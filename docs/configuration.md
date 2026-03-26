@@ -60,7 +60,7 @@ Backward compatibility: `GIT_TOKEN` without `GIT_REPO_URL` still works (legacy b
 | `MARKDOWN_VAULT_MCP_GIT_USERNAME` | string | `x-access-token` | Username for HTTPS auth prompts (`x-access-token` GitHub, `oauth2` GitLab, account name Bitbucket) |
 | `MARKDOWN_VAULT_MCP_GIT_TOKEN` | string | — | Token/password for HTTPS auth via `GIT_ASKPASS` |
 | `MARKDOWN_VAULT_MCP_GIT_PULL_INTERVAL_S` | int | `600` | Seconds between `git fetch` + ff-only update attempts; `0` disables periodic pull |
-| `MARKDOWN_VAULT_MCP_GIT_PUSH_DELAY_S`` | float | `30` | Seconds of write-idle time before pushing; `0` = push only on shutdown |
+| `MARKDOWN_VAULT_MCP_GIT_PUSH_DELAY_S` | float | `30` | Seconds of write-idle time before pushing; `0` = push only on shutdown |
 | `MARKDOWN_VAULT_MCP_GIT_COMMIT_NAME` | string | `markdown-vault-mcp` | Git committer name for auto-commits; **set this in Docker** where `git config user.name` is empty |
 | `MARKDOWN_VAULT_MCP_GIT_COMMIT_EMAIL` | string | `noreply@markdown-vault-mcp` | Git committer email for auto-commits |
 | `MARKDOWN_VAULT_MCP_GIT_LFS` | bool | `true` | Run `git lfs pull` on startup to resolve LFS pointers; set to `false` if git-lfs is not installed |
