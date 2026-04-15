@@ -73,25 +73,14 @@ def _build_collection(args: argparse.Namespace) -> Collection:
     if index_path_override:
         kwargs["index_path"] = Path(index_path_override)
 
-    # Resolve embedding provider if embeddings_path is configured.
-    if config.embeddings_path is not None:
-        try:
-            from markdown_vault_mcp.providers import get_embedding_provider
-
-            kwargs["embedding_provider"] = get_embedding_provider()
-        except Exception:
-            logger.warning(
-                "Could not load embedding provider; semantic search disabled",
-                exc_info=True,
-            )
-
     return Collection(**kwargs)
 
 
 def _cmd_serve(args: argparse.Namespace) -> None:
     """Run the MCP server."""
     try:
-        from markdown_vault_mcp.mcp_server import build_event_store, create_server
+        from markdown_vault_mcp.config import build_event_store
+        from markdown_vault_mcp.mcp_server import create_server
     except ImportError:
         logger.error(
             "FastMCP is not installed. Install with: "

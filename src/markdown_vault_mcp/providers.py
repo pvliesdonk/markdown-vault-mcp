@@ -15,8 +15,10 @@ from __future__ import annotations
 import logging
 import os
 from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING
 
-from markdown_vault_mcp.config import _ENV_PREFIX
+if TYPE_CHECKING:
+    from markdown_vault_mcp.config import CollectionConfig
 
 logger = logging.getLogger(__name__)
 
@@ -67,20 +69,20 @@ class EmbeddingProvider(ABC):
 
 
 class OllamaProvider(EmbeddingProvider):
-    """Embedding provider backed by the Ollama REST API.
+    """Embedding provider backed by the Ollama REST API."""
 
-    Configuration via environment variables:
+    def __init__(
+        self,
+        host: str = "http://localhost:11434",
+        model: str = "nomic-embed-text",
+        cpu_only: bool = False,
+    ) -> None:
+        """Initialise OllamaProvider.
 
-    - ``OLLAMA_HOST``: base URL of the Ollama server
-      (default: ``http://localhost:11434``).
-    - ``MARKDOWN_VAULT_MCP_OLLAMA_MODEL``: model name to use
-      (default: ``nomic-embed-text``).
-    - ``MARKDOWN_VAULT_MCP_OLLAMA_CPU_ONLY``: set to ``true`` to force CPU-only
-      inference (default: ``false``).
-    """
-
-    def __init__(self) -> None:
-        """Initialise OllamaProvider from environment variables.
+        Args:
+            host: Base URL of the Ollama server.
+            model: Model name to use.
+            cpu_only: Force CPU-only inference.
 
         Raises:
             ImportError: If ``httpx`` is not installed.
@@ -94,10 +96,9 @@ class OllamaProvider(EmbeddingProvider):
             ) from exc
 
         self._httpx = httpx
-        self._host = os.environ.get("OLLAMA_HOST", "http://localhost:11434").rstrip("/")
-        self._model = os.environ.get(f"{_ENV_PREFIX}_OLLAMA_MODEL", "nomic-embed-text")
-        cpu_only_raw = os.environ.get(f"{_ENV_PREFIX}_OLLAMA_CPU_ONLY", "false").lower()
-        self._cpu_only = cpu_only_raw in ("1", "true", "yes")
+        self._host = host.rstrip("/")
+        self._model = model
+        self._cpu_only = cpu_only
         self._dimension: int | None = None
 
         logger.debug(
@@ -173,22 +174,21 @@ class OllamaProvider(EmbeddingProvider):
 class OpenAIProvider(EmbeddingProvider):
     """Embedding provider backed by the OpenAI Embeddings API.
 
-    Configuration via environment variables:
-
-    - ``OPENAI_API_KEY``: required API key.
-
     Uses the ``text-embedding-3-small`` model.
     """
 
     _MODEL = "text-embedding-3-small"
     _ENDPOINT = "https://api.openai.com/v1/embeddings"
 
-    def __init__(self) -> None:
-        """Initialise OpenAIProvider from environment variables.
+    def __init__(self, api_key: str | None = None) -> None:
+        """Initialise OpenAIProvider.
+
+        Args:
+            api_key: OpenAI API key.
 
         Raises:
             ImportError: If ``httpx`` is not installed.
-            RuntimeError: If ``OPENAI_API_KEY`` is not set.
+            RuntimeError: If ``api_key`` is not provided.
         """
         try:
             import httpx
@@ -199,10 +199,9 @@ class OpenAIProvider(EmbeddingProvider):
             ) from exc
 
         self._httpx = httpx
-        api_key = os.environ.get("OPENAI_API_KEY")
         if not api_key:
             raise RuntimeError(
-                "OpenAIProvider requires the OPENAI_API_KEY environment variable."
+                "OpenAIProvider requires the OPENAI_API_KEY environment variable (passed as api_key)."
             )
         self._api_key = api_key
         self._dimension: int | None = None
@@ -288,7 +287,7 @@ class FastEmbedProvider(EmbeddingProvider):
 
     def __init__(
         self,
-        model_name: str | None = None,
+        model_name: str = "BAAI/bge-small-en-v1.5",
         cache_dir: str | None = None,
     ) -> None:
         """Initialise FastEmbed model.
@@ -308,12 +307,8 @@ class FastEmbedProvider(EmbeddingProvider):
                 "Install it with: pip install 'markdown-vault-mcp[embeddings]'"
             ) from exc
 
-        self._model_name = model_name or os.environ.get(
-            f"{_ENV_PREFIX}_FASTEMBED_MODEL", "BAAI/bge-small-en-v1.5"
-        )
-        self._cache_dir = cache_dir or os.environ.get(
-            f"{_ENV_PREFIX}_FASTEMBED_CACHE_DIR"
-        )
+        self._model_name = model_name
+        self._cache_dir = cache_dir
         kwargs: dict[str, object] = {"model_name": self._model_name}
         if self._cache_dir:
             kwargs["cache_dir"] = self._cache_dir
@@ -369,65 +364,96 @@ class FastEmbedProvider(EmbeddingProvider):
         return self._model_name
 
 
-def get_embedding_provider() -> EmbeddingProvider:
+def get_embedding_provider(config: CollectionConfig | None = None) -> EmbeddingProvider:
     """Auto-detect and return an embedding provider.
 
-    Checks the ``EMBEDDING_PROVIDER`` environment variable first. When that
-    variable is not set, probes for available providers in this order:
-
-    1. If ``OPENAI_API_KEY`` is set → :class:`OpenAIProvider`.
-    2. If Ollama is reachable at ``OLLAMA_HOST`` → :class:`OllamaProvider`.
-    3. If ``fastembed`` can be imported →
-       :class:`FastEmbedProvider`.
-    4. Raises :class:`RuntimeError` with installation instructions.
+    Args:
+        config: Optional :class:`~markdown_vault_mcp.config.CollectionConfig`.
+            When provided, settings from the config take precedence over
+            auto-detection.
 
     Returns:
         An initialised :class:`EmbeddingProvider` instance.
 
     Raises:
-        RuntimeError: If no provider is available and ``EMBEDDING_PROVIDER``
-            is not set, or if the explicitly requested provider cannot be
-            initialised.
-        ValueError: If ``EMBEDDING_PROVIDER`` is set to an unrecognised value.
+        RuntimeError: If no provider is available and no explicit provider is
+            set in *config*, or if the requested provider cannot be initialised.
+        ValueError: If an unrecognised provider is requested.
     """
-    explicit = os.environ.get("EMBEDDING_PROVIDER", "").strip().lower()
+    if config:
+        explicit = config.embedding_provider
+        if explicit == "openai":
+            logger.info("Using OpenAIProvider (config)")
+            return OpenAIProvider(api_key=config.openai_api_key)
+        if explicit == "ollama":
+            logger.info("Using OllamaProvider (config)")
+            return OllamaProvider(
+                host=config.ollama_host,
+                model=config.ollama_model,
+                cpu_only=config.ollama_cpu_only,
+            )
+        if explicit == "fastembed":
+            logger.info("Using FastEmbedProvider (config)")
+            return FastEmbedProvider(
+                model_name=config.fastembed_model, cache_dir=config.fastembed_cache_dir
+            )
+        if explicit:
+            raise ValueError(
+                f"Unrecognised embedding_provider: {explicit!r}. "
+                "Valid values: 'openai', 'ollama', 'fastembed'."
+            )
 
-    if explicit == "openai":
-        logger.info("Using OpenAIProvider (EMBEDDING_PROVIDER=openai)")
-        return OpenAIProvider()
+    # Fallback to auto-detection (uses os.environ internally if config is missing)
+    # but since we want to move away from os.environ, we should ideally always pass config.
+    # For now, we'll maintain backward compatibility by reading env vars if config is None.
+    # Actually, let's just use os.environ as a final fallback if config is None.
 
-    if explicit == "ollama":
-        logger.info("Using OllamaProvider (EMBEDDING_PROVIDER=ollama)")
-        return OllamaProvider()
-
-    if explicit == "fastembed":
-        logger.info(
-            "Using FastEmbedProvider (EMBEDDING_PROVIDER=%s)",
-            explicit,
+    provider_name = os.environ.get("EMBEDDING_PROVIDER", "").strip().lower()
+    if provider_name == "openai":
+        return OpenAIProvider(api_key=os.environ.get("OPENAI_API_KEY"))
+    if provider_name == "ollama":
+        return OllamaProvider(
+            host=os.environ.get("OLLAMA_HOST", "http://localhost:11434"),
+            model=os.environ.get("MARKDOWN_VAULT_MCP_OLLAMA_MODEL", "nomic-embed-text"),
+            cpu_only=os.environ.get(
+                "MARKDOWN_VAULT_MCP_OLLAMA_CPU_ONLY", "false"
+            ).lower()
+            in ("true", "1", "yes"),
         )
-        return FastEmbedProvider()
-
-    if explicit:
-        raise ValueError(
-            f"Unrecognised EMBEDDING_PROVIDER value: {explicit!r}. "
-            "Valid values: 'openai', 'ollama', 'fastembed'."
+    if provider_name == "fastembed":
+        return FastEmbedProvider(
+            model_name=os.environ.get(
+                "MARKDOWN_VAULT_MCP_FASTEMBED_MODEL", "BAAI/bge-small-en-v1.5"
+            ),
+            cache_dir=os.environ.get("MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR"),
         )
 
     # Auto-detect: OpenAI API key present?
-    if os.environ.get("OPENAI_API_KEY"):
-        logger.info("Auto-detected OpenAIProvider (OPENAI_API_KEY is set)")
-        return OpenAIProvider()
+    api_key = config.openai_api_key if config else os.environ.get("OPENAI_API_KEY")
+    if api_key:
+        logger.info("Auto-detected OpenAIProvider")
+        return OpenAIProvider(api_key=api_key)
 
     # Auto-detect: Ollama reachable?
-    host = os.environ.get("OLLAMA_HOST", "http://localhost:11434").rstrip("/")
+    host = (
+        config.ollama_host
+        if config
+        else os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+    )
     try:
         import httpx
 
         with httpx.Client(timeout=2.0) as client:
-            response = client.get(f"{host}/api/tags")
+            response = client.get(f"{host.rstrip('/')}/api/tags")
         if response.status_code == 200:
             logger.info("Auto-detected OllamaProvider (Ollama reachable at %s)", host)
-            return OllamaProvider()
+            if config:
+                return OllamaProvider(
+                    host=config.ollama_host,
+                    model=config.ollama_model,
+                    cpu_only=config.ollama_cpu_only,
+                )
+            return OllamaProvider(host=host)
     except Exception:
         logger.debug("Ollama not reachable at %s, skipping", host)
 
@@ -436,6 +462,10 @@ def get_embedding_provider() -> EmbeddingProvider:
         import fastembed  # noqa: F401
 
         logger.info("Auto-detected FastEmbedProvider")
+        if config:
+            return FastEmbedProvider(
+                model_name=config.fastembed_model, cache_dir=config.fastembed_cache_dir
+            )
         return FastEmbedProvider()
     except ImportError:
         logger.debug("fastembed not available, skipping")
@@ -444,6 +474,4 @@ def get_embedding_provider() -> EmbeddingProvider:
         "No embedding provider is available. Install one of:\n"
         "  pip install 'markdown-vault-mcp[embeddings-api]'  # httpx for Ollama or OpenAI\n"
         "  pip install 'markdown-vault-mcp[embeddings]'       # fastembed (local)\n"
-        "Or set OPENAI_API_KEY for the OpenAI provider, "
-        "or start an Ollama server for the Ollama provider."
     )

@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import pytest
 
-from markdown_vault_mcp.config import load_config
-from markdown_vault_mcp.mcp_server import build_event_store
+from markdown_vault_mcp.config import (
+    build_event_store,
+    load_config,
+)
 
 
 class TestBuildEventStore:
@@ -16,7 +18,7 @@ class TestBuildEventStore:
         from unittest.mock import patch
 
         with patch(
-            "markdown_vault_mcp.mcp_server._DEFAULT_EVENT_STORE_DIR",
+            "markdown_vault_mcp.config._DEFAULT_EVENT_STORE_DIR",
             str(tmp_path / "events"),
         ):
             store = build_event_store(None)
@@ -29,7 +31,7 @@ class TestBuildEventStore:
         from unittest.mock import patch
 
         with patch(
-            "markdown_vault_mcp.mcp_server._DEFAULT_EVENT_STORE_DIR",
+            "markdown_vault_mcp.config._DEFAULT_EVENT_STORE_DIR",
             str(tmp_path / "events"),
         ):
             store = build_event_store("")
@@ -60,7 +62,7 @@ class TestBuildEventStore:
         from unittest.mock import patch
 
         with patch(
-            "markdown_vault_mcp.mcp_server._DEFAULT_EVENT_STORE_DIR",
+            "markdown_vault_mcp.config._DEFAULT_EVENT_STORE_DIR",
             str(tmp_path / "events"),
         ):
             store = build_event_store("file://")
