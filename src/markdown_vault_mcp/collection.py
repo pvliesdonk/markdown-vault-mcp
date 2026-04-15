@@ -14,7 +14,6 @@ import mimetypes
 import os.path as osp
 import queue
 import re
-import sqlite3
 import threading
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -24,6 +23,7 @@ from markdown_vault_mcp.exceptions import (
 )
 from markdown_vault_mcp.fts_index import FTSIndex, _derive_folder
 from markdown_vault_mcp.managers.document import DocumentManager
+from markdown_vault_mcp.managers.search import SearchManager
 from markdown_vault_mcp.scanner import (
     ChunkStrategy,
     HeadingChunker,
@@ -52,7 +52,6 @@ from markdown_vault_mcp.types import (
     ReindexResult,
     RenameResult,
     SearchResult,
-    SimilarItem,
     WriteCallback,
     WriteResult,
 )
@@ -68,7 +67,6 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_STATE_SUBDIR = ".markdown_vault_mcp"
 _DEFAULT_STATE_FILENAME = "state.json"
-_CONTEXT_FOLDER_PEERS_LIMIT = 20
 
 # ---------------------------------------------------------------------------
 # Link-update helpers (used by Collection.rename update_links logic)
@@ -171,9 +169,6 @@ def _apply_link_replacement(
         )
     return content
 
-
-# RRF constant — standard value recommended in the original paper.
-_RRF_K = 60
 
 # Maximum chunks per embedding provider call.  Keeps memory bounded during
 # build_embeddings() — FastEmbed/ONNX can allocate pathologically large buffers
@@ -369,6 +364,7 @@ class Collection:
         )
         self._tracker = ChangeTracker(self._state_path)
         self._docs = DocumentManager(self)
+        self._search = SearchManager(self)
 
         # Vector index is loaded lazily (only if embeddings_path is set).
         self._vectors: VectorIndex | None = None
@@ -516,22 +512,9 @@ class Collection:
             ValueError: If *mode* is ``"semantic"`` or ``"hybrid"`` but no
                 embedding provider or embeddings path is configured.
         """
-        self._ensure_initialized()
-
-        if mode == "keyword":
-            return self._keyword_search(
-                query, limit=limit, filters=filters, folder=folder
-            )
-
-        if mode == "semantic":
-            self._require_vectors()
-            return self._semantic_search(
-                query, limit=limit, filters=filters, folder=folder
-            )
-
-        # hybrid
-        self._require_vectors()
-        return self._hybrid_search(query, limit=limit, filters=filters, folder=folder)
+        return self._search.search(
+            query, limit=limit, mode=mode, filters=filters, folder=folder
+        )
 
     def _require_vectors(self) -> None:
         """Raise ValueError if semantic search is not configured."""
@@ -575,234 +558,9 @@ class Collection:
 
         return self._vectors
 
-    def _keyword_search(
-        self,
-        query: str,
-        *,
-        limit: int,
-        filters: dict[str, str] | None,
-        folder: str | None,
-    ) -> list[SearchResult]:
-        fts_results = self._fts.search(
-            query, limit=limit, filters=filters, folder=folder
-        )
-        return [
-            SearchResult(
-                path=r.path,
-                title=r.title,
-                folder=r.folder,
-                heading=r.heading,
-                content=r.content,
-                score=r.score,
-                search_type="keyword",
-                frontmatter=self._get_frontmatter(r.path),
-            )
-            for r in fts_results
-        ]
-
-    def _semantic_search(
-        self,
-        query: str,
-        *,
-        limit: int,
-        filters: dict[str, str] | None = None,
-        folder: str | None = None,
-    ) -> list[SearchResult]:
-        # Flush deferred embedding updates so results are consistent.
-        self._flush_dirty_embeddings()
-        vectors = self._load_vectors()
-        # Fetch extra candidates so post-filtering still yields *limit* results.
-        candidate_limit = max(limit * 3, 30) if (folder or filters) else limit
-        raw = vectors.search(query, limit=candidate_limit)
-
-        results: list[SearchResult] = []
-        for r in raw:
-            if len(results) >= limit:
-                break
-
-            # Apply folder prefix filter.
-            if folder is not None:
-                r_folder = r.get("folder", "")
-                if r_folder != folder and not r_folder.startswith(folder + "/"):
-                    continue
-
-            # Apply tag filters: check FTS index for each required tag.
-            if filters:
-                note_row = self._fts.get_note(r["path"])
-                if note_row is None:
-                    continue
-                fm_raw = note_row.get("frontmatter_json")
-                fm: dict = {}
-                if fm_raw:
-                    with contextlib.suppress(ValueError, TypeError):
-                        fm = json.loads(fm_raw)
-                match = True
-                for key, value in filters.items():
-                    fm_val = fm.get(key)
-                    if fm_val is None:
-                        match = False
-                        break
-                    # Support both scalar and list values.
-                    if isinstance(fm_val, list):
-                        if str(value) not in [str(v) for v in fm_val]:
-                            match = False
-                            break
-                    else:
-                        if str(fm_val) != str(value):
-                            match = False
-                            break
-                if not match:
-                    continue
-
-            results.append(
-                SearchResult(
-                    path=r["path"],
-                    title=r["title"],
-                    folder=r["folder"],
-                    heading=r.get("heading"),
-                    content=r["content"],
-                    score=r["score"],
-                    search_type="semantic",
-                    frontmatter=self._get_frontmatter(r["path"]),
-                )
-            )
-        return results
-
-    def _hybrid_search(
-        self,
-        query: str,
-        *,
-        limit: int,
-        filters: dict[str, str] | None,
-        folder: str | None,
-    ) -> list[SearchResult]:
-        """RRF merge of keyword and semantic results.
-
-        Each result set is ranked independently.  Merged score:
-        ``1 / (k + rank)`` where k=60.  Results appearing in both sets have
-        their scores summed.  Returns top *limit* by total RRF score.
-        """
-        # Fetch more candidates than needed so RRF has enough to rank.
-        candidate_limit = max(limit * 2, 20)
-
-        # Flush deferred embedding updates so results are consistent.
-        self._flush_dirty_embeddings()
-
-        fts_results = self._fts.search(
-            query, limit=candidate_limit, filters=filters, folder=folder
-        )
-        vectors = self._load_vectors()
-        vec_results = vectors.search(query, limit=candidate_limit)
-
-        # Build a key for deduplication: (path, heading) identifies a chunk.
-        # Use a dict to accumulate RRF scores and store metadata.
-        rrf_scores: dict[tuple[str, str | None], float] = {}
-        # Store the best metadata dict keyed by (path, heading).
-        chunk_meta: dict[tuple[str, str | None], dict] = {}
-
-        for rank, r in enumerate(fts_results, start=1):
-            key = (r.path, r.heading)
-            rrf_scores[key] = rrf_scores.get(key, 0.0) + 1.0 / (_RRF_K + rank)
-            if key not in chunk_meta:
-                chunk_meta[key] = {
-                    "path": r.path,
-                    "title": r.title,
-                    "folder": r.folder,
-                    "heading": r.heading,
-                    "content": r.content,
-                    "search_type": "keyword",
-                }
-
-        for rank, r in enumerate(vec_results, start=1):
-            # Apply folder prefix filter to semantic results.
-            if folder is not None:
-                r_folder = r.get("folder", "")
-                if r_folder != folder and not r_folder.startswith(folder + "/"):
-                    continue
-
-            # Apply tag filters to semantic results via frontmatter lookup.
-            if filters:
-                note_row = self._fts.get_note(r["path"])
-                if note_row is None:
-                    continue
-                fm_raw = note_row.get("frontmatter_json")
-                fm: dict = {}
-                if fm_raw:
-                    with contextlib.suppress(json.JSONDecodeError, TypeError):
-                        fm = json.loads(fm_raw)
-                skip = False
-                for key, value in filters.items():
-                    fm_val = fm.get(key)
-                    if fm_val is None:
-                        skip = True
-                        break
-                    if isinstance(fm_val, list):
-                        if str(value) not in [str(v) for v in fm_val]:
-                            skip = True
-                            break
-                    else:
-                        if str(fm_val) != str(value):
-                            skip = True
-                            break
-                if skip:
-                    continue
-
-            heading = r.get("heading")
-            key = (r["path"], heading)
-            rrf_scores[key] = rrf_scores.get(key, 0.0) + 1.0 / (_RRF_K + rank)
-            if key not in chunk_meta:
-                chunk_meta[key] = {
-                    "path": r["path"],
-                    "title": r["title"],
-                    "folder": r["folder"],
-                    "heading": heading,
-                    "content": r["content"],
-                    "search_type": "semantic",
-                }
-
-        # Sort by descending RRF score, take top limit.
-        sorted_keys = sorted(rrf_scores, key=lambda k: rrf_scores[k], reverse=True)[
-            :limit
-        ]
-
-        return [
-            SearchResult(
-                path=chunk_meta[k]["path"],
-                title=chunk_meta[k]["title"],
-                folder=chunk_meta[k]["folder"],
-                heading=chunk_meta[k]["heading"],
-                content=chunk_meta[k]["content"],
-                score=rrf_scores[k],
-                search_type=chunk_meta[k]["search_type"],
-                frontmatter=self._get_frontmatter(chunk_meta[k]["path"]),
-            )
-            for k in sorted_keys
-        ]
-
-    def _get_frontmatter(self, path: str) -> dict:
-        """Return the frontmatter dict for a document from the FTS index.
-
-        Falls back to an empty dict if the document is not found.
-
-        Args:
-            path: Relative document path.
-
-        Returns:
-            Parsed frontmatter dict.
-        """
-        row = self._fts.get_note(path)
-        if row is None:
-            return {}
-        raw = row.get("frontmatter_json")
-        if not raw:
-            return {}
-        try:
-            return json.loads(raw)
-        except (json.JSONDecodeError, TypeError) as exc:
-            logger.warning(
-                "_get_frontmatter: invalid JSON for %s — %s", row.get("path"), exc
-            )
-            return {}
+    def _get_frontmatter(self, path: str) -> dict[str, Any]:
+        """Return the frontmatter dict for a document from the FTS index."""
+        return self._search._get_frontmatter(path)
 
     # ------------------------------------------------------------------
     # Read / list
@@ -1500,49 +1258,14 @@ class Collection:
     def get_similar(self, path: str, *, limit: int = 10) -> list[SearchResult]:
         """Return the most semantically similar chunks from other documents.
 
-        Uses the stored embedding vectors for ``path`` (averaged across
-        chunks) to compute cosine similarity against all other documents.
-        No re-embedding is needed.  Results are at chunk granularity —
-        the same document may appear multiple times if it has many chunks.
-
         Args:
             path: Relative path of the reference document.
             limit: Maximum number of results to return.
 
         Returns:
-            List of :class:`~markdown_vault_mcp.types.SearchResult` objects
-            ordered by descending similarity.  Returns ``[]`` when embeddings
-            are not configured or the document has no stored vectors.
-
-        Raises:
-            ValueError: If no document exists at the given path.
+            List of SearchResult objects.
         """
-        self._ensure_initialized()
-        self._validate_path(path)
-        if self._fts.get_note(path) is None:
-            raise ValueError(f"Document not found: {path}")
-
-        if self._embedding_provider is None or self._embeddings_path is None:
-            return []
-
-        self._load_vectors()
-        if self._vectors is None or self._vectors.count == 0:
-            return []
-
-        raw_results = self._vectors.search_by_path(path, limit=limit)
-        return [
-            SearchResult(
-                path=r["path"],
-                title=r.get("title", ""),
-                folder=r.get("folder", ""),
-                heading=r.get("heading"),
-                content=r.get("content", ""),
-                score=r.get("score", 0.0),
-                search_type="semantic",
-                frontmatter=self._get_frontmatter(r["path"]),
-            )
-            for r in raw_results
-        ]
+        return self._search.get_similar(path, limit=limit)
 
     def get_recent(
         self, *, limit: int = 20, folder: str | None = None
@@ -1571,118 +1294,16 @@ class Collection:
     ) -> NoteContext:
         """Return a consolidated context dossier for a document.
 
-        Combines backlinks, outlinks, similar notes, folder peers, and
-        indexed frontmatter tags into a single response, saving the caller
-        multiple round trips.
-
         Args:
-            path: Relative path of the document (e.g. ``"notes/topic.md"``).
+            path: Relative path of the document.
             similar_limit: Maximum number of similar notes to include.
             link_limit: Maximum number of backlinks and outlinks to include.
 
         Returns:
-            A :class:`~markdown_vault_mcp.types.NoteContext` object.
-
-        Raises:
-            ValueError: If no document exists at the given path.
+            A NoteContext object.
         """
-        self._ensure_initialized()
-        self._validate_path(path)
-        row = self._fts.get_note(path)
-        if row is None:
-            raise ValueError(f"Document not found: {path}")
-
-        frontmatter = self._get_frontmatter(path)
-
-        # Backlinks — capped at link_limit; graceful if links table absent.
-        try:
-            backlinks = self._fts.get_backlinks(path, limit=link_limit)
-            backlink_objs = [
-                BacklinkInfo(
-                    source_path=r["source_path"],
-                    source_title=r["source_title"],
-                    link_text=r["link_text"],
-                    link_type=r["link_type"],
-                    fragment=r["fragment"],
-                    raw_target=r["raw_target"],
-                )
-                for r in backlinks
-            ]
-        except sqlite3.OperationalError as exc:
-            logger.warning(
-                "get_context: failed to retrieve backlinks for %s: %s", path, exc
-            )
-            backlink_objs = []
-
-        # Outlinks — capped at link_limit; graceful if links table absent.
-        try:
-            outlinks = self._fts.get_outlinks(path, limit=link_limit)
-            outlink_objs = [
-                OutlinkInfo(
-                    target_path=r["target_path"],
-                    link_text=r["link_text"],
-                    link_type=r["link_type"],
-                    fragment=r["fragment"],
-                    exists=bool(r["target_exists"]),
-                    raw_target=r["raw_target"],
-                )
-                for r in outlinks
-            ]
-        except sqlite3.OperationalError as exc:
-            logger.warning(
-                "get_context: failed to retrieve outlinks for %s: %s", path, exc
-            )
-            outlink_objs = []
-
-        # Similar notes — empty if embeddings not configured or similar_limit is 0.
-        similar_dicts: list[SimilarItem] = []
-        if (
-            similar_limit > 0
-            and self._embedding_provider is not None
-            and self._embeddings_path is not None
-        ):
-            self._load_vectors()
-            if self._vectors is not None and self._vectors.count > 0:
-                raw = self._vectors.search_by_path(path, limit=similar_limit)
-                similar_dicts = [
-                    SimilarItem(
-                        path=r["path"],
-                        title=r["title"],
-                        score=r["score"],
-                    )
-                    for r in raw
-                ]
-
-        # Folder peers — other notes in the same folder, capped at limit.
-        # folder is always a str (empty string for root-level docs) — never None.
-        folder = row["folder"]
-        folder_rows = self._fts.list_notes(folder=folder)
-        folder_notes = [r["path"] for r in folder_rows if r["path"] != path][
-            :_CONTEXT_FOLDER_PEERS_LIMIT
-        ]
-
-        # Tags — indexed frontmatter fields present on this document.
-        tags: dict[str, list[str]] = {}
-        for field in self._indexed_frontmatter_fields:
-            value = frontmatter.get(field)
-            if value is None:
-                continue
-            if isinstance(value, list):
-                tags[field] = [str(v) for v in value]
-            else:
-                tags[field] = [str(value)]
-
-        return NoteContext(
-            path=path,
-            title=row["title"],
-            folder=folder,
-            frontmatter=frontmatter,
-            modified_at=row["modified_at"],
-            backlinks=backlink_objs,
-            outlinks=outlink_objs,
-            similar=similar_dicts,
-            folder_notes=folder_notes,
-            tags=tags,
+        return self._search.get_context(
+            path, similar_limit=similar_limit, link_limit=link_limit
         )
 
     def get_orphan_notes(self) -> list[NoteInfo]:
