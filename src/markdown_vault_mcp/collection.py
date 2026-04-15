@@ -6,7 +6,6 @@ LangChain wrappers, and CLI commands all go through this class.
 
 from __future__ import annotations
 
-import base64
 import contextlib
 import fnmatch
 import json
@@ -15,25 +14,16 @@ import mimetypes
 import os.path as osp
 import queue
 import re
-import shutil
 import sqlite3
-import tempfile
 import threading
-from collections import defaultdict
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
-import frontmatter as fm
-
 from markdown_vault_mcp.exceptions import (
-    ConcurrentModificationError,
-    DocumentExistsError,
-    DocumentNotFoundError,
-    EditConflictError,
     ReadOnlyError,
 )
 from markdown_vault_mcp.fts_index import FTSIndex, _derive_folder
-from markdown_vault_mcp.hashing import compute_etag, compute_file_hash
+from markdown_vault_mcp.managers.document import DocumentManager
 from markdown_vault_mcp.scanner import (
     ChunkStrategy,
     HeadingChunker,
@@ -65,11 +55,6 @@ from markdown_vault_mcp.types import (
     SimilarItem,
     WriteCallback,
     WriteResult,
-)
-from markdown_vault_mcp.utils.text import (
-    build_position_map,
-    find_closest_match,
-    normalize_text,
 )
 
 if TYPE_CHECKING:
@@ -383,6 +368,7 @@ class Collection:
             indexed_frontmatter_fields=self._indexed_frontmatter_fields or None,
         )
         self._tracker = ChangeTracker(self._state_path)
+        self._docs = DocumentManager(self)
 
         # Vector index is loaded lazily (only if embeddings_path is set).
         self._vectors: VectorIndex | None = None
@@ -832,37 +818,7 @@ class Collection:
             A :class:`~markdown_vault_mcp.types.NoteContent` instance, or ``None``
             if the file does not exist.
         """
-        self._ensure_initialized()
-
-        abs_path = (self._source_dir / path).resolve()
-        if not abs_path.is_relative_to(self._source_dir.resolve()):
-            return None
-        if not abs_path.is_file():
-            return None
-
-        try:
-            note = parse_note(abs_path, self._source_dir, self._chunk_strategy)
-        except (UnicodeDecodeError, OSError) as exc:
-            logger.warning("read(%s): could not parse file — %s", path, exc)
-            return None
-
-        raw_content = abs_path.read_text(encoding="utf-8")
-        etag = (
-            note.content_hash
-        )  # already computed by parse_note (SHA-256 of raw bytes)
-        folder = str(Path(path).parent)
-        if folder == ".":
-            folder = ""
-
-        return NoteContent(
-            path=note.path,
-            title=note.title,
-            folder=folder,
-            content=raw_content,
-            frontmatter=note.frontmatter,
-            modified_at=note.modified_at,
-            etag=etag,
-        )
+        return self._docs.read(path)
 
     def list(
         self,
@@ -2204,35 +2160,7 @@ class Collection:
                 extension not in the allowlist, or the file does not exist.
             ValueError: If the file exceeds the configured size limit.
         """
-        abs_path = self._validate_attachment_path(path)
-        if not abs_path.is_file():
-            raise ValueError(f"Attachment not found: {path}")
-
-        stat = abs_path.stat()
-        size_bytes = stat.st_size
-        if self._max_attachment_size_mb > 0:
-            limit_bytes = int(self._max_attachment_size_mb * 1024 * 1024)
-            if size_bytes > limit_bytes:
-                raise ValueError(
-                    f"Attachment {path!r} is {size_bytes} bytes, which exceeds "
-                    f"the limit of {self._max_attachment_size_mb} MB "
-                    f"({limit_bytes} bytes). "
-                    "Raise MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB or set it "
-                    "to 0 to disable the limit."
-                )
-
-        mime_type, _ = mimetypes.guess_type(path)
-        raw = abs_path.read_bytes()
-        content_base64 = base64.b64encode(raw).decode("ascii")
-        etag = compute_etag(raw)
-        return AttachmentContent(
-            path=path,
-            mime_type=mime_type,
-            size_bytes=size_bytes,
-            content_base64=content_base64,
-            modified_at=stat.st_mtime,
-            etag=etag,
-        )
+        return self._docs.read_attachment(path)
 
     def write_attachment(
         self, path: str, content: bytes, if_match: str | None = None
@@ -2259,48 +2187,7 @@ class Collection:
                 extension not in the allowlist, or the content exceeds the
                 size limit.
         """
-        self._check_writable()
-        with self._write_lock:
-            self._ensure_initialized()
-            abs_path = self._validate_attachment_path(path)
-            if if_match is not None:
-                if not abs_path.is_file():
-                    raise ConcurrentModificationError(
-                        path, expected=if_match, actual="(file does not exist)"
-                    )
-                current_hash = compute_file_hash(abs_path)
-                if current_hash != if_match:
-                    raise ConcurrentModificationError(
-                        path, expected=if_match, actual=current_hash
-                    )
-            if self._max_attachment_size_mb > 0:
-                limit_bytes = int(self._max_attachment_size_mb * 1024 * 1024)
-                if len(content) > limit_bytes:
-                    raise ValueError(
-                        f"Content ({len(content)} bytes) exceeds the limit of "
-                        f"{self._max_attachment_size_mb} MB ({limit_bytes} bytes). "
-                        "Raise MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB or set "
-                        "it to 0 to disable the limit."
-                    )
-            created = not abs_path.is_file()
-            abs_path.parent.mkdir(parents=True, exist_ok=True)
-            with tempfile.NamedTemporaryFile(
-                dir=abs_path.parent, mode="wb", suffix=".tmp", delete=False
-            ) as tmp:
-                tmp.write(content)
-                tmp_name = tmp.name
-            if abs_path.is_file():
-                shutil.copymode(abs_path, tmp_name)
-            try:
-                Path(tmp_name).replace(abs_path)
-            except Exception:
-                Path(tmp_name).unlink(missing_ok=True)
-                raise
-            result = WriteResult(path=path, created=created)
-
-        self._fire_write_callback(abs_path, "", "write")
-
-        return result
+        return self._docs.write_attachment(path, content, if_match=if_match)
 
     def write(
         self,
@@ -2335,63 +2222,9 @@ class Collection:
                 not match the current file hash (or the file does not exist).
             ValueError: If *path* escapes the source directory.
         """
-        self._check_writable()
-        with self._write_lock:
-            self._ensure_initialized()
-
-            abs_path = self._validate_path(path)
-            if if_match is not None:
-                if not abs_path.is_file():
-                    raise ConcurrentModificationError(
-                        path, expected=if_match, actual="(file does not exist)"
-                    )
-                current_hash = compute_file_hash(abs_path)
-                if current_hash != if_match:
-                    raise ConcurrentModificationError(
-                        path, expected=if_match, actual=current_hash
-                    )
-            created = not abs_path.is_file()
-
-            # Create intermediate directories.
-            abs_path.parent.mkdir(parents=True, exist_ok=True)
-
-            # Build file content with optional frontmatter.
-            if frontmatter is not None:
-                post = fm.Post(content, **frontmatter)
-                file_content = fm.dumps(post)
-            else:
-                file_content = content
-
-            with tempfile.NamedTemporaryFile(
-                dir=abs_path.parent,
-                mode="w",
-                encoding="utf-8",
-                suffix=".tmp",
-                delete=False,
-            ) as tmp:
-                tmp.write(file_content)
-                tmp_name = tmp.name
-            if abs_path.is_file():
-                shutil.copymode(abs_path, tmp_name)
-            try:
-                Path(tmp_name).replace(abs_path)
-            except Exception:
-                Path(tmp_name).unlink(missing_ok=True)
-                raise
-
-            # Update FTS index.
-            note = parse_note(abs_path, self._source_dir, self._chunk_strategy)
-            self._fts.upsert_note(note)
-
-            # Mark for deferred embedding update.
-            self._update_vector_index(note)
-
-            result = WriteResult(path=path, created=created)
-
-        # Fire git callback in background thread.
-        self._fire_write_callback(abs_path, file_content, "write")
-
-        return result
+        return self._docs.write(
+            path, content, frontmatter=frontmatter, if_match=if_match
+        )
 
     def edit(
         self,
@@ -2452,199 +2285,14 @@ class Collection:
             ValueError: If parameter combination is invalid, or line
                 numbers are out of range.
         """
-        self._check_writable()
-
-        # --- Parameter validation ---
-        if old_text is not None and not old_text:
-            raise ValueError("old_text must not be empty")
-        has_lines = line_start is not None or line_end is not None
-        if old_text is None and not has_lines:
-            raise ValueError("Must provide old_text, line_start/line_end, or both")
-        if (line_start is None) != (line_end is None):
-            raise ValueError("Must provide both line_start and line_end, not just one")
-        if line_start is not None and line_end is not None:
-            if line_start < 1:
-                raise ValueError("line_start must be >= 1 (lines are 1-based)")
-            if line_start > line_end:
-                raise ValueError(
-                    f"line_start ({line_start}) must be <= line_end ({line_end})"
-                )
-
-        with self._write_lock:
-            self._ensure_initialized()
-
-            abs_path = self._validate_path(path)
-            if not abs_path.is_file():
-                raise DocumentNotFoundError(f"Document not found: {path}")
-
-            if if_match is not None:
-                current_hash = compute_file_hash(abs_path)
-                if current_hash != if_match:
-                    raise ConcurrentModificationError(
-                        path, expected=if_match, actual=current_hash
-                    )
-
-            file_content = abs_path.read_text(encoding="utf-8")
-
-            if has_lines:
-                assert line_start is not None and line_end is not None
-                new_content, match_type = self._edit_with_lines(
-                    file_content, old_text, new_text, line_start, line_end, path
-                )
-            else:
-                assert old_text is not None
-                new_content, match_type = self._edit_with_text(
-                    file_content, old_text, new_text, path
-                )
-
-            with tempfile.NamedTemporaryFile(
-                dir=abs_path.parent,
-                mode="w",
-                encoding="utf-8",
-                suffix=".tmp",
-                delete=False,
-            ) as tmp:
-                tmp.write(new_content)
-                tmp_name = tmp.name
-            shutil.copymode(abs_path, tmp_name)
-            try:
-                Path(tmp_name).replace(abs_path)
-            except Exception:
-                Path(tmp_name).unlink(missing_ok=True)
-                raise
-
-            # Update FTS index.
-            note = parse_note(abs_path, self._source_dir, self._chunk_strategy)
-            self._fts.upsert_note(note)
-
-            # Mark for deferred embedding update.
-            self._update_vector_index(note)
-
-        # Fire git callback in background thread.
-        self._fire_write_callback(abs_path, new_content, "edit")
-
-        return EditResult(path=path, replacements=1, match_type=match_type)
-
-    def _edit_with_lines(
-        self,
-        file_content: str,
-        old_text: str | None,
-        new_text: str,
-        line_start: int,
-        line_end: int,
-        path: str,
-    ) -> tuple[str, str]:
-        """Handle line-range and scoped-match edit modes.
-
-        Returns:
-            Tuple of (new_file_content, match_type).
-        """
-        lines = file_content.split("\n")
-        # The split produces an extra empty string after a trailing newline.
-        # Total addressable lines = len(lines) if last is non-empty, else
-        # len(lines) - 1 (the trailing empty element isn't a real line).
-        total_lines = len(lines) - 1 if lines and lines[-1] == "" else len(lines)
-        if line_end > total_lines:
-            raise ValueError(
-                f"line_end ({line_end}) out of range (file has {total_lines} lines)"
-            )
-
-        # Convert to 0-based indices for slicing.
-        start_idx = line_start - 1
-        end_idx = line_end  # exclusive for slice
-
-        if old_text is not None:
-            # Scoped match: search within the line range only.
-            scope = "\n".join(lines[start_idx:end_idx])
-            context_desc = f"lines {line_start}-{line_end} of {path}"
-            new_scope, match_type = self._match_and_replace(
-                scope, old_text, new_text, path, context_desc=context_desc
-            )
-            lines[start_idx:end_idx] = new_scope.split("\n")
-        else:
-            # Pure line-range replacement.
-            match_type = "exact"
-            # Reconstruct: new_text replaces lines, preserving structure.
-            # Strip trailing newline from new_text if present to avoid
-            # double-newline when rejoining.
-            replacement_lines = new_text.rstrip("\n").split("\n") if new_text else [""]
-            lines[start_idx:end_idx] = replacement_lines
-
-        return "\n".join(lines), match_type
-
-    def _edit_with_text(
-        self,
-        file_content: str,
-        old_text: str,
-        new_text: str,
-        path: str,
-    ) -> tuple[str, str]:
-        """Handle exact-match edit mode (with normalized fallback).
-
-        Thin wrapper so ``edit()`` has a symmetric call site for both modes
-        (line-range via ``_edit_with_lines``, text via this method).
-
-        Returns:
-            Tuple of (new_file_content, match_type).
-        """
-        return self._match_and_replace(file_content, old_text, new_text, path)
-
-    def _match_and_replace(
-        self,
-        content: str,
-        old_text: str,
-        new_text: str,
-        path: str,
-        context_desc: str | None = None,
-    ) -> tuple[str, str]:
-        """Try exact match, then normalized match, then raise with diagnostics.
-
-        Args:
-            content: The text to search within (full file or a line-range scope).
-            old_text: Text to find and replace.
-            new_text: Replacement text.
-            path: Vault-relative file path, used in error messages.
-            context_desc: Optional human-readable context for error messages
-                (e.g. ``"lines 5-10 of notes/foo.md"``). When omitted, errors
-                refer to *path* directly.
-
-        Returns:
-            Tuple of (new_content, match_type).
-        """
-        location = context_desc or path
-        count = content.count(old_text)
-
-        if count == 1:
-            return content.replace(old_text, new_text, 1), "exact"
-
-        if count > 1:
-            raise EditConflictError(
-                f"old_text appears {count} times in {location}; must appear exactly once"
-            )
-
-        # count == 0: try normalized matching.
-        normalized_content = normalize_text(content)
-        normalized_old = normalize_text(old_text)
-        norm_count = normalized_content.count(normalized_old)
-
-        if norm_count == 1:
-            pos_map = build_position_map(content, normalized_content)
-            norm_start = normalized_content.index(normalized_old)
-            norm_end = norm_start + len(normalized_old)
-            orig_start = pos_map[norm_start]
-            orig_end = pos_map[norm_end]
-            new_content = content[:orig_start] + new_text + content[orig_end:]
-            return new_content, "normalized"
-
-        if norm_count > 1:
-            raise EditConflictError(
-                f"old_text appears {norm_count} times in {location} after "
-                f"normalization; must appear exactly once"
-            )
-
-        # norm_count == 0: raise with diagnostics.
-        diag = find_closest_match(old_text, content)
-        raise EditConflictError(f"old_text not found in {location}", **diag)
+        return self._docs.edit(
+            path,
+            old_text=old_text,
+            new_text=new_text,
+            if_match=if_match,
+            line_start=line_start,
+            line_end=line_end,
+        )
 
     def delete(self, path: str, if_match: str | None = None) -> DeleteResult:
         """Delete a document or attachment.
@@ -2671,150 +2319,7 @@ class Collection:
             ValueError: If the path escapes the source directory, or (for
                 non-.md paths) has an extension not in the attachment allowlist.
         """
-        self._check_writable()
-        with self._write_lock:
-            self._ensure_initialized()
-
-            if path.endswith(".md"):
-                abs_path = self._validate_path(path)
-                if not abs_path.is_file():
-                    raise DocumentNotFoundError(f"Document not found: {path}")
-                if if_match is not None:
-                    current_hash = compute_file_hash(abs_path)
-                    if current_hash != if_match:
-                        raise ConcurrentModificationError(
-                            path, expected=if_match, actual=current_hash
-                        )
-                abs_path.unlink()
-                self._fts.delete_by_path(path)
-                # Mark for deferred vector index cleanup.
-                if (
-                    self._embeddings_path is not None
-                    and self._embedding_provider is not None
-                ):
-                    with self._embedding_flush_lock:
-                        self._dirty_embeddings.add(path)
-                    self._schedule_embedding_flush()
-            else:
-                abs_path = self._validate_attachment_path(path)
-                if not abs_path.is_file():
-                    raise DocumentNotFoundError(f"Attachment not found: {path}")
-                if if_match is not None:
-                    current_hash = compute_file_hash(abs_path)
-                    if current_hash != if_match:
-                        raise ConcurrentModificationError(
-                            path, expected=if_match, actual=current_hash
-                        )
-                abs_path.unlink()
-
-        # Fire git callback in background thread.
-        self._fire_write_callback(abs_path, "", "delete")
-
-        return DeleteResult(path=path)
-
-    def _update_backlinks(
-        self,
-        old_path: str,
-        new_path: str,
-        backlinks: list[dict],
-    ) -> list[tuple[Path, str]]:
-        """Rewrite every source file that links to *old_path* so it points to *new_path*.
-
-        Called by :meth:`rename` after the file has already been moved on disk
-        and the FTS index updated.  Each source file is read, all of its links
-        to *old_path* are rewritten in a single pass, then written back.
-        Per-file failures are logged at ``WARNING`` and do not abort the batch.
-
-        This method must be called while :attr:`_write_lock` is held.  It does
-        **not** fire write callbacks itself — callers must do so after releasing
-        the lock, using the returned list of ``(abs_path, content)`` pairs.
-
-        Args:
-            old_path: Vault-relative path that was renamed (the old location).
-            new_path: Vault-relative path after the rename (the new location).
-            backlinks: Rows returned by :meth:`FTSIndex.get_backlinks` before
-                the rename — each must contain ``source_path``, ``link_type``,
-                ``raw_target``, and ``fragment`` keys.
-
-        Returns:
-            List of ``(abs_path, new_content)`` pairs for every source document
-            that was successfully rewritten.  Callers should fire a write
-            callback for each pair after releasing :attr:`_write_lock`.
-        """
-        if not backlinks:
-            return []
-
-        by_source: dict[str, list[dict]] = defaultdict(list)
-        for row in backlinks:
-            by_source[row["source_path"]].append(row)
-
-        # If the renamed file self-links, its source key is
-        # old_path — but the file now lives at new_path.  Remap
-        # before iterating so we read/write the correct file.
-        if old_path in by_source:
-            by_source[new_path] = by_source.pop(old_path)
-
-        pending_callbacks: list[tuple[Path, str]] = []
-        for source_path, rows in by_source.items():
-            try:
-                source_abs = self._validate_path(source_path)
-                if not source_abs.is_file():
-                    logger.warning(
-                        "_update_backlinks: skipping %s — file not found",
-                        source_path,
-                    )
-                    continue
-                content = source_abs.read_text(encoding="utf-8")
-                for row in rows:
-                    new_raw = _compute_new_raw_target(
-                        row["link_type"],
-                        row["raw_target"],
-                        row["fragment"],
-                        new_path,
-                        source_path=source_path,
-                        old_path=old_path,
-                    )
-                    content = _apply_link_replacement(
-                        content,
-                        row["link_type"],
-                        row["raw_target"],
-                        new_raw,
-                    )
-                with tempfile.NamedTemporaryFile(
-                    dir=source_abs.parent,
-                    mode="w",
-                    encoding="utf-8",
-                    suffix=".tmp",
-                    delete=False,
-                ) as tmp:
-                    tmp.write(content)
-                    tmp_name = tmp.name
-                shutil.copymode(source_abs, tmp_name)
-                try:
-                    Path(tmp_name).replace(source_abs)
-                except Exception:
-                    Path(tmp_name).unlink(missing_ok=True)
-                    raise
-                updated_note = parse_note(
-                    source_abs, self._source_dir, self._chunk_strategy
-                )
-                self._fts.upsert_note(updated_note)
-                self._update_vector_index(updated_note)
-                pending_callbacks.append((source_abs, content))
-            except (OSError, UnicodeDecodeError, ValueError, sqlite3.Error) as exc:
-                logger.warning(
-                    "_update_backlinks: failed to update %s: %s",
-                    source_path,
-                    exc,
-                )
-            except Exception as exc:
-                logger.warning(
-                    "_update_backlinks: unexpected error updating %s: %s",
-                    source_path,
-                    exc,
-                    exc_info=True,
-                )
-        return pending_callbacks
+        return self._docs.delete(path, if_match=if_match)
 
     def rename(
         self,
@@ -2861,82 +2366,33 @@ class Collection:
             ValueError: If either path escapes the source directory, or (for
                 non-.md paths) has an extension not in the attachment allowlist.
         """
-        self._check_writable()
-        updated_links = 0
-        backlink_callbacks: list[tuple[Path, str]] = []
-
-        with self._write_lock:
-            self._ensure_initialized()
-
-            if old_path.endswith(".md"):
-                old_abs = self._validate_path(old_path)
-                new_abs = self._validate_path(new_path)
-
-                if not old_abs.is_file():
-                    raise DocumentNotFoundError(f"Document not found: {old_path}")
-                if new_abs.is_file():
-                    raise DocumentExistsError(f"Target already exists: {new_path}")
-                if if_match is not None:
-                    current_hash = compute_file_hash(old_abs)
-                    if current_hash != if_match:
-                        raise ConcurrentModificationError(
-                            old_path, expected=if_match, actual=current_hash
-                        )
-
-                # Collect backlinks before the rename so the index still
-                # reflects old_path as the target.
-                backlinks = self._fts.get_backlinks(old_path) if update_links else []
-
-                new_abs.parent.mkdir(parents=True, exist_ok=True)
-                shutil.move(str(old_abs), str(new_abs))
-
-                self._fts.delete_by_path(old_path)
-
-                note = parse_note(new_abs, self._source_dir, self._chunk_strategy)
-                self._fts.upsert_note(note)
-
-                # Mark both paths for deferred vector update: old_path
-                # entries are deleted (file gone), new_path re-embedded.
-                if (
-                    self._embeddings_path is not None
-                    and self._embedding_provider is not None
-                ):
-                    with self._embedding_flush_lock:
-                        self._dirty_embeddings.add(old_path)
-                        self._dirty_embeddings.add(note.path)
-                    self._schedule_embedding_flush()
-
-                callback_content = new_abs.read_text(encoding="utf-8")
-
-                backlink_callbacks = self._update_backlinks(
-                    old_path, new_path, backlinks
-                )
-                updated_links = len(backlink_callbacks)
-            else:
-                old_abs = self._validate_attachment_path(old_path)
-                new_abs = self._validate_attachment_path(new_path)
-
-                if not old_abs.is_file():
-                    raise DocumentNotFoundError(f"Attachment not found: {old_path}")
-                if new_abs.is_file():
-                    raise DocumentExistsError(f"Target already exists: {new_path}")
-                if if_match is not None:
-                    current_hash = compute_file_hash(old_abs)
-                    if current_hash != if_match:
-                        raise ConcurrentModificationError(
-                            old_path, expected=if_match, actual=current_hash
-                        )
-
-                new_abs.parent.mkdir(parents=True, exist_ok=True)
-                shutil.move(str(old_abs), str(new_abs))
-
-                callback_content = ""
-
-        # Fire git callbacks in background thread (outside write lock).
-        self._fire_write_callback(new_abs, callback_content, "rename")
-        for src_abs, src_content in backlink_callbacks:
-            self._fire_write_callback(src_abs, src_content, "edit")
-
-        return RenameResult(
-            old_path=old_path, new_path=new_path, updated_links=updated_links
+        return self._docs.rename(
+            old_path, new_path, if_match=if_match, update_links=update_links
         )
+
+    def _is_attachment(self, path: str) -> bool:
+        """Return True if *path* is an allowed non-.md attachment."""
+        return self._docs.is_attachment(path)
+
+    def _is_path_excluded(self, path: str) -> bool:
+        """Check whether *path* matches any configured exclude pattern."""
+        return self._docs.is_path_excluded(path)
+
+    def _validate_path(self, path: str) -> Path:
+        """Resolve a relative path and validate it is inside source_dir."""
+        return self._docs.validate_path(path)
+
+    def _validate_attachment_path(self, path: str) -> Path:
+        """Resolve and validate a non-.md attachment path."""
+        return self._docs.validate_attachment_path(path)
+
+    def _effective_attachment_extensions(self) -> frozenset[str]:
+        """Return the effective set of allowed attachment extensions."""
+        return self._docs.effective_attachment_extensions()
+
+    def _check_writable(self) -> None:
+        """Raise ReadOnlyError if the collection is configured as read-only."""
+        if self._read_only:
+            raise ReadOnlyError(
+                "Collection is read-only; write operations are not permitted."
+            )
