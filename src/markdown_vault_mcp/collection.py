@@ -23,6 +23,7 @@ from markdown_vault_mcp.exceptions import (
 )
 from markdown_vault_mcp.fts_index import FTSIndex, _derive_folder
 from markdown_vault_mcp.managers.document import DocumentManager
+from markdown_vault_mcp.managers.link import LinkManager
 from markdown_vault_mcp.managers.search import SearchManager
 from markdown_vault_mcp.scanner import (
     ChunkStrategy,
@@ -365,6 +366,7 @@ class Collection:
         self._tracker = ChangeTracker(self._state_path)
         self._docs = DocumentManager(self)
         self._search = SearchManager(self)
+        self._links = LinkManager(self)
 
         # Vector index is loaded lazily (only if embeddings_path is set).
         self._vectors: VectorIndex | None = None
@@ -1179,22 +1181,7 @@ class Collection:
         Raises:
             ValueError: If no document exists at the given path.
         """
-        self._ensure_initialized()
-        self._validate_path(path)
-        if self._fts.get_note(path) is None:
-            raise ValueError(f"Document not found: {path}")
-        rows = self._fts.get_backlinks(path)
-        return [
-            BacklinkInfo(
-                source_path=row["source_path"],
-                source_title=row["source_title"],
-                link_text=row["link_text"],
-                link_type=row["link_type"],
-                fragment=row["fragment"],
-                raw_target=row["raw_target"],
-            )
-            for row in rows
-        ]
+        return self._links.get_backlinks(path)
 
     def get_outlinks(self, path: str) -> list[OutlinkInfo]:
         """Return all links from the given document to other documents.
@@ -1213,22 +1200,7 @@ class Collection:
         Raises:
             ValueError: If no document exists at the given path.
         """
-        self._ensure_initialized()
-        self._validate_path(path)
-        if self._fts.get_note(path) is None:
-            raise ValueError(f"Document not found: {path}")
-        rows = self._fts.get_outlinks(path)
-        return [
-            OutlinkInfo(
-                target_path=row["target_path"],
-                link_text=row["link_text"],
-                link_type=row["link_type"],
-                fragment=row["fragment"],
-                exists=bool(row["target_exists"]),
-                raw_target=row["raw_target"],
-            )
-            for row in rows
-        ]
+        return self._links.get_outlinks(path)
 
     def get_broken_links(self, *, folder: str | None = None) -> list[BrokenLinkInfo]:
         """Return all links whose target does not exist in the collection.
@@ -1240,20 +1212,7 @@ class Collection:
         Returns:
             List of :class:`~markdown_vault_mcp.types.BrokenLinkInfo` objects.
         """
-        self._ensure_initialized()
-        rows = self._fts.get_broken_links(folder=folder)
-        return [
-            BrokenLinkInfo(
-                source_path=row["source_path"],
-                source_title=row["source_title"],
-                target_path=row["target_path"],
-                link_text=row["link_text"],
-                link_type=row["link_type"],
-                fragment=row["fragment"],
-                raw_target=row["raw_target"],
-            )
-            for row in rows
-        ]
+        return self._links.get_broken_links(folder=folder)
 
     def get_similar(self, path: str, *, limit: int = 10) -> list[SearchResult]:
         """Return the most semantically similar chunks from other documents.
@@ -1316,9 +1275,7 @@ class Collection:
             List of :class:`~markdown_vault_mcp.types.NoteInfo` objects,
             ordered by path.
         """
-        self._ensure_initialized()
-        rows = self._fts.get_orphan_notes()
-        return [_fts_row_to_note_info(r) for r in rows]
+        return self._links.get_orphan_notes()
 
     def get_most_linked(self, *, limit: int = 10) -> list[MostLinkedNote]:
         """Return the documents with the most inbound links.
@@ -1330,8 +1287,7 @@ class Collection:
             List of :class:`~markdown_vault_mcp.types.MostLinkedNote` ordered
             by backlink_count descending.
         """
-        self._ensure_initialized()
-        return [MostLinkedNote(**row) for row in self._fts.get_most_linked(limit=limit)]
+        return self._links.get_most_linked(limit=limit)
 
     def get_connection_path(
         self, source: str, target: str, max_depth: int = 10
@@ -1354,10 +1310,7 @@ class Collection:
         Raises:
             ValueError: If *source* or *target* is not found in the index.
         """
-        self._ensure_initialized()
-        self._validate_path(source)
-        self._validate_path(target)
-        return self._fts.get_connection_path(source, target, max_depth=max_depth)
+        return self._links.get_connection_path(source, target, max_depth=max_depth)
 
     # ------------------------------------------------------------------
     # Git history query methods
