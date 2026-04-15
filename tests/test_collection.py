@@ -2760,7 +2760,7 @@ class TestBuildEmbeddings:
         mock_provider: MockEmbeddingProvider,
     ) -> None:
         """build_embeddings() calls the provider in batches, not one giant call."""
-        from markdown_vault_mcp.collection import _EMBEDDING_BATCH_SIZE
+        from markdown_vault_mcp.managers.index import _EMBEDDING_BATCH_SIZE
 
         embeddings_path = tmp_path / "embeddings"
         col = Collection(
@@ -2793,7 +2793,7 @@ class TestBuildEmbeddings:
         mock_provider: MockEmbeddingProvider,
     ) -> None:
         """build_embeddings() handles a corpus spanning multiple batches."""
-        from markdown_vault_mcp.collection import _EMBEDDING_BATCH_SIZE
+        from markdown_vault_mcp.managers.index import _EMBEDDING_BATCH_SIZE
 
         # Create a vault with enough chunks to span multiple batches.
         vault = tmp_path / "vault"
