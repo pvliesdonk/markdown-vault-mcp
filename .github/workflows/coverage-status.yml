@@ -27,18 +27,18 @@ jobs:
 
     steps:
       - name: Download patch coverage artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: patch-coverage
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Post codecov/patch status
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const fs = require('fs');
+            const fs = await import('node:fs');
             const { state, description } = JSON.parse(fs.readFileSync('patch-coverage.json', 'utf8'));
             const sha = context.payload.workflow_run.head_sha;
             core.info(`Posting codecov/patch: ${state} — ${description} to ${sha}`);
