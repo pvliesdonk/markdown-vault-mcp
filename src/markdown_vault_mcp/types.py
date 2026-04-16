@@ -296,3 +296,48 @@ class CommitDiff:
 WriteCallback = Callable[
     [Path, str, Literal["write", "edit", "delete", "rename"]], None
 ]
+
+# Default set of allowed attachment extensions (without leading dot, lower-case).
+# .md is always excluded — it is always handled as a markdown note.
+DEFAULT_ATTACHMENT_EXTENSIONS: frozenset[str] = frozenset(
+    [
+        # Documents
+        "pdf",
+        "docx",
+        "xlsx",
+        "pptx",
+        "odt",
+        "ods",
+        "odp",
+        # Images
+        "png",
+        "jpg",
+        "jpeg",
+        "gif",
+        "webp",
+        "svg",
+        "bmp",
+        "tiff",
+        # Archives
+        "zip",
+        "tar",
+        "gz",
+        # Audio / Video
+        "mp3",
+        "mp4",
+        "wav",
+        "ogg",
+        # Text and data
+        "txt",
+        "csv",
+        "tsv",
+        "json",
+        "yaml",
+        "toml",
+        "xml",
+        "html",
+        "css",
+        "js",
+        "ts",
+    ]
+)

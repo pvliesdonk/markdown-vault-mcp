@@ -42,6 +42,7 @@ from markdown_vault_mcp.scanner import (
 )
 from markdown_vault_mcp.tracker import ChangeTracker
 from markdown_vault_mcp.types import (
+    DEFAULT_ATTACHMENT_EXTENSIONS,
     AttachmentContent,
     AttachmentInfo,
     BacklinkInfo,
@@ -61,7 +62,6 @@ from markdown_vault_mcp.types import (
     ReindexResult,
     RenameResult,
     SearchResult,
-    SimilarItem,
     WriteCallback,
     WriteResult,
 )
@@ -92,11 +92,6 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_STATE_SUBDIR = ".markdown_vault_mcp"
 _DEFAULT_STATE_FILENAME = "state.json"
-_CONTEXT_FOLDER_PEERS_LIMIT = 20
-
-# RRF constant — standard value recommended in the original paper.
-_RRF_K = 60
-
 # Maximum chunks per embedding provider call.  Keeps memory bounded during
 # build_embeddings() — FastEmbed/ONNX can allocate pathologically large buffers
 # when the entire corpus is sent in one batch (see issue #159).
@@ -105,51 +100,6 @@ _EMBEDDING_BATCH_SIZE = 4
 # Seconds between automatic background flushes of dirty embeddings to disk.
 # Write operations mark documents as dirty; the flush re-embeds them in bulk.
 _EMBEDDING_FLUSH_INTERVAL = 30
-
-# Default set of allowed attachment extensions (without leading dot, lower-case).
-# .md is always excluded — it is always handled as a markdown note.
-_DEFAULT_ATTACHMENT_EXTENSIONS: frozenset[str] = frozenset(
-    [
-        # Documents
-        "pdf",
-        "docx",
-        "xlsx",
-        "pptx",
-        "odt",
-        "ods",
-        "odp",
-        # Images
-        "png",
-        "jpg",
-        "jpeg",
-        "gif",
-        "webp",
-        "svg",
-        "bmp",
-        "tiff",
-        # Archives
-        "zip",
-        "tar",
-        "gz",
-        # Audio / Video
-        "mp3",
-        "mp4",
-        "wav",
-        "ogg",
-        # Text and data
-        "txt",
-        "csv",
-        "tsv",
-        "json",
-        "yaml",
-        "toml",
-        "xml",
-        "html",
-        "css",
-        "js",
-        "ts",
-    ]
-)
 
 
 def _resolve_chunk_strategy(strategy: str | ChunkStrategy) -> ChunkStrategy:
@@ -175,34 +125,6 @@ def _resolve_chunk_strategy(strategy: str | ChunkStrategy) -> ChunkStrategy:
             "Valid string values: 'heading', 'whole'."
         )
     return strategy
-
-
-def _fts_row_to_note_info(row: dict) -> NoteInfo:
-    """Convert an FTSIndex list_notes() row dict to a :class:`NoteInfo`.
-
-    Args:
-        row: Dict returned by :meth:`FTSIndex.list_notes` or
-            :meth:`FTSIndex.get_note`.
-
-    Returns:
-        A populated :class:`NoteInfo` instance.
-    """
-    frontmatter: dict = {}
-    raw_json = row.get("frontmatter_json")
-    if raw_json:
-        try:
-            frontmatter = json.loads(raw_json)
-        except (json.JSONDecodeError, TypeError):
-            logger.warning(
-                "Could not parse frontmatter_json for path %s", row.get("path")
-            )
-    return NoteInfo(
-        path=row["path"],
-        title=row["title"],
-        folder=row["folder"],
-        frontmatter=frontmatter,
-        modified_at=row["modified_at"],
-    )
 
 
 class Collection:
@@ -293,11 +215,21 @@ class Collection:
 
         # Manager modules (dependency-injected, no back-reference).
         from markdown_vault_mcp.managers.link import LinkManager
+        from markdown_vault_mcp.managers.search import SearchManager
 
         self._link_mgr = LinkManager(fts=self._fts, source_dir=self._source_dir)
-
-        # Vector index is loaded lazily (only if embeddings_path is set).
-        self._vectors: VectorIndex | None = None
+        self._search_mgr = SearchManager(
+            fts=self._fts,
+            source_dir=self._source_dir,
+            embeddings_path=self._embeddings_path,
+            embedding_provider=self._embedding_provider,
+            indexed_frontmatter_fields=self._indexed_frontmatter_fields,
+            exclude_patterns=self._exclude_patterns,
+            attachment_extensions=self._attachment_extensions,
+            link_manager=self._link_mgr,
+            flush_embeddings=self._flush_dirty_embeddings,
+            rebuild_embeddings=lambda: self.build_embeddings(force=True),
+        )
 
         # Lazy initialisation flag.
         self._initialized = False
@@ -409,6 +341,15 @@ class Collection:
         if not self._initialized:
             self.build_index()
 
+    @property
+    def _vectors(self) -> VectorIndex | None:
+        """Bridge property: vector index is owned by SearchManager."""
+        return self._search_mgr.vectors
+
+    @_vectors.setter
+    def _vectors(self, value: VectorIndex | None) -> None:
+        self._search_mgr.vectors = value
+
     # ------------------------------------------------------------------
     # Search
     # ------------------------------------------------------------------
@@ -443,29 +384,13 @@ class Collection:
                 embedding provider or embeddings path is configured.
         """
         self._ensure_initialized()
-
-        if mode == "keyword":
-            return self._keyword_search(
-                query, limit=limit, filters=filters, folder=folder
-            )
-
-        if mode == "semantic":
-            self._require_vectors()
-            return self._semantic_search(
-                query, limit=limit, filters=filters, folder=folder
-            )
-
-        # hybrid
-        self._require_vectors()
-        return self._hybrid_search(query, limit=limit, filters=filters, folder=folder)
+        return self._search_mgr.search(
+            query, limit=limit, mode=mode, filters=filters, folder=folder
+        )
 
     def _require_vectors(self) -> None:
         """Raise ValueError if semantic search is not configured."""
-        if self._embedding_provider is None or self._embeddings_path is None:
-            raise ValueError(
-                "Semantic search requires both 'embedding_provider' and "
-                "'embeddings_path' to be configured."
-            )
+        self._search_mgr._require_vectors()
 
     def _load_vectors(self) -> VectorIndex:
         """Load or return the cached VectorIndex.
@@ -473,237 +398,7 @@ class Collection:
         Returns:
             A :class:`~markdown_vault_mcp.vector_index.VectorIndex` instance.
         """
-        if self._vectors is not None:
-            return self._vectors
-
-        from markdown_vault_mcp.vector_index import (
-            VectorIndex,
-            VectorIndexCompatibilityError,
-        )
-
-        assert self._embeddings_path is not None
-        assert self._embedding_provider is not None
-
-        npy_path = Path(str(self._embeddings_path) + ".npy")
-        if npy_path.exists():
-            try:
-                self._vectors = VectorIndex.load(
-                    self._embeddings_path, self._embedding_provider
-                )
-                logger.info("Loaded vector index from %s", self._embeddings_path)
-            except VectorIndexCompatibilityError as exc:
-                logger.warning("%s Rebuilding embeddings.", exc)
-                self.build_embeddings(force=True)
-                assert self._vectors is not None
-        else:
-            self._vectors = VectorIndex(self._embedding_provider)
-            logger.info("No vector index on disk; created empty VectorIndex")
-
-        return self._vectors
-
-    def _keyword_search(
-        self,
-        query: str,
-        *,
-        limit: int,
-        filters: dict[str, str] | None,
-        folder: str | None,
-    ) -> list[SearchResult]:
-        fts_results = self._fts.search(
-            query, limit=limit, filters=filters, folder=folder
-        )
-        return [
-            SearchResult(
-                path=r.path,
-                title=r.title,
-                folder=r.folder,
-                heading=r.heading,
-                content=r.content,
-                score=r.score,
-                search_type="keyword",
-                frontmatter=self._get_frontmatter(r.path),
-            )
-            for r in fts_results
-        ]
-
-    def _semantic_search(
-        self,
-        query: str,
-        *,
-        limit: int,
-        filters: dict[str, str] | None = None,
-        folder: str | None = None,
-    ) -> list[SearchResult]:
-        # Flush deferred embedding updates so results are consistent.
-        self._flush_dirty_embeddings()
-        vectors = self._load_vectors()
-        # Fetch extra candidates so post-filtering still yields *limit* results.
-        candidate_limit = max(limit * 3, 30) if (folder or filters) else limit
-        raw = vectors.search(query, limit=candidate_limit)
-
-        results: list[SearchResult] = []
-        for r in raw:
-            if len(results) >= limit:
-                break
-
-            # Apply folder prefix filter.
-            if folder is not None:
-                r_folder = r.get("folder", "")
-                if r_folder != folder and not r_folder.startswith(folder + "/"):
-                    continue
-
-            # Apply tag filters: check FTS index for each required tag.
-            if filters:
-                note_row = self._fts.get_note(r["path"])
-                if note_row is None:
-                    continue
-                fm_raw = note_row.get("frontmatter_json")
-                fm: dict = {}
-                if fm_raw:
-                    with contextlib.suppress(ValueError, TypeError):
-                        fm = json.loads(fm_raw)
-                match = True
-                for key, value in filters.items():
-                    fm_val = fm.get(key)
-                    if fm_val is None:
-                        match = False
-                        break
-                    # Support both scalar and list values.
-                    if isinstance(fm_val, list):
-                        if str(value) not in [str(v) for v in fm_val]:
-                            match = False
-                            break
-                    else:
-                        if str(fm_val) != str(value):
-                            match = False
-                            break
-                if not match:
-                    continue
-
-            results.append(
-                SearchResult(
-                    path=r["path"],
-                    title=r["title"],
-                    folder=r["folder"],
-                    heading=r.get("heading"),
-                    content=r["content"],
-                    score=r["score"],
-                    search_type="semantic",
-                    frontmatter=self._get_frontmatter(r["path"]),
-                )
-            )
-        return results
-
-    def _hybrid_search(
-        self,
-        query: str,
-        *,
-        limit: int,
-        filters: dict[str, str] | None,
-        folder: str | None,
-    ) -> list[SearchResult]:
-        """RRF merge of keyword and semantic results.
-
-        Each result set is ranked independently.  Merged score:
-        ``1 / (k + rank)`` where k=60.  Results appearing in both sets have
-        their scores summed.  Returns top *limit* by total RRF score.
-        """
-        # Fetch more candidates than needed so RRF has enough to rank.
-        candidate_limit = max(limit * 2, 20)
-
-        # Flush deferred embedding updates so results are consistent.
-        self._flush_dirty_embeddings()
-
-        fts_results = self._fts.search(
-            query, limit=candidate_limit, filters=filters, folder=folder
-        )
-        vectors = self._load_vectors()
-        vec_results = vectors.search(query, limit=candidate_limit)
-
-        # Build a key for deduplication: (path, heading) identifies a chunk.
-        # Use a dict to accumulate RRF scores and store metadata.
-        rrf_scores: dict[tuple[str, str | None], float] = {}
-        # Store the best metadata dict keyed by (path, heading).
-        chunk_meta: dict[tuple[str, str | None], dict] = {}
-
-        for rank, r in enumerate(fts_results, start=1):
-            key = (r.path, r.heading)
-            rrf_scores[key] = rrf_scores.get(key, 0.0) + 1.0 / (_RRF_K + rank)
-            if key not in chunk_meta:
-                chunk_meta[key] = {
-                    "path": r.path,
-                    "title": r.title,
-                    "folder": r.folder,
-                    "heading": r.heading,
-                    "content": r.content,
-                    "search_type": "keyword",
-                }
-
-        for rank, r in enumerate(vec_results, start=1):
-            # Apply folder prefix filter to semantic results.
-            if folder is not None:
-                r_folder = r.get("folder", "")
-                if r_folder != folder and not r_folder.startswith(folder + "/"):
-                    continue
-
-            # Apply tag filters to semantic results via frontmatter lookup.
-            if filters:
-                note_row = self._fts.get_note(r["path"])
-                if note_row is None:
-                    continue
-                fm_raw = note_row.get("frontmatter_json")
-                fm: dict = {}
-                if fm_raw:
-                    with contextlib.suppress(json.JSONDecodeError, TypeError):
-                        fm = json.loads(fm_raw)
-                skip = False
-                for key, value in filters.items():
-                    fm_val = fm.get(key)
-                    if fm_val is None:
-                        skip = True
-                        break
-                    if isinstance(fm_val, list):
-                        if str(value) not in [str(v) for v in fm_val]:
-                            skip = True
-                            break
-                    else:
-                        if str(fm_val) != str(value):
-                            skip = True
-                            break
-                if skip:
-                    continue
-
-            heading = r.get("heading")
-            key = (r["path"], heading)
-            rrf_scores[key] = rrf_scores.get(key, 0.0) + 1.0 / (_RRF_K + rank)
-            if key not in chunk_meta:
-                chunk_meta[key] = {
-                    "path": r["path"],
-                    "title": r["title"],
-                    "folder": r["folder"],
-                    "heading": heading,
-                    "content": r["content"],
-                    "search_type": "semantic",
-                }
-
-        # Sort by descending RRF score, take top limit.
-        sorted_keys = sorted(rrf_scores, key=lambda k: rrf_scores[k], reverse=True)[
-            :limit
-        ]
-
-        return [
-            SearchResult(
-                path=chunk_meta[k]["path"],
-                title=chunk_meta[k]["title"],
-                folder=chunk_meta[k]["folder"],
-                heading=chunk_meta[k]["heading"],
-                content=chunk_meta[k]["content"],
-                score=rrf_scores[k],
-                search_type=chunk_meta[k]["search_type"],
-                frontmatter=self._get_frontmatter(chunk_meta[k]["path"]),
-            )
-            for k in sorted_keys
-        ]
+        return self._search_mgr._load_vectors()
 
     def _get_frontmatter(self, path: str) -> dict:
         """Return the frontmatter dict for a document from the FTS index.
@@ -716,19 +411,7 @@ class Collection:
         Returns:
             Parsed frontmatter dict.
         """
-        row = self._fts.get_note(path)
-        if row is None:
-            return {}
-        raw = row.get("frontmatter_json")
-        if not raw:
-            return {}
-        try:
-            return json.loads(raw)
-        except (json.JSONDecodeError, TypeError) as exc:
-            logger.warning(
-                "_get_frontmatter: invalid JSON for %s — %s", row.get("path"), exc
-            )
-            return {}
+        return self._search_mgr._get_frontmatter(path)
 
     # ------------------------------------------------------------------
     # Read / list
@@ -801,78 +484,9 @@ class Collection:
             objects.
         """
         self._ensure_initialized()
-
-        rows = self._fts.list_notes(folder=folder)
-        notes: list[NoteInfo | AttachmentInfo] = [
-            _fts_row_to_note_info(row) for row in rows
-        ]
-
-        if pattern:
-            notes = [n for n in notes if fnmatch.fnmatch(n.path, pattern)]
-
-        if not include_attachments:
-            return notes
-
-        exts = self._effective_attachment_extensions()
-        source_resolved = self._source_dir.resolve()
-        attachments: list[AttachmentInfo] = []
-
-        # Attachment scan runs outside _write_lock — result is a best-effort
-        # snapshot and is not atomic with the FTS note listing above.
-        for abs_path in self._source_dir.rglob("*"):
-            if not abs_path.is_file():
-                continue
-            if abs_path.suffix.lower() == ".md":
-                continue
-            suffix = abs_path.suffix.lstrip(".").lower()
-            if "*" not in exts and suffix not in exts:
-                continue
-            try:
-                rel = abs_path.relative_to(source_resolved)
-            except ValueError as exc:
-                logger.warning(
-                    "_list_attachments: skipping %s — outside source_dir (%s)",
-                    abs_path,
-                    exc,
-                )
-                continue
-            rel_path = str(rel)
-            # Skip files where any path component (including the filename itself) starts with ".".
-            if any(part.startswith(".") for part in rel.parts):
-                continue
-            # Apply exclude_patterns — mirrors scan_directory behaviour.
-            if self._is_path_excluded(rel.as_posix()):
-                continue
-            if pattern and not fnmatch.fnmatch(rel_path, pattern):
-                continue
-            rel_folder = str(Path(rel_path).parent)
-            if rel_folder == ".":
-                rel_folder = ""
-            if (
-                folder is not None
-                and rel_folder != folder
-                and not rel_folder.startswith(folder + "/")
-            ):
-                continue
-            try:
-                stat = abs_path.stat()
-            except OSError as exc:
-                logger.warning(
-                    "_list_attachments: skipping %s — stat error (%s)", abs_path, exc
-                )
-                continue
-            mime_type, _ = mimetypes.guess_type(rel_path)
-            attachments.append(
-                AttachmentInfo(
-                    path=rel_path,
-                    folder=rel_folder,
-                    mime_type=mime_type,
-                    size_bytes=stat.st_size,
-                    modified_at=stat.st_mtime,
-                )
-            )
-
-        return notes + attachments
+        return self._search_mgr.list(
+            folder=folder, pattern=pattern, include_attachments=include_attachments
+        )
 
     # ------------------------------------------------------------------
     # Index management
@@ -1313,7 +927,7 @@ class Collection:
             Sorted list of folder strings (``""`` for the collection root).
         """
         self._ensure_initialized()
-        return self._fts.list_folders()
+        return self._search_mgr.list_folders()
 
     def list_tags(self, field: str = "tags") -> list[str]:
         """Return all distinct values indexed for a given frontmatter field.
@@ -1327,7 +941,7 @@ class Collection:
             Sorted list of distinct value strings.
         """
         self._ensure_initialized()
-        return self._fts.list_field_values(field)
+        return self._search_mgr.list_tags(field)
 
     def get_toc(self, path: str) -> list[dict[str, Any]]:
         """Return table of contents for a document.
@@ -1434,31 +1048,7 @@ class Collection:
             ValueError: If no document exists at the given path.
         """
         self._ensure_initialized()
-        self._validate_path(path)
-        if self._fts.get_note(path) is None:
-            raise ValueError(f"Document not found: {path}")
-
-        if self._embedding_provider is None or self._embeddings_path is None:
-            return []
-
-        self._load_vectors()
-        if self._vectors is None or self._vectors.count == 0:
-            return []
-
-        raw_results = self._vectors.search_by_path(path, limit=limit)
-        return [
-            SearchResult(
-                path=r["path"],
-                title=r.get("title", ""),
-                folder=r.get("folder", ""),
-                heading=r.get("heading"),
-                content=r.get("content", ""),
-                score=r.get("score", 0.0),
-                search_type="semantic",
-                frontmatter=self._get_frontmatter(r["path"]),
-            )
-            for r in raw_results
-        ]
+        return self._search_mgr.get_similar(path, limit=limit)
 
     def get_recent(
         self, *, limit: int = 20, folder: str | None = None
@@ -1475,8 +1065,7 @@ class Collection:
             ordered by modification time (most recent first).
         """
         self._ensure_initialized()
-        rows = self._fts.get_recent(limit=limit, folder=folder)
-        return [_fts_row_to_note_info(row) for row in rows]
+        return self._search_mgr.get_recent(limit=limit, folder=folder)
 
     def get_context(
         self,
@@ -1503,102 +1092,8 @@ class Collection:
             ValueError: If no document exists at the given path.
         """
         self._ensure_initialized()
-        self._validate_path(path)
-        row = self._fts.get_note(path)
-        if row is None:
-            raise ValueError(f"Document not found: {path}")
-
-        frontmatter = self._get_frontmatter(path)
-
-        # Backlinks — capped at link_limit; graceful if links table absent.
-        try:
-            backlinks = self._fts.get_backlinks(path, limit=link_limit)
-            backlink_objs = [
-                BacklinkInfo(
-                    source_path=r["source_path"],
-                    source_title=r["source_title"],
-                    link_text=r["link_text"],
-                    link_type=r["link_type"],
-                    fragment=r["fragment"],
-                    raw_target=r["raw_target"],
-                )
-                for r in backlinks
-            ]
-        except sqlite3.OperationalError as exc:
-            logger.warning(
-                "get_context: failed to retrieve backlinks for %s: %s", path, exc
-            )
-            backlink_objs = []
-
-        # Outlinks — capped at link_limit; graceful if links table absent.
-        try:
-            outlinks = self._fts.get_outlinks(path, limit=link_limit)
-            outlink_objs = [
-                OutlinkInfo(
-                    target_path=r["target_path"],
-                    link_text=r["link_text"],
-                    link_type=r["link_type"],
-                    fragment=r["fragment"],
-                    exists=bool(r["target_exists"]),
-                    raw_target=r["raw_target"],
-                )
-                for r in outlinks
-            ]
-        except sqlite3.OperationalError as exc:
-            logger.warning(
-                "get_context: failed to retrieve outlinks for %s: %s", path, exc
-            )
-            outlink_objs = []
-
-        # Similar notes — empty if embeddings not configured or similar_limit is 0.
-        similar_dicts: list[SimilarItem] = []
-        if (
-            similar_limit > 0
-            and self._embedding_provider is not None
-            and self._embeddings_path is not None
-        ):
-            self._load_vectors()
-            if self._vectors is not None and self._vectors.count > 0:
-                raw = self._vectors.search_by_path(path, limit=similar_limit)
-                similar_dicts = [
-                    SimilarItem(
-                        path=r["path"],
-                        title=r["title"],
-                        score=r["score"],
-                    )
-                    for r in raw
-                ]
-
-        # Folder peers — other notes in the same folder, capped at limit.
-        # folder is always a str (empty string for root-level docs) — never None.
-        folder = row["folder"]
-        folder_rows = self._fts.list_notes(folder=folder)
-        folder_notes = [r["path"] for r in folder_rows if r["path"] != path][
-            :_CONTEXT_FOLDER_PEERS_LIMIT
-        ]
-
-        # Tags — indexed frontmatter fields present on this document.
-        tags: dict[str, list[str]] = {}
-        for field in self._indexed_frontmatter_fields:
-            value = frontmatter.get(field)
-            if value is None:
-                continue
-            if isinstance(value, list):
-                tags[field] = [str(v) for v in value]
-            else:
-                tags[field] = [str(value)]
-
-        return NoteContext(
-            path=path,
-            title=row["title"],
-            folder=folder,
-            frontmatter=frontmatter,
-            modified_at=row["modified_at"],
-            backlinks=backlink_objs,
-            outlinks=outlink_objs,
-            similar=similar_dicts,
-            folder_notes=folder_notes,
-            tags=tags,
+        return self._search_mgr.get_context(
+            path, similar_limit=similar_limit, link_limit=link_limit
         )
 
     def get_orphan_notes(self) -> list[NoteInfo]:
@@ -1825,7 +1320,7 @@ class Collection:
             The special value ``frozenset(["*"])`` means all non-.md files.
         """
         if self._attachment_extensions is None:
-            return _DEFAULT_ATTACHMENT_EXTENSIONS
+            return DEFAULT_ATTACHMENT_EXTENSIONS
         return frozenset(self._attachment_extensions)
 
     def _is_attachment(self, path: str) -> bool:
