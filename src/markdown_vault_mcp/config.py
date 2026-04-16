@@ -93,8 +93,10 @@ class CollectionConfig:
         server_name: Display name for the MCP server (default
             ``"markdown-vault-mcp"``).
         instructions: Optional server-level instructions surfaced to clients.
-        auth_mode: Explicit auth mode override (``"bearer"``, ``"oidc-proxy"``,
-            ``"remote"``, ``"multi"``).  ``None`` means auto-detect.
+        auth_mode: Explicit OIDC mode override: ``"oidc-proxy"`` or
+            ``"remote"``.  ``None`` (default) means auto-detect from which
+            OIDC env vars are present.  Bearer and multi-auth are determined
+            automatically by the presence of ``bearer_token`` and OIDC fields.
         base_url: Public base URL of the server, required for OIDC remote mode.
         oidc_config_url: OIDC discovery endpoint URL.
         oidc_client_id: OIDC client identifier.
@@ -176,6 +178,12 @@ class CollectionConfig:
     fastembed_model: str = "BAAI/bge-small-en-v1.5"
     fastembed_cache_dir: str | None = None
 
+    def __post_init__(self) -> None:
+        """Normalize fields that must not be empty strings."""
+        if not self.ollama_host:
+            self.ollama_host = "http://localhost:11434"
+        self.ollama_host = self.ollama_host.rstrip("/")
+
     def to_collection_kwargs(self) -> dict[str, Any]:
         """Return keyword arguments suitable for ``Collection(**kwargs)``.
 
@@ -206,12 +214,14 @@ class CollectionConfig:
         }
 
         # Resolve embedding provider if embeddings_path is configured.
+        # ValueError propagates — it means the user set an invalid provider
+        # name, which is a config mistake that should not be silenced.
         if self.embeddings_path is not None:
             try:
                 from markdown_vault_mcp.providers import get_embedding_provider
 
                 kwargs["embedding_provider"] = get_embedding_provider(self)
-            except Exception:
+            except (ImportError, RuntimeError):
                 logger.warning(
                     "Could not load embedding provider; semantic search disabled",
                     exc_info=True,
@@ -340,9 +350,10 @@ def load_config() -> CollectionConfig:
 
     **Authentication:**
 
-    - ``MARKDOWN_VAULT_MCP_AUTH_MODE``: explicit auth mode override
-      (``"bearer"``, ``"oidc-proxy"``, ``"remote"``, ``"multi"``); default
-      auto-detect.
+    - ``MARKDOWN_VAULT_MCP_AUTH_MODE``: explicit OIDC mode override
+      (``"oidc-proxy"`` or ``"remote"``); default auto-detect.  Bearer and
+      multi-auth are determined by the presence of ``BEARER_TOKEN`` and OIDC
+      fields.
     - ``MARKDOWN_VAULT_MCP_BASE_URL``: public base URL of the server.
     - ``MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL``: OIDC discovery endpoint URL.
     - ``MARKDOWN_VAULT_MCP_OIDC_CLIENT_ID``: OIDC client identifier.
@@ -778,7 +789,7 @@ def build_remote_auth(config: CollectionConfig) -> Any:
         logger.debug("Remote auth: disabled — missing BASE_URL or OIDC_CONFIG_URL")
         return None
 
-    audience = config.oidc_audience or None
+    audience = config.oidc_audience
     required_scopes = _parse_scopes(config.oidc_required_scopes)
 
     try:
@@ -903,10 +914,16 @@ def build_oidc_auth(config: CollectionConfig) -> Any:
         logger.debug("OIDC auth: disabled — missing env vars: %s", ", ".join(missing))
         return None
 
+    # All four are guaranteed non-None after the guard above.
+    oidc_base_url: str = config.base_url  # type: ignore[assignment]
+    oidc_config_url: str = config.oidc_config_url  # type: ignore[assignment]
+    oidc_client_id: str = config.oidc_client_id  # type: ignore[assignment]
+    oidc_client_secret: str = config.oidc_client_secret  # type: ignore[assignment]
+
     from fastmcp.server.auth.oidc_proxy import OIDCProxy
 
-    jwt_signing_key = config.oidc_jwt_signing_key or None
-    audience = config.oidc_audience or None
+    jwt_signing_key = config.oidc_jwt_signing_key
+    audience = config.oidc_audience
 
     # Parse scopes: default to ["openid"] when not set.
     raw_scopes = _parse_scopes(config.oidc_required_scopes)
@@ -928,9 +945,9 @@ def build_oidc_auth(config: CollectionConfig) -> Any:
         "  jwt_signing_key     = %s\n"
         "  verify_id_token     = %s\n"
         "  verify_access_token = %s",
-        config.oidc_config_url,
-        config.oidc_client_id,
-        config.base_url,
+        oidc_config_url,
+        oidc_client_id,
+        oidc_base_url,
         audience or "(not set)",
         required_scopes,
         "(set)" if jwt_signing_key else "(not set)",
@@ -963,17 +980,11 @@ def build_oidc_auth(config: CollectionConfig) -> Any:
             "(MARKDOWN_VAULT_MCP_OIDC_VERIFY_ACCESS_TOKEN=true)"
         )
 
-    # Narrowing: the guard above ensures all four are non-None.
-    assert config.oidc_config_url is not None
-    assert config.oidc_client_id is not None
-    assert config.oidc_client_secret is not None
-    assert config.base_url is not None
-
     return OIDCProxy(
-        config_url=config.oidc_config_url,
-        client_id=config.oidc_client_id,
-        client_secret=config.oidc_client_secret,
-        base_url=config.base_url,
+        config_url=oidc_config_url,
+        client_id=oidc_client_id,
+        client_secret=oidc_client_secret,
+        base_url=oidc_base_url,
         audience=audience,
         required_scopes=required_scopes,
         jwt_signing_key=jwt_signing_key,
