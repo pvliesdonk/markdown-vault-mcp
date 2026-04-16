@@ -89,6 +89,38 @@ class CollectionConfig:
             strategy initialisation so LFS pointers are resolved before reads.
         git_pull_interval_s: Interval in seconds for periodic git fetch +
             fast-forward-only updates (default ``600``). Set to ``0`` to disable.
+        server_name: Display name for the MCP server (default
+            ``"markdown-vault-mcp"``).
+        instructions: Optional server-level instructions surfaced to clients.
+        auth_mode: Explicit auth mode override (``"bearer"``, ``"oidc-proxy"``,
+            ``"remote"``, ``"multi"``).  ``None`` means auto-detect.
+        base_url: Public base URL of the server, required for OIDC remote mode.
+        oidc_config_url: OIDC discovery endpoint URL.
+        oidc_client_id: OIDC client identifier.
+        oidc_client_secret: OIDC client secret (logged as set/not set).
+        oidc_audience: Expected ``aud`` claim in OIDC tokens.
+        oidc_required_scopes: Comma-separated OIDC scopes to require.
+        oidc_jwt_signing_key: Key for signing session JWTs (logged as
+            set/not set).
+        oidc_verify_access_token: When ``True``, verify the OIDC access
+            token instead of the id_token (default ``False``).
+        bearer_token: Static bearer token for simple auth (logged as
+            set/not set).
+        embedding_provider: Name of the embedding provider to use (e.g.
+            ``"ollama"``, ``"openai"``, ``"fastembed"``).  ``None`` disables
+            semantic search.
+        ollama_host: Base URL for the Ollama API (default
+            ``"http://localhost:11434"``).
+        ollama_model: Ollama model name for embeddings (default
+            ``"nomic-embed-text"``).
+        ollama_cpu_only: When ``True``, request CPU-only inference from
+            Ollama (default ``False``).
+        openai_api_key: OpenAI API key for embeddings (logged as set/not
+            set).
+        fastembed_model: FastEmbed model name (default
+            ``"BAAI/bge-small-en-v1.5"``).
+        fastembed_cache_dir: Directory for FastEmbed model cache.  ``None``
+            uses the library default.
 
     Example::
 
@@ -117,6 +149,31 @@ class CollectionConfig:
     templates_folder: str = "_templates"
     prompts_folder: str | None = None
     event_store_url: str | None = None
+
+    # Server identity
+    server_name: str = "markdown-vault-mcp"
+    instructions: str | None = None
+
+    # Auth
+    auth_mode: str | None = None
+    base_url: str | None = None
+    oidc_config_url: str | None = None
+    oidc_client_id: str | None = None
+    oidc_client_secret: str | None = None
+    oidc_audience: str | None = None
+    oidc_required_scopes: str | None = None
+    oidc_jwt_signing_key: str | None = None
+    oidc_verify_access_token: bool = False
+    bearer_token: str | None = None
+
+    # Embedding providers
+    embedding_provider: str | None = None
+    ollama_host: str = "http://localhost:11434"
+    ollama_model: str = "nomic-embed-text"
+    ollama_cpu_only: bool = False
+    openai_api_key: str | None = None
+    fastembed_model: str = "BAAI/bge-small-en-v1.5"
+    fastembed_cache_dir: str | None = None
 
     def to_collection_kwargs(self) -> dict[str, Any]:
         """Return keyword arguments suitable for ``Collection(**kwargs)``.

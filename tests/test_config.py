@@ -498,3 +498,78 @@ class TestGitLfsConfig:
         strategy = kwargs["on_write"]
         assert isinstance(strategy, GitWriteStrategy)
         assert strategy._git_lfs is True
+
+
+class TestCollectionConfigDefaults:
+    """Verify all new fields on CollectionConfig have correct defaults."""
+
+    def test_server_identity_defaults(self) -> None:
+        """Server name defaults to 'markdown-vault-mcp', instructions to None."""
+        config = CollectionConfig(source_dir=Path("/tmp/vault"))
+        assert config.server_name == "markdown-vault-mcp"
+        assert config.instructions is None
+
+    def test_auth_defaults(self) -> None:
+        """All auth fields default to None/False."""
+        config = CollectionConfig(source_dir=Path("/tmp/vault"))
+        assert config.auth_mode is None
+        assert config.base_url is None
+        assert config.oidc_config_url is None
+        assert config.oidc_client_id is None
+        assert config.oidc_client_secret is None
+        assert config.oidc_audience is None
+        assert config.oidc_required_scopes is None
+        assert config.oidc_jwt_signing_key is None
+        assert config.oidc_verify_access_token is False
+        assert config.bearer_token is None
+
+    def test_embedding_provider_defaults(self) -> None:
+        """Embedding fields have correct defaults."""
+        config = CollectionConfig(source_dir=Path("/tmp/vault"))
+        assert config.embedding_provider is None
+        assert config.ollama_host == "http://localhost:11434"
+        assert config.ollama_model == "nomic-embed-text"
+        assert config.ollama_cpu_only is False
+        assert config.openai_api_key is None
+        assert config.fastembed_model == "BAAI/bge-small-en-v1.5"
+        assert config.fastembed_cache_dir is None
+
+    def test_custom_values_accepted(self) -> None:
+        """CollectionConfig accepts custom values for all new fields."""
+        config = CollectionConfig(
+            source_dir=Path("/tmp/vault"),
+            server_name="my-server",
+            instructions="Be helpful",
+            auth_mode="bearer",
+            base_url="https://example.com",
+            oidc_config_url="https://auth.example.com/.well-known/openid-configuration",
+            oidc_client_id="client-123",
+            oidc_client_secret="secret-456",
+            oidc_audience="my-api",
+            oidc_required_scopes="openid,profile",
+            oidc_jwt_signing_key="signing-key-789",
+            oidc_verify_access_token=True,
+            bearer_token="tok_abc",
+            embedding_provider="ollama",
+            ollama_host="http://gpu-server:11434",
+            ollama_model="mxbai-embed-large",
+            ollama_cpu_only=True,
+            openai_api_key="sk-test",
+            fastembed_model="BAAI/bge-base-en-v1.5",
+            fastembed_cache_dir="/tmp/cache",
+        )
+        assert config.server_name == "my-server"
+        assert config.instructions == "Be helpful"
+        assert config.auth_mode == "bearer"
+        assert config.base_url == "https://example.com"
+        assert config.oidc_client_id == "client-123"
+        assert config.oidc_client_secret == "secret-456"
+        assert config.oidc_verify_access_token is True
+        assert config.bearer_token == "tok_abc"
+        assert config.embedding_provider == "ollama"
+        assert config.ollama_host == "http://gpu-server:11434"
+        assert config.ollama_model == "mxbai-embed-large"
+        assert config.ollama_cpu_only is True
+        assert config.openai_api_key == "sk-test"
+        assert config.fastembed_model == "BAAI/bge-base-en-v1.5"
+        assert config.fastembed_cache_dir == "/tmp/cache"
