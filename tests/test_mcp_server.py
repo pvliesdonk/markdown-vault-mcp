@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 import pytest
@@ -15,17 +16,16 @@ from fastmcp import Client
 from fastmcp.exceptions import ToolError
 from mcp.shared.exceptions import McpError
 
-from markdown_vault_mcp.mcp_server import (
-    _build_bearer_auth,
-    _build_oidc_auth,
-    _build_remote_auth,
-    _resolve_auth_mode,
-    create_server,
+from markdown_vault_mcp.config import (
+    CollectionConfig,
+    build_bearer_auth,
+    build_oidc_auth,
+    build_remote_auth,
+    resolve_auth_mode,
 )
+from markdown_vault_mcp.mcp_server import create_server
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     import mcp.types as mcp_types
 
 
@@ -735,62 +735,58 @@ _OIDC_REQUIRED = {
 }
 
 
-class TestBuildOidcAuth:
-    """Unit tests for _build_oidc_auth()."""
+def _oidc_config(**overrides: Any) -> CollectionConfig:
+    """Build a CollectionConfig pre-filled with all required OIDC fields.
 
-    @pytest.fixture(autouse=True)
-    def _clear_oidc_vars(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Ensure OIDC env vars are absent before each test."""
-        for var in _OIDC_VARS:
-            monkeypatch.delenv(var, raising=False)
+    Keyword arguments override any field on the config.
+    """
+    defaults: dict[str, Any] = {
+        "source_dir": Path("/tmp"),
+        "base_url": "https://mcp.example.com",
+        "oidc_config_url": "https://auth.example.com/.well-known/openid-configuration",
+        "oidc_client_id": "test-client",
+        "oidc_client_secret": "test-secret",
+    }
+    defaults.update(overrides)
+    return CollectionConfig(**defaults)
+
+
+class TestBuildOidcAuth:
+    """Unit tests for build_oidc_auth()."""
 
     def test_returns_none_when_no_vars_set(self) -> None:
-        assert _build_oidc_auth() is None
+        config = CollectionConfig(source_dir=Path("/tmp"))
+        assert build_oidc_auth(config) is None
 
     @pytest.mark.parametrize(
-        "missing_var",
-        [
-            "MARKDOWN_VAULT_MCP_BASE_URL",
-            "MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL",
-            "MARKDOWN_VAULT_MCP_OIDC_CLIENT_ID",
-            "MARKDOWN_VAULT_MCP_OIDC_CLIENT_SECRET",
-        ],
+        "missing_field",
+        ["base_url", "oidc_config_url", "oidc_client_id", "oidc_client_secret"],
     )
     def test_returns_none_when_one_required_var_missing(
-        self, monkeypatch: pytest.MonkeyPatch, missing_var: str
+        self, missing_field: str
     ) -> None:
-        """Any one missing required var disables auth."""
-        for var, val in _OIDC_REQUIRED.items():
-            if var != missing_var:
-                monkeypatch.setenv(var, val)
-        assert _build_oidc_auth() is None
+        """Any one missing required field disables auth."""
+        config = _oidc_config(**{missing_field: None})
+        assert build_oidc_auth(config) is None
 
-    def test_returns_non_none_when_all_required_vars_set(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_returns_non_none_when_all_required_vars_set(self) -> None:
         from unittest.mock import MagicMock, patch
 
-        for var, val in _OIDC_REQUIRED.items():
-            monkeypatch.setenv(var, val)
-
+        config = _oidc_config()
         mock_cls = MagicMock()
         with patch("fastmcp.server.auth.oidc_proxy.OIDCProxy", mock_cls):
-            result = _build_oidc_auth()
+            result = build_oidc_auth(config)
 
         assert result is not None
         mock_cls.assert_called_once()
 
-    def test_passes_required_kwargs_to_oidc_proxy(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_passes_required_kwargs_to_oidc_proxy(self) -> None:
         from unittest.mock import MagicMock, patch
 
-        for var, val in _OIDC_REQUIRED.items():
-            monkeypatch.setenv(var, val)
-
+        config = _oidc_config()
         mock_cls = MagicMock()
         with patch("fastmcp.server.auth.oidc_proxy.OIDCProxy", mock_cls):
-            _build_oidc_auth()
+            build_oidc_auth(config)
 
         kw = mock_cls.call_args.kwargs
         assert kw["base_url"] == "https://mcp.example.com"
@@ -801,50 +797,34 @@ class TestBuildOidcAuth:
         assert kw["client_id"] == "test-client"
         assert kw["client_secret"] == "test-secret"
 
-    def test_default_required_scopes_is_openid(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_default_required_scopes_is_openid(self) -> None:
         from unittest.mock import MagicMock, patch
 
-        for var, val in _OIDC_REQUIRED.items():
-            monkeypatch.setenv(var, val)
-
+        config = _oidc_config()
         mock_cls = MagicMock()
         with patch("fastmcp.server.auth.oidc_proxy.OIDCProxy", mock_cls):
-            _build_oidc_auth()
+            build_oidc_auth(config)
 
         assert mock_cls.call_args.kwargs["required_scopes"] == ["openid"]
 
-    def test_empty_required_scopes_falls_back_to_openid(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_empty_required_scopes_falls_back_to_openid(self) -> None:
         """Explicitly empty REQUIRED_SCOPES falls back to ['openid'], not []."""
         from unittest.mock import MagicMock, patch
 
-        for var, val in _OIDC_REQUIRED.items():
-            monkeypatch.setenv(var, val)
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OIDC_REQUIRED_SCOPES", "")
-
+        config = _oidc_config(oidc_required_scopes="")
         mock_cls = MagicMock()
         with patch("fastmcp.server.auth.oidc_proxy.OIDCProxy", mock_cls):
-            _build_oidc_auth()
+            build_oidc_auth(config)
 
         assert mock_cls.call_args.kwargs["required_scopes"] == ["openid"]
 
-    def test_custom_required_scopes_parsed(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_custom_required_scopes_parsed(self) -> None:
         from unittest.mock import MagicMock, patch
 
-        for var, val in _OIDC_REQUIRED.items():
-            monkeypatch.setenv(var, val)
-        monkeypatch.setenv(
-            "MARKDOWN_VAULT_MCP_OIDC_REQUIRED_SCOPES", "openid, profile, email"
-        )
-
+        config = _oidc_config(oidc_required_scopes="openid, profile, email")
         mock_cls = MagicMock()
         with patch("fastmcp.server.auth.oidc_proxy.OIDCProxy", mock_cls):
-            _build_oidc_auth()
+            build_oidc_auth(config)
 
         assert mock_cls.call_args.kwargs["required_scopes"] == [
             "openid",
@@ -852,77 +832,59 @@ class TestBuildOidcAuth:
             "email",
         ]
 
-    def test_audience_forwarded_when_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_audience_forwarded_when_set(self) -> None:
         from unittest.mock import MagicMock, patch
 
-        for var, val in _OIDC_REQUIRED.items():
-            monkeypatch.setenv(var, val)
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OIDC_AUDIENCE", "my-api")
-
+        config = _oidc_config(oidc_audience="my-api")
         mock_cls = MagicMock()
         with patch("fastmcp.server.auth.oidc_proxy.OIDCProxy", mock_cls):
-            _build_oidc_auth()
+            build_oidc_auth(config)
 
         assert mock_cls.call_args.kwargs["audience"] == "my-api"
 
-    def test_audience_is_none_when_not_set(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_audience_is_none_when_not_set(self) -> None:
         from unittest.mock import MagicMock, patch
 
-        for var, val in _OIDC_REQUIRED.items():
-            monkeypatch.setenv(var, val)
-
+        config = _oidc_config()
         mock_cls = MagicMock()
         with patch("fastmcp.server.auth.oidc_proxy.OIDCProxy", mock_cls):
-            _build_oidc_auth()
+            build_oidc_auth(config)
 
         assert mock_cls.call_args.kwargs["audience"] is None
 
-    def test_jwt_signing_key_forwarded_when_set(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_jwt_signing_key_forwarded_when_set(self) -> None:
         from unittest.mock import MagicMock, patch
 
-        for var, val in _OIDC_REQUIRED.items():
-            monkeypatch.setenv(var, val)
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY", "deadbeef1234")
-
+        config = _oidc_config(oidc_jwt_signing_key="deadbeef1234")
         mock_cls = MagicMock()
         with patch("fastmcp.server.auth.oidc_proxy.OIDCProxy", mock_cls):
-            _build_oidc_auth()
+            build_oidc_auth(config)
 
         assert mock_cls.call_args.kwargs["jwt_signing_key"] == "deadbeef1234"
 
-    def test_jwt_signing_key_is_none_when_not_set(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_jwt_signing_key_is_none_when_not_set(self) -> None:
         from unittest.mock import MagicMock, patch
 
-        for var, val in _OIDC_REQUIRED.items():
-            monkeypatch.setenv(var, val)
-
+        config = _oidc_config()
         mock_cls = MagicMock()
         with patch("fastmcp.server.auth.oidc_proxy.OIDCProxy", mock_cls):
-            _build_oidc_auth()
+            build_oidc_auth(config)
 
         assert mock_cls.call_args.kwargs["jwt_signing_key"] is None
 
     def test_linux_warning_when_jwt_key_absent(
-        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+        self, caplog: pytest.LogCaptureFixture
     ) -> None:
         from unittest.mock import MagicMock, patch
 
-        for var, val in _OIDC_REQUIRED.items():
-            monkeypatch.setenv(var, val)
-
+        config = _oidc_config()
         mock_cls = MagicMock()
         with (
             patch("fastmcp.server.auth.oidc_proxy.OIDCProxy", mock_cls),
-            patch("markdown_vault_mcp.mcp_server.sys") as mock_sys,
+            patch("markdown_vault_mcp.config.sys") as mock_sys,
         ):
             mock_sys.platform = "linux"
-            _build_oidc_auth()
+            build_oidc_auth(config)
 
         assert any(
             "JWT_SIGNING_KEY" in r.message and r.levelname == "WARNING"
@@ -930,21 +892,18 @@ class TestBuildOidcAuth:
         )
 
     def test_no_warning_when_jwt_key_present_on_linux(
-        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+        self, caplog: pytest.LogCaptureFixture
     ) -> None:
         from unittest.mock import MagicMock, patch
 
-        for var, val in _OIDC_REQUIRED.items():
-            monkeypatch.setenv(var, val)
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY", "some-key")
-
+        config = _oidc_config(oidc_jwt_signing_key="some-key")
         mock_cls = MagicMock()
         with (
             patch("fastmcp.server.auth.oidc_proxy.OIDCProxy", mock_cls),
-            patch("markdown_vault_mcp.mcp_server.sys") as mock_sys,
+            patch("markdown_vault_mcp.config.sys") as mock_sys,
         ):
             mock_sys.platform = "linux"
-            _build_oidc_auth()
+            build_oidc_auth(config)
 
         assert not any(
             "JWT_SIGNING_KEY" in r.message and r.levelname == "WARNING"
@@ -952,108 +911,75 @@ class TestBuildOidcAuth:
         )
 
     def test_no_warning_on_non_linux_without_jwt_key(
-        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+        self, caplog: pytest.LogCaptureFixture
     ) -> None:
         from unittest.mock import MagicMock, patch
 
-        for var, val in _OIDC_REQUIRED.items():
-            monkeypatch.setenv(var, val)
-
+        config = _oidc_config()
         mock_cls = MagicMock()
         with (
             patch("fastmcp.server.auth.oidc_proxy.OIDCProxy", mock_cls),
-            patch("markdown_vault_mcp.mcp_server.sys") as mock_sys,
+            patch("markdown_vault_mcp.config.sys") as mock_sys,
         ):
             mock_sys.platform = "darwin"
-            _build_oidc_auth()
+            build_oidc_auth(config)
 
         assert not any(
             "JWT_SIGNING_KEY" in r.message and r.levelname == "WARNING"
             for r in caplog.records
         )
 
-    def test_default_verify_id_token_is_true(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_default_verify_id_token_is_true(self) -> None:
         """By default, verify_id_token=True (works with opaque access tokens)."""
         from unittest.mock import MagicMock, patch
 
-        for var, val in _OIDC_REQUIRED.items():
-            monkeypatch.setenv(var, val)
-
+        config = _oidc_config()
         mock_cls = MagicMock()
         with patch("fastmcp.server.auth.oidc_proxy.OIDCProxy", mock_cls):
-            _build_oidc_auth()
+            build_oidc_auth(config)
 
         assert mock_cls.call_args.kwargs["verify_id_token"] is True
 
-    def test_verify_access_token_disables_verify_id_token(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_verify_access_token_disables_verify_id_token(self) -> None:
         """OIDC_VERIFY_ACCESS_TOKEN=true reverts to access-token verification."""
         from unittest.mock import MagicMock, patch
 
-        for var, val in _OIDC_REQUIRED.items():
-            monkeypatch.setenv(var, val)
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OIDC_VERIFY_ACCESS_TOKEN", "true")
-
+        config = _oidc_config(oidc_verify_access_token=True)
         mock_cls = MagicMock()
         with patch("fastmcp.server.auth.oidc_proxy.OIDCProxy", mock_cls):
-            _build_oidc_auth()
+            build_oidc_auth(config)
 
         assert mock_cls.call_args.kwargs["verify_id_token"] is False
 
-    @pytest.mark.parametrize("value", ["false", "0", "no", ""])
-    def test_verify_access_token_falsy_keeps_id_token_default(
-        self, monkeypatch: pytest.MonkeyPatch, value: str
-    ) -> None:
-        """Falsy values for OIDC_VERIFY_ACCESS_TOKEN keep verify_id_token=True."""
-        from unittest.mock import MagicMock, patch
-
-        for var, val in _OIDC_REQUIRED.items():
-            monkeypatch.setenv(var, val)
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OIDC_VERIFY_ACCESS_TOKEN", value)
-
-        mock_cls = MagicMock()
-        with patch("fastmcp.server.auth.oidc_proxy.OIDCProxy", mock_cls):
-            _build_oidc_auth()
-
-        assert mock_cls.call_args.kwargs["verify_id_token"] is True
-
     def test_verify_id_token_log_message(
-        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+        self, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Default config logs that id_token verification is active."""
         from unittest.mock import MagicMock, patch
 
-        for var, val in _OIDC_REQUIRED.items():
-            monkeypatch.setenv(var, val)
-
+        config = _oidc_config()
         mock_cls = MagicMock()
         with (
             patch("fastmcp.server.auth.oidc_proxy.OIDCProxy", mock_cls),
-            caplog.at_level(logging.INFO, logger="markdown_vault_mcp.mcp_server"),
+            caplog.at_level(logging.INFO, logger="markdown_vault_mcp.config"),
         ):
-            _build_oidc_auth()
+            build_oidc_auth(config)
 
         assert any("verifying upstream id_token" in r.message for r in caplog.records)
 
     def test_verify_access_token_log_message(
-        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+        self, caplog: pytest.LogCaptureFixture
     ) -> None:
         """OIDC_VERIFY_ACCESS_TOKEN=true logs access-token verification mode."""
         from unittest.mock import MagicMock, patch
 
-        for var, val in _OIDC_REQUIRED.items():
-            monkeypatch.setenv(var, val)
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OIDC_VERIFY_ACCESS_TOKEN", "true")
-
+        config = _oidc_config(oidc_verify_access_token=True)
         mock_cls = MagicMock()
         with (
             patch("fastmcp.server.auth.oidc_proxy.OIDCProxy", mock_cls),
-            caplog.at_level(logging.INFO, logger="markdown_vault_mcp.mcp_server"),
+            caplog.at_level(logging.INFO, logger="markdown_vault_mcp.config"),
         ):
-            _build_oidc_auth()
+            build_oidc_auth(config)
 
         assert any(
             "verifying upstream access_token as JWT" in r.message
@@ -1061,35 +987,30 @@ class TestBuildOidcAuth:
         )
 
     def test_warning_when_openid_scope_missing_with_verify_id_token(
-        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+        self, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Warn when verify_id_token=True but 'openid' is not in scopes."""
         from unittest.mock import MagicMock, patch
 
-        for var, val in _OIDC_REQUIRED.items():
-            monkeypatch.setenv(var, val)
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OIDC_REQUIRED_SCOPES", "profile,email")
-
+        config = _oidc_config(oidc_required_scopes="profile,email")
         mock_cls = MagicMock()
         with patch("fastmcp.server.auth.oidc_proxy.OIDCProxy", mock_cls):
-            _build_oidc_auth()
+            build_oidc_auth(config)
 
         assert any(
             "openid" in r.message and r.levelname == "WARNING" for r in caplog.records
         )
 
     def test_no_warning_when_openid_scope_present(
-        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+        self, caplog: pytest.LogCaptureFixture
     ) -> None:
         """No warning when 'openid' is in scopes (default)."""
         from unittest.mock import MagicMock, patch
 
-        for var, val in _OIDC_REQUIRED.items():
-            monkeypatch.setenv(var, val)
-
+        config = _oidc_config()
         mock_cls = MagicMock()
         with patch("fastmcp.server.auth.oidc_proxy.OIDCProxy", mock_cls):
-            _build_oidc_auth()
+            build_oidc_auth(config)
 
         assert not any(
             "openid" in r.message and r.levelname == "WARNING" for r in caplog.records
@@ -2462,71 +2383,54 @@ _BEARER_VARS = ("MARKDOWN_VAULT_MCP_BEARER_TOKEN",)
 
 
 class TestBuildBearerAuth:
-    """Unit tests for _build_bearer_auth()."""
-
-    @pytest.fixture(autouse=True)
-    def _clear_bearer_vars(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Ensure bearer env var is absent before each test."""
-        for var in _BEARER_VARS:
-            monkeypatch.delenv(var, raising=False)
+    """Unit tests for build_bearer_auth()."""
 
     def test_returns_none_when_no_var_set(self) -> None:
-        assert _build_bearer_auth() is None
+        config = CollectionConfig(source_dir=Path("/tmp"))
+        assert build_bearer_auth(config) is None
 
-    def test_returns_none_when_empty_string(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_BEARER_TOKEN", "")
-        assert _build_bearer_auth() is None
+    def test_returns_none_when_empty_string(self) -> None:
+        config = CollectionConfig(source_dir=Path("/tmp"), bearer_token="")
+        assert build_bearer_auth(config) is None
 
-    def test_returns_none_when_whitespace_only(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_BEARER_TOKEN", "   ")
-        assert _build_bearer_auth() is None
+    def test_returns_none_when_whitespace_only(self) -> None:
+        config = CollectionConfig(source_dir=Path("/tmp"), bearer_token="   ")
+        assert build_bearer_auth(config) is None
 
-    def test_returns_static_token_verifier_when_set(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_returns_static_token_verifier_when_set(self) -> None:
         from fastmcp.server.auth import StaticTokenVerifier
 
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_BEARER_TOKEN", "test-secret-123")
-        result = _build_bearer_auth()
+        config = CollectionConfig(
+            source_dir=Path("/tmp"), bearer_token="test-secret-123"
+        )
+        result = build_bearer_auth(config)
         assert isinstance(result, StaticTokenVerifier)
 
-    def test_token_dict_has_correct_structure(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_BEARER_TOKEN", "my-token")
-        result = _build_bearer_auth()
+    def test_token_dict_has_correct_structure(self) -> None:
+        config = CollectionConfig(source_dir=Path("/tmp"), bearer_token="my-token")
+        result = build_bearer_auth(config)
         assert "my-token" in result.tokens
         entry = result.tokens["my-token"]
         assert entry["client_id"] == "bearer"
         assert entry["scopes"] == ["read", "write"]
 
-    async def test_verify_correct_token_returns_access_token(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_BEARER_TOKEN", "good-token")
-        verifier = _build_bearer_auth()
+    async def test_verify_correct_token_returns_access_token(self) -> None:
+        config = CollectionConfig(source_dir=Path("/tmp"), bearer_token="good-token")
+        verifier = build_bearer_auth(config)
         access = await verifier.verify_token("good-token")
         assert access is not None
         assert access.client_id == "bearer"
         assert access.scopes == ["read", "write"]
 
-    async def test_verify_wrong_token_returns_none(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_BEARER_TOKEN", "good-token")
-        verifier = _build_bearer_auth()
+    async def test_verify_wrong_token_returns_none(self) -> None:
+        config = CollectionConfig(source_dir=Path("/tmp"), bearer_token="good-token")
+        verifier = build_bearer_auth(config)
         access = await verifier.verify_token("wrong-token")
         assert access is None
 
-    async def test_verify_empty_token_returns_none(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_BEARER_TOKEN", "good-token")
-        verifier = _build_bearer_auth()
+    async def test_verify_empty_token_returns_none(self) -> None:
+        config = CollectionConfig(source_dir=Path("/tmp"), bearer_token="good-token")
+        verifier = build_bearer_auth(config)
         access = await verifier.verify_token("")
         assert access is None
 
@@ -2673,55 +2577,45 @@ class TestAuthModeSelection:
 class TestAuthDebugLogging:
     """Tests for auth DEBUG logging (issue #181)."""
 
-    @pytest.fixture(autouse=True)
-    def _clear_all_auth_vars(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        for var in (*_BEARER_VARS, *_OIDC_VARS):
-            monkeypatch.delenv(var, raising=False)
-
-    def test_bearer_debug_logs_presence(
-        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
-    ) -> None:
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_BEARER_TOKEN", "secret-token")
+    def test_bearer_debug_logs_presence(self, caplog: pytest.LogCaptureFixture) -> None:
+        config = CollectionConfig(source_dir=Path("/tmp"), bearer_token="secret-token")
         with caplog.at_level(logging.DEBUG):
-            _build_bearer_auth()
+            build_bearer_auth(config)
         assert "BEARER_TOKEN is set" in caplog.text
         assert "secret-token" not in caplog.text
 
     def test_bearer_debug_logs_absence(self, caplog: pytest.LogCaptureFixture) -> None:
+        config = CollectionConfig(source_dir=Path("/tmp"))
         with caplog.at_level(logging.DEBUG):
-            _build_bearer_auth()
+            build_bearer_auth(config)
         assert "BEARER_TOKEN not set" in caplog.text
 
-    def test_oidc_debug_logs_config(
-        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
-    ) -> None:
+    def test_oidc_debug_logs_config(self, caplog: pytest.LogCaptureFixture) -> None:
         from unittest.mock import MagicMock, patch
 
-        for var, val in _OIDC_REQUIRED.items():
-            monkeypatch.setenv(var, val)
-
+        config = _oidc_config()
         mock_cls = MagicMock()
         with (
             patch("fastmcp.server.auth.oidc_proxy.OIDCProxy", mock_cls),
             caplog.at_level(logging.DEBUG),
         ):
-            _build_oidc_auth()
+            build_oidc_auth(config)
 
         assert "OIDC auth config:" in caplog.text
         assert "config_url" in caplog.text
         assert "client_id" in caplog.text
         assert "<redacted>" in caplog.text  # client_secret is redacted
-        assert (
-            _OIDC_REQUIRED["MARKDOWN_VAULT_MCP_OIDC_CLIENT_SECRET"] not in caplog.text
-        )
+        assert "test-secret" not in caplog.text
 
     def test_oidc_debug_logs_missing_vars(
-        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+        self, caplog: pytest.LogCaptureFixture
     ) -> None:
         # Only set BASE_URL, leave others missing
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_BASE_URL", "https://example.com")
+        config = CollectionConfig(
+            source_dir=Path("/tmp"), base_url="https://example.com"
+        )
         with caplog.at_level(logging.DEBUG):
-            result = _build_oidc_auth()
+            result = build_oidc_auth(config)
         assert result is None
         assert "missing env vars" in caplog.text
 
@@ -2762,177 +2656,133 @@ class TestAuthDebugLogging:
 # _resolve_auth_mode() — OIDC mode detection
 # ---------------------------------------------------------------------------
 
-_RESOLVE_AUTH_VARS = (
-    "MARKDOWN_VAULT_MCP_AUTH_MODE",
-    "MARKDOWN_VAULT_MCP_BASE_URL",
-    "MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL",
-    "MARKDOWN_VAULT_MCP_OIDC_CLIENT_ID",
-    "MARKDOWN_VAULT_MCP_OIDC_CLIENT_SECRET",
-)
-
 
 class TestResolveAuthMode:
-    """Tests for _resolve_auth_mode()."""
+    """Tests for resolve_auth_mode()."""
 
-    @pytest.fixture(autouse=True)
-    def _clear_auth_mode_vars(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Ensure all relevant env vars are absent before each test."""
-        for var in _RESOLVE_AUTH_VARS:
-            monkeypatch.delenv(var, raising=False)
+    def test_explicit_remote(self) -> None:
+        config = CollectionConfig(source_dir=Path("/tmp"), auth_mode="remote")
+        assert resolve_auth_mode(config) == "remote"
 
-    def test_explicit_remote(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_AUTH_MODE", "remote")
-        assert _resolve_auth_mode() == "remote"
+    def test_explicit_oidc_proxy(self) -> None:
+        config = CollectionConfig(source_dir=Path("/tmp"), auth_mode="oidc-proxy")
+        assert resolve_auth_mode(config) == "oidc-proxy"
 
-    def test_explicit_oidc_proxy(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_AUTH_MODE", "oidc-proxy")
-        assert _resolve_auth_mode() == "oidc-proxy"
+    def test_explicit_case_insensitive(self) -> None:
+        config = CollectionConfig(source_dir=Path("/tmp"), auth_mode="REMOTE")
+        assert resolve_auth_mode(config) == "remote"
 
-    def test_explicit_case_insensitive(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_AUTH_MODE", "REMOTE")
-        assert _resolve_auth_mode() == "remote"
+    def test_auto_detect_oidc_proxy(self) -> None:
+        """All four OIDC fields set -> oidc-proxy."""
+        config = _oidc_config()
+        assert resolve_auth_mode(config) == "oidc-proxy"
 
-    def test_auto_detect_oidc_proxy(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """All four OIDC vars set → oidc-proxy."""
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_BASE_URL", "https://mcp.example.com")
-        monkeypatch.setenv(
-            "MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL",
-            "https://auth.example.com/.well-known/openid-configuration",
+    def test_auto_detect_remote(self) -> None:
+        """Only base_url + oidc_config_url -> remote."""
+        config = CollectionConfig(
+            source_dir=Path("/tmp"),
+            base_url="https://mcp.example.com",
+            oidc_config_url="https://auth.example.com/.well-known/openid-configuration",
         )
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OIDC_CLIENT_ID", "test-client")
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OIDC_CLIENT_SECRET", "test-secret")
-        assert _resolve_auth_mode() == "oidc-proxy"
-
-    def test_auto_detect_remote(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Only BASE_URL + CONFIG_URL → remote."""
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_BASE_URL", "https://mcp.example.com")
-        monkeypatch.setenv(
-            "MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL",
-            "https://auth.example.com/.well-known/openid-configuration",
-        )
-        assert _resolve_auth_mode() == "remote"
+        assert resolve_auth_mode(config) == "remote"
 
     def test_no_vars_returns_none(self) -> None:
-        assert _resolve_auth_mode() is None
+        config = CollectionConfig(source_dir=Path("/tmp"))
+        assert resolve_auth_mode(config) is None
 
-    def test_invalid_mode_ignored(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_AUTH_MODE", "invalid")
-        assert _resolve_auth_mode() is None
+    def test_invalid_mode_ignored(self) -> None:
+        config = CollectionConfig(source_dir=Path("/tmp"), auth_mode="invalid")
+        assert resolve_auth_mode(config) is None
 
     def test_invalid_mode_warns_and_falls_through(
-        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+        self, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """Invalid AUTH_MODE with auto-detect vars logs warning, falls to remote."""
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_AUTH_MODE", "typo")
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_BASE_URL", "https://mcp.example.com")
-        monkeypatch.setenv(
-            "MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL",
-            "https://auth.example.com/.well-known/openid-configuration",
+        """Invalid AUTH_MODE with auto-detect fields logs warning, falls to remote."""
+        config = CollectionConfig(
+            source_dir=Path("/tmp"),
+            auth_mode="typo",
+            base_url="https://mcp.example.com",
+            oidc_config_url="https://auth.example.com/.well-known/openid-configuration",
         )
         with caplog.at_level(logging.WARNING):
-            result = _resolve_auth_mode()
+            result = resolve_auth_mode(config)
         assert result == "remote"
         assert "Unknown AUTH_MODE 'typo'" in caplog.text
 
-    def test_only_base_url_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """BASE_URL alone is not enough for any OIDC mode."""
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_BASE_URL", "https://mcp.example.com")
-        assert _resolve_auth_mode() is None
-
-    def test_explicit_overrides_auto_detection(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """AUTH_MODE=remote forces remote even when all four vars are set."""
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_AUTH_MODE", "remote")
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_BASE_URL", "https://mcp.example.com")
-        monkeypatch.setenv(
-            "MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL",
-            "https://auth.example.com/.well-known/openid-configuration",
+    def test_only_base_url_returns_none(self) -> None:
+        """base_url alone is not enough for any OIDC mode."""
+        config = CollectionConfig(
+            source_dir=Path("/tmp"), base_url="https://mcp.example.com"
         )
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OIDC_CLIENT_ID", "test-client")
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OIDC_CLIENT_SECRET", "test-secret")
-        assert _resolve_auth_mode() == "remote"
+        assert resolve_auth_mode(config) is None
+
+    def test_explicit_overrides_auto_detection(self) -> None:
+        """AUTH_MODE=remote forces remote even when all four fields are set."""
+        config = _oidc_config(auth_mode="remote")
+        assert resolve_auth_mode(config) == "remote"
 
 
 # ---------------------------------------------------------------------------
 # _build_remote_auth() — RemoteAuthProvider construction
 # ---------------------------------------------------------------------------
 
-_REMOTE_AUTH_VARS = (
-    "MARKDOWN_VAULT_MCP_BASE_URL",
-    "MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL",
-    "MARKDOWN_VAULT_MCP_OIDC_AUDIENCE",
-    "MARKDOWN_VAULT_MCP_OIDC_REQUIRED_SCOPES",
-)
-
 
 class TestBuildRemoteAuth:
-    """Tests for _build_remote_auth()."""
+    """Tests for build_remote_auth()."""
 
-    @pytest.fixture(autouse=True)
-    def _clear_remote_auth_vars(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Ensure relevant env vars are absent before each test."""
-        for var in _REMOTE_AUTH_VARS:
-            monkeypatch.delenv(var, raising=False)
+    def _remote_config(self, **overrides: Any) -> CollectionConfig:
+        """Build a CollectionConfig with base_url + oidc_config_url."""
+        defaults: dict[str, Any] = {
+            "source_dir": Path("/tmp"),
+            "base_url": "https://mcp.example.com",
+            "oidc_config_url": "https://auth.example.com/.well-known/openid-configuration",
+        }
+        defaults.update(overrides)
+        return CollectionConfig(**defaults)
 
     def test_missing_env_vars_returns_none(self) -> None:
-        assert _build_remote_auth() is None
+        config = CollectionConfig(source_dir=Path("/tmp"))
+        assert build_remote_auth(config) is None
 
-    def test_missing_config_url_returns_none(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_BASE_URL", "https://mcp.example.com")
-        assert _build_remote_auth() is None
-
-    def test_missing_base_url_returns_none(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setenv(
-            "MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL",
-            "https://auth.example.com/.well-known/openid-configuration",
+    def test_missing_config_url_returns_none(self) -> None:
+        config = CollectionConfig(
+            source_dir=Path("/tmp"), base_url="https://mcp.example.com"
         )
-        assert _build_remote_auth() is None
+        assert build_remote_auth(config) is None
 
-    def test_discovery_fetch_failure_returns_none(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_missing_base_url_returns_none(self) -> None:
+        config = CollectionConfig(
+            source_dir=Path("/tmp"),
+            oidc_config_url="https://auth.example.com/.well-known/openid-configuration",
+        )
+        assert build_remote_auth(config) is None
+
+    def test_discovery_fetch_failure_returns_none(self) -> None:
         from unittest.mock import patch
 
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_BASE_URL", "https://mcp.example.com")
-        monkeypatch.setenv(
-            "MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL",
-            "https://auth.example.com/.well-known/openid-configuration",
-        )
+        config = self._remote_config()
         with patch("httpx.get", side_effect=Exception("connection failed")):
-            assert _build_remote_auth() is None
+            assert build_remote_auth(config) is None
 
     def test_httpx_import_error_returns_none(
-        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+        self, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Missing httpx gives a clear error, not a confusing discovery message."""
-        import sys
+        import sys as _sys
         from unittest.mock import patch
 
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_BASE_URL", "https://mcp.example.com")
-        monkeypatch.setenv(
-            "MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL",
-            "https://auth.example.com/.well-known/openid-configuration",
-        )
+        config = self._remote_config()
         with (
-            patch.dict(sys.modules, {"httpx": None}),
+            patch.dict(_sys.modules, {"httpx": None}),
             caplog.at_level(logging.ERROR),
         ):
-            assert _build_remote_auth() is None
+            assert build_remote_auth(config) is None
         assert "'httpx' is not installed" in caplog.text
 
-    def test_happy_path_returns_non_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_happy_path_returns_non_none(self) -> None:
         from unittest.mock import MagicMock, patch
 
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_BASE_URL", "https://mcp.example.com")
-        monkeypatch.setenv(
-            "MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL",
-            "https://auth.example.com/.well-known/openid-configuration",
-        )
+        config = self._remote_config()
         mock_resp = MagicMock()
         mock_resp.json.return_value = {
             "jwks_uri": "https://auth.example.com/.well-known/jwks.json",
@@ -2940,50 +2790,35 @@ class TestBuildRemoteAuth:
         }
         mock_resp.raise_for_status = MagicMock()
         with patch("httpx.get", return_value=mock_resp):
-            result = _build_remote_auth()
+            result = build_remote_auth(config)
         assert result is not None
 
-    def test_missing_jwks_uri_returns_none(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_missing_jwks_uri_returns_none(self) -> None:
         from unittest.mock import MagicMock, patch
 
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_BASE_URL", "https://mcp.example.com")
-        monkeypatch.setenv(
-            "MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL",
-            "https://auth.example.com/.well-known/openid-configuration",
-        )
+        config = self._remote_config()
         mock_resp = MagicMock()
         mock_resp.json.return_value = {"issuer": "https://auth.example.com"}
         mock_resp.raise_for_status = MagicMock()
         with patch("httpx.get", return_value=mock_resp):
-            assert _build_remote_auth() is None
+            assert build_remote_auth(config) is None
 
-    def test_missing_issuer_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_missing_issuer_returns_none(self) -> None:
         from unittest.mock import MagicMock, patch
 
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_BASE_URL", "https://mcp.example.com")
-        monkeypatch.setenv(
-            "MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL",
-            "https://auth.example.com/.well-known/openid-configuration",
-        )
+        config = self._remote_config()
         mock_resp = MagicMock()
         mock_resp.json.return_value = {
             "jwks_uri": "https://auth.example.com/.well-known/jwks.json"
         }
         mock_resp.raise_for_status = MagicMock()
         with patch("httpx.get", return_value=mock_resp):
-            assert _build_remote_auth() is None
+            assert build_remote_auth(config) is None
 
-    def test_audience_forwarded_when_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_audience_forwarded_when_set(self) -> None:
         from unittest.mock import MagicMock, patch
 
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_BASE_URL", "https://mcp.example.com")
-        monkeypatch.setenv(
-            "MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL",
-            "https://auth.example.com/.well-known/openid-configuration",
-        )
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OIDC_AUDIENCE", "my-api")
+        config = self._remote_config(oidc_audience="my-api")
         mock_resp = MagicMock()
         mock_resp.json.return_value = {
             "jwks_uri": "https://auth.example.com/.well-known/jwks.json",
@@ -3000,21 +2835,15 @@ class TestBuildRemoteAuth:
             patch("fastmcp.server.auth.JWTVerifier", mock_verifier_cls),
             patch("fastmcp.server.auth.RemoteAuthProvider", mock_remote_cls),
         ):
-            _build_remote_auth()
+            build_remote_auth(config)
 
         kw = mock_verifier_cls.call_args.kwargs
         assert kw["audience"] == "my-api"
 
-    def test_audience_is_none_when_not_set(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_audience_is_none_when_not_set(self) -> None:
         from unittest.mock import MagicMock, patch
 
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_BASE_URL", "https://mcp.example.com")
-        monkeypatch.setenv(
-            "MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL",
-            "https://auth.example.com/.well-known/openid-configuration",
-        )
+        config = self._remote_config()
         mock_resp = MagicMock()
         mock_resp.json.return_value = {
             "jwks_uri": "https://auth.example.com/.well-known/jwks.json",
@@ -3031,22 +2860,15 @@ class TestBuildRemoteAuth:
             patch("fastmcp.server.auth.JWTVerifier", mock_verifier_cls),
             patch("fastmcp.server.auth.RemoteAuthProvider", mock_remote_cls),
         ):
-            _build_remote_auth()
+            build_remote_auth(config)
 
         kw = mock_verifier_cls.call_args.kwargs
         assert kw["audience"] is None
 
-    def test_required_scopes_parsed(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_required_scopes_parsed(self) -> None:
         from unittest.mock import MagicMock, patch
 
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_BASE_URL", "https://mcp.example.com")
-        monkeypatch.setenv(
-            "MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL",
-            "https://auth.example.com/.well-known/openid-configuration",
-        )
-        monkeypatch.setenv(
-            "MARKDOWN_VAULT_MCP_OIDC_REQUIRED_SCOPES", "openid, profile, email"
-        )
+        config = self._remote_config(oidc_required_scopes="openid, profile, email")
         mock_resp = MagicMock()
         mock_resp.json.return_value = {
             "jwks_uri": "https://auth.example.com/.well-known/jwks.json",
@@ -3063,23 +2885,16 @@ class TestBuildRemoteAuth:
             patch("fastmcp.server.auth.JWTVerifier", mock_verifier_cls),
             patch("fastmcp.server.auth.RemoteAuthProvider", mock_remote_cls),
         ):
-            _build_remote_auth()
+            build_remote_auth(config)
 
         kw = mock_verifier_cls.call_args.kwargs
         assert kw["required_scopes"] == ["openid", "profile", "email"]
 
-    def test_empty_required_scopes_results_in_none(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_empty_required_scopes_results_in_none(self) -> None:
         """Empty REQUIRED_SCOPES results in None (no scope enforcement)."""
         from unittest.mock import MagicMock, patch
 
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_BASE_URL", "https://mcp.example.com")
-        monkeypatch.setenv(
-            "MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL",
-            "https://auth.example.com/.well-known/openid-configuration",
-        )
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OIDC_REQUIRED_SCOPES", "")
+        config = self._remote_config(oidc_required_scopes="")
         mock_resp = MagicMock()
         mock_resp.json.return_value = {
             "jwks_uri": "https://auth.example.com/.well-known/jwks.json",
@@ -3096,21 +2911,15 @@ class TestBuildRemoteAuth:
             patch("fastmcp.server.auth.JWTVerifier", mock_verifier_cls),
             patch("fastmcp.server.auth.RemoteAuthProvider", mock_remote_cls),
         ):
-            _build_remote_auth()
+            build_remote_auth(config)
 
         kw = mock_verifier_cls.call_args.kwargs
         assert kw["required_scopes"] is None
 
-    def test_debug_logging_on_success(
-        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
-    ) -> None:
+    def test_debug_logging_on_success(self, caplog: pytest.LogCaptureFixture) -> None:
         from unittest.mock import MagicMock, patch
 
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_BASE_URL", "https://mcp.example.com")
-        monkeypatch.setenv(
-            "MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL",
-            "https://auth.example.com/.well-known/openid-configuration",
-        )
+        config = self._remote_config()
         mock_resp = MagicMock()
         mock_resp.json.return_value = {
             "jwks_uri": "https://auth.example.com/.well-known/jwks.json",
@@ -3128,7 +2937,7 @@ class TestBuildRemoteAuth:
             patch("fastmcp.server.auth.RemoteAuthProvider", mock_remote_cls),
             caplog.at_level(logging.DEBUG),
         ):
-            _build_remote_auth()
+            build_remote_auth(config)
 
         assert "Remote auth config:" in caplog.text
         assert "jwks_uri" in caplog.text

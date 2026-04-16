@@ -1,12 +1,20 @@
-"""Tests for config.py — env var loading."""
+"""Tests for config.py — env var loading and auth builders."""
 
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 
-from markdown_vault_mcp.config import CollectionConfig, load_config
+from markdown_vault_mcp.config import (
+    CollectionConfig,
+    build_bearer_auth,
+    build_oidc_auth,
+    build_remote_auth,
+    load_config,
+    resolve_auth_mode,
+)
 
 
 class TestParseHelpers:
@@ -807,3 +815,217 @@ class TestLoadConfigEmbeddingFields:
         monkeypatch.delenv("MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR", raising=False)
         config = load_config()
         assert config.fastembed_cache_dir is None
+
+
+# ---------------------------------------------------------------------------
+# Auth builder helpers
+# ---------------------------------------------------------------------------
+
+
+def _oidc_config(**overrides: Any) -> CollectionConfig:
+    """Build a CollectionConfig pre-filled with all required OIDC fields."""
+    defaults: dict[str, Any] = {
+        "source_dir": Path("/tmp"),
+        "base_url": "https://mcp.example.com",
+        "oidc_config_url": "https://auth.example.com/.well-known/openid-configuration",
+        "oidc_client_id": "test-client",
+        "oidc_client_secret": "test-secret",
+    }
+    defaults.update(overrides)
+    return CollectionConfig(**defaults)
+
+
+# ---------------------------------------------------------------------------
+# resolve_auth_mode()
+# ---------------------------------------------------------------------------
+
+
+class TestResolveAuthModeConfig:
+    """Tests for resolve_auth_mode() accepting CollectionConfig."""
+
+    def test_explicit_remote(self) -> None:
+        config = CollectionConfig(source_dir=Path("/tmp"), auth_mode="remote")
+        assert resolve_auth_mode(config) == "remote"
+
+    def test_explicit_oidc_proxy(self) -> None:
+        config = CollectionConfig(source_dir=Path("/tmp"), auth_mode="oidc-proxy")
+        assert resolve_auth_mode(config) == "oidc-proxy"
+
+    def test_auto_detect_oidc_proxy(self) -> None:
+        """All four OIDC fields set -> oidc-proxy."""
+        config = _oidc_config()
+        assert resolve_auth_mode(config) == "oidc-proxy"
+
+    def test_auto_detect_remote(self) -> None:
+        """Only base_url + oidc_config_url -> remote."""
+        config = CollectionConfig(
+            source_dir=Path("/tmp"),
+            base_url="https://mcp.example.com",
+            oidc_config_url="https://auth.example.com/.well-known/openid-configuration",
+        )
+        assert resolve_auth_mode(config) == "remote"
+
+    def test_no_auth_returns_none(self) -> None:
+        config = CollectionConfig(source_dir=Path("/tmp"))
+        assert resolve_auth_mode(config) is None
+
+    def test_invalid_mode_returns_none(self) -> None:
+        config = CollectionConfig(source_dir=Path("/tmp"), auth_mode="invalid")
+        assert resolve_auth_mode(config) is None
+
+
+# ---------------------------------------------------------------------------
+# build_bearer_auth()
+# ---------------------------------------------------------------------------
+
+
+class TestBuildBearerAuthConfig:
+    """Tests for build_bearer_auth() accepting CollectionConfig."""
+
+    def test_returns_none_when_no_token(self) -> None:
+        config = CollectionConfig(source_dir=Path("/tmp"))
+        assert build_bearer_auth(config) is None
+
+    def test_returns_verifier_when_token_set(self) -> None:
+        from fastmcp.server.auth import StaticTokenVerifier
+
+        config = CollectionConfig(source_dir=Path("/tmp"), bearer_token="tok123")
+        result = build_bearer_auth(config)
+        assert isinstance(result, StaticTokenVerifier)
+        assert "tok123" in result.tokens
+
+
+# ---------------------------------------------------------------------------
+# build_oidc_auth()
+# ---------------------------------------------------------------------------
+
+
+class TestBuildOidcAuthConfig:
+    """Tests for build_oidc_auth() accepting CollectionConfig."""
+
+    def test_returns_none_when_missing_fields(self) -> None:
+        config = CollectionConfig(source_dir=Path("/tmp"))
+        assert build_oidc_auth(config) is None
+
+    def test_returns_proxy_when_all_fields_present(self) -> None:
+        from unittest.mock import MagicMock, patch
+
+        config = _oidc_config()
+        mock_cls = MagicMock()
+        with patch("fastmcp.server.auth.oidc_proxy.OIDCProxy", mock_cls):
+            result = build_oidc_auth(config)
+        assert result is not None
+        mock_cls.assert_called_once()
+
+    def test_passes_correct_kwargs(self) -> None:
+        from unittest.mock import MagicMock, patch
+
+        config = _oidc_config()
+        mock_cls = MagicMock()
+        with patch("fastmcp.server.auth.oidc_proxy.OIDCProxy", mock_cls):
+            build_oidc_auth(config)
+
+        kw = mock_cls.call_args.kwargs
+        assert kw["base_url"] == "https://mcp.example.com"
+        assert kw["client_id"] == "test-client"
+        assert kw["client_secret"] == "test-secret"
+        assert kw["required_scopes"] == ["openid"]
+        assert kw["verify_id_token"] is True
+
+    def test_scopes_parsed_from_config(self) -> None:
+        from unittest.mock import MagicMock, patch
+
+        config = _oidc_config(oidc_required_scopes="openid, profile")
+        mock_cls = MagicMock()
+        with patch("fastmcp.server.auth.oidc_proxy.OIDCProxy", mock_cls):
+            build_oidc_auth(config)
+
+        assert mock_cls.call_args.kwargs["required_scopes"] == ["openid", "profile"]
+
+    def test_linux_warning_logged(self, caplog: pytest.LogCaptureFixture) -> None:
+        from unittest.mock import MagicMock, patch
+
+        config = _oidc_config()
+        mock_cls = MagicMock()
+        with (
+            patch("fastmcp.server.auth.oidc_proxy.OIDCProxy", mock_cls),
+            patch("markdown_vault_mcp.config.sys") as mock_sys,
+        ):
+            mock_sys.platform = "linux"
+            build_oidc_auth(config)
+
+        assert any(
+            "JWT_SIGNING_KEY" in r.message and r.levelname == "WARNING"
+            for r in caplog.records
+        )
+
+
+# ---------------------------------------------------------------------------
+# build_remote_auth()
+# ---------------------------------------------------------------------------
+
+
+class TestBuildRemoteAuthConfig:
+    """Tests for build_remote_auth() accepting CollectionConfig."""
+
+    def test_returns_none_when_missing_fields(self) -> None:
+        config = CollectionConfig(source_dir=Path("/tmp"))
+        assert build_remote_auth(config) is None
+
+    def test_returns_none_on_discovery_failure(self) -> None:
+        from unittest.mock import patch
+
+        config = CollectionConfig(
+            source_dir=Path("/tmp"),
+            base_url="https://mcp.example.com",
+            oidc_config_url="https://auth.example.com/.well-known/openid-configuration",
+        )
+        with patch("httpx.get", side_effect=Exception("fail")):
+            assert build_remote_auth(config) is None
+
+    def test_happy_path(self) -> None:
+        from unittest.mock import MagicMock, patch
+
+        config = CollectionConfig(
+            source_dir=Path("/tmp"),
+            base_url="https://mcp.example.com",
+            oidc_config_url="https://auth.example.com/.well-known/openid-configuration",
+        )
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {
+            "jwks_uri": "https://auth.example.com/.well-known/jwks.json",
+            "issuer": "https://auth.example.com",
+        }
+        mock_resp.raise_for_status = MagicMock()
+        with patch("httpx.get", return_value=mock_resp):
+            result = build_remote_auth(config)
+        assert result is not None
+
+    def test_scopes_parsed_from_config(self) -> None:
+        from unittest.mock import MagicMock, patch
+
+        config = CollectionConfig(
+            source_dir=Path("/tmp"),
+            base_url="https://mcp.example.com",
+            oidc_config_url="https://auth.example.com/.well-known/openid-configuration",
+            oidc_required_scopes="openid, profile",
+        )
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {
+            "jwks_uri": "https://auth.example.com/.well-known/jwks.json",
+            "issuer": "https://auth.example.com",
+        }
+        mock_resp.raise_for_status = MagicMock()
+
+        mock_verifier_cls = MagicMock()
+        mock_remote_cls = MagicMock()
+
+        with (
+            patch("httpx.get", return_value=mock_resp),
+            patch("fastmcp.server.auth.JWTVerifier", mock_verifier_cls),
+            patch("fastmcp.server.auth.RemoteAuthProvider", mock_remote_cls),
+        ):
+            build_remote_auth(config)
+
+        kw = mock_verifier_cls.call_args.kwargs
+        assert kw["required_scopes"] == ["openid", "profile"]
