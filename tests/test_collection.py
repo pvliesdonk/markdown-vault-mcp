@@ -2888,7 +2888,7 @@ class TestBuildEmbeddings:
         mock_provider: MockEmbeddingProvider,
     ) -> None:
         """build_embeddings() calls the provider in batches, not one giant call."""
-        from markdown_vault_mcp.collection import _EMBEDDING_BATCH_SIZE
+        from markdown_vault_mcp.managers.index import _EMBEDDING_BATCH_SIZE
 
         embeddings_path = tmp_path / "embeddings"
         col = Collection(
@@ -2921,7 +2921,7 @@ class TestBuildEmbeddings:
         mock_provider: MockEmbeddingProvider,
     ) -> None:
         """build_embeddings() handles a corpus spanning multiple batches."""
-        from markdown_vault_mcp.collection import _EMBEDDING_BATCH_SIZE
+        from markdown_vault_mcp.managers.index import _EMBEDDING_BATCH_SIZE
 
         # Create a vault with enough chunks to span multiple batches.
         vault = tmp_path / "vault"
@@ -2977,16 +2977,16 @@ class TestBuildIndexNoOp:
         col.build_index()
 
         # Intercept scan_directory to confirm it is NOT called again.
-        import markdown_vault_mcp.collection as col_mod
+        import markdown_vault_mcp.managers.index as idx_mod
 
-        original_scan = col_mod.scan_directory
+        original_scan = idx_mod.scan_directory
         scan_calls: list = []
 
         def tracking_scan(*args, **kwargs):
             scan_calls.append(args)
             return original_scan(*args, **kwargs)
 
-        with patch.object(col_mod, "scan_directory", side_effect=tracking_scan):
+        with patch.object(idx_mod, "scan_directory", side_effect=tracking_scan):
             stats2 = col.build_index()
 
         # scan_directory must not have been invoked on the second call.
@@ -3764,14 +3764,14 @@ class TestDeferredEmbeddings:
             "# Deferred Embedding\n\nUniqueContentForTest.\n",
         )
         # The dirty set should contain this path.
-        assert "deferred_doc.md" in col._dirty_embeddings
+        assert "deferred_doc.md" in col._index_mgr._dirty_embeddings
 
         # Semantic search triggers flush.
         results = col.search("UniqueContentForTest", mode="semantic")
         paths = [r.path for r in results]
         assert "deferred_doc.md" in paths
         # Dirty set should now be empty.
-        assert len(col._dirty_embeddings) == 0
+        assert len(col._index_mgr._dirty_embeddings) == 0
 
     def test_dirty_docs_flushed_on_close(
         self,
@@ -3794,10 +3794,10 @@ class TestDeferredEmbeddings:
             "close_flush.md",
             "# Close Flush\n\nContent to be flushed on close.\n",
         )
-        assert "close_flush.md" in col._dirty_embeddings
+        assert "close_flush.md" in col._index_mgr._dirty_embeddings
 
         col.close()
-        assert len(col._dirty_embeddings) == 0
+        assert len(col._index_mgr._dirty_embeddings) == 0
 
     def test_git_callback_fires_eventually(self, vault_path: Path) -> None:
         """Git callback fires in the background after write returns."""
