@@ -52,7 +52,7 @@ def make_collection_lifespan(config: CollectionConfig) -> Any:
             try:
                 from markdown_vault_mcp.providers import get_embedding_provider
 
-                embedding_provider = get_embedding_provider()
+                embedding_provider = get_embedding_provider(config)
                 logger.info("Embedding provider: %s", type(embedding_provider).__name__)
             except Exception:
                 logger.warning(

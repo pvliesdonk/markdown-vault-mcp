@@ -78,7 +78,7 @@ def _build_collection(args: argparse.Namespace) -> Collection:
         try:
             from markdown_vault_mcp.providers import get_embedding_provider
 
-            kwargs["embedding_provider"] = get_embedding_provider()
+            kwargs["embedding_provider"] = get_embedding_provider(config)
         except Exception:
             logger.warning(
                 "Could not load embedding provider; semantic search disabled",
