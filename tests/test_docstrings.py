@@ -13,10 +13,14 @@ def _public_members(obj):
 
 
 def test_all_exported_symbols_have_docstrings():
-    """Every symbol in __all__ must have a module-level docstring."""
+    """Every class and function in __all__ must have a docstring."""
     missing = []
     for name in markdown_vault_mcp.__all__:
         obj = getattr(markdown_vault_mcp, name)
+        # Only check classes and functions; bare type aliases (Callable[...] etc.)
+        # cannot carry docstrings in the traditional sense
+        if not (inspect.isclass(obj) or inspect.isfunction(obj)):
+            continue
         if obj.__doc__ is None:
             missing.append(name)
     assert not missing, f"Missing docstrings: {missing}"
