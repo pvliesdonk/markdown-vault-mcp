@@ -1006,11 +1006,11 @@ class Collection:
             :class:`~markdown_vault_mcp.types.EditResult`.
 
         Raises:
+            EditConflictError: If *old_text* is not found or appears more than
+                once.
             ReadOnlyError: If the collection is read-only.
             ConcurrentModificationError: If *if_match* is provided and does
                 not match.
-            ValueError: If *path* escapes the source directory or the
-                replacement text is ambiguous.
         """
         self._ensure_initialized()
         return self._doc_mgr.edit(
@@ -1040,7 +1040,7 @@ class Collection:
             ReadOnlyError: If the collection is read-only.
             ConcurrentModificationError: If *if_match* is provided and does
                 not match.
-            FileNotFoundError: If *path* does not exist.
+            DocumentNotFoundError: If *path* does not exist.
         """
         self._ensure_initialized()
         return self._doc_mgr.delete(path, if_match=if_match)
@@ -1074,7 +1074,7 @@ class Collection:
             ReadOnlyError: If the collection is read-only.
             ConcurrentModificationError: If *if_match* is provided and does
                 not match.
-            FileNotFoundError: If *old_path* does not exist.
+            DocumentNotFoundError: If *old_path* does not exist.
             ValueError: If *old_path* or *new_path* escapes the source
                 directory.
         """

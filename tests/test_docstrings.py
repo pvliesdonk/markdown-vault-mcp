@@ -4,10 +4,10 @@ import markdown_vault_mcp
 
 
 def _public_members(obj):
-    """Return (name, member) pairs for public non-dunder members."""
+    """Return (name, member) pairs for public non-dunder members defined directly on obj."""
     return [
         (name, member)
-        for name, member in inspect.getmembers(obj)
+        for name, member in vars(obj).items()
         if not name.startswith("_") and not inspect.ismodule(member)
     ]
 

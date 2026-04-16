@@ -10,7 +10,14 @@ from typing import Any, Literal
 
 @dataclass
 class Chunk:
-    """A chunk of a document, typically a section under a heading."""
+    """A chunk of a document, typically a section under a heading.
+
+    Attributes:
+        heading: Section heading text, or ``None`` for the document intro.
+        heading_level: Markdown heading level (1-6); 0 for intro chunks.
+        content: Plain text content of this chunk.
+        start_line: 1-based line number where this chunk begins in the source.
+    """
 
     heading: str | None
     heading_level: int
@@ -20,7 +27,15 @@ class Chunk:
 
 @dataclass
 class LinkInfo:
-    """A link extracted from a markdown document."""
+    """A link extracted from a markdown document.
+
+    Attributes:
+        target_path: Resolved relative path of the link target.
+        link_text: Display text of the link.
+        link_type: Link syntax: ``"markdown"`` (``[text](path)``), ``"wikilink"`` (``[[path]]``), or ``"reference"`` (``[text][ref]``).
+        fragment: Heading anchor (``#section``) if present in the link target.
+        raw_target: The unresolved link target exactly as written in the source.
+    """
 
     target_path: str
     link_text: str
@@ -31,7 +46,17 @@ class LinkInfo:
 
 @dataclass
 class ParsedNote:
-    """A parsed markdown document."""
+    """A parsed markdown document with extracted structure.
+
+    Attributes:
+        path: Relative path from the vault root.
+        frontmatter: Parsed YAML frontmatter as a dict.
+        title: Document title derived from the first H1 heading or filename.
+        chunks: Ordered list of content chunks split by heading.
+        content_hash: SHA-256 hash of the raw file content for change detection.
+        modified_at: Last-modified time as a Unix timestamp float.
+        links: All links extracted from the document body.
+    """
 
     path: str
     frontmatter: dict[str, Any]
@@ -69,7 +94,16 @@ class SearchResult:
 
 @dataclass
 class FTSResult:
-    """A raw search result from the FTS5 index layer."""
+    """A raw search result from the FTS5 index layer.
+
+    Attributes:
+        path: Relative path of the document containing this chunk.
+        title: Document title.
+        folder: Parent folder path.
+        heading: Section heading this chunk falls under, or ``None`` for the intro.
+        content: Matched chunk text.
+        score: BM25 relevance score (higher is better).
+    """
 
     path: str
     title: str
@@ -153,7 +187,11 @@ class EditResult:
 
 @dataclass
 class DeleteResult:
-    """Result of a delete operation."""
+    """Result of a delete operation.
+
+    Attributes:
+        path: Relative path of the document that was deleted.
+    """
 
     path: str
 
@@ -276,7 +314,14 @@ class CollectionStats:
 
 @dataclass
 class ChangeSet:
-    """Documents that changed since last index."""
+    """Documents that changed since the last index build.
+
+    Attributes:
+        added: Paths of newly discovered documents.
+        modified: Paths of documents whose content changed.
+        deleted: Paths of documents that no longer exist on disk.
+        unchanged: Count of documents with no changes (not listed individually).
+    """
 
     added: list[str]
     modified: list[str]
@@ -351,7 +396,13 @@ class BrokenLinkInfo:
 
 @dataclass
 class MostLinkedNote:
-    """A document with its inbound backlink count, returned by get_most_linked()."""
+    """A document with its inbound backlink count, returned by :meth:`~markdown_vault_mcp.collection.Collection.get_most_linked`.
+
+    Attributes:
+        path: Relative path from the vault root.
+        title: Document title.
+        backlink_count: Number of other documents that link to this document.
+    """
 
     path: str
     title: str
@@ -360,11 +411,16 @@ class MostLinkedNote:
 
 @dataclass
 class SimilarItem:
-    """Shape of each entry in :attr:`NoteContext.similar`.
+    """A compact similar-note entry in :attr:`NoteContext.similar`.
 
-    A compact subset of :class:`SearchResult` — path, title, and score only.
+    A subset of :class:`SearchResult` — path, title, and score only.
     Use :meth:`~markdown_vault_mcp.collection.Collection.get_similar` directly
     when you need the full chunk content.
+
+    Attributes:
+        path: Relative path from the vault root.
+        title: Document title.
+        score: Cosine similarity score (higher is better).
     """
 
     path: str
