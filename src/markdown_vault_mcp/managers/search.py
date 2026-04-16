@@ -1,15 +1,20 @@
-"""Manager for document search operations (keyword, semantic, hybrid)."""
+"""Manager for document search and listing operations."""
 
 from __future__ import annotations
 
 import contextlib
+import fnmatch
 import json
 import logging
-from typing import TYPE_CHECKING, Any
+import mimetypes
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Literal
 
 from markdown_vault_mcp.types import (
+    AttachmentInfo,
     BacklinkInfo,
     NoteContext,
+    NoteInfo,
     OutlinkInfo,
     SearchResult,
     SimilarItem,
@@ -29,17 +34,113 @@ _CONTEXT_FOLDER_PEERS_LIMIT = 20
 
 
 class SearchManager:
-    """Handles keyword (FTS5), semantic (vector), and hybrid search."""
+    """Handles keyword (FTS5), semantic (vector), and hybrid search, and listings."""
 
     def __init__(self, collection: Collection) -> None:
         self._collection = collection
+
+    def list_documents(
+        self,
+        *,
+        folder: str | None = None,
+        pattern: str | None = None,
+        include_attachments: bool = False,
+    ) -> list[NoteInfo | AttachmentInfo]:
+        """List documents (and optionally attachments) in the collection."""
+        self._collection._ensure_initialized()
+
+        rows = self._collection._fts.list_notes(folder=folder)
+        notes: list[NoteInfo | AttachmentInfo] = [
+            NoteInfo.from_fts_row(row) for row in rows
+        ]
+
+        if pattern:
+            notes = [n for n in notes if fnmatch.fnmatch(n.path, pattern)]
+
+        if not include_attachments:
+            return notes
+
+        exts = self._collection._effective_attachment_extensions()
+        source_resolved = self._collection._source_dir.resolve()
+        attachments: list[AttachmentInfo] = []
+
+        for abs_path in self._collection._source_dir.rglob("*"):
+            if not abs_path.is_file():
+                continue
+            if abs_path.suffix.lower() == ".md":
+                continue
+            suffix = abs_path.suffix.lstrip(".").lower()
+            if "*" not in exts and suffix not in exts:
+                continue
+            try:
+                rel = abs_path.relative_to(source_resolved)
+            except ValueError as exc:
+                logger.warning(
+                    "_list_attachments: skipping %s — outside source_dir (%s)",
+                    abs_path,
+                    exc,
+                )
+                continue
+            rel_path = str(rel)
+            if any(part.startswith(".") for part in rel.parts):
+                continue
+            if self._collection._is_path_excluded(rel.as_posix()):
+                continue
+            if pattern and not fnmatch.fnmatch(rel_path, pattern):
+                continue
+            rel_folder = str(Path(rel_path).parent)
+            if rel_folder == ".":
+                rel_folder = ""
+            if (
+                folder is not None
+                and rel_folder != folder
+                and not rel_folder.startswith(folder + "/")
+            ):
+                continue
+            try:
+                stat = abs_path.stat()
+            except OSError as exc:
+                logger.warning(
+                    "_list_attachments: skipping %s — stat error (%s)", abs_path, exc
+                )
+                continue
+            mime_type, _ = mimetypes.guess_type(rel_path)
+            attachments.append(
+                AttachmentInfo(
+                    path=rel_path,
+                    folder=rel_folder,
+                    mime_type=mime_type,
+                    size_bytes=stat.st_size,
+                    modified_at=stat.st_mtime,
+                )
+            )
+
+        return notes + attachments
+
+    def get_recent(
+        self, *, limit: int = 20, folder: str | None = None
+    ) -> list[NoteInfo]:
+        """Return the most recently modified documents."""
+        self._collection._ensure_initialized()
+        rows = self._collection._fts.get_recent(limit=limit, folder=folder)
+        return [NoteInfo.from_fts_row(row) for row in rows]
+
+    def list_folders(self) -> list[str]:
+        """Return all distinct folder values across the indexed collection."""
+        self._collection._ensure_initialized()
+        return self._collection._fts.list_folders()
+
+    def list_tags(self, field: str = "tags") -> list[str]:
+        """Return all distinct values indexed for a given frontmatter field."""
+        self._collection._ensure_initialized()
+        return self._collection._fts.list_field_values(field)
 
     def search(
         self,
         query: str,
         *,
         limit: int = 10,
-        mode: str = "keyword",
+        mode: Literal["keyword", "semantic", "hybrid"] = "keyword",
         filters: dict[str, str] | None = None,
         folder: str | None = None,
     ) -> list[SearchResult]:
@@ -391,8 +492,7 @@ class SearchManager:
             and self._collection._embedding_provider is not None
             and self._collection._embeddings_path is not None
         ):
-            self._load_vectors()
-            vectors = self._collection._vectors
+            vectors = self._load_vectors()
             if vectors is not None and vectors.count > 0:
                 raw = vectors.search_by_path(path, limit=similar_limit)
                 similar_dicts = [

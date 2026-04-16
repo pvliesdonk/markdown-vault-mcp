@@ -2849,16 +2849,16 @@ class TestBuildIndexNoOp:
         col.build_index()
 
         # Intercept scan_directory to confirm it is NOT called again.
-        import markdown_vault_mcp.collection as col_mod
+        import markdown_vault_mcp.managers.index as index_mod
 
-        original_scan = col_mod.scan_directory
+        original_scan = index_mod.scan_directory
         scan_calls: list = []
 
         def tracking_scan(*args, **kwargs):
             scan_calls.append(args)
             return original_scan(*args, **kwargs)
 
-        with patch.object(col_mod, "scan_directory", side_effect=tracking_scan):
+        with patch.object(index_mod, "scan_directory", side_effect=tracking_scan):
             stats2 = col.build_index()
 
         # scan_directory must not have been invoked on the second call.
@@ -3000,8 +3000,6 @@ class TestResolveChunkStrategy:
 class TestFtsRowToNoteInfoMalformedJson:
     def test_invalid_frontmatter_json_returns_empty_dict(self) -> None:
         """_fts_row_to_note_info with invalid JSON returns NoteInfo with empty frontmatter."""
-        from markdown_vault_mcp.collection import _fts_row_to_note_info
-
         row = {
             "path": "x.md",
             "title": "X",
@@ -3009,7 +3007,7 @@ class TestFtsRowToNoteInfoMalformedJson:
             "frontmatter_json": "not-valid-json{{{",
             "modified_at": 0.0,
         }
-        result = _fts_row_to_note_info(row)
+        result = NoteInfo.from_fts_row(row)
 
         assert isinstance(result, NoteInfo)
         assert result.frontmatter == {}
@@ -3017,8 +3015,6 @@ class TestFtsRowToNoteInfoMalformedJson:
 
     def test_none_frontmatter_json_returns_empty_dict(self) -> None:
         """_fts_row_to_note_info with frontmatter_json=None returns empty frontmatter."""
-        from markdown_vault_mcp.collection import _fts_row_to_note_info
-
         row = {
             "path": "y.md",
             "title": "Y",
@@ -3026,14 +3022,12 @@ class TestFtsRowToNoteInfoMalformedJson:
             "frontmatter_json": None,
             "modified_at": 1234567890.0,
         }
-        result = _fts_row_to_note_info(row)
+        result = NoteInfo.from_fts_row(row)
 
         assert result.frontmatter == {}
 
     def test_empty_string_frontmatter_json_returns_empty_dict(self) -> None:
         """_fts_row_to_note_info with frontmatter_json='' returns empty frontmatter."""
-        from markdown_vault_mcp.collection import _fts_row_to_note_info
-
         row = {
             "path": "z.md",
             "title": "Z",
@@ -3041,7 +3035,7 @@ class TestFtsRowToNoteInfoMalformedJson:
             "frontmatter_json": "",
             "modified_at": 0.0,
         }
-        result = _fts_row_to_note_info(row)
+        result = NoteInfo.from_fts_row(row)
 
         assert result.frontmatter == {}
 

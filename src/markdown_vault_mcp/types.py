@@ -92,6 +92,34 @@ class NoteInfo:
     modified_at: float
     kind: str = "note"
 
+    @staticmethod
+    def from_fts_row(row: dict[str, Any]) -> NoteInfo:
+        """Convert an FTSIndex row dict to a NoteInfo."""
+        import json
+        import logging
+        from contextlib import suppress
+
+        fm_data: dict[str, Any] = {}
+        raw_json = row.get("frontmatter_json")
+        if raw_json:
+            with suppress(json.JSONDecodeError, TypeError):
+                data = json.loads(raw_json)
+                if isinstance(data, dict):
+                    fm_data = data
+                else:
+                    logging.getLogger(__name__).warning(
+                        "NoteInfo.from_fts_row: non-dict frontmatter for %s",
+                        row.get("path"),
+                    )
+
+        return NoteInfo(
+            path=row["path"],
+            title=row["title"],
+            folder=row["folder"],
+            frontmatter=fm_data,
+            modified_at=row["modified_at"],
+        )
+
 
 @dataclass
 class WriteResult:

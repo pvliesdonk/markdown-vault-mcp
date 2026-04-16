@@ -6,6 +6,8 @@ import base64
 import fnmatch
 import logging
 import mimetypes
+import os.path as osp
+import re
 import shutil
 import tempfile
 from pathlib import Path
@@ -124,6 +126,26 @@ class DocumentManager:
             modified_at=note.modified_at,
             etag=etag,
         )
+
+    def get_toc(self, path: str) -> list[dict[str, Any]]:
+        """Return table of contents for a document."""
+        self._collection._ensure_initialized()
+        self.validate_path(path)
+
+        row = self._collection._fts.get_note(path)
+        if row is None:
+            raise ValueError(f"Document not found: {path}")
+
+        title: str = row["title"]
+        headings = self._collection._fts.get_toc(path)
+
+        # Prepend a synthetic H1 for the document title, filtering out any
+        # real H1 that duplicates it (common when docs start with ``# Title``).
+        toc: list[dict[str, Any]] = [{"heading": title, "level": 1}]
+        toc.extend(
+            h for h in headings if not (h["level"] == 1 and h["heading"] == title)
+        )
+        return toc
 
     def write_attachment(
         self, path: str, content: bytes, if_match: str | None = None
@@ -552,11 +574,6 @@ class DocumentManager:
         """Rewrite source files that link to old_path."""
         from collections import defaultdict
 
-        from markdown_vault_mcp.collection import (
-            _apply_link_replacement,
-            _compute_new_raw_target,
-        )
-
         if not backlinks:
             return []
 
@@ -686,3 +703,59 @@ class DocumentManager:
         if not abs_path.is_relative_to(self._collection._source_dir.resolve()):
             raise ValueError(f"Path traversal detected: {path}")
         return abs_path
+
+
+def _compute_new_raw_target(
+    link_type: str,
+    raw_target: str,
+    fragment: str | None,
+    new_path: str,
+    source_path: str = "",
+    old_path: str = "",
+) -> str:
+    """Compute the replacement raw_target string when a file is renamed."""
+    if link_type == "wikilink":
+        # Determine whether the original wikilink included the .md extension.
+        old_path_part = raw_target.split("#")[0]
+        if old_path_part.lower().endswith(".md"):
+            new_path_part = new_path
+        else:
+            new_path_part = new_path[:-3]
+        return new_path_part + ("#" + fragment if fragment else "")
+    else:
+        # markdown and reference links.
+        raw_path_part = raw_target.split("#")[0]
+        if source_path and old_path and raw_path_part != old_path:
+            # Relative-to-source link: compute the correct new relative path.
+            source_dir = str(Path(source_path).parent)
+            new_rel = osp.relpath(new_path, source_dir)
+            new_path_part = new_rel.replace("\\", "/")
+        else:
+            new_path_part = new_path
+        return new_path_part + ("#" + fragment if fragment else "")
+
+
+def _apply_link_replacement(
+    content: str, link_type: str, old_raw: str, new_raw: str
+) -> str:
+    """Replace a single link target occurrence in file content."""
+    if link_type == "markdown":
+        return re.sub(
+            r"(?<!!)(\[[^\]]*?\])\(" + re.escape(old_raw) + r"((?:\s[^)]*)?)\)",
+            lambda m: m.group(1) + "(" + new_raw + m.group(2) + ")",
+            content,
+        )
+    elif link_type == "reference":
+        return re.sub(
+            r"^(\[.*?\]:\s+)" + re.escape(old_raw) + r"([ \t].*|$)",
+            lambda m: m.group(1) + new_raw + m.group(2),
+            content,
+            flags=re.MULTILINE,
+        )
+    elif link_type == "wikilink":
+        return re.sub(
+            r"\[\[" + re.escape(old_raw) + r"(\|[^\]]*)?\]\]",
+            lambda m: "[[" + new_raw + (m.group(1) or "") + "]]",
+            content,
+        )
+    return content
