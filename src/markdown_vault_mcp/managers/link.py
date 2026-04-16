@@ -8,9 +8,8 @@ receives only :class:`~markdown_vault_mcp.fts_index.FTSIndex` and a
 
 from __future__ import annotations
 
-import json
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from markdown_vault_mcp.types import (
     BacklinkInfo,
@@ -19,6 +18,7 @@ from markdown_vault_mcp.types import (
     NoteInfo,
     OutlinkInfo,
 )
+from markdown_vault_mcp.utils import fts_row_to_note_info, validate_path
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -26,34 +26,6 @@ if TYPE_CHECKING:
     from markdown_vault_mcp.fts_index import FTSIndex
 
 logger = logging.getLogger(__name__)
-
-
-def _fts_row_to_note_info(row: dict[str, Any]) -> NoteInfo:
-    """Convert an FTSIndex row dict to a :class:`NoteInfo`.
-
-    Args:
-        row: Dict returned by :meth:`FTSIndex.list_notes`,
-            :meth:`FTSIndex.get_note`, or :meth:`FTSIndex.get_orphan_notes`.
-
-    Returns:
-        A populated :class:`NoteInfo` instance.
-    """
-    frontmatter: dict[str, Any] = {}
-    raw_json = row.get("frontmatter_json")
-    if raw_json:
-        try:
-            frontmatter = json.loads(raw_json)
-        except (json.JSONDecodeError, TypeError):
-            logger.warning(
-                "Could not parse frontmatter_json for path %s", row.get("path")
-            )
-    return NoteInfo(
-        path=row["path"],
-        title=row["title"],
-        folder=row["folder"],
-        frontmatter=frontmatter,
-        modified_at=row["modified_at"],
-    )
 
 
 class LinkManager:
@@ -82,11 +54,7 @@ class LinkManager:
             ValueError: If the path does not end with ``.md`` or escapes
                 the source directory.
         """
-        if not path.endswith(".md"):
-            raise ValueError(f"Path must end with '.md': {path}")
-        abs_path = (self._source_dir / path).resolve()
-        if not abs_path.is_relative_to(self._source_dir.resolve()):
-            raise ValueError(f"Path traversal detected: {path}")
+        validate_path(path, self._source_dir)
 
     def _require_note(self, path: str) -> None:
         """Validate *path* and ensure a document exists in the index.
@@ -206,7 +174,7 @@ class LinkManager:
             ordered by path.
         """
         rows = self._fts.get_orphan_notes()
-        return [_fts_row_to_note_info(r) for r in rows]
+        return [fts_row_to_note_info(r) for r in rows]
 
     def get_most_linked(self, *, limit: int = 10) -> list[MostLinkedNote]:
         """Return the documents with the most inbound links.
@@ -241,6 +209,10 @@ class LinkManager:
         Raises:
             ValueError: If *source* or *target* is not found in the index.
         """
+        # Note: we use _validate_path (not _require_note) here because
+        # FTSIndex.get_connection_path already raises ValueError for
+        # nonexistent source/target paths, and handles the trivial
+        # source == target case by returning [source].
         self._validate_path(source)
         self._validate_path(target)
         return self._fts.get_connection_path(source, target, max_depth=max_depth)

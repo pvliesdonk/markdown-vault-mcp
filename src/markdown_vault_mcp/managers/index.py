@@ -8,7 +8,6 @@ dependency injection and no back-reference to :class:`Collection`.
 
 from __future__ import annotations
 
-import fnmatch
 import json
 import logging
 import threading
@@ -18,6 +17,7 @@ from typing import TYPE_CHECKING, Any
 from markdown_vault_mcp.fts_index import _derive_folder
 from markdown_vault_mcp.scanner import parse_note, scan_directory
 from markdown_vault_mcp.types import IndexStats, ParsedNote, ReindexResult
+from markdown_vault_mcp.utils import is_path_excluded
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -111,9 +111,7 @@ class IndexManager:
             ``True`` if the path matches any pattern in
             ``self._exclude_patterns``.
         """
-        if not self._exclude_patterns:
-            return False
-        return any(fnmatch.fnmatch(path, pat) for pat in self._exclude_patterns)
+        return is_path_excluded(path, self._exclude_patterns)
 
     def _require_vectors(self) -> None:
         """Raise ValueError if embedding support is not configured."""
@@ -138,8 +136,10 @@ class IndexManager:
             VectorIndexCompatibilityError,
         )
 
-        assert self._embeddings_path is not None
-        assert self._embedding_provider is not None
+        if self._embeddings_path is None or self._embedding_provider is None:
+            raise RuntimeError(
+                "_require_vectors() must be called before _load_vectors()"
+            )
 
         npy_path = Path(str(self._embeddings_path) + ".npy")
         if npy_path.exists():
@@ -150,13 +150,21 @@ class IndexManager:
             except VectorIndexCompatibilityError as exc:
                 logger.warning("%s Rebuilding embeddings.", exc)
                 self.build_embeddings(force=True)
-                assert self._get_vectors() is not None
+                if self._get_vectors() is None:
+                    raise ValueError(
+                        "Failed to rebuild vector index after a compatibility error."
+                    ) from exc
         else:
             vi = VectorIndex(self._embedding_provider)
             self._set_vectors(vi)
             logger.info("No vector index on disk; created empty VectorIndex")
 
-        return self._get_vectors()  # type: ignore[return-value]
+        result = self._get_vectors()
+        if result is None:
+            raise ValueError(
+                "Failed to rebuild vector index after a compatibility error."
+            )
+        return result
 
     # ------------------------------------------------------------------
     # Index building
@@ -443,8 +451,11 @@ class IndexManager:
         """
         self._require_vectors()
 
-        assert self._embeddings_path is not None
-        assert self._embedding_provider is not None
+        # _require_vectors() guarantees these are not None.
+        if self._embeddings_path is None or self._embedding_provider is None:
+            raise RuntimeError(
+                "_require_vectors() must be called before build_embeddings()"
+            )
 
         from markdown_vault_mcp.vector_index import VectorIndex
 
@@ -454,7 +465,8 @@ class IndexManager:
         else:
             self._load_vectors()
             vectors = self._get_vectors()
-            assert vectors is not None
+            if vectors is None:
+                raise ValueError("Failed to load vector index after _load_vectors()")
             if vectors.count > 0:
                 logger.info(
                     "build_embeddings: index already exists (%d chunks), skipping",
@@ -498,7 +510,8 @@ class IndexManager:
                 )
 
         vectors = self._get_vectors()
-        assert vectors is not None
+        if vectors is None:
+            raise ValueError("Vector index unexpectedly None after initialisation")
         total = len(texts)
         for start in range(0, total, _EMBEDDING_BATCH_SIZE):
             end = min(start + _EMBEDDING_BATCH_SIZE, total)

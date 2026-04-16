@@ -8,7 +8,6 @@ and no back-reference to :class:`Collection`.
 from __future__ import annotations
 
 import base64
-import fnmatch
 import logging
 import mimetypes
 import shutil
@@ -30,13 +29,17 @@ from markdown_vault_mcp.exceptions import (
 from markdown_vault_mcp.hashing import compute_etag, compute_file_hash
 from markdown_vault_mcp.scanner import parse_note
 from markdown_vault_mcp.types import (
-    DEFAULT_ATTACHMENT_EXTENSIONS,
     AttachmentContent,
     DeleteResult,
     EditResult,
     NoteContent,
     RenameResult,
     WriteResult,
+)
+from markdown_vault_mcp.utils import (
+    effective_attachment_extensions,
+    is_path_excluded,
+    validate_path,
 )
 from markdown_vault_mcp.utils.links import (
     apply_link_replacement as _apply_link_replacement,
@@ -138,9 +141,7 @@ class DocumentManager:
             Frozenset of lower-case extension strings (without leading dot).
             The special value ``frozenset(["*"])`` means all non-.md files.
         """
-        if self._attachment_extensions is None:
-            return DEFAULT_ATTACHMENT_EXTENSIONS
-        return frozenset(self._attachment_extensions)
+        return effective_attachment_extensions(self._attachment_extensions)
 
     def _is_attachment(self, path: str) -> bool:
         """Return True if *path* is an allowed non-.md attachment.
@@ -167,9 +168,7 @@ class DocumentManager:
             ``True`` if the path matches any pattern in
             ``self._exclude_patterns``.
         """
-        if not self._exclude_patterns:
-            return False
-        return any(fnmatch.fnmatch(path, pat) for pat in self._exclude_patterns)
+        return is_path_excluded(path, self._exclude_patterns)
 
     def _validate_path(self, path: str) -> Path:
         """Resolve a relative path and validate it is inside source_dir.
@@ -184,12 +183,7 @@ class DocumentManager:
             ValueError: If the path escapes the source directory or does
                 not end with ``.md``.
         """
-        if not path.endswith(".md"):
-            raise ValueError(f"Path must end with '.md': {path}")
-        abs_path = (self._source_dir / path).resolve()
-        if not abs_path.is_relative_to(self._source_dir.resolve()):
-            raise ValueError(f"Path traversal detected: {path}")
-        return abs_path
+        return validate_path(path, self._source_dir)
 
     def _validate_attachment_path(self, path: str) -> Path:
         """Resolve and validate a non-.md attachment path.

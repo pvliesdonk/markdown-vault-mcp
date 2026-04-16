@@ -26,6 +26,12 @@ from markdown_vault_mcp.types import (
     SearchResult,
     SimilarItem,
 )
+from markdown_vault_mcp.utils import (
+    effective_attachment_extensions,
+    fts_row_to_note_info,
+    is_path_excluded,
+    validate_path,
+)
 
 if TYPE_CHECKING:
     import builtins
@@ -43,34 +49,6 @@ _RRF_K = 60
 
 # Maximum folder peers returned by get_context().
 _CONTEXT_FOLDER_PEERS_LIMIT = 20
-
-
-def _fts_row_to_note_info(row: dict[str, Any]) -> NoteInfo:
-    """Convert an FTSIndex row dict to a :class:`NoteInfo`.
-
-    Args:
-        row: Dict returned by :meth:`FTSIndex.list_notes`,
-            :meth:`FTSIndex.get_note`, or :meth:`FTSIndex.get_recent`.
-
-    Returns:
-        A populated :class:`NoteInfo` instance.
-    """
-    frontmatter: dict[str, Any] = {}
-    raw_json = row.get("frontmatter_json")
-    if raw_json:
-        try:
-            frontmatter = json.loads(raw_json)
-        except (json.JSONDecodeError, TypeError):
-            logger.warning(
-                "Could not parse frontmatter_json for path %s", row.get("path")
-            )
-    return NoteInfo(
-        path=row["path"],
-        title=row["title"],
-        folder=row["folder"],
-        frontmatter=frontmatter,
-        modified_at=row["modified_at"],
-    )
 
 
 class SearchManager:
@@ -149,11 +127,7 @@ class SearchManager:
             ValueError: If the path does not end with ``.md`` or escapes
                 the source directory.
         """
-        if not path.endswith(".md"):
-            raise ValueError(f"Path must end with '.md': {path}")
-        abs_path = (self._source_dir / path).resolve()
-        if not abs_path.is_relative_to(self._source_dir.resolve()):
-            raise ValueError(f"Path traversal detected: {path}")
+        validate_path(path, self._source_dir)
 
     def _require_vectors(self) -> None:
         """Raise ValueError if semantic search is not configured."""
@@ -177,8 +151,10 @@ class SearchManager:
             VectorIndexCompatibilityError,
         )
 
-        assert self._embeddings_path is not None
-        assert self._embedding_provider is not None
+        if self._embeddings_path is None or self._embedding_provider is None:
+            raise RuntimeError(
+                "_require_vectors() must be called before _load_vectors()"
+            )
 
         npy_path = Path(str(self._embeddings_path) + ".npy")
         if npy_path.exists():
@@ -190,7 +166,10 @@ class SearchManager:
             except VectorIndexCompatibilityError as exc:
                 logger.warning("%s Rebuilding embeddings.", exc)
                 self._rebuild_embeddings()
-                assert self._vectors is not None
+                if self._vectors is None:
+                    raise ValueError(
+                        "Failed to rebuild vector index after a compatibility error."
+                    ) from exc
         else:
             self._vectors = VectorIndex(self._embedding_provider)
             logger.info("No vector index on disk; created empty VectorIndex")
@@ -232,11 +211,7 @@ class SearchManager:
             Frozenset of lower-case extension strings (without leading dot).
             The special value ``frozenset(["*"])`` means all non-.md files.
         """
-        from markdown_vault_mcp.types import DEFAULT_ATTACHMENT_EXTENSIONS
-
-        if self._attachment_extensions is None:
-            return DEFAULT_ATTACHMENT_EXTENSIONS
-        return frozenset(self._attachment_extensions)
+        return effective_attachment_extensions(self._attachment_extensions)
 
     def _is_path_excluded(self, path: str) -> bool:
         """Check whether *path* matches any configured exclude pattern.
@@ -248,9 +223,7 @@ class SearchManager:
             ``True`` if the path matches any pattern in
             ``self._exclude_patterns``.
         """
-        if not self._exclude_patterns:
-            return False
-        return any(fnmatch.fnmatch(path, pat) for pat in self._exclude_patterns)
+        return is_path_excluded(path, self._exclude_patterns)
 
     # ------------------------------------------------------------------
     # Search
@@ -536,7 +509,7 @@ class SearchManager:
         """
         rows = self._fts.list_notes(folder=folder)
         notes: list[NoteInfo | AttachmentInfo] = [
-            _fts_row_to_note_info(row) for row in rows
+            fts_row_to_note_info(row) for row in rows
         ]
 
         if pattern:
@@ -648,7 +621,7 @@ class SearchManager:
             ordered by modification time (most recent first).
         """
         rows = self._fts.get_recent(limit=limit, folder=folder)
-        return [_fts_row_to_note_info(row) for row in rows]
+        return [fts_row_to_note_info(row) for row in rows]
 
     def get_similar(self, path: str, *, limit: int = 10) -> builtins.list[SearchResult]:
         """Return the most semantically similar chunks from other documents.

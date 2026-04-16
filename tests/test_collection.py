@@ -3132,7 +3132,9 @@ class TestResolveChunkStrategy:
 class TestFtsRowToNoteInfoMalformedJson:
     def test_invalid_frontmatter_json_returns_empty_dict(self) -> None:
         """_fts_row_to_note_info with invalid JSON returns NoteInfo with empty frontmatter."""
-        from markdown_vault_mcp.managers.search import _fts_row_to_note_info
+        from markdown_vault_mcp.utils.fts import (
+            fts_row_to_note_info as _fts_row_to_note_info,
+        )
 
         row = {
             "path": "x.md",
@@ -3149,7 +3151,9 @@ class TestFtsRowToNoteInfoMalformedJson:
 
     def test_none_frontmatter_json_returns_empty_dict(self) -> None:
         """_fts_row_to_note_info with frontmatter_json=None returns empty frontmatter."""
-        from markdown_vault_mcp.managers.search import _fts_row_to_note_info
+        from markdown_vault_mcp.utils.fts import (
+            fts_row_to_note_info as _fts_row_to_note_info,
+        )
 
         row = {
             "path": "y.md",
@@ -3164,7 +3168,9 @@ class TestFtsRowToNoteInfoMalformedJson:
 
     def test_empty_string_frontmatter_json_returns_empty_dict(self) -> None:
         """_fts_row_to_note_info with frontmatter_json='' returns empty frontmatter."""
-        from markdown_vault_mcp.managers.search import _fts_row_to_note_info
+        from markdown_vault_mcp.utils.fts import (
+            fts_row_to_note_info as _fts_row_to_note_info,
+        )
 
         row = {
             "path": "z.md",

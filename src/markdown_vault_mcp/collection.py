@@ -42,6 +42,7 @@ from markdown_vault_mcp.types import (
     WriteCallback,
     WriteResult,
 )
+from markdown_vault_mcp.utils import effective_attachment_extensions
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -182,17 +183,12 @@ class Collection:
         from markdown_vault_mcp.managers.link import LinkManager
         from markdown_vault_mcp.managers.search import SearchManager
 
+        # 1. LinkManager (no deps)
         self._link_mgr = LinkManager(fts=self._fts, source_dir=self._source_dir)
-        self._search_mgr = SearchManager(
-            fts=self._fts,
-            source_dir=self._source_dir,
-            embeddings_path=self._embeddings_path,
-            embedding_provider=self._embedding_provider,
-            indexed_frontmatter_fields=self._indexed_frontmatter_fields,
-            exclude_patterns=self._exclude_patterns,
-            attachment_extensions=self._attachment_extensions,
-            link_manager=self._link_mgr,
-        )
+        # 2. IndexManager (needs fts, tracker, write_lock — NOT search_mgr)
+        #    get_vectors/set_vectors use late-binding lambdas that capture
+        #    self._search_mgr; they are only called at runtime after all
+        #    managers are constructed.
         self._index_mgr = IndexManager(
             fts=self._fts,
             tracker=self._tracker,
@@ -207,11 +203,20 @@ class Collection:
             get_vectors=lambda: self._search_mgr.vectors,
             set_vectors=lambda v: setattr(self._search_mgr, "vectors", v),
         )
-        # Wire IndexManager callbacks into SearchManager.
-        self._search_mgr._flush_embeddings = self._index_mgr.flush_dirty_embeddings
-        self._search_mgr._rebuild_embeddings = lambda: self._index_mgr.build_embeddings(
-            force=True
+        # 3. SearchManager (receives IndexManager callbacks via constructor)
+        self._search_mgr = SearchManager(
+            fts=self._fts,
+            source_dir=self._source_dir,
+            embeddings_path=self._embeddings_path,
+            embedding_provider=self._embedding_provider,
+            indexed_frontmatter_fields=self._indexed_frontmatter_fields,
+            exclude_patterns=self._exclude_patterns,
+            attachment_extensions=self._attachment_extensions,
+            link_manager=self._link_mgr,
+            flush_embeddings=self._index_mgr.flush_dirty_embeddings,
+            rebuild_embeddings=lambda: self._index_mgr.build_embeddings(force=True),
         )
+        # 4. DocumentManager (needs index_mgr callbacks)
         self._doc_mgr = DocumentManager(
             fts=self._fts,
             source_dir=self._source_dir,
@@ -835,7 +840,7 @@ class Collection:
             self._embedding_provider is not None and self._embeddings_path is not None
         )
 
-        exts = self._doc_mgr._effective_attachment_extensions()
+        exts = effective_attachment_extensions(self._attachment_extensions)
         attachment_extensions = ["*"] if "*" in exts else sorted(exts)
 
         return CollectionStats(

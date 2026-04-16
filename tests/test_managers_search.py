@@ -11,10 +11,7 @@ if TYPE_CHECKING:
 
 from markdown_vault_mcp.fts_index import FTSIndex
 from markdown_vault_mcp.managers.link import LinkManager
-from markdown_vault_mcp.managers.search import (
-    SearchManager,
-    _fts_row_to_note_info,
-)
+from markdown_vault_mcp.managers.search import SearchManager
 from markdown_vault_mcp.scanner import scan_directory
 from markdown_vault_mcp.types import (
     AttachmentInfo,
@@ -22,6 +19,7 @@ from markdown_vault_mcp.types import (
     NoteInfo,
     SearchResult,
 )
+from markdown_vault_mcp.utils.fts import fts_row_to_note_info as _fts_row_to_note_info
 
 # ---------------------------------------------------------------------------
 # Fixtures
