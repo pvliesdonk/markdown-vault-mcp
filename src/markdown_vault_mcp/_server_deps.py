@@ -46,23 +46,12 @@ def make_collection_lifespan(config: CollectionConfig) -> Any:
         """Build the Collection at server startup, tear down on shutdown."""
         logger.info("Initialising collection from %s", config.source_dir)
 
-        # Resolve embedding provider if embeddings_path is configured.
-        embedding_provider = None
-        if config.embeddings_path is not None:
-            try:
-                from markdown_vault_mcp.providers import get_embedding_provider
-
-                embedding_provider = get_embedding_provider(config)
-                logger.info("Embedding provider: %s", type(embedding_provider).__name__)
-            except Exception:
-                logger.warning(
-                    "Could not load embedding provider; semantic search disabled",
-                    exc_info=True,
-                )
-
         kwargs = config.to_collection_kwargs()
-        if embedding_provider is not None:
-            kwargs["embedding_provider"] = embedding_provider
+        if kwargs.get("embedding_provider") is not None:
+            logger.info(
+                "Embedding provider: %s",
+                type(kwargs["embedding_provider"]).__name__,
+            )
         collection = Collection(**kwargs)
 
         # If periodic git pull is enabled, sync before building the initial index so
@@ -80,7 +69,7 @@ def make_collection_lifespan(config: CollectionConfig) -> Any:
         # Build embeddings eagerly when an embedding provider is configured.
         # build_embeddings() skips work if the vector index already exists on disk,
         # so this is safe to call on every startup.
-        if embedding_provider is not None:
+        if kwargs.get("embedding_provider") is not None:
             chunks_embedded = await asyncio.to_thread(collection.build_embeddings)
             logger.info("Embeddings ready: %d chunks", chunks_embedded)
 

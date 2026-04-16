@@ -179,9 +179,8 @@ class CollectionConfig:
     def to_collection_kwargs(self) -> dict[str, Any]:
         """Return keyword arguments suitable for ``Collection(**kwargs)``.
 
-        Creates a
-        :class:`~markdown_vault_mcp.git.GitWriteStrategy` and includes
-        it as the ``on_write`` parameter.
+        Resolves the embedding provider (when ``embeddings_path`` is set)
+        and creates a :class:`~markdown_vault_mcp.git.GitWriteStrategy`.
 
         Returns:
             Dict of keyword arguments accepted by
@@ -205,6 +204,19 @@ class CollectionConfig:
             "max_attachment_size_mb": self.max_attachment_size_mb,
             "git_pull_interval_s": 0,
         }
+
+        # Resolve embedding provider if embeddings_path is configured.
+        if self.embeddings_path is not None:
+            try:
+                from markdown_vault_mcp.providers import get_embedding_provider
+
+                kwargs["embedding_provider"] = get_embedding_provider(self)
+            except Exception:
+                logger.warning(
+                    "Could not load embedding provider; semantic search disabled",
+                    exc_info=True,
+                )
+
         from markdown_vault_mcp.git import GitWriteStrategy
 
         if self.git_repo_url is not None:

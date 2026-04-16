@@ -73,18 +73,6 @@ def _build_collection(args: argparse.Namespace) -> Collection:
     if index_path_override:
         kwargs["index_path"] = Path(index_path_override)
 
-    # Resolve embedding provider if embeddings_path is configured.
-    if config.embeddings_path is not None:
-        try:
-            from markdown_vault_mcp.providers import get_embedding_provider
-
-            kwargs["embedding_provider"] = get_embedding_provider(config)
-        except Exception:
-            logger.warning(
-                "Could not load embedding provider; semantic search disabled",
-                exc_info=True,
-            )
-
     return Collection(**kwargs)
 
 
