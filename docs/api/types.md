@@ -68,4 +68,18 @@ from markdown_vault_mcp import NoteContent, SearchResult, NoteContext
 
 ## Callbacks
 
-::: markdown_vault_mcp.types.WriteCallback
+**`WriteCallback`**
+
+Type alias for the `on_write` callback passed to `Collection`. Called after each successful write operation (write, edit, delete, rename).
+
+```python
+WriteCallback = Callable[[Path, str, Literal["write", "edit", "delete", "rename"]], None]
+```
+
+Arguments received by the callback:
+
+| Argument | Type | Description |
+|----------|------|-------------|
+| `path` | `Path` | Absolute path of the modified file |
+| `content` | `str` | New file content (empty string for binary attachments and deletes) |
+| `op` | `Literal[...]` | Operation type: `"write"`, `"edit"`, `"delete"`, or `"rename"` |

@@ -1011,6 +1011,7 @@ class Collection:
             ReadOnlyError: If the collection is read-only.
             ConcurrentModificationError: If *if_match* is provided and does
                 not match.
+            ValueError: If *path* escapes the source directory.
         """
         self._ensure_initialized()
         return self._doc_mgr.edit(
