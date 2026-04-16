@@ -1889,7 +1889,7 @@ class TestReadAttachment:
     ) -> None:
         """read_attachment() raises ValueError for missing files."""
         col = Collection(source_dir=vault_with_attachment)
-        with pytest.raises(ValueError, match="not found"):
+        with pytest.raises(DocumentNotFoundError, match="not found"):
             col.read_attachment("assets/missing.pdf")
 
     def test_read_attachment_disallowed_extension_raises(
@@ -3353,7 +3353,7 @@ class TestCollectionGetToc:
         self, collection_with_long_doc: Collection
     ) -> None:
         """get_toc() raises ValueError for a path not in the index."""
-        with pytest.raises(ValueError, match="Document not found"):
+        with pytest.raises(DocumentNotFoundError, match="Document not found"):
             collection_with_long_doc.get_toc("does_not_exist.md")
 
 

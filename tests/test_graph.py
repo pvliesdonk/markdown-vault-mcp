@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 from markdown_vault_mcp.collection import Collection
+from markdown_vault_mcp.exceptions import DocumentNotFoundError
 from markdown_vault_mcp.fts_index import FTSIndex
 from markdown_vault_mcp.types import (
     Chunk,
@@ -540,14 +541,14 @@ class TestFTSGetConnectionPath:
         """ValueError raised when source_path is not in documents table."""
         idx = self._make_idx()
         idx.upsert_note(make_note("b.md"))
-        with pytest.raises(ValueError, match=r"missing\.md"):
+        with pytest.raises(DocumentNotFoundError, match=r"missing\.md"):
             idx.get_connection_path("missing.md", "b.md")
 
     def test_nonexistent_target_raises_value_error(self) -> None:
         """ValueError raised when target_path is not in documents table."""
         idx = self._make_idx()
         idx.upsert_note(make_note("a.md"))
-        with pytest.raises(ValueError, match=r"missing\.md"):
+        with pytest.raises(DocumentNotFoundError, match=r"missing\.md"):
             idx.get_connection_path("a.md", "missing.md")
 
 

@@ -182,9 +182,9 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
                 return asdict(attachment)
             note = await asyncio.to_thread(collection.read, path)
             if note is None:
-                raise ToolError(f"Document not found: {path}")
+                raise DocumentNotFoundError(f"Document not found: {path}")
             return asdict(note)
-        except ValueError as exc:
+        except (ValueError, DocumentNotFoundError) as exc:
             raise ToolError(str(exc)) from exc
 
     @mcp.tool(
@@ -520,7 +520,7 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
         try:
             results = await asyncio.to_thread(collection.get_similar, path, limit=limit)
             return [asdict(r) for r in results]
-        except ValueError as exc:
+        except (ValueError, DocumentNotFoundError) as exc:
             raise ToolError(str(exc)) from exc
 
     # --- Recently modified ---
@@ -619,7 +619,7 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
                 link_limit=link_limit,
             )
             return asdict(result)
-        except ValueError as exc:
+        except (ValueError, DocumentNotFoundError) as exc:
             raise ToolError(str(exc)) from exc
 
     @mcp.tool(
@@ -730,7 +730,7 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
             if result is None:
                 return {"found": False, "path": [], "hops": -1}
             return {"found": True, "path": result, "hops": len(result) - 1}
-        except ValueError as exc:
+        except (ValueError, DocumentNotFoundError) as exc:
             raise ToolError(str(exc)) from exc
 
     # --- Git history tools ---
@@ -1016,7 +1016,7 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
                 if_match=if_match,
             )
             return asdict(result)
-        except (ValueError, ConcurrentModificationError) as exc:
+        except (ValueError, ConcurrentModificationError, DocumentNotFoundError) as exc:
             raise ToolError(str(exc)) from exc
 
     @mcp.tool(

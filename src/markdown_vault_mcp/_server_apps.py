@@ -25,6 +25,7 @@ from fastmcp.dependencies import Depends
 
 from markdown_vault_mcp.collection import Collection
 from markdown_vault_mcp.config import _ENV_PREFIX
+from markdown_vault_mcp.exceptions import DocumentNotFoundError
 
 from ._icons import _TOOL_ICONS
 from ._server_deps import get_collection
@@ -209,7 +210,7 @@ def register_apps(mcp: FastMCP) -> None:
         """
         try:
             ctx = await asyncio.to_thread(collection.get_context, path)
-        except ValueError:
+        except (ValueError, DocumentNotFoundError):
             return {"error": f"Note not found: {path}"}
         return asdict(ctx)
 
@@ -246,7 +247,7 @@ def register_apps(mcp: FastMCP) -> None:
         """
         try:
             ctx = await asyncio.to_thread(collection.get_context, path)
-        except ValueError:
+        except (ValueError, DocumentNotFoundError):
             return {
                 "path": path,
                 "view": "context",
@@ -333,11 +334,11 @@ def register_apps(mcp: FastMCP) -> None:
             # Fetch backlinks/outlinks for interior nodes (orphan detection + edges)
             try:
                 backlinks = await asyncio.to_thread(collection.get_backlinks, current)
-            except ValueError:
+            except (ValueError, DocumentNotFoundError):
                 backlinks = []
             try:
                 outlinks = await asyncio.to_thread(collection.get_outlinks, current)
-            except ValueError:
+            except (ValueError, DocumentNotFoundError):
                 outlinks = []
             is_orphan = len(backlinks) == 0 and len(outlinks) == 0
 
@@ -390,7 +391,7 @@ def register_apps(mcp: FastMCP) -> None:
                     similar = await asyncio.to_thread(
                         collection.get_similar, node_path, limit=5
                     )
-                except ValueError:
+                except (ValueError, DocumentNotFoundError):
                     # Expected when embeddings are not configured for this collection
                     continue
                 except Exception:
@@ -473,7 +474,7 @@ def register_apps(mcp: FastMCP) -> None:
             # Get immediate connections for each hub
             try:
                 backlinks = await asyncio.to_thread(collection.get_backlinks, hub.path)
-            except ValueError:
+            except (ValueError, DocumentNotFoundError):
                 backlinks = []
             for bl in backlinks:
                 if bl.source_path not in nodes:
@@ -630,7 +631,7 @@ def register_apps(mcp: FastMCP) -> None:
             results = await asyncio.to_thread(
                 collection.search, query, limit=limit, mode=mode
             )
-        except ValueError as exc:
+        except (ValueError, DocumentNotFoundError) as exc:
             return [{"error": str(exc)}]
         return [
             {

@@ -9,6 +9,7 @@ from unittest.mock import patch
 import pytest
 
 from markdown_vault_mcp.collection import Collection
+from markdown_vault_mcp.exceptions import DocumentNotFoundError
 from markdown_vault_mcp.fts_index import FTSIndex
 from markdown_vault_mcp.scanner import extract_links
 from markdown_vault_mcp.types import (
@@ -1083,7 +1084,7 @@ class TestCollectionGetContext:
         """get_context raises ValueError when the path is not indexed."""
         col = Collection(source_dir=context_vault)
         col.build_index()
-        with pytest.raises(ValueError, match="Document not found"):
+        with pytest.raises(DocumentNotFoundError, match="Document not found"):
             col.get_context("nonexistent.md")
 
     def test_get_context_link_limit_caps_results(self, context_vault: Path) -> None:

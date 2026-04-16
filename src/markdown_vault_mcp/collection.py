@@ -9,6 +9,7 @@ from __future__ import annotations
 import contextlib
 import logging
 import queue
+import re
 import threading
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal

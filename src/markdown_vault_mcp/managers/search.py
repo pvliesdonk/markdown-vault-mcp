@@ -10,6 +10,7 @@ import mimetypes
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
+from markdown_vault_mcp.exceptions import DocumentNotFoundError
 from markdown_vault_mcp.types import (
     AttachmentInfo,
     BacklinkInfo,
@@ -175,7 +176,7 @@ class SearchManager:
         self._collection._ensure_initialized()
         self._collection._validate_path(path)
         if self._collection._fts.get_note(path) is None:
-            raise ValueError(f"Document not found: {path}")
+            raise DocumentNotFoundError(f"Document not found: {path}")
 
         if (
             self._collection._embedding_provider is None
@@ -452,7 +453,7 @@ class SearchManager:
         self._collection._validate_path(path)
         row = self._collection._fts.get_note(path)
         if row is None:
-            raise ValueError(f"Document not found: {path}")
+            raise DocumentNotFoundError(f"Document not found: {path}")
 
         fm_data = self._get_frontmatter(path)
 

@@ -138,7 +138,7 @@ class DocumentManager:
 
         row = self._collection._fts.get_note(path)
         if row is None:
-            raise ValueError(f"Document not found: {path}")
+            raise DocumentNotFoundError(f"Document not found: {path}")
 
         title: str = row["title"]
         headings = self._collection._fts.get_toc(path)
@@ -643,7 +643,7 @@ class DocumentManager:
         """Read binary content of a non-.md attachment."""
         abs_path = self.validate_attachment_path(path)
         if not abs_path.is_file():
-            raise ValueError(f"Attachment not found: {path}")
+            raise DocumentNotFoundError(f"Attachment not found: {path}")
 
         stat = abs_path.stat()
         size_bytes = stat.st_size

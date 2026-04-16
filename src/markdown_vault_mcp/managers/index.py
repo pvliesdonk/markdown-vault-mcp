@@ -83,7 +83,7 @@ class IndexManager:
             for note in notes:
                 try:
                     total_chunks += self._collection._fts.upsert_note(note)
-                except (sqlite3.Error, OSError) as exc:
+                except (sqlite3.Error, OSError, TypeError, ValueError) as exc:
                     errored += 1
                     logger.warning(
                         "build_index: failed to index %s — %s", note.path, exc
@@ -240,7 +240,7 @@ class IndexManager:
             for path, note in parsed:
                 try:
                     self._collection._fts.upsert_note(note)
-                except (sqlite3.Error, OSError) as exc:
+                except (sqlite3.Error, OSError, TypeError, ValueError) as exc:
                     logger.warning("reindex: failed to index %s — %s", path, exc)
                     continue
                 if path in added_set:

@@ -10,6 +10,7 @@ from collections import deque
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from markdown_vault_mcp.exceptions import DocumentNotFoundError
 from markdown_vault_mcp.types import FTSResult, ParsedNote
 
 if TYPE_CHECKING:
@@ -1136,7 +1137,7 @@ class FTSIndex:
                 "SELECT 1 FROM documents WHERE path = ?", (path,)
             ).fetchone()
             if row is None:
-                raise ValueError(f"Path not found in index: {path!r}")
+                raise DocumentNotFoundError(f"Path not found in index: {path!r}")
 
         # Trivial case.
         if source_path == target_path:
