@@ -9,6 +9,7 @@ from __future__ import annotations
 import contextlib
 import logging
 import queue
+import re
 import threading
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -409,6 +410,9 @@ class Collection:
             raise ValueError(
                 "Exactly one of 'since_sha' or 'since_timestamp' must be provided"
             )
+
+        if since_sha and not re.match(r"^[0-9a-f]{4,40}$", since_sha):
+            raise ValueError(f"Invalid commit SHA: {since_sha}")
 
         abs_path = self._validate_path(path)
         return self._git_strategy.get_file_diff(

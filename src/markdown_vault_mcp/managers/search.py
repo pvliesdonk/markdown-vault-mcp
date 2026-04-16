@@ -64,7 +64,15 @@ class SearchManager:
         source_resolved = self._collection._source_dir.resolve()
         attachments: list[AttachmentInfo] = []
 
-        for abs_path in self._collection._source_dir.rglob("*"):
+        # Attachment scan runs outside _write_lock — result is a best-effort
+        # snapshot and is not atomic with the FTS note listing above.
+        scan_root = self._collection._source_dir
+        if folder:
+            scan_root = self._collection._source_dir / folder
+            if not scan_root.is_dir():
+                return notes
+
+        for abs_path in scan_root.rglob("*"):
             if not abs_path.is_file():
                 continue
             if abs_path.suffix.lower() == ".md":
