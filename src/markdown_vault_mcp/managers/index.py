@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import sqlite3
 import threading
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from markdown_vault_mcp.fts_index import _derive_folder
@@ -382,6 +383,52 @@ class IndexManager:
             else:
                 logger.info("build_embeddings: nothing to embed")
         return total
+
+    def embeddings_status(self) -> dict[str, Any]:
+        """Return status information about the vector index."""
+        if (
+            self._collection._embedding_provider is None
+            or self._collection._embeddings_path is None
+        ):
+            return {
+                "available": False,
+                "provider": None,
+                "chunk_count": 0,
+                "path": None,
+            }
+
+        count = 0
+        if self._collection._vectors is not None:
+            count = self._collection._vectors.count
+        else:
+            import json
+            from json import JSONDecodeError
+
+            npy_path = Path(str(self._collection._embeddings_path) + ".npy")
+            if npy_path.exists():
+                # Peek at metadata file for count without loading full matrix.
+                json_path = Path(str(self._collection._embeddings_path) + ".json")
+                if json_path.exists():
+                    try:
+                        with json_path.open(encoding="utf-8") as fh:
+                            loaded_meta = json.load(fh)
+                        if isinstance(loaded_meta, list):
+                            count = len(loaded_meta)
+                        else:
+                            count = len(loaded_meta.get("rows", []))
+                    except (OSError, JSONDecodeError) as exc:
+                        logger.warning(
+                            "embeddings_status: could not read metadata from %s — %s",
+                            json_path,
+                            exc,
+                        )
+
+        return {
+            "available": True,
+            "provider": type(self._collection._embedding_provider).__name__,
+            "chunk_count": count,
+            "path": str(self._collection._embeddings_path),
+        }
 
     def update_vector_index(self, note: ParsedNote) -> None:
         """Mark a document for deferred embedding update."""

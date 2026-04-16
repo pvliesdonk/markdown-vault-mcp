@@ -43,30 +43,25 @@ vault becomes another.
 
 ## Architecture
 
-Two packages, one dependency edge (eventual):
+The library follows a **Thin Facade + Specialized Managers** pattern. `Collection` acts as the primary entry point, delegating specific responsibilities to internal manager classes.
 
 ```
-markdown-vault-mcp (new package)
+markdown-vault-mcp (package)
++-- managers/         -- specialized internal logic
+|   +-- document.py   -- CRUD, attachments, path validation
+|   +-- search.py     -- keyword, semantic, and hybrid search orchestration
+|   +-- link.py       -- link extraction, backlinks, graph traversal
+|   +-- index.py      -- indexing lifecycle, reindexing, embeddings
 +-- scanner.py        -- file discovery, frontmatter parsing, chunking
 +-- fts_index.py      -- SQLite FTS5 schema, BM25 search
 +-- vector_index.py   -- numpy embeddings, cosine similarity
-+-- providers.py      -- Ollama / OpenAI / SentenceTransformers
++-- providers.py      -- Ollama / OpenAI / FastEmbed
 +-- tracker.py        -- hash-based change detection
-+-- collection.py     -- thin facade: init, lazy loading, public API
-+-- config.py         -- configuration loading
++-- collection.py     -- thin facade: orchestrates managers and indexes
++-- config.py         -- centralized configuration and authentication loading
 +-- mcp_server.py     -- generic FastMCP server
 +-- cli.py            -- CLI entry point
-
-ifcraftcorpus (existing, refactored later)
-+-- depends on markdown-vault-mcp
-+-- ships corpus/ content
-+-- adds domain-specific tools (search_exemplars, list_exemplar_tags)
-+-- adds subagent prompts
-+-- thin wrapper: configures Collection with required_frontmatter
 ```
-
-**ifcraftcorpus stays as-is** during markdown-vault-mcp development. No changes to
-the existing package until a complete refactor after markdown-vault-mcp is stable.
 
 ## Reference Code
 
@@ -174,6 +169,23 @@ independently. Merged score: `1 / (k + rank)` where `k` is a constant
 (typically 60). Results are sorted by summed RRF score.
 
 This produces sensible merged rankings regardless of the raw score scales.
+
+### Manager Pattern
+
+To maintain a clean facade while growing in functionality, `Collection`
+delegates core logic to specialized internal managers:
+
+- **`DocumentManager`**: Handles all file-system interactions (read, write,
+  delete, rename), attachment allowlists, and text utilities for fuzzy editing.
+- **`SearchManager`**: Orchestrates FTS5 and Vector searches, implements
+  hybrid RRF merging, and handles high-level listing/listing metadata (tags, folders).
+- **`LinkManager`**: Manages the link graph, including backlinks, outlinks,
+  broken link detection, and shortest-path connection traversal.
+- **`IndexManager`**: Manages the indexing lifecycle, including initial
+  builds, incremental reindexing, and deferred embedding flushes.
+
+This separation ensures that `Collection` remains a "thin facade" while
+individual managers remain focused and easier to test.
 
 ### Chunking Strategy
 
