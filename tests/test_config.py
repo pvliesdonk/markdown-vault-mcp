@@ -573,3 +573,237 @@ class TestCollectionConfigDefaults:
         assert config.openai_api_key == "sk-test"
         assert config.fastembed_model == "BAAI/bge-base-en-v1.5"
         assert config.fastembed_cache_dir == "/tmp/cache"
+
+
+class TestLoadConfigServerIdentityFields:
+    """Verify server identity env vars are read by load_config()."""
+
+    @pytest.fixture(autouse=True)
+    def _set_source_dir(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+
+    def test_server_name_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """load_config() defaults server_name to 'markdown-vault-mcp'."""
+        monkeypatch.delenv("MARKDOWN_VAULT_MCP_SERVER_NAME", raising=False)
+        config = load_config()
+        assert config.server_name == "markdown-vault-mcp"
+
+    def test_server_name_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """load_config() reads MARKDOWN_VAULT_MCP_SERVER_NAME."""
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SERVER_NAME", "my-vault")
+        config = load_config()
+        assert config.server_name == "my-vault"
+
+    def test_server_name_empty_uses_default(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """load_config() falls back to default when SERVER_NAME is empty."""
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SERVER_NAME", "")
+        config = load_config()
+        assert config.server_name == "markdown-vault-mcp"
+
+    def test_instructions_default_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """load_config() defaults instructions to None."""
+        monkeypatch.delenv("MARKDOWN_VAULT_MCP_INSTRUCTIONS", raising=False)
+        config = load_config()
+        assert config.instructions is None
+
+    def test_instructions_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """load_config() reads MARKDOWN_VAULT_MCP_INSTRUCTIONS."""
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_INSTRUCTIONS", "Be concise")
+        config = load_config()
+        assert config.instructions == "Be concise"
+
+
+class TestLoadConfigAuthFields:
+    """Verify auth env vars are read correctly by load_config()."""
+
+    @pytest.fixture(autouse=True)
+    def _set_source_dir(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+
+    def test_auth_mode_default_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """load_config() defaults auth_mode to None (auto-detect)."""
+        monkeypatch.delenv("MARKDOWN_VAULT_MCP_AUTH_MODE", raising=False)
+        config = load_config()
+        assert config.auth_mode is None
+
+    def test_auth_mode_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """load_config() reads MARKDOWN_VAULT_MCP_AUTH_MODE."""
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_AUTH_MODE", "bearer")
+        config = load_config()
+        assert config.auth_mode == "bearer"
+
+    def test_base_url_read(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """load_config() reads MARKDOWN_VAULT_MCP_BASE_URL."""
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_BASE_URL", "https://vault.example.com")
+        config = load_config()
+        assert config.base_url == "https://vault.example.com"
+
+    def test_oidc_fields_read(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """load_config() reads all OIDC env vars."""
+        monkeypatch.setenv(
+            "MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL",
+            "https://auth.example.com/.well-known/openid-configuration",
+        )
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OIDC_CLIENT_ID", "my-client")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OIDC_CLIENT_SECRET", "s3cret")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OIDC_AUDIENCE", "my-api")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OIDC_REQUIRED_SCOPES", "openid,profile")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY", "jwt-key-123")
+        config = load_config()
+        assert (
+            config.oidc_config_url
+            == "https://auth.example.com/.well-known/openid-configuration"
+        )
+        assert config.oidc_client_id == "my-client"
+        assert config.oidc_client_secret == "s3cret"
+        assert config.oidc_audience == "my-api"
+        assert config.oidc_required_scopes == "openid,profile"
+        assert config.oidc_jwt_signing_key == "jwt-key-123"
+
+    def test_oidc_verify_access_token_default_false(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """load_config() defaults oidc_verify_access_token to False."""
+        monkeypatch.delenv("MARKDOWN_VAULT_MCP_OIDC_VERIFY_ACCESS_TOKEN", raising=False)
+        config = load_config()
+        assert config.oidc_verify_access_token is False
+
+    def test_oidc_verify_access_token_true(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """load_config() parses OIDC_VERIFY_ACCESS_TOKEN=true."""
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OIDC_VERIFY_ACCESS_TOKEN", "true")
+        config = load_config()
+        assert config.oidc_verify_access_token is True
+
+    def test_bearer_token_read(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """load_config() reads MARKDOWN_VAULT_MCP_BEARER_TOKEN."""
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_BEARER_TOKEN", "tok_abc123")
+        config = load_config()
+        assert config.bearer_token == "tok_abc123"
+
+    def test_bearer_token_default_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """load_config() defaults bearer_token to None."""
+        monkeypatch.delenv("MARKDOWN_VAULT_MCP_BEARER_TOKEN", raising=False)
+        config = load_config()
+        assert config.bearer_token is None
+
+
+class TestLoadConfigEmbeddingFields:
+    """Verify embedding env vars are read correctly by load_config()."""
+
+    @pytest.fixture(autouse=True)
+    def _set_source_dir(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+
+    def test_embedding_provider_prefixed(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """load_config() reads MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER."""
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER", "ollama")
+        config = load_config()
+        assert config.embedding_provider == "ollama"
+
+    def test_embedding_provider_default_none(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """load_config() defaults embedding_provider to None."""
+        monkeypatch.delenv("MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER", raising=False)
+        config = load_config()
+        assert config.embedding_provider is None
+
+    def test_ollama_host_bare_env_var(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """load_config() reads OLLAMA_HOST (bare, not prefixed)."""
+        monkeypatch.setenv("OLLAMA_HOST", "http://gpu:11434")
+        config = load_config()
+        assert config.ollama_host == "http://gpu:11434"
+
+    def test_ollama_host_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """load_config() defaults ollama_host to http://localhost:11434."""
+        monkeypatch.delenv("OLLAMA_HOST", raising=False)
+        config = load_config()
+        assert config.ollama_host == "http://localhost:11434"
+
+    def test_ollama_host_empty_uses_default(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """load_config() treats empty OLLAMA_HOST as default."""
+        monkeypatch.setenv("OLLAMA_HOST", "")
+        config = load_config()
+        assert config.ollama_host == "http://localhost:11434"
+
+    def test_ollama_host_trailing_slash_stripped(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """load_config() strips trailing slash from OLLAMA_HOST."""
+        monkeypatch.setenv("OLLAMA_HOST", "http://gpu:11434/")
+        config = load_config()
+        assert config.ollama_host == "http://gpu:11434"
+
+    def test_ollama_model_prefixed(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """load_config() reads MARKDOWN_VAULT_MCP_OLLAMA_MODEL."""
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OLLAMA_MODEL", "mxbai-embed-large")
+        config = load_config()
+        assert config.ollama_model == "mxbai-embed-large"
+
+    def test_ollama_model_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """load_config() defaults ollama_model to nomic-embed-text."""
+        monkeypatch.delenv("MARKDOWN_VAULT_MCP_OLLAMA_MODEL", raising=False)
+        config = load_config()
+        assert config.ollama_model == "nomic-embed-text"
+
+    def test_ollama_cpu_only_default_false(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """load_config() defaults ollama_cpu_only to False."""
+        monkeypatch.delenv("MARKDOWN_VAULT_MCP_OLLAMA_CPU_ONLY", raising=False)
+        config = load_config()
+        assert config.ollama_cpu_only is False
+
+    def test_ollama_cpu_only_true(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """load_config() parses OLLAMA_CPU_ONLY=true."""
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OLLAMA_CPU_ONLY", "true")
+        config = load_config()
+        assert config.ollama_cpu_only is True
+
+    def test_openai_api_key_bare_env_var(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """load_config() reads OPENAI_API_KEY (bare, not prefixed)."""
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-test123")
+        config = load_config()
+        assert config.openai_api_key == "sk-test123"
+
+    def test_openai_api_key_default_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """load_config() defaults openai_api_key to None."""
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        config = load_config()
+        assert config.openai_api_key is None
+
+    def test_fastembed_model_prefixed(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """load_config() reads MARKDOWN_VAULT_MCP_FASTEMBED_MODEL."""
+        monkeypatch.setenv(
+            "MARKDOWN_VAULT_MCP_FASTEMBED_MODEL", "BAAI/bge-base-en-v1.5"
+        )
+        config = load_config()
+        assert config.fastembed_model == "BAAI/bge-base-en-v1.5"
+
+    def test_fastembed_model_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """load_config() defaults fastembed_model to BAAI/bge-small-en-v1.5."""
+        monkeypatch.delenv("MARKDOWN_VAULT_MCP_FASTEMBED_MODEL", raising=False)
+        config = load_config()
+        assert config.fastembed_model == "BAAI/bge-small-en-v1.5"
+
+    def test_fastembed_cache_dir_prefixed(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """load_config() reads MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR."""
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR", "/tmp/fe-cache")
+        config = load_config()
+        assert config.fastembed_cache_dir == "/tmp/fe-cache"
+
+    def test_fastembed_cache_dir_default_none(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """load_config() defaults fastembed_cache_dir to None."""
+        monkeypatch.delenv("MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR", raising=False)
+        config = load_config()
+        assert config.fastembed_cache_dir is None

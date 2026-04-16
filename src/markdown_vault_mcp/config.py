@@ -268,6 +268,8 @@ def load_config() -> CollectionConfig:
 
     Reads the following environment variables:
 
+    **Core:**
+
     - ``MARKDOWN_VAULT_MCP_SOURCE_DIR`` (required): path to markdown files.
     - ``MARKDOWN_VAULT_MCP_READ_ONLY``: disable write tools; default ``true``.
     - ``MARKDOWN_VAULT_MCP_INDEX_PATH``: SQLite index path; default in-memory.
@@ -281,6 +283,9 @@ def load_config() -> CollectionConfig:
       frontmatter fields; default none.
     - ``MARKDOWN_VAULT_MCP_EXCLUDE``: comma-separated glob patterns to
       exclude; default none.
+
+    **Git:**
+
     - ``MARKDOWN_VAULT_MCP_GIT_TOKEN``: token for git write strategy; default
       disabled.
     - ``MARKDOWN_VAULT_MCP_GIT_REPO_URL``: HTTPS remote URL for managed git mode;
@@ -297,6 +302,9 @@ def load_config() -> CollectionConfig:
       init to resolve LFS pointers; default ``true``.
     - ``MARKDOWN_VAULT_MCP_GIT_PULL_INTERVAL_S``: seconds between periodic
       git fetch + ff-only updates (default ``600``). Set to ``0`` to disable.
+
+    **Attachments and templates:**
+
     - ``MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS``: comma-separated list of
       allowed attachment extensions (without dot, e.g. ``pdf,png,jpg``); use
       ``*`` to allow all non-.md files; default: common document and image types.
@@ -310,9 +318,46 @@ def load_config() -> CollectionConfig:
       persistence; ``file:///path`` (default ``/data/state/events``) or
       ``memory://`` (in-memory, lost on restart).
 
-    The ``EMBEDDING_PROVIDER`` variable is intentionally **not** resolved here;
-    call :func:`~markdown_vault_mcp.providers.get_embedding_provider`
-    separately in the server layer.
+    **Server identity:**
+
+    - ``MARKDOWN_VAULT_MCP_SERVER_NAME``: display name for the MCP server;
+      default ``"markdown-vault-mcp"``.
+    - ``MARKDOWN_VAULT_MCP_INSTRUCTIONS``: server-level instructions surfaced
+      to clients; default ``None``.
+
+    **Authentication:**
+
+    - ``MARKDOWN_VAULT_MCP_AUTH_MODE``: explicit auth mode override
+      (``"bearer"``, ``"oidc-proxy"``, ``"remote"``, ``"multi"``); default
+      auto-detect.
+    - ``MARKDOWN_VAULT_MCP_BASE_URL``: public base URL of the server.
+    - ``MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL``: OIDC discovery endpoint URL.
+    - ``MARKDOWN_VAULT_MCP_OIDC_CLIENT_ID``: OIDC client identifier.
+    - ``MARKDOWN_VAULT_MCP_OIDC_CLIENT_SECRET``: OIDC client secret.
+    - ``MARKDOWN_VAULT_MCP_OIDC_AUDIENCE``: expected ``aud`` claim in tokens.
+    - ``MARKDOWN_VAULT_MCP_OIDC_REQUIRED_SCOPES``: comma-separated required
+      OIDC scopes.
+    - ``MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY``: key for signing session
+      JWTs.
+    - ``MARKDOWN_VAULT_MCP_OIDC_VERIFY_ACCESS_TOKEN``: verify access token
+      instead of id_token; default ``false``.
+    - ``MARKDOWN_VAULT_MCP_BEARER_TOKEN``: static bearer token for simple auth.
+
+    **Embedding providers:**
+
+    - ``MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER``: embedding provider name
+      (``"ollama"``, ``"openai"``, ``"fastembed"``); default ``None``.
+    - ``OLLAMA_HOST``: Ollama API base URL (ecosystem standard, bare env var);
+      default ``"http://localhost:11434"``.
+    - ``MARKDOWN_VAULT_MCP_OLLAMA_MODEL``: Ollama model name; default
+      ``"nomic-embed-text"``.
+    - ``MARKDOWN_VAULT_MCP_OLLAMA_CPU_ONLY``: CPU-only Ollama inference;
+      default ``false``.
+    - ``OPENAI_API_KEY``: OpenAI API key (ecosystem standard, bare env var).
+    - ``MARKDOWN_VAULT_MCP_FASTEMBED_MODEL``: FastEmbed model name; default
+      ``"BAAI/bge-small-en-v1.5"``.
+    - ``MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR``: FastEmbed model cache
+      directory; default ``None``.
 
     Returns:
         A fully populated :class:`CollectionConfig` instance.
@@ -488,6 +533,104 @@ def load_config() -> CollectionConfig:
         "load_config: event_store_url=%s", event_store_url or "not set (file default)"
     )
 
+    # --- Server identity ---
+    raw_server_name = (_env("SERVER_NAME") or "").strip()
+    server_name: str = raw_server_name or "markdown-vault-mcp"
+    logger.debug("load_config: server_name=%s", server_name)
+
+    raw_instructions = (_env("INSTRUCTIONS") or "").strip()
+    instructions: str | None = raw_instructions or None
+    logger.debug("load_config: instructions=%s", "set" if instructions else "not set")
+
+    # --- Auth ---
+    raw_auth_mode = (_env("AUTH_MODE") or "").strip()
+    auth_mode: str | None = raw_auth_mode or None
+    logger.debug("load_config: auth_mode=%s", auth_mode or "auto-detect")
+
+    raw_base_url = (_env("BASE_URL") or "").strip()
+    base_url: str | None = raw_base_url or None
+    logger.debug("load_config: base_url=%s", base_url or "not set")
+
+    raw_oidc_config_url = (_env("OIDC_CONFIG_URL") or "").strip()
+    oidc_config_url: str | None = raw_oidc_config_url or None
+    logger.debug("load_config: oidc_config_url=%s", oidc_config_url or "not set")
+
+    raw_oidc_client_id = (_env("OIDC_CLIENT_ID") or "").strip()
+    oidc_client_id: str | None = raw_oidc_client_id or None
+    logger.debug("load_config: oidc_client_id=%s", oidc_client_id or "not set")
+
+    raw_oidc_client_secret = (_env("OIDC_CLIENT_SECRET") or "").strip()
+    oidc_client_secret: str | None = raw_oidc_client_secret or None
+    logger.debug(
+        "load_config: oidc_client_secret=%s",
+        "set" if oidc_client_secret else "not set",
+    )
+
+    raw_oidc_audience = (_env("OIDC_AUDIENCE") or "").strip()
+    oidc_audience: str | None = raw_oidc_audience or None
+    logger.debug("load_config: oidc_audience=%s", oidc_audience or "not set")
+
+    raw_oidc_required_scopes = (_env("OIDC_REQUIRED_SCOPES") or "").strip()
+    oidc_required_scopes: str | None = raw_oidc_required_scopes or None
+    logger.debug(
+        "load_config: oidc_required_scopes=%s", oidc_required_scopes or "not set"
+    )
+
+    raw_oidc_jwt_signing_key = (_env("OIDC_JWT_SIGNING_KEY") or "").strip()
+    oidc_jwt_signing_key: str | None = raw_oidc_jwt_signing_key or None
+    logger.debug(
+        "load_config: oidc_jwt_signing_key=%s",
+        "set" if oidc_jwt_signing_key else "not set",
+    )
+
+    raw_oidc_verify_access_token = _env("OIDC_VERIFY_ACCESS_TOKEN")
+    oidc_verify_access_token: bool = (
+        _parse_bool(raw_oidc_verify_access_token)
+        if raw_oidc_verify_access_token is not None
+        else False
+    )
+    logger.debug("load_config: oidc_verify_access_token=%s", oidc_verify_access_token)
+
+    raw_bearer_token = (_env("BEARER_TOKEN") or "").strip()
+    bearer_token: str | None = raw_bearer_token or None
+    logger.debug("load_config: bearer_token=%s", "set" if bearer_token else "not set")
+
+    # --- Embedding providers ---
+    raw_embedding_provider = (_env("EMBEDDING_PROVIDER") or "").strip()
+    embedding_provider: str | None = raw_embedding_provider or None
+    logger.debug("load_config: embedding_provider=%s", embedding_provider or "not set")
+
+    ollama_host: str = (
+        os.environ.get("OLLAMA_HOST") or "http://localhost:11434"
+    ).rstrip("/")
+    logger.debug("load_config: ollama_host=%s", ollama_host)
+
+    raw_ollama_model = (_env("OLLAMA_MODEL") or "").strip()
+    ollama_model: str = raw_ollama_model or "nomic-embed-text"
+    logger.debug("load_config: ollama_model=%s", ollama_model)
+
+    raw_ollama_cpu_only = _env("OLLAMA_CPU_ONLY")
+    ollama_cpu_only: bool = (
+        _parse_bool(raw_ollama_cpu_only) if raw_ollama_cpu_only is not None else False
+    )
+    logger.debug("load_config: ollama_cpu_only=%s", ollama_cpu_only)
+
+    raw_openai_api_key = (os.environ.get("OPENAI_API_KEY") or "").strip()
+    openai_api_key: str | None = raw_openai_api_key or None
+    logger.debug(
+        "load_config: openai_api_key=%s", "set" if openai_api_key else "not set"
+    )
+
+    raw_fastembed_model = (_env("FASTEMBED_MODEL") or "").strip()
+    fastembed_model: str = raw_fastembed_model or "BAAI/bge-small-en-v1.5"
+    logger.debug("load_config: fastembed_model=%s", fastembed_model)
+
+    raw_fastembed_cache_dir = (_env("FASTEMBED_CACHE_DIR") or "").strip()
+    fastembed_cache_dir: str | None = raw_fastembed_cache_dir or None
+    logger.debug(
+        "load_config: fastembed_cache_dir=%s", fastembed_cache_dir or "not set"
+    )
+
     return CollectionConfig(
         source_dir=source_dir,
         read_only=read_only,
@@ -510,4 +653,23 @@ def load_config() -> CollectionConfig:
         templates_folder=templates_folder,
         prompts_folder=prompts_folder,
         event_store_url=event_store_url,
+        server_name=server_name,
+        instructions=instructions,
+        auth_mode=auth_mode,
+        base_url=base_url,
+        oidc_config_url=oidc_config_url,
+        oidc_client_id=oidc_client_id,
+        oidc_client_secret=oidc_client_secret,
+        oidc_audience=oidc_audience,
+        oidc_required_scopes=oidc_required_scopes,
+        oidc_jwt_signing_key=oidc_jwt_signing_key,
+        oidc_verify_access_token=oidc_verify_access_token,
+        bearer_token=bearer_token,
+        embedding_provider=embedding_provider,
+        ollama_host=ollama_host,
+        ollama_model=ollama_model,
+        ollama_cpu_only=ollama_cpu_only,
+        openai_api_key=openai_api_key,
+        fastembed_model=fastembed_model,
+        fastembed_cache_dir=fastembed_cache_dir,
     )
