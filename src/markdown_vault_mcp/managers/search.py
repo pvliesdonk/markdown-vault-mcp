@@ -167,7 +167,7 @@ class SearchManager:
                 fm_raw = note_row.get("frontmatter_json")
                 fm_data: dict[str, Any] = {}
                 if fm_raw:
-                    with contextlib.suppress(ValueError, TypeError):
+                    with contextlib.suppress(json.JSONDecodeError, TypeError):
                         fm_data = json.loads(fm_raw)
                 match = True
                 for key, value in filters.items():
@@ -211,7 +211,10 @@ class SearchManager:
     ) -> list[SearchResult]:
         """RRF merge of keyword and semantic results."""
         # Fetch more candidates than needed so RRF has enough to rank.
-        candidate_limit = max(limit * 2, 20)
+        # Use a larger buffer when filters are active to combat rank bias.
+        candidate_limit = (
+            max(limit * 3, 30) if (folder or filters) else max(limit * 2, 20)
+        )
 
         # Flush deferred embedding updates so results are consistent.
         self._collection._flush_dirty_embeddings()
