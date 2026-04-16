@@ -16,8 +16,5 @@ collection = Collection(**config.to_collection_kwargs())
 ## API Reference
 
 ::: markdown_vault_mcp.config.CollectionConfig
-    options:
-      members:
-        - to_collection_kwargs
 
 ::: markdown_vault_mcp.config.load_config

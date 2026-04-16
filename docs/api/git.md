@@ -32,14 +32,5 @@ collection.close()
 ## API Reference
 
 ::: markdown_vault_mcp.git.GitWriteStrategy
-    options:
-      members:
-        - __init__
-        - __call__
-        - sync_once
-        - start
-        - stop
-        - flush
-        - close
 
 ::: markdown_vault_mcp.git.git_write_strategy

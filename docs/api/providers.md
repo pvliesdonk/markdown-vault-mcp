@@ -28,10 +28,6 @@ Override with `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER=openai|ollama|fastembed`.
 ## API Reference
 
 ::: markdown_vault_mcp.providers.EmbeddingProvider
-    options:
-      members:
-        - embed
-        - dimension
 
 ::: markdown_vault_mcp.providers.OllamaProvider
 

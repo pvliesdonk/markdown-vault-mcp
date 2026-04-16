@@ -37,6 +37,7 @@ theme:
 exclude_docs: |
   design.md
   deployment.md
+  superpowers/**
 
 hooks:
   - docs/hooks.py
@@ -48,8 +49,9 @@ plugins:
       markdown_description: >
         markdown-vault-mcp is a generic markdown collection MCP server with
         FTS5 full-text search, semantic search via embeddings, frontmatter-aware
-        indexing, and incremental reindexing. It exposes 13 tools, 6 resources,
-        and 6 prompts over the Model Context Protocol.
+        indexing, and incremental reindexing. It exposes 31 LLM-visible tools
+        (plus 6 app-only tools), 9 resources, and 6 prompts over the Model
+        Context Protocol.
       sections:
         Getting Started:
           - index.md: Overview — features, quick start, and project links
@@ -82,6 +84,8 @@ plugins:
           - api/git.md: GitWriteStrategy API reference
           - api/config.md: Configuration loading API reference
           - api/providers.md: Embedding provider API reference
+          - api/types.md: All data types returned by the Collection API
+          - api/exceptions.md: All exceptions raised by the library
   - mkdocstrings:
       handlers:
         python:
@@ -145,3 +149,5 @@ nav:
       - Git Integration: api/git.md
       - Configuration: api/config.md
       - Embedding Providers: api/providers.md
+      - Types: api/types.md
+      - Exceptions: api/exceptions.md

@@ -26,31 +26,3 @@ print(note.content)
 ## API Reference
 
 ::: markdown_vault_mcp.collection.Collection
-    options:
-      members:
-        - __init__
-        - pause_writes
-        - sync_from_remote_before_index
-        - start
-        - stop
-        - build_index
-        - search
-        - read
-        - write
-        - edit
-        - delete
-        - rename
-        - list
-        - list_folders
-        - list_tags
-        - stats
-        - reindex
-        - build_embeddings
-        - embeddings_status
-        - get_toc
-        - read_attachment
-        - write_attachment
-        - delete_attachment
-        - rename_attachment
-        - list_attachments
-        - close

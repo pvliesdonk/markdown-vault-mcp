@@ -20,8 +20,8 @@ Point it at a directory of Markdown files (an Obsidian vault, a docs folder, a Z
 - **Attachment support** — read, write, delete, and list non-markdown files (PDFs, images, etc.)
 - **Git integration** — optional auto-commit and push on every write via `GIT_ASKPASS`
 - **OIDC authentication** — optional token-based auth for HTTP deployments (Authelia, Keycloak, etc.)
-- **MCP tools** — 25+ tools including search, read, write, edit, delete, rename, git history, and admin operations
-- **MCP resources** — 6 resources exposing vault configuration, statistics, tags, folders, and document outlines
+- **MCP tools** — 31 LLM-visible tools including search, read, write, edit, delete, rename, git history, and admin operations; plus 6 app-only tools for MCP Apps clients
+- **MCP resources** — 9 resources exposing vault configuration, statistics, tags, folders, document outlines, similar notes, recent notes, and an interactive SPA
 - **MCP prompts** — 6 prompt templates including template-driven note creation
 
 ## Installation
@@ -338,8 +338,12 @@ markdown-vault-mcp reindex [--source-dir PATH] [--index-path PATH]
 | `get_diff` | Return a unified diff of a note between a reference commit/timestamp and HEAD (git-backed vaults only) |
 | `fetch` | Download a file from a URL and save it to the vault as a note or attachment (MCP-to-MCP transfer) |
 | `create_download_link` | Generate a one-time download URL for a vault file — enables MCP-to-MCP file transfer (HTTP/SSE transport only; requires `BASE_URL`) |
+| `browse_vault` | Open the vault explorer SPA in a supporting MCP Apps client |
+| `show_context` | Open the Context Card for a specific note in a supporting MCP Apps client |
 
 Write tools (`write`, `edit`, `delete`, `rename`, `fetch`) are only available when `MARKDOWN_VAULT_MCP_READ_ONLY=false`.
+
+App tools (`browse_vault`, `show_context`) use `visibility="app"` and only appear in MCP clients that support the MCP Apps protocol. Six additional internal tools (`vault_context`, `vault_list`, `vault_read`, `vault_search`, `vault_graph_neighborhood`, `vault_graph_hubs`) are used by the SPA and are never visible to the LLM.
 
 ### Resources
 
@@ -355,6 +359,7 @@ MCP resources expose vault metadata as structured JSON that clients can read dir
 | `toc://vault/{path}` | Table of contents (heading outline) for a specific document (template) |
 | `similar://vault/{path}` | Top 10 semantically similar notes for a document (template) |
 | `recent://vault` | 20 most recently modified notes with ISO timestamps |
+| `ui://vault/app.html` | Interactive vault explorer SPA for MCP Apps clients |
 
 ### Prompts
 
