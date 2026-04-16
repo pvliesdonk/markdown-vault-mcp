@@ -86,6 +86,20 @@ class CollectionConfig:
         exclude_patterns: Glob patterns matched against relative document
             paths to exclude from scanning (e.g. ``[".obsidian/**"]``).
             ``None`` means no files are excluded.
+        git_token: Personal access token (PAT) for HTTPS git push/pull
+            authentication.  When set together with *git_repo_url*, the
+            collection is managed in write-through git mode.
+        git_repo_url: Remote git repository URL.  Required when *git_token*
+            is set; the collection will clone or validate the repo on startup.
+        git_username: Username used with token auth (default
+            ``"x-access-token"``, GitHub-compatible).
+        git_push_delay_s: Seconds of write-idle time before flushing local
+            commits to the remote (default ``30.0``).  ``0`` means push only
+            on shutdown.
+        git_commit_name: Git committer name for auto-commits (default
+            ``"markdown-vault-mcp"``).
+        git_commit_email: Git committer e-mail for auto-commits (default
+            ``"noreply@markdown-vault-mcp"``).
         git_lfs: When ``True`` (default), run ``git lfs pull`` during git
             strategy initialisation so LFS pointers are resolved before reads.
         git_pull_interval_s: Interval in seconds for periodic git fetch +
@@ -93,6 +107,20 @@ class CollectionConfig:
         server_name: Display name for the MCP server (default
             ``"markdown-vault-mcp"``).
         instructions: Optional server-level instructions surfaced to clients.
+        attachment_extensions: Allowlist of file extensions (without the
+            leading dot, e.g. ``["pdf", "png"]``) that may be stored as
+            attachments.  ``["*"]`` accepts every extension.  ``None`` uses
+            the built-in default list from
+            :class:`~markdown_vault_mcp.collection.Collection`.
+        max_attachment_size_mb: Maximum attachment file size in megabytes
+            (default ``10.0``).  ``0`` means unlimited.
+        templates_folder: Vault-relative folder that holds note templates
+            (default ``"_templates"``).
+        prompts_folder: Vault-relative folder from which user-defined MCP
+            prompts are loaded at startup.  ``None`` disables user prompts.
+        event_store_url: URL for the FastMCP persistent event store used by
+            the HTTP transport (e.g. ``"file:///data/state/events"``).
+            ``None`` defaults to ``/data/state/events``.
         auth_mode: Explicit OIDC mode override: ``"oidc-proxy"`` or
             ``"remote"``.  ``None`` (default) means auto-detect from which
             OIDC env vars are present.  Bearer and multi-auth are determined

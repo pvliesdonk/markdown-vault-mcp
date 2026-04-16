@@ -951,7 +951,26 @@ class Collection:
     ) -> WriteResult:
         """Create or overwrite a document.
 
-        Delegates to :meth:`DocumentManager.write`.
+        Creates intermediate directories as needed.  If *frontmatter* is
+        provided, it is serialised as a YAML header at the top of the file.
+
+        Args:
+            path: Relative document path (e.g. ``"notes/topic.md"``).
+            content: Markdown body (excluding frontmatter).
+            frontmatter: Optional frontmatter dict serialised as a YAML header.
+            if_match: Optional etag from a previous :meth:`read` call.  When
+                provided, the write is only performed if the current file hash
+                matches this value, preventing overwrites of concurrent
+                modifications.  Pass ``None`` (default) to skip the check.
+
+        Returns:
+            :class:`~markdown_vault_mcp.types.WriteResult`.
+
+        Raises:
+            ReadOnlyError: If the collection is read-only.
+            ConcurrentModificationError: If *if_match* is provided and does
+                not match the current file hash.
+            ValueError: If *path* escapes the source directory.
         """
         self._ensure_initialized()
         return self._doc_mgr.write(
@@ -969,7 +988,29 @@ class Collection:
     ) -> EditResult:
         """Patch a section of a document.
 
-        Delegates to :meth:`DocumentManager.edit`.
+        Replaces the first occurrence of *old_text* with *new_text*, or
+        replaces the line range [*line_start*, *line_end*] when line numbers
+        are given instead.
+
+        Args:
+            path: Relative document path.
+            old_text: Exact text to replace (must occur exactly once).
+                Mutually exclusive with *line_start* / *line_end*.
+            new_text: Replacement text (may be empty to delete *old_text*).
+            if_match: Optional etag for optimistic concurrency; see
+                :meth:`write`.
+            line_start: 1-based start line for line-range mode.
+            line_end: 1-based end line (inclusive) for line-range mode.
+
+        Returns:
+            :class:`~markdown_vault_mcp.types.EditResult`.
+
+        Raises:
+            ReadOnlyError: If the collection is read-only.
+            ConcurrentModificationError: If *if_match* is provided and does
+                not match.
+            ValueError: If *path* escapes the source directory or the
+                replacement text is ambiguous.
         """
         self._ensure_initialized()
         return self._doc_mgr.edit(
@@ -984,7 +1025,22 @@ class Collection:
     def delete(self, path: str, if_match: str | None = None) -> DeleteResult:
         """Delete a document or attachment.
 
-        Delegates to :meth:`DocumentManager.delete`.
+        Removes the file from disk and purges its entries from the FTS and
+        vector indices.
+
+        Args:
+            path: Relative path of the document or attachment to remove.
+            if_match: Optional etag for optimistic concurrency; see
+                :meth:`write`.
+
+        Returns:
+            :class:`~markdown_vault_mcp.types.DeleteResult`.
+
+        Raises:
+            ReadOnlyError: If the collection is read-only.
+            ConcurrentModificationError: If *if_match* is provided and does
+                not match.
+            FileNotFoundError: If *path* does not exist.
         """
         self._ensure_initialized()
         return self._doc_mgr.delete(path, if_match=if_match)
@@ -999,7 +1055,28 @@ class Collection:
     ) -> RenameResult:
         """Rename or move a document or attachment.
 
-        Delegates to :meth:`DocumentManager.rename`.
+        Moves the file on disk and updates the FTS / vector indices.  When
+        *update_links* is ``True``, all wikilinks and markdown links in other
+        documents that pointed to *old_path* are rewritten to *new_path*.
+
+        Args:
+            old_path: Current relative path of the document or attachment.
+            new_path: Desired relative path after the move.
+            if_match: Optional etag for optimistic concurrency; see
+                :meth:`write`.
+            update_links: When ``True``, rewrite internal links across the
+                vault to reflect the new path.  Defaults to ``False``.
+
+        Returns:
+            :class:`~markdown_vault_mcp.types.RenameResult`.
+
+        Raises:
+            ReadOnlyError: If the collection is read-only.
+            ConcurrentModificationError: If *if_match* is provided and does
+                not match.
+            FileNotFoundError: If *old_path* does not exist.
+            ValueError: If *old_path* or *new_path* escapes the source
+                directory.
         """
         self._ensure_initialized()
         return self._doc_mgr.rename(
