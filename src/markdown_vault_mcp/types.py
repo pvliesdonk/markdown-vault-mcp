@@ -143,7 +143,7 @@ class EditResult:
     Attributes:
         path: Relative path of the document that was edited.
         replacements: Number of text replacements made (always 1 for exact match).
-        match_type: How the replacement was found: ``"exact"``, ``"line_range"``, or ``"fuzzy"``.
+        match_type: How the replacement was found: ``"exact"`` (verbatim match) or ``"normalized"`` (whitespace-normalised match).
     """
 
     path: str
@@ -286,7 +286,16 @@ class ChangeSet:
 
 @dataclass
 class BacklinkInfo:
-    """A document that links to a given path."""
+    """A document that links to a given path, returned by :meth:`~markdown_vault_mcp.collection.Collection.get_backlinks`.
+
+    Attributes:
+        source_path: Relative path of the document containing the link.
+        source_title: Title of the linking document.
+        link_text: Display text of the link.
+        link_type: Link syntax: ``"markdown"`` (``[text](path)``), ``"wikilink"`` (``[[path]]``), or ``"reference"`` (``[text][ref]``).
+        fragment: Heading anchor (``#section``) if present in the link target.
+        raw_target: The unresolved link target exactly as written in the source.
+    """
 
     source_path: str
     source_title: str
@@ -298,7 +307,16 @@ class BacklinkInfo:
 
 @dataclass
 class OutlinkInfo:
-    """A link from a document to another path."""
+    """A link from a document to another path, returned by :meth:`~markdown_vault_mcp.collection.Collection.get_outlinks`.
+
+    Attributes:
+        target_path: Resolved relative path of the link target.
+        link_text: Display text of the link.
+        link_type: Link syntax: ``"markdown"``, ``"wikilink"``, or ``"reference"``.
+        fragment: Heading anchor if present.
+        raw_target: The unresolved link target exactly as written.
+        exists: ``True`` if the target document exists in the collection.
+    """
 
     target_path: str
     link_text: str
@@ -310,7 +328,17 @@ class OutlinkInfo:
 
 @dataclass
 class BrokenLinkInfo:
-    """A link whose target does not exist in the collection."""
+    """A link whose target does not exist, returned by :meth:`~markdown_vault_mcp.collection.Collection.get_broken_links`.
+
+    Attributes:
+        source_path: Relative path of the document containing the broken link.
+        source_title: Title of the linking document.
+        target_path: Resolved path the link points to (does not exist).
+        link_text: Display text of the link.
+        link_type: Link syntax: ``"markdown"``, ``"wikilink"``, or ``"reference"``.
+        fragment: Heading anchor if present.
+        raw_target: The unresolved link target exactly as written.
+    """
 
     source_path: str
     source_title: str
@@ -375,7 +403,16 @@ class NoteContext:
 
 @dataclass
 class HistoryEntry:
-    """A commit that touched a note or the vault, returned by get_history()."""
+    """A commit that touched a note or the vault, returned by :meth:`~markdown_vault_mcp.collection.Collection.get_history`.
+
+    Attributes:
+        sha: Full 40-character commit SHA.
+        short_sha: Abbreviated 7-character SHA.
+        timestamp: ISO 8601 commit timestamp.
+        author: Commit author name and email.
+        message: First line of the commit message.
+        paths_changed: Relative paths of files changed in this commit.
+    """
 
     sha: str
     short_sha: str
@@ -387,7 +424,15 @@ class HistoryEntry:
 
 @dataclass
 class CommitDiff:
-    """A per-commit diff entry, returned by get_diff() when per_commit=True."""
+    """A per-commit diff entry, returned by :meth:`~markdown_vault_mcp.collection.Collection.get_diff` when ``per_commit=True``.
+
+    Attributes:
+        sha: Full 40-character commit SHA.
+        short_sha: Abbreviated 7-character SHA.
+        timestamp: ISO 8601 commit timestamp.
+        message: First line of the commit message.
+        diff: Unified diff text for the commit.
+    """
 
     sha: str
     short_sha: str
