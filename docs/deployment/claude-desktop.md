@@ -67,7 +67,7 @@ Restart the application to pick up the new configuration. You should see the mar
         "MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH": "/Users/me/.local/share/markdown-vault-mcp/embeddings",
         "MARKDOWN_VAULT_MCP_INDEXED_FIELDS": "tags",
         "MARKDOWN_VAULT_MCP_EXCLUDE": ".obsidian/**,.trash/**",
-        "EMBEDDING_PROVIDER": "ollama",
+        "MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER": "ollama",
         "OLLAMA_HOST": "http://localhost:11434"
       }
     }

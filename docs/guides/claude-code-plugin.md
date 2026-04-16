@@ -57,7 +57,7 @@ The plugin wires up four env vars:
 |---------|---------|-------------|
 | `MARKDOWN_VAULT_MCP_SOURCE_DIR` | _(required)_ | Path to your vault directory |
 | `MARKDOWN_VAULT_MCP_READ_ONLY` | `true` | Set to `false` to enable write/edit/delete/rename tools |
-| `EMBEDDING_PROVIDER` | _(empty)_ | Embedding backend (`fastembed`, `ollama`, `openai`); leave empty for keyword-only search |
+| `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` | _(empty)_ | Embedding backend (`fastembed`, `ollama`, `openai`); leave empty for keyword-only search |
 | `MARKDOWN_VAULT_MCP_EXCLUDE` | `.obsidian/**,.trash/**,.git/**` | Comma-separated glob patterns to exclude from indexing |
 
 In addition to the MCP server, the plugin installs the **`vault-workflow` skill**, which gives Claude guidance on:

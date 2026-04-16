@@ -80,7 +80,7 @@
           "description": "Comma-separated glob patterns to exclude from indexing"
         },
         {
-          "name": "EMBEDDING_PROVIDER",
+          "name": "MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER",
           "description": "Embedding provider to use",
           "choices": [
             "openai",
@@ -91,7 +91,7 @@
         },
         {
           "name": "OPENAI_API_KEY",
-          "description": "OpenAI API key (required when EMBEDDING_PROVIDER=openai)",
+          "description": "OpenAI API key (required when MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER=openai)",
           "isSecret": true
         },
         {
@@ -302,7 +302,7 @@
           "description": "Comma-separated glob patterns to exclude from indexing"
         },
         {
-          "name": "EMBEDDING_PROVIDER",
+          "name": "MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER",
           "description": "Embedding provider to use",
           "choices": [
             "openai",
@@ -313,7 +313,7 @@
         },
         {
           "name": "OPENAI_API_KEY",
-          "description": "OpenAI API key (required when EMBEDDING_PROVIDER=openai)",
+          "description": "OpenAI API key (required when MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER=openai)",
           "isSecret": true
         },
         {

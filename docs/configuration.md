@@ -1,6 +1,6 @@
 # Configuration
 
-All configuration is via environment variables. Most use the `MARKDOWN_VAULT_MCP_` prefix; embedding provider settings use their own conventions.
+All configuration is via environment variables. Most use the `MARKDOWN_VAULT_MCP_` prefix. `OLLAMA_HOST` and `OPENAI_API_KEY` are bare ecosystem-standard names; all other variables use the `MARKDOWN_VAULT_MCP_` prefix.
 
 ## Core
 
@@ -34,7 +34,7 @@ All configuration is via environment variables. Most use the `MARKDOWN_VAULT_MCP
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
-| `EMBEDDING_PROVIDER` | string | auto-detect | Embedding provider: `openai`, `ollama`, or `fastembed`. **Not** `MARKDOWN_VAULT_MCP_`-prefixed |
+| `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` | string | auto-detect | Embedding provider: `openai`, `ollama`, or `fastembed`. **Breaking change** from `EMBEDDING_PROVIDER` in older versions |
 | `OLLAMA_HOST` | url | `http://localhost:11434` | Ollama server URL. **Not** `MARKDOWN_VAULT_MCP_`-prefixed |
 | `OPENAI_API_KEY` | string | — | OpenAI API key for the OpenAI embedding provider. **Not** `MARKDOWN_VAULT_MCP_`-prefixed |
 | `MARKDOWN_VAULT_MCP_OLLAMA_MODEL` | string | `nomic-embed-text` | Ollama embedding model name |
@@ -43,7 +43,7 @@ All configuration is via environment variables. Most use the `MARKDOWN_VAULT_MCP
 | `MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR` | path | FastEmbed default | FastEmbed model cache directory (in Docker, stored under `/data/state/fastembed`) |
 
 !!! note "Embedding provider auto-detection"
-    When `EMBEDDING_PROVIDER` is not set, the server tries providers in this order:
+    When `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` is not set, the server tries providers in this order:
 
     1. **OpenAI** — if `OPENAI_API_KEY` is set
     2. **Ollama** — if `OLLAMA_HOST` is reachable

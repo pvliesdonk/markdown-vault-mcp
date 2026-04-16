@@ -229,7 +229,7 @@ You should see a commit from `markdown-vault-mcp`. Delete the test note when don
             "MARKDOWN_VAULT_MCP_SOURCE_DIR": "C:\\Users\\YourName\\Documents\\ObsidianVault",
             "MARKDOWN_VAULT_MCP_SERVER_NAME": "my-vault",
             "MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH": "C:\\Users\\YourName\\vault_embeddings",
-            "EMBEDDING_PROVIDER": "fastembed",
+            "MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER": "fastembed",
             "MARKDOWN_VAULT_MCP_FASTEMBED_MODEL": "BAAI/bge-small-en-v1.5",
             "MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR": "C:\\Users\\YourName\\fastembed_cache",
             "MARKDOWN_VAULT_MCP_INDEX_PATH": "C:\\Users\\YourName\\vault_index.db",
@@ -261,7 +261,7 @@ You should see a commit from `markdown-vault-mcp`. Delete the test note when don
             "MARKDOWN_VAULT_MCP_SOURCE_DIR": "/path/to/your/ObsidianVault",
             "MARKDOWN_VAULT_MCP_SERVER_NAME": "my-vault",
             "MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH": "/path/to/store/embeddings",
-            "EMBEDDING_PROVIDER": "ollama",
+            "MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER": "ollama",
             "OLLAMA_HOST": "http://localhost:11434",
             "MARKDOWN_VAULT_MCP_OLLAMA_MODEL": "nomic-embed-text",
             "MARKDOWN_VAULT_MCP_EXCLUDE": ".obsidian/**,.trash/**",
@@ -275,7 +275,7 @@ You should see a commit from `markdown-vault-mcp`. Delete the test note when don
 **Key env vars:**
 
 - `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` — where to persist embedding vectors on disk (required to enable semantic search)
-- `EMBEDDING_PROVIDER` — `fastembed`, `ollama`, or `openai` (no prefix — intentional)
+- `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` — `fastembed`, `ollama`, or `openai`
 - `MARKDOWN_VAULT_MCP_FASTEMBED_MODEL` / `MARKDOWN_VAULT_MCP_OLLAMA_MODEL` — which model to use
 
 ### Pre-build embeddings before first launch
@@ -288,7 +288,7 @@ For large vaults, building embeddings on first startup can take several minutes 
     export MARKDOWN_VAULT_MCP_SOURCE_DIR="/path/to/your/ObsidianVault"
     export MARKDOWN_VAULT_MCP_INDEX_PATH="/path/to/store/index.db"
     export MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH="/path/to/store/embeddings"
-    export EMBEDDING_PROVIDER="ollama"
+    export MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER="ollama"
 
     markdown-vault-mcp reindex
     ```
@@ -299,7 +299,7 @@ For large vaults, building embeddings on first startup can take several minutes 
     $env:MARKDOWN_VAULT_MCP_SOURCE_DIR = "C:\Users\YourName\Documents\ObsidianVault"
     $env:MARKDOWN_VAULT_MCP_INDEX_PATH = "C:\Users\YourName\vault_index.db"
     $env:MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH = "C:\Users\YourName\vault_embeddings"
-    $env:EMBEDDING_PROVIDER = "fastembed"
+    $env:MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER = "fastembed"
     $env:MARKDOWN_VAULT_MCP_FASTEMBED_MODEL = "BAAI/bge-small-en-v1.5"
     $env:MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR = "C:\Users\YourName\fastembed_cache"
 

@@ -287,7 +287,7 @@ MARKDOWN_VAULT_MCP_EXCLUDE=.obsidian/**,.trash/**,_templates/**
 MARKDOWN_VAULT_MCP_GIT_REPO_URL=https://github.com/your-org/your-vault.git
 MARKDOWN_VAULT_MCP_GIT_USERNAME=x-access-token
 MARKDOWN_VAULT_MCP_GIT_TOKEN=ghp_your_token_here
-EMBEDDING_PROVIDER=ollama
+MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER=ollama
 OLLAMA_HOST=http://host.docker.internal:11434  # use host.docker.internal inside Docker
 MARKDOWN_VAULT_MCP_OLLAMA_MODEL=nomic-embed-text
 ```

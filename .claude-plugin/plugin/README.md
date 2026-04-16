@@ -39,7 +39,7 @@ Optional environment variables:
 | Variable | Default | Purpose |
 |---|---|---|
 | `MARKDOWN_VAULT_MCP_READ_ONLY` | `true` | Disable write tools. |
-| `EMBEDDING_PROVIDER` | *(empty)* | `fastembed` / `ollama` / `openai`. Leave blank for keyword-only search. |
+| `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` | *(empty)* | `fastembed` / `ollama` / `openai`. Leave blank for keyword-only search. |
 | `MARKDOWN_VAULT_MCP_EXCLUDE` | `.obsidian/**,.trash/**,.git/**` | Glob patterns to skip. |
 
 For the full list of env vars, see the

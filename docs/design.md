@@ -1189,7 +1189,7 @@ For MCP server deployment:
 | `MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS` | Comma-separated allowlist of non-.md extensions (without dot), e.g. `pdf,png,docx`; use `*` to allow all non-.md files | common list (pdf, png, jpg, docx, …) |
 | `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB` | Maximum attachment size in MB enforced on both read and write; `0` disables the limit | `10.0` |
 | `MARKDOWN_VAULT_MCP_APP_DOMAIN` | Claude app domain for MCP Apps iframe sandboxing; auto-computed from `BASE_URL` via `_compute_claude_app_domain()` | derived from `BASE_URL` |
-| `EMBEDDING_PROVIDER` | `openai`, `ollama`, `fastembed` | auto-detect |
+| `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` | `openai`, `ollama`, `fastembed` | auto-detect |
 | `OLLAMA_HOST` | Ollama server URL | `http://localhost:11434` |
 | `MARKDOWN_VAULT_MCP_OLLAMA_MODEL` | Ollama embedding model | `nomic-embed-text` |
 | `MARKDOWN_VAULT_MCP_OLLAMA_CPU_ONLY` | Force CPU-only inference | `false` |
@@ -1204,7 +1204,7 @@ For MCP server deployment:
 MARKDOWN_VAULT_MCP_SOURCE_DIR=/home/user/Obsidian
 MARKDOWN_VAULT_MCP_READ_ONLY=true
 MARKDOWN_VAULT_MCP_EXCLUDE=.obsidian/**,.trash/**
-EMBEDDING_PROVIDER=ollama
+MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER=ollama
 ```
 
 **IF Craft Corpus (strict frontmatter)**:

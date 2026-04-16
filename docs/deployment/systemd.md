@@ -90,7 +90,7 @@ MARKDOWN_VAULT_MCP_READ_ONLY=false
 MARKDOWN_VAULT_MCP_INDEX_PATH=/var/lib/markdown-vault-mcp/index.db
 MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH=/var/lib/markdown-vault-mcp/embeddings
 MARKDOWN_VAULT_MCP_INDEXED_FIELDS=tags,category
-EMBEDDING_PROVIDER=fastembed
+MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER=fastembed
 ```
 
 See [Configuration](../configuration.md) for the full list of environment variables.

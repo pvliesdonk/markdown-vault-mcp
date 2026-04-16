@@ -23,7 +23,7 @@ The `get_embedding_provider()` function auto-detects the best available provider
 2. **Ollama** — if `OLLAMA_HOST` is reachable
 3. **FastEmbed** — if the package is installed
 
-Override with `EMBEDDING_PROVIDER=openai|ollama|fastembed`.
+Override with `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER=openai|ollama|fastembed`.
 
 ## API Reference
 

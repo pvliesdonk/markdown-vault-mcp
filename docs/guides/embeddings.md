@@ -49,7 +49,7 @@ You should see `nomic-embed-text` in the list.
 ### Configure
 
 ```bash
-EMBEDDING_PROVIDER=ollama
+MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER=ollama
 OLLAMA_HOST=http://localhost:11434
 MARKDOWN_VAULT_MCP_OLLAMA_MODEL=nomic-embed-text
 MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH=/path/to/store/embeddings
@@ -128,7 +128,7 @@ The `[all]` extra includes FastEmbed as well.
 ### Configure
 
 ```bash
-EMBEDDING_PROVIDER=fastembed
+MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER=fastembed
 MARKDOWN_VAULT_MCP_FASTEMBED_MODEL=BAAI/bge-small-en-v1.5
 MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR=/path/to/store/fastembed-cache
 MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH=/path/to/store/embeddings
@@ -167,7 +167,7 @@ Uses the [OpenAI Embeddings API](https://platform.openai.com/docs/guides/embeddi
 ### Configure
 
 ```bash
-EMBEDDING_PROVIDER=openai
+MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER=openai
 OPENAI_API_KEY=sk-your-api-key-here
 MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH=/path/to/store/embeddings
 ```
@@ -196,13 +196,13 @@ You should get a JSON response with an embedding array. After starting the serve
 
 ## Auto-detection
 
-If you don't set `EMBEDDING_PROVIDER`, the server tries providers in this order:
+If you don't set `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER`, the server tries providers in this order:
 
 1. **OpenAI** — if `OPENAI_API_KEY` is set
 2. **Ollama** — if `OLLAMA_HOST` is reachable
 3. **FastEmbed** — if the package is installed
 
-Set `EMBEDDING_PROVIDER` explicitly to avoid surprises when your environment changes (e.g., setting `OPENAI_API_KEY` for another tool will cause the server to switch from Ollama to OpenAI).
+Set `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` explicitly to avoid surprises when your environment changes (e.g., setting `OPENAI_API_KEY` for another tool will cause the server to switch from Ollama to OpenAI).
 
 ## Common to all providers
 
