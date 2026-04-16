@@ -10,15 +10,23 @@ The authoritative design specification lives at [`docs/design.md`](docs/design.m
 
 ```
 src/markdown_vault_mcp/
-  scanner.py        -- file discovery, frontmatter parsing, chunking
-  fts_index.py      -- SQLite FTS5 schema, BM25 search
-  vector_index.py   -- numpy embeddings, cosine similarity
-  providers.py      -- embedding provider ABC + implementations
-  tracker.py        -- hash-based change detection
-  collection.py     -- thin facade: init, lazy loading, public API
-  config.py         -- configuration loading
-  mcp_server.py     -- generic FastMCP server with tool annotations
-  cli.py            -- CLI entry point
+  utils/
+    text.py            -- text normalization, position mapping, fuzzy matching
+    links.py           -- link target computation and replacement
+  managers/
+    link.py            -- LinkManager: backlinks, outlinks, broken, orphans, hubs, paths
+    search.py          -- SearchManager: keyword/semantic/hybrid search, list, context
+    index.py           -- IndexManager: build_index, reindex, embeddings, flush
+    document.py        -- DocumentManager: CRUD, attachments, path validation, backlinks
+  scanner.py           -- file discovery, frontmatter parsing, chunking
+  fts_index.py         -- SQLite FTS5 schema, BM25 search
+  vector_index.py      -- numpy embeddings, cosine similarity
+  providers.py         -- embedding provider ABC + implementations
+  tracker.py           -- hash-based change detection
+  collection.py        -- thin facade: lifecycle, wiring, delegation
+  config.py            -- configuration loading
+  mcp_server.py        -- generic FastMCP server with tool annotations
+  cli.py               -- CLI entry point
 ```
 
 ## Conventions

@@ -367,31 +367,6 @@ class Collection:
             query, limit=limit, mode=mode, filters=filters, folder=folder
         )
 
-    def _require_vectors(self) -> None:
-        """Raise ValueError if semantic search is not configured."""
-        self._search_mgr._require_vectors()
-
-    def _load_vectors(self) -> VectorIndex:
-        """Load or return the cached VectorIndex.
-
-        Returns:
-            A :class:`~markdown_vault_mcp.vector_index.VectorIndex` instance.
-        """
-        return self._search_mgr._load_vectors()
-
-    def _get_frontmatter(self, path: str) -> dict:
-        """Return the frontmatter dict for a document from the FTS index.
-
-        Falls back to an empty dict if the document is not found.
-
-        Args:
-            path: Relative document path.
-
-        Returns:
-            Parsed frontmatter dict.
-        """
-        return self._search_mgr._get_frontmatter(path)
-
     # ------------------------------------------------------------------
     # Read / list
     # ------------------------------------------------------------------
@@ -895,20 +870,6 @@ class Collection:
                 not end with ``.md``.
         """
         return self._doc_mgr._validate_path(path)
-
-    def _is_attachment(self, path: str) -> bool:
-        """Return True if *path* is an allowed non-.md attachment.
-
-        Delegates to :meth:`DocumentManager._is_attachment`.
-        """
-        return self._doc_mgr._is_attachment(path)
-
-    def _is_path_excluded(self, path: str) -> bool:
-        """Check whether *path* matches any configured exclude pattern.
-
-        Delegates to :meth:`DocumentManager._is_path_excluded`.
-        """
-        return self._doc_mgr._is_path_excluded(path)
 
     def _validate_attachment_path(self, path: str) -> Path:
         """Resolve and validate a non-.md attachment path.

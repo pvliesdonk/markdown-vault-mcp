@@ -52,10 +52,18 @@ markdown-vault-mcp (new package)
 +-- vector_index.py   -- numpy embeddings, cosine similarity
 +-- providers.py      -- Ollama / OpenAI / SentenceTransformers
 +-- tracker.py        -- hash-based change detection
-+-- collection.py     -- thin facade: init, lazy loading, public API
++-- collection.py     -- thin facade: lifecycle, wiring, delegation
 +-- config.py         -- configuration loading
 +-- mcp_server.py     -- generic FastMCP server
 +-- cli.py            -- CLI entry point
++-- utils/
+|   +-- text.py       -- text normalization and fuzzy matching
+|   +-- links.py      -- link target computation and replacement
++-- managers/
+|   +-- link.py       -- LinkManager: backlinks, outlinks, broken, orphans, hubs, paths
+|   +-- search.py     -- SearchManager: keyword/semantic/hybrid search, list, context
+|   +-- index.py      -- IndexManager: build_index, reindex, embeddings, flush
+|   +-- document.py   -- DocumentManager: CRUD, attachments, path validation
 
 ifcraftcorpus (existing, refactored later)
 +-- depends on markdown-vault-mcp
@@ -754,7 +762,26 @@ The MCP tool `get_connection_path` returns
 
 ### `collection.py` -- Thin Facade
 
-The main interface. Orchestrates specialized modules. Target: ~200 lines.
+The main interface. Orchestrates specialized manager modules via dependency
+injection. Collection creates managers in ``__init__`` and delegates all
+operations to them. No manager holds a back-reference to Collection.
+
+#### Internal Manager Architecture
+
+| Manager | Responsibility | Dependencies |
+|---------|---------------|-------------|
+| ``LinkManager`` | Backlinks, outlinks, broken links, orphans, hubs, connection paths | ``FTSIndex``, ``source_dir`` |
+| ``SearchManager`` | Keyword/semantic/hybrid search, list, folders, tags, recent, similar, context | ``FTSIndex``, ``source_dir``, embedding config, ``LinkManager`` |
+| ``IndexManager`` | build_index, reindex, build_embeddings, embedding flush | ``FTSIndex``, ``ChangeTracker``, ``source_dir``, write lock, chunk strategy |
+| ``DocumentManager`` | read, write, edit, delete, rename, attachments, TOC | ``FTSIndex``, ``source_dir``, write lock, callbacks |
+
+Each manager receives its dependencies as constructor arguments. This enables
+isolated unit testing and clear dependency boundaries. Pure utility functions
+live in ``utils/text.py`` (normalization, position mapping, fuzzy matching) and
+``utils/links.py`` (link target computation and replacement).
+
+Collection's public API signatures remain unchanged — clients interact with
+Collection, never with managers directly.
 
 ```python
 class Collection:

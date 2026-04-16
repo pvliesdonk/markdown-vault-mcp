@@ -1944,25 +1944,25 @@ class TestAttachmentHelpers:
     def test_is_attachment_pdf(self, vault_path: Path) -> None:
         """_is_attachment() returns True for a .pdf path with default allowlist."""
         col = Collection(source_dir=vault_path)
-        assert col._is_attachment("assets/report.pdf") is True
+        assert col._doc_mgr._is_attachment("assets/report.pdf") is True
 
     def test_is_attachment_md_always_false(self, vault_path: Path) -> None:
         """_is_attachment() always returns False for .md paths."""
         col = Collection(source_dir=vault_path)
-        assert col._is_attachment("notes/note.md") is False
+        assert col._doc_mgr._is_attachment("notes/note.md") is False
 
     def test_is_attachment_disallowed_extension(self, vault_path: Path) -> None:
         """_is_attachment() returns False for extensions not in the default list."""
         col = Collection(source_dir=vault_path)
         # .xyz is not in the default list
-        assert col._is_attachment("file.xyz") is False
+        assert col._doc_mgr._is_attachment("file.xyz") is False
 
     def test_is_attachment_wildcard_allows_all(self, vault_path: Path) -> None:
         """_is_attachment() returns True for any non-.md extension when '*' is set."""
         col = Collection(source_dir=vault_path, attachment_extensions=["*"])
-        assert col._is_attachment("file.xyz") is True
-        assert col._is_attachment("file.bin") is True
-        assert col._is_attachment("notes/note.md") is False
+        assert col._doc_mgr._is_attachment("file.xyz") is True
+        assert col._doc_mgr._is_attachment("file.bin") is True
+        assert col._doc_mgr._is_attachment("notes/note.md") is False
 
     def test_validate_attachment_path_rejects_md(self, vault_path: Path) -> None:
         """_validate_attachment_path() raises ValueError for .md paths."""
@@ -2516,7 +2516,7 @@ class TestSemanticSearch:
         # Confirm no .npy file exists before loading.
         assert not (tmp_path / "embeddings.npy").exists()
 
-        vectors = col._load_vectors()
+        vectors = col._search_mgr._load_vectors()
 
         assert vectors is not None
         assert vectors.count == 0
@@ -2549,7 +2549,7 @@ class TestSemanticSearch:
         col2.build_index()
         assert col2._vectors is None  # not yet loaded
 
-        vectors = col2._load_vectors()
+        vectors = col2._search_mgr._load_vectors()
 
         assert vectors.count == chunk_count
 
@@ -2587,7 +2587,7 @@ class TestSemanticSearch:
         )
         col2.build_index()
 
-        vectors = col2._load_vectors()
+        vectors = col2._search_mgr._load_vectors()
         assert vectors.count == expected_count
 
         with (tmp_path / "embeddings.json").open(encoding="utf-8") as fh:
@@ -2600,7 +2600,7 @@ class TestSemanticSearch:
         col = _make_collection(vault_path)
 
         with pytest.raises(ValueError, match="embedding_provider"):
-            col._require_vectors()
+            col._search_mgr._require_vectors()
 
 
 # ---------------------------------------------------------------------------
@@ -3024,7 +3024,7 @@ class TestReindexWithVectors:
         col.build_index()
         col.build_embeddings()
         # Trigger vector load so _vectors is not None.
-        col._load_vectors()
+        col._search_mgr._load_vectors()
         return col
 
     def test_reindex_adds_vector_entries_for_new_files(
@@ -3901,10 +3901,12 @@ class TestLoggingAuditSilentPaths:
             "modified_at": 0.0,
         }
         with (
-            caplog.at_level(logging.WARNING, logger="markdown_vault_mcp.collection"),
-            patch.object(col._fts, "get_note", return_value=bad_row),
+            caplog.at_level(
+                logging.WARNING, logger="markdown_vault_mcp.managers.search"
+            ),
+            patch.object(col._search_mgr._fts, "get_note", return_value=bad_row),
         ):
-            result = col._get_frontmatter("note.md")
+            result = col._search_mgr._get_frontmatter("note.md")
         assert result == {}
         assert any(
             "_get_frontmatter: invalid JSON" in rec.message for rec in caplog.records

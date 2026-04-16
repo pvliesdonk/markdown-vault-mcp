@@ -777,12 +777,20 @@ class TestBuildCollectionConfigFields:
         collection = _build_collection(args)
 
         # These should be excluded via the newly-propagated patterns.
-        assert collection._is_path_excluded("sessions/2026-04-09/chat.log.md") is True
-        assert collection._is_path_excluded(".obsidian/workspace.json.md") is True
+        assert (
+            collection._doc_mgr._is_path_excluded("sessions/2026-04-09/chat.log.md")
+            is True
+        )
+        assert (
+            collection._doc_mgr._is_path_excluded(".obsidian/workspace.json.md") is True
+        )
 
         # And these should still pass through unaffected.
-        assert collection._is_path_excluded("notes/alpha.md") is False
-        assert collection._is_path_excluded("decisions/2026-04-09-auth.md") is False
+        assert collection._doc_mgr._is_path_excluded("notes/alpha.md") is False
+        assert (
+            collection._doc_mgr._is_path_excluded("decisions/2026-04-09-auth.md")
+            is False
+        )
 
     def test_index_path_override_propagated(
         self,
