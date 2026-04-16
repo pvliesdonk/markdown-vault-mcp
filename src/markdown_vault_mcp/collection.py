@@ -12,16 +12,13 @@ import fnmatch
 import json
 import logging
 import mimetypes
-import os.path as osp
 import queue
 import re
 import shutil
 import sqlite3
 import tempfile
 import threading
-import unicodedata
 from collections import defaultdict
-from difflib import SequenceMatcher
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -68,6 +65,21 @@ from markdown_vault_mcp.types import (
     WriteCallback,
     WriteResult,
 )
+from markdown_vault_mcp.utils.links import (
+    apply_link_replacement as _apply_link_replacement,
+)
+from markdown_vault_mcp.utils.links import (
+    compute_new_raw_target as _compute_new_raw_target,
+)
+from markdown_vault_mcp.utils.text import (
+    build_position_map as _build_position_map,
+)
+from markdown_vault_mcp.utils.text import (
+    find_closest_match as _find_closest_match,
+)
+from markdown_vault_mcp.utils.text import (
+    normalize_text as _normalize_text,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -81,294 +93,6 @@ logger = logging.getLogger(__name__)
 _DEFAULT_STATE_SUBDIR = ".markdown_vault_mcp"
 _DEFAULT_STATE_FILENAME = "state.json"
 _CONTEXT_FOLDER_PEERS_LIMIT = 20
-
-# ---------------------------------------------------------------------------
-# Edit helpers
-# ---------------------------------------------------------------------------
-
-# Direct single-character substitutions applied during normalization.
-# Used by _build_position_map to avoid calling _normalize_text() per
-# character, which would (a) be O(n²) and (b) incorrectly strip a lone
-# space/tab as "trailing whitespace" of a one-char string.
-_CHAR_SUBS: dict[str, str] = {
-    "\u2013": "-",  # en-dash
-    "\u2014": "-",  # em-dash
-    "\u201c": '"',  # left double quotation mark
-    "\u201d": '"',  # right double quotation mark
-    "\u2018": "'",  # left single quotation mark
-    "\u2019": "'",  # right single quotation mark
-}
-
-
-def _normalize_text(text: str) -> str:
-    """Normalize text for fuzzy edit matching.
-
-    Applied to both old_text and file content for comparison only — the
-    actual file replacement uses original bytes.
-
-    Steps:
-        1. Unicode NFC normalization.
-        2. En-dash / em-dash → hyphen.
-        3. Smart quotes → straight quotes.
-        4. Collapse whitespace runs within lines (not across newlines).
-        5. Strip trailing whitespace per line.
-    """
-    text = unicodedata.normalize("NFC", text)
-    text = text.replace("\u2013", "-").replace("\u2014", "-")
-    text = text.replace("\u201c", '"').replace("\u201d", '"')
-    text = text.replace("\u2018", "'").replace("\u2019", "'")
-    lines = text.split("\n")
-    lines = [re.sub(r"[ \t]+", " ", line).rstrip() for line in lines]
-    return "\n".join(lines)
-
-
-def _build_position_map(original: str, normalized: str) -> list[int]:
-    """Map each normalized character index to its original character index.
-
-    Walks both strings in parallel, advancing the original pointer past
-    characters that were removed or merged by normalization.
-
-    Args:
-        original: The original (un-normalized) text.
-        normalized: The result of ``_normalize_text(original)``.
-
-    Returns:
-        A list of *len(normalized) + 1* entries where ``pos_map[i]`` is the
-        index in *original* corresponding to ``normalized[i]``, and the final
-        sentinel ``pos_map[len(normalized)]`` equals ``len(original)``.  The
-        sentinel lets callers compute the original end-position of a match
-        as ``pos_map[norm_end]`` without special-casing the last character.
-    """
-    pos_map: list[int] = []
-    orig_idx = 0
-    norm_idx = 0
-    orig_len = len(original)
-    norm_len = len(normalized)
-
-    while norm_idx < norm_len:
-        if orig_idx >= orig_len:
-            # Safety: normalized should never be longer.
-            break
-
-        norm_char = normalized[norm_idx]
-        orig_char = original[orig_idx]
-
-        # Newlines anchor both streams.
-        if norm_char == "\n" and orig_char == "\n":
-            pos_map.append(orig_idx)
-            orig_idx += 1
-            norm_idx += 1
-            continue
-
-        # Trailing whitespace was stripped: skip original trailing ws
-        # before a newline or end-of-string.
-        if norm_char == "\n" or (norm_idx == norm_len - 1 and norm_char != "\n"):
-            if norm_char != "\n":
-                # last char of normalized, not a newline — emit it first
-                pos_map.append(orig_idx)
-                orig_idx += 1
-                norm_idx += 1
-            # skip trailing whitespace in original before newline/end
-            while orig_idx < orig_len and original[orig_idx] in " \t":
-                orig_idx += 1
-            continue
-
-        # Whitespace collapse: normalized has single space, original has one or
-        # more spaces/tabs. Checked before the direct-match step so that runs
-        # of whitespace are always consumed in full (a single space would pass
-        # the direct-match test below, leaving trailing spaces unadvanced).
-        if norm_char == " " and orig_char in " \t":
-            pos_map.append(orig_idx)
-            orig_idx += 1
-            # skip remaining whitespace in original
-            while orig_idx < orig_len and original[orig_idx] in " \t":
-                orig_idx += 1
-            norm_idx += 1
-            continue
-
-        # Direct character match (possibly after NFC + char substitution).
-        # Using _normalize_text(orig_char) would be O(n²) and would also
-        # incorrectly strip a lone space as "trailing whitespace", so we
-        # apply NFC and _CHAR_SUBS directly instead.
-        nfc_char = unicodedata.normalize("NFC", orig_char)
-        sub_char = _CHAR_SUBS.get(nfc_char, nfc_char)
-        if sub_char == norm_char:
-            pos_map.append(orig_idx)
-            orig_idx += 1
-            norm_idx += 1
-            continue
-
-        # Unicode NFC: original may have multiple chars for one normalized.
-        # Try expanding original chars until they normalize to norm_char.
-        consumed = 1
-        while orig_idx + consumed <= orig_len:
-            chunk = original[orig_idx : orig_idx + consumed]
-            if unicodedata.normalize("NFC", chunk) == norm_char:
-                pos_map.append(orig_idx)
-                orig_idx += consumed
-                norm_idx += 1
-                break
-            consumed += 1
-        else:
-            # Fallback: advance both by one.
-            pos_map.append(orig_idx)
-            orig_idx += 1
-            norm_idx += 1
-
-    # Sentinel: pos_map[norm_len] = orig_len so callers can compute
-    # orig_end = pos_map[norm_end] for any norm_end including norm_len.
-    pos_map.append(orig_len)
-    return pos_map
-
-
-def _find_closest_match(old_text: str, file_content: str) -> dict[str, Any]:
-    """Find the closest fuzzy match for diagnostic error reporting.
-
-    Compares the first line of *old_text* against every line in the file
-    using ``difflib.SequenceMatcher``.  If a match with ratio >= 0.6 is
-    found, returns diagnostic info about the first character divergence.
-
-    Args:
-        old_text: The text the caller tried to match.
-        file_content: The full file content.
-
-    Returns:
-        A dict with ``closest_match_line``, ``first_diff_char``,
-        ``expected_snippet``, and ``found_snippet``; or an empty dict
-        if no match with ratio >= 0.6 is found.
-    """
-    first_line = old_text.split("\n", 1)[0]
-    file_lines = file_content.split("\n")
-    best_ratio = 0.0
-    best_line_num = 0
-    best_line_text = ""
-
-    for i, line in enumerate(file_lines, 1):
-        ratio = SequenceMatcher(None, first_line, line).ratio()
-        if ratio > best_ratio:
-            best_ratio = ratio
-            best_line_num = i
-            best_line_text = line
-
-    if best_ratio < 0.6:
-        return {}
-
-    # Find first character difference.
-    diff_pos = 0
-    min_len = min(len(first_line), len(best_line_text))
-    while diff_pos < min_len and first_line[diff_pos] == best_line_text[diff_pos]:
-        diff_pos += 1
-
-    ctx = 30
-    return {
-        "closest_match_line": best_line_num,
-        "first_diff_char": diff_pos,
-        "expected_snippet": first_line[max(0, diff_pos - ctx) : diff_pos + ctx],
-        "found_snippet": best_line_text[max(0, diff_pos - ctx) : diff_pos + ctx],
-    }
-
-
-# ---------------------------------------------------------------------------
-# Link-update helpers (used by Collection.rename update_links logic)
-# ---------------------------------------------------------------------------
-
-
-def _compute_new_raw_target(
-    link_type: str,
-    raw_target: str,
-    fragment: str | None,
-    new_path: str,
-    source_path: str = "",
-    old_path: str = "",
-) -> str:
-    """Compute the replacement raw_target string when a file is renamed.
-
-    Args:
-        link_type: One of ``"markdown"``, ``"reference"``, ``"wikilink"``.
-        raw_target: The literal link string stored in the source file.
-        fragment: The heading fragment (``#heading``) of the link, if any.
-        new_path: The vault-relative path of the renamed file (e.g.
-            ``"notes/new-name.md"``).
-        source_path: Vault-relative path of the file that contains the link.
-            Required for correct relative-path handling in markdown and
-            reference links (cross-directory links would otherwise be silently
-            broken).
-        old_path: Vault-relative path of the file being renamed.  Used to
-            detect whether *raw_target* was written as a vault-root-relative
-            or source-directory-relative path.
-
-    Returns:
-        The replacement raw_target string to write into the source file.
-    """
-    if link_type == "wikilink":
-        # Determine whether the original wikilink included the .md extension.
-        old_path_part = raw_target.split("#")[0]
-        if old_path_part.lower().endswith(".md"):
-            new_path_part = new_path
-        else:
-            new_path_part = new_path[:-3]
-        return new_path_part + ("#" + fragment if fragment else "")
-    else:
-        # markdown and reference links.
-        # Detect whether the link was written as vault-root-relative (raw_target
-        # matches old_path) or as a path relative to the source file's directory
-        # (raw_target != old_path, e.g. "../archive/target.md" from docs/).
-        raw_path_part = raw_target.split("#")[0]
-        if source_path and old_path and raw_path_part != old_path:
-            # Relative-to-source link: compute the correct new relative path so
-            # cross-directory links continue to resolve after the rename.
-            source_dir = str(Path(source_path).parent)
-            new_rel = osp.relpath(new_path, source_dir)
-            # os.path.relpath uses OS separators on Windows; normalise to /.
-            new_path_part = new_rel.replace("\\", "/")
-        else:
-            new_path_part = new_path
-        return new_path_part + ("#" + fragment if fragment else "")
-
-
-def _apply_link_replacement(
-    content: str, link_type: str, old_raw: str, new_raw: str
-) -> str:
-    """Replace a single link target occurrence in file content.
-
-    Args:
-        content: Full file content to modify.
-        link_type: One of ``"markdown"``, ``"reference"``, ``"wikilink"``.
-        old_raw: The original raw_target string to find.
-        new_raw: The replacement raw_target string.
-
-    Returns:
-        Updated content with all occurrences of *old_raw* replaced.
-    """
-    if link_type == "markdown":
-        # Negative lookbehind (?<!!) excludes image links ![](url) — the `!`
-        # immediately before `[` is the discriminator. Anchored to [text]( so
-        # bare (old_raw) occurrences in plain text are also excluded.
-        # Captures and preserves optional link title (e.g. "title" or 'title').
-        # NOTE: operates on raw file content; occurrences inside backtick code
-        # spans would also be rewritten. Risk is low in practice.
-        return re.sub(
-            r"(?<!!)(\[[^\]]*?\])\(" + re.escape(old_raw) + r"((?:\s[^)]*)?)\)",
-            lambda m: m.group(1) + "(" + new_raw + m.group(2) + ")",
-            content,
-        )
-    elif link_type == "reference":
-        # Match reference definition lines: [id]: url optional-title
-        # Anchored to line start with MULTILINE so we don't match inline text.
-        return re.sub(
-            r"^(\[.*?\]:\s+)" + re.escape(old_raw) + r"([ \t].*|$)",
-            lambda m: m.group(1) + new_raw + m.group(2),
-            content,
-            flags=re.MULTILINE,
-        )
-    elif link_type == "wikilink":
-        return re.sub(
-            r"\[\[" + re.escape(old_raw) + r"(\|[^\]]*)?\]\]",
-            lambda m: "[[" + new_raw + (m.group(1) or "") + "]]",
-            content,
-        )
-    return content
-
 
 # RRF constant — standard value recommended in the original paper.
 _RRF_K = 60
