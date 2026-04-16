@@ -19,7 +19,12 @@ from fastmcp.dependencies import Depends
 from fastmcp.exceptions import ToolError
 
 from markdown_vault_mcp.collection import Collection
-from markdown_vault_mcp.exceptions import EditConflictError
+from markdown_vault_mcp.exceptions import (
+    ConcurrentModificationError,
+    DocumentExistsError,
+    DocumentNotFoundError,
+    EditConflictError,
+)
 
 from ._icons import _TOOL_ICONS
 from ._server_deps import get_collection
@@ -167,17 +172,20 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
             delete, or rename to guard against concurrent modifications.
 
         Raises:
-            ValueError: If no file exists at the given path, the extension is
+            ToolError: If no file exists at the given path, the extension is
                 not in the attachment allowlist, or the file exceeds the size
                 limit.
         """
-        if not path.endswith(".md"):
-            attachment = await asyncio.to_thread(collection.read_attachment, path)
-            return asdict(attachment)
-        note = await asyncio.to_thread(collection.read, path)
-        if note is None:
-            raise ValueError(f"Document not found: {path}")
-        return asdict(note)
+        try:
+            if not path.endswith(".md"):
+                attachment = await asyncio.to_thread(collection.read_attachment, path)
+                return asdict(attachment)
+            note = await asyncio.to_thread(collection.read, path)
+            if note is None:
+                raise ToolError(f"Document not found: {path}")
+            return asdict(note)
+        except ValueError as exc:
+            raise ToolError(str(exc)) from exc
 
     @mcp.tool(
         icons=_TOOL_ICONS["list_documents"],
@@ -507,10 +515,13 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
             (most similar chunk), score, search_type ("semantic").
 
         Raises:
-            ValueError: If no document exists at the given path.
+            ToolError: If the document does not exist.
         """
-        results = await asyncio.to_thread(collection.get_similar, path, limit=limit)
-        return [asdict(r) for r in results]
+        try:
+            results = await asyncio.to_thread(collection.get_similar, path, limit=limit)
+            return [asdict(r) for r in results]
+        except ValueError as exc:
+            raise ToolError(str(exc)) from exc
 
     # --- Recently modified ---
 
@@ -598,15 +609,18 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
             or similar_limit is 0.
 
         Raises:
-            ValueError: If no document exists at the given path.
+            ToolError: If the document does not exist.
         """
-        result = await asyncio.to_thread(
-            collection.get_context,
-            path,
-            similar_limit=similar_limit,
-            link_limit=link_limit,
-        )
-        return asdict(result)
+        try:
+            result = await asyncio.to_thread(
+                collection.get_context,
+                path,
+                similar_limit=similar_limit,
+                link_limit=link_limit,
+            )
+            return asdict(result)
+        except ValueError as exc:
+            raise ToolError(str(exc)) from exc
 
     @mcp.tool(
         icons=_TOOL_ICONS["get_orphan_notes"],
@@ -708,13 +722,16 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
             - `hops` (int): Number of edges in the path (`len(path) - 1`), or -1 if
               not found.
         """
-        result: list[str] | None = await asyncio.to_thread(
-            collection.get_connection_path, source, target, max_depth
-        )
+        try:
+            result: list[str] | None = await asyncio.to_thread(
+                collection.get_connection_path, source, target, max_depth
+            )
 
-        if result is None:
-            return {"found": False, "path": [], "hops": -1}
-        return {"found": True, "path": result, "hops": len(result) - 1}
+            if result is None:
+                return {"found": False, "path": [], "hops": -1}
+            return {"found": True, "path": result, "hops": len(result) - 1}
+        except ValueError as exc:
+            raise ToolError(str(exc)) from exc
 
     # --- Git history tools ---
 
@@ -913,9 +930,15 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
 
         Returns:
             Dict with chunks_embedded: number of chunks newly embedded.
+
+        Raises:
+            ToolError: If no embedding provider is configured.
         """
-        count = await asyncio.to_thread(collection.build_embeddings, force=force)
-        return {"chunks_embedded": count}
+        try:
+            count = await asyncio.to_thread(collection.build_embeddings, force=force)
+            return {"chunks_embedded": count}
+        except ValueError as exc:
+            raise ToolError(str(exc)) from exc
 
     # --- Write tools (tag-based visibility) ---
 
@@ -967,28 +990,34 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
             false if overwrite).
 
         Raises:
-            ValueError: If content_base64 is missing/invalid for
-                attachments, or the content exceeds the size limit.
-            McpError: If if_match is provided and the file has been
-                modified (ConcurrentModificationError).
+            ToolError: If content_base64 is missing/invalid for
+                attachments, or the content exceeds the size limit, or
+                if_match fails.
         """
-        if not path.endswith(".md"):
-            if not content_base64:
-                raise ValueError(
-                    f"content_base64 is required for non-.md attachments: {path}"
+        try:
+            if not path.endswith(".md"):
+                if not content_base64:
+                    raise ToolError(
+                        f"content_base64 is required for non-.md attachments: {path}"
+                    )
+                try:
+                    raw_bytes = base64.b64decode(content_base64)
+                except Exception as exc:
+                    raise ToolError(f"Invalid base64 in content_base64: {exc}") from exc
+                result = await asyncio.to_thread(
+                    collection.write_attachment, path, raw_bytes, if_match=if_match
                 )
-            try:
-                raw_bytes = base64.b64decode(content_base64)
-            except Exception as exc:
-                raise ValueError(f"Invalid base64 in content_base64: {exc}") from exc
+                return asdict(result)
             result = await asyncio.to_thread(
-                collection.write_attachment, path, raw_bytes, if_match=if_match
+                collection.write,
+                path,
+                content,
+                frontmatter=frontmatter,
+                if_match=if_match,
             )
             return asdict(result)
-        result = await asyncio.to_thread(
-            collection.write, path, content, frontmatter=frontmatter, if_match=if_match
-        )
-        return asdict(result)
+        except (ValueError, ConcurrentModificationError) as exc:
+            raise ToolError(str(exc)) from exc
 
     @mcp.tool(
         tags={"write"},
@@ -1064,17 +1093,24 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
                 line_end=line_end,
             )
             return asdict(result)
-        except EditConflictError as exc:
-            parts = [str(exc)]
-            if exc.closest_match_line is not None:
-                parts.append(f"closest_match_line: {exc.closest_match_line}")
-            if exc.first_diff_char is not None:
-                parts.append(f"first_diff_at_char: {exc.first_diff_char}")
-            if exc.expected_snippet is not None:
-                parts.append(f"expected: {exc.expected_snippet!r}")
-            if exc.found_snippet is not None:
-                parts.append(f"found: {exc.found_snippet!r}")
-            raise ToolError("\n".join(parts)) from exc
+        except (
+            EditConflictError,
+            DocumentNotFoundError,
+            ConcurrentModificationError,
+            ValueError,
+        ) as exc:
+            if isinstance(exc, EditConflictError):
+                parts = [str(exc)]
+                if exc.closest_match_line is not None:
+                    parts.append(f"closest_match_line: {exc.closest_match_line}")
+                if exc.first_diff_char is not None:
+                    parts.append(f"first_diff_at_char: {exc.first_diff_char}")
+                if exc.expected_snippet is not None:
+                    parts.append(f"expected: {exc.expected_snippet!r}")
+                if exc.found_snippet is not None:
+                    parts.append(f"found: {exc.found_snippet!r}")
+                raise ToolError("\n".join(parts)) from exc
+            raise ToolError(str(exc)) from exc
 
     @mcp.tool(
         tags={"write"},
@@ -1109,12 +1145,13 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
             Dict with path (str) of the deleted file.
 
         Raises:
-            ValueError: If no file exists at the given path.
-            McpError: If if_match is provided and the file has been modified
-                (ConcurrentModificationError).
+            ToolError: If no file exists at the given path, or if_match fails.
         """
-        result = await asyncio.to_thread(collection.delete, path, if_match=if_match)
-        return asdict(result)
+        try:
+            result = await asyncio.to_thread(collection.delete, path, if_match=if_match)
+            return asdict(result)
+        except (DocumentNotFoundError, ConcurrentModificationError, ValueError) as exc:
+            raise ToolError(str(exc)) from exc
 
     @mcp.tool(
         tags={"write"},
@@ -1161,19 +1198,25 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
             counting the number of source documents whose links were updated.
 
         Raises:
-            ValueError: If old_path does not exist, new_path already exists,
-                or the path fails traversal validation.
-            McpError: If if_match is provided and the file has been modified
-                (ConcurrentModificationError).
+            ToolError: If old_path does not exist, new_path already exists,
+                the path fails traversal validation, or if_match fails.
         """
-        result = await asyncio.to_thread(
-            collection.rename,
-            old_path,
-            new_path,
-            if_match=if_match,
-            update_links=update_links,
-        )
-        return asdict(result)
+        try:
+            result = await asyncio.to_thread(
+                collection.rename,
+                old_path,
+                new_path,
+                if_match=if_match,
+                update_links=update_links,
+            )
+            return asdict(result)
+        except (
+            DocumentNotFoundError,
+            DocumentExistsError,
+            ConcurrentModificationError,
+            ValueError,
+        ) as exc:
+            raise ToolError(str(exc)) from exc
 
     @mcp.tool(
         tags={"write"},
