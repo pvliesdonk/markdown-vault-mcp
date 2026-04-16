@@ -10,13 +10,18 @@ The authoritative design specification lives at [`docs/design.md`](docs/design.m
 
 ```
 src/markdown_vault_mcp/
+  managers/         -- specialized internal logic
+    document.py     -- CRUD, attachments, path validation
+    search.py       -- search and listing orchestration
+    link.py         -- link graph and connections
+    index.py        -- indexing lifecycle and embeddings
   scanner.py        -- file discovery, frontmatter parsing, chunking
   fts_index.py      -- SQLite FTS5 schema, BM25 search
   vector_index.py   -- numpy embeddings, cosine similarity
   providers.py      -- embedding provider ABC + implementations
   tracker.py        -- hash-based change detection
-  collection.py     -- thin facade: init, lazy loading, public API
-  config.py         -- configuration loading
+  collection.py     -- thin facade: orchestrates managers and indexes
+  config.py         -- configuration and auth loading
   mcp_server.py     -- generic FastMCP server with tool annotations
   cli.py            -- CLI entry point
 ```
@@ -102,9 +107,10 @@ This repo shares domain-independent infrastructure with [`pvliesdonk/image-gener
 
 ### Exception Handling
 - All exceptions must be caught and handled. No bare `except:`. Always specify the exception type.
-- Expected errors (HTTP 4xx, missing data): catch, log, return user-facing error string.
+- **Domain Errors**: Internal domain exceptions (`DocumentNotFoundError`, `EditConflictError`, etc.) must be caught in the MCP layer (`_server_tools.py`) and re-raised as `fastmcp.exceptions.ToolError` with a clear, descriptive message for the user.
+- Expected errors (HTTP 4xx, missing data): catch, log, return user-facing error string via `ToolError`.
 - Optional enrichment failures: catch, log at `DEBUG` with `exc_info=True`, continue.
-- Primary result errors: catch, log at `WARNING` or `ERROR`, return error string.
+- Primary result errors: catch, log at `WARNING` or `ERROR`, return error string via `ToolError`.
 - `ErrorHandlingMiddleware` is a safety net. If it catches something, that's a bug to fix.
 
 ### Message Format
