@@ -902,15 +902,20 @@ def build_oidc_auth(config: CollectionConfig) -> Any:
         A configured :class:`~fastmcp.server.auth.oidc_proxy.OIDCProxy`
         instance, or ``None`` when authentication is disabled.
     """
-    required = {
+    # Check required fields.  The secret is checked separately so it never
+    # enters the dict that feeds the logged "missing" list — this keeps
+    # CodeQL's taint analysis happy.
+    required_public = {
         "BASE_URL": config.base_url,
         "OIDC_CONFIG_URL": config.oidc_config_url,
         "OIDC_CLIENT_ID": config.oidc_client_id,
-        "OIDC_CLIENT_SECRET": config.oidc_client_secret,
     }
+    has_secret = bool(config.oidc_client_secret)
 
-    if not all(required.values()):
-        missing = [k for k, v in required.items() if not v]
+    if not all(required_public.values()) or not has_secret:
+        missing = [k for k, v in required_public.items() if not v]
+        if not has_secret:
+            missing.append("OIDC_CLIENT_SECRET")
         logger.debug("OIDC auth: disabled — missing env vars: %s", ", ".join(missing))
         return None
 
