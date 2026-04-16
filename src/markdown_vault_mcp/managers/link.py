@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from markdown_vault_mcp.types import (
     BacklinkInfo,
@@ -17,28 +17,6 @@ if TYPE_CHECKING:
     from markdown_vault_mcp.collection import Collection
 
 logger = logging.getLogger(__name__)
-
-
-def _fts_row_to_note_info(row: dict[str, Any]) -> NoteInfo:
-    """Helper to convert FTS row to NoteInfo."""
-    import contextlib
-    import json
-
-    fm_raw = row.get("frontmatter_json")
-    fm_data: dict[str, Any] = {}
-    if fm_raw:
-        with contextlib.suppress(json.JSONDecodeError, TypeError):
-            data = json.loads(fm_raw)
-            if isinstance(data, dict):
-                fm_data = data
-
-    return NoteInfo(
-        path=row["path"],
-        title=row["title"],
-        folder=row["folder"],
-        frontmatter=fm_data,
-        modified_at=row["modified_at"],
-    )
 
 
 class LinkManager:
@@ -106,7 +84,7 @@ class LinkManager:
         """Return all documents with no inbound or outbound links."""
         self._collection._ensure_initialized()
         rows = self._collection._fts.get_orphan_notes()
-        return [_fts_row_to_note_info(r) for r in rows]
+        return [NoteInfo.from_fts_row(r) for r in rows]
 
     def get_most_linked(self, *, limit: int = 10) -> list[MostLinkedNote]:
         """Return the documents with the most inbound links."""
