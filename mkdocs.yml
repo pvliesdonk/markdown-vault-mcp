@@ -49,7 +49,7 @@ plugins:
       markdown_description: >
         markdown-vault-mcp is a generic markdown collection MCP server with
         FTS5 full-text search, semantic search via embeddings, frontmatter-aware
-        indexing, and incremental reindexing. It exposes 31 LLM-visible tools
+        indexing, and incremental reindexing. It exposes 28 LLM-visible tools
         (plus 6 app-only tools), 9 resources, and 6 prompts over the Model
         Context Protocol.
       sections:
