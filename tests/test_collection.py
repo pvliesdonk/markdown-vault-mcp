@@ -11,12 +11,7 @@ from unittest.mock import patch
 
 import pytest
 
-from markdown_vault_mcp.collection import (
-    Collection,
-    _build_position_map,
-    _find_closest_match,
-    _normalize_text,
-)
+from markdown_vault_mcp.collection import Collection
 from markdown_vault_mcp.exceptions import (
     ConcurrentModificationError,
     DocumentExistsError,
@@ -35,6 +30,15 @@ from markdown_vault_mcp.types import (
     NoteInfo,
     RenameResult,
     WriteResult,
+)
+from markdown_vault_mcp.utils.text import (
+    build_position_map as _build_position_map,
+)
+from markdown_vault_mcp.utils.text import (
+    find_closest_match as _find_closest_match,
+)
+from markdown_vault_mcp.utils.text import (
+    normalize_text as _normalize_text,
 )
 
 if TYPE_CHECKING:
