@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import sqlite3
 import threading
 from typing import TYPE_CHECKING, Any
 
@@ -77,49 +78,50 @@ class IndexManager:
 
         total_chunks = 0
         errored = 0
-        for note in notes:
-            try:
-                total_chunks += self._collection._fts.upsert_note(note)
-            except Exception:
-                errored += 1
-                logger.warning(
-                    "build_index: failed to index %s", note.path, exc_info=True
-                )
+        with self._collection._write_lock:
+            for note in notes:
+                try:
+                    total_chunks += self._collection._fts.upsert_note(note)
+                except (sqlite3.Error, OSError) as exc:
+                    errored += 1
+                    logger.warning(
+                        "build_index: failed to index %s — %s", note.path, exc
+                    )
 
-        # Purge stale excluded docs from a persistent index.
-        indexed_paths = {note.path for note in notes}
-        if self._collection._exclude_patterns:
-            if (
-                self._collection._vectors is None
-                and self._collection._embedding_provider is not None
-                and self._collection._embeddings_path is not None
-            ):
-                self._collection._load_vectors()
-
-            purged = 0
-            for row in self._collection._fts.list_notes():
-                if row[
-                    "path"
-                ] not in indexed_paths and self._collection._is_path_excluded(
-                    row["path"]
+            # Purge stale excluded docs from a persistent index.
+            indexed_paths = {note.path for note in notes}
+            if self._collection._exclude_patterns:
+                if (
+                    self._collection._vectors is None
+                    and self._collection._embedding_provider is not None
+                    and self._collection._embeddings_path is not None
                 ):
-                    self._collection._fts.delete_by_path(row["path"])
-                    if self._collection._vectors is not None:
-                        self._collection._vectors.delete_by_path(row["path"])
-                    purged += 1
+                    self._collection._load_vectors()
 
-            if (
-                purged
-                and self._collection._vectors is not None
-                and self._collection._embeddings_path is not None
-            ):
-                self._collection._vectors.save(self._collection._embeddings_path)
+                purged = 0
+                for row in self._collection._fts.list_notes():
+                    if row[
+                        "path"
+                    ] not in indexed_paths and self._collection._is_path_excluded(
+                        row["path"]
+                    ):
+                        self._collection._fts.delete_by_path(row["path"])
+                        if self._collection._vectors is not None:
+                            self._collection._vectors.delete_by_path(row["path"])
+                        purged += 1
+
+                if (
+                    purged
+                    and self._collection._vectors is not None
+                    and self._collection._embeddings_path is not None
+                ):
+                    self._collection._vectors.save(self._collection._embeddings_path)
+
+            # Resolve vault-wide wikilinks.
+            self._collection._fts.resolve_vault_wikilinks()
 
         all_files = list(self._collection._source_dir.glob("**/*.md"))
         skipped = len(all_files) - len(notes)
-
-        # Resolve vault-wide wikilinks.
-        self._collection._fts.resolve_vault_wikilinks()
 
         # Update tracker state.
         self._collection._tracker.update_state(notes)
@@ -237,8 +239,8 @@ class IndexManager:
             for path, note in parsed:
                 try:
                     self._collection._fts.upsert_note(note)
-                except Exception:
-                    logger.warning("reindex: failed to index %s", path, exc_info=True)
+                except (sqlite3.Error, OSError) as exc:
+                    logger.warning("reindex: failed to index %s — %s", path, exc)
                     continue
                 if path in added_set:
                     indexed_added += 1
@@ -361,23 +363,24 @@ class IndexManager:
                 )
 
         total = len(texts)
-        for start in range(0, total, _EMBEDDING_BATCH_SIZE):
-            end = min(start + _EMBEDDING_BATCH_SIZE, total)
-            assert self._collection._vectors is not None
-            self._collection._vectors.add(texts[start:end], meta[start:end])
-            logger.info(
-                "build_embeddings: embedded chunks %d-%d of %d",
-                start + 1,
-                end,
-                total,
-            )
+        with self._collection._write_lock:
+            for start in range(0, total, _EMBEDDING_BATCH_SIZE):
+                end = min(start + _EMBEDDING_BATCH_SIZE, total)
+                assert self._collection._vectors is not None
+                self._collection._vectors.add(texts[start:end], meta[start:end])
+                logger.info(
+                    "build_embeddings: embedded chunks %d-%d of %d",
+                    start + 1,
+                    end,
+                    total,
+                )
 
-        if total > 0:
-            assert self._collection._vectors is not None
-            self._collection._vectors.save(self._collection._embeddings_path)
-            logger.info("build_embeddings: embedded and saved %d chunks", total)
-        else:
-            logger.info("build_embeddings: nothing to embed")
+            if total > 0:
+                assert self._collection._vectors is not None
+                self._collection._vectors.save(self._collection._embeddings_path)
+                logger.info("build_embeddings: embedded and saved %d chunks", total)
+            else:
+                logger.info("build_embeddings: nothing to embed")
         return total
 
     def update_vector_index(self, note: ParsedNote) -> None:
