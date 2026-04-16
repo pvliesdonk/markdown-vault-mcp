@@ -249,7 +249,7 @@ class TestCmdServe:
     """Test the serve subcommand dispatch."""
 
     @patch("uvicorn.run")
-    @patch("markdown_vault_mcp.mcp_server.build_event_store")
+    @patch("markdown_vault_mcp.config.build_event_store")
     @patch("markdown_vault_mcp.cli.load_config")
     @patch("markdown_vault_mcp.mcp_server.create_server")
     def test_serve_http_calls_http_app_and_uvicorn(
@@ -289,7 +289,7 @@ class TestCmdServe:
         )
 
     @patch("uvicorn.run")
-    @patch("markdown_vault_mcp.mcp_server.build_event_store")
+    @patch("markdown_vault_mcp.config.build_event_store")
     @patch("markdown_vault_mcp.cli.load_config")
     @patch("markdown_vault_mcp.mcp_server.create_server")
     def test_serve_http_custom_path(
@@ -318,7 +318,7 @@ class TestCmdServe:
         assert call_kwargs["path"] == "/vault/mcp"
 
     @patch("uvicorn.run")
-    @patch("markdown_vault_mcp.mcp_server.build_event_store")
+    @patch("markdown_vault_mcp.config.build_event_store")
     @patch("markdown_vault_mcp.cli.load_config")
     @patch("markdown_vault_mcp.mcp_server.create_server")
     def test_serve_http_custom_path_normalised(
@@ -347,7 +347,7 @@ class TestCmdServe:
         assert call_kwargs["path"] == "/vault/mcp"
 
     @patch("uvicorn.run")
-    @patch("markdown_vault_mcp.mcp_server.build_event_store")
+    @patch("markdown_vault_mcp.config.build_event_store")
     @patch("markdown_vault_mcp.cli.load_config")
     @patch("markdown_vault_mcp.mcp_server.create_server")
     def test_serve_http_path_env_fallback(
@@ -375,7 +375,7 @@ class TestCmdServe:
         assert call_kwargs["path"] == "/vault/mcp"
 
     @patch("uvicorn.run")
-    @patch("markdown_vault_mcp.mcp_server.build_event_store")
+    @patch("markdown_vault_mcp.config.build_event_store")
     @patch("markdown_vault_mcp.cli.load_config")
     @patch("markdown_vault_mcp.mcp_server.create_server")
     def test_serve_http_path_cli_overrides_env(

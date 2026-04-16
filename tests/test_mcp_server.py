@@ -15,13 +15,14 @@ from fastmcp import Client
 from fastmcp.exceptions import ToolError
 from mcp.shared.exceptions import McpError
 
-from markdown_vault_mcp.mcp_server import (
+from markdown_vault_mcp.config import (
     _build_bearer_auth,
     _build_oidc_auth,
     _build_remote_auth,
     _resolve_auth_mode,
-    create_server,
+    load_config,
 )
+from markdown_vault_mcp.mcp_server import create_server
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -736,7 +737,7 @@ _OIDC_REQUIRED = {
 
 
 class TestBuildOidcAuth:
-    """Unit tests for _build_oidc_auth()."""
+    """Unit tests for _build_oidc_auth(load_config(strict=False))."""
 
     @pytest.fixture(autouse=True)
     def _clear_oidc_vars(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -745,7 +746,7 @@ class TestBuildOidcAuth:
             monkeypatch.delenv(var, raising=False)
 
     def test_returns_none_when_no_vars_set(self) -> None:
-        assert _build_oidc_auth() is None
+        assert _build_oidc_auth(load_config(strict=False)) is None
 
     @pytest.mark.parametrize(
         "missing_var",
@@ -763,7 +764,7 @@ class TestBuildOidcAuth:
         for var, val in _OIDC_REQUIRED.items():
             if var != missing_var:
                 monkeypatch.setenv(var, val)
-        assert _build_oidc_auth() is None
+        assert _build_oidc_auth(load_config(strict=False)) is None
 
     def test_returns_non_none_when_all_required_vars_set(
         self, monkeypatch: pytest.MonkeyPatch
@@ -775,7 +776,7 @@ class TestBuildOidcAuth:
 
         mock_cls = MagicMock()
         with patch("fastmcp.server.auth.oidc_proxy.OIDCProxy", mock_cls):
-            result = _build_oidc_auth()
+            result = _build_oidc_auth(load_config(strict=False))
 
         assert result is not None
         mock_cls.assert_called_once()
@@ -790,7 +791,7 @@ class TestBuildOidcAuth:
 
         mock_cls = MagicMock()
         with patch("fastmcp.server.auth.oidc_proxy.OIDCProxy", mock_cls):
-            _build_oidc_auth()
+            _build_oidc_auth(load_config(strict=False))
 
         kw = mock_cls.call_args.kwargs
         assert kw["base_url"] == "https://mcp.example.com"
@@ -811,7 +812,7 @@ class TestBuildOidcAuth:
 
         mock_cls = MagicMock()
         with patch("fastmcp.server.auth.oidc_proxy.OIDCProxy", mock_cls):
-            _build_oidc_auth()
+            _build_oidc_auth(load_config(strict=False))
 
         assert mock_cls.call_args.kwargs["required_scopes"] == ["openid"]
 
@@ -827,7 +828,7 @@ class TestBuildOidcAuth:
 
         mock_cls = MagicMock()
         with patch("fastmcp.server.auth.oidc_proxy.OIDCProxy", mock_cls):
-            _build_oidc_auth()
+            _build_oidc_auth(load_config(strict=False))
 
         assert mock_cls.call_args.kwargs["required_scopes"] == ["openid"]
 
@@ -844,7 +845,7 @@ class TestBuildOidcAuth:
 
         mock_cls = MagicMock()
         with patch("fastmcp.server.auth.oidc_proxy.OIDCProxy", mock_cls):
-            _build_oidc_auth()
+            _build_oidc_auth(load_config(strict=False))
 
         assert mock_cls.call_args.kwargs["required_scopes"] == [
             "openid",
@@ -861,7 +862,7 @@ class TestBuildOidcAuth:
 
         mock_cls = MagicMock()
         with patch("fastmcp.server.auth.oidc_proxy.OIDCProxy", mock_cls):
-            _build_oidc_auth()
+            _build_oidc_auth(load_config(strict=False))
 
         assert mock_cls.call_args.kwargs["audience"] == "my-api"
 
@@ -875,7 +876,7 @@ class TestBuildOidcAuth:
 
         mock_cls = MagicMock()
         with patch("fastmcp.server.auth.oidc_proxy.OIDCProxy", mock_cls):
-            _build_oidc_auth()
+            _build_oidc_auth(load_config(strict=False))
 
         assert mock_cls.call_args.kwargs["audience"] is None
 
@@ -890,7 +891,7 @@ class TestBuildOidcAuth:
 
         mock_cls = MagicMock()
         with patch("fastmcp.server.auth.oidc_proxy.OIDCProxy", mock_cls):
-            _build_oidc_auth()
+            _build_oidc_auth(load_config(strict=False))
 
         assert mock_cls.call_args.kwargs["jwt_signing_key"] == "deadbeef1234"
 
@@ -904,7 +905,7 @@ class TestBuildOidcAuth:
 
         mock_cls = MagicMock()
         with patch("fastmcp.server.auth.oidc_proxy.OIDCProxy", mock_cls):
-            _build_oidc_auth()
+            _build_oidc_auth(load_config(strict=False))
 
         assert mock_cls.call_args.kwargs["jwt_signing_key"] is None
 
@@ -919,10 +920,10 @@ class TestBuildOidcAuth:
         mock_cls = MagicMock()
         with (
             patch("fastmcp.server.auth.oidc_proxy.OIDCProxy", mock_cls),
-            patch("markdown_vault_mcp.mcp_server.sys") as mock_sys,
+            patch("markdown_vault_mcp.config.sys") as mock_sys,
         ):
             mock_sys.platform = "linux"
-            _build_oidc_auth()
+            _build_oidc_auth(load_config(strict=False))
 
         assert any(
             "JWT_SIGNING_KEY" in r.message and r.levelname == "WARNING"
@@ -941,10 +942,10 @@ class TestBuildOidcAuth:
         mock_cls = MagicMock()
         with (
             patch("fastmcp.server.auth.oidc_proxy.OIDCProxy", mock_cls),
-            patch("markdown_vault_mcp.mcp_server.sys") as mock_sys,
+            patch("markdown_vault_mcp.config.sys") as mock_sys,
         ):
             mock_sys.platform = "linux"
-            _build_oidc_auth()
+            _build_oidc_auth(load_config(strict=False))
 
         assert not any(
             "JWT_SIGNING_KEY" in r.message and r.levelname == "WARNING"
@@ -962,10 +963,10 @@ class TestBuildOidcAuth:
         mock_cls = MagicMock()
         with (
             patch("fastmcp.server.auth.oidc_proxy.OIDCProxy", mock_cls),
-            patch("markdown_vault_mcp.mcp_server.sys") as mock_sys,
+            patch("markdown_vault_mcp.config.sys") as mock_sys,
         ):
             mock_sys.platform = "darwin"
-            _build_oidc_auth()
+            _build_oidc_auth(load_config(strict=False))
 
         assert not any(
             "JWT_SIGNING_KEY" in r.message and r.levelname == "WARNING"
@@ -983,7 +984,7 @@ class TestBuildOidcAuth:
 
         mock_cls = MagicMock()
         with patch("fastmcp.server.auth.oidc_proxy.OIDCProxy", mock_cls):
-            _build_oidc_auth()
+            _build_oidc_auth(load_config(strict=False))
 
         assert mock_cls.call_args.kwargs["verify_id_token"] is True
 
@@ -999,7 +1000,7 @@ class TestBuildOidcAuth:
 
         mock_cls = MagicMock()
         with patch("fastmcp.server.auth.oidc_proxy.OIDCProxy", mock_cls):
-            _build_oidc_auth()
+            _build_oidc_auth(load_config(strict=False))
 
         assert mock_cls.call_args.kwargs["verify_id_token"] is False
 
@@ -1016,7 +1017,7 @@ class TestBuildOidcAuth:
 
         mock_cls = MagicMock()
         with patch("fastmcp.server.auth.oidc_proxy.OIDCProxy", mock_cls):
-            _build_oidc_auth()
+            _build_oidc_auth(load_config(strict=False))
 
         assert mock_cls.call_args.kwargs["verify_id_token"] is True
 
@@ -1034,7 +1035,7 @@ class TestBuildOidcAuth:
             patch("fastmcp.server.auth.oidc_proxy.OIDCProxy", mock_cls),
             caplog.at_level(logging.INFO, logger="markdown_vault_mcp.mcp_server"),
         ):
-            _build_oidc_auth()
+            _build_oidc_auth(load_config(strict=False))
 
         assert any("verifying upstream id_token" in r.message for r in caplog.records)
 
@@ -1053,7 +1054,7 @@ class TestBuildOidcAuth:
             patch("fastmcp.server.auth.oidc_proxy.OIDCProxy", mock_cls),
             caplog.at_level(logging.INFO, logger="markdown_vault_mcp.mcp_server"),
         ):
-            _build_oidc_auth()
+            _build_oidc_auth(load_config(strict=False))
 
         assert any(
             "verifying upstream access_token as JWT" in r.message
@@ -1072,7 +1073,7 @@ class TestBuildOidcAuth:
 
         mock_cls = MagicMock()
         with patch("fastmcp.server.auth.oidc_proxy.OIDCProxy", mock_cls):
-            _build_oidc_auth()
+            _build_oidc_auth(load_config(strict=False))
 
         assert any(
             "openid" in r.message and r.levelname == "WARNING" for r in caplog.records
@@ -1089,7 +1090,7 @@ class TestBuildOidcAuth:
 
         mock_cls = MagicMock()
         with patch("fastmcp.server.auth.oidc_proxy.OIDCProxy", mock_cls):
-            _build_oidc_auth()
+            _build_oidc_auth(load_config(strict=False))
 
         assert not any(
             "openid" in r.message and r.levelname == "WARNING" for r in caplog.records
@@ -2462,7 +2463,7 @@ _BEARER_VARS = ("MARKDOWN_VAULT_MCP_BEARER_TOKEN",)
 
 
 class TestBuildBearerAuth:
-    """Unit tests for _build_bearer_auth()."""
+    """Unit tests for _build_bearer_auth(load_config(strict=False))."""
 
     @pytest.fixture(autouse=True)
     def _clear_bearer_vars(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -2471,19 +2472,19 @@ class TestBuildBearerAuth:
             monkeypatch.delenv(var, raising=False)
 
     def test_returns_none_when_no_var_set(self) -> None:
-        assert _build_bearer_auth() is None
+        assert _build_bearer_auth(load_config(strict=False)) is None
 
     def test_returns_none_when_empty_string(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_BEARER_TOKEN", "")
-        assert _build_bearer_auth() is None
+        assert _build_bearer_auth(load_config(strict=False)) is None
 
     def test_returns_none_when_whitespace_only(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_BEARER_TOKEN", "   ")
-        assert _build_bearer_auth() is None
+        assert _build_bearer_auth(load_config(strict=False)) is None
 
     def test_returns_static_token_verifier_when_set(
         self, monkeypatch: pytest.MonkeyPatch
@@ -2491,14 +2492,14 @@ class TestBuildBearerAuth:
         from fastmcp.server.auth import StaticTokenVerifier
 
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_BEARER_TOKEN", "test-secret-123")
-        result = _build_bearer_auth()
+        result = _build_bearer_auth(load_config(strict=False))
         assert isinstance(result, StaticTokenVerifier)
 
     def test_token_dict_has_correct_structure(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_BEARER_TOKEN", "my-token")
-        result = _build_bearer_auth()
+        result = _build_bearer_auth(load_config(strict=False))
         assert "my-token" in result.tokens
         entry = result.tokens["my-token"]
         assert entry["client_id"] == "bearer"
@@ -2508,7 +2509,7 @@ class TestBuildBearerAuth:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_BEARER_TOKEN", "good-token")
-        verifier = _build_bearer_auth()
+        verifier = _build_bearer_auth(load_config(strict=False))
         access = await verifier.verify_token("good-token")
         assert access is not None
         assert access.client_id == "bearer"
@@ -2518,7 +2519,7 @@ class TestBuildBearerAuth:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_BEARER_TOKEN", "good-token")
-        verifier = _build_bearer_auth()
+        verifier = _build_bearer_auth(load_config(strict=False))
         access = await verifier.verify_token("wrong-token")
         assert access is None
 
@@ -2526,7 +2527,7 @@ class TestBuildBearerAuth:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_BEARER_TOKEN", "good-token")
-        verifier = _build_bearer_auth()
+        verifier = _build_bearer_auth(load_config(strict=False))
         access = await verifier.verify_token("")
         assert access is None
 
@@ -2683,13 +2684,13 @@ class TestAuthDebugLogging:
     ) -> None:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_BEARER_TOKEN", "secret-token")
         with caplog.at_level(logging.DEBUG):
-            _build_bearer_auth()
+            _build_bearer_auth(load_config(strict=False))
         assert "BEARER_TOKEN is set" in caplog.text
         assert "secret-token" not in caplog.text
 
     def test_bearer_debug_logs_absence(self, caplog: pytest.LogCaptureFixture) -> None:
         with caplog.at_level(logging.DEBUG):
-            _build_bearer_auth()
+            _build_bearer_auth(load_config(strict=False))
         assert "BEARER_TOKEN not set" in caplog.text
 
     def test_oidc_debug_logs_config(
@@ -2705,7 +2706,7 @@ class TestAuthDebugLogging:
             patch("fastmcp.server.auth.oidc_proxy.OIDCProxy", mock_cls),
             caplog.at_level(logging.DEBUG),
         ):
-            _build_oidc_auth()
+            _build_oidc_auth(load_config(strict=False))
 
         assert "OIDC auth config:" in caplog.text
         assert "config_url" in caplog.text
@@ -2721,7 +2722,7 @@ class TestAuthDebugLogging:
         # Only set BASE_URL, leave others missing
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_BASE_URL", "https://example.com")
         with caplog.at_level(logging.DEBUG):
-            result = _build_oidc_auth()
+            result = _build_oidc_auth(load_config(strict=False))
         assert result is None
         assert "missing env vars" in caplog.text
 
@@ -2759,7 +2760,7 @@ class TestAuthDebugLogging:
 
 
 # ---------------------------------------------------------------------------
-# _resolve_auth_mode() — OIDC mode detection
+# _resolve_auth_mode(load_config(strict=False)) — OIDC mode detection
 # ---------------------------------------------------------------------------
 
 _RESOLVE_AUTH_VARS = (
@@ -2772,7 +2773,7 @@ _RESOLVE_AUTH_VARS = (
 
 
 class TestResolveAuthMode:
-    """Tests for _resolve_auth_mode()."""
+    """Tests for _resolve_auth_mode(load_config(strict=False))."""
 
     @pytest.fixture(autouse=True)
     def _clear_auth_mode_vars(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -2782,15 +2783,15 @@ class TestResolveAuthMode:
 
     def test_explicit_remote(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_AUTH_MODE", "remote")
-        assert _resolve_auth_mode() == "remote"
+        assert _resolve_auth_mode(load_config(strict=False)) == "remote"
 
     def test_explicit_oidc_proxy(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_AUTH_MODE", "oidc-proxy")
-        assert _resolve_auth_mode() == "oidc-proxy"
+        assert _resolve_auth_mode(load_config(strict=False)) == "oidc-proxy"
 
     def test_explicit_case_insensitive(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_AUTH_MODE", "REMOTE")
-        assert _resolve_auth_mode() == "remote"
+        assert _resolve_auth_mode(load_config(strict=False)) == "remote"
 
     def test_auto_detect_oidc_proxy(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """All four OIDC vars set → oidc-proxy."""
@@ -2801,7 +2802,7 @@ class TestResolveAuthMode:
         )
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_OIDC_CLIENT_ID", "test-client")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_OIDC_CLIENT_SECRET", "test-secret")
-        assert _resolve_auth_mode() == "oidc-proxy"
+        assert _resolve_auth_mode(load_config(strict=False)) == "oidc-proxy"
 
     def test_auto_detect_remote(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Only BASE_URL + CONFIG_URL → remote."""
@@ -2810,14 +2811,14 @@ class TestResolveAuthMode:
             "MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL",
             "https://auth.example.com/.well-known/openid-configuration",
         )
-        assert _resolve_auth_mode() == "remote"
+        assert _resolve_auth_mode(load_config(strict=False)) == "remote"
 
     def test_no_vars_returns_none(self) -> None:
-        assert _resolve_auth_mode() is None
+        assert _resolve_auth_mode(load_config(strict=False)) is None
 
     def test_invalid_mode_ignored(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_AUTH_MODE", "invalid")
-        assert _resolve_auth_mode() is None
+        assert _resolve_auth_mode(load_config(strict=False)) is None
 
     def test_invalid_mode_warns_and_falls_through(
         self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
@@ -2830,14 +2831,14 @@ class TestResolveAuthMode:
             "https://auth.example.com/.well-known/openid-configuration",
         )
         with caplog.at_level(logging.WARNING):
-            result = _resolve_auth_mode()
+            result = _resolve_auth_mode(load_config(strict=False))
         assert result == "remote"
         assert "Unknown AUTH_MODE 'typo'" in caplog.text
 
     def test_only_base_url_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """BASE_URL alone is not enough for any OIDC mode."""
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_BASE_URL", "https://mcp.example.com")
-        assert _resolve_auth_mode() is None
+        assert _resolve_auth_mode(load_config(strict=False)) is None
 
     def test_explicit_overrides_auto_detection(
         self, monkeypatch: pytest.MonkeyPatch
@@ -2851,11 +2852,11 @@ class TestResolveAuthMode:
         )
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_OIDC_CLIENT_ID", "test-client")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_OIDC_CLIENT_SECRET", "test-secret")
-        assert _resolve_auth_mode() == "remote"
+        assert _resolve_auth_mode(load_config(strict=False)) == "remote"
 
 
 # ---------------------------------------------------------------------------
-# _build_remote_auth() — RemoteAuthProvider construction
+# _build_remote_auth(load_config(strict=False)) — RemoteAuthProvider construction
 # ---------------------------------------------------------------------------
 
 _REMOTE_AUTH_VARS = (
@@ -2867,7 +2868,7 @@ _REMOTE_AUTH_VARS = (
 
 
 class TestBuildRemoteAuth:
-    """Tests for _build_remote_auth()."""
+    """Tests for _build_remote_auth(load_config(strict=False))."""
 
     @pytest.fixture(autouse=True)
     def _clear_remote_auth_vars(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -2876,13 +2877,13 @@ class TestBuildRemoteAuth:
             monkeypatch.delenv(var, raising=False)
 
     def test_missing_env_vars_returns_none(self) -> None:
-        assert _build_remote_auth() is None
+        assert _build_remote_auth(load_config(strict=False)) is None
 
     def test_missing_config_url_returns_none(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_BASE_URL", "https://mcp.example.com")
-        assert _build_remote_auth() is None
+        assert _build_remote_auth(load_config(strict=False)) is None
 
     def test_missing_base_url_returns_none(
         self, monkeypatch: pytest.MonkeyPatch
@@ -2891,7 +2892,7 @@ class TestBuildRemoteAuth:
             "MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL",
             "https://auth.example.com/.well-known/openid-configuration",
         )
-        assert _build_remote_auth() is None
+        assert _build_remote_auth(load_config(strict=False)) is None
 
     def test_discovery_fetch_failure_returns_none(
         self, monkeypatch: pytest.MonkeyPatch
@@ -2904,7 +2905,7 @@ class TestBuildRemoteAuth:
             "https://auth.example.com/.well-known/openid-configuration",
         )
         with patch("httpx.get", side_effect=Exception("connection failed")):
-            assert _build_remote_auth() is None
+            assert _build_remote_auth(load_config(strict=False)) is None
 
     def test_httpx_import_error_returns_none(
         self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
@@ -2922,7 +2923,7 @@ class TestBuildRemoteAuth:
             patch.dict(sys.modules, {"httpx": None}),
             caplog.at_level(logging.ERROR),
         ):
-            assert _build_remote_auth() is None
+            assert _build_remote_auth(load_config(strict=False)) is None
         assert "'httpx' is not installed" in caplog.text
 
     def test_happy_path_returns_non_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -2940,7 +2941,7 @@ class TestBuildRemoteAuth:
         }
         mock_resp.raise_for_status = MagicMock()
         with patch("httpx.get", return_value=mock_resp):
-            result = _build_remote_auth()
+            result = _build_remote_auth(load_config(strict=False))
         assert result is not None
 
     def test_missing_jwks_uri_returns_none(
@@ -2957,7 +2958,7 @@ class TestBuildRemoteAuth:
         mock_resp.json.return_value = {"issuer": "https://auth.example.com"}
         mock_resp.raise_for_status = MagicMock()
         with patch("httpx.get", return_value=mock_resp):
-            assert _build_remote_auth() is None
+            assert _build_remote_auth(load_config(strict=False)) is None
 
     def test_missing_issuer_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from unittest.mock import MagicMock, patch
@@ -2973,7 +2974,7 @@ class TestBuildRemoteAuth:
         }
         mock_resp.raise_for_status = MagicMock()
         with patch("httpx.get", return_value=mock_resp):
-            assert _build_remote_auth() is None
+            assert _build_remote_auth(load_config(strict=False)) is None
 
     def test_audience_forwarded_when_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from unittest.mock import MagicMock, patch
@@ -3000,7 +3001,7 @@ class TestBuildRemoteAuth:
             patch("fastmcp.server.auth.JWTVerifier", mock_verifier_cls),
             patch("fastmcp.server.auth.RemoteAuthProvider", mock_remote_cls),
         ):
-            _build_remote_auth()
+            _build_remote_auth(load_config(strict=False))
 
         kw = mock_verifier_cls.call_args.kwargs
         assert kw["audience"] == "my-api"
@@ -3031,7 +3032,7 @@ class TestBuildRemoteAuth:
             patch("fastmcp.server.auth.JWTVerifier", mock_verifier_cls),
             patch("fastmcp.server.auth.RemoteAuthProvider", mock_remote_cls),
         ):
-            _build_remote_auth()
+            _build_remote_auth(load_config(strict=False))
 
         kw = mock_verifier_cls.call_args.kwargs
         assert kw["audience"] is None
@@ -3063,7 +3064,7 @@ class TestBuildRemoteAuth:
             patch("fastmcp.server.auth.JWTVerifier", mock_verifier_cls),
             patch("fastmcp.server.auth.RemoteAuthProvider", mock_remote_cls),
         ):
-            _build_remote_auth()
+            _build_remote_auth(load_config(strict=False))
 
         kw = mock_verifier_cls.call_args.kwargs
         assert kw["required_scopes"] == ["openid", "profile", "email"]
@@ -3096,7 +3097,7 @@ class TestBuildRemoteAuth:
             patch("fastmcp.server.auth.JWTVerifier", mock_verifier_cls),
             patch("fastmcp.server.auth.RemoteAuthProvider", mock_remote_cls),
         ):
-            _build_remote_auth()
+            _build_remote_auth(load_config(strict=False))
 
         kw = mock_verifier_cls.call_args.kwargs
         assert kw["required_scopes"] is None
@@ -3128,7 +3129,7 @@ class TestBuildRemoteAuth:
             patch("fastmcp.server.auth.RemoteAuthProvider", mock_remote_cls),
             caplog.at_level(logging.DEBUG),
         ):
-            _build_remote_auth()
+            _build_remote_auth(load_config(strict=False))
 
         assert "Remote auth config:" in caplog.text
         assert "jwks_uri" in caplog.text
