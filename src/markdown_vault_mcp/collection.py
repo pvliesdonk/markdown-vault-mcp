@@ -200,6 +200,8 @@ class Collection:
             exclude_patterns=self._exclude_patterns,
             required_frontmatter=self._required_frontmatter,
             indexed_frontmatter_fields=self._indexed_frontmatter_fields,
+            # Late-binding closures: self._search_mgr is assigned below and
+            # only accessed at call-time, not during IndexManager.__init__.
             get_vectors=lambda: self._search_mgr.vectors,
             set_vectors=lambda v: setattr(self._search_mgr, "vectors", v),
         )
@@ -862,8 +864,6 @@ class Collection:
     def _validate_path(self, path: str) -> Path:
         """Resolve a relative path and validate it is inside source_dir.
 
-        Delegates to :meth:`DocumentManager._validate_path`.
-
         Args:
             path: Relative document path.
 
@@ -874,13 +874,12 @@ class Collection:
             ValueError: If the path escapes the source directory or does
                 not end with ``.md``.
         """
-        return self._doc_mgr._validate_path(path)
+        from markdown_vault_mcp.utils import validate_path
+
+        return validate_path(path, self._source_dir)
 
     def _validate_attachment_path(self, path: str) -> Path:
-        """Resolve and validate a non-.md attachment path.
-
-        Delegates to :meth:`DocumentManager._validate_attachment_path`.
-        """
+        """Resolve and validate a non-.md attachment path."""
         return self._doc_mgr._validate_attachment_path(path)
 
     def _ensure_callback_worker(self) -> None:
