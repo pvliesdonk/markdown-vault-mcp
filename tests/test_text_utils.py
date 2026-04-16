@@ -43,6 +43,10 @@ class TestNormalizeText:
         text = "hello world"
         assert normalize_text(text) == text
 
+    def test_empty_string_passthrough(self) -> None:
+        """Empty string remains empty."""
+        assert normalize_text("") == ""
+
 
 class TestBuildPositionMap:
     def test_identity_mapping(self) -> None:
@@ -106,6 +110,10 @@ class TestBuildPositionMap:
         assert pos_map[3] == 3  # 'e' (start of 2-char decomposed sequence)
         assert pos_map[4] == 5  # sentinel = orig_len (past the combining accent)
 
+    def test_empty_mapping(self) -> None:
+        """Empty inputs return just the sentinel [0]."""
+        assert build_position_map("", "") == [0]
+
 
 class TestFindClosestMatch:
     def test_close_match_found(self) -> None:
@@ -131,3 +139,7 @@ class TestFindClosestMatch:
         file_content = "first\nhello worlds\nthird\n"
         diag = find_closest_match(old_text, file_content)
         assert diag["closest_match_line"] == 2
+
+    def test_empty_file_no_match(self) -> None:
+        """Matching against empty file returns empty dict."""
+        assert find_closest_match("some text", "") == {}

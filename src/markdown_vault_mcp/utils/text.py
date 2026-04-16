@@ -17,7 +17,7 @@ from typing import Any
 # Used by build_position_map to avoid calling normalize_text() per
 # character, which would (a) be O(n²) and (b) incorrectly strip a lone
 # space/tab as "trailing whitespace" of a one-char string.
-_CHAR_SUBS: dict[str, str] = {
+_CHAR_SUBS: dict[str, str | int | None] = {
     "\u2013": "-",  # en-dash
     "\u2014": "-",  # em-dash
     "\u201c": '"',  # left double quotation mark
@@ -47,9 +47,7 @@ def normalize_text(text: str) -> str:
         Normalized string.
     """
     text = unicodedata.normalize("NFC", text)
-    text = text.replace("\u2013", "-").replace("\u2014", "-")
-    text = text.replace("\u201c", '"').replace("\u201d", '"')
-    text = text.replace("\u2018", "'").replace("\u2019", "'")
+    text = text.translate(str.maketrans(_CHAR_SUBS))
     lines = text.split("\n")
     lines = [re.sub(r"[ \t]+", " ", line).rstrip() for line in lines]
     return "\n".join(lines)
