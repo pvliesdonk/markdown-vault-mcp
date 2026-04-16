@@ -29,6 +29,10 @@ from markdown_vault_mcp.types import (
     RenameResult,
     WriteResult,
 )
+from markdown_vault_mcp.utils.links import (
+    apply_link_replacement,
+    compute_new_raw_target,
+)
 from markdown_vault_mcp.utils.text import (
     build_position_map,
     find_closest_match,
@@ -552,11 +556,6 @@ class DocumentManager:
         """Rewrite source files that link to old_path."""
         from collections import defaultdict
 
-        from markdown_vault_mcp.collection import (
-            _apply_link_replacement,
-            _compute_new_raw_target,
-        )
-
         if not backlinks:
             return []
 
@@ -575,7 +574,7 @@ class DocumentManager:
                     continue
                 content = source_abs.read_text(encoding="utf-8")
                 for row in rows:
-                    new_raw = _compute_new_raw_target(
+                    new_raw = compute_new_raw_target(
                         row["link_type"],
                         row["raw_target"],
                         row["fragment"],
@@ -583,7 +582,7 @@ class DocumentManager:
                         source_path=source_path,
                         old_path=old_path,
                     )
-                    content = _apply_link_replacement(
+                    content = apply_link_replacement(
                         content,
                         row["link_type"],
                         row["raw_target"],
@@ -677,11 +676,18 @@ class DocumentManager:
     def validate_attachment_path(self, path: str) -> Path:
         """Resolve and validate a non-.md attachment path."""
         if path.endswith(".md"):
-            raise ValueError("Use note methods for .md files.")
+            raise ValueError(
+                f"Path ends with '.md' — use the note read/write methods instead: {path}"
+            )
         exts = self.effective_attachment_extensions()
         suffix = Path(path).suffix.lstrip(".").lower()
         if "*" not in exts and suffix not in exts:
-            raise ValueError(f"Extension '.{suffix}' not in allowlist.")
+            allowed_str = ", ".join(f".{e}" for e in sorted(exts))
+            raise ValueError(
+                f"Extension '.{suffix}' is not in the attachment allowlist. "
+                f"Allowed: {allowed_str}. "
+                "Set MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS=* to allow all non-.md files."
+            )
         abs_path = (self._collection._source_dir / path).resolve()
         if not abs_path.is_relative_to(self._collection._source_dir.resolve()):
             raise ValueError(f"Path traversal detected: {path}")
