@@ -398,7 +398,7 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
             - raw_target (str): Literal link target as written in the source.
 
         Raises:
-            DocumentNotFoundError: If no document exists at the given path.
+            ValueError: If no document exists at the given path.
         """
         results = await asyncio.to_thread(collection.get_backlinks, path)
         return [asdict(r) for r in results]
@@ -439,7 +439,7 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
             - exists (bool): True if the target document is indexed.
 
         Raises:
-            DocumentNotFoundError: If no document exists at the given path.
+            ValueError: If no document exists at the given path.
         """
         results = await asyncio.to_thread(collection.get_outlinks, path)
         return [asdict(r) for r in results]
@@ -526,7 +526,7 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
             - frontmatter (dict): Parsed YAML frontmatter.
 
         Raises:
-            DocumentNotFoundError: If no document exists at the given path.
+            ValueError: If no document exists at the given path.
         """
         results = await asyncio.to_thread(collection.get_similar, path, limit=limit)
         return [asdict(r) for r in results]
@@ -613,22 +613,39 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
             - folder (str): Parent folder path.
             - frontmatter (dict): Parsed YAML frontmatter.
             - modified_at (float): Unix timestamp of last modification.
-            - backlinks (list): Documents linking to this note. Each entry
-              has source_path, source_title, link_text, link_type, fragment,
-              raw_target. Empty if link tracking is not yet built.
-            - outlinks (list): Links from this note. Each entry has
-              target_path, link_text, link_type, fragment, raw_target, exists
-              (bool). Empty if link tracking is not yet built.
-            - similar (list): Semantically similar notes. Each entry has
-              path, title, score (cosine similarity 0.0-1.0). Empty if
-              semantic search is not configured or similar_limit=0.
+            - backlinks (list): Documents linking to this note. List of dicts,
+              each with:
+
+              - source_path (str): Path of the document containing the link.
+              - source_title (str): Title of the source document.
+              - link_text (str): The clickable text of the link.
+              - link_type (str): One of "markdown", "wikilink", or "reference".
+              - fragment (str | None): Heading anchor (e.g. "#section"), or null.
+              - raw_target (str): Literal link target as written in the source.
+
+            - outlinks (list): Links from this note. List of dicts, each with:
+
+              - target_path (str): Path of the linked document.
+              - link_text (str): The clickable text of the link.
+              - link_type (str): One of "markdown", "wikilink", or "reference".
+              - fragment (str | None): Heading anchor (e.g. "#section"), or null.
+              - raw_target (str): Literal link target as written in the source.
+              - exists (bool): True if the target document is indexed.
+
+            - similar (list): Semantically similar notes. List of dicts, each
+              with:
+
+              - path (str): Relative path of the similar document.
+              - title (str): Document title.
+              - score (float): Cosine similarity, 0.0-1.0; higher = more similar.
+
             - folder_notes (list[str]): Paths of other notes in the same
               folder (up to 20). Plain strings, not dicts.
             - tags (dict[str, list[str]]): Indexed frontmatter field →
               distinct values for this note.
 
         Raises:
-            DocumentNotFoundError: If no document exists at the given path.
+            ValueError: If no document exists at the given path.
         """
         result = await asyncio.to_thread(
             collection.get_context,

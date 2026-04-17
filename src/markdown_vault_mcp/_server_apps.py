@@ -305,10 +305,19 @@ def register_apps(mcp: FastMCP) -> None:
         Returns:
             Dict with:
 
-            - nodes (list): Each node has id (str), label (str), group
-              ("note" or "orphan"), folder (str), backlink_count (int).
-            - edges (list): Each edge has from (str), to (str), type
-              ("markdown", "wikilink", "reference", or "semantic").
+            - nodes (list): List of dicts, each with:
+
+              - id (str): Unique identifier for the node.
+              - label (str): Display name for the node.
+              - group (str): "note" or "orphan".
+              - folder (str): Parent folder path.
+              - backlink_count (int): Number of inbound links.
+
+            - edges (list): List of dicts, each with:
+
+              - from (str): Source node ID.
+              - to (str): Target node ID.
+              - type (str): "markdown", "wikilink", "reference", or "semantic".
         """
         nodes: dict[str, dict[str, Any]] = {}
         edges: list[dict[str, Any]] = []
@@ -463,10 +472,19 @@ def register_apps(mcp: FastMCP) -> None:
         Returns:
             Dict with:
 
-            - nodes (list): Each node has id (str), label (str), group
-              ("hub" or "note"), folder (str), backlink_count (int).
-            - edges (list): Each edge has from (str), to (str), type
-              ("markdown", "wikilink", or "reference").
+            - nodes (list): List of dicts, each with:
+
+              - id (str): Unique identifier for the node.
+              - label (str): Display name for the node.
+              - group (str): "hub" or "note".
+              - folder (str): Parent folder path.
+              - backlink_count (int): Number of inbound links.
+
+            - edges (list): List of dicts, each with:
+
+              - from (str): Source node ID.
+              - to (str): Target node ID.
+              - type (str): "markdown", "wikilink", or "reference".
         """
         hubs = await asyncio.to_thread(collection.get_most_linked, limit=limit)
         nodes: dict[str, dict[str, Any]] = {}
@@ -546,8 +564,12 @@ def register_apps(mcp: FastMCP) -> None:
             Dict with:
 
             - folders (list[str]): Direct child folder paths.
-            - notes (list): Notes directly inside this folder. Each has
-              path (str), title (str), kind ("note" or "attachment").
+            - notes (list): Notes directly inside this folder. List of dicts,
+              each with:
+
+              - path (str): Relative path of the note.
+              - title (str): Document title.
+              - kind (str): "note" or "attachment".
         """
         docs = await asyncio.to_thread(
             collection.list, folder=folder, include_attachments=True

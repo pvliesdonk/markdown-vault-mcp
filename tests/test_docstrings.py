@@ -55,9 +55,11 @@ def test_all_mcp_tools_have_icons():
     import ast
     from pathlib import Path
 
-    server_dir = Path("src/markdown_vault_mcp")
+    server_dir = Path(__file__).parent.parent / "src" / "markdown_vault_mcp"
+    paths = sorted(server_dir.glob("_server_*.py"))
+    assert paths, f"No _server_*.py files found under {server_dir.resolve()}"
     missing = []
-    for path in sorted(server_dir.glob("_server_*.py")):
+    for path in paths:
         tree = ast.parse(path.read_text())
         for node in ast.walk(tree):
             if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
