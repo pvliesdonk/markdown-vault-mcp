@@ -112,9 +112,18 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
                 document where "pacing" appears in the tags list.
 
         Returns:
-            List of result dicts ranked by relevance (higher score is better).
-            Each contains: path, title, folder, content (matched chunk),
-            score, frontmatter.
+            List of result dicts ranked by relevance. Each contains:
+
+            - path (str): Relative path of the document.
+            - title (str): Document title.
+            - folder (str): Parent folder path.
+            - heading (str | None): Section heading of the matched chunk,
+              or null for the document intro.
+            - content (str): Matched chunk text (not the full document).
+            - score (float): BM25 relevance score (keyword mode) or cosine
+              similarity 0.0-1.0 (semantic/hybrid); higher = better match.
+            - search_type (str): "keyword" or "semantic".
+            - frontmatter (dict): Parsed YAML frontmatter of the document.
 
         Raises:
             ValueError: If mode is "semantic" or "hybrid" and no embedding
@@ -339,10 +348,13 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
         scratch after changing the embedding model.
 
         Returns:
-            Dict with available (bool), provider (str or null — provider class
-            name when configured, e.g. "OllamaProvider"), chunk_count (int —
-            embedded chunks in the vector index), and path (str or null —
-            vector index file path when configured).
+            Dict with the following fields:
+
+            - available (bool): True if semantic search can be used in 'search'.
+            - provider (str | None): Provider class name when configured
+              (e.g. "OllamaProvider"), or null if not configured.
+            - chunk_count (int): Number of chunks currently in the vector index.
+            - path (str | None): Vector index file path when persisted, or null.
         """
         return await asyncio.to_thread(collection.embeddings_status)
 
@@ -502,12 +514,19 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
             limit: Maximum number of similar notes to return (default 10).
 
         Returns:
-            List of result dicts ranked by similarity (higher score is
-            more similar). Each contains: path, title, folder, content
-            (most similar chunk), score, search_type ("semantic").
+            List of result dicts ranked by similarity. Each contains:
+
+            - path (str): Relative path of the similar document.
+            - title (str): Document title.
+            - folder (str): Parent folder path.
+            - heading (str | None): Section heading of the most similar chunk.
+            - content (str): Most similar chunk text.
+            - score (float): Cosine similarity, 0.0-1.0; higher = more similar.
+            - search_type (str): Always "semantic".
+            - frontmatter (dict): Parsed YAML frontmatter.
 
         Raises:
-            ValueError: If no document exists at the given path.
+            DocumentNotFoundError: If no document exists at the given path.
         """
         results = await asyncio.to_thread(collection.get_similar, path, limit=limit)
         return [asdict(r) for r in results]
@@ -909,7 +928,8 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
         Args:
             force: When True, discards existing embeddings and rebuilds from
                 scratch. Use only if the embedding model has changed.
-                False (default) only embeds chunks not yet embedded.
+                When False (default), only embeds chunks not yet in the
+                vector index (incremental — does not skip if any exist).
 
         Returns:
             Dict with chunks_embedded: number of chunks newly embedded.
