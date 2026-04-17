@@ -398,7 +398,7 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
             - raw_target (str): Literal link target as written in the source.
 
         Raises:
-            ValueError: If no document exists at the given path.
+            DocumentNotFoundError: If no document exists at the given path.
         """
         results = await asyncio.to_thread(collection.get_backlinks, path)
         return [asdict(r) for r in results]
@@ -439,7 +439,7 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
             - exists (bool): True if the target document is indexed.
 
         Raises:
-            ValueError: If no document exists at the given path.
+            DocumentNotFoundError: If no document exists at the given path.
         """
         results = await asyncio.to_thread(collection.get_outlinks, path)
         return [asdict(r) for r in results]
@@ -606,18 +606,29 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
                 each (default 10).
 
         Returns:
-            Dict with: path, title, folder, frontmatter (dict),
-            modified_at (Unix timestamp), backlinks (list), outlinks (list),
-            similar (list of {path, title, score}).
-            folder_notes (list[str]): Paths of other notes in the same folder
-            (max 20). Plain strings, not dicts — unlike backlinks/outlinks/similar.
-            tags (dict[str, list[str]]): Indexed frontmatter field → list of values.
-            backlinks and outlinks are empty if link tracking is not
-            available. similar is empty if semantic search is not configured
-            or similar_limit is 0.
+            Dict with the following fields:
+
+            - path (str): Relative path of the document.
+            - title (str): Document title.
+            - folder (str): Parent folder path.
+            - frontmatter (dict): Parsed YAML frontmatter.
+            - modified_at (float): Unix timestamp of last modification.
+            - backlinks (list): Documents linking to this note. Each entry
+              has source_path, source_title, link_text, link_type, fragment,
+              raw_target. Empty if link tracking is not yet built.
+            - outlinks (list): Links from this note. Each entry has
+              target_path, link_text, link_type, fragment, raw_target, exists
+              (bool). Empty if link tracking is not yet built.
+            - similar (list): Semantically similar notes. Each entry has
+              path, title, score (cosine similarity 0.0-1.0). Empty if
+              semantic search is not configured or similar_limit=0.
+            - folder_notes (list[str]): Paths of other notes in the same
+              folder (up to 20). Plain strings, not dicts.
+            - tags (dict[str, list[str]]): Indexed frontmatter field →
+              distinct values for this note.
 
         Raises:
-            ValueError: If no document exists at the given path.
+            DocumentNotFoundError: If no document exists at the given path.
         """
         result = await asyncio.to_thread(
             collection.get_context,
@@ -779,10 +790,8 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
             - author (str): Committer name and email, e.g. "Name <email>".
             - message (str): First line of the commit message.
             - paths_changed (list[str]): Files touched by the commit.
-              Populated for vault-wide queries; always empty for single-note
-              queries because the path is already determined by the query
-              arguments — callers know which file the commit touched without
-              needing it echoed back.
+              Populated for vault-wide queries. Always [] for single-note
+              queries (the queried note path is implicit).
 
         Raises:
             ToolError: If the path is invalid.
