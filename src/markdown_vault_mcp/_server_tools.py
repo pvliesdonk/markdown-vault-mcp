@@ -1138,7 +1138,7 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
             Dict with path (str) of the deleted file.
 
         Raises:
-            ValueError: If no file exists at the given path.
+            DocumentNotFoundError: If no file exists at the given path.
             McpError: If if_match is provided and the file has been modified
                 (ConcurrentModificationError).
         """
@@ -1190,8 +1190,9 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
             counting the number of source documents whose links were updated.
 
         Raises:
-            ValueError: If old_path does not exist, new_path already exists,
-                or the path fails traversal validation.
+            DocumentNotFoundError: If old_path does not exist.
+            DocumentExistsError: If new_path already exists.
+            ValueError: If the path fails traversal validation.
             McpError: If if_match is provided and the file has been modified
                 (ConcurrentModificationError).
         """
@@ -1430,8 +1431,12 @@ def _register_download_link_tool(mcp: FastMCP) -> None:
                 minutes).
 
         Returns:
-            JSON with ``download_url``, ``expires_in_seconds``,
-            ``path``, and ``content_type``.
+            JSON-encoded string with the following fields:
+
+            - download_url (str): One-time HTTP URL to download the file.
+            - expires_in_seconds (int): Link lifetime (equals ttl_seconds).
+            - path (str): Vault-relative path of the served file.
+            - content_type (str): MIME type of the file.
 
         Raises:
             ValueError: If ``MARKDOWN_VAULT_MCP_BASE_URL`` is not
