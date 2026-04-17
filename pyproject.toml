@@ -54,7 +54,7 @@ docs = [
     "mkdocs-material>=9.5",
     "mkdocstrings[python]>=0.24",
     "mkdocs-llmstxt>=0.2",
-    "pygments>=2,<2.20",
+    "pygments>=2,<2.21",
 ]
 
 [project.scripts]
@@ -73,7 +73,7 @@ build-backend = "hatchling.build"
 [tool.uv]
 # Pygments 2.20.0 crashes on filename=None in HtmlFormatter (introduced in 2.20.0,
 # tracked upstream as Pygments PR #3078). Pin globally until the fix ships.
-override-dependencies = ["pygments>=2,<2.20"]
+override-dependencies = ["pygments>=2,<2.21"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/markdown_vault_mcp"]
