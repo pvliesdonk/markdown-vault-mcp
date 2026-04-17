@@ -59,5 +59,13 @@ _TOOL_ICONS: dict[str, list[Icon]] = {
         "create_download_link",
         "get_history",
         "get_diff",
+        "vault_graph_neighborhood",
+        "vault_graph_hubs",
     ]
 }
+
+# App-only tools reuse existing icons rather than introducing new SVG files.
+_TOOL_ICONS["vault_context"] = _TOOL_ICONS["get_context"]
+_TOOL_ICONS["vault_list"] = _TOOL_ICONS["list_documents"]
+_TOOL_ICONS["vault_read"] = _TOOL_ICONS["read"]
+_TOOL_ICONS["vault_search"] = _TOOL_ICONS["search"]

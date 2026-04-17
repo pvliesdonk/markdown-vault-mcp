@@ -48,3 +48,28 @@ def test_gitwritestrategy_public_methods_have_docstrings():
         if callable(member) and member.__doc__ is None
     ]
     assert not missing, f"GitWriteStrategy methods missing docstrings: {missing}"
+
+
+def test_all_mcp_tools_have_icons():
+    """Every @mcp.tool decorator in _server_*.py must include icons=."""
+    import ast
+    from pathlib import Path
+
+    server_dir = Path("src/markdown_vault_mcp")
+    missing = []
+    for path in sorted(server_dir.glob("_server_*.py")):
+        tree = ast.parse(path.read_text())
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            for decorator in node.decorator_list:
+                if not (
+                    isinstance(decorator, ast.Call)
+                    and isinstance(decorator.func, ast.Attribute)
+                    and decorator.func.attr == "tool"
+                ):
+                    continue
+                has_icons = any(kw.arg == "icons" for kw in decorator.keywords)
+                if not has_icons:
+                    missing.append(f"{path.name}::{node.name}")
+    assert not missing, f"@mcp.tool decorators missing icons=: {missing}"

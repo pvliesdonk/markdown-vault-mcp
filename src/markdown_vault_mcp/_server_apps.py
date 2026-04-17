@@ -183,6 +183,7 @@ def register_apps(mcp: FastMCP) -> None:
     # -- App-only tools (hidden from LLM, used by SPA via callServerTool) ---
 
     @mcp.tool(
+        icons=_TOOL_ICONS["vault_context"],
         annotations={
             "readOnlyHint": True,
             "destructiveHint": False,
@@ -271,6 +272,7 @@ def register_apps(mcp: FastMCP) -> None:
         }
 
     @mcp.tool(
+        icons=_TOOL_ICONS["vault_graph_neighborhood"],
         annotations={
             "readOnlyHint": True,
             "destructiveHint": False,
@@ -429,6 +431,7 @@ def register_apps(mcp: FastMCP) -> None:
         return {"nodes": list(nodes.values()), "edges": unique_edges}
 
     @mcp.tool(
+        icons=_TOOL_ICONS["vault_graph_hubs"],
         annotations={
             "readOnlyHint": True,
             "destructiveHint": False,
@@ -505,6 +508,7 @@ def register_apps(mcp: FastMCP) -> None:
         return {"nodes": list(nodes.values()), "edges": edges}
 
     @mcp.tool(
+        icons=_TOOL_ICONS["vault_list"],
         annotations={
             "readOnlyHint": True,
             "destructiveHint": False,
@@ -562,6 +566,7 @@ def register_apps(mcp: FastMCP) -> None:
         return {"folders": child_folders, "notes": notes}
 
     @mcp.tool(
+        icons=_TOOL_ICONS["vault_read"],
         annotations={
             "readOnlyHint": True,
             "destructiveHint": False,
@@ -598,6 +603,7 @@ def register_apps(mcp: FastMCP) -> None:
         }
 
     @mcp.tool(
+        icons=_TOOL_ICONS["vault_search"],
         annotations={
             "readOnlyHint": True,
             "destructiveHint": False,
