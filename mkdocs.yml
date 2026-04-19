@@ -66,6 +66,7 @@ plugins:
           - guides/authentication.md: Authentication modes — bearer token, OIDC, and troubleshooting
           - guides/oidc-providers.md: OIDC provider setup (Authelia, Keycloak, Google, GitHub via broker)
           - guides/obsidian-everywhere.md: Reference architecture for desktop + mobile + Claude on one vault
+          - guides/research-workflows.md: Research workflows (seed → ground → absorb → interconnect → produce, with optional scholar-mcp integration)
           - guides/zettelkasten.md: Zettelkasten workflow (fleeting → literature → permanent notes, MOCs, graph navigation)
           - guides/para.md: PARA workflow (Projects/Areas/Resources/Archive with triage, kickoff, and weekly review prompts)
           - guides/mcp-apps.md: MCP Apps — Context Card, Graph Explorer, Vault Browser, and Note Preview views
@@ -132,6 +133,7 @@ nav:
       - Authentication: guides/authentication.md
       - OIDC Providers: guides/oidc-providers.md
       - Obsidian Everywhere: guides/obsidian-everywhere.md
+      - Research Workflows: guides/research-workflows.md
       - Zettelkasten: guides/zettelkasten.md
       - PARA: guides/para.md
       - MCP Apps: guides/mcp-apps.md

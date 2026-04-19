@@ -15,6 +15,7 @@ Step-by-step walkthroughs for common deployment scenarios. Each guide takes you 
 | Protect my server with a bearer token | [Authentication](authentication.md#bearer-token) |
 | Protect my server with OIDC authentication | [Authentication](authentication.md#oidc) |
 | Access my vault from desktop, mobile, AND Claude | [Obsidian Everywhere](obsidian-everywhere.md) |
+| Do research (literature grounding, interconnected notes, paper drafting) | [Research workflows](research-workflows.md) |
 | Use FastEmbed for local embeddings | [Embeddings](embeddings.md#fastembed) |
 | Use Ollama for embeddings (CPU-only) | [Embeddings](embeddings.md#ollama) |
 | Use OpenAI for embeddings | [Embeddings](embeddings.md#openai) |
