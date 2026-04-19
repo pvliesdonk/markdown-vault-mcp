@@ -28,7 +28,9 @@ def _load(path: Path) -> Any:
 
 def _dump(path: Path, data: Any) -> None:
     with path.open("w", encoding="utf-8") as fh:
-        json.dump(data, fh, indent=2)
+        # ensure_ascii=False preserves UTF-8 characters literally, matching
+        # jq's default behavior and how a human editor would save the file.
+        json.dump(data, fh, indent=2, ensure_ascii=False)
         fh.write("\n")
 
 
