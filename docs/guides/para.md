@@ -177,7 +177,10 @@ Triage is the decision step: every Inbox note either becomes a Project, Area, or
 
 **What Claude does autonomously:** classify unambiguous notes into their bucket, slug the filename from the title, fill type-specific frontmatter fields (`outcome`, `deadline`, `area`, `standard`) from the note body, and execute the rename and write on confirmation.
 
-**What Claude asks about:** anything that could fit two buckets ("is this a one-off project or an ongoing responsibility?"), picking a slug when the title is generic ("thoughts"), deciding whether a note belongs as a new section of an existing permanent note rather than a standalone file. When a note contains two distinct ideas, you can tell Claude to split it — it creates two notes, one per idea, and triages each separately.
+**What Claude asks about:** anything that could fit two buckets ("is this a one-off project or an ongoing responsibility?"), picking a slug when the title is generic ("thoughts"), and two shape decisions worth calling out:
+
+- **Split.** When an Inbox note contains two distinct ideas, tell Claude to split. It creates two notes — one per idea — and triages each separately. Don't pre-split before triage; Claude handles it in one pass.
+- **Merge.** Before classifying, Claude can search for existing notes covering the same ground. If a strong match exists, it proposes merging the inbox content into the existing note as a new section (or extending an existing section), deleting the inbox note after. This prevents the vault from accumulating near-duplicates.
 
 The prompt walks through five steps:
 
@@ -408,9 +411,14 @@ Date-range filters are tracked as a planned follow-up — see [Future Enhancemen
 
 Same spirit as Zettelkasten: over-linking is better than under-linking. If a Resource touches on a Project's outcome, link it. If an Area has three projects that reference a common book, link the book from each. `get_context(path)` will surface these connections later when you're editing, and `para-project-kickoff` will resurface them when you start a new related project. Don't agonize — the tools will help you rediscover what you linked.
 
-### Let Claude split ambiguous captures
+### Let Claude split or merge captures
 
-When an inbox note contains two ideas, tell the triage prompt to split it. Claude creates two notes — one per idea — and classifies each separately. Don't try to pre-split before triage; Claude handles it in one pass.
+Two shape operations the triage prompt handles that manual workflows usually skip:
+
+- **Split** — when an Inbox note contains two ideas, tell the triage prompt to split. Claude creates two notes, one per idea, and classifies each separately.
+- **Merge** — when an Inbox note extends or restates something already in the vault, Claude proposes merging it into the existing note rather than creating a duplicate. This prevents near-duplicate accumulation, which is the main failure mode of long-lived PARA vaults.
+
+Don't pre-split or pre-merge before triage; Claude handles both in one pass.
 
 ### Ask Claude for area assignments in batches
 
