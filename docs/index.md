@@ -25,7 +25,7 @@ Point it at a directory of Markdown files — an Obsidian vault, a docs folder, 
 A few flows the server enables with an LLM on top — none of these require a bespoke prompt:
 
 - **"Fetch <url> and summarize into a Resource note."** Claude composes `fetch` + `search` + `write`.
-- **"Research <topic> and create a set of interlinked notes."** Claude composes web tools + `write` with wikilinks.
+- **"Research <topic> and create a set of interlinked notes."** Claude composes web tools + `write` with wikilinks. See the [Research workflows guide](guides/research-workflows.md) for the full loop.
 - **"Summarize today's conversations into Inbox notes."** Claude.ai composes `conversation_search` + `recent_chats` + `write`; the [`para-capture-chats`](guides/para.md#using-the-para-prompts) prompt is the one-click version.
 - **Find missing links.** The [`propose-links`](prompts.md) builtin prompt scans recently-modified notes and proposes meaningful connections.
 
