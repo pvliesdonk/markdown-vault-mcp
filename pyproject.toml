@@ -163,7 +163,7 @@ commit_parser = "angular"
 tag_format = "v{version}"
 # Bump the versioned manifests inside the release commit rather than in a
 # follow-up commit + force-retag. See issue #392.
-build_command = "bash scripts/bump_manifests.sh"
+build_command = "python scripts/bump_manifests.py"
 # PSR stages and commits files listed in `assets` together with pyproject.toml
 # and CHANGELOG.md, so the release tag points at a single commit containing
 # all version-coupled files.
