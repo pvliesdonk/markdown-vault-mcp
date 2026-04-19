@@ -24,6 +24,18 @@ Point it at a directory of Markdown files (an Obsidian vault, a docs folder, a Z
 - **MCP resources** — 9 resources exposing vault configuration, statistics, tags, folders, document outlines, similar notes, recent notes, and an interactive SPA
 - **MCP prompts** — 6 prompt templates including template-driven note creation
 
+## What you can do with it
+
+With this server mounted in Claude, you can:
+
+- **Capture a URL as a note.** "Fetch <url>, summarize as a Resource note under `3-Resources/`, and link any existing notes on the topic." — Claude composes `fetch` + `search` + `write`.
+- **Research a topic into your vault.** "Research product security regulations, compare them, and create a set of interlinked notes — one per regulation, plus a map-of-content." — Claude composes web-search tools (client-side) + `write` with wikilinks.
+- **Distill today's thinking.** "Summarize today's conversations into Inbox notes." — Claude.ai only; uses `conversation_search` + `recent_chats` + `write`. The [`para-capture-chats`](examples/para/prompts/para-capture-chats.md) prompt is the one-click version.
+- **Find missing links.** Fire the [`propose-links`](https://pvliesdonk.github.io/markdown-vault-mcp/prompts/#propose-links) prompt from the `+` menu — it scans recently-modified notes, proposes meaningful connections, and writes them on confirmation.
+- **Split or merge captures.** "Split this Inbox note into two." / "Merge this into `<existing note>` instead of duplicating." — Claude composes `read` + `write` + `delete`.
+
+No external scheduler, no separate capture app — the vault sits behind your conversations and absorbs their output.
+
 ## Installation
 
 ### From PyPI

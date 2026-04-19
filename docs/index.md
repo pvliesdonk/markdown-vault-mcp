@@ -20,6 +20,17 @@ Point it at a directory of Markdown files — an Obsidian vault, a docs folder, 
 - **MCP prompts** — summarize, research, discuss, create from template, compare, and find related notes
 - **MCP Apps** — four browser-based views (Context Card, Graph Explorer, Vault Browser, Note Preview) for clients supporting the MCP Apps protocol
 
+## What you can do with it
+
+A few flows the server enables with an LLM on top — none of these require a bespoke prompt:
+
+- **"Fetch <url> and summarize into a Resource note."** Claude composes `fetch` + `search` + `write`.
+- **"Research <topic> and create a set of interlinked notes."** Claude composes web tools + `write` with wikilinks.
+- **"Summarize today's conversations into Inbox notes."** Claude.ai composes `conversation_search` + `recent_chats` + `write`; the [`para-capture-chats`](guides/para.md#using-the-para-prompts) prompt is the one-click version.
+- **Find missing links.** The [`propose-links`](prompts.md) builtin prompt scans recently-modified notes and proposes meaningful connections.
+
+See [MCP Prompts](prompts.md) for the codified workflows and the ambient-pattern reference.
+
 ## Quick Start
 
 ### As a library
