@@ -46,7 +46,7 @@ On user confirmation:
 
 1. `rename(old_path, new_path, update_links=True)` — preserves backlinks from other notes.
 2. `read(path=new_path)` to get the current body content.
-3. `write(path=new_path, content=<existing body>, frontmatter=<typed frontmatter dict>)` — overwrites the file with the typed frontmatter while preserving the body. Include `type`, `status=active`, `tags`, `created` (from the original note), and any type-specific fields you inferred (`outcome`, `deadline`, `area` for projects; `standard`, `review_cadence` for areas).
+3. `write(path=new_path, content=<existing body>, frontmatter=<typed frontmatter dict>)` — overwrites the file with the typed frontmatter while preserving the body. Include `type`, `status=active`, `tags`, `created` (from the original note, or today's ISO date if missing), and any type-specific fields you inferred (`outcome`, `deadline`, `area` for projects; `standard`, `review_cadence` for areas).
 
 ## Constraints
 

@@ -26,7 +26,7 @@ Record for each active project: path, title, `frontmatter.deadline`, `modified_a
 Using the `modified_at` values from Step 2 (no additional calls needed), compute:
 
 ```
-stale_threshold = <current Unix timestamp> - 14 * 86400   # 14 days in seconds
+stale_threshold = <current Unix timestamp, ask user if unknown> - 14 * 86400   # 14 days in seconds
 stale_projects = [p for p in active_projects if p.modified_at < stale_threshold]
 ```
 

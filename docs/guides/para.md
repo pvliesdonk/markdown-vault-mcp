@@ -5,6 +5,8 @@ PARA (Projects, Areas, Resources, Archive) is Tiago Forte's framework for organi
 !!! note
     This is one of many ways to organize a vault with markdown-vault-mcp. The server is a generic markdown collection backend — PARA conventions are applied in this guide but not required or enforced by the server.
 
+This guide assumes you're working with a PARA vault through Claude (or another MCP client) as the primary interface. The three PARA prompts — triage, kickoff, and weekly review — are where most of the value lives; Claude handles surfacing, classification, and batch operations you'd otherwise skip or defer. The Python and CLI examples scattered throughout are the scripting escape hatch, not the day-to-day pattern.
+
 ## Vault Setup
 
 ### Recommended folder structure
@@ -35,7 +37,7 @@ PARA has four note shapes. Each uses a distinct frontmatter block. The templates
 ---
 title: "{{title}}"
 tags: []
-created: {{date}}
+created: "{{date}}"
 ---
 ```
 
@@ -50,7 +52,7 @@ outcome: "<one-sentence definition of done>"
 deadline: YYYY-MM-DD
 area: "<parent area name, or empty>"
 tags: []
-created: {{date}}
+created: "{{date}}"
 ---
 ```
 
@@ -64,7 +66,7 @@ status: active
 standard: "<what 'healthy' looks like for this area>"
 review_cadence: "<weekly | monthly | quarterly>"
 tags: []
-created: {{date}}
+created: "{{date}}"
 ---
 ```
 
@@ -76,7 +78,7 @@ title: "{{title}}"
 type: resource
 status: active
 tags: []
-created: {{date}}
+created: "{{date}}"
 ---
 ```
 
@@ -89,7 +91,7 @@ created: {{date}}
 - `deadline` — Project-only. Target date. Stored as ISO `YYYY-MM-DD` but not indexed for range queries (see [Future Enhancements](#future-enhancements)).
 - `area` — Project-only. Names the parent Area for rollups (e.g., `"Health"`). This field is the authoritative signal for area→project linkage; wikilinks between them are supplementary.
 - `standard` — Area-only. Describes what "healthy" looks like for the area. Used during the Weekly Review.
-- `review_cadence` — Area-only. One of `weekly`, `monthly`, `quarterly`. Drives how often the Area should appear in reviews.
+- `review_cadence` — Area-only. Informational hint about how often this area should be reviewed (`weekly`, `monthly`, `quarterly`). The `para-weekly-review` prompt does not yet act on this field; it audits all active areas each run. Tracked as a Future Enhancement.
 - `tags` — Free-form list. Searchable via `filters={"tags": "value"}`.
 - `created` — ISO date the note was written. Useful for reviewing note age.
 
@@ -140,16 +142,15 @@ The canonical PARA loop: **Capture → Triage → Project Work → Weekly Review
 
 ### 1. Capture (Inbox)
 
-Capture any new idea, task, or reference in `0-Inbox/` immediately, without classifying it. Use the inbox template for minimal friction:
+Capture whatever's in your head into `0-Inbox/` without worrying about classification. The `inbox.md` template exists for this — Claude can create notes from it on request ("create an inbox note titled X with content Y"), or you can drop files directly into the folder via Obsidian, the CLI, or a scripting run. Review the inbox daily or every few days by invoking the triage prompt on the whole folder; Claude walks each note, classifies it, and proposes target paths.
 
-**Via CLI:**
+**Via Claude:**
 
-```bash
-markdown-vault-mcp serve &
-# Then in Claude:  create_from_template(template_name='inbox')
+```
+Use the create_from_template prompt with template_name="inbox"
 ```
 
-**Programmatically:**
+**Programmatically (scripting escape hatch):**
 
 ```python
 from markdown_vault_mcp import Collection
@@ -168,17 +169,13 @@ collection.write(
 - One idea per note
 - Review the Inbox at least once per week
 
-**Review the inbox:**
-
-```python
-inbox = collection.list(folder="0-Inbox")
-for note in inbox:
-    print(note.path, note.title)
-```
-
 ### 2. Triage (Inbox → P/A/R)
 
-Triage is the decision step: every Inbox note either becomes a Project, Area, or Resource, or gets deleted. The `para-triage` prompt codifies the decision procedure.
+Triage is the decision step: every Inbox note either becomes a Project, Area, or Resource, or gets deleted. The `para-triage` prompt codifies the decision procedure. Give Claude the entire `0-Inbox/` folder and it processes each note sequentially, pausing for your call on anything ambiguous — what would take an hour of manual review runs in minutes.
+
+**What Claude does autonomously:** classify unambiguous notes into their bucket, slug the filename from the title, fill type-specific frontmatter fields (`outcome`, `deadline`, `area`, `standard`) from the note body, and execute the rename and write on confirmation.
+
+**What Claude asks about:** anything that could fit two buckets ("is this a one-off project or an ongoing responsibility?"), picking a slug when the title is generic ("thoughts"), deciding whether a note belongs as a new section of an existing permanent note rather than a standalone file. When a note contains two distinct ideas, you can tell Claude to split it — it creates two notes, one per idea, and triages each separately.
 
 The prompt walks through five steps:
 
@@ -201,7 +198,7 @@ The prompt enforces a simple safety rule: **never rename or edit without explici
 
 ### 3. Project Work (`para-project-kickoff`)
 
-Once a note has been classified as a Project, the `para-project-kickoff` prompt turns it into an actionable plan. The prompt bakes in the "just-in-time resurface" workflow: before the project starts, it pulls in related Resources, past archived Projects, and linkable Areas.
+Once a note has been classified as a Project, the `para-project-kickoff` prompt turns it into an actionable plan. This is the resurface work you'd otherwise skip: most people defining a project don't go back through archived work to check what's been tried, don't look across resources to find relevant reference material, don't re-read similar past projects for lessons. Claude does. You give Claude the project note; Claude does the homework and surfaces what's relevant; you approve the links to add.
 
 The prompt walks through six steps:
 
@@ -216,18 +213,26 @@ The prompt walks through six steps:
    - `2-Areas/` → linkable Area
    Folder-prefix classification is one step; reading each note's frontmatter is N steps. Prefer the fast path, fall back to a targeted `search(filters={"type": "resource"})` per bucket when the layout is non-canonical.
 5. **Propose links.** Present a `## Related` section grouped by bucket, with a one-sentence "why this is relevant" per link. Prefer `[[wikilinks]]`.
-6. **Apply on confirmation.** On confirmation, add the `## Related` section via `edit` (if appending to an existing section) or `write` after a fresh `read` (if creating one).
+6. **Apply on confirmation.** On confirmation, `write` the note back with the `## Related` section added (robust to trailing whitespace), or use `edit` if you prefer to avoid rewriting the full file and can match the section heading precisely.
 
 See the full prompt body in `examples/para/prompts/para-project-kickoff.md`.
+
+The kickoff prompt isn't just for project start. Re-invoke it mid-project when you're stuck — Claude will resurface whatever's changed in the vault since kickoff and propose additional links as context evolves.
 
 !!! note "Hybrid mode needs embeddings"
     `search(mode='hybrid')` combines BM25 keyword ranking with vector similarity via Reciprocal Rank Fusion. It requires embeddings to be built. If embeddings aren't configured, the prompt falls back to `mode='keyword'`, which still works but misses semantic matches (paraphrases, conceptual neighbors). Check `stats().semantic_search_available` before picking the mode.
 
 ### 4. Weekly Review (`para-weekly-review`)
 
-The Weekly Review is the maintenance pass that keeps the vault healthy. The `para-weekly-review` prompt produces a dated review note summarizing the state of Projects and Areas and flagging Archive candidates.
+The Weekly Review is a 10-minute guided session, not a manual audit. Invoke the prompt, answer Claude's questions as they come, and decide on the archive candidates it surfaces. The stale-scan, area audit, and archive candidate list are what a manual review would take an hour to produce — the prompt does it in minutes; you just make the calls.
 
-The prompt walks through seven steps:
+Invoke it in Claude with no arguments — it figures out the current ISO week and defaults everything:
+
+```
+In Claude, call: para-weekly-review()
+```
+
+Here is Claude's internal process across seven steps:
 
 1. **Determine the review path.** Default is `3-Resources/reviews/<YYYY-WW>.md` (ISO week), or a user-supplied `review_path`.
 2. **Enumerate active projects** with `list_documents(folder='1-Projects')` and filter client-side for `frontmatter.status == 'active'`. Record each project's path, title, deadline, and `modified_at` timestamp.
@@ -239,13 +244,15 @@ The prompt walks through seven steps:
 
 See the full prompt body in `examples/para/prompts/para-weekly-review.md`.
 
-The prompt is careful to present all findings before asking for any action. It never archives, renames, or edits notes without explicit confirmation, and when the user confirms a batch ("archive all 5"), it still performs each operation individually so failures are isolated.
+The prompt presents all findings before asking for any action. It never archives, renames, or edits notes without explicit confirmation, and when the user confirms a batch ("archive all 5"), it still performs each operation individually so failures are isolated.
 
 ### 5. Archive (lifecycle transition)
 
 Archiving is a two-step operation: flip the `status` to `archived` (and set `archived_at`), then move the file to `4-Archive/`. The order matters — the `status` field is what matters for queries; the folder is for browsing.
 
-The easiest path is to use `para-weekly-review` Step 7, which handles the full lifecycle (surface candidates, flip status, move) with user confirmation. In practice, use that prompt — the snippet below is for manual scripting only.
+The easiest path is to use `para-weekly-review` Step 7, which handles the full lifecycle (surface candidates, flip status, move) with user confirmation. You can also invoke archiving ad-hoc outside the review cadence: "Claude, list everything with `status=completed` in `1-Projects/` and archive them." Claude runs `list_documents(folder='1-Projects')`, filters client-side on the frontmatter, and proposes each move for your confirmation (or batch confirmation if you prefer).
+
+For scripting outside the prompt:
 
 ```python
 from datetime import date
@@ -383,9 +390,19 @@ Date-range filters are tracked as a planned follow-up — see [Future Enhancemen
 
 Same spirit as Zettelkasten: over-linking is better than under-linking. If a Resource touches on a Project's outcome, link it. If an Area has three projects that reference a common book, link the book from each. `get_context(path)` will surface these connections later when you're editing, and `para-project-kickoff` will resurface them when you start a new related project. Don't agonize — the tools will help you rediscover what you linked.
 
+### Let Claude split ambiguous captures
+
+When an inbox note contains two ideas, tell the triage prompt to split it. Claude creates two notes — one per idea — and classifies each separately. Don't try to pre-split before triage; Claude handles it in one pass.
+
+### Ask Claude for area assignments in batches
+
+After a triage session produces 5-10 new projects, ask Claude to propose an `area` value for each based on the project's outcome. It's a one-shot operation that keeps the rollup queries useful and saves you from clicking through each note.
+
 ## Future Enhancements
 
 **Date-range filter support** would enable deadline queries like `filters={"deadline": {"lte": "2026-05-01"}}`. This requires extending the FTS query layer to parse range operators on indexed date fields. Tracked as a planned follow-up issue.
+
+**Review-cadence-aware weekly review.** The `review_cadence` frontmatter on Areas is currently informational. A future version of the `para-weekly-review` prompt could skip areas whose cadence is `monthly` or `quarterly` and it isn't their week.
 
 **Consolidated triage-and-create prompt.** Today, triage classifies an existing Inbox note and moves it; `create_from_template` creates a new note from a template. A combined "triage a thought and create a typed note directly" prompt — with auto-suggested target folder based on classification — is possible as a `create_from_template` extension. It's a usability improvement, not a capability gap.
 
