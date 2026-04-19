@@ -166,7 +166,7 @@ A secondary failure: grounding stops at the first source that supports the claim
 
 ### Baseline flow
 
-Once a source is identified, you write a literature note against it. The shape follows the existing Zettelkasten [`literature.md` template](../../examples/zettelkasten/), adapted to the research-specific concerns of relevance and open questions:
+Once a source is identified, you write a literature note against it. The shape follows the existing Zettelkasten [`literature.md` template](../../examples/zettelkasten/) (under `templates/`), adapted to the research-specific concerns of relevance and open questions:
 
 ```markdown
 ---
