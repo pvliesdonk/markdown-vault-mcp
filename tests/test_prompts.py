@@ -443,3 +443,30 @@ class TestNoPromptsFolder:
         assert "summarize" in names
         assert "related" in names
         assert "compare" in names
+        # Write-tagged builtins (research, discuss, propose-links) should be hidden.
+        assert "research" not in names
+        assert "discuss" not in names
+        assert "propose-links" not in names
+
+
+class TestProposeLinks:
+    """The propose-links builtin prompt is registered with the expected shape."""
+
+    @pytest.mark.usefixtures("_clear_vars")
+    async def test_propose_links_registered(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # propose-links is tagged "write"; must enable write mode to see it.
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
+        server = create_server()
+        async with Client(server) as client:
+            prompts = await client.list_prompts()
+        propose_links = next(p for p in prompts if p.name == "propose-links")
+        assert (
+            propose_links.description is not None
+            and "link" in propose_links.description.lower()
+        )
+        # Both arguments are optional (scope, per_note_limit).
+        arg_names = {arg.name for arg in (propose_links.arguments or [])}
+        assert arg_names == {"scope", "per_note_limit"}
+        assert all(arg.required is False for arg in (propose_links.arguments or []))

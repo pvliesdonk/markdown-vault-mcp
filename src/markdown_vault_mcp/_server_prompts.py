@@ -329,7 +329,14 @@ def register_prompts(
     # a body that uses $var / ${var} (string.Template) substitution.
     # ``create_from_template`` has path-traversal safety logic and stays inline.
 
-    for md_name in ["summarize", "research", "discuss", "related", "compare"]:
+    for md_name in [
+        "summarize",
+        "research",
+        "discuss",
+        "related",
+        "compare",
+        "propose-links",
+    ]:
         if md_name in user_prompt_defs:
             continue
         defn = _load_builtin_prompt(md_name)
