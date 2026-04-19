@@ -415,6 +415,8 @@ markdown-vault-mcp serve
 
 Then in Claude, the `zettelkasten` prompt is available for use.
 
+**Fire the prompt from Claude.ai's `+` menu.** Once the server is added as a connector on Claude.ai, every MCP prompt — including `zettelkasten` — appears in the compose area's `+` menu. Click `+`, select **connectors**, pick the server, pick the prompt. Claude opens with the invocation scaffolded, so you don't need to remember the arguments. See [How to invoke prompts](../prompts.md#how-to-invoke-prompts) for other clients.
+
 **Use the prompt:**
 
 ```
@@ -509,9 +511,19 @@ tags: [system-type-1, category-a-variant-b]
 
 Use search and links for discovery. Tags are just shortcuts.
 
+### Let Claude split or merge fleeting notes
+
+Two shape operations that an LLM handles cleanly but manual workflows usually skip:
+
+- **Split.** When a fleeting note contains two ideas — one literature reference and one nascent permanent claim — ask Claude to split it into two notes. Each is then developed independently.
+- **Merge.** When a fleeting note restates or extends an existing permanent note, ask Claude to merge it (add as a new paragraph or `## Extension` section) rather than letting near-duplicates accumulate. The [`search`](../tools/index.md#search) + `read` + `write` + `delete` composition handles this in a single prompt turn.
+
+Resist pre-splitting or pre-merging before review. Claude does both in one pass.
+
 ## Next Steps
 
 - **Read the design document** for details on the linking system and search algorithms: [`docs/design.md`](../design.md)
 - **Explore the MCP tools** to understand the full API: [`tools/index.md`](../tools/index.md)
 - **Review the examples** for templates and prompts: [`examples/zettelkasten/`](../../examples/zettelkasten/)
 - **Prefer an action-oriented workflow?** Try the [PARA guide](para.md) — Projects, Areas, Resources, Archive with triage, kickoff, and weekly review prompts
+- **Ambient patterns**: [`docs/prompts.md`](../prompts.md#ambient-patterns-without-prompts) — flows the LLM handles from prose alone (URL capture, research, split/merge, ad-hoc link proposal)
