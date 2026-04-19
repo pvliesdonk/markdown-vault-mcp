@@ -5,7 +5,7 @@ PARA (Projects, Areas, Resources, Archive) is Tiago Forte's framework for organi
 !!! note
     This is one of many ways to organize a vault with markdown-vault-mcp. The server is a generic markdown collection backend — PARA conventions are applied in this guide but not required or enforced by the server.
 
-This guide assumes you're working with a PARA vault through Claude (or another MCP client) as the primary interface. The three PARA prompts — triage, kickoff, and weekly review — are where most of the value lives; Claude handles surfacing, classification, and batch operations you'd otherwise skip or defer. The Python and CLI examples scattered throughout are the scripting escape hatch, not the day-to-day pattern.
+This guide assumes you're working with a PARA vault through Claude (or another MCP client) as the primary interface. The four PARA prompts — capture-from-chats, triage, kickoff, and weekly review — are where most of the value lives; Claude handles surfacing, classification, and batch operations you'd otherwise skip or defer. The Python and CLI examples scattered throughout are the scripting escape hatch, not the day-to-day pattern.
 
 ## Vault Setup
 
@@ -143,6 +143,8 @@ The canonical PARA loop: **Capture → Triage → Project Work → Weekly Review
 ### 1. Capture (Inbox)
 
 Capture whatever's in your head into `0-Inbox/` without worrying about classification. The `inbox.md` template exists for this — Claude can create notes from it on request ("create an inbox note titled X with content Y"), or you can drop files directly into the folder via Obsidian, the CLI, or a scripting run. Review the inbox daily or every few days by invoking the triage prompt on the whole folder; Claude walks each note, classifies it, and proposes target paths.
+
+Capture doesn't have to be something you type. If your MCP client exposes chat-history tools (Claude.ai has `conversation_search` and `recent_chats`), the vault can ingest ideas you've already discussed. The `para-capture-chats` prompt does this in one pass — it distills recent conversations into topic-scoped Inbox notes ready for triage. On Claude.ai you can fire it directly from the compose area's `+` menu once the MCP server is added as a connector — no typing required.
 
 **Via Claude:**
 
@@ -311,14 +313,30 @@ The prompt calls `list_documents` on the templates folder to enumerate choices, 
 
 ## Using the PARA Prompts
 
-The three PARA prompts live in `examples/para/prompts/` and are loaded via `MARKDOWN_VAULT_MCP_PROMPTS_FOLDER`:
+The four PARA prompts live in `examples/para/prompts/` and are loaded via `MARKDOWN_VAULT_MCP_PROMPTS_FOLDER`:
 
 ```bash
 export MARKDOWN_VAULT_MCP_PROMPTS_FOLDER=/path/to/examples/para/prompts
 markdown-vault-mcp serve
 ```
 
-Then in Claude, the `para-triage`, `para-project-kickoff`, and `para-weekly-review` prompts are available.
+Then in Claude, the `para-capture-chats`, `para-triage`, `para-project-kickoff`, and `para-weekly-review` prompts are available. On Claude.ai they also appear in the compose area's `+` menu after adding the MCP server as a connector.
+
+### `para-capture-chats`
+
+**When to use:** at the end of a day or week, when you want ideas from your recent conversations captured into the vault without retyping them. Requires a client that exposes chat-history tools (e.g. Claude.ai's `conversation_search` and `recent_chats`); the prompt stops gracefully if they're not available.
+
+```
+In Claude, call: para-capture-chats()
+```
+
+Or with an explicit window:
+
+```
+In Claude, call: para-capture-chats(window='this week')
+```
+
+The prompt gathers relevant conversations, distills them topic by topic, and proposes one Inbox note per topic for your confirmation. It ends by suggesting you run `para-triage` on the fresh Inbox entries to classify them.
 
 ### `para-triage`
 

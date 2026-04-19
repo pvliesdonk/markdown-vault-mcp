@@ -14,8 +14,9 @@ Five note templates covering the PARA lifecycle:
 
 ## Prompts
 
-Three prompts that codify the canonical PARA workflow:
+Four prompts that codify the canonical PARA workflow:
 
+- **`para-capture-chats.md`** — Distill recent chat conversations (via `conversation_search` / `recent_chats` on Claude.ai) into Inbox notes for later triage
 - **`para-triage.md`** — Classify an Inbox note into Project, Area, or Resource and move it
 - **`para-project-kickoff.md`** — Define a project's outcome and surface related Resources, Areas, and past Archived projects
 - **`para-weekly-review.md`** — Scan active projects for staleness, audit areas, and identify archive candidates; writes a dated review note
@@ -42,7 +43,7 @@ export MARKDOWN_VAULT_MCP_PROMPTS_FOLDER=/path/to/examples/para/prompts
 markdown-vault-mcp serve
 ```
 
-Then in Claude, call any of the three PARA prompts by name.
+Then in Claude, call any of the four PARA prompts by name. On Claude.ai, prompts also appear in the compose area's `+` menu once the MCP server is added as a connector — one click to fire.
 
 ## Configuration
 
