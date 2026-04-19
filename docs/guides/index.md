@@ -23,6 +23,7 @@ Step-by-step walkthroughs for common deployment scenarios. Each guide takes you 
 | Set up OIDC with Google | [OIDC Providers](oidc-providers.md#google) |
 | Set up OIDC with GitHub (via Keycloak) | [OIDC Providers](oidc-providers.md#github) |
 | Build a Zettelkasten workflow | [Zettelkasten](zettelkasten.md) |
+| Build a PARA workflow (Projects/Areas/Resources/Archive) | [PARA](para.md) |
 | Use the browser-based vault views (Context Card, Graph, Browser) | [MCP Apps](mcp-apps.md) |
 
 ## Prerequisites

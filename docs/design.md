@@ -1170,8 +1170,9 @@ Prompt content here. Use $path and $topic as placeholders (string.Template synta
 
 **Override semantics**: if a user-defined prompt has the same name as a
 built-in, the built-in is skipped and the user's version is registered.
-This allows domain-specific workflows (e.g. a ``zettelkasten`` prompt) to
-live outside the core server and be mounted at deployment time.
+This allows domain-specific workflows (e.g. the ``zettelkasten`` or
+``para-triage`` prompts) to live outside the core server and be mounted
+at deployment time.
 
 ## Configuration
 

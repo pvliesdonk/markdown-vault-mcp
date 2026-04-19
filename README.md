@@ -7,7 +7,7 @@ A generic markdown collection [MCP](https://modelcontextprotocol.io/) server wit
 
 **[Documentation](https://pvliesdonk.github.io/markdown-vault-mcp/)** | **[PyPI](https://pypi.org/project/markdown-vault-mcp/)** | **[Docker](https://github.com/pvliesdonk/markdown-vault-mcp/pkgs/container/markdown-vault-mcp)**
 
-Point it at a directory of Markdown files (an Obsidian vault, a docs folder, a Zettelkasten) and it exposes search, read, write, and edit tools over the Model Context Protocol.
+Point it at a directory of Markdown files (an Obsidian vault, a docs folder, a Zettelkasten, a PARA vault) and it exposes search, read, write, and edit tools over the Model Context Protocol.
 
 ## Features
 
@@ -383,6 +383,7 @@ Templates are regular markdown files. If placeholder template text pollutes sear
 Mount a directory of `.md` prompt files to override or extend the built-in prompts. Set `MARKDOWN_VAULT_MCP_PROMPTS_FOLDER` to the path. Each file's frontmatter defines `description`, `arguments` (a list of objects, each with `name`, `description`, and `required` fields), and optional `tags`. A user prompt with the same name as a built-in replaces it.
 
 For a complete example — including Zettelkasten capture, development, and review prompts — see the [Zettelkasten guide](https://pvliesdonk.github.io/markdown-vault-mcp/guides/zettelkasten/).
+For an alternative action-oriented workflow — Projects, Areas, Resources, Archive with triage, kickoff, and weekly review prompts — see the [PARA guide](https://pvliesdonk.github.io/markdown-vault-mcp/guides/para/).
 
 ## MCP Apps
 

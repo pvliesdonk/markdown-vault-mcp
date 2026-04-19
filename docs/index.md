@@ -2,7 +2,7 @@
 
 A generic markdown collection [MCP](https://modelcontextprotocol.io/) server with FTS5 full-text search, semantic vector search, frontmatter-aware indexing, incremental reindexing, and non-markdown attachment support.
 
-Point it at a directory of Markdown files — an Obsidian vault, a docs folder, a Zettelkasten — and it exposes search, read, write, and edit tools over the [Model Context Protocol](https://modelcontextprotocol.io/).
+Point it at a directory of Markdown files — an Obsidian vault, a docs folder, a Zettelkasten, a PARA vault — and it exposes search, read, write, and edit tools over the [Model Context Protocol](https://modelcontextprotocol.io/).
 
 ## Features
 

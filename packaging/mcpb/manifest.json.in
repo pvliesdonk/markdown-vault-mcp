@@ -17,7 +17,7 @@
   "documentation": "https://pvliesdonk.github.io/markdown-vault-mcp/",
   "support": "https://github.com/pvliesdonk/markdown-vault-mcp/issues",
   "license": "MIT",
-  "keywords": ["markdown", "vault", "obsidian", "search", "fts5", "embeddings", "zettelkasten"],
+  "keywords": ["markdown", "vault", "obsidian", "search", "fts5", "embeddings", "zettelkasten", "para"],
   "server": {
     "type": "uv",
     "entry_point": "src/server.py",
