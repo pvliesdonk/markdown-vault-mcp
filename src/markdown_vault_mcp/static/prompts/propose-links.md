@@ -18,7 +18,7 @@ You are proposing meaningful new links between notes in a markdown vault. Focus 
 
 Interpret `$scope`:
 
-- Empty or `'recent'`: call `list_documents()`, then filter client-side for notes where `modified_at > <now - 30 * 86400>` (i.e., modified within the last 30 days). If the current Unix timestamp is not available, ask the user for today's date.
+- Empty or `'recent'`: call `get_recent(limit=100)` — it returns the 100 most-recently-modified notes pre-sorted by `modified_at`. Then filter client-side to keep only notes where `modified_at > <now - 30 * 86400>` (within the last 30 days). If the current Unix timestamp is not available, ask the user for today's date. Using `get_recent` here is strictly better than `list_documents()`: it bounds the payload and pre-sorts by recency in one tool call.
 - `'all'`: call `list_documents()` unfiltered.
 - Otherwise treat as a folder path. Strip any trailing `/` and call `list_documents(folder='<scope>')`.
 
@@ -33,7 +33,7 @@ For each note in scope:
 
 ## Step 3: Filter out already-linked pairs
 
-For each scanned note, call `get_outlinks(path=<note>)` once. For each candidate pair (A, B), drop the candidate if A already links to B — compare the candidate path against each outlink's `raw_target` (also consider the wikilink form, e.g., `[[B-title]]` without the `.md` extension).
+For each scanned note, call `get_outlinks(path=<note>)` once. For each candidate pair (A, B), drop the candidate if A already links to B — compare the candidate path `B` against each outlink's `target_path` (the resolved vault-relative path of the link target, which is what you want for equality checks). `raw_target` is the literal link text as written (and may be a wikilink without `.md`) — only fall back to comparing against `raw_target` when `target_path` is empty (e.g., the link hasn't been resolved).
 
 ## Step 4: Apply LLM judgment
 

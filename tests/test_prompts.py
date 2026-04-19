@@ -469,4 +469,21 @@ class TestProposeLinks:
         # Both arguments are optional (scope, per_note_limit).
         arg_names = {arg.name for arg in (propose_links.arguments or [])}
         assert arg_names == {"scope", "per_note_limit"}
-        assert all(arg.required is False for arg in (propose_links.arguments or []))
+        assert all(not arg.required for arg in (propose_links.arguments or []))
+
+    @pytest.mark.usefixtures("_clear_vars")
+    async def test_propose_links_substitutes_arguments(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Invoking propose-links substitutes $scope and $per_note_limit into the body."""
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
+        server = create_server()
+        async with Client(server) as client:
+            result = await client.get_prompt(
+                "propose-links", {"scope": "1-Projects", "per_note_limit": "7"}
+            )
+        text = result.messages[0].content.text
+        assert "1-Projects" in text
+        assert "7" in text
+        assert "$scope" not in text
+        assert "$per_note_limit" not in text
