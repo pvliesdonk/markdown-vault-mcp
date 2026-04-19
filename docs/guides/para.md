@@ -439,3 +439,4 @@ After a triage session produces 5-10 new projects, ask Claude to propose an `are
 - **Review the examples** for templates and prompts: [`examples/para/`](../../examples/para/)
 - **Prefer idea-centric knowledge management?** See the alternative workflow: [`docs/guides/zettelkasten.md`](zettelkasten.md)
 - **Ambient patterns**: [`docs/prompts.md`](../prompts.md#ambient-patterns-without-prompts) — flows the LLM handles from prose alone (URL capture, research, ad-hoc link proposal)
+- **Research workflows**: [research-workflows.md](research-workflows.md) — literature grounding, fact-checking, and writing papers from notes

@@ -527,3 +527,4 @@ Resist pre-splitting or pre-merging before review. Claude does both in one pass.
 - **Review the examples** for templates and prompts: [`examples/zettelkasten/`](../../examples/zettelkasten/)
 - **Prefer an action-oriented workflow?** Try the [PARA guide](para.md) — Projects, Areas, Resources, Archive with triage, kickoff, and weekly review prompts
 - **Ambient patterns**: [`docs/prompts.md`](../prompts.md#ambient-patterns-without-prompts) — flows the LLM handles from prose alone (URL capture, research, split/merge, ad-hoc link proposal)
+- **Research workflows**: [research-workflows.md](research-workflows.md) — literature grounding, fact-checking, and writing papers from notes
