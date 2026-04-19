@@ -2,7 +2,7 @@
 title: "Weekly Review {{date}}"
 type: resource
 tags: [review]
-created: {{date}}
+created: "{{date}}"
 ---
 
 # Weekly Review — {{date}}

@@ -5,7 +5,7 @@ status: active
 standard: "<what 'healthy' looks like for this area>"
 review_cadence: "<weekly | monthly | quarterly>"
 tags: []
-created: {{date}}
+created: "{{date}}"
 ---
 
 # {{title}}

@@ -3,7 +3,7 @@ title: "{{title}}"
 type: resource
 status: active
 tags: []
-created: {{date}}
+created: "{{date}}"
 ---
 
 # {{title}}

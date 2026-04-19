@@ -1,7 +1,7 @@
 ---
 title: "{{title}}"
 tags: []
-created: {{date}}
+created: "{{date}}"
 ---
 
 # {{title}}

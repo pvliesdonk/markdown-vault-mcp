@@ -6,7 +6,7 @@ outcome: "<one-sentence definition of done>"
 deadline: YYYY-MM-DD
 area: "<parent area name, or empty>"
 tags: []
-created: {{date}}
+created: "{{date}}"
 ---
 
 # {{title}}
