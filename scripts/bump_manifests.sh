@@ -15,11 +15,13 @@ set -euo pipefail
 V="$NEW_VERSION"
 
 # server.json — top-level version, PyPI package version, OCI tag identifier.
+# Replace only the `:v<old>` suffix of the OCI identifier so forks/renames
+# keep their own `ghcr.io/<owner>/<image>` base.
 jq --arg v "$V" '
   .version = $v
   | .packages |= map(
       if .registryType == "pypi" then .version = $v
-      elif .registryType == "oci" then .identifier = ("ghcr.io/pvliesdonk/markdown-vault-mcp:v" + $v)
+      elif .registryType == "oci" then .identifier |= sub(":v[^:]+$"; ":v" + $v)
       else . end
     )
 ' server.json > server.json.tmp
