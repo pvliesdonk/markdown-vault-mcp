@@ -68,3 +68,4 @@ export MARKDOWN_VAULT_MCP_INDEX_PATH=/path/to/vault/.vault/index.db
 - **Zettelkasten Guide**: [`docs/guides/zettelkasten.md`](../../docs/guides/zettelkasten.md) — comprehensive walkthrough
 - **MCP Tools Reference**: [`docs/tools/index.md`](../../docs/tools/index.md) — all available tools
 - **Design Document**: [`docs/design.md`](../../docs/design.md) — linking system and search algorithms
+- **PARA alternative**: [`docs/guides/para.md`](../../docs/guides/para.md) — for action-oriented Projects/Areas/Resources/Archive workflows

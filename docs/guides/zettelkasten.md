@@ -514,3 +514,4 @@ Use search and links for discovery. Tags are just shortcuts.
 - **Read the design document** for details on the linking system and search algorithms: [`docs/design.md`](../design.md)
 - **Explore the MCP tools** to understand the full API: [`tools/index.md`](../tools/index.md)
 - **Review the examples** for templates and prompts: [`examples/zettelkasten/`](../../examples/zettelkasten/)
+- **Prefer an action-oriented workflow?** Try the [PARA guide](para.md) — Projects, Areas, Resources, Archive with triage, kickoff, and weekly review prompts
