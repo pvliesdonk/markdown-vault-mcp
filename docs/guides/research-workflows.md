@@ -113,7 +113,7 @@ The `## Open claims` section at the bottom is the secondary tracker. Inline mark
 
 A final point on frontmatter: keep it minimal at the seeding stage. A seed doesn't need a `type` field, a `status` field, or a rigid tag taxonomy. It needs a title, a `draft` tag, and a `created` date. If your vault follows a scheme like [Zettelkasten](zettelkasten.md) or [PARA](para.md), the triage step — not the seed step — is where a note acquires its typed frontmatter.
 
-**Finding seeds later.** Seeds are easy to lose track of. A simple convention is to tag all seeds `draft` and periodically run `list_documents()`, then filter on `frontmatter.tags` containing `"draft"`, to see what's still unresolved. (The keyword-search path won't work for pure tag filtering — `search` requires a non-empty query string; `list_documents` returns the full tag-bearing metadata without one.) Anything that's been a draft for more than a month is either worth grounding or worth deleting; the middle path — a permanent pile of unresolved seeds — is where vault rot starts.
+**Finding seeds later.** Seeds are easy to lose track of. A simple convention is to tag all seeds `draft` and periodically run `list_documents()`, then filter on `frontmatter.tags` containing `"draft"`, to see what's still unresolved. (The keyword-search path won't work for pure tag filtering — `search` requires a non-empty query string; `list_documents` returns the full tag-bearing metadata without requiring a query.) Anything that's been a draft for more than a month is either worth grounding or worth deleting; the middle path — a permanent pile of unresolved seeds — is where vault rot starts.
 
 ## Phase 2: Literature grounding
 
