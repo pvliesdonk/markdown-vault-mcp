@@ -358,3 +358,7 @@ Claude uses the `show_context` tool to open the Context Card for that note.
     Clients that don't support MCP Apps (e.g., Claude Code) receive a text-only summary instead of the interactive view. All the underlying data is still accessible via the `get_context`, `get_backlinks`, and other link graph tools.
 
 For full details on views, configuration, and architecture, see the [MCP Apps guide](mcp-apps.md).
+
+### Firing prompts from Claude.ai's `+` menu
+
+This guide covers Claude Desktop. If you also use Claude.ai with the same server, its prompts can be fired from the compose area's `+` menu once the server is added as a connector. Click `+`, select **connectors**, pick the server, pick a prompt — Claude opens with the prompt scaffolded. See [How to invoke prompts](../prompts.md#how-to-invoke-prompts).

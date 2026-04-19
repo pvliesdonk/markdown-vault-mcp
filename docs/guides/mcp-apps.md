@@ -95,3 +95,7 @@ The app integrates with the host client via the ext-apps SDK:
 ## Client support
 
 MCP Apps views require a client that supports the MCP Apps protocol. Currently supported by Claude on claude.ai. Clients without Apps support receive a text-only fallback from `browse_vault` and `show_context`.
+
+### Firing prompts from Claude.ai's `+` menu
+
+MCP Apps surface interactive views, but this server also ships MCP *prompts* — `summarize`, `research`, `propose-links`, and the workflow prompts from the PARA and Zettelkasten packs. On Claude.ai, every prompt appears in the compose area's `+` menu once the server is added as a connector. Click `+`, select **connectors**, pick the server, pick a prompt — Claude opens with the invocation scaffolded. See [How to invoke prompts](../prompts.md#how-to-invoke-prompts).
