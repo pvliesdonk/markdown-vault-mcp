@@ -125,6 +125,10 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
             - search_type (str): "keyword" or "semantic".
             - frontmatter (dict): Parsed YAML frontmatter of the document.
 
+        Also useful for finding merge candidates during triage — if a
+        close match exists for a new capture, prefer merging over
+        creating a near-duplicate.
+
         Raises:
             ValueError: If mode is "semantic" or "hybrid" and no embedding
                 provider is configured.
@@ -397,6 +401,9 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
             - fragment (str | None): Heading anchor (e.g. "#section"), or null.
             - raw_target (str): Literal link target as written in the source.
 
+        Combine with ``get_similar`` to find connection gaps — notes that are
+        semantically close to the target but not yet linked.
+
         Raises:
             ValueError: If no document exists at the given path.
         """
@@ -437,6 +444,9 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
             - fragment (str | None): Heading anchor (e.g. "#section"), or null.
             - raw_target (str): Literal link target as written in the source.
             - exists (bool): True if the target document is indexed.
+
+        Combine with ``get_similar`` to find connection gaps — notes the
+        source is semantically close to but hasn't linked yet.
 
         Raises:
             ValueError: If no document exists at the given path.
@@ -524,6 +534,10 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
             - score (float): Cosine similarity, 0.0-1.0; higher = more similar.
             - search_type (str): Always "semantic".
             - frontmatter (dict): Parsed YAML frontmatter.
+
+        Useful for finding link candidates that aren't yet wikilinked — the
+        vault's organic graph is almost always denser than its explicit one.
+        See the ``propose-links`` prompt for a full vault-wide sweep.
 
         Raises:
             ValueError: If no document exists at the given path.
@@ -643,6 +657,10 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
               folder (up to 20). Plain strings, not dicts.
             - tags (dict[str, list[str]]): Indexed frontmatter field →
               distinct values for this note.
+
+        The ``similar`` field in the response surfaces notes that may warrant
+        explicit links to the context note but don't yet — a common input to
+        manual or automated link proposal.
 
         Raises:
             ValueError: If no document exists at the given path.
@@ -1012,6 +1030,10 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
             Dict with path (str) and created (bool — true if new file,
             false if overwrite).
 
+        Supports split (write several new notes from one source) and merge
+        (extend an existing note with content from another) when composed with
+        ``read`` and ``delete``.
+
         Raises:
             ValueError: If content_base64 is missing/invalid for
                 attachments, or the content exceeds the size limit.
@@ -1154,6 +1176,9 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
         Returns:
             Dict with path (str) of the deleted file.
 
+        Typically called after a split or merge to remove the source note once
+        its content has been relocated.
+
         Raises:
             DocumentNotFoundError: If no file exists at the given path.
             McpError: If if_match is provided and the file has been modified
@@ -1276,6 +1301,10 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
             - created (bool): true if new file, false if overwrite
             - content_length (int): bytes downloaded
             - content_type (str or null): Content-Type from the response
+
+        Primary building block for URL-to-note capture flows: call ``fetch`` to
+        retrieve the source, summarize via the LLM, and ``write`` the result
+        as a new note.
 
         Raises:
             ValueError: If the URL scheme is not http/https, the download
