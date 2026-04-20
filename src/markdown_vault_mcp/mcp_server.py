@@ -12,7 +12,6 @@ configured :class:`~fastmcp.FastMCP` instance.
 from __future__ import annotations
 
 import logging
-import os
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
 from pathlib import Path
@@ -23,12 +22,7 @@ if TYPE_CHECKING:
     from fastmcp.server.event_store import EventStore
 
 from fastmcp import FastMCP
-from fastmcp.server.middleware.error_handling import ErrorHandlingMiddleware
-from fastmcp.server.middleware.logging import (
-    LoggingMiddleware,
-    StructuredLoggingMiddleware,
-)
-from fastmcp.server.middleware.timing import TimingMiddleware
+from fastmcp_pvl_core import wire_middleware_stack
 
 from markdown_vault_mcp.config import (
     build_bearer_auth,
@@ -238,26 +232,13 @@ def create_server(transport: str = "stdio") -> FastMCP:
         auth=auth,
     )
 
-    # --- Middleware stack ---
-    # Order matters: outermost runs first.
-    #  1. ErrorHandlingMiddleware — catches unhandled exceptions
-    #  2. TimingMiddleware — records tool invocation duration
-    #  3. LoggingMiddleware — rich or structured (JSON) output
-    # Capture root log level *now* — works correctly when create_server() is
-    # called after CLI verbose setup.  In library/test usage where logging is
-    # configured later, tracebacks default to off (safe for production).
-    include_traceback = logging.getLogger().isEnabledFor(logging.DEBUG)
-    mcp.add_middleware(
-        ErrorHandlingMiddleware(
-            include_traceback=include_traceback, transform_errors=False
-        )
-    )
-    mcp.add_middleware(TimingMiddleware())
-    rich_logging = os.environ.get("FASTMCP_ENABLE_RICH_LOGGING", "true").strip().lower()
-    if rich_logging in ("false", "0", "no"):
-        mcp.add_middleware(StructuredLoggingMiddleware())
-    else:
-        mcp.add_middleware(LoggingMiddleware())
+    # Middleware stack (ErrorHandling → Timing → Logging) is installed by
+    # fastmcp_pvl_core.  include_traceback=None lets the helper infer the
+    # setting from the root log level at call time — matches MV's previous
+    # behaviour (on under -v, off in production).  transform_errors=False
+    # preserves MV's default of letting exceptions propagate to FastMCP's
+    # own handlers rather than synthesising MCP error responses.
+    wire_middleware_stack(mcp, include_traceback=None, transform_errors=False)
 
     register_tools(mcp, transport=transport)
     register_resources(mcp)

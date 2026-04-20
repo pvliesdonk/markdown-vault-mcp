@@ -171,26 +171,23 @@ class TestMainDispatch:
         mock_handler.assert_called_once()
 
     @patch("markdown_vault_mcp.cli._COMMANDS")
-    @patch("markdown_vault_mcp.cli.configure_logging")
+    @patch("markdown_vault_mcp.cli.configure_logging_from_env")
     def test_verbose_enables_debug_for_both_logger_trees(
         self, mock_configure: MagicMock, mock_commands: MagicMock
     ) -> None:
-        """``-v`` sets root to DEBUG and calls ``configure_logging("DEBUG")``."""
+        """``-v`` routes to configure_logging_from_env and silences httpx/httpcore."""
         mock_handler = MagicMock()
         mock_commands.__getitem__ = MagicMock(return_value=mock_handler)
         with patch("sys.argv", ["markdown-vault-mcp", "-v", "index"]):
             main()
-        mock_configure.assert_called_once_with("DEBUG")
+        mock_configure.assert_called_once_with(verbose=True)
         import logging
 
         assert logging.getLogger("httpx").level == logging.WARNING
         assert logging.getLogger("httpcore").level == logging.WARNING
 
     @patch("markdown_vault_mcp.cli._COMMANDS")
-    @patch("markdown_vault_mcp.cli.configure_logging")
-    def test_verbose_sets_fastmcp_log_level_env(
-        self, _mock_configure: MagicMock, mock_commands: MagicMock
-    ) -> None:
+    def test_verbose_sets_fastmcp_log_level_env(self, mock_commands: MagicMock) -> None:
         """``-v`` sets FASTMCP_LOG_LEVEL=DEBUG in the environment."""
         import os
 
