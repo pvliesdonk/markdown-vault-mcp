@@ -131,7 +131,7 @@ def _load_plugin_mcp_json() -> dict:
 
 
 def test_plugin_mcp_json_pinned_and_matches_plugin_version() -> None:
-    """.mcp.json must pin --from markdown-vault-mcp[all]==<X.Y.Z> and match plugin.json."""
+    """.mcp.json must pin --from markdown-vault-mcp[all]==<X.Y.Z[-rc.N]> and match plugin.json."""
     mcp_cfg = _load_plugin_mcp_json()
     entry = mcp_cfg["markdown-vault-mcp"]
     assert entry["command"] == "uvx"
