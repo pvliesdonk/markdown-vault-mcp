@@ -21,13 +21,14 @@ if TYPE_CHECKING:
 
 from fastmcp import FastMCP
 from fastmcp_pvl_core import (
+    ServerConfig,
+    wire_middleware_stack,
+)
+from fastmcp_pvl_core import (
     build_event_store as _core_build_event_store,
 )
 from fastmcp_pvl_core import (
     build_instructions as _core_build_instructions,
-)
-from fastmcp_pvl_core import (
-    wire_middleware_stack,
 )
 
 from markdown_vault_mcp.config import (
@@ -67,8 +68,6 @@ def build_event_store(url: str | None = None) -> EventStore:
     Returns:
         A configured :class:`~fastmcp.server.event_store.EventStore`.
     """
-    from fastmcp_pvl_core import ServerConfig
-
     return _core_build_event_store(_ENV_PREFIX, ServerConfig(event_store_url=url))
 
 
