@@ -8,12 +8,14 @@ from __future__ import annotations
 
 import logging
 import os
-import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from fastmcp_pvl_core import ServerConfig
+from fastmcp_pvl_core import build_bearer_auth as _core_build_bearer_auth
+from fastmcp_pvl_core import build_oidc_proxy_auth as _core_build_oidc_proxy_auth
+from fastmcp_pvl_core import build_remote_auth as _core_build_remote_auth
 from fastmcp_pvl_core import env as _core_env
 
 # Direct re-exports: parse_bool/parse_list match MV's old call shape (take a
@@ -22,6 +24,7 @@ from fastmcp_pvl_core import env as _core_env
 from fastmcp_pvl_core import parse_bool as _parse_bool
 from fastmcp_pvl_core import parse_list as _parse_list
 from fastmcp_pvl_core import parse_scopes as _core_parse_scopes
+from fastmcp_pvl_core import resolve_auth_mode as _core_resolve_auth_mode
 
 logger = logging.getLogger(__name__)
 
@@ -730,20 +733,50 @@ def load_config() -> CollectionConfig:
 
 
 # ---------------------------------------------------------------------------
-# Auth builder functions
+# Auth builder functions — thin wrappers that delegate to fastmcp-pvl-core.
+#
+# Each wrapper accepts the legacy :class:`CollectionConfig` (which still
+# carries duplicated auth/OIDC fields), constructs a transient
+# :class:`ServerConfig` view via :func:`_server_from_collection`, and
+# delegates to the core implementation.  The duplicates on
+# :class:`CollectionConfig` will be removed in a later PR once consumers
+# (currently :mod:`markdown_vault_mcp.mcp_server`) read directly from
+# ``config.server`` instead.
 # ---------------------------------------------------------------------------
 
 
+def _server_from_collection(config: CollectionConfig) -> ServerConfig:
+    """Build a :class:`ServerConfig` view from CollectionConfig duplicates.
+
+    The duplicate auth fields on :class:`CollectionConfig` are still the
+    source of truth for the auth wrappers in this module — until consumers
+    migrate to :attr:`CollectionConfig.server`, we synthesize a transient
+    :class:`ServerConfig` from the same duplicates so ``fastmcp_pvl_core``
+    can do the actual work.
+    """
+    return ServerConfig(
+        base_url=config.base_url,
+        bearer_token=config.bearer_token,
+        oidc_config_url=config.oidc_config_url,
+        oidc_client_id=config.oidc_client_id,
+        oidc_client_secret=config.oidc_client_secret,
+        oidc_audience=config.oidc_audience,
+        oidc_required_scopes=tuple(_parse_scopes(config.oidc_required_scopes) or ()),
+        oidc_jwt_signing_key=config.oidc_jwt_signing_key,
+        oidc_verify_access_token=config.oidc_verify_access_token,
+        auth_mode=config.auth_mode,
+    )
+
+
 def resolve_auth_mode(config: CollectionConfig) -> str | None:
-    """Determine which OIDC auth mode to use.
+    """Return the OIDC auth flavor for *config*, or ``None`` for no OIDC.
 
-    Checks ``config.auth_mode`` for an explicit override.  When not set,
-    auto-detects based on which config fields are populated:
-
-    - All four OIDC fields (base_url, oidc_config_url, oidc_client_id,
-      oidc_client_secret) -> ``"oidc-proxy"``
-    - Only base_url + oidc_config_url -> ``"remote"``
-    - Otherwise -> ``None`` (no OIDC)
+    Existing callers (``mcp_server.create_server``) compose multi-auth
+    themselves by combining the OIDC flavor with the bearer verifier, so
+    this wrapper hides core's ``"multi"`` outcome by re-resolving with
+    the bearer token suppressed — the caller still sees just the OIDC
+    flavor (``"remote"`` / ``"oidc-proxy"``) and ``None`` for bearer-only
+    or no-auth configurations.
 
     Args:
         config: Populated configuration object.
@@ -751,263 +784,41 @@ def resolve_auth_mode(config: CollectionConfig) -> str | None:
     Returns:
         ``"remote"``, ``"oidc-proxy"``, or ``None``.
     """
-    explicit = (config.auth_mode or "").strip().lower()
-    if explicit in ("remote", "oidc-proxy"):
-        logger.info("OIDC auth mode: %s (explicit via AUTH_MODE)", explicit)
-        return explicit
-    if explicit:
-        logger.warning(
-            "Unknown AUTH_MODE %r — ignoring, falling back to auto-detection",
-            explicit,
-        )
+    from dataclasses import replace
 
-    if all(
-        [
-            config.base_url,
-            config.oidc_config_url,
-            config.oidc_client_id,
-            config.oidc_client_secret,
-        ]
-    ):
-        logger.info(
-            "OIDC auth mode: oidc-proxy (auto-detected — all four OIDC vars set)"
-        )
-        return "oidc-proxy"
-
-    if config.base_url and config.oidc_config_url:
-        logger.info(
-            "OIDC auth mode: remote (auto-detected — BASE_URL + OIDC_CONFIG_URL set)"
-        )
-        return "remote"
-
-    return None
+    server = _server_from_collection(config)
+    mode = _core_resolve_auth_mode(server)
+    if mode == "multi":
+        mode = _core_resolve_auth_mode(replace(server, bearer_token=None))
+    return None if mode in ("none", "bearer") else mode
 
 
 def build_remote_auth(config: CollectionConfig) -> Any:
-    """Build a RemoteAuthProvider from OIDC discovery.
+    """Build a :class:`RemoteAuthProvider` from OIDC discovery.
 
-    Fetches the OIDC discovery document at startup to extract ``jwks_uri``
-    and ``issuer``, then constructs a ``JWTVerifier`` for local token
-    validation via JWKS.  No client credentials are needed -- tokens are
-    validated locally.
-
-    Requires ``base_url`` and ``oidc_config_url`` on *config*.
-
-    Args:
-        config: Populated configuration object.
-
-    Returns:
-        A configured ``RemoteAuthProvider``, or ``None`` when required
-        fields are missing or the discovery fetch fails.
+    Delegates to :func:`fastmcp_pvl_core.build_remote_auth`.  Returns
+    ``None`` when ``base_url`` / ``oidc_config_url`` are missing, when
+    ``httpx`` is not installed, when discovery fails, or when the
+    discovery document is missing required keys.
     """
-    if not config.base_url or not config.oidc_config_url:
-        logger.debug("Remote auth: disabled — missing BASE_URL or OIDC_CONFIG_URL")
-        return None
-
-    audience = config.oidc_audience
-    required_scopes = _parse_scopes(config.oidc_required_scopes)
-
-    try:
-        import httpx
-    except ImportError:
-        logger.error(
-            "Remote auth: 'httpx' is not installed. "
-            "Install it with: pip install 'markdown-vault-mcp[all]' "
-            "or pip install httpx"
-        )
-        return None
-
-    try:
-        resp = httpx.get(config.oidc_config_url, timeout=10)
-        resp.raise_for_status()
-        discovery = resp.json()
-    except Exception:
-        logger.exception(
-            "Remote auth: failed to fetch OIDC discovery from %s",
-            config.oidc_config_url,
-        )
-        return None
-
-    jwks_uri = discovery.get("jwks_uri")
-    issuer = discovery.get("issuer")
-    if not jwks_uri or not issuer:
-        logger.error(
-            "Remote auth: OIDC discovery missing jwks_uri or issuer "
-            "(got jwks_uri=%s, issuer=%s)",
-            jwks_uri,
-            issuer,
-        )
-        return None
-
-    logger.debug(
-        "Remote auth config:\n"
-        "  config_url      = %s\n"
-        "  jwks_uri        = %s\n"
-        "  issuer          = %s\n"
-        "  base_url        = %s\n"
-        "  audience        = %s\n"
-        "  required_scopes = %s",
-        config.oidc_config_url,
-        jwks_uri,
-        issuer,
-        config.base_url,
-        audience or "(not set)",
-        required_scopes or "(not set)",
-    )
-
-    from fastmcp.server.auth import JWTVerifier, RemoteAuthProvider
-
-    verifier = JWTVerifier(
-        jwks_uri=jwks_uri,
-        issuer=issuer,
-        audience=audience,
-        required_scopes=required_scopes,
-    )
-    return RemoteAuthProvider(
-        token_verifier=verifier,
-        authorization_servers=[issuer],
-        base_url=config.base_url,
-    )
+    return _core_build_remote_auth(_server_from_collection(config))
 
 
 def build_bearer_auth(config: CollectionConfig) -> Any:
-    """Build a StaticTokenVerifier from ``config.bearer_token``.
+    """Build a :class:`StaticTokenVerifier` from ``config.bearer_token``.
 
-    When the bearer token is set (non-empty), returns a
-    :class:`~fastmcp.server.auth.StaticTokenVerifier` that validates
-    ``Authorization: Bearer <token>`` headers against the configured
-    static token.
-
-    Args:
-        config: Populated configuration object.
-
-    Returns:
-        A configured ``StaticTokenVerifier``, or ``None`` when the
-        bearer token is absent or empty.
+    Delegates to :func:`fastmcp_pvl_core.build_bearer_auth`.  Returns
+    ``None`` when the bearer token is absent or blank.
     """
-    token = (config.bearer_token or "").strip()
-    if not token:
-        logger.debug("Bearer auth: BEARER_TOKEN not set — skipping")
-        return None
-    logger.debug("Bearer auth: BEARER_TOKEN is set (value redacted)")
-    from fastmcp.server.auth import StaticTokenVerifier
-
-    return StaticTokenVerifier(
-        tokens={token: {"client_id": "bearer", "scopes": ["read", "write"]}}
-    )
+    return _core_build_bearer_auth(_server_from_collection(config))
 
 
 def build_oidc_auth(config: CollectionConfig) -> Any:
-    """Build an OIDCProxy auth provider from configuration, or return None.
+    """Build an :class:`OIDCProxy` provider, or return ``None``.
 
-    All four of ``base_url``, ``oidc_config_url``, ``oidc_client_id``,
-    and ``oidc_client_secret`` must be set on *config* to enable
-    authentication.  If any is absent the server starts unauthenticated.
-
-    By default the proxy verifies the upstream ``id_token`` (a standard
-    JWT per OIDC Core) instead of the ``access_token``.  This works with
-    every OIDC provider -- including those that issue opaque access
-    tokens (e.g. Authelia).  Set ``oidc_verify_access_token=True`` on
-    *config* to revert to access-token verification.
-
-    Args:
-        config: Populated configuration object.
-
-    Returns:
-        A configured :class:`~fastmcp.server.auth.oidc_proxy.OIDCProxy`
-        instance, or ``None`` when authentication is disabled.
+    Delegates to :func:`fastmcp_pvl_core.build_oidc_proxy_auth`.  Returns
+    ``None`` when any of the four required fields (``base_url``,
+    ``oidc_config_url``, ``oidc_client_id``, ``oidc_client_secret``) is
+    missing.
     """
-    # Check required fields.  The secret is checked separately so it never
-    # enters the dict that feeds the logged "missing" list — this keeps
-    # CodeQL's taint analysis happy.
-    required_public = {
-        "BASE_URL": config.base_url,
-        "OIDC_CONFIG_URL": config.oidc_config_url,
-        "OIDC_CLIENT_ID": config.oidc_client_id,
-    }
-    has_secret = bool(config.oidc_client_secret)
-
-    if not all(required_public.values()) or not has_secret:
-        missing = [k for k, v in required_public.items() if not v]
-        if not has_secret:
-            missing.append("OIDC_CLIENT_SECRET")
-        logger.debug("OIDC auth: disabled — missing env vars: %s", ", ".join(missing))
-        return None
-
-    # All four are guaranteed non-None after the guard above.
-    oidc_base_url: str = config.base_url  # type: ignore[assignment]
-    oidc_config_url: str = config.oidc_config_url  # type: ignore[assignment]
-    oidc_client_id: str = config.oidc_client_id  # type: ignore[assignment]
-    oidc_client_secret: str = config.oidc_client_secret  # type: ignore[assignment]
-
-    from fastmcp.server.auth.oidc_proxy import OIDCProxy
-
-    jwt_signing_key = config.oidc_jwt_signing_key
-    audience = config.oidc_audience
-
-    # Parse scopes: default to ["openid"] when not set.
-    raw_scopes = _parse_scopes(config.oidc_required_scopes)
-    required_scopes = raw_scopes if raw_scopes is not None else ["openid"]
-
-    # Default: verify id_token (works with all providers, including opaque
-    # access-token issuers like Authelia).
-    verify_access_token = config.oidc_verify_access_token
-    verify_id_token = not verify_access_token
-
-    logger.debug(
-        "OIDC auth config:\n"
-        "  config_url          = %s\n"
-        "  client_id           = %s\n"
-        "  client_secret       = <redacted>\n"
-        "  base_url            = %s\n"
-        "  audience            = %s\n"
-        "  required_scopes     = %s\n"
-        "  jwt_signing_key     = %s\n"
-        "  verify_id_token     = %s\n"
-        "  verify_access_token = %s",
-        oidc_config_url,
-        oidc_client_id,
-        oidc_base_url,
-        audience or "(not set)",
-        required_scopes,
-        "(set)" if jwt_signing_key else "(not set)",
-        verify_id_token,
-        verify_access_token,
-    )
-
-    if verify_id_token and "openid" not in required_scopes:
-        logger.warning(
-            "OIDC: verify_id_token=True requires the 'openid' scope but it is "
-            "not in MARKDOWN_VAULT_MCP_OIDC_REQUIRED_SCOPES — the id_token may "
-            "be absent from the token response; add 'openid' to the scope list "
-            "or set MARKDOWN_VAULT_MCP_OIDC_VERIFY_ACCESS_TOKEN=true"
-        )
-
-    if jwt_signing_key is None and sys.platform.startswith("linux"):
-        logger.warning(
-            "OIDC: MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY is not set — "
-            "the JWT signing key is ephemeral on Linux; all clients must "
-            "re-authenticate after every server restart"
-        )
-
-    if verify_id_token:
-        logger.info(
-            "OIDC: verifying upstream id_token (works with opaque access tokens)"
-        )
-    else:
-        logger.info(
-            "OIDC: verifying upstream access_token as JWT "
-            "(MARKDOWN_VAULT_MCP_OIDC_VERIFY_ACCESS_TOKEN=true)"
-        )
-
-    return OIDCProxy(
-        config_url=oidc_config_url,
-        client_id=oidc_client_id,
-        client_secret=oidc_client_secret,
-        base_url=oidc_base_url,
-        audience=audience,
-        required_scopes=required_scopes,
-        jwt_signing_key=jwt_signing_key,
-        verify_id_token=verify_id_token,
-        require_authorization_consent=False,
-    )
+    return _core_build_oidc_proxy_auth(_server_from_collection(config))

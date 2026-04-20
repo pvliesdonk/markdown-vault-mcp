@@ -947,9 +947,11 @@ class TestBuildOidcAuthConfig:
 
         config = _oidc_config()
         mock_cls = MagicMock()
+        # The ephemeral-signing-key warning lives in fastmcp_pvl_core._auth
+        # since MV-PR2; patch sys there, not in markdown_vault_mcp.config.
         with (
             patch("fastmcp.server.auth.oidc_proxy.OIDCProxy", mock_cls),
-            patch("markdown_vault_mcp.config.sys") as mock_sys,
+            patch("fastmcp_pvl_core._auth.sys") as mock_sys,
         ):
             mock_sys.platform = "linux"
             build_oidc_auth(config)
@@ -975,12 +977,17 @@ class TestBuildRemoteAuthConfig:
     def test_returns_none_on_discovery_failure(self) -> None:
         from unittest.mock import patch
 
+        import httpx
+
         config = CollectionConfig(
             source_dir=Path("/tmp"),
             base_url="https://mcp.example.com",
             oidc_config_url="https://auth.example.com/.well-known/openid-configuration",
         )
-        with patch("httpx.get", side_effect=Exception("fail")):
+        # Core's build_remote_auth catches httpx.HTTPError + ValueError (the
+        # realistic discovery failures) — narrower than MV's old bare
+        # ``except Exception``.  A bare Exception now propagates by design.
+        with patch("httpx.get", side_effect=httpx.ConnectError("fail")):
             assert build_remote_auth(config) is None
 
     def test_happy_path(self) -> None:

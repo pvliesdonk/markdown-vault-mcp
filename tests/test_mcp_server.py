@@ -881,7 +881,7 @@ class TestBuildOidcAuth:
         mock_cls = MagicMock()
         with (
             patch("fastmcp.server.auth.oidc_proxy.OIDCProxy", mock_cls),
-            patch("markdown_vault_mcp.config.sys") as mock_sys,
+            patch("fastmcp_pvl_core._auth.sys") as mock_sys,
         ):
             mock_sys.platform = "linux"
             build_oidc_auth(config)
@@ -900,7 +900,7 @@ class TestBuildOidcAuth:
         mock_cls = MagicMock()
         with (
             patch("fastmcp.server.auth.oidc_proxy.OIDCProxy", mock_cls),
-            patch("markdown_vault_mcp.config.sys") as mock_sys,
+            patch("fastmcp_pvl_core._auth.sys") as mock_sys,
         ):
             mock_sys.platform = "linux"
             build_oidc_auth(config)
@@ -919,7 +919,7 @@ class TestBuildOidcAuth:
         mock_cls = MagicMock()
         with (
             patch("fastmcp.server.auth.oidc_proxy.OIDCProxy", mock_cls),
-            patch("markdown_vault_mcp.config.sys") as mock_sys,
+            patch("fastmcp_pvl_core._auth.sys") as mock_sys,
         ):
             mock_sys.platform = "darwin"
             build_oidc_auth(config)
@@ -951,40 +951,13 @@ class TestBuildOidcAuth:
 
         assert mock_cls.call_args.kwargs["verify_id_token"] is False
 
-    def test_verify_id_token_log_message(
-        self, caplog: pytest.LogCaptureFixture
-    ) -> None:
-        """Default config logs that id_token verification is active."""
-        from unittest.mock import MagicMock, patch
-
-        config = _oidc_config()
-        mock_cls = MagicMock()
-        with (
-            patch("fastmcp.server.auth.oidc_proxy.OIDCProxy", mock_cls),
-            caplog.at_level(logging.INFO, logger="markdown_vault_mcp.config"),
-        ):
-            build_oidc_auth(config)
-
-        assert any("verifying upstream id_token" in r.message for r in caplog.records)
-
-    def test_verify_access_token_log_message(
-        self, caplog: pytest.LogCaptureFixture
-    ) -> None:
-        """OIDC_VERIFY_ACCESS_TOKEN=true logs access-token verification mode."""
-        from unittest.mock import MagicMock, patch
-
-        config = _oidc_config(oidc_verify_access_token=True)
-        mock_cls = MagicMock()
-        with (
-            patch("fastmcp.server.auth.oidc_proxy.OIDCProxy", mock_cls),
-            caplog.at_level(logging.INFO, logger="markdown_vault_mcp.config"),
-        ):
-            build_oidc_auth(config)
-
-        assert any(
-            "verifying upstream access_token as JWT" in r.message
-            for r in caplog.records
-        )
+    # Note: the previous test_verify_id_token_log_message /
+    # test_verify_access_token_log_message tests asserted MV-specific INFO
+    # log strings ("verifying upstream id_token") that fastmcp_pvl_core
+    # replaced with structured key=value logging.  The behavioural
+    # assertion they backed (verify_id_token kwarg flips correctly) is
+    # already covered by test_default_verify_id_token and
+    # test_verify_access_token_disables_verify_id_token above.
 
     def test_warning_when_openid_scope_missing_with_verify_id_token(
         self, caplog: pytest.LogCaptureFixture
@@ -2575,22 +2548,33 @@ class TestAuthModeSelection:
 
 
 class TestAuthDebugLogging:
-    """Tests for auth DEBUG logging (issue #181)."""
+    """Tests for auth DEBUG logging (issue #181).
+
+    The literal log strings asserted here were updated when MV-PR2
+    delegated auth builders to fastmcp_pvl_core, which uses structured
+    ``key=value`` logging instead of MV's old prose strings.  The
+    security-relevant property — secrets never appearing in logs — is
+    preserved verbatim.
+    """
 
     def test_bearer_debug_logs_presence(self, caplog: pytest.LogCaptureFixture) -> None:
         config = CollectionConfig(source_dir=Path("/tmp"), bearer_token="secret-token")
         with caplog.at_level(logging.DEBUG):
             build_bearer_auth(config)
-        assert "BEARER_TOKEN is set" in caplog.text
+        assert "bearer_auth_enabled" in caplog.text
+        assert "<redacted>" in caplog.text
         assert "secret-token" not in caplog.text
 
     def test_bearer_debug_logs_absence(self, caplog: pytest.LogCaptureFixture) -> None:
         config = CollectionConfig(source_dir=Path("/tmp"))
         with caplog.at_level(logging.DEBUG):
             build_bearer_auth(config)
-        assert "BEARER_TOKEN not set" in caplog.text
+        assert "bearer_auth_skipped" in caplog.text
 
-    def test_oidc_debug_logs_config(self, caplog: pytest.LogCaptureFixture) -> None:
+    def test_oidc_debug_does_not_leak_secret(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """OIDC builder must never log the client_secret value."""
         from unittest.mock import MagicMock, patch
 
         config = _oidc_config()
@@ -2601,10 +2585,6 @@ class TestAuthDebugLogging:
         ):
             build_oidc_auth(config)
 
-        assert "OIDC auth config:" in caplog.text
-        assert "config_url" in caplog.text
-        assert "client_id" in caplog.text
-        assert "<redacted>" in caplog.text  # client_secret is redacted
         assert "test-secret" not in caplog.text
 
     def test_oidc_debug_logs_missing_vars(
@@ -2617,7 +2597,8 @@ class TestAuthDebugLogging:
         with caplog.at_level(logging.DEBUG):
             result = build_oidc_auth(config)
         assert result is None
-        assert "missing env vars" in caplog.text
+        assert "oidc_proxy_auth_skipped" in caplog.text
+        assert "missing=" in caplog.text
 
     def test_startup_summary_logged(
         self,
@@ -2707,7 +2688,9 @@ class TestResolveAuthMode:
         with caplog.at_level(logging.WARNING):
             result = resolve_auth_mode(config)
         assert result == "remote"
-        assert "Unknown AUTH_MODE 'typo'" in caplog.text
+        # Core's structured warning replaces MV's old "Unknown AUTH_MODE 'X'".
+        assert "auth_mode_unknown" in caplog.text
+        assert "'typo'" in caplog.text
 
     def test_only_base_url_returns_none(self) -> None:
         """base_url alone is not enough for any OIDC mode."""
@@ -2760,24 +2743,30 @@ class TestBuildRemoteAuth:
     def test_discovery_fetch_failure_returns_none(self) -> None:
         from unittest.mock import patch
 
+        import httpx
+
         config = self._remote_config()
-        with patch("httpx.get", side_effect=Exception("connection failed")):
+        # Core's build_remote_auth catches httpx.HTTPError + ValueError; a
+        # bare Exception now propagates by design.
+        with patch("httpx.get", side_effect=httpx.ConnectError("connection failed")):
             assert build_remote_auth(config) is None
 
     def test_httpx_import_error_returns_none(
         self, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """Missing httpx gives a clear error, not a confusing discovery message."""
+        """Missing httpx gives a clear warning, not a confusing discovery message."""
         import sys as _sys
         from unittest.mock import patch
 
         config = self._remote_config()
+        # Core logs the missing-httpx case at WARNING (was ERROR in MV).
         with (
             patch.dict(_sys.modules, {"httpx": None}),
-            caplog.at_level(logging.ERROR),
+            caplog.at_level(logging.WARNING),
         ):
             assert build_remote_auth(config) is None
-        assert "'httpx' is not installed" in caplog.text
+        assert "remote_auth_skipped" in caplog.text
+        assert "httpx_missing" in caplog.text
 
     def test_happy_path_returns_non_none(self) -> None:
         from unittest.mock import MagicMock, patch
@@ -2916,31 +2905,12 @@ class TestBuildRemoteAuth:
         kw = mock_verifier_cls.call_args.kwargs
         assert kw["required_scopes"] is None
 
-    def test_debug_logging_on_success(self, caplog: pytest.LogCaptureFixture) -> None:
-        from unittest.mock import MagicMock, patch
-
-        config = self._remote_config()
-        mock_resp = MagicMock()
-        mock_resp.json.return_value = {
-            "jwks_uri": "https://auth.example.com/.well-known/jwks.json",
-            "issuer": "https://auth.example.com",
-        }
-        mock_resp.raise_for_status = MagicMock()
-
-        mock_jwt_verifier = MagicMock()
-        mock_verifier_cls = MagicMock(return_value=mock_jwt_verifier)
-        mock_remote_cls = MagicMock()
-
-        with (
-            patch("httpx.get", return_value=mock_resp),
-            patch("fastmcp.server.auth.JWTVerifier", mock_verifier_cls),
-            patch("fastmcp.server.auth.RemoteAuthProvider", mock_remote_cls),
-            caplog.at_level(logging.DEBUG),
-        ):
-            build_remote_auth(config)
-
-        assert "Remote auth config:" in caplog.text
-        assert "jwks_uri" in caplog.text
+    # Removed test_debug_logging_on_success: it asserted MV's verbose
+    # "Remote auth config:" multi-line debug dump, which fastmcp_pvl_core
+    # doesn't emit (core uses structured key=value logging only on
+    # skip/failure paths).  The behavioural property (success builds a
+    # RemoteAuthProvider) is already covered by test_happy_path_returns_non_none
+    # above.
 
 
 # ---------------------------------------------------------------------------
