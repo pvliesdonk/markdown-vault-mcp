@@ -1473,14 +1473,20 @@ def _register_download_link_tool(mcp: FastMCP) -> None:
         Args:
             path: Vault-relative path to the file (e.g.
                 ``"notes/report.md"`` or ``"assets/diagram.png"``).
-            ttl_seconds: Link lifetime in seconds (default 300 / 5
-                minutes).
+            ttl_seconds: Requested link lifetime in seconds (default
+                300 / 5 minutes).  The server enforces a single
+                process-wide TTL on its artifact store; the actual
+                expiry returned in ``expires_in_seconds`` reflects that
+                store setting, which may differ from the requested
+                value.
 
         Returns:
             JSON-encoded string with the following fields:
 
             - download_url (str): One-time HTTP URL to download the file.
-            - expires_in_seconds (int): Link lifetime (equals ttl_seconds).
+            - expires_in_seconds (int): Link lifetime actually enforced
+              by the server (may differ from the requested
+              ``ttl_seconds``).
             - path (str): Vault-relative path of the served file.
             - content_type (str): MIME type of the file.
 
@@ -1517,21 +1523,32 @@ def _register_download_link_tool(mcp: FastMCP) -> None:
         if not abs_path.is_file():
             raise ValueError(f"File not found: {path}")
 
-        from markdown_vault_mcp.artifacts import get_artifact_store
+        # Eagerly read bytes so the HTTP handler doesn't touch disk at
+        # serve time — the artifact store stores (bytes, filename, mime).
+        data = await asyncio.to_thread(abs_path.read_bytes)
+        filename = path.rsplit("/", 1)[-1]
+
+        from markdown_vault_mcp.artifacts import (
+            ARTIFACT_TTL_SECONDS,
+            get_artifact_store,
+        )
 
         store = get_artifact_store()
-        token = store.create_token(path, ttl_seconds=ttl_seconds)
+        token = store.add(data, filename=filename, mime_type=content_type)
+        effective_ttl = ARTIFACT_TTL_SECONDS
 
         download_url = f"{base_url}/artifacts/{token}"
         result = {
             "download_url": download_url,
-            "expires_in_seconds": ttl_seconds,
+            "expires_in_seconds": effective_ttl,
             "path": path,
             "content_type": content_type,
         }
         logger.info(
-            "Created download link for path=%r ttl=%ds",
+            "Created download link path=%r size=%d requested_ttl=%ds effective_ttl=%ds",
             path,
+            len(data),
             ttl_seconds,
+            effective_ttl,
         )
         return json.dumps(result, indent=2)

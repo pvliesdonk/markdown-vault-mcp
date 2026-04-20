@@ -76,22 +76,15 @@ def make_collection_lifespan(config: CollectionConfig) -> Any:
         # Start background tasks (e.g. git pull loop) after index is built.
         collection.start()
 
-        # Initialise artifact store singletons so the HTTP artifact endpoint
-        # can resolve vault paths outside of FastMCP's DI context.
-        from markdown_vault_mcp.artifacts import (
-            ArtifactStore,
-            set_artifact_store,
-            set_collection_store,
-        )
-
-        set_artifact_store(ArtifactStore())
-        set_collection_store(collection)
+        # Artifact store singleton is wired in create_server(), not here —
+        # the HTTP route captures the store at server-construction time and
+        # tool handlers reach it via get_artifact_store().  Tokens carry
+        # eager bytes now, so the lifespan no longer needs to expose the
+        # Collection to the HTTP handler.
 
         try:
             yield {"collection": collection, "config": config}
         finally:
-            set_artifact_store(None)
-            set_collection_store(None)
             collection.close()
             logger.info("Collection shut down")
 

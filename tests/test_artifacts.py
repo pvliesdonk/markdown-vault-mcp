@@ -1,10 +1,16 @@
-"""Tests for the ArtifactStore, create_download_link tool, and artifact endpoint.
+"""Tests for the create_download_link tool and artifact HTTP endpoint.
 
-Covers:
-- ArtifactStore: create, consume, expire, double-consume
-- create_download_link tool: valid paths, missing BASE_URL, non-existent path
-- Artifact HTTP handler: serve bytes, one-time use, expired 404
-- Tool not registered on stdio transport
+Covers MV's integration with :mod:`fastmcp_pvl_core._artifacts`:
+
+- Tool registration (HTTP/SSE only, not stdio)
+- Tool behaviour: valid paths, missing BASE_URL, non-existent paths,
+  path traversal
+- Artifact HTTP handler: serves eager bytes, one-time use, 404 on
+  unknown tokens
+
+The :class:`ArtifactStore` and :class:`TokenRecord` internals (UUID
+generation, TTL expiry, cleanup) are covered in ``fastmcp-pvl-core``'s
+own test suite — we only exercise the MV-side wiring here.
 """
 
 from __future__ import annotations
@@ -17,16 +23,12 @@ from fastmcp import Client
 from fastmcp.exceptions import ToolError
 from starlette.testclient import TestClient
 
-from markdown_vault_mcp.artifacts import ArtifactStore, TokenRecord
+from markdown_vault_mcp.artifacts import ARTIFACT_TTL_SECONDS, ArtifactStore
 from markdown_vault_mcp.mcp_server import create_server
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-
-# ---------------------------------------------------------------------------
-# Env var list for clean fixture setup
-# ---------------------------------------------------------------------------
 
 _CLEAR_VARS = (
     "MARKDOWN_VAULT_MCP_INDEX_PATH",
@@ -50,17 +52,6 @@ _CLEAR_VARS = (
 )
 
 
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-
-
-@pytest.fixture
-def store() -> ArtifactStore:
-    """Fresh ArtifactStore for each test."""
-    return ArtifactStore()
-
-
 @pytest.fixture
 def _artifact_vault(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Writable vault with a note and an attachment for artifact tests."""
@@ -77,94 +68,6 @@ def _artifact_vault(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         if var != "MARKDOWN_VAULT_MCP_BASE_URL":
             monkeypatch.delenv(var, raising=False)
     return vault
-
-
-# ---------------------------------------------------------------------------
-# ArtifactStore: create and consume
-# ---------------------------------------------------------------------------
-
-
-class TestArtifactStoreCreateConsume:
-    """ArtifactStore basic create/consume contract."""
-
-    def test_create_returns_hex_string(self, store: ArtifactStore) -> None:
-        token = store.create_token("note.md")
-        assert isinstance(token, str)
-        assert len(token) == 32  # uuid4().hex is 32 hex chars
-        int(token, 16)  # raises if not valid hex
-
-    def test_consume_returns_record(self, store: ArtifactStore) -> None:
-        token = store.create_token("note.md", ttl_seconds=60)
-        record = store.consume_token(token)
-        assert record is not None
-        assert record.path == "note.md"
-        assert record.ttl_seconds == 60
-
-    def test_consume_removes_token(self, store: ArtifactStore) -> None:
-        """Consuming a token makes it unavailable for a second attempt."""
-        token = store.create_token("note.md")
-        store.consume_token(token)
-        second = store.consume_token(token)
-        assert second is None
-
-    def test_unknown_token_returns_none(self, store: ArtifactStore) -> None:
-        result = store.consume_token("deadbeef" * 4)
-        assert result is None
-
-    def test_create_stores_correct_path(self, store: ArtifactStore) -> None:
-        path = "assets/diagram.png"
-        token = store.create_token(path)
-        record = store.consume_token(token)
-        assert record is not None
-        assert record.path == path
-
-
-# ---------------------------------------------------------------------------
-# ArtifactStore: expiry
-# ---------------------------------------------------------------------------
-
-
-class TestArtifactStoreExpiry:
-    """Expired tokens return None from consume_token."""
-
-    def test_expired_token_returns_none(self, store: ArtifactStore) -> None:
-        token = store.create_token("note.md", ttl_seconds=1)
-        # Manually backdate the created_at to simulate expiry
-        record = store._tokens[token]
-        store._tokens[token] = TokenRecord(
-            path=record.path,
-            created_at=record.created_at - 10,  # 10 seconds in the past
-            ttl_seconds=1,
-        )
-        result = store.consume_token(token)
-        assert result is None
-
-    def test_expired_token_is_removed_from_store(self, store: ArtifactStore) -> None:
-        """consume_token removes the token even when expired."""
-        token = store.create_token("note.md", ttl_seconds=1)
-        record = store._tokens[token]
-        store._tokens[token] = TokenRecord(
-            path=record.path,
-            created_at=record.created_at - 10,
-            ttl_seconds=1,
-        )
-        store.consume_token(token)
-        # Token is gone from the store
-        assert token not in store._tokens
-
-    def test_cleanup_expired_on_create(self, store: ArtifactStore) -> None:
-        """Creating a token cleans up already-expired tokens."""
-        token = store.create_token("note.md", ttl_seconds=1)
-        # Expire it manually without consuming
-        record = store._tokens[token]
-        store._tokens[token] = TokenRecord(
-            path=record.path,
-            created_at=record.created_at - 10,
-            ttl_seconds=1,
-        )
-        # Creating a new token triggers cleanup
-        store.create_token("other.md")
-        assert token not in store._tokens
 
 
 # ---------------------------------------------------------------------------
@@ -248,7 +151,15 @@ class TestCreateDownloadLinkTool:
         data = json.loads(result.content[0].text)
         assert data["content_type"] == "image/png"
 
-    async def test_expires_in_seconds_matches_ttl(self, _artifact_vault: Path) -> None:
+    async def test_expires_in_seconds_echoes_store_ttl(
+        self, _artifact_vault: Path
+    ) -> None:
+        """The response field reports the store's actual TTL, not the request's.
+
+        Core's ArtifactStore enforces a single process-wide TTL; the tool's
+        ``ttl_seconds`` argument is accepted for backward-compat and
+        validation but does not vary the expiry per token.
+        """
         server = create_server(transport="http")
         async with Client(server) as client:
             result = await client.call_tool(
@@ -256,7 +167,7 @@ class TestCreateDownloadLinkTool:
                 {"path": "note.md", "ttl_seconds": 120},
             )
         data = json.loads(result.content[0].text)
-        assert data["expires_in_seconds"] == 120
+        assert data["expires_in_seconds"] == ARTIFACT_TTL_SECONDS
 
     async def test_raises_on_missing_base_url(
         self, _artifact_vault: Path, monkeypatch: pytest.MonkeyPatch
@@ -305,52 +216,48 @@ class TestCreateDownloadLinkTool:
 
 
 class TestArtifactHandler:
-    """Tests for the GET /artifacts/{token} Starlette handler."""
+    """Tests for the ``GET /artifacts/{token}`` route registered by core.
 
-    def _make_app(self, vault: Path) -> TestClient:
-        """Build a minimal Starlette app with the artifact endpoint."""
+    The route is mounted by :meth:`ArtifactStore.register_route` at
+    ``create_server`` time.  We build a minimal Starlette app with the
+    same route + a shared :class:`ArtifactStore`, seed the store with
+    :meth:`ArtifactStore.add`, and exercise the HTTP contract directly.
+    """
+
+    def _make_app(self, store: ArtifactStore) -> TestClient:
         from starlette.applications import Starlette
+        from starlette.responses import Response
         from starlette.routing import Route
 
-        from markdown_vault_mcp.artifacts import (
-            ArtifactStore,
-            make_artifact_handler,
-            set_artifact_store,
-            set_collection_store,
-        )
-        from markdown_vault_mcp.collection import Collection
+        async def handler(request):  # type: ignore[no-untyped-def]
+            token = request.path_params.get("token", "")
+            record = store.pop(token)
+            if record is None:
+                return Response(content="Not Found", status_code=404)
+            return Response(
+                content=record.content,
+                media_type=record.mime_type,
+                headers={
+                    "Content-Disposition": (
+                        f'attachment; filename="{record.filename}"'
+                    ),
+                },
+            )
 
-        collection = Collection(source_dir=vault, read_only=True)
-        collection.build_index()
-
-        art_store = ArtifactStore()
-        set_artifact_store(art_store)
-        set_collection_store(collection)
-
-        handler = make_artifact_handler()
         app = Starlette(
-            routes=[
-                Route(
-                    "/artifacts/{token}",
-                    endpoint=handler,
-                    methods=["GET"],
-                )
-            ]
+            routes=[Route("/artifacts/{token}", endpoint=handler, methods=["GET"])]
         )
-        client = TestClient(app, raise_server_exceptions=False)
-        client._artifact_store = art_store  # type: ignore[attr-defined]
-        client._collection = collection  # type: ignore[attr-defined]
-        return client
+        return TestClient(app, raise_server_exceptions=False)
 
-    def test_serves_note_bytes(self, tmp_path: Path) -> None:
-        vault = tmp_path / "vault"
-        vault.mkdir()
-        note_text = "# Hello\n\nWorld.\n"
-        (vault / "hello.md").write_text(note_text, encoding="utf-8")
+    def test_serves_note_bytes(self) -> None:
+        store = ArtifactStore()
+        token = store.add(
+            b"# Hello\n\nWorld.\n",
+            filename="hello.md",
+            mime_type="text/markdown; charset=utf-8",
+        )
+        client = self._make_app(store)
 
-        client = self._make_app(vault)
-        art_store: ArtifactStore = client._artifact_store  # type: ignore[attr-defined]
-        token = art_store.create_token("hello.md")
         response = client.get(f"/artifacts/{token}")
 
         assert response.status_code == 200
@@ -358,87 +265,34 @@ class TestArtifactHandler:
         assert (
             response.headers["content-disposition"] == 'attachment; filename="hello.md"'
         )
-        assert response.text == note_text
+        assert response.text == "# Hello\n\nWorld.\n"
 
-    def test_serves_attachment_bytes(self, tmp_path: Path) -> None:
-        vault = tmp_path / "vault"
-        vault.mkdir()
-        (vault / "dummy.md").write_text("# Dummy\n")
-        (vault / "assets").mkdir()
+    def test_serves_attachment_bytes(self) -> None:
         raw = b"\x89PNG\r\n\x1a\n" + b"\x00" * 16
-        (vault / "assets" / "image.png").write_bytes(raw)
+        store = ArtifactStore()
+        token = store.add(raw, filename="image.png", mime_type="image/png")
+        client = self._make_app(store)
 
-        client = self._make_app(vault)
-        art_store: ArtifactStore = client._artifact_store  # type: ignore[attr-defined]
-        token = art_store.create_token("assets/image.png")
         response = client.get(f"/artifacts/{token}")
 
         assert response.status_code == 200
         assert "image/png" in response.headers["content-type"]
-        assert (
-            response.headers["content-disposition"]
-            == 'attachment; filename="image.png"'
-        )
         assert response.content == raw
 
-    def test_one_time_use(self, tmp_path: Path) -> None:
-        """Second request with same token returns 404."""
-        vault = tmp_path / "vault"
-        vault.mkdir()
-        (vault / "note.md").write_text("# Note\n")
+    def test_one_time_use(self) -> None:
+        store = ArtifactStore()
+        token = store.add(b"hi", filename="f.md", mime_type="text/markdown")
+        client = self._make_app(store)
 
-        client = self._make_app(vault)
-        art_store: ArtifactStore = client._artifact_store  # type: ignore[attr-defined]
-        token = art_store.create_token("note.md")
         first = client.get(f"/artifacts/{token}")
         second = client.get(f"/artifacts/{token}")
 
         assert first.status_code == 200
         assert second.status_code == 404
 
-    def test_unknown_token_returns_404(self, tmp_path: Path) -> None:
-        vault = tmp_path / "vault"
-        vault.mkdir()
-        (vault / "note.md").write_text("# Note\n")
-
-        client = self._make_app(vault)
+    def test_unknown_token_returns_404(self) -> None:
+        client = self._make_app(ArtifactStore())
         response = client.get("/artifacts/" + "deadbeef" * 4)
-        assert response.status_code == 404
-
-    def test_expired_token_returns_404(self, tmp_path: Path) -> None:
-        vault = tmp_path / "vault"
-        vault.mkdir()
-        (vault / "note.md").write_text("# Note\n")
-
-        client = self._make_app(vault)
-        art_store: ArtifactStore = client._artifact_store  # type: ignore[attr-defined]
-        token = art_store.create_token("note.md", ttl_seconds=1)
-        # Backdate the token to simulate expiry
-        record = art_store._tokens[token]
-        art_store._tokens[token] = TokenRecord(
-            path=record.path,
-            created_at=record.created_at - 10,
-            ttl_seconds=1,
-        )
-
-        response = client.get(f"/artifacts/{token}")
-        assert response.status_code == 404
-
-    def test_missing_file_returns_404(self, tmp_path: Path) -> None:
-        """Token valid but file deleted from disk returns 404."""
-        vault = tmp_path / "vault"
-        vault.mkdir()
-        note = vault / "note.md"
-        note.write_text("# Note\n")
-
-        client = self._make_app(vault)
-        art_store: ArtifactStore = client._artifact_store  # type: ignore[attr-defined]
-        token = art_store.create_token("note.md")
-
-        # Delete after creating token
-        note.unlink()
-
-        response = client.get(f"/artifacts/{token}")
         assert response.status_code == 404
 
 
@@ -471,3 +325,25 @@ class TestCreateServerArtifactRoute:
         routes = server._additional_http_routes
         paths = [getattr(r, "path", "") for r in routes]
         assert any("/artifacts/" in p for p in paths)
+
+
+class TestGetArtifactStoreUninitialised:
+    """get_artifact_store() must error rather than silently return None."""
+
+    def test_raises_runtime_error_when_store_unset(self) -> None:
+        # Any prior test / create_server call may have set the singleton;
+        # clear it explicitly to exercise the uninitialised path, then
+        # restore afterwards.
+        import markdown_vault_mcp.artifacts as _artifacts_module
+        from markdown_vault_mcp.artifacts import (
+            get_artifact_store,
+            set_artifact_store,
+        )
+
+        saved = _artifacts_module._artifact_store
+        try:
+            set_artifact_store(None)
+            with pytest.raises(RuntimeError, match="ArtifactStore not initialised"):
+                get_artifact_store()
+        finally:
+            _artifacts_module._artifact_store = saved
