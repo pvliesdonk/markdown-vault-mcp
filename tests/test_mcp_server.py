@@ -2450,7 +2450,9 @@ class TestAuthModeSelection:
 
         assert isinstance(server.auth, MultiAuth)
         assert "using bearer token auth" not in caplog.text
-        assert "Multi-auth enabled" in caplog.text
+        # create_server now logs "Auth enabled: mode=multi" via core's
+        # resolve_auth_mode, which reports the unified 5-mode vocabulary.
+        assert "Auth enabled: mode=multi" in caplog.text
 
     def test_multi_auth_contains_both_verifiers(
         self,

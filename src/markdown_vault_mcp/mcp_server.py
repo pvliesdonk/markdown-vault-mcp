@@ -23,6 +23,8 @@ from fastmcp import FastMCP
 from fastmcp_pvl_core import (
     ArtifactStore,
     ServerConfig,
+    build_auth,
+    resolve_auth_mode,
     wire_middleware_stack,
 )
 from fastmcp_pvl_core import (
@@ -34,11 +36,7 @@ from fastmcp_pvl_core import (
 
 from markdown_vault_mcp.config import (
     _ENV_PREFIX,
-    build_bearer_auth,
-    build_oidc_auth,
-    build_remote_auth,
     load_config,
-    resolve_auth_mode,
 )
 
 from ._icons import _SERVER_ICON
@@ -143,47 +141,18 @@ def create_server(transport: str = "stdio") -> FastMCP:
     else:
         instructions = _build_default_instructions(read_only=is_read_only)
 
-    bearer_auth = build_bearer_auth(config)
-    oidc_mode = resolve_auth_mode(config)
-
-    oidc_auth = None
-    if oidc_mode == "remote":
-        oidc_auth = build_remote_auth(config)
-    elif oidc_mode == "oidc-proxy":
-        oidc_auth = build_oidc_auth(config)
-
-    if oidc_mode and not oidc_auth:
-        logger.warning(
-            "OIDC auth mode '%s' was selected but auth failed to initialize — "
-            "server will start without OIDC",
-            oidc_mode,
-        )
-
-    if bearer_auth and oidc_auth:
-        from fastmcp.server.auth import MultiAuth
-
-        # Override required_scopes to empty — OIDC's required_scopes
-        # (e.g. ["openid"]) would otherwise propagate to the HTTP
-        # middleware and reject bearer tokens that lack "openid".
-        auth = MultiAuth(server=oidc_auth, verifiers=[bearer_auth], required_scopes=[])
-        auth_mode = f"multi({oidc_mode}+bearer)"
-        logger.info(
-            "Multi-auth enabled: bearer token + OIDC %s (either accepted)", oidc_mode
-        )
-    elif bearer_auth:
-        auth = bearer_auth
-        auth_mode = "bearer"
-        logger.info("Bearer token auth enabled")
-    elif oidc_auth:
-        auth = oidc_auth
-        auth_mode = oidc_mode or "oidc"
-        logger.info("OIDC auth enabled (mode: %s)", oidc_mode)
-    else:
-        auth = None
-        auth_mode = "none"
+    # Core owns the auth dispatch: bearer/remote/oidc-proxy/multi/none are
+    # all resolved from config.server field presence via resolve_auth_mode,
+    # and build_auth composes the right provider (wrapping bearer + OIDC in
+    # MultiAuth(required_scopes=[]) when both are configured).
+    auth = build_auth(config.server)
+    auth_mode = resolve_auth_mode(config.server)
+    if auth_mode == "none":
         logger.warning(
             "No auth configured — server accepts unauthenticated connections"
         )
+    else:
+        logger.info("Auth enabled: mode=%s", auth_mode)
 
     try:
         pkg_ver = _pkg_version("markdown-vault-mcp")
