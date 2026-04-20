@@ -734,6 +734,18 @@ wheels = [
 ]
 
 [[package]]
+name = "fastmcp-pvl-core"
+version = "1.0.0rc1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "fastmcp" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/44/61/71891949c6569c986d01a2f043687a6acb704a2b6b8422f3806036c47e12/fastmcp_pvl_core-1.0.0rc1.tar.gz", hash = "sha256:56925ed645720b956a7d1fe395da6edb9518c4e47470a4d0c24520af2364c26e", size = 144859, upload-time = "2026-04-20T10:12:20.808Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/60/f5/29ef92cfa2a0f61178e3bdd6f4b7fbc24e39507d0085154ec71bdc22a067/fastmcp_pvl_core-1.0.0rc1-py3-none-any.whl", hash = "sha256:5b268ca4dbe9eef50ee99fd58cd55fed32470fcf9c389eb45742a23454dadc6a", size = 18444, upload-time = "2026-04-20T10:12:19.272Z" },
+]
+
+[[package]]
 name = "filelock"
 version = "3.25.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1163,9 +1175,10 @@ wheels = [
 
 [[package]]
 name = "markdown-vault-mcp"
-version = "1.23.1rc1"
+version = "1.23.1"
 source = { editable = "." }
 dependencies = [
+    { name = "fastmcp-pvl-core" },
     { name = "python-frontmatter" },
     { name = "requests" },
 ]
@@ -1212,6 +1225,7 @@ requires-dist = [
     { name = "fastembed", marker = "extra == 'embeddings'", specifier = ">=0.3" },
     { name = "fastmcp", marker = "extra == 'all'", specifier = ">=3.0,<4" },
     { name = "fastmcp", marker = "extra == 'mcp'", specifier = ">=3.0,<4" },
+    { name = "fastmcp-pvl-core", specifier = "==1.0.0rc1" },
     { name = "httpx", marker = "extra == 'all'", specifier = ">=0.25" },
     { name = "httpx", marker = "extra == 'embeddings-api'", specifier = ">=0.25" },
     { name = "mkdocs-llmstxt", marker = "extra == 'docs'", specifier = ">=0.2" },
