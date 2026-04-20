@@ -41,6 +41,18 @@ vault becomes another.
    the primary interface; MCP is one consumer, not the only one. Other
    frameworks (LangChain, LlamaIndex, etc.) may wrap `Collection` directly.
 
+## Shared Infrastructure
+
+Generic FastMCP infrastructure (auth providers, middleware stack, logging
+bootstrap, server-factory helpers, artifact store, CLI helpers) lives in the
+`fastmcp-pvl-core` PyPI package. markdown-vault-mcp composes this library
+via `ServerConfig` (never inheritance) and imports the building blocks
+directly — see `src/markdown_vault_mcp/mcp_server.py:create_server` for the
+assembled call graph.
+
+Design spec: `docs/superpowers/specs/2026-04-20-fastmcp-core-and-copier-template-design.md`.
+Adoption plan: `docs/superpowers/plans/2026-04-20-fastmcp-pvl-core-extraction.md`.
+
 ## Architecture
 
 Two packages, one dependency edge (eventual):
