@@ -1029,3 +1029,72 @@ class TestBuildRemoteAuthConfig:
 
         kw = mock_verifier_cls.call_args.kwargs
         assert kw["required_scopes"] == ["openid", "profile"]
+
+
+class TestEmptyBoolEnvVarsFallToDefault:
+    """Empty-string env vars on bool fields fall through to the configured default.
+
+    Adopting fastmcp_pvl_core.env() changed the semantics: blank values are
+    treated as unset (the helper strips whitespace and returns the default),
+    where MV's old _env() returned the literal empty string and downstream
+    parse_bool("") yielded False. These tests lock in the new contract.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _source_dir(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+
+    def test_read_only_empty_falls_through_to_default(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "")
+        config = load_config()
+        assert config.read_only is True  # default
+
+    def test_git_lfs_empty_falls_through_to_default(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_LFS", "")
+        config = load_config()
+        assert config.git_lfs is True  # default
+
+    def test_oidc_verify_access_token_empty_falls_through_to_default(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OIDC_VERIFY_ACCESS_TOKEN", "")
+        config = load_config()
+        assert config.oidc_verify_access_token is False  # default
+
+    def test_ollama_cpu_only_empty_falls_through_to_default(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OLLAMA_CPU_ONLY", "")
+        config = load_config()
+        assert config.ollama_cpu_only is False  # default
+
+
+class TestServerConfigComposition:
+    """The composed ServerConfig field on CollectionConfig."""
+
+    def test_server_field_default_is_empty_serverconfig(self) -> None:
+        from fastmcp_pvl_core import ServerConfig
+
+        config = CollectionConfig(source_dir=Path("/tmp/v"))
+        assert isinstance(config.server, ServerConfig)
+        # Defaults match ServerConfig dataclass defaults
+        assert config.server.transport == "stdio"
+        assert config.server.bearer_token is None
+
+    def test_load_config_populates_server_from_env(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_TRANSPORT", "http")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_BEARER_TOKEN", "secret-token")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_BASE_URL", "https://api.example.com")
+
+        config = load_config()
+
+        assert config.server.transport == "http"
+        assert config.server.bearer_token == "secret-token"
+        assert config.server.base_url == "https://api.example.com"

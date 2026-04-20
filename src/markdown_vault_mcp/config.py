@@ -15,6 +15,10 @@ from typing import Any
 
 from fastmcp_pvl_core import ServerConfig
 from fastmcp_pvl_core import env as _core_env
+
+# Direct re-exports: parse_bool/parse_list match MV's old call shape (take a
+# str, return bool / list[str]) and call sites still gate with
+# ``if raw_xxx is not None`` so no shim wrapper is needed.
 from fastmcp_pvl_core import parse_bool as _parse_bool
 from fastmcp_pvl_core import parse_list as _parse_list
 from fastmcp_pvl_core import parse_scopes as _core_parse_scopes
@@ -137,6 +141,12 @@ class CollectionConfig:
             ``"BAAI/bge-small-en-v1.5"``).
         fastembed_cache_dir: Directory for FastEmbed model cache.  ``None``
             uses the library default.
+        server: Shared server-level configuration (transport, host/port,
+            auth, base URL, event store URL, MCP App domain) populated
+            from ``MARKDOWN_VAULT_MCP_*`` env vars by
+            :meth:`fastmcp_pvl_core.ServerConfig.from_env`.  Domain-specific
+            duplicates above remain on :class:`CollectionConfig` until
+            MV-PR2/3 migrate consumers to read from ``self.server.*``.
 
     Example::
 
