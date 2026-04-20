@@ -218,7 +218,10 @@ def _build_parser() -> argparse.ArgumentParser:
         help="port for http transport (default: 8000)",
     )
     serve_parser.add_argument(
+        # --path is kept as an alias so existing Dockerfiles and service
+        # units keep working; new invocations should prefer --http-path.
         "--http-path",
+        "--path",
         default=None,
         help=(
             "mount path for http transport (default: "

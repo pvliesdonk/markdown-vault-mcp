@@ -58,6 +58,18 @@ class TestBuildParser:
         assert args.transport == "http"
         assert args.http_path == "/vault/mcp"
 
+    def test_serve_legacy_path_alias_still_works(self) -> None:
+        """The legacy --path spelling is kept as an alias for --http-path.
+
+        Protects existing Dockerfiles, systemd units, and service configs
+        from the rename; the argparse dest remains ``http_path``.
+        """
+        parser = _build_parser()
+        args = parser.parse_args(
+            ["serve", "--transport", "http", "--path", "/legacy/mcp"]
+        )
+        assert args.http_path == "/legacy/mcp"
+
     def test_index_command(self) -> None:
         parser = _build_parser()
         args = parser.parse_args(["index"])
