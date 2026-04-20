@@ -15,6 +15,12 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 MCPB_DIR = REPO_ROOT / "packaging" / "mcpb"
 PLUGIN_DIR = REPO_ROOT / ".claude-plugin" / "plugin"
 
+# Stable `X.Y.Z` or python-semantic-release prerelease format `X.Y.Z-rc.N`.
+# The release workflow bumps the manifests for every release including RCs
+# (via PSR's build_command), so main may carry an RC version between stable
+# releases.
+_VERSION_RE = re.compile(r"\d+\.\d+\.\d+(?:-rc\.\d+)?")
+
 
 def test_cli_main_import_target_exists() -> None:
     """The mcpb shim imports markdown_vault_mcp.cli.main — make sure it exists."""
@@ -110,12 +116,11 @@ def test_claude_code_plugin_json_shape() -> None:
     assert plugin["repository"] == "https://github.com/pvliesdonk/markdown-vault-mcp"
     assert plugin["license"] == "MIT"
 
-    # Version must look like a real semver — not a template literal.
+    # Version must look like a real semver (stable or RC) — not a template literal.
     version = plugin["version"]
     assert version != "${VERSION}"
-    parts = version.split(".")
-    assert len(parts) == 3 and all(p.isdigit() for p in parts), (
-        f"expected X.Y.Z semver, got {version!r}"
+    assert _VERSION_RE.fullmatch(version), (
+        f"expected X.Y.Z or X.Y.Z-rc.N, got {version!r}"
     )
 
 
@@ -135,7 +140,7 @@ def test_plugin_mcp_json_pinned_and_matches_plugin_version() -> None:
     assert "--from" in args, f"args must include --from, got {args}"
     from_index = args.index("--from")
     spec = args[from_index + 1]
-    match = re.fullmatch(r"markdown-vault-mcp\[all\]==(\d+\.\d+\.\d+)", spec)
+    match = re.fullmatch(rf"markdown-vault-mcp\[all\]==({_VERSION_RE.pattern})", spec)
     assert match, f"unexpected --from spec: {spec!r}"
 
     plugin_version = _load_plugin_json()["version"]
