@@ -310,25 +310,16 @@ def main() -> None:
     parser = _build_parser()
     args = parser.parse_args()
 
-    # Logging setup routes through fastmcp_pvl_core, which aligns
-    # ``FASTMCP_LOG_LEVEL`` with ``-v`` and calls FastMCP's own
-    # ``configure_logging`` so our loggers and FastMCP's produce
-    # matching output.
     configure_logging_from_env(verbose=args.verbose)
 
-    # FastMCP's configure_logging installs a rich handler on its own
-    # logger tree; the root logger still needs a plain StreamHandler so
-    # that our ``markdown_vault_mcp.*`` loggers produce output when the
-    # CLI is invoked outside an environment that has already configured
-    # one.
+    # Root handler for markdown_vault_mcp.* — FastMCP's configure_logging only covers its own logger tree.
     root = logging.getLogger()
     if not root.handlers:
         handler = logging.StreamHandler()
         handler.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
         root.addHandler(handler)
 
-    # httpx / httpcore are domain-specific noise we silence inline;
-    # the core helper stays pure and doesn't know about our deps.
+    # Silence httpx/httpcore at DEBUG — kept inline, core doesn't own these deps.
     if args.verbose:
         logging.getLogger("httpx").setLevel(logging.WARNING)
         logging.getLogger("httpcore").setLevel(logging.WARNING)

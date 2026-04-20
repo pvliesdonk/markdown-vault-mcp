@@ -188,21 +188,32 @@ class TestMainDispatch:
 
     @patch("markdown_vault_mcp.cli._COMMANDS")
     def test_verbose_sets_fastmcp_log_level_env(self, mock_commands: MagicMock) -> None:
-        """``-v`` sets FASTMCP_LOG_LEVEL=DEBUG in the environment."""
+        """``-v`` sets FASTMCP_LOG_LEVEL=DEBUG via the real configure_logging_from_env.
+
+        Intentionally exercises the real helper (not mocked) so it covers the
+        env-var contract MV depends on.  Saves and restores the root logger's
+        level + handlers and FASTMCP_LOG_LEVEL to keep global state clean.
+        """
+        import logging
         import os
 
         mock_handler = MagicMock()
         mock_commands.__getitem__ = MagicMock(return_value=mock_handler)
-        old = os.environ.pop("FASTMCP_LOG_LEVEL", None)
+        root = logging.getLogger()
+        saved_env = os.environ.pop("FASTMCP_LOG_LEVEL", None)
+        saved_level = root.level
+        saved_handlers = root.handlers[:]
         try:
             with patch("sys.argv", ["markdown-vault-mcp", "-v", "index"]):
                 main()
             assert os.environ.get("FASTMCP_LOG_LEVEL") == "DEBUG"
         finally:
-            if old is not None:
-                os.environ["FASTMCP_LOG_LEVEL"] = old
+            if saved_env is not None:
+                os.environ["FASTMCP_LOG_LEVEL"] = saved_env
             else:
                 os.environ.pop("FASTMCP_LOG_LEVEL", None)
+            root.setLevel(saved_level)
+            root.handlers[:] = saved_handlers
 
     @patch("markdown_vault_mcp.cli._COMMANDS")
     def test_no_verbose_does_not_set_fastmcp_log_level(
