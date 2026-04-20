@@ -37,12 +37,15 @@ _artifact_store: ArtifactStore | None = None
 def set_artifact_store(store: ArtifactStore | None) -> None:
     """Set the module-level artifact store.
 
-    Called from :func:`markdown_vault_mcp.mcp_server.create_server` when
-    the server is first constructed, and again with ``None`` to clear
-    the singleton on teardown.
+    Called from :func:`markdown_vault_mcp.mcp_server.create_server` on
+    each server construction.  The server owns the store for its
+    lifetime; there is no lifespan teardown hook, so a later
+    ``create_server`` call simply replaces the singleton.  Passing
+    ``None`` is supported (tests use it to exercise the uninitialised
+    path), but is not invoked by the normal server lifecycle.
 
     Args:
-        store: The :class:`ArtifactStore` instance, or ``None`` on shutdown.
+        store: The :class:`ArtifactStore` instance, or ``None`` to clear.
     """
     global _artifact_store
     _artifact_store = store

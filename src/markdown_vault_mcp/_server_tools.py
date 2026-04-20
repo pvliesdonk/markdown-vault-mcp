@@ -1526,7 +1526,7 @@ def _register_download_link_tool(mcp: FastMCP) -> None:
         # Eagerly read bytes so the HTTP handler doesn't touch disk at
         # serve time — the artifact store stores (bytes, filename, mime).
         data = await asyncio.to_thread(abs_path.read_bytes)
-        filename = path.rsplit("/", 1)[-1]
+        filename = abs_path.name
 
         from markdown_vault_mcp.artifacts import (
             ARTIFACT_TTL_SECONDS,

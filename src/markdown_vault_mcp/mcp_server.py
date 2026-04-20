@@ -220,16 +220,20 @@ def create_server(transport: str = "stdio") -> FastMCP:
         prompts_folder=config.prompts_folder,
     )
 
-    # Artifact store is constructed here (not in lifespan) so the HTTP route
-    # closure can bind to a concrete store instance.  The tool handler reaches
-    # it via set_artifact_store/get_artifact_store in markdown_vault_mcp.artifacts.
-    from markdown_vault_mcp.artifacts import ARTIFACT_TTL_SECONDS, set_artifact_store
-
-    artifact_store = ArtifactStore(ttl_seconds=ARTIFACT_TTL_SECONDS)
-    set_artifact_store(artifact_store)
-
     # --- Artifact download endpoint (HTTP transports only) ---
+    # The store is constructed here (not in lifespan) so the HTTP route
+    # closure can bind to a concrete instance.  The tool handler reaches
+    # the same instance via get_artifact_store() in markdown_vault_mcp.artifacts.
+    # Skipped entirely on stdio where the create_download_link tool isn't
+    # registered — no need to hold bytes in memory for a feature we don't expose.
     if transport != "stdio":
+        from markdown_vault_mcp.artifacts import (
+            ARTIFACT_TTL_SECONDS,
+            set_artifact_store,
+        )
+
+        artifact_store = ArtifactStore(ttl_seconds=ARTIFACT_TTL_SECONDS)
+        set_artifact_store(artifact_store)
         ArtifactStore.register_route(mcp, artifact_store)
 
     # --- Visibility: hide write-tagged components in read-only mode ---

@@ -277,6 +277,10 @@ class TestArtifactHandler:
 
         assert response.status_code == 200
         assert "image/png" in response.headers["content-type"]
+        assert (
+            response.headers["content-disposition"]
+            == 'attachment; filename="image.png"'
+        )
         assert response.content == raw
 
     def test_one_time_use(self) -> None:
@@ -325,6 +329,31 @@ class TestCreateServerArtifactRoute:
         routes = server._additional_http_routes
         paths = [getattr(r, "path", "") for r in routes]
         assert any("/artifacts/" in p for p in paths)
+
+    def test_artifact_route_end_to_end_via_http_app(self) -> None:
+        """End-to-end smoke test that exercises core's register_route behaviour.
+
+        Builds the ASGI app via ``mcp.http_app()`` — the same call path
+        ``_cmd_serve`` uses — seeds the store via ``get_artifact_store().add``
+        and hits the real mounted route.  Guards against divergence between
+        TestArtifactHandler's hand-rolled handler and core's
+        ArtifactStore.register_route implementation.
+        """
+        from markdown_vault_mcp.artifacts import get_artifact_store
+
+        server = create_server(transport="http")
+        store = get_artifact_store()
+        token = store.add(
+            b"integration",
+            filename="it.md",
+            mime_type="text/markdown; charset=utf-8",
+        )
+        with TestClient(server.http_app()) as client:
+            response = client.get(f"/artifacts/{token}")
+
+        assert response.status_code == 200
+        assert response.content == b"integration"
+        assert "text/markdown" in response.headers["content-type"]
 
 
 class TestGetArtifactStoreUninitialised:
