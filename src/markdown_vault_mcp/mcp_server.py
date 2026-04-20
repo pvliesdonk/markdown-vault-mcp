@@ -232,12 +232,7 @@ def create_server(transport: str = "stdio") -> FastMCP:
         auth=auth,
     )
 
-    # Middleware stack (ErrorHandling → Timing → Logging) is installed by
-    # fastmcp_pvl_core.  include_traceback=None lets the helper infer the
-    # setting from the root log level at call time — matches MV's previous
-    # behaviour (on under -v, off in production).  transform_errors=False
-    # preserves MV's default of letting exceptions propagate to FastMCP's
-    # own handlers rather than synthesising MCP error responses.
+    # include_traceback=None infers from root log level (-v→DEBUG→tracebacks); transform_errors=False lets exceptions propagate to FastMCP's own handlers.
     wire_middleware_stack(mcp, include_traceback=None, transform_errors=False)
 
     register_tools(mcp, transport=transport)
