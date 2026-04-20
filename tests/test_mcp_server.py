@@ -2450,8 +2450,6 @@ class TestAuthModeSelection:
 
         assert isinstance(server.auth, MultiAuth)
         assert "using bearer token auth" not in caplog.text
-        # create_server now logs "Auth enabled: mode=multi" via core's
-        # resolve_auth_mode, which reports the unified 5-mode vocabulary.
         assert "Auth enabled: mode=multi" in caplog.text
 
     def test_multi_auth_contains_both_verifiers(
@@ -2551,6 +2549,34 @@ class TestAuthModeSelection:
         assert any("unauthenticated" in r.message for r in warning_records), (
             "No-auth message must be logged at WARNING level, not INFO"
         )
+
+    def test_auth_mode_reports_none_when_build_auth_fails(
+        self,
+        vault_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """If build_auth returns None despite OIDC config, log ``mode=none``.
+
+        Guards against the log drifting from reality when e.g. OIDC
+        discovery fails: ``resolve_auth_mode`` would still report
+        ``oidc-proxy`` from field presence, but the actual auth object
+        is ``None`` so the startup summary must say ``none``.
+        """
+        from unittest.mock import patch
+
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault_path))
+        for var, val in _OIDC_REQUIRED.items():
+            monkeypatch.setenv(var, val)
+
+        with (
+            patch("markdown_vault_mcp.mcp_server.build_auth", return_value=None),
+            caplog.at_level(logging.WARNING),
+        ):
+            server = create_server()
+
+        assert server.auth is None
+        assert "unauthenticated" in caplog.text
 
 
 class TestAuthDebugLogging:

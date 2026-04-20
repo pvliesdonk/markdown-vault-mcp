@@ -141,12 +141,11 @@ def create_server(transport: str = "stdio") -> FastMCP:
     else:
         instructions = _build_default_instructions(read_only=is_read_only)
 
-    # Core owns the auth dispatch: bearer/remote/oidc-proxy/multi/none are
-    # all resolved from config.server field presence via resolve_auth_mode,
-    # and build_auth composes the right provider (wrapping bearer + OIDC in
-    # MultiAuth(required_scopes=[]) when both are configured).
     auth = build_auth(config.server)
-    auth_mode = resolve_auth_mode(config.server)
+    # Collapse to "none" whenever build_auth actually returned None (e.g.
+    # OIDC discovery failed) so the log reflects the real security posture,
+    # not whatever resolve_auth_mode would report from field presence alone.
+    auth_mode = resolve_auth_mode(config.server) if auth is not None else "none"
     if auth_mode == "none":
         logger.warning(
             "No auth configured — server accepts unauthenticated connections"

@@ -771,12 +771,14 @@ def _server_from_collection(config: CollectionConfig) -> ServerConfig:
 def resolve_auth_mode(config: CollectionConfig) -> str | None:
     """Return the OIDC auth flavor for *config*, or ``None`` for no OIDC.
 
-    Existing callers (``mcp_server.create_server``) compose multi-auth
-    themselves by combining the OIDC flavor with the bearer verifier, so
-    this wrapper hides core's ``"multi"`` outcome by re-resolving with
-    the bearer token suppressed — the caller still sees just the OIDC
-    flavor (``"remote"`` / ``"oidc-proxy"``) and ``None`` for bearer-only
-    or no-auth configurations.
+    Preserved for the test surface that constructs :class:`CollectionConfig`
+    directly with auth fields populated — the wrapper bridges to core's
+    resolver via :func:`_server_from_collection` and hides the ``"multi"``
+    / ``"bearer"`` / ``"none"`` outcomes behind ``None`` so callers that
+    only branch on the OIDC flavor (``"remote"`` / ``"oidc-proxy"``) keep
+    working.  Production code in :mod:`mcp_server` now calls core's
+    :func:`~fastmcp_pvl_core.resolve_auth_mode` directly on
+    ``config.server``.
 
     Args:
         config: Populated configuration object.
