@@ -2574,7 +2574,12 @@ class TestAuthDebugLogging:
     def test_oidc_debug_does_not_leak_secret(
         self, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """OIDC builder must never log the client_secret value."""
+        """OIDC builder invokes OIDCProxy and never logs the client_secret.
+
+        The positive leg (``mock_cls.assert_called_once()``) guards against
+        a regression where this test would silently pass if build_oidc_auth
+        bailed out before reaching the proxy construction.
+        """
         from unittest.mock import MagicMock, patch
 
         config = _oidc_config()
@@ -2585,6 +2590,7 @@ class TestAuthDebugLogging:
         ):
             build_oidc_auth(config)
 
+        mock_cls.assert_called_once()
         assert "test-secret" not in caplog.text
 
     def test_oidc_debug_logs_missing_vars(

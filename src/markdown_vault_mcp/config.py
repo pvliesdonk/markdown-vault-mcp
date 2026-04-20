@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -784,8 +784,6 @@ def resolve_auth_mode(config: CollectionConfig) -> str | None:
     Returns:
         ``"remote"``, ``"oidc-proxy"``, or ``None``.
     """
-    from dataclasses import replace
-
     server = _server_from_collection(config)
     mode = _core_resolve_auth_mode(server)
     if mode == "multi":
