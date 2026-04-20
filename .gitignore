@@ -21,3 +21,6 @@ htmlcov/
 site/
 .mcpregistry_*
 .worktrees/
+
+# Claude Code local settings
+.claude/
