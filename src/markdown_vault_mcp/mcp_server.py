@@ -14,17 +14,24 @@ from __future__ import annotations
 import logging
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
-from pathlib import Path
 from typing import TYPE_CHECKING
-from urllib.parse import urlparse
 
 if TYPE_CHECKING:
     from fastmcp.server.event_store import EventStore
 
 from fastmcp import FastMCP
-from fastmcp_pvl_core import wire_middleware_stack
+from fastmcp_pvl_core import (
+    build_event_store as _core_build_event_store,
+)
+from fastmcp_pvl_core import (
+    build_instructions as _core_build_instructions,
+)
+from fastmcp_pvl_core import (
+    wire_middleware_stack,
+)
 
 from markdown_vault_mcp.config import (
+    _ENV_PREFIX,
     build_bearer_auth,
     build_oidc_auth,
     build_remote_auth,
@@ -46,17 +53,13 @@ logger = logging.getLogger(__name__)
 # Event store
 # ---------------------------------------------------------------------------
 
-_DEFAULT_EVENT_STORE_DIR = "/data/state/events"
-
 
 def build_event_store(url: str | None = None) -> EventStore:
     """Build an ``EventStore`` for SSE polling/resumability.
 
-    Parses the *url* scheme to select a storage backend:
-
-    - ``None`` or empty → ``FileTreeStore`` at :data:`_DEFAULT_EVENT_STORE_DIR`
-    - ``file:///path`` → ``FileTreeStore`` at the given path
-    - ``memory://`` → in-memory (lost on restart, for development)
+    Thin shim over :func:`fastmcp_pvl_core.build_event_store`: wraps the
+    legacy URL-only call shape used by ``cli.py`` and delegates the actual
+    backend selection (file-tree vs in-memory) to the shared core helper.
 
     Args:
         url: Event store URL from ``MARKDOWN_VAULT_MCP_EVENT_STORE_URL``.
@@ -64,39 +67,9 @@ def build_event_store(url: str | None = None) -> EventStore:
     Returns:
         A configured :class:`~fastmcp.server.event_store.EventStore`.
     """
-    from fastmcp.server.event_store import EventStore as _EventStore
+    from fastmcp_pvl_core import ServerConfig
 
-    if not url:
-        url = f"file://{_DEFAULT_EVENT_STORE_DIR}"
-
-    parsed = urlparse(url)
-
-    if parsed.scheme == "memory":
-        logger.info("Event store: in-memory (sessions lost on restart)")
-        return _EventStore(max_events_per_stream=100, ttl=3600)
-
-    if parsed.scheme == "file":
-        directory = parsed.path
-        if not directory:
-            directory = _DEFAULT_EVENT_STORE_DIR
-        Path(directory).mkdir(parents=True, exist_ok=True)
-        logger.info("Event store: file-backed at %s", directory)
-
-        try:
-            from key_value.aio.stores.filetree import FileTreeStore
-        except ImportError:
-            raise ImportError(
-                "FileTreeStore requires fastmcp>=3.0 with key-value support. "
-                "Install with: pip install 'markdown-vault-mcp[mcp]'"
-            ) from None
-
-        storage = FileTreeStore(data_directory=directory)
-        return _EventStore(storage=storage, max_events_per_stream=100, ttl=3600)
-
-    raise ValueError(
-        f"Unsupported EVENT_STORE_URL scheme {parsed.scheme!r}. "
-        "Use 'file:///path' or 'memory://'."
-    )
+    return _core_build_event_store(_ENV_PREFIX, ServerConfig(event_store_url=url))
 
 
 # ---------------------------------------------------------------------------
@@ -107,34 +80,37 @@ def build_event_store(url: str | None = None) -> EventStore:
 def _build_default_instructions(*, read_only: bool) -> str:
     """Build the default instructions string based on read-only state.
 
-    Args:
-        read_only: Whether write tools are disabled on this instance.
-
-    Returns:
-        Instructions string suitable for the ``instructions`` parameter
-        of :class:`~fastmcp.FastMCP`.
+    Composes MV's domain-specific guidance into a ``domain_line`` and
+    delegates to :func:`fastmcp_pvl_core.build_instructions` for the
+    read-only/read-write line and operator override hint.
     """
-    write_line = (
-        "This instance is READ-ONLY — write tools are not available."
+    prelude = (
+        "A searchable markdown document collection. "
+        "Paths are always relative (e.g. 'Journal/note.md')."
+    )
+    write_guidance = (
+        ""
         if read_only
         else (
-            "This instance is READ-WRITE — use 'write' to create, 'edit' for "
-            "targeted changes (read first), 'rename' to move "
-            "(pass update_links=True to fix links in other notes), 'delete' to remove. "
-            "All write operations update the search index immediately — never call "
-            "'reindex' after write, edit, delete, or rename."
+            " Write tools: use 'write' to create, 'edit' for targeted changes "
+            "(read first), 'rename' to move (pass update_links=True to fix links "
+            "in other notes), 'delete' to remove. All write operations update the "
+            "search index immediately — never call 'reindex' after write, edit, "
+            "delete, or rename."
         )
     )
-    return (
-        "A searchable markdown document collection. "
-        "Paths are always relative (e.g. 'Journal/note.md'). "
-        f"{write_line} "
-        "Use 'search' (mode='hybrid' preferred when available) to find documents, "
+    search_guidance = (
+        " Use 'search' (mode='hybrid' preferred when available) to find documents, "
         "'read' for full content, 'list_documents' to enumerate, 'stats' to check "
-        "capabilities. "
-        "'browse_vault' and 'show_context' open a visual UI for the user — do not "
-        "call them to retrieve vault content; use 'search', 'read', 'list_documents', "
-        "or 'get_context' instead."
+        "capabilities. 'browse_vault' and 'show_context' open a visual UI for the "
+        "user — do not call them to retrieve vault content; use 'search', 'read', "
+        "'list_documents', or 'get_context' instead."
+    )
+    domain_line = f"{prelude}{write_guidance}{search_guidance}"
+    return _core_build_instructions(
+        read_only=read_only,
+        env_prefix=_ENV_PREFIX,
+        domain_line=domain_line,
     )
 
 

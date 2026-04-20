@@ -16,7 +16,7 @@ class TestBuildEventStore:
         from unittest.mock import patch
 
         with patch(
-            "markdown_vault_mcp.mcp_server._DEFAULT_EVENT_STORE_DIR",
+            "fastmcp_pvl_core._factory._DEFAULT_EVENT_STORE_DIR",
             str(tmp_path / "events"),
         ):
             store = build_event_store(None)
@@ -29,7 +29,7 @@ class TestBuildEventStore:
         from unittest.mock import patch
 
         with patch(
-            "markdown_vault_mcp.mcp_server._DEFAULT_EVENT_STORE_DIR",
+            "fastmcp_pvl_core._factory._DEFAULT_EVENT_STORE_DIR",
             str(tmp_path / "events"),
         ):
             store = build_event_store("")
@@ -52,7 +52,7 @@ class TestBuildEventStore:
 
     def test_unsupported_scheme_raises(self):
         """Unsupported URL scheme raises ValueError."""
-        with pytest.raises(ValueError, match="Unsupported EVENT_STORE_URL scheme"):
+        with pytest.raises(ValueError, match="Unsupported event store URL scheme"):
             build_event_store("redis://localhost:6379")
 
     def test_file_url_without_path_uses_default(self, tmp_path):
@@ -60,7 +60,7 @@ class TestBuildEventStore:
         from unittest.mock import patch
 
         with patch(
-            "markdown_vault_mcp.mcp_server._DEFAULT_EVENT_STORE_DIR",
+            "fastmcp_pvl_core._factory._DEFAULT_EVENT_STORE_DIR",
             str(tmp_path / "events"),
         ):
             store = build_event_store("file://")

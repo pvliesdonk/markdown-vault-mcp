@@ -129,7 +129,11 @@ class TestServerIdentity:
         assert "relative" in server.instructions
         assert "'search'" in server.instructions
         assert "'stats'" in server.instructions
-        assert "MARKDOWN_VAULT_MCP_INSTRUCTIONS" not in server.instructions
+        # Core's build_instructions appends an operator-override hint
+        # (by design — tells anyone reading the instructions that the
+        # env var exists to customise them).
+        assert "MARKDOWN_VAULT_MCP_INSTRUCTIONS" in server.instructions
+        assert "Operators:" in server.instructions
 
     @pytest.mark.usefixtures("_mcp_env")
     def test_custom_server_name(self, monkeypatch: pytest.MonkeyPatch) -> None:
