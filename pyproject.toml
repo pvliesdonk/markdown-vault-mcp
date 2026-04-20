@@ -158,6 +158,13 @@ module = [
 # numpy dtype mismatches).  TODO: fix in a dedicated type-safety PR.
 ignore_errors = true
 
+[tool.pyright]
+# Point Pyright at the uv-managed venv so editor diagnostics resolve
+# imports the same way as our CLI tools (mypy/ruff/pytest run via uv).
+venvPath = "."
+venv = ".venv"
+pythonVersion = "3.11"
+
 [tool.semantic_release]
 version_toml = ["pyproject.toml:project.version"]
 commit_parser = "angular"

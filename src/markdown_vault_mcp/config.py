@@ -9,9 +9,15 @@ from __future__ import annotations
 import logging
 import os
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+from fastmcp_pvl_core import ServerConfig
+from fastmcp_pvl_core import env as _core_env
+from fastmcp_pvl_core import parse_bool as _parse_bool
+from fastmcp_pvl_core import parse_list as _parse_list
+from fastmcp_pvl_core import parse_scopes as _core_parse_scopes
 
 logger = logging.getLogger(__name__)
 
@@ -19,47 +25,26 @@ _ENV_PREFIX = "MARKDOWN_VAULT_MCP"
 
 
 def _env(name: str, default: str | None = None) -> str | None:
-    """Return the value of ``{_ENV_PREFIX}_{name}`` from the environment.
+    """Read ``{_ENV_PREFIX}_{name}`` via the shared core helper.
 
-    Args:
-        name: Suffix after the prefix (e.g. ``"SOURCE_DIR"``).
-        default: Fallback when the variable is unset.
-
-    Returns:
-        The environment variable value, or *default*.
+    Thin shim that preserves the historical one-arg call shape used
+    throughout this module.  Behaviour comes from
+    :func:`fastmcp_pvl_core.env`: whitespace is stripped and an empty
+    value is treated as unset (returns *default*).
     """
-    return os.environ.get(f"{_ENV_PREFIX}_{name}", default)
+    return _core_env(_ENV_PREFIX, name, default=default)
 
 
-def _parse_bool(value: str) -> bool:
-    """Parse a boolean from an environment variable string.
+def _parse_scopes(raw: str | None) -> list[str] | None:
+    """Parse a comma- or space-separated OIDC scopes string.
 
-    Treats ``"true"``, ``"1"``, and ``"yes"`` (case-insensitive) as ``True``.
-    Everything else is ``False``.
-
-    Args:
-        value: Raw environment variable string.
-
-    Returns:
-        ``True`` for truthy strings, ``False`` otherwise.
+    Routes through :func:`fastmcp_pvl_core.parse_scopes` but preserves MV's
+    historical "blank → ``None``" semantics so existing auth-builder
+    fallbacks (``required_scopes if raw is not None else ["openid"]``)
+    keep working.  Core returns ``[]`` for blank input; MV needs ``None``.
     """
-    return value.strip().lower() in ("true", "1", "yes")
-
-
-def _parse_list(value: str) -> list[str]:
-    """Parse a comma-separated environment variable into a list of strings.
-
-    Splits on commas, strips whitespace from each element, and filters out
-    empty strings.
-
-    Args:
-        value: Raw environment variable string (e.g. ``"a, b, c"``).
-
-    Returns:
-        List of non-empty stripped strings.  Returns ``[]`` when *value* is
-        blank.
-    """
-    return [item.strip() for item in value.split(",") if item.strip()]
+    result = _core_parse_scopes(raw)
+    return result or None
 
 
 @dataclass
@@ -205,6 +190,12 @@ class CollectionConfig:
     openai_api_key: str | None = None
     fastembed_model: str = "BAAI/bge-small-en-v1.5"
     fastembed_cache_dir: str | None = None
+
+    # Universal server fields delegated to fastmcp_pvl_core.ServerConfig.
+    # Domain-specific fields above remain on CollectionConfig; subsequent
+    # MV-PR2/3 will migrate consumers (auth builders, middleware) to read
+    # from ``self.server.*`` instead of the local duplicates.
+    server: ServerConfig = field(default_factory=ServerConfig)
 
     def __post_init__(self) -> None:
         """Normalize fields that must not be empty strings."""
@@ -724,27 +715,13 @@ def load_config() -> CollectionConfig:
         openai_api_key=openai_api_key,
         fastembed_model=fastembed_model,
         fastembed_cache_dir=fastembed_cache_dir,
+        server=ServerConfig.from_env(_ENV_PREFIX),
     )
 
 
 # ---------------------------------------------------------------------------
 # Auth builder functions
 # ---------------------------------------------------------------------------
-
-
-def _parse_scopes(raw: str | None) -> list[str] | None:
-    """Parse a comma-separated scopes string into a list.
-
-    Args:
-        raw: Comma-separated scopes string, or ``None``.
-
-    Returns:
-        List of non-empty scope strings, or ``None`` when *raw* is
-        ``None`` or blank.
-    """
-    if not raw:
-        return None
-    return [s.strip() for s in raw.split(",") if s.strip()] or None
 
 
 def resolve_auth_mode(config: CollectionConfig) -> str | None:
