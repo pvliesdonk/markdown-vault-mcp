@@ -259,7 +259,7 @@ markdown-vault-mcp <command> [options]
 Start the MCP server.
 
 ```bash
-markdown-vault-mcp serve [--transport {stdio|sse|http}] [--host HOST] [--port PORT] [--path PATH]
+markdown-vault-mcp serve [--transport {stdio|sse|http}] [--host HOST] [--port PORT] [--http-path PATH]
 ```
 
 | Flag | Default | Description |
@@ -267,14 +267,14 @@ markdown-vault-mcp serve [--transport {stdio|sse|http}] [--host HOST] [--port PO
 | `--transport` | `stdio` | MCP transport: `stdio` (stdin/stdout, default), `sse` (Server-Sent Events), `http` (streamable-HTTP). Use `http` for Docker with a reverse proxy or when OIDC is enabled. |
 | `--host` | `0.0.0.0` | Bind host for the `http` transport (ignored for `stdio` and `sse`) |
 | `--port` | `8000` | Port for the `http` transport (ignored for `stdio` and `sse`) |
-| `--path` | env `MARKDOWN_VAULT_MCP_HTTP_PATH` or `/mcp` | MCP HTTP path for `http` transport; useful for reverse-proxy subpath mounting (e.g. `/vault/mcp`) |
+| `--http-path` | env `MARKDOWN_VAULT_MCP_HTTP_PATH` or `/mcp` | MCP HTTP path for `http` transport; useful for reverse-proxy subpath mounting (e.g. `/vault/mcp`) |
 
 ### Reverse Proxy Subpath Mounts
 
 By default, HTTP transport serves MCP on `/mcp`. You can run it under a subpath:
 
 ```bash
-markdown-vault-mcp serve --transport http --path /vault/mcp
+markdown-vault-mcp serve --transport http --http-path /vault/mcp
 ```
 
 Equivalent env-based config:

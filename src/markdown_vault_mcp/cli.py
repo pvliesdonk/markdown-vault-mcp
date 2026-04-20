@@ -7,41 +7,28 @@ The entry point is :func:`main`, registered as ``markdown-vault-mcp`` in
 
 from __future__ import annotations
 
-import argparse
 import json
 import logging
 import os
 import sys
 from dataclasses import asdict
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from fastmcp_pvl_core import configure_logging_from_env
+from fastmcp_pvl_core import (
+    configure_logging_from_env,
+    normalise_http_path,
+)
 
 from markdown_vault_mcp.collection import Collection
 from markdown_vault_mcp.config import _ENV_PREFIX, load_config
 
+if TYPE_CHECKING:
+    import argparse
+
 logger = logging.getLogger(__name__)
 
 _PROG = "markdown-vault-mcp"
-_DEFAULT_HTTP_PATH = "/mcp"
-
-
-def _normalise_http_path(path: str | None) -> str:
-    """Normalise an HTTP endpoint path for FastMCP streamable HTTP transport.
-
-    Ensures a leading slash and removes a trailing slash (except for root ``/``).
-    Empty values fall back to ``/mcp``.
-    """
-    if path is None:
-        return _DEFAULT_HTTP_PATH
-    normalised = path.strip()
-    if not normalised:
-        return _DEFAULT_HTTP_PATH
-    if not normalised.startswith("/"):
-        normalised = f"/{normalised}"
-    if len(normalised) > 1:
-        normalised = normalised.rstrip("/")
-    return normalised
 
 
 def _build_collection(args: argparse.Namespace) -> Collection:
@@ -90,11 +77,13 @@ def _cmd_serve(args: argparse.Namespace) -> None:
     transport = args.transport
     server = create_server(transport=transport)
     env_http_path = os.environ.get(f"{_ENV_PREFIX}_HTTP_PATH")
-    http_path = _normalise_http_path(args.path or env_http_path)
+    http_path = normalise_http_path(args.http_path or env_http_path)
     if transport != "http" and (
-        args.host != "127.0.0.1" or args.port != 8000 or args.path is not None
+        args.host != "127.0.0.1" or args.port != 8000 or args.http_path is not None
     ):
-        logger.warning("--host, --port and --path are only used with --transport http")
+        logger.warning(
+            "--host, --port and --http-path are only used with --transport http"
+        )
     if transport == "http":
         import uvicorn
 
@@ -193,6 +182,8 @@ def _build_parser() -> argparse.ArgumentParser:
     Returns:
         Configured :class:`argparse.ArgumentParser`.
     """
+    import argparse
+
     parser = argparse.ArgumentParser(
         prog=_PROG,
         description="Generic markdown collection MCP server",
@@ -206,7 +197,8 @@ def _build_parser() -> argparse.ArgumentParser:
 
     sub = parser.add_subparsers(dest="command", required=True)
 
-    # serve
+    # serve — flags mirror fastmcp_pvl_core.make_serve_parser so future
+    # adoption (once core exposes add_serve_args) is a straight swap.
     serve_parser = sub.add_parser("serve", help="run the MCP server")
     serve_parser.add_argument(
         "--transport",
@@ -226,7 +218,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help="port for http transport (default: 8000)",
     )
     serve_parser.add_argument(
-        "--path",
+        "--http-path",
         default=None,
         help=(
             "mount path for http transport (default: "
