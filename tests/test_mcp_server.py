@@ -2571,12 +2571,15 @@ class TestAuthModeSelection:
 
         with (
             patch("markdown_vault_mcp.mcp_server.build_auth", return_value=None),
-            caplog.at_level(logging.WARNING),
+            caplog.at_level(logging.INFO),
         ):
             server = create_server()
 
         assert server.auth is None
         assert "unauthenticated" in caplog.text
+        # Guard against the misleading "Auth enabled: mode=<flavor>" log
+        # that the stale auth_mode could otherwise produce.
+        assert "Auth enabled" not in caplog.text
 
 
 class TestAuthDebugLogging:
