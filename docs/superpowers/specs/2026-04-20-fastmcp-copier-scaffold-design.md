@@ -453,7 +453,7 @@ async def server_lifespan(_mcp: object) -> AsyncIterator[LifespanState]:
 
 
 def get_service(ctx: Context = CurrentContext()) -> Service:
-    return ctx.request_context.lifespan_context["service"]
+    return ctx.lifespan_context["service"]
 ```
 
 ### `server.py`, `config.py`, `cli.py`, `_server_apps.py` (synced)
