@@ -47,7 +47,7 @@ Generic FastMCP infrastructure (auth providers, middleware stack, logging
 bootstrap, server-factory helpers, artifact store, CLI helpers) lives in the
 `fastmcp-pvl-core` PyPI package. markdown-vault-mcp composes this library
 via `ServerConfig` (never inheritance) and imports the building blocks
-directly — see `src/markdown_vault_mcp/mcp_server.py:create_server` for the
+directly — see `create_server()` in `src/markdown_vault_mcp/mcp_server.py` for the
 assembled call graph.
 
 Design spec: `docs/superpowers/specs/2026-04-20-fastmcp-core-and-copier-template-design.md`.
