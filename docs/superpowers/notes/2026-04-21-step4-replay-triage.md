@@ -233,7 +233,7 @@ Files/dirs that are divergent-by-design and won't be harmonised.
 32. `Only in /mnt/code/markdown-mcp/examples: obsidian-readwrite.env` — MV-specific domain example.
 33. `Only in /mnt/code/markdown-mcp/examples: para` — PARA template vault.
 34. `Only in /mnt/code/markdown-mcp/examples: zettelkasten` — Zettelkasten template vault.
-35. `Only in /tmp/mv-replay/examples: oidc.env` — Generic OIDC starter; MV uses `obsidian-oidc.env` instead. Acceptable divergence (MV examples are domain-branded).
+35. `Only in /tmp/mv-replay/examples: oidc.env` — **Reclassified Class B during retrofit:** template ships generic OIDC starter; MV had only `obsidian-oidc.env`. Adopted in retrofit so users get a vendor-neutral example alongside the Obsidian-flavored one.
 36. `Only in /mnt/code/markdown-mcp/packaging: env.example` — Systemd-deployment env-var sample; MV-specific.
 37. `Only in /mnt/code/markdown-mcp/packaging: mcpb` — MCP Bundle packaging artifacts; MV distribution channel.
 38. `Only in /mnt/code/markdown-mcp/scripts: bump_manifests.py` — Custom PSR build script that bumps `.claude-plugin/**` manifests in the release commit (MV-specific manifest set). Referenced by MV's pyproject `build_command`.
