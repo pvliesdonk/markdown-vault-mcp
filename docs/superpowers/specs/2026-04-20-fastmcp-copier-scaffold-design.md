@@ -460,7 +460,7 @@ def get_service(ctx: Context = CurrentContext()) -> Service:
 
 `_server_apps.py` ships as an **inert placeholder**: a `register_apps(mcp)`
 function that conditionally registers the SPA shell resource and
-iframe-CSP config only when `{{ project_name }}_APP_DOMAIN` or
+iframe-CSP config only when `{{ env_prefix }}_APP_DOMAIN` or
 `{{ env_prefix }}_BASE_URL` are set. A generated project that never
 uses MCP Apps sees the module once and never touches it again.
 
