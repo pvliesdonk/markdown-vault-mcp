@@ -21,9 +21,9 @@ from typing import TYPE_CHECKING
 import pytest
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
+from fastmcp_pvl_core import ArtifactStore
 from starlette.testclient import TestClient
 
-from markdown_vault_mcp.artifacts import ARTIFACT_TTL_SECONDS, ArtifactStore
 from markdown_vault_mcp.server import make_server
 
 if TYPE_CHECKING:
@@ -76,7 +76,12 @@ def _artifact_vault(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 class TestCreateDownloadLinkRegistration:
-    """create_download_link is only registered for non-stdio transports."""
+    """create_download_link is gated on (HTTP transport AND BASE_URL set).
+
+    Without BASE_URL the store can't build URLs, so the tool would fail at
+    every call site — registering it would be advertising a broken tool.
+    Without HTTP there's no route to back the URL.
+    """
 
     @pytest.fixture(autouse=True)
     def _env(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -88,21 +93,39 @@ class TestCreateDownloadLinkRegistration:
         for var in _CLEAR_VARS:
             monkeypatch.delenv(var, raising=False)
 
-    async def test_not_registered_on_stdio(self) -> None:
+    async def test_not_registered_on_stdio_even_with_base_url(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_BASE_URL", "https://mcp.example.com")
         server = make_server(transport="stdio")
         async with Client(server) as client:
             tools = await client.list_tools()
         names = {t.name for t in tools}
         assert "create_download_link" not in names
 
-    async def test_registered_on_http(self) -> None:
+    async def test_not_registered_on_http_without_base_url(self) -> None:
+        # Fixture clears BASE_URL — registration must skip rather than
+        # advertise a tool that would fail on every call.
+        server = make_server(transport="http")
+        async with Client(server) as client:
+            tools = await client.list_tools()
+        names = {t.name for t in tools}
+        assert "create_download_link" not in names
+
+    async def test_registered_on_http_with_base_url(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_BASE_URL", "https://mcp.example.com")
         server = make_server(transport="http")
         async with Client(server) as client:
             tools = await client.list_tools()
         names = {t.name for t in tools}
         assert "create_download_link" in names
 
-    async def test_registered_on_sse(self) -> None:
+    async def test_registered_on_sse_with_base_url(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_BASE_URL", "https://mcp.example.com")
         server = make_server(transport="sse")
         async with Client(server) as client:
             tools = await client.list_tools()
@@ -151,14 +174,15 @@ class TestCreateDownloadLinkTool:
         data = json.loads(result.content[0].text)
         assert data["content_type"] == "image/png"
 
-    async def test_expires_in_seconds_echoes_store_ttl(
+    async def test_expires_in_seconds_echoes_requested_ttl(
         self, _artifact_vault: Path
     ) -> None:
-        """The response field reports the store's actual TTL, not the request's.
+        """The response echoes the requested ``ttl_seconds`` exactly.
 
-        Core's ArtifactStore enforces a single process-wide TTL; the tool's
-        ``ttl_seconds`` argument is accepted for backward-compat and
-        validation but does not vary the expiry per token.
+        Core's ArtifactStore now supports per-token TTL via
+        :meth:`ArtifactStore.put_ephemeral`, so the value the caller
+        asked for is the value they get back — no more "requested vs
+        effective" gap.
         """
         server = make_server(transport="http")
         async with Client(server) as client:
@@ -167,16 +191,24 @@ class TestCreateDownloadLinkTool:
                 {"path": "note.md", "ttl_seconds": 120},
             )
         data = json.loads(result.content[0].text)
-        assert data["expires_in_seconds"] == ARTIFACT_TTL_SECONDS
+        assert data["expires_in_seconds"] == 120
 
-    async def test_raises_on_missing_base_url(
+    async def test_tool_unavailable_when_base_url_missing(
         self, _artifact_vault: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        """Without BASE_URL the tool is not registered at all.
+
+        Both the artifact route + module-level singleton AND the tool
+        registration are gated on ``base_url`` at ``make_server`` time,
+        so a misconfigured server doesn't advertise a tool that would
+        fail on every call.
+        """
         monkeypatch.delenv("MARKDOWN_VAULT_MCP_BASE_URL", raising=False)
         server = make_server(transport="http")
         async with Client(server) as client:
-            with pytest.raises(ToolError, match="MARKDOWN_VAULT_MCP_BASE_URL"):
-                await client.call_tool("create_download_link", {"path": "note.md"})
+            tools = await client.list_tools()
+        names = {t.name for t in tools}
+        assert "create_download_link" not in names
 
     async def test_raises_on_zero_ttl(self, _artifact_vault: Path) -> None:
         server = make_server(transport="http")
@@ -315,8 +347,13 @@ class TestCreateServerArtifactRoute:
         (vault / "note.md").write_text("# Note\n")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault))
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "true")
+        # The route is gated on base_url at make_server time, so the
+        # registration tests need BASE_URL set even though they don't
+        # invoke the tool.
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_BASE_URL", "https://mcp.example.com")
         for var in _CLEAR_VARS:
-            monkeypatch.delenv(var, raising=False)
+            if var != "MARKDOWN_VAULT_MCP_BASE_URL":
+                monkeypatch.delenv(var, raising=False)
 
     def test_artifact_route_not_registered_for_stdio(self) -> None:
         server = make_server(transport="stdio")
@@ -339,7 +376,7 @@ class TestCreateServerArtifactRoute:
         TestArtifactHandler's hand-rolled handler and core's
         ArtifactStore.register_route implementation.
         """
-        from markdown_vault_mcp.artifacts import get_artifact_store
+        from fastmcp_pvl_core import get_artifact_store
 
         server = make_server(transport="http")
         store = get_artifact_store()
@@ -359,20 +396,17 @@ class TestCreateServerArtifactRoute:
 class TestGetArtifactStoreUninitialised:
     """get_artifact_store() must error rather than silently return None."""
 
-    def test_raises_runtime_error_when_store_unset(self) -> None:
+    def test_raises_runtime_error_when_store_unset(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         # Any prior test / make_server call may have set the singleton;
-        # clear it explicitly to exercise the uninitialised path, then
-        # restore afterwards.
-        import markdown_vault_mcp.artifacts as _artifacts_module
-        from markdown_vault_mcp.artifacts import (
-            get_artifact_store,
-            set_artifact_store,
-        )
+        # clear it explicitly to exercise the uninitialised path. The
+        # ``set_artifact_store`` helper only accepts a real store, so
+        # poke the underlying module global directly via monkeypatch
+        # (which restores it after the test).
+        import fastmcp_pvl_core._artifacts as _core_artifacts
+        from fastmcp_pvl_core import get_artifact_store
 
-        saved = _artifacts_module._artifact_store
-        try:
-            set_artifact_store(None)
-            with pytest.raises(RuntimeError, match="ArtifactStore not initialised"):
-                get_artifact_store()
-        finally:
-            _artifacts_module._artifact_store = saved
+        monkeypatch.setattr(_core_artifacts, "_artifact_store", None)
+        with pytest.raises(RuntimeError, match="ArtifactStore not configured"):
+            get_artifact_store()

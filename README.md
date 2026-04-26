@@ -252,7 +252,7 @@ Full OAuth 2.1 authentication for HTTP deployments. OIDC activates when all four
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `MARKDOWN_VAULT_MCP_BASE_URL` | Yes | Public base URL of the server (e.g. `https://mcp.example.com`; include prefix if mounted under subpath, e.g. `https://mcp.example.com/vault`). Also required for `create_download_link` and used to auto-compute the MCP Apps domain. |
+| `MARKDOWN_VAULT_MCP_BASE_URL` | Yes | Public base URL of the server (e.g. `https://mcp.example.com`; include prefix if mounted under subpath, e.g. `https://mcp.example.com/vault`). Used to auto-compute the MCP Apps domain and as the prefix for any tool that emits absolute URLs (e.g. `create_download_link`). |
 | `MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL` | Yes | OIDC discovery endpoint (e.g. `https://auth.example.com/.well-known/openid-configuration`) |
 | `MARKDOWN_VAULT_MCP_OIDC_CLIENT_ID` | Yes | OIDC client ID registered with your provider |
 | `MARKDOWN_VAULT_MCP_OIDC_CLIENT_SECRET` | Yes | OIDC client secret |

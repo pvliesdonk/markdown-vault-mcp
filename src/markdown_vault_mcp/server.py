@@ -25,6 +25,7 @@ from fastmcp_pvl_core import (
     ServerConfig,
     build_auth,
     resolve_auth_mode,
+    set_artifact_store,
     wire_middleware_stack,
 )
 from fastmcp_pvl_core import (
@@ -47,6 +48,14 @@ from ._server_resources import register_resources
 from ._server_tools import register_tools
 
 logger = logging.getLogger(__name__)
+
+
+#: Lifetime applied to every artifact token.  Long enough to cover slow
+#: downloads (LLMs sometimes re-fetch after a delay) but short enough
+#: that a forgotten link doesn't linger indefinitely.  Per-call
+#: ``ttl_seconds`` on ``create_download_link`` overrides this on a
+#: per-token basis.
+_ARTIFACT_TTL_SECONDS = 3600
 
 
 # ---------------------------------------------------------------------------
@@ -179,7 +188,7 @@ def make_server(transport: str = "stdio") -> FastMCP:
     # include_traceback=None infers from root log level (-v→DEBUG→tracebacks); transform_errors=False lets exceptions propagate to FastMCP's own handlers.
     wire_middleware_stack(mcp, include_traceback=None, transform_errors=False)
 
-    register_tools(mcp, transport=transport)
+    register_tools(mcp, transport=transport, base_url_configured=bool(config.base_url))
     register_resources(mcp)
     register_apps(mcp)
     register_prompts(
@@ -189,20 +198,30 @@ def make_server(transport: str = "stdio") -> FastMCP:
     )
 
     # --- Artifact download endpoint (HTTP transports only) ---
-    # The store is constructed here (not in lifespan) so the HTTP route
-    # closure can bind to a concrete instance.  The tool handler reaches
-    # the same instance via get_artifact_store() in markdown_vault_mcp.artifacts.
-    # Skipped entirely on stdio where the create_download_link tool isn't
-    # registered — no need to hold bytes in memory for a feature we don't expose.
-    if transport != "stdio":
-        from markdown_vault_mcp.artifacts import (
-            ARTIFACT_TTL_SECONDS,
-            set_artifact_store,
+    # Construct the store here (not in lifespan) so the HTTP route closure
+    # can bind to a concrete instance. The tool handler reaches the same
+    # instance via fastmcp_pvl_core.get_artifact_store(). Skip when no
+    # base_url is configured: put_ephemeral needs it for URL construction,
+    # so registering the route without it would surface a confusing
+    # RuntimeError on first call instead of a startup-time skip.
+    if transport != "stdio" and config.base_url:
+        artifact_store = ArtifactStore(
+            ttl_seconds=_ARTIFACT_TTL_SECONDS, base_url=config.base_url
         )
-
-        artifact_store = ArtifactStore(ttl_seconds=ARTIFACT_TTL_SECONDS)
         set_artifact_store(artifact_store)
         ArtifactStore.register_route(mcp, artifact_store)
+    elif transport != "stdio":
+        # HTTP transport without BASE_URL is a valid configuration (the
+        # MCP protocol still works), but create_download_link can't
+        # function — we already gate the tool registration on this in
+        # register_tools().  Surface a clear startup signal so operators
+        # don't have to discover the missing tool via "why isn't it in
+        # the list?" later.
+        logger.warning(
+            "create_download_link unavailable: MARKDOWN_VAULT_MCP_BASE_URL "
+            "is not set, so the artifact route + tool are skipped. Set "
+            "BASE_URL to expose download links."
+        )
 
     # --- Visibility: hide write-tagged components in read-only mode ---
 
