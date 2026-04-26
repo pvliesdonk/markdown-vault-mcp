@@ -145,6 +145,23 @@ class TestFileExchangeCapability:
         assert "http" not in payload["transfer_methods"]
         assert "exchange" in payload["transfer_methods"]
 
+    async def test_capability_absent_when_no_transfers_available(
+        self, _no_exchange_env: Path
+    ) -> None:
+        """stdio + no MCP_EXCHANGE_DIR = no transfers, so don't advertise.
+
+        Spec §3.9 frames the capability as "I can move bytes via at
+        least one transport".  Registering with an empty
+        ``transfer_methods`` would tell peers "I speak v0.3" while
+        offering them no way to actually transfer — misleading.
+        """
+        server = make_server(transport="stdio")
+        async with Client(server) as client:
+            init = client.initialize_result
+            assert init is not None
+            caps = init.capabilities.experimental or {}
+        assert "file_exchange" not in caps
+
 
 # ---------------------------------------------------------------------------
 # read augmentation

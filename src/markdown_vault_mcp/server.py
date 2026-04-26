@@ -262,18 +262,31 @@ def make_server(transport: str = "stdio") -> FastMCP:
     # a missing instance.
     fx = FileExchange.from_env(default_namespace=server_name)
     set_file_exchange(fx)
-    register_file_exchange_capability(
-        mcp,
-        FileExchangeCapability(
-            namespace=fx.namespace if fx.is_configured else server_name,
-            exchange_id=fx.exchange_id if fx.is_configured else None,
-            produces=_FILE_EXCHANGE_PRODUCES,
-            consumes=_FILE_EXCHANGE_CONSUMES,
-            transfer_methods=_resolve_transfer_methods(
-                fx, transport=transport, base_url=config.base_url
-            ),
-        ),
+    transfer_methods = _resolve_transfer_methods(
+        fx, transport=transport, base_url=config.base_url
     )
+    if transfer_methods:
+        # Only advertise the capability when at least one transfer method
+        # is actually available. Registering with an empty
+        # ``transfer_methods`` (stdio + no MCP_EXCHANGE_DIR) would tell
+        # peers "I speak v0.3" while offering no way to move bytes —
+        # misleading per spec §3.9 which describes the capability as the
+        # signal that *some* transport is offered.
+        register_file_exchange_capability(
+            mcp,
+            FileExchangeCapability(
+                namespace=fx.namespace if fx.is_configured else server_name,
+                exchange_id=fx.exchange_id if fx.is_configured else None,
+                produces=_FILE_EXCHANGE_PRODUCES,
+                consumes=_FILE_EXCHANGE_CONSUMES,
+                transfer_methods=transfer_methods,
+            ),
+        )
+    else:
+        logger.info(
+            "File exchange capability not advertised: no transfer methods "
+            "available (stdio transport with MCP_EXCHANGE_DIR unset)."
+        )
     if fx.is_configured:
         # Producer-side periodic eviction. The lifespan stops the timer
         # in its `finally` block; one final sweep also runs there to

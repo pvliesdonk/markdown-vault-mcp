@@ -1567,7 +1567,19 @@ def _build_attachment_file_ref(
     if fx is None or not fx.is_configured:
         return None
 
-    origin_id = _stable_origin_id(path)
+    # Two different identifiers, both unfortunately called "origin_id"
+    # by the spec:
+    #
+    # - ``uri_filename_id`` (below) — the segment-safe stable hash that
+    #   becomes the filename stem in the exchange URI. Spec §6.3
+    #   restricts URI segments to ``[A-Za-z0-9._-]``, and a hash gives
+    #   us a free dedup property (re-reads of the same vault path
+    #   overwrite the same exchange file).
+    # - ``file_ref["origin_id"]`` (the field on the returned envelope)
+    #   — the spec §3.1 opaque round-trip handle the producer chooses.
+    #   For this server that's the raw vault path so the LLM can pass
+    #   it straight back to ``create_download_link(origin_id=...)``.
+    uri_filename_id = _stable_origin_id(path)
     suffix = path.rsplit(".", 1)[-1] if "." in path else "bin"
     mime_type = getattr(attachment, "mime_type", None) or "application/octet-stream"
 
@@ -1586,7 +1598,7 @@ def _build_attachment_file_ref(
 
     try:
         uri = fx.write_atomic(
-            origin_id=origin_id,
+            origin_id=uri_filename_id,
             ext=suffix,
             content=raw_bytes,
             mime_type=mime_type,
