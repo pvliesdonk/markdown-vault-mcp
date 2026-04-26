@@ -285,7 +285,9 @@ def make_server(transport: str = "stdio") -> FastMCP:
     else:
         logger.info(
             "File exchange capability not advertised: no transfer methods "
-            "available (stdio transport with MCP_EXCHANGE_DIR unset)."
+            "available (set MCP_EXCHANGE_DIR for the exchange transfer, or "
+            "switch to an HTTP transport with BASE_URL set for the http "
+            "transfer)."
         )
     if fx.is_configured:
         # Producer-side periodic eviction. The lifespan stops the timer
