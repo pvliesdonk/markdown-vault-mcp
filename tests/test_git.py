@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import subprocess
+import sys
 import time
 from typing import TYPE_CHECKING
 
@@ -405,6 +406,15 @@ class TestGitWriteStrategyClass:
 
         strategy.close()
 
+    @pytest.mark.xfail(
+        sys.version_info >= (3, 14),
+        reason=(
+            "Flaky on Python 3.14 — the 300 ms push_delay_s window can close "
+            "before the assertion runs, so the deferred push has already "
+            "fired and note_4.md is in the log. Tracked in #430."
+        ),
+        strict=False,
+    )
     def test_multiple_writes_single_push(
         self, git_repo_with_remote: tuple[Path, Path]
     ) -> None:
