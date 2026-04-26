@@ -140,5 +140,13 @@ def _arm(fx: FileExchange, interval_s: float) -> None:
     timer = threading.Timer(interval_s, _tick)
     timer.daemon = True
     with _sweep_lock:
+        # Final stop check INSIDE the lock so a `stop_sweep_timer` that
+        # interleaves with this re-arm wins deterministically.
+        # `stop_sweep_timer` sets the event and clears `_sweep_timer`
+        # under the same lock, so if it ran first we observe
+        # ``_sweep_stopped.is_set()`` here and drop the timer instead
+        # of installing it (would otherwise leak an orphan daemon).
+        if _sweep_stopped.is_set():
+            return
         _sweep_timer = timer
     timer.start()

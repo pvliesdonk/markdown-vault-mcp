@@ -199,7 +199,12 @@ def register_tools(
         if not path.endswith(".md"):
             attachment = await asyncio.to_thread(collection.read_attachment, path)
             payload = asdict(attachment)
-            file_ref = _build_attachment_file_ref(path, attachment)
+            # `_build_attachment_file_ref` does sync disk I/O via
+            # `fx.write_atomic`; offload to a worker thread so the event
+            # loop isn't blocked under concurrent `read` calls.
+            file_ref = await asyncio.to_thread(
+                _build_attachment_file_ref, path, attachment
+            )
             if file_ref is not None:
                 payload["file_ref"] = file_ref
             return payload
