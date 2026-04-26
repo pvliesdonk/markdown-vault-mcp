@@ -198,6 +198,42 @@ class TestReadFileRefAugmentation:
         assert data is not None
         assert "file_ref" not in data
 
+    async def test_stdio_file_ref_omits_http_transfer(
+        self, _exchange_env: tuple[Path, Path]
+    ) -> None:
+        """On stdio, ``create_download_link`` isn't registered.
+
+        The per-result ``file_ref.transfer`` must therefore omit the
+        ``http`` entry so consumers don't try to invoke a tool that
+        doesn't exist on this server.  ``test_capability_stdio_omits_http``
+        covers the capability declaration; this asserts the same gate
+        applies to individual ``read`` results.
+        """
+        server = make_server(transport="stdio")
+        async with Client(server) as client:
+            result = await client.call_tool("read", {"path": "assets/image.png"})
+        data = result.structured_content
+        assert data is not None
+        assert "file_ref" in data
+        assert "exchange" in data["file_ref"]["transfer"]
+        assert "http" not in data["file_ref"]["transfer"]
+
+    async def test_http_no_base_url_file_ref_omits_http_transfer(
+        self,
+        _exchange_env: tuple[Path, Path],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """HTTP transport without BASE_URL: tool not registered, http omitted."""
+        monkeypatch.delenv("MARKDOWN_VAULT_MCP_BASE_URL", raising=False)
+        server = make_server(transport="http")
+        async with Client(server) as client:
+            result = await client.call_tool("read", {"path": "assets/image.png"})
+        data = result.structured_content
+        assert data is not None
+        assert "file_ref" in data
+        assert "http" not in data["file_ref"]["transfer"]
+        assert "exchange" in data["file_ref"]["transfer"]
+
 
 # ---------------------------------------------------------------------------
 # fetch consumer side

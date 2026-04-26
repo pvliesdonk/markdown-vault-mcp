@@ -8,10 +8,11 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
 import ipaddress
 import logging
 from dataclasses import asdict
-from typing import Any, Literal
+from typing import Any, Literal, cast
 from urllib.parse import urlparse, urlunparse
 
 from fastmcp import FastMCP
@@ -202,8 +203,14 @@ def register_tools(
             # `_build_attachment_file_ref` does sync disk I/O via
             # `fx.write_atomic`; offload to a worker thread so the event
             # loop isn't blocked under concurrent `read` calls.
+            # http_transfer_available mirrors the gate on
+            # `_register_download_link_tool` below — the file_ref must
+            # not advertise a tool the server doesn't actually expose.
             file_ref = await asyncio.to_thread(
-                _build_attachment_file_ref, path, attachment
+                _build_attachment_file_ref,
+                path,
+                attachment,
+                http_transfer_available=(transport != "stdio" and base_url_configured),
             )
             if file_ref is not None:
                 payload["file_ref"] = file_ref
@@ -1302,14 +1309,19 @@ def register_tools(
         paths the response is saved as a binary attachment, subject to
         the configured attachment size limit.
 
-        URL/source resolution order when both are provided:
+        URL/source resolution order when both ``url`` and ``file_ref``
+        are provided:
 
-        1. ``file_ref.transfer.exchange.uri`` — picked when this server
-           and the producer share an exchange group. Avoids any HTTP
-           round-trip.
-        2. ``file_ref.transfer.http.tool`` — informational; the LLM
-           must invoke that tool to obtain a URL it can pass back here.
-        3. ``url`` — explicit override, preferred over file_ref.
+        1. ``url`` — explicit override; wins unconditionally when set.
+           Pass only the file_ref (omit ``url``) to let the resolver
+           pick the best transfer method.
+        2. ``file_ref.transfer.exchange.uri`` — picked when ``url`` is
+           absent and this server shares an exchange group with the
+           producer. Avoids any HTTP round-trip.
+        3. ``file_ref.transfer.http.tool`` — informational; if no
+           ``exchange`` entry is available, the LLM must invoke that
+           named tool on the producer to obtain a concrete URL and
+           pass it back here as ``url``.
 
         Args:
             url: Source URL to download from. Schemes ``http``,
@@ -1488,12 +1500,15 @@ def _stable_origin_id(path: str) -> str:
     attachment writing to the same exchange file (free dedup; sweep
     can keep a single entry per logical attachment).
     """
-    import hashlib
-
     return hashlib.sha256(path.encode("utf-8")).hexdigest()[:32]
 
 
-def _build_attachment_file_ref(path: str, attachment: Any) -> dict[str, Any] | None:
+def _build_attachment_file_ref(
+    path: str,
+    attachment: Any,
+    *,
+    http_transfer_available: bool,
+) -> dict[str, Any] | None:
     """Augment a binary ``read`` result with a ``file_ref`` block.
 
     Returns ``None`` when ``MCP_EXCHANGE_DIR`` is not configured — the
@@ -1513,6 +1528,12 @@ def _build_attachment_file_ref(path: str, attachment: Any) -> dict[str, Any] | N
             and ``content_base64`` (decoded back to bytes for the
             exchange write — the base64 step is the only available
             handle on the bytes from this layer).
+        http_transfer_available: Whether ``create_download_link`` is
+            actually registered on this server (i.e. HTTP transport
+            AND ``BASE_URL`` configured).  Gates whether the
+            ``http`` entry appears in ``file_ref.transfer`` — without
+            it, advertising the tool would point consumers at a
+            tool that doesn't exist on this server.
     """
     fx = get_file_exchange()
     if fx is None or not fx.is_configured:
@@ -1546,7 +1567,8 @@ def _build_attachment_file_ref(path: str, attachment: Any) -> dict[str, Any] | N
         return None
 
     transfer: dict[str, dict[str, str]] = {"exchange": {"uri": uri}}
-    transfer["http"] = {"tool": "create_download_link"}
+    if http_transfer_available:
+        transfer["http"] = {"tool": "create_download_link"}
     return {
         "origin_server": fx.namespace,
         "origin_id": path,
@@ -1792,11 +1814,11 @@ def _register_download_link_tool(mcp: FastMCP) -> None:
                 "'path' and 'origin_id' were both supplied with different "
                 "values; pass only one (or matching values)"
             )
-        path = path if path is not None else origin_id
-        # ``path`` is non-None after the branches above; help mypy by
-        # narrowing.  The first ``if`` returned, the second normalised
-        # mismatch, and ``path = ... or origin_id`` resolves to a str.
-        assert path is not None
+        # ``path`` is non-None after the branches above (the first
+        # ``if`` returned and the second normalised mismatch), so the
+        # assignment + ``cast`` here gives mypy the narrowing it needs
+        # without an ``assert`` (which ``python -O`` would strip).
+        path = cast("str", path if path is not None else origin_id)
 
         if ttl_seconds <= 0:
             msg = "ttl_seconds must be a positive integer"
