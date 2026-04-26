@@ -1358,7 +1358,7 @@ def register_tools(
         scheme = parsed.scheme
         if scheme == _EXCHANGE_SCHEME:
             raw_bytes, content_type = await _fetch_via_exchange(
-                resolved_url, advertised_mime
+                resolved_url, path, advertised_mime, collection
             )
         elif scheme in _ALLOWED_FETCH_SCHEMES:
             raw_bytes, content_type = await _fetch_via_http(
@@ -1552,15 +1552,27 @@ def _build_attachment_file_ref(path: str, attachment: Any) -> dict[str, Any] | N
 
 
 async def _fetch_via_exchange(
-    uri: str, advertised_mime: str | None
+    uri: str,
+    path: str,
+    advertised_mime: str | None,
+    collection: Collection,
 ) -> tuple[bytes, str | None]:
     """Resolve an ``exchange://`` URI against the local FileExchange.
 
+    Pre-flights the on-disk file size against
+    ``collection._max_attachment_size_mb`` so a malicious or buggy peer
+    publishing a multi-GB file can't exhaust this server's memory
+    (gemini-code-assist flagged this as security-high).  Markdown
+    targets skip the size cap (notes are text and have no limit).
+
     Args:
         uri: The full ``exchange://`` URI.
+        path: Destination vault path; used to decide whether the
+            attachment size limit applies (``.md`` → no limit).
         advertised_mime: Optional MIME hint from the producer's
             file_ref; passed through to the result so the caller can
             log/return it.
+        collection: Used to read the configured attachment size limit.
 
     Returns:
         ``(bytes, content_type)`` — content_type is the producer's
@@ -1573,14 +1585,47 @@ async def _fetch_via_exchange(
         ExchangeURIError: URI fails spec §6.3.
         FileNotFoundError: The producer hasn't written the file (or it
             expired).
+        ValueError: The on-disk file exceeds the configured attachment
+            size limit.
     """
-    from fastmcp_pvl_core import FileExchangeConfigError
+    from fastmcp_pvl_core import ExchangeURI, FileExchangeConfigError
 
     fx = get_file_exchange()
     if fx is None or not fx.is_configured:
         raise FileExchangeConfigError(
             f"Cannot resolve {uri!r}: MCP_EXCHANGE_DIR is not configured"
         )
+
+    # Pre-flight size check — never read a too-large file into memory.
+    # Reach for the same byte-cap math the HTTP path uses so the two
+    # transports enforce identical limits. ``_max_attachment_size_mb``
+    # is on Collection because there's no public getter; the MCP layer
+    # is a trusted consumer of these internals.
+    is_markdown = path.endswith(".md")
+    max_bytes = (
+        0
+        if is_markdown or collection._max_attachment_size_mb <= 0
+        else int(collection._max_attachment_size_mb * 1024 * 1024)
+    )
+    if max_bytes > 0:
+        parsed = ExchangeURI.parse(uri)
+        on_disk = fx.base_dir / parsed.namespace / parsed.filename
+        try:
+            size = on_disk.stat().st_size
+        except FileNotFoundError:
+            # Defer to read_exchange_uri so the canonical
+            # FileNotFoundError carries the same path/error semantics
+            # as the no-limit path.
+            pass
+        else:
+            if size > max_bytes:
+                raise ValueError(
+                    f"Exchange URI exceeds the attachment size limit of "
+                    f"{collection._max_attachment_size_mb} MB ({size} bytes). "
+                    "Raise MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB or "
+                    "set it to 0 to disable the limit."
+                )
+
     data = await asyncio.to_thread(fx.read_exchange_uri, uri)
     logger.info(
         "fetch_exchange uri=%s size=%d mime=%s",

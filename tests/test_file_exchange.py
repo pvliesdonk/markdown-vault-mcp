@@ -289,6 +289,57 @@ class TestFetchExchangeURI:
                     },
                 )
 
+    async def test_fetch_exchange_size_limit_pre_flight_blocks_oversize(
+        self,
+        _exchange_env: tuple[Path, Path],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Oversized exchange files are rejected BEFORE reading into memory.
+
+        Regression for the security-high gemini-code-assist finding: a
+        malicious peer publishing a multi-GB file would exhaust this
+        server's memory if we read the bytes before checking size.
+        Stat the on-disk file first so the limit is enforced at the
+        syscall layer.
+        """
+        _vault, exchange_dir = _exchange_env
+        # 1 KB cap; write a 100 KB exchange file directly.
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB", "0.001")
+        # Build the server first so FileExchange writes ``.exchange-id``.
+        server = make_server(transport="http")
+        exchange_id = (exchange_dir / ".exchange-id").read_text().strip()
+        ns_dir = exchange_dir / "markdown-vault-mcp"
+        ns_dir.mkdir(exist_ok=True)
+        (ns_dir / "huge.png").write_bytes(b"\x00" * 100_000)
+        uri = f"exchange://{exchange_id}/markdown-vault-mcp/huge.png"
+
+        async with Client(server) as client:
+            with pytest.raises(ToolError, match="exceeds the attachment size limit"):
+                await client.call_tool("fetch", {"url": uri, "path": "assets/huge.png"})
+
+    async def test_fetch_exchange_size_limit_skipped_for_markdown(
+        self,
+        _exchange_env: tuple[Path, Path],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Markdown targets bypass the attachment size cap (notes are text)."""
+        _vault, exchange_dir = _exchange_env
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB", "0.001")
+        server = make_server(transport="http")
+        exchange_id = (exchange_dir / ".exchange-id").read_text().strip()
+        ns_dir = exchange_dir / "markdown-vault-mcp"
+        ns_dir.mkdir(exist_ok=True)
+        body = b"# Big Note\n\n" + (b"text " * 1000)
+        (ns_dir / "big.md").write_bytes(body)
+        uri = f"exchange://{exchange_id}/markdown-vault-mcp/big.md"
+
+        async with Client(server) as client:
+            result = await client.call_tool(
+                "fetch", {"url": uri, "path": "imported/big.md"}
+            )
+        assert result.structured_content is not None
+        assert result.structured_content["content_length"] == len(body)
+
 
 # ---------------------------------------------------------------------------
 # create_download_link origin_id alias
@@ -338,3 +389,61 @@ class TestCreateDownloadLinkOriginIdAlias:
         async with Client(server) as client:
             with pytest.raises(ToolError, match=r"path.*origin_id"):
                 await client.call_tool("create_download_link", {})
+
+
+# ---------------------------------------------------------------------------
+# Sweep timer lifecycle
+# ---------------------------------------------------------------------------
+
+
+class TestSweepTimerLifecycle:
+    """The sweep timer cleanly stops even when a tick is mid-execution.
+
+    Regression for the race gemini-code-assist flagged: ``stop_sweep_timer``
+    must beat ``_arm`` re-installing a fresh timer when ``_tick`` is in
+    the middle of ``fx.sweep()``.  The stop event makes that win
+    deterministic.
+    """
+
+    async def test_stop_during_sweep_does_not_re_arm(
+        self, _exchange_env: tuple[Path, Path]
+    ) -> None:
+        from unittest.mock import patch
+
+        from markdown_vault_mcp import _file_exchange as fx_mod
+
+        # Build a server so the singleton is wired up.
+        server = make_server(transport="http")
+        async with Client(server) as client:
+            # Ensure the lifespan has started — first call materialises it.
+            await client.list_tools()
+
+            fx = fx_mod.get_file_exchange()
+            assert fx is not None and fx.is_configured
+
+            # Inject a sweep that calls stop_sweep_timer mid-flight,
+            # mirroring the lifespan teardown firing while a tick is
+            # already running.
+            real_sweep = fx.sweep
+            sweep_calls = 0
+
+            def _swept_then_stop() -> int:
+                nonlocal sweep_calls
+                sweep_calls += 1
+                fx_mod.stop_sweep_timer()
+                return real_sweep()
+
+            with patch.object(fx, "sweep", side_effect=_swept_then_stop):
+                # Arm a very short timer; the tick will fire, sweep,
+                # stop itself, and MUST NOT re-arm.
+                fx_mod.start_sweep_timer(fx, interval_s=0.01)
+                # Give the timer thread time to fire.
+                import time
+
+                time.sleep(0.2)
+
+            # The stop-event should be set; no live timer reference.
+            assert fx_mod._sweep_stopped.is_set()
+            assert fx_mod._sweep_timer is None
+            # Sweep was called exactly once — no re-arm after stop.
+            assert sweep_calls == 1

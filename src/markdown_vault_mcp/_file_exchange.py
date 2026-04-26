@@ -35,6 +35,13 @@ DEFAULT_SWEEP_INTERVAL_S = 300.0
 _fx: FileExchange | None = None
 _sweep_timer: threading.Timer | None = None
 _sweep_lock = threading.Lock()
+#: Set by :func:`stop_sweep_timer` so a tick already in flight skips
+#: re-arming. Cancelling the ``threading.Timer`` only stops a tick that
+#: hasn't fired yet — without this flag, ``_tick`` running concurrently
+#: with ``stop_sweep_timer`` would re-install a fresh timer the cancel
+#: never sees (gemini-code-assist flagged this race).
+_sweep_stopped = threading.Event()
+_sweep_stopped.set()  # default: not running
 
 
 def set_file_exchange(fx: FileExchange | None) -> None:
@@ -76,6 +83,7 @@ def start_sweep_timer(
     if not fx.is_configured:
         return
     stop_sweep_timer()
+    _sweep_stopped.clear()
     _arm(fx, interval_s)
 
 
@@ -85,8 +93,15 @@ def stop_sweep_timer() -> None:
     Safe to call multiple times; safe to call when no timer was ever
     started.  Called from the lifespan's ``finally`` block to release
     the daemon thread on shutdown.
+
+    Sets the stop event *before* cancelling so a tick currently inside
+    ``fx.sweep()`` reads ``_sweep_stopped.is_set() == True`` when it
+    returns and skips re-arming.  Cancelling alone is racy because a
+    timer that has already fired can't be cancelled — the only handle
+    on an in-flight tick is the shared event.
     """
     global _sweep_timer
+    _sweep_stopped.set()
     with _sweep_lock:
         if _sweep_timer is not None:
             _sweep_timer.cancel()
@@ -102,6 +117,10 @@ def _arm(fx: FileExchange, interval_s: float) -> None:
     """
 
     def _tick() -> None:
+        # Bail before doing any work if a stop arrived while this tick
+        # was waiting on the timer queue.
+        if _sweep_stopped.is_set():
+            return
         try:
             evicted = fx.sweep()
             if evicted:
@@ -110,6 +129,11 @@ def _arm(fx: FileExchange, interval_s: float) -> None:
             # Sweep failures must not break the loop — the next tick
             # will retry, and spec §7 producer cleanup is best-effort.
             logger.exception("file_exchange_sweep failed")
+        # Re-check the flag after the (potentially long) sweep call;
+        # otherwise a stop that arrived mid-sweep would be ignored and
+        # we'd re-install a fresh timer the cancel never sees.
+        if _sweep_stopped.is_set():
+            return
         _arm(fx, interval_s)
 
     global _sweep_timer
