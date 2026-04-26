@@ -65,6 +65,36 @@ def get_file_exchange() -> FileExchange | None:
     return _fx
 
 
+def stat_exchange_uri(uri: str) -> int | None:
+    """Return the on-disk size of *uri* in bytes, or ``None`` if missing.
+
+    Encapsulates the ``base_dir / namespace / filename`` storage layout
+    that ``fastmcp_pvl_core.FileExchange`` does not yet expose via a
+    public stat API, so the tool layer doesn't have to reach into
+    those internals itself.  ``None`` covers both "exchange not
+    configured" and "file not present" — callers fall through to the
+    canonical ``read_exchange_uri`` for the actual error semantics.
+
+    Args:
+        uri: The full ``exchange://`` URI to size.
+
+    Returns:
+        The file's size in bytes, or ``None`` if the runtime is
+        unconfigured or the file is absent.
+    """
+    from fastmcp_pvl_core import ExchangeURI
+
+    fx = _fx
+    if fx is None or not fx.is_configured:
+        return None
+    parsed = ExchangeURI.parse(uri)
+    on_disk = fx.base_dir / parsed.namespace / parsed.filename
+    try:
+        return on_disk.stat().st_size
+    except FileNotFoundError:
+        return None
+
+
 def start_sweep_timer(
     fx: FileExchange,
     interval_s: float = DEFAULT_SWEEP_INTERVAL_S,

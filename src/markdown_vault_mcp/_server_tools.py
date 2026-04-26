@@ -22,7 +22,7 @@ from fastmcp.exceptions import ToolError
 from markdown_vault_mcp.collection import Collection
 from markdown_vault_mcp.exceptions import EditConflictError
 
-from ._file_exchange import get_file_exchange
+from ._file_exchange import get_file_exchange, stat_exchange_uri
 from ._icons import _TOOL_ICONS
 from ._server_deps import get_collection
 
@@ -210,6 +210,7 @@ def register_tools(
                 _build_attachment_file_ref,
                 path,
                 attachment,
+                collection,
                 http_transfer_available=(transport != "stdio" and base_url_configured),
             )
             if file_ref is not None:
@@ -1503,9 +1504,32 @@ def _stable_origin_id(path: str) -> str:
     return hashlib.sha256(path.encode("utf-8")).hexdigest()[:32]
 
 
+def _attachment_size_limit_bytes(collection: Collection, path: str) -> int:
+    """Return the configured attachment byte-cap, or ``0`` when no cap applies.
+
+    Markdown notes have no size limit (they're text); attachments are
+    capped by ``MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB`` (``0``
+    disables the cap entirely).  Centralised here so both fetch
+    transports — HTTP streaming and exchange:// pre-flight — apply
+    the exact same byte threshold.
+
+    Args:
+        collection: Source of the configured ``_max_attachment_size_mb``.
+        path: Destination vault path; the ``.md`` suffix opts out of
+            the cap.
+
+    Returns:
+        Maximum bytes allowed, or ``0`` when no cap should be enforced.
+    """
+    if path.endswith(".md") or collection._max_attachment_size_mb <= 0:
+        return 0
+    return int(collection._max_attachment_size_mb * 1024 * 1024)
+
+
 def _build_attachment_file_ref(
     path: str,
     attachment: Any,
+    collection: Collection,
     *,
     http_transfer_available: bool,
 ) -> dict[str, Any] | None:
@@ -1518,16 +1542,20 @@ def _build_attachment_file_ref(
     When configured, writes the attachment bytes into
     ``$MCP_EXCHANGE_DIR/{namespace}/{stable-hash}.{ext}`` (idempotent —
     re-reads of the same path overwrite the same file) and returns the
-    spec §3.1 ``file_ref`` envelope referencing it.
+    spec §3.1 ``file_ref`` envelope referencing it.  Bytes come from
+    re-reading the source file, not from decoding the response's
+    ``content_base64`` — the round-trip would burn an extra ~1.33x
+    memory + decode CPU on every binary read.
 
     Args:
         path: Vault-relative attachment path used as the opaque
-            ``origin_id`` round-trip handle.
+            ``origin_id`` round-trip handle and as the source for the
+            raw bytes written to the exchange directory.
         attachment: The :class:`AttachmentContent` returned by
-            :meth:`Collection.read_attachment`. Read for ``mime_type``
-            and ``content_base64`` (decoded back to bytes for the
-            exchange write — the base64 step is the only available
-            handle on the bytes from this layer).
+            :meth:`Collection.read_attachment`. Read for
+            ``mime_type`` and ``size_bytes`` only.
+        collection: Used to resolve *path* to an absolute filesystem
+            location via ``_validate_attachment_path``.
         http_transfer_available: Whether ``create_download_link`` is
             actually registered on this server (i.e. HTTP transport
             AND ``BASE_URL`` configured).  Gates whether the
@@ -1542,14 +1570,18 @@ def _build_attachment_file_ref(
     origin_id = _stable_origin_id(path)
     suffix = path.rsplit(".", 1)[-1] if "." in path else "bin"
     mime_type = getattr(attachment, "mime_type", None) or "application/octet-stream"
-    content_b64 = getattr(attachment, "content_base64", "") or ""
+
+    # Read raw bytes directly from disk rather than decoding the
+    # base64 round-trip carried in ``attachment.content_base64`` —
+    # that would burn ~1.33x memory + decode CPU per binary read.
+    # ``_validate_attachment_path`` already resolved the same path
+    # safely inside ``read_attachment``; calling it again here is
+    # cheap and keeps the bytes-source explicit.
     try:
-        raw_bytes = base64.b64decode(content_b64) if content_b64 else b""
-    except (ValueError, TypeError):
-        # Defensive — read_attachment produces well-formed base64, but
-        # surfacing a corrupt-payload tracer here is more useful than a
-        # silently-half-built file_ref.
-        logger.warning("read: could not decode base64 for file_ref path=%r", path)
+        abs_path = collection._validate_attachment_path(path)
+        raw_bytes = abs_path.read_bytes()
+    except Exception:
+        logger.exception("read: could not re-read bytes for file_ref path=%r", path)
         return None
 
     try:
@@ -1615,7 +1647,7 @@ async def _fetch_via_exchange(
         ValueError: The on-disk file exceeds the configured attachment
             size limit.
     """
-    from fastmcp_pvl_core import ExchangeURI, FileExchangeConfigError
+    from fastmcp_pvl_core import FileExchangeConfigError
 
     fx = get_file_exchange()
     if fx is None or not fx.is_configured:
@@ -1624,34 +1656,22 @@ async def _fetch_via_exchange(
         )
 
     # Pre-flight size check — never read a too-large file into memory.
-    # Reach for the same byte-cap math the HTTP path uses so the two
-    # transports enforce identical limits. ``_max_attachment_size_mb``
-    # is on Collection because there's no public getter; the MCP layer
-    # is a trusted consumer of these internals.
-    is_markdown = path.endswith(".md")
-    max_bytes = (
-        0
-        if is_markdown or collection._max_attachment_size_mb <= 0
-        else int(collection._max_attachment_size_mb * 1024 * 1024)
-    )
+    # `stat_exchange_uri` encapsulates the FileExchange storage layout
+    # so this layer doesn't reach into ``fx.base_dir`` itself.
+    max_bytes = _attachment_size_limit_bytes(collection, path)
     if max_bytes > 0:
-        parsed = ExchangeURI.parse(uri)
-        on_disk = fx.base_dir / parsed.namespace / parsed.filename
-        try:
-            size = on_disk.stat().st_size
-        except FileNotFoundError:
-            # Defer to read_exchange_uri so the canonical
-            # FileNotFoundError carries the same path/error semantics
-            # as the no-limit path.
-            pass
-        else:
-            if size > max_bytes:
-                raise ValueError(
-                    f"Exchange URI exceeds the attachment size limit of "
-                    f"{collection._max_attachment_size_mb} MB ({size} bytes). "
-                    "Raise MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB or "
-                    "set it to 0 to disable the limit."
-                )
+        size = await asyncio.to_thread(stat_exchange_uri, uri)
+        # ``size is None`` covers "file missing" — fall through to
+        # ``read_exchange_uri`` so the canonical FileNotFoundError
+        # surfaces with the same path/error semantics as the
+        # no-limit path.
+        if size is not None and size > max_bytes:
+            raise ValueError(
+                f"Exchange URI exceeds the attachment size limit of "
+                f"{collection._max_attachment_size_mb} MB ({size} bytes). "
+                "Raise MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB or "
+                "set it to 0 to disable the limit."
+            )
 
     data = await asyncio.to_thread(fx.read_exchange_uri, uri)
     logger.info(
@@ -1687,13 +1707,7 @@ async def _fetch_via_http(
             "  # or: pip install httpx"
         ) from None
 
-    is_markdown = path.endswith(".md")
-    # MCP layer is a trusted Collection consumer; no public size-limit getter.
-    max_bytes = (
-        0
-        if is_markdown or collection._max_attachment_size_mb <= 0
-        else int(collection._max_attachment_size_mb * 1024 * 1024)
-    )
+    max_bytes = _attachment_size_limit_bytes(collection, path)
 
     chunks: list[bytes] = []
     downloaded = 0
