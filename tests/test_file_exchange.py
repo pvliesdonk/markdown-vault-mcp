@@ -659,10 +659,12 @@ class TestSweepTimerLifecycle:
                 # Arm a very short timer; the tick will fire, sweep,
                 # stop itself, and MUST NOT re-arm.
                 fx_mod.start_sweep_timer(fx, interval_s=0.01)
-                # Give the timer thread time to fire.
-                import time
+                # Give the timer thread time to fire.  ``asyncio.sleep``
+                # (not ``time.sleep``) so we don't block the event loop
+                # the surrounding ``async with Client(server)`` is using.
+                import asyncio
 
-                time.sleep(0.2)
+                await asyncio.sleep(0.2)
 
             # The stop-event should be set; no live timer reference.
             assert fx_mod._sweep_stopped.is_set()
