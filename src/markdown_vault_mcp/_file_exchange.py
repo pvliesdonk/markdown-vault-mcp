@@ -75,12 +75,24 @@ def stat_exchange_uri(uri: str) -> int | None:
     configured" and "file not present" — callers fall through to the
     canonical ``read_exchange_uri`` for the actual error semantics.
 
+    Defence-in-depth: ``ExchangeURI.parse`` already rejects ``..``
+    namespaces, ``/`` segments, and double-encoded ``%XX`` traversal
+    bytes per spec §6.3, but the ``parsed.namespace / parsed.filename``
+    join still touches the filesystem with caller-controlled segments.
+    We resolve the joined path and verify it stays inside ``base_dir``
+    before stat-ing — even one symlink in a namespace dir or a future
+    parser regression would otherwise let an attacker probe outside
+    the exchange root.
+
     Args:
         uri: The full ``exchange://`` URI to size.
 
     Returns:
         The file's size in bytes, or ``None`` if the runtime is
-        unconfigured or the file is absent.
+        unconfigured, the file is absent, or the resolved path
+        escapes ``base_dir`` (in which case the caller treats the
+        URI as missing — ``read_exchange_uri`` will produce the
+        canonical error).
     """
     from fastmcp_pvl_core import ExchangeURI
 
@@ -88,7 +100,17 @@ def stat_exchange_uri(uri: str) -> int | None:
     if fx is None or not fx.is_configured:
         return None
     parsed = ExchangeURI.parse(uri)
-    on_disk = fx.base_dir / parsed.namespace / parsed.filename
+    base_dir = fx.base_dir.resolve()
+    on_disk = (base_dir / parsed.namespace / parsed.filename).resolve()
+    if not on_disk.is_relative_to(base_dir):
+        # Defensive — should already be impossible after ExchangeURI.parse.
+        # Logging at WARNING so a real attempt (or a parser bug) is visible.
+        logger.warning(
+            "stat_exchange_uri: resolved path escaped base_dir uri=%s resolved=%s",
+            uri,
+            on_disk,
+        )
+        return None
     try:
         return on_disk.stat().st_size
     except FileNotFoundError:
@@ -109,7 +131,19 @@ def start_sweep_timer(
         fx: The configured :class:`FileExchange` instance to sweep.
         interval_s: Seconds between sweeps.  Defaults to
             :data:`DEFAULT_SWEEP_INTERVAL_S`.
+
+    Raises:
+        ValueError: If ``interval_s`` is not strictly positive — a
+            zero or negative value would crash ``threading.Timer``
+            with its own ``ValueError`` deep inside the lifespan,
+            which is harder to diagnose than a clear startup failure.
     """
+    if interval_s <= 0:
+        msg = (
+            f"interval_s must be strictly positive (got {interval_s!r}); "
+            "the sweep timer cannot fire on a non-positive interval"
+        )
+        raise ValueError(msg)
     if not fx.is_configured:
         return
     stop_sweep_timer()

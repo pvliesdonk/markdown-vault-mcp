@@ -458,6 +458,69 @@ class TestSweepTimerLifecycle:
     deterministic.
     """
 
+    def test_start_sweep_timer_rejects_non_positive_interval(self) -> None:
+        """``start_sweep_timer`` validates ``interval_s`` explicitly.
+
+        Without the check, a zero or negative interval would surface as
+        a ``ValueError`` from inside ``threading.Timer`` (deep in the
+        lifespan), which is much harder to trace back to the bad
+        config.  Fail loudly at the entry point instead.
+        """
+        from unittest.mock import MagicMock
+
+        from markdown_vault_mcp import _file_exchange as fx_mod
+
+        fx = MagicMock()
+        fx.is_configured = True
+        with pytest.raises(ValueError, match="strictly positive"):
+            fx_mod.start_sweep_timer(fx, interval_s=0)
+        with pytest.raises(ValueError, match="strictly positive"):
+            fx_mod.start_sweep_timer(fx, interval_s=-5.0)
+
+    def test_stat_exchange_uri_blocks_traversal_via_symlink(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Defence-in-depth: a symlink in a namespace dir can't escape base_dir.
+
+        ``ExchangeURI.parse`` already rejects ``..`` segments (spec §6.3),
+        but a symlink under ``$base_dir/{namespace}/`` could still
+        redirect a stat to outside the exchange root.  The
+        ``is_relative_to`` check after ``resolve()`` catches this.
+        """
+        from markdown_vault_mcp import _file_exchange as fx_mod
+
+        # Create an exchange dir + a real file outside it.
+        exchange_dir = tmp_path / "exchange"
+        exchange_dir.mkdir()
+        ns_dir = exchange_dir / "markdown-vault-mcp"
+        ns_dir.mkdir()
+        outside = tmp_path / "secret.png"
+        outside.write_bytes(b"\x00" * 9999)
+
+        # Plant a symlink inside the namespace dir that escapes the root.
+        attack = ns_dir / "evil.png"
+        attack.symlink_to(outside)
+
+        # Boot a configured FileExchange pointed at the dir.
+        for var in _CLEAR_VARS:
+            monkeypatch.delenv(var, raising=False)
+        monkeypatch.setenv("MCP_EXCHANGE_DIR", str(exchange_dir))
+        monkeypatch.setenv("MCP_EXCHANGE_NAMESPACE", "markdown-vault-mcp")
+        from fastmcp_pvl_core import FileExchange
+
+        fx = FileExchange.from_env(default_namespace="markdown-vault-mcp")
+        assert fx.is_configured
+        fx_mod.set_file_exchange(fx)
+
+        exchange_id = (exchange_dir / ".exchange-id").read_text().strip()
+        uri = f"exchange://{exchange_id}/markdown-vault-mcp/evil.png"
+
+        # Symlink resolves outside base_dir → returns None instead of leaking
+        # the file size (which would prove the file's existence to a probe).
+        assert fx_mod.stat_exchange_uri(uri) is None
+
     async def test_stop_during_sweep_does_not_re_arm(
         self, _exchange_env: tuple[Path, Path]
     ) -> None:
