@@ -50,6 +50,14 @@ from ._server_tools import register_tools
 logger = logging.getLogger(__name__)
 
 
+#: Lifetime applied to every artifact token.  Long enough to cover slow
+#: downloads (LLMs sometimes re-fetch after a delay) but short enough
+#: that a forgotten link doesn't linger indefinitely.  Per-call
+#: ``ttl_seconds`` on ``create_download_link`` overrides this on a
+#: per-token basis.
+_ARTIFACT_TTL_SECONDS = 3600
+
+
 # ---------------------------------------------------------------------------
 # Event store
 # ---------------------------------------------------------------------------
@@ -197,9 +205,23 @@ def make_server(transport: str = "stdio") -> FastMCP:
     # so registering the route without it would surface a confusing
     # RuntimeError on first call instead of a startup-time skip.
     if transport != "stdio" and config.base_url:
-        artifact_store = ArtifactStore(ttl_seconds=3600, base_url=config.base_url)
+        artifact_store = ArtifactStore(
+            ttl_seconds=_ARTIFACT_TTL_SECONDS, base_url=config.base_url
+        )
         set_artifact_store(artifact_store)
         ArtifactStore.register_route(mcp, artifact_store)
+    elif transport != "stdio":
+        # HTTP transport without BASE_URL is a valid configuration (the
+        # MCP protocol still works), but create_download_link can't
+        # function — we already gate the tool registration on this in
+        # register_tools().  Surface a clear startup signal so operators
+        # don't have to discover the missing tool via "why isn't it in
+        # the list?" later.
+        logger.warning(
+            "create_download_link unavailable: MARKDOWN_VAULT_MCP_BASE_URL "
+            "is not set, so the artifact route + tool are skipped. Set "
+            "BASE_URL to expose download links."
+        )
 
     # --- Visibility: hide write-tagged components in read-only mode ---
 
