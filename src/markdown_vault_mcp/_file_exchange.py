@@ -71,28 +71,37 @@ def stat_exchange_uri(uri: str) -> int | None:
     Encapsulates the ``base_dir / namespace / filename`` storage layout
     that ``fastmcp_pvl_core.FileExchange`` does not yet expose via a
     public stat API, so the tool layer doesn't have to reach into
-    those internals itself.  ``None`` covers both "exchange not
-    configured" and "file not present" — callers fall through to the
-    canonical ``read_exchange_uri`` for the actual error semantics.
+    those internals itself.  Returns ``None`` whenever the URI cannot
+    be safely sized — callers fall through to the canonical
+    ``read_exchange_uri`` for the precise error semantics.
 
-    Defence-in-depth: ``ExchangeURI.parse`` already rejects ``..``
-    namespaces, ``/`` segments, and double-encoded ``%XX`` traversal
-    bytes per spec §6.3, but the ``parsed.namespace / parsed.filename``
-    join still touches the filesystem with caller-controlled segments.
-    We resolve the joined path and verify it stays inside ``base_dir``
-    before stat-ing — even one symlink in a namespace dir or a future
-    parser regression would otherwise let an attacker probe outside
-    the exchange root.
+    Three layers of safety apply, mirroring ``read_exchange_uri``:
+
+    1. **Group check.** ``parsed.exchange_id`` must equal the local
+       ``fx.exchange_id`` — otherwise the URI belongs to a peer that
+       happens to share our ``base_dir`` (operator misconfig) and
+       returning its metadata would leak file existence across groups.
+    2. **Path-traversal defence.** ``ExchangeURI.parse`` already
+       rejects ``..`` namespaces, ``/`` segments, and double-encoded
+       ``%XX`` traversal bytes per spec §6.3, but the
+       ``parsed.namespace / parsed.filename`` join still touches the
+       filesystem with caller-controlled segments. We resolve the
+       joined path and verify it stays inside ``base_dir`` before
+       stat-ing — even a symlink in a namespace dir would otherwise
+       let an attacker probe outside the exchange root.
+    3. **Regular-file check.** Only return a size for actual files;
+       directories, FIFOs, sockets, etc. all return ``None``. ``stat``
+       on a FIFO would block forever waiting for a writer; ``st_size``
+       on a directory is platform-dependent garbage.
 
     Args:
         uri: The full ``exchange://`` URI to size.
 
     Returns:
         The file's size in bytes, or ``None`` if the runtime is
-        unconfigured, the file is absent, or the resolved path
-        escapes ``base_dir`` (in which case the caller treats the
-        URI as missing — ``read_exchange_uri`` will produce the
-        canonical error).
+        unconfigured, the URI's group doesn't match, the resolved
+        path escapes ``base_dir``, the path isn't a regular file,
+        or the file is absent / unreadable.
     """
     from fastmcp_pvl_core import ExchangeURI
 
@@ -100,6 +109,16 @@ def stat_exchange_uri(uri: str) -> int | None:
     if fx is None or not fx.is_configured:
         return None
     parsed = ExchangeURI.parse(uri)
+    if parsed.exchange_id != fx.exchange_id:
+        # Cross-group access — log at INFO since this is operator-visible
+        # configuration, not an attack signature.
+        logger.info(
+            "stat_exchange_uri: exchange group mismatch uri=%s local=%s remote=%s",
+            uri,
+            fx.exchange_id,
+            parsed.exchange_id,
+        )
+        return None
     base_dir = fx.base_dir.resolve()
     on_disk = (base_dir / parsed.namespace / parsed.filename).resolve()
     if not on_disk.is_relative_to(base_dir):
@@ -112,8 +131,17 @@ def stat_exchange_uri(uri: str) -> int | None:
         )
         return None
     try:
+        # ``is_file`` already calls ``stat`` and follows symlinks (already
+        # resolved above). False means absent, directory, FIFO, socket,
+        # or some other non-file — none of which have a meaningful size
+        # and ``st_size`` on them is at best wrong, at worst a hang.
+        if not on_disk.is_file():
+            return None
         return on_disk.stat().st_size
-    except FileNotFoundError:
+    except (FileNotFoundError, PermissionError):
+        # FileNotFoundError races with sweep / external delete; PermissionError
+        # surfaces a misconfigured shared volume. Both degrade to "URI not
+        # resolvable here" and let the caller fall through to read_exchange_uri.
         return None
 
 

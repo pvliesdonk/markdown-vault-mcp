@@ -477,6 +477,81 @@ class TestSweepTimerLifecycle:
         with pytest.raises(ValueError, match="strictly positive"):
             fx_mod.start_sweep_timer(fx, interval_s=-5.0)
 
+    def test_stat_exchange_uri_rejects_cross_group_uri(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Group-id mismatch returns None — mirrors ``read_exchange_uri``.
+
+        Even if a peer in a different exchange group happens to share
+        our base_dir (operator misconfig), exposing its file metadata
+        would leak existence across groups.  ``stat_exchange_uri``
+        guards against this with the same group check ``read_exchange_uri``
+        applies, instead of just relying on the layout/path checks.
+        """
+        from markdown_vault_mcp import _file_exchange as fx_mod
+
+        exchange_dir = tmp_path / "exchange"
+        exchange_dir.mkdir()
+        ns_dir = exchange_dir / "markdown-vault-mcp"
+        ns_dir.mkdir()
+        (ns_dir / "neighbour.png").write_bytes(b"\x00" * 100)
+
+        for var in _CLEAR_VARS:
+            monkeypatch.delenv(var, raising=False)
+        monkeypatch.setenv("MCP_EXCHANGE_DIR", str(exchange_dir))
+        monkeypatch.setenv("MCP_EXCHANGE_NAMESPACE", "markdown-vault-mcp")
+        from fastmcp_pvl_core import FileExchange
+
+        fx = FileExchange.from_env(default_namespace="markdown-vault-mcp")
+        assert fx.is_configured
+        fx_mod.set_file_exchange(fx)
+
+        # Build a URI with a fake exchange-id from a different group,
+        # but pointing at a real on-disk file under our base_dir.
+        wrong_group = "00000000-0000-0000-0000-000000000000"
+        assert wrong_group != fx.exchange_id
+        uri = f"exchange://{wrong_group}/markdown-vault-mcp/neighbour.png"
+
+        assert fx_mod.stat_exchange_uri(uri) is None
+
+    def test_stat_exchange_uri_returns_none_for_directory(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Non-regular files (directories, FIFOs, etc.) return None.
+
+        A directory's ``st_size`` is platform-dependent garbage; a
+        FIFO's stat would block.  Only sizes for actual files are
+        meaningful to the size pre-flight callers.
+        """
+        from markdown_vault_mcp import _file_exchange as fx_mod
+
+        exchange_dir = tmp_path / "exchange"
+        exchange_dir.mkdir()
+        ns_dir = exchange_dir / "markdown-vault-mcp"
+        ns_dir.mkdir()
+        # Filename-shaped subdirectory inside the namespace dir — passes
+        # spec §6.3 segment validation but is not a regular file.
+        (ns_dir / "looksfile.png").mkdir()
+
+        for var in _CLEAR_VARS:
+            monkeypatch.delenv(var, raising=False)
+        monkeypatch.setenv("MCP_EXCHANGE_DIR", str(exchange_dir))
+        monkeypatch.setenv("MCP_EXCHANGE_NAMESPACE", "markdown-vault-mcp")
+        from fastmcp_pvl_core import FileExchange
+
+        fx = FileExchange.from_env(default_namespace="markdown-vault-mcp")
+        assert fx.is_configured
+        fx_mod.set_file_exchange(fx)
+
+        exchange_id = (exchange_dir / ".exchange-id").read_text().strip()
+        uri = f"exchange://{exchange_id}/markdown-vault-mcp/looksfile.png"
+
+        assert fx_mod.stat_exchange_uri(uri) is None
+
     def test_stat_exchange_uri_blocks_traversal_via_symlink(
         self,
         tmp_path: Path,
