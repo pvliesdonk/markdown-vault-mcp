@@ -735,14 +735,14 @@ wheels = [
 
 [[package]]
 name = "fastmcp-pvl-core"
-version = "1.1.0rc1"
+version = "1.1.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "fastmcp" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/cc/62/eb59c69011e02eea86f717a1e80bd9e21bdc99d9549c4032d2652751d8a4/fastmcp_pvl_core-1.1.0rc1.tar.gz", hash = "sha256:8b9986d32736833c3aabc603d87a2fb2b09962bbe35cb1bec6e557c30384642f", size = 190230, upload-time = "2026-04-26T11:08:32.967Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/4b/9e/e4df782d309b9ec0249a63da29407f0b2bf43ad6d52677065a77b7524e8b/fastmcp_pvl_core-1.1.0.tar.gz", hash = "sha256:2a388e2bd90903167dc66da2d17f8714c9e979abe00c8c8860a13fa1fd53dfc0", size = 190209, upload-time = "2026-04-26T12:56:33.24Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/9c/94/1879c725cca8396a4d06668103ebf68ccd598240f028b3a15e96bb4f86d4/fastmcp_pvl_core-1.1.0rc1-py3-none-any.whl", hash = "sha256:985ade743354b06cc8c03918c0a2ff5ab322e46e6566b1e3cff4285b5a974e60", size = 39900, upload-time = "2026-04-26T11:08:31.297Z" },
+    { url = "https://files.pythonhosted.org/packages/99/ae/5c2c135f87df66e75af5cb4ad222290cf84b332a087d55dc28cf05434963/fastmcp_pvl_core-1.1.0-py3-none-any.whl", hash = "sha256:35e6bd5afdbf6d6a896fe2327c7917dac20091eaebaf66daeb086e973fd39638", size = 39865, upload-time = "2026-04-26T12:56:32.047Z" },
 ]
 
 [[package]]
@@ -1225,7 +1225,7 @@ requires-dist = [
     { name = "fastembed", marker = "extra == 'embeddings'", specifier = ">=0.3" },
     { name = "fastmcp", marker = "extra == 'all'", specifier = ">=3.0,<4" },
     { name = "fastmcp", marker = "extra == 'mcp'", specifier = ">=3.0,<4" },
-    { name = "fastmcp-pvl-core", specifier = ">=1.1.0rc1,<2" },
+    { name = "fastmcp-pvl-core", specifier = ">=1.1.0,<2" },
     { name = "httpx", marker = "extra == 'all'", specifier = ">=0.25" },
     { name = "httpx", marker = "extra == 'embeddings-api'", specifier = ">=0.25" },
     { name = "mkdocs-llmstxt", marker = "extra == 'docs'", specifier = ">=0.2" },
