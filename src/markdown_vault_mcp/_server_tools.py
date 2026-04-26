@@ -60,7 +60,9 @@ def _is_private_url(url: str) -> bool:
         return False
 
 
-def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
+def register_tools(
+    mcp: FastMCP, *, transport: str = "stdio", base_url_configured: bool = False
+) -> None:
     """Register all MCP tools on *mcp*.
 
     Args:
@@ -68,6 +70,11 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
         transport: The MCP transport in use.  ``create_download_link`` is
             only registered for non-stdio transports (``"sse"`` or
             ``"http"``), because stdio has no HTTP server.
+        base_url_configured: Whether ``MARKDOWN_VAULT_MCP_BASE_URL`` is set.
+            Required for ``create_download_link`` — without it the tool
+            cannot construct download URLs and would fail at call time
+            with a confusing ``RuntimeError``.  Pass ``False`` to skip
+            registration so the tool isn't advertised at all.
     """
 
     # --- Read-only tools (always visible) ---
@@ -1422,9 +1429,11 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
             "content_type": content_type,
         }
 
-    # create_download_link is only available on HTTP transports —
-    # stdio has no HTTP server to host the artifact endpoint.
-    if transport != "stdio":
+    # create_download_link is only registered when both conditions hold:
+    # - HTTP transport (stdio has no HTTP server to host the artifact endpoint)
+    # - BASE_URL is configured (the store needs it to build URLs;
+    #   without it every call would die with a RuntimeError)
+    if transport != "stdio" and base_url_configured:
         _register_download_link_tool(mcp)
 
 

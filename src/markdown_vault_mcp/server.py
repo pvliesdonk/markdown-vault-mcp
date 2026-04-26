@@ -180,7 +180,7 @@ def make_server(transport: str = "stdio") -> FastMCP:
     # include_traceback=None infers from root log level (-v→DEBUG→tracebacks); transform_errors=False lets exceptions propagate to FastMCP's own handlers.
     wire_middleware_stack(mcp, include_traceback=None, transform_errors=False)
 
-    register_tools(mcp, transport=transport)
+    register_tools(mcp, transport=transport, base_url_configured=bool(config.base_url))
     register_resources(mcp)
     register_apps(mcp)
     register_prompts(

@@ -76,7 +76,12 @@ def _artifact_vault(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 class TestCreateDownloadLinkRegistration:
-    """create_download_link is only registered for non-stdio transports."""
+    """create_download_link is gated on (HTTP transport AND BASE_URL set).
+
+    Without BASE_URL the store can't build URLs, so the tool would fail at
+    every call site — registering it would be advertising a broken tool.
+    Without HTTP there's no route to back the URL.
+    """
 
     @pytest.fixture(autouse=True)
     def _env(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -88,21 +93,39 @@ class TestCreateDownloadLinkRegistration:
         for var in _CLEAR_VARS:
             monkeypatch.delenv(var, raising=False)
 
-    async def test_not_registered_on_stdio(self) -> None:
+    async def test_not_registered_on_stdio_even_with_base_url(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_BASE_URL", "https://mcp.example.com")
         server = make_server(transport="stdio")
         async with Client(server) as client:
             tools = await client.list_tools()
         names = {t.name for t in tools}
         assert "create_download_link" not in names
 
-    async def test_registered_on_http(self) -> None:
+    async def test_not_registered_on_http_without_base_url(self) -> None:
+        # Fixture clears BASE_URL — registration must skip rather than
+        # advertise a tool that would fail on every call.
+        server = make_server(transport="http")
+        async with Client(server) as client:
+            tools = await client.list_tools()
+        names = {t.name for t in tools}
+        assert "create_download_link" not in names
+
+    async def test_registered_on_http_with_base_url(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_BASE_URL", "https://mcp.example.com")
         server = make_server(transport="http")
         async with Client(server) as client:
             tools = await client.list_tools()
         names = {t.name for t in tools}
         assert "create_download_link" in names
 
-    async def test_registered_on_sse(self) -> None:
+    async def test_registered_on_sse_with_base_url(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_BASE_URL", "https://mcp.example.com")
         server = make_server(transport="sse")
         async with Client(server) as client:
             tools = await client.list_tools()
@@ -170,28 +193,22 @@ class TestCreateDownloadLinkTool:
         data = json.loads(result.content[0].text)
         assert data["expires_in_seconds"] == 120
 
-    async def test_raises_on_missing_base_url(
+    async def test_tool_unavailable_when_base_url_missing(
         self, _artifact_vault: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Without BASE_URL the server skips store construction and the tool fails.
+        """Without BASE_URL the tool is not registered at all.
 
-        The route + module-level singleton are gated on ``base_url`` at
-        ``make_server`` time (see :func:`server.make_server`), so calling
-        the tool surfaces core's "ArtifactStore not configured" error
-        rather than a tool-side BASE_URL check.
+        Both the artifact route + module-level singleton AND the tool
+        registration are gated on ``base_url`` at ``make_server`` time,
+        so a misconfigured server doesn't advertise a tool that would
+        fail on every call.
         """
-        # Clear the singleton — earlier tests (including the autouse
-        # _artifact_vault fixture) may have left a store registered, and
-        # the production make_server skips construction when base_url is
-        # absent, so the leftover would mask the failure path.
-        import fastmcp_pvl_core._artifacts as _core_artifacts
-
-        monkeypatch.setattr(_core_artifacts, "_artifact_store", None)
         monkeypatch.delenv("MARKDOWN_VAULT_MCP_BASE_URL", raising=False)
         server = make_server(transport="http")
         async with Client(server) as client:
-            with pytest.raises(ToolError, match="ArtifactStore not configured"):
-                await client.call_tool("create_download_link", {"path": "note.md"})
+            tools = await client.list_tools()
+        names = {t.name for t in tools}
+        assert "create_download_link" not in names
 
     async def test_raises_on_zero_ttl(self, _artifact_vault: Path) -> None:
         server = make_server(transport="http")
