@@ -22,8 +22,11 @@ if TYPE_CHECKING:
 from fastmcp import FastMCP
 from fastmcp_pvl_core import (
     ArtifactStore,
+    FileExchange,
+    FileExchangeCapability,
     ServerConfig,
     build_auth,
+    register_file_exchange_capability,
     resolve_auth_mode,
     set_artifact_store,
     wire_middleware_stack,
@@ -40,12 +43,41 @@ from markdown_vault_mcp.config import (
     load_config,
 )
 
+from ._file_exchange import set_file_exchange, start_sweep_timer
 from ._icons import _SERVER_ICON
 from ._server_apps import register_apps
 from ._server_deps import make_collection_lifespan
 from ._server_prompts import register_prompts
 from ._server_resources import register_resources
 from ._server_tools import register_tools
+
+#: MIME types this server consumes when accepting file_refs from other
+#: producers. ``*/*`` is the catch-all spec §3.3 sentinel meaning "we
+#: accept any binary blob the operator's attachment allowlist permits".
+_FILE_EXCHANGE_CONSUMES = (
+    "text/markdown",
+    "image/png",
+    "image/jpeg",
+    "image/webp",
+    "image/svg+xml",
+    "application/pdf",
+    "application/octet-stream",
+    "*/*",
+)
+
+#: MIME types this server can emit as file_refs (binary attachments
+#: returned by ``read``).  Markdown notes are emitted in-band as text,
+#: not via file_ref, so the list focuses on the binary surface.
+_FILE_EXCHANGE_PRODUCES = (
+    "application/octet-stream",
+    "image/png",
+    "image/jpeg",
+    "image/webp",
+    "image/svg+xml",
+    "image/gif",
+    "application/pdf",
+    "text/markdown",
+)
 
 logger = logging.getLogger(__name__)
 
@@ -223,9 +255,64 @@ def make_server(transport: str = "stdio") -> FastMCP:
             "BASE_URL to expose download links."
         )
 
+    # --- File exchange (MCP File Exchange v0.3) ---
+    # Always construct an instance — `from_env` returns an unconfigured
+    # sentinel when MCP_EXCHANGE_DIR is unset, so `is_configured` gates
+    # the runtime behaviour without forcing every caller to special-case
+    # a missing instance.
+    fx = FileExchange.from_env(default_namespace=server_name)
+    set_file_exchange(fx)
+    register_file_exchange_capability(
+        mcp,
+        FileExchangeCapability(
+            namespace=fx.namespace if fx.is_configured else server_name,
+            exchange_id=fx.exchange_id if fx.is_configured else None,
+            produces=_FILE_EXCHANGE_PRODUCES,
+            consumes=_FILE_EXCHANGE_CONSUMES,
+            transfer_methods=_resolve_transfer_methods(
+                fx, transport=transport, base_url=config.base_url
+            ),
+        ),
+    )
+    if fx.is_configured:
+        # Producer-side periodic eviction. The lifespan stops the timer
+        # in its `finally` block; one final sweep also runs there to
+        # release expired files at shutdown.
+        start_sweep_timer(fx)
+        logger.info(
+            "File exchange enabled: namespace=%s exchange_id=%s",
+            fx.namespace,
+            fx.exchange_id,
+        )
+
     # --- Visibility: hide write-tagged components in read-only mode ---
 
     if is_read_only:
         mcp.disable(tags={"write"})
 
     return mcp
+
+
+def _resolve_transfer_methods(
+    fx: FileExchange,
+    *,
+    transport: str,
+    base_url: str | None,
+) -> dict[str, dict[str, str]]:
+    """Build the ``transfer_methods`` dict advertised in the capability.
+
+    ``exchange`` is included only when ``fx.is_configured``; ``http``
+    is included only when an HTTP transport is in use AND ``base_url``
+    is set, because ``create_download_link`` is the http-side handle
+    and that tool itself is gated on the same conditions.
+
+    The two methods are independent — a stdio server with
+    ``MCP_EXCHANGE_DIR`` set advertises ``exchange`` only, an HTTP
+    server without exchange advertises ``http`` only.
+    """
+    methods: dict[str, dict[str, str]] = {}
+    if fx.is_configured:
+        methods["exchange"] = {}
+    if transport != "stdio" and base_url:
+        methods["http"] = {"tool": "create_download_link"}
+    return methods

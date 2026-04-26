@@ -21,12 +21,14 @@ from fastmcp.exceptions import ToolError
 from markdown_vault_mcp.collection import Collection
 from markdown_vault_mcp.exceptions import EditConflictError
 
+from ._file_exchange import get_file_exchange
 from ._icons import _TOOL_ICONS
 from ._server_deps import get_collection
 
 logger = logging.getLogger(__name__)
 
 _ALLOWED_FETCH_SCHEMES = frozenset({"http", "https"})
+_EXCHANGE_SCHEME = "exchange"
 
 # SSRF protection: block private/reserved IP ranges.
 _FETCH_BLOCKED_HOSTNAMES = frozenset(
@@ -182,7 +184,10 @@ def register_tools(
             etag (SHA-256 hex str or null).
             For attachments: dict with path, mime_type (str or null),
             size_bytes (int), content_base64 (str), modified_at (Unix timestamp),
-            etag (SHA-256 hex str or null).
+            etag (SHA-256 hex str or null).  When ``MCP_EXCHANGE_DIR`` is
+            configured the dict also carries a ``file_ref`` block (spec
+            §3.1) so other MCP servers can pick up the bytes via the
+            shared exchange volume rather than re-decoding base64.
             The 'etag' value can be passed as 'if_match' to write, edit,
             delete, or rename to guard against concurrent modifications.
 
@@ -193,7 +198,11 @@ def register_tools(
         """
         if not path.endswith(".md"):
             attachment = await asyncio.to_thread(collection.read_attachment, path)
-            return asdict(attachment)
+            payload = asdict(attachment)
+            file_ref = _build_attachment_file_ref(path, attachment)
+            if file_ref is not None:
+                payload["file_ref"] = file_ref
+            return payload
         note = await asyncio.to_thread(collection.read, path)
         if note is None:
             raise ValueError(f"Document not found: {path}")
@@ -1267,138 +1276,103 @@ def register_tools(
         },
     )
     async def fetch(
-        url: str,
-        path: str,
+        url: str | None = None,
+        path: str = "",
         frontmatter: dict[str, Any] | None = None,
         if_match: str | None = None,
         timeout_s: float = 30.0,
+        file_ref: dict[str, Any] | None = None,
         collection: Collection = Depends(get_collection),
     ) -> dict[str, Any]:
-        """Download a file from a URL and save it to the vault.
+        """Download a file from a URL or file_ref and save it to the vault.
 
-        Fetches content from an HTTP/HTTPS URL and writes it as a note or
-        attachment. Designed for MCP-to-MCP file transfer when content is
-        too large to pass through the LLM context window.
+        Fetches content from an HTTP/HTTPS URL, an ``exchange://`` URI
+        (MCP File Exchange v0.3 — zero-cost shared-volume transfer), or
+        a producer's ``file_ref`` block, and writes the bytes as a note
+        or attachment. Designed for MCP-to-MCP file transfer when
+        content is too large to pass through the LLM context window.
 
-        For .md paths: the response is decoded as UTF-8 text and saved as
-        a markdown note with optional frontmatter. The search index is
-        updated immediately.
+        For ``.md`` paths the response is decoded as UTF-8 text and
+        saved as a markdown note with optional frontmatter. For other
+        paths the response is saved as a binary attachment, subject to
+        the configured attachment size limit.
 
-        For other paths: the response is saved as a binary attachment.
-        The existing attachment size limit applies.
+        URL/source resolution order when both are provided:
+
+        1. ``file_ref.transfer.exchange.uri`` — picked when this server
+           and the producer share an exchange group. Avoids any HTTP
+           round-trip.
+        2. ``file_ref.transfer.http.tool`` — informational; the LLM
+           must invoke that tool to obtain a URL it can pass back here.
+        3. ``url`` — explicit override, preferred over file_ref.
 
         Args:
-            url: Source URL to download from. Only http:// and https://
-                schemes are allowed. Private/loopback IPs are blocked.
-                Redirects are NOT followed (SSRF protection).
-            path: Destination path in the vault (e.g. "notes/report.md"
-                or "assets/diagram.png"). Extension determines handling:
-                .md for notes, anything else for attachments.
-            frontmatter: Optional YAML frontmatter dict for .md files,
-                e.g. {"title": "Report", "source": "http://..."}. Ignored
+            url: Source URL to download from. Schemes ``http``,
+                ``https``, and ``exchange`` are allowed. HTTP(S) URLs
+                are guarded against SSRF (private/loopback IPs blocked,
+                redirects NOT followed). Required when no ``file_ref``
+                is supplied.
+            path: Destination path in the vault (e.g. ``"notes/report.md"``
+                or ``"assets/diagram.png"``). Extension determines
+                handling: ``.md`` for notes, anything else for
+                attachments.
+            frontmatter: Optional YAML frontmatter dict for ``.md`` files,
+                e.g. ``{"title": "Report", "source": "http://..."}``. Ignored
                 for attachments.
-            if_match: Optional etag from a previous 'read' call for
+            if_match: Optional etag from a previous ``read`` call for
                 optimistic concurrency. Omit to write unconditionally.
-            timeout_s: Download timeout in seconds (default 30). Increase
-                for large files on slow connections.
+            timeout_s: Download timeout in seconds (default 30). Ignored
+                when the source resolves via ``exchange://``.
+            file_ref: Optional file reference block as emitted by another
+                MCP server (spec §3.1).  Must contain ``origin_server``,
+                ``origin_id``, and ``transfer``.
 
         Returns:
             Dict with:
+
             - path (str): vault path of the written file
             - created (bool): true if new file, false if overwrite
             - content_length (int): bytes downloaded
-            - content_type (str or null): Content-Type from the response
-
-        Primary building block for URL-to-note capture flows: call ``fetch`` to
-        retrieve the source, summarize via the LLM, and ``write`` the result
-        as a new note.
+            - content_type (str or null): Content-Type from the response,
+              or the file_ref's advertised mime_type for exchange://
 
         Raises:
-            ValueError: If the URL scheme is not http/https, the download
-                exceeds the size limit, or the response cannot be decoded.
-            ImportError: If httpx is not installed.
+            ValueError: If neither ``url`` nor ``file_ref`` is supplied,
+                ``path`` is empty, the URL scheme is unsupported, the
+                download exceeds the size limit, the response cannot be
+                decoded, or the file_ref shape is invalid.
+            ImportError: If ``httpx`` is not installed and the resolved
+                source is HTTP(S).
+            FileExchangeConfigError: If the resolved source is
+                ``exchange://`` but ``MCP_EXCHANGE_DIR`` is not
+                configured on this server.
+            ExchangeGroupMismatch: If the ``exchange://`` URI belongs
+                to a different exchange group than this server.
         """
-        # Validate URL scheme (SSRF protection).
-        parsed = urlparse(url)
-        if parsed.scheme not in _ALLOWED_FETCH_SCHEMES:
-            raise ValueError(
-                f"Only http and https URLs are allowed, got {parsed.scheme!r}"
+        if not path:
+            raise ValueError("path is required")
+
+        resolved_url, advertised_mime = _resolve_fetch_source(url, file_ref)
+
+        parsed = urlparse(resolved_url)
+        scheme = parsed.scheme
+        if scheme == _EXCHANGE_SCHEME:
+            raw_bytes, content_type = await _fetch_via_exchange(
+                resolved_url, advertised_mime
             )
-        if _is_private_url(url):
+        elif scheme in _ALLOWED_FETCH_SCHEMES:
+            raw_bytes, content_type = await _fetch_via_http(
+                resolved_url, path, timeout_s, collection
+            )
+        else:
             raise ValueError(
-                "URLs targeting private, loopback, or link-local addresses "
-                "are not allowed."
+                f"Unsupported URL scheme {scheme!r}; expected one of "
+                "http, https, exchange"
             )
 
-        # Conditional import — httpx is an optional dependency.
-        try:
-            import httpx
-        except ImportError:
-            raise ImportError(
-                "The 'fetch' tool requires 'httpx'. Install it with:\n"
-                "  pip install 'markdown-vault-mcp[all]'\n"
-                "  # or: pip install httpx"
-            ) from None
-
-        # Determine size limit (attachments only). This pre-check enforces
-        # the limit during streaming so we abort early without buffering the
-        # entire payload. write_attachment() has a redundant check that
-        # covers the non-fetch code path.
+        content_length = len(raw_bytes)
         is_markdown = path.endswith(".md")
-        # pylint: disable=protected-access  # No public API for size limit;
-        # MCP layer is a trusted consumer of Collection internals.
-        max_bytes = (
-            0
-            if is_markdown or collection._max_attachment_size_mb <= 0
-            else int(collection._max_attachment_size_mb * 1024 * 1024)
-        )
 
-        # Stream download — enforce size limit as chunks arrive.
-        chunks: list[bytes] = []
-        downloaded = 0
-        async with (
-            httpx.AsyncClient(timeout=timeout_s, follow_redirects=False) as client,
-            client.stream("GET", url) as response,
-        ):
-            response.raise_for_status()
-            content_type = response.headers.get("content-type")
-            async for chunk in response.aiter_bytes(chunk_size=65536):
-                downloaded += len(chunk)
-                if max_bytes > 0 and downloaded > max_bytes:
-                    raise ValueError(
-                        f"Download exceeded the attachment size limit "
-                        f"of {collection._max_attachment_size_mb} MB "
-                        f"({max_bytes} bytes). Raise "
-                        "MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB or "
-                        "set it to 0 to disable the limit."
-                    )
-                chunks.append(chunk)
-
-        raw_bytes = b"".join(chunks)
-        content_length = downloaded
-
-        # Redact userinfo and query string to avoid logging credentials
-        # (pre-signed URLs, API tokens, embedded passwords).
-        _parsed_log = urlparse(url)
-        _safe_url = urlunparse(
-            _parsed_log._replace(
-                netloc=(
-                    f"{_parsed_log.hostname}:{_parsed_log.port}"
-                    if _parsed_log.port
-                    else (_parsed_log.hostname or "")
-                ),
-                query="",
-                fragment="",
-            )
-        )
-        logger.info(
-            "fetch: downloaded %d bytes from %s → %s",
-            content_length,
-            _safe_url,
-            path,
-        )
-
-        # Dispatch to the appropriate write method.
         if is_markdown:
             try:
                 text = raw_bytes.decode("utf-8")
@@ -1437,6 +1411,257 @@ def register_tools(
         _register_download_link_tool(mcp)
 
 
+def _resolve_fetch_source(
+    url: str | None, file_ref: dict[str, Any] | None
+) -> tuple[str, str | None]:
+    """Pick a concrete URL + advertised MIME from ``url`` and ``file_ref``.
+
+    Resolution order:
+
+    1. ``url`` (explicit override).
+    2. ``file_ref.transfer.exchange.uri`` (preferred when no explicit
+       URL — avoids HTTP round-trip).
+    3. Otherwise raise; ``http.tool`` is informational and requires a
+       separate tool call to obtain a concrete URL.
+
+    Args:
+        url: Optional explicit URL.
+        file_ref: Optional file_ref block (spec §3.1).
+
+    Returns:
+        ``(resolved_url, advertised_mime)`` — the MIME hint comes from
+        the file_ref when present, useful for ``exchange://`` where the
+        URI carries no Content-Type metadata.
+
+    Raises:
+        ValueError: Neither input provides a resolvable source.
+    """
+    if url:
+        advertised = _advertised_mime(file_ref)
+        return url, advertised
+
+    if file_ref is None:
+        raise ValueError("either 'url' or 'file_ref' is required")
+
+    transfer = file_ref.get("transfer") if isinstance(file_ref, dict) else None
+    if not isinstance(transfer, dict) or not transfer:
+        raise ValueError("file_ref.transfer must be a non-empty mapping per spec §3.1")
+    exchange = transfer.get("exchange")
+    if isinstance(exchange, dict) and isinstance(exchange.get("uri"), str):
+        return exchange["uri"], _advertised_mime(file_ref)
+
+    # Spec §7: when only an http transfer is offered, the consumer must
+    # call the producer's named tool to materialise a URL — that is
+    # outside fetch's contract. Surface a clear error rather than
+    # pretending the file_ref is resolvable.
+    http = transfer.get("http")
+    if isinstance(http, dict) and isinstance(http.get("tool"), str):
+        raise ValueError(
+            "file_ref offers only http transfer; call "
+            f"{http['tool']!r} on {file_ref.get('origin_server', '?')!r} to "
+            "get a concrete URL, then pass it as 'url'"
+        )
+    raise ValueError(
+        "file_ref.transfer has no resolvable method (need 'exchange' or explicit 'url')"
+    )
+
+
+def _advertised_mime(file_ref: dict[str, Any] | None) -> str | None:
+    """Return the file_ref's ``mime_type`` field if present."""
+    if isinstance(file_ref, dict):
+        mime = file_ref.get("mime_type")
+        if isinstance(mime, str):
+            return mime
+    return None
+
+
+def _stable_origin_id(path: str) -> str:
+    """Hash *path* into a stable, segment-safe origin_id for exchange URIs.
+
+    Spec §6.3 limits filename segments to ``[A-Za-z0-9._-]``; a SHA-256
+    hex prefix satisfies that and keeps repeated reads of the same
+    attachment writing to the same exchange file (free dedup; sweep
+    can keep a single entry per logical attachment).
+    """
+    import hashlib
+
+    return hashlib.sha256(path.encode("utf-8")).hexdigest()[:32]
+
+
+def _build_attachment_file_ref(path: str, attachment: Any) -> dict[str, Any] | None:
+    """Augment a binary ``read`` result with a ``file_ref`` block.
+
+    Returns ``None`` when ``MCP_EXCHANGE_DIR`` is not configured — the
+    caller silently skips the augmentation in that case so the legacy
+    ``content_base64`` field remains the only download path.
+
+    When configured, writes the attachment bytes into
+    ``$MCP_EXCHANGE_DIR/{namespace}/{stable-hash}.{ext}`` (idempotent —
+    re-reads of the same path overwrite the same file) and returns the
+    spec §3.1 ``file_ref`` envelope referencing it.
+
+    Args:
+        path: Vault-relative attachment path used as the opaque
+            ``origin_id`` round-trip handle.
+        attachment: The :class:`AttachmentContent` returned by
+            :meth:`Collection.read_attachment`. Read for ``mime_type``
+            and ``content_base64`` (decoded back to bytes for the
+            exchange write — the base64 step is the only available
+            handle on the bytes from this layer).
+    """
+    fx = get_file_exchange()
+    if fx is None or not fx.is_configured:
+        return None
+
+    origin_id = _stable_origin_id(path)
+    suffix = path.rsplit(".", 1)[-1] if "." in path else "bin"
+    mime_type = getattr(attachment, "mime_type", None) or "application/octet-stream"
+    content_b64 = getattr(attachment, "content_base64", "") or ""
+    try:
+        raw_bytes = base64.b64decode(content_b64) if content_b64 else b""
+    except (ValueError, TypeError):
+        # Defensive — read_attachment produces well-formed base64, but
+        # surfacing a corrupt-payload tracer here is more useful than a
+        # silently-half-built file_ref.
+        logger.warning("read: could not decode base64 for file_ref path=%r", path)
+        return None
+
+    try:
+        uri = fx.write_atomic(
+            origin_id=origin_id,
+            ext=suffix,
+            content=raw_bytes,
+            mime_type=mime_type,
+        )
+    except Exception:
+        # An exchange write failure must not break the ``read`` call —
+        # the legacy content_base64 path still works.  Log and omit the
+        # augmentation.
+        logger.exception("read: file_exchange write_atomic failed for %r", path)
+        return None
+
+    transfer: dict[str, dict[str, str]] = {"exchange": {"uri": uri}}
+    transfer["http"] = {"tool": "create_download_link"}
+    return {
+        "origin_server": fx.namespace,
+        "origin_id": path,
+        "mime_type": mime_type,
+        "size_bytes": getattr(attachment, "size_bytes", len(raw_bytes)),
+        "transfer": transfer,
+    }
+
+
+async def _fetch_via_exchange(
+    uri: str, advertised_mime: str | None
+) -> tuple[bytes, str | None]:
+    """Resolve an ``exchange://`` URI against the local FileExchange.
+
+    Args:
+        uri: The full ``exchange://`` URI.
+        advertised_mime: Optional MIME hint from the producer's
+            file_ref; passed through to the result so the caller can
+            log/return it.
+
+    Returns:
+        ``(bytes, content_type)`` — content_type is the producer's
+        hint (or ``None`` if absent), since on-disk exchange files
+        carry no MIME metadata.
+
+    Raises:
+        FileExchangeConfigError: ``MCP_EXCHANGE_DIR`` is unset.
+        ExchangeGroupMismatch: URI's group differs from local.
+        ExchangeURIError: URI fails spec §6.3.
+        FileNotFoundError: The producer hasn't written the file (or it
+            expired).
+    """
+    from fastmcp_pvl_core import FileExchangeConfigError
+
+    fx = get_file_exchange()
+    if fx is None or not fx.is_configured:
+        raise FileExchangeConfigError(
+            f"Cannot resolve {uri!r}: MCP_EXCHANGE_DIR is not configured"
+        )
+    data = await asyncio.to_thread(fx.read_exchange_uri, uri)
+    logger.info(
+        "fetch_exchange uri=%s size=%d mime=%s",
+        uri,
+        len(data),
+        advertised_mime or "-",
+    )
+    return data, advertised_mime
+
+
+async def _fetch_via_http(
+    url: str,
+    path: str,
+    timeout_s: float,
+    collection: Collection,
+) -> tuple[bytes, str | None]:
+    """Stream-download an HTTP(S) URL and return ``(bytes, content_type)``."""
+    parsed = urlparse(url)
+    if parsed.scheme not in _ALLOWED_FETCH_SCHEMES:
+        raise ValueError(f"Only http and https URLs are allowed, got {parsed.scheme!r}")
+    if _is_private_url(url):
+        raise ValueError(
+            "URLs targeting private, loopback, or link-local addresses are not allowed."
+        )
+
+    try:
+        import httpx
+    except ImportError:
+        raise ImportError(
+            "The 'fetch' tool requires 'httpx'. Install it with:\n"
+            "  pip install 'markdown-vault-mcp[all]'\n"
+            "  # or: pip install httpx"
+        ) from None
+
+    is_markdown = path.endswith(".md")
+    # MCP layer is a trusted Collection consumer; no public size-limit getter.
+    max_bytes = (
+        0
+        if is_markdown or collection._max_attachment_size_mb <= 0
+        else int(collection._max_attachment_size_mb * 1024 * 1024)
+    )
+
+    chunks: list[bytes] = []
+    downloaded = 0
+    async with (
+        httpx.AsyncClient(timeout=timeout_s, follow_redirects=False) as client,
+        client.stream("GET", url) as response,
+    ):
+        response.raise_for_status()
+        content_type = response.headers.get("content-type")
+        async for chunk in response.aiter_bytes(chunk_size=65536):
+            downloaded += len(chunk)
+            if max_bytes > 0 and downloaded > max_bytes:
+                raise ValueError(
+                    f"Download exceeded the attachment size limit "
+                    f"of {collection._max_attachment_size_mb} MB "
+                    f"({max_bytes} bytes). Raise "
+                    "MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB or "
+                    "set it to 0 to disable the limit."
+                )
+            chunks.append(chunk)
+
+    raw_bytes = b"".join(chunks)
+
+    # Redact userinfo + query string before logging — pre-signed URLs and
+    # API tokens often live there.
+    safe_url = urlunparse(
+        parsed._replace(
+            netloc=(
+                f"{parsed.hostname}:{parsed.port}"
+                if parsed.port
+                else (parsed.hostname or "")
+            ),
+            query="",
+            fragment="",
+        )
+    )
+    logger.info("fetch_http downloaded=%d url=%s path=%s", downloaded, safe_url, path)
+    return raw_bytes, content_type
+
+
 def _register_download_link_tool(mcp: FastMCP) -> None:
     """Register the ``create_download_link`` tool on *mcp*.
 
@@ -1460,8 +1685,9 @@ def _register_download_link_tool(mcp: FastMCP) -> None:
         },
     )
     async def create_download_link(
-        path: str,
+        path: str | None = None,
         ttl_seconds: int = 300,
+        origin_id: str | None = None,
         collection: Collection = Depends(get_collection),
     ) -> str:
         """Create a one-time download URL for a vault file.
@@ -1481,10 +1707,17 @@ def _register_download_link_tool(mcp: FastMCP) -> None:
         Args:
             path: Vault-relative path to the file (e.g.
                 ``"notes/report.md"`` or ``"assets/diagram.png"``).
+                Canonical name for human callers.
             ttl_seconds: Link lifetime in seconds (default 300 / 5
                 minutes).  Each token now carries its own TTL — the
                 value returned in ``expires_in_seconds`` matches the
                 value requested here.
+            origin_id: Spec §3.1 round-trip alias for ``path``. The MCP
+                File Exchange v0.3 spec requires producer tools to
+                accept the opaque handle the server emitted in
+                ``file_ref.origin_id`` (which, for this server, is the
+                vault path). Pass either ``path`` or ``origin_id``;
+                supplying both is rejected.
 
         Returns:
             JSON-encoded string with the following fields:
@@ -1496,10 +1729,25 @@ def _register_download_link_tool(mcp: FastMCP) -> None:
             - content_type (str): MIME type of the file.
 
         Raises:
-            ValueError: If the path does not exist or fails validation.
+            ValueError: If neither ``path`` nor ``origin_id`` is supplied,
+                if both are supplied with different values, if the path
+                does not exist, or if it fails validation.
             RuntimeError: If the server has no ``base_url`` configured
                 (i.e. ``MARKDOWN_VAULT_MCP_BASE_URL`` is unset).
         """
+        if path is None and origin_id is None:
+            raise ValueError("either 'path' or 'origin_id' is required")
+        if path is not None and origin_id is not None and path != origin_id:
+            raise ValueError(
+                "'path' and 'origin_id' were both supplied with different "
+                "values; pass only one (or matching values)"
+            )
+        path = path if path is not None else origin_id
+        # ``path`` is non-None after the branches above; help mypy by
+        # narrowing.  The first ``if`` returned, the second normalised
+        # mismatch, and ``path = ... or origin_id`` resolves to a str.
+        assert path is not None
+
         if ttl_seconds <= 0:
             msg = "ttl_seconds must be a positive integer"
             raise ValueError(msg)

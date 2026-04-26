@@ -10,12 +10,21 @@ services:
     volumes:
       - ${MARKDOWN_VAULT_MCP_SOURCE_DIR:?Set MARKDOWN_VAULT_MCP_SOURCE_DIR}:/data/vault
       - state-data:/data/state
+      # --- MCP File Exchange v0.3 ---
+      # Uncomment + share this volume with peer MCP servers (e.g.
+      # image-mcp, paperless-mcp) to enable zero-cost file transfer
+      # over a shared filesystem instead of routing bytes through the
+      # LLM context. Mount the same `mcp-exchange` named volume into
+      # each peer container at the same path.
+      # - mcp-exchange:/data/exchange
     environment:
       MARKDOWN_VAULT_MCP_SOURCE_DIR: /data/vault
       MARKDOWN_VAULT_MCP_INDEX_PATH: /data/state/index.db
       MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH: /data/state/embeddings/embeddings
       MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR: /data/state/fastembed
       FASTMCP_HOME: /data/state/fastmcp
+      # MCP_EXCHANGE_DIR: /data/exchange
+      # MCP_EXCHANGE_NAMESPACE: markdown-vault-mcp
     restart: unless-stopped
     labels:
       - "traefik.enable=true"
@@ -24,3 +33,4 @@ services:
 
 volumes:
   state-data:
+  # mcp-exchange:

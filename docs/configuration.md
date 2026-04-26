@@ -116,6 +116,25 @@ Optional token-based authentication for HTTP deployments. OIDC activates when al
 | `MARKDOWN_VAULT_MCP_OIDC_REQUIRED_SCOPES` | csv | `openid` | Comma-separated required scopes |
 | `MARKDOWN_VAULT_MCP_OIDC_VERIFY_ACCESS_TOKEN` | bool | `false` | Set `true` to verify the upstream access token as JWT instead of the id token. Only needed when your provider issues JWT access tokens and you require audience-claim validation on that token |
 
+## File Exchange
+
+The MCP File Exchange v0.3 protocol (spec lives in `fastmcp-pvl-core`) lets a producer/consumer pair of MCP servers move binary files through a shared filesystem volume — bypassing the LLM context entirely. When `MCP_EXCHANGE_DIR` points at a directory writable by every server in the same exchange group, this server:
+
+- Augments `read` results for binary attachments with a `file_ref` block carrying an `exchange://` URI.
+- Resolves `exchange://` URIs and `file_ref` blocks passed to `fetch` by reading bytes directly from the volume.
+- Advertises `experimental.file_exchange` in the MCP `initialize` response so peers can discover the capability.
+- Sweeps expired files under its own namespace every 5 minutes and one final time at shutdown.
+
+The three environment variables are **unprefixed** because the deployer (not the server) owns the shared volume:
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `MCP_EXCHANGE_DIR` | No | Path to a directory shared across the exchange group (e.g. a Docker named volume mounted at `/data/exchange` in every container). When unset, the server still advertises the `http` transfer method and accepts http(s) URLs in `fetch`, but no `file_ref.exchange` blocks are emitted. |
+| `MCP_EXCHANGE_NAMESPACE` | No | Namespace this server owns under `$MCP_EXCHANGE_DIR/`. Defaults to the server name (`markdown-vault-mcp`). Set explicitly when running multiple instances of this image. |
+| `MCP_EXCHANGE_ID` | No | Override the auto-generated exchange-group ID. The first server to start in a fresh `$MCP_EXCHANGE_DIR` writes a random UUID to `.exchange-id`; later starts read it. Pin only when wiring up a peer that already has an `.exchange-id`. |
+
+See the [Sharing files with other MCP servers](guides/file-exchange.md) guide for an end-to-end Docker Compose walkthrough.
+
 ## Boolean Parsing
 
 Boolean environment variables accept `true`, `1`, or `yes` (case-insensitive) as truthy. Everything else is treated as `false`.

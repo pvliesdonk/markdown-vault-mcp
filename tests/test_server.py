@@ -1193,7 +1193,7 @@ class TestFetchTool:
         """file:// URLs are rejected (SSRF protection)."""
         server = make_server()
         async with Client(server) as client:
-            with pytest.raises(ToolError, match="http and https"):
+            with pytest.raises(ToolError, match="Unsupported URL scheme"):
                 await client.call_tool(
                     "fetch",
                     {"url": "file:///etc/passwd", "path": "stolen.md"},
@@ -1205,7 +1205,7 @@ class TestFetchTool:
         """ftp:// URLs are rejected."""
         server = make_server()
         async with Client(server) as client:
-            with pytest.raises(ToolError, match="http and https"):
+            with pytest.raises(ToolError, match="Unsupported URL scheme"):
                 await client.call_tool(
                     "fetch",
                     {"url": "ftp://example.com/file.txt", "path": "file.md"},

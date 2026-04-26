@@ -44,14 +44,40 @@ vault becomes another.
 ## Shared Infrastructure
 
 Generic FastMCP infrastructure (auth providers, middleware stack, logging
-bootstrap, server-factory helpers, artifact store, CLI helpers) lives in the
-`fastmcp-pvl-core` PyPI package. markdown-vault-mcp composes this library
-via `ServerConfig` (never inheritance) and imports the building blocks
-directly — see `make_server()` in `src/markdown_vault_mcp/server.py` for the
-assembled call graph.
+bootstrap, server-factory helpers, artifact store, file-exchange runtime,
+CLI helpers) lives in the `fastmcp-pvl-core` PyPI package. markdown-vault-mcp
+composes this library via `ServerConfig` (never inheritance) and imports
+the building blocks directly — see `make_server()` in
+`src/markdown_vault_mcp/server.py` for the assembled call graph.
 
 Design spec: `docs/superpowers/specs/2026-04-20-fastmcp-core-and-copier-template-design.md`.
 Adoption plan: `docs/superpowers/plans/2026-04-20-fastmcp-pvl-core-extraction.md`.
+
+### MCP File Exchange v0.3 role
+
+This server is **both** a producer and a consumer in the file-exchange
+spec (see `fastmcp-pvl-core/docs/specs/file-exchange.md`):
+
+- **Producer.** When `MCP_EXCHANGE_DIR` is configured, binary
+  attachment reads (`read("assets/foo.png")`) write the bytes to
+  `$MCP_EXCHANGE_DIR/markdown-vault-mcp/<sha256-prefix>.png` and
+  attach a `file_ref` block to the tool result. The HTTP transfer
+  method (`create_download_link`) is also advertised so consumers
+  without a shared volume can still pick the file up.
+- **Consumer.** `fetch` accepts `exchange://` URIs and `file_ref`
+  envelopes in addition to `http(s)://` URLs. When given a `file_ref`,
+  the resolver prefers the `exchange` transfer entry and only falls
+  back to the producer's `http.tool` when no shared volume is
+  configured.
+
+Capability declaration runs through
+`fastmcp_pvl_core.register_file_exchange_capability` — the
+`experimental.file_exchange` block in the MCP `initialize` response
+advertises the namespace, exchange-group ID, supported MIME types,
+and active transfer methods. The `FileExchange` runtime is owned by
+`src/markdown_vault_mcp/_file_exchange.py` (process-wide singleton +
+periodic sweep timer); the lifespan stops the timer and runs one
+final sweep before `Collection.close()`.
 
 ## Architecture
 

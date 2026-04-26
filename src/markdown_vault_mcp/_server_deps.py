@@ -17,6 +17,8 @@ from fastmcp.server.lifespan import lifespan
 
 from markdown_vault_mcp.collection import Collection
 
+from ._file_exchange import get_file_exchange, stop_sweep_timer
+
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
@@ -85,6 +87,19 @@ def make_collection_lifespan(config: CollectionConfig) -> Any:
         try:
             yield {"collection": collection, "config": config}
         finally:
+            # File-exchange teardown runs before Collection.close() so a
+            # late tool invocation racing the shutdown still sees a
+            # consistent producer state.  The final sweep releases any
+            # files past their TTL one more time before the process
+            # exits — orphan cleanup that the periodic timer would
+            # otherwise have to wait one interval to do.
+            stop_sweep_timer()
+            fx = get_file_exchange()
+            if fx is not None and fx.is_configured:
+                try:
+                    fx.sweep()
+                except Exception:
+                    logger.exception("file_exchange final sweep failed")
             collection.close()
             logger.info("Collection shut down")
 
