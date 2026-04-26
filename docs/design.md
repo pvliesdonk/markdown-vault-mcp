@@ -1218,7 +1218,7 @@ For MCP server deployment:
 | `MARKDOWN_VAULT_MCP_GIT_COMMIT_EMAIL` | Committer email for auto-commits | `noreply@markdown-vault-mcp` |
 | `MARKDOWN_VAULT_MCP_GIT_LFS` | Run `git lfs pull` on startup to resolve LFS pointer files | `true` |
 | `MARKDOWN_VAULT_MCP_BEARER_TOKEN` | Static bearer token for simple auth — clients send `Authorization: Bearer <token>` | none |
-| `MARKDOWN_VAULT_MCP_BASE_URL` | Server's public URL — required for OIDC auth and `create_download_link` (e.g. `https://mcp.example.com`) | none |
+| `MARKDOWN_VAULT_MCP_BASE_URL` | Server's public URL — required for OIDC auth, MCP Apps, and any tool that emits absolute URLs (e.g. `https://mcp.example.com`) | none |
 | `MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL` | OIDC discovery URL (`/.well-known/openid-configuration`) | none |
 | `MARKDOWN_VAULT_MCP_OIDC_CLIENT_ID` | OIDC client ID registered with the provider | none |
 | `MARKDOWN_VAULT_MCP_OIDC_CLIENT_SECRET` | OIDC client secret | none |

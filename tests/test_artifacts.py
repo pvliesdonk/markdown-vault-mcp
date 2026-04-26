@@ -21,9 +21,9 @@ from typing import TYPE_CHECKING
 import pytest
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
+from fastmcp_pvl_core import ArtifactStore
 from starlette.testclient import TestClient
 
-from markdown_vault_mcp.artifacts import ARTIFACT_TTL_SECONDS, ArtifactStore
 from markdown_vault_mcp.server import make_server
 
 if TYPE_CHECKING:
@@ -151,14 +151,15 @@ class TestCreateDownloadLinkTool:
         data = json.loads(result.content[0].text)
         assert data["content_type"] == "image/png"
 
-    async def test_expires_in_seconds_echoes_store_ttl(
+    async def test_expires_in_seconds_echoes_requested_ttl(
         self, _artifact_vault: Path
     ) -> None:
-        """The response field reports the store's actual TTL, not the request's.
+        """The response echoes the requested ``ttl_seconds`` exactly.
 
-        Core's ArtifactStore enforces a single process-wide TTL; the tool's
-        ``ttl_seconds`` argument is accepted for backward-compat and
-        validation but does not vary the expiry per token.
+        Core's ArtifactStore now supports per-token TTL via
+        :meth:`ArtifactStore.put_ephemeral`, so the value the caller
+        asked for is the value they get back — no more "requested vs
+        effective" gap.
         """
         server = make_server(transport="http")
         async with Client(server) as client:
@@ -167,15 +168,29 @@ class TestCreateDownloadLinkTool:
                 {"path": "note.md", "ttl_seconds": 120},
             )
         data = json.loads(result.content[0].text)
-        assert data["expires_in_seconds"] == ARTIFACT_TTL_SECONDS
+        assert data["expires_in_seconds"] == 120
 
     async def test_raises_on_missing_base_url(
         self, _artifact_vault: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        """Without BASE_URL the server skips store construction and the tool fails.
+
+        The route + module-level singleton are gated on ``base_url`` at
+        ``make_server`` time (see :func:`server.make_server`), so calling
+        the tool surfaces core's "ArtifactStore not configured" error
+        rather than a tool-side BASE_URL check.
+        """
+        # Clear the singleton — earlier tests (including the autouse
+        # _artifact_vault fixture) may have left a store registered, and
+        # the production make_server skips construction when base_url is
+        # absent, so the leftover would mask the failure path.
+        import fastmcp_pvl_core._artifacts as _core_artifacts
+
+        monkeypatch.setattr(_core_artifacts, "_artifact_store", None)
         monkeypatch.delenv("MARKDOWN_VAULT_MCP_BASE_URL", raising=False)
         server = make_server(transport="http")
         async with Client(server) as client:
-            with pytest.raises(ToolError, match="MARKDOWN_VAULT_MCP_BASE_URL"):
+            with pytest.raises(ToolError, match="ArtifactStore not configured"):
                 await client.call_tool("create_download_link", {"path": "note.md"})
 
     async def test_raises_on_zero_ttl(self, _artifact_vault: Path) -> None:
@@ -315,8 +330,13 @@ class TestCreateServerArtifactRoute:
         (vault / "note.md").write_text("# Note\n")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault))
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "true")
+        # The route is gated on base_url at make_server time, so the
+        # registration tests need BASE_URL set even though they don't
+        # invoke the tool.
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_BASE_URL", "https://mcp.example.com")
         for var in _CLEAR_VARS:
-            monkeypatch.delenv(var, raising=False)
+            if var != "MARKDOWN_VAULT_MCP_BASE_URL":
+                monkeypatch.delenv(var, raising=False)
 
     def test_artifact_route_not_registered_for_stdio(self) -> None:
         server = make_server(transport="stdio")
@@ -339,7 +359,7 @@ class TestCreateServerArtifactRoute:
         TestArtifactHandler's hand-rolled handler and core's
         ArtifactStore.register_route implementation.
         """
-        from markdown_vault_mcp.artifacts import get_artifact_store
+        from fastmcp_pvl_core import get_artifact_store
 
         server = make_server(transport="http")
         store = get_artifact_store()
@@ -359,20 +379,17 @@ class TestCreateServerArtifactRoute:
 class TestGetArtifactStoreUninitialised:
     """get_artifact_store() must error rather than silently return None."""
 
-    def test_raises_runtime_error_when_store_unset(self) -> None:
+    def test_raises_runtime_error_when_store_unset(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         # Any prior test / make_server call may have set the singleton;
-        # clear it explicitly to exercise the uninitialised path, then
-        # restore afterwards.
-        import markdown_vault_mcp.artifacts as _artifacts_module
-        from markdown_vault_mcp.artifacts import (
-            get_artifact_store,
-            set_artifact_store,
-        )
+        # clear it explicitly to exercise the uninitialised path. The
+        # ``set_artifact_store`` helper only accepts a real store, so
+        # poke the underlying module global directly via monkeypatch
+        # (which restores it after the test).
+        import fastmcp_pvl_core._artifacts as _core_artifacts
+        from fastmcp_pvl_core import get_artifact_store
 
-        saved = _artifacts_module._artifact_store
-        try:
-            set_artifact_store(None)
-            with pytest.raises(RuntimeError, match="ArtifactStore not initialised"):
-                get_artifact_store()
-        finally:
-            _artifacts_module._artifact_store = saved
+        monkeypatch.setattr(_core_artifacts, "_artifact_store", None)
+        with pytest.raises(RuntimeError, match="ArtifactStore not configured"):
+            get_artifact_store()

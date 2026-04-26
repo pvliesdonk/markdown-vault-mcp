@@ -25,6 +25,7 @@ from fastmcp_pvl_core import (
     ServerConfig,
     build_auth,
     resolve_auth_mode,
+    set_artifact_store,
     wire_middleware_stack,
 )
 from fastmcp_pvl_core import (
@@ -189,18 +190,14 @@ def make_server(transport: str = "stdio") -> FastMCP:
     )
 
     # --- Artifact download endpoint (HTTP transports only) ---
-    # The store is constructed here (not in lifespan) so the HTTP route
-    # closure can bind to a concrete instance.  The tool handler reaches
-    # the same instance via get_artifact_store() in markdown_vault_mcp.artifacts.
-    # Skipped entirely on stdio where the create_download_link tool isn't
-    # registered — no need to hold bytes in memory for a feature we don't expose.
-    if transport != "stdio":
-        from markdown_vault_mcp.artifacts import (
-            ARTIFACT_TTL_SECONDS,
-            set_artifact_store,
-        )
-
-        artifact_store = ArtifactStore(ttl_seconds=ARTIFACT_TTL_SECONDS)
+    # Construct the store here (not in lifespan) so the HTTP route closure
+    # can bind to a concrete instance. The tool handler reaches the same
+    # instance via fastmcp_pvl_core.get_artifact_store(). Skip when no
+    # base_url is configured: put_ephemeral needs it for URL construction,
+    # so registering the route without it would surface a confusing
+    # RuntimeError on first call instead of a startup-time skip.
+    if transport != "stdio" and config.base_url:
+        artifact_store = ArtifactStore(ttl_seconds=3600, base_url=config.base_url)
         set_artifact_store(artifact_store)
         ArtifactStore.register_route(mcp, artifact_store)
 

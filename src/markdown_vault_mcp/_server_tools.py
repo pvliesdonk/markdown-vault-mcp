@@ -1439,9 +1439,8 @@ def _register_download_link_tool(mcp: FastMCP) -> None:
     """
     import json
     import mimetypes
-    import os
 
-    from markdown_vault_mcp.config import _ENV_PREFIX
+    from fastmcp_pvl_core import get_artifact_store
 
     @mcp.tool(
         icons=_TOOL_ICONS["create_download_link"],
@@ -1473,40 +1472,27 @@ def _register_download_link_tool(mcp: FastMCP) -> None:
         Args:
             path: Vault-relative path to the file (e.g.
                 ``"notes/report.md"`` or ``"assets/diagram.png"``).
-            ttl_seconds: Requested link lifetime in seconds (default
-                300 / 5 minutes).  The server enforces a single
-                process-wide TTL on its artifact store; the actual
-                expiry returned in ``expires_in_seconds`` reflects that
-                store setting, which may differ from the requested
-                value.
+            ttl_seconds: Link lifetime in seconds (default 300 / 5
+                minutes).  Each token now carries its own TTL — the
+                value returned in ``expires_in_seconds`` matches the
+                value requested here.
 
         Returns:
             JSON-encoded string with the following fields:
 
             - download_url (str): One-time HTTP URL to download the file.
-            - expires_in_seconds (int): Link lifetime actually enforced
-              by the server (may differ from the requested
-              ``ttl_seconds``).
+            - expires_in_seconds (int): Link lifetime in seconds (echoes
+              the requested ``ttl_seconds``).
             - path (str): Vault-relative path of the served file.
             - content_type (str): MIME type of the file.
 
         Raises:
-            ValueError: If ``MARKDOWN_VAULT_MCP_BASE_URL`` is not
-                configured, the path does not exist, or the path
-                fails validation.
+            ValueError: If the path does not exist or fails validation.
+            RuntimeError: If the server has no ``base_url`` configured
+                (i.e. ``MARKDOWN_VAULT_MCP_BASE_URL`` is unset).
         """
         if ttl_seconds <= 0:
             msg = "ttl_seconds must be a positive integer"
-            raise ValueError(msg)
-
-        # Validate BASE_URL is configured
-        base_url = os.environ.get(f"{_ENV_PREFIX}_BASE_URL", "").strip().rstrip("/")
-        if not base_url:
-            msg = (
-                "MARKDOWN_VAULT_MCP_BASE_URL is required for download links. "
-                "Set it to the public base URL of this server "
-                "(e.g. https://mcp.example.com)."
-            )
             raise ValueError(msg)
 
         # Validate the path exists in the vault (also checks traversal).
@@ -1524,31 +1510,25 @@ def _register_download_link_tool(mcp: FastMCP) -> None:
             raise ValueError(f"File not found: {path}")
 
         # Eagerly read bytes so the HTTP handler doesn't touch disk at
-        # serve time — the artifact store stores (bytes, filename, mime).
+        # serve time — the artifact store keeps (bytes, filename, mime).
         data = await asyncio.to_thread(abs_path.read_bytes)
-        filename = abs_path.name
 
-        from markdown_vault_mcp.artifacts import (
-            ARTIFACT_TTL_SECONDS,
-            get_artifact_store,
+        download_url = get_artifact_store().put_ephemeral(
+            data,
+            content_type=content_type,
+            filename=abs_path.name,
+            ttl_seconds=ttl_seconds,
         )
-
-        store = get_artifact_store()
-        token = store.add(data, filename=filename, mime_type=content_type)
-        effective_ttl = ARTIFACT_TTL_SECONDS
-
-        download_url = f"{base_url}/artifacts/{token}"
         result = {
             "download_url": download_url,
-            "expires_in_seconds": effective_ttl,
+            "expires_in_seconds": ttl_seconds,
             "path": path,
             "content_type": content_type,
         }
         logger.info(
-            "Created download link path=%r size=%d requested_ttl=%ds effective_ttl=%ds",
+            "Created download link path=%r size=%d ttl=%ds",
             path,
             len(data),
             ttl_seconds,
-            effective_ttl,
         )
         return json.dumps(result, indent=2)
