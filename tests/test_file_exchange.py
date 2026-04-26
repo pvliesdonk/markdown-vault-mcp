@@ -215,6 +215,37 @@ class TestReadFileRefAugmentation:
         assert data is not None
         assert "file_ref" not in data
 
+    async def test_extension_extracted_from_filename_not_path(
+        self,
+        _exchange_env: tuple[Path, Path],
+    ) -> None:
+        """Dotted directory names don't break the exchange URI's extension.
+
+        Regression for Gemini's e92e98b finding: ``path.rsplit(".", 1)``
+        would have given ``"assets/diagram"`` (with a slash!) as the
+        "extension" for ``my.assets/diagram.png``.  ``PurePosixPath(path).name``
+        isolates the basename first.
+        """
+        vault, exchange_dir = _exchange_env
+        # Plant a file under a dotted directory name.
+        dotted_dir = vault / "my.assets"
+        dotted_dir.mkdir()
+        (dotted_dir / "diagram.png").write_bytes(b"\x89PNG" + b"\x00" * 16)
+
+        server = make_server(transport="http")
+        async with Client(server) as client:
+            result = await client.call_tool("read", {"path": "my.assets/diagram.png"})
+        data = result.structured_content
+        assert data is not None
+        assert "file_ref" in data
+        uri = data["file_ref"]["transfer"]["exchange"]["uri"]
+        # URI must end in `.png`, not `.assets/diagram.png` or similar
+        # mangled form.
+        assert uri.endswith(".png"), f"unexpected exchange URI: {uri!r}"
+        # And the on-disk file the URI points at should exist.
+        files = list((exchange_dir / "markdown-vault-mcp").glob("*.png"))
+        assert len(files) == 1
+
     async def test_stdio_file_ref_omits_http_transfer(
         self, _exchange_env: tuple[Path, Path]
     ) -> None:

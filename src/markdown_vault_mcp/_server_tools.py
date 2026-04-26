@@ -12,6 +12,7 @@ import hashlib
 import ipaddress
 import logging
 from dataclasses import asdict
+from pathlib import PurePosixPath
 from typing import Any, Literal, cast
 from urllib.parse import urlparse, urlunparse
 
@@ -1580,7 +1581,13 @@ def _build_attachment_file_ref(
     #   For this server that's the raw vault path so the LLM can pass
     #   it straight back to ``create_download_link(origin_id=...)``.
     uri_filename_id = _stable_origin_id(path)
-    suffix = path.rsplit(".", 1)[-1] if "." in path else "bin"
+    # Extract the extension from the filename only, not the whole path —
+    # ``"my.assets/image"`` would otherwise yield ``"assets/image"`` as
+    # the "extension". Vault paths are always forward-slash-separated
+    # (Collection enforces this), so ``PurePosixPath`` is correct
+    # cross-platform.
+    filename = PurePosixPath(path).name
+    suffix = filename.rsplit(".", 1)[-1] if "." in filename else "bin"
     mime_type = getattr(attachment, "mime_type", None) or "application/octet-stream"
 
     # Read raw bytes directly from disk rather than decoding the

@@ -97,7 +97,11 @@ def make_collection_lifespan(config: CollectionConfig) -> Any:
             fx = get_file_exchange()
             if fx is not None and fx.is_configured:
                 try:
-                    fx.sweep()
+                    # ``fx.sweep`` walks the namespace dir + stats every
+                    # entry — synchronous disk I/O. Offload so the
+                    # async lifespan cleanup doesn't block the event
+                    # loop while other shutdown tasks are draining.
+                    await asyncio.to_thread(fx.sweep)
                 except Exception:
                     logger.exception("file_exchange final sweep failed")
             collection.close()
