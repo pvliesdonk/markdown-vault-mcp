@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import fnmatch
 import json
 import logging
 import os
@@ -46,6 +47,7 @@ class ChangeTracker:
         self,
         source_dir: Path,
         glob_pattern: str = "**/*.md",
+        exclude_patterns: list[str] | None = None,
     ) -> ChangeSet:
         """Compare files on disk against stored state and return the delta.
 
@@ -53,25 +55,34 @@ class ChangeTracker:
 
         1. Load existing state (empty dict if state file does not exist).
         2. Scan *source_dir* for all files matching *glob_pattern*.
-        3. Compute SHA256 of each file's raw bytes.
-        4. Categorise each path:
+        3. Skip files matching any pattern in *exclude_patterns*.
+        4. Compute SHA256 of each file's raw bytes.
+        5. Categorise each path:
 
            - present on disk but absent from state → **added**
            - present in both and hash differs → **modified**
            - present in state but absent from disk → **deleted**
            - present in both and hash matches → **unchanged** (counted only)
 
-        5. Return a :class:`~markdown_vault_mcp.types.ChangeSet`.
+        6. Return a :class:`~markdown_vault_mcp.types.ChangeSet`.
 
         Args:
             source_dir: Root directory of the markdown collection.
             glob_pattern: Glob pattern used to discover files, relative to
                 *source_dir*. Defaults to ``"**/*.md"``.
+            exclude_patterns: Optional list of :func:`fnmatch.fnmatch` glob
+                patterns matched against each file's relative POSIX path.
+                Files matching any pattern are skipped from the disk scan
+                (not hashed, not reported in ``added``/``modified``) and are
+                kept out of ``deleted`` even if a stale entry for them exists
+                in the stored state. Mirrors
+                :func:`~markdown_vault_mcp.scanner.scan_directory` semantics.
 
         Returns:
             A :class:`~markdown_vault_mcp.types.ChangeSet` describing the delta.
         """
         stored_state = self._load_state()
+        exclude_patterns = exclude_patterns or []
 
         # Build a mapping of relative path → sha256 for current disk contents.
         disk_state: dict[str, str] = {}
@@ -82,6 +93,13 @@ class ChangeTracker:
                 rel_str = abs_path.relative_to(source_dir).as_posix()
             except ValueError:
                 logger.warning("File outside source_dir, skipping: %s", abs_path)
+                continue
+            if exclude_patterns and any(
+                fnmatch.fnmatch(rel_str, pat) for pat in exclude_patterns
+            ):
+                logger.debug(
+                    "detect_changes: excluding %s (matched exclude pattern)", rel_str
+                )
                 continue
             try:
                 content_hash = self._compute_hash(abs_path)
@@ -102,8 +120,17 @@ class ChangeTracker:
             else:
                 unchanged += 1
 
+        # Excluded paths in stored_state are kept as-is (not marked deleted),
+        # so the caller's purge pass (see Collection.reindex) can distinguish
+        # "file gone from disk" from "file still on disk but now excluded".
         deleted: list[str] = [
-            rel_path for rel_path in stored_state if rel_path not in disk_state
+            rel_path
+            for rel_path in stored_state
+            if rel_path not in disk_state
+            and not (
+                exclude_patterns
+                and any(fnmatch.fnmatch(rel_path, pat) for pat in exclude_patterns)
+            )
         ]
 
         logger.debug(

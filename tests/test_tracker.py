@@ -335,6 +335,121 @@ class TestSaveStateFailure:
         assert leftover == [], f"Leftover tmp files: {leftover}"
 
 
+class TestExcludePatterns:
+    """Verifies that ``exclude_patterns`` filters files from the scan and
+    protects stale state entries from the ``deleted`` bucket. Issue #257."""
+
+    def test_excluded_files_not_in_added(self, tmp_path: Path) -> None:
+        """Files matching an exclude pattern are not reported as added."""
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        _write_md(vault, "note.md")
+        _write_md(vault, ".claude/agents/knowledge-gaps.md")
+        _write_md(vault, ".obsidian/workspace.md")
+
+        tracker = ChangeTracker(tmp_path / "state.json")
+        changes = tracker.detect_changes(
+            vault, exclude_patterns=[".claude/**", ".obsidian/**"]
+        )
+
+        assert "note.md" in changes.added
+        assert ".claude/agents/knowledge-gaps.md" not in changes.added
+        assert ".obsidian/workspace.md" not in changes.added
+        assert changes.modified == []
+        assert changes.deleted == []
+
+    def test_excluded_files_not_hashed(self, tmp_path: Path) -> None:
+        """Excluded files are skipped during the scan and never hashed.
+
+        Verified by patching ``_compute_hash`` and asserting it is only called
+        for the non-excluded file.
+        """
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        _write_md(vault, "kept.md")
+        _write_md(vault, "excluded/leak.md")
+
+        tracker = ChangeTracker(tmp_path / "state.json")
+        with patch.object(
+            tracker, "_compute_hash", wraps=tracker._compute_hash
+        ) as spy:
+            tracker.detect_changes(vault, exclude_patterns=["excluded/**"])
+
+        called_files = {call.args[0].name for call in spy.call_args_list}
+        assert called_files == {"kept.md"}
+
+    def test_excluded_files_not_in_modified(self, tmp_path: Path) -> None:
+        """A previously seen file that matches a pattern is not reported as
+        modified, even if its content changed."""
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        md = _write_md(vault, ".obsidian/workspace.md", "v1\n")
+        old_hash = hashlib.sha256(md.read_bytes()).hexdigest()
+
+        # Seed state with the old hash so the tracker thinks it has seen the
+        # file before.
+        state_path = tmp_path / "state.json"
+        state_path.write_text(
+            json.dumps({".obsidian/workspace.md": old_hash}), encoding="utf-8"
+        )
+
+        # Modify file then detect changes with the exclude pattern.
+        md.write_text("v2\n", encoding="utf-8")
+        tracker = ChangeTracker(state_path)
+        changes = tracker.detect_changes(vault, exclude_patterns=[".obsidian/**"])
+
+        assert changes.added == []
+        assert changes.modified == []
+        # Stale state entry must NOT be reported as deleted either (the file
+        # still exists on disk, it is just excluded).
+        assert changes.deleted == []
+
+    def test_excluded_stale_entry_not_deleted(self, tmp_path: Path) -> None:
+        """Stale state entries pointing at excluded files are kept out of
+        ``deleted`` even when the file is gone from disk.
+
+        Rationale: if a file was renamed *into* an excluded subtree, the
+        previous index entry should be purged by the caller via a separate
+        stale-doc pass (Collection.reindex), not by ChangeTracker. Keeping
+        excluded paths out of ``deleted`` makes that contract explicit.
+        """
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        _write_md(vault, "still.md")
+
+        state_path = tmp_path / "state.json"
+        state_path.write_text(
+            json.dumps({
+                "still.md": hashlib.sha256(
+                    (vault / "still.md").read_bytes()
+                ).hexdigest(),
+                ".trash/old.md": "0" * 64,
+            }),
+            encoding="utf-8",
+        )
+
+        tracker = ChangeTracker(state_path)
+        changes = tracker.detect_changes(vault, exclude_patterns=[".trash/**"])
+
+        assert ".trash/old.md" not in changes.deleted
+        assert changes.deleted == []
+
+    def test_no_exclude_patterns_preserves_legacy_behaviour(
+        self, tmp_path: Path
+    ) -> None:
+        """Calling detect_changes without exclude_patterns matches v1.6.0
+        semantics: every markdown file under source_dir is reported."""
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        _write_md(vault, "a.md")
+        _write_md(vault, ".obsidian/workspace.md")
+
+        tracker = ChangeTracker(tmp_path / "state.json")
+        changes = tracker.detect_changes(vault)
+
+        assert set(changes.added) == {"a.md", ".obsidian/workspace.md"}
+
+
 class TestStateFileFormat:
     def test_state_file_format_is_path_to_hash(self, tmp_path: Path) -> None:
         """The JSON state file maps relative path strings to SHA256 hex strings."""

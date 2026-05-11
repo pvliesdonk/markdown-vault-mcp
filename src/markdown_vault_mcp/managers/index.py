@@ -296,7 +296,10 @@ class IndexManager:
             of changes applied.
         """
         # Phase 1: scan (outside lock — read-only filesystem walk + hashing).
-        changes = self._tracker.detect_changes(self._source_dir)
+        # Pass exclude_patterns so excluded files are not hashed (perf #257).
+        changes = self._tracker.detect_changes(
+            self._source_dir, exclude_patterns=self._exclude_patterns
+        )
         logger.info(
             "reindex: %d added, %d modified, %d deleted, %d unchanged",
             len(changes.added),
