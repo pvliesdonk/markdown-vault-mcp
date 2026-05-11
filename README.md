@@ -167,6 +167,16 @@ For reverse proxy (Traefik) and deployment setup, see [`docs/deployment.md`](doc
 
 The server registers a built-in `get_server_info` tool (via `fastmcp_pvl_core.register_server_info_tool`) so operators can confirm the deployed version with a single MCP call. The response carries `server_name`, `server_version`, and `core_version`. Wire upstream version reporting (when applicable) inside the `DOMAIN-UPSTREAM-START` / `DOMAIN-UPSTREAM-END` sentinel in `src/markdown_vault_mcp/server.py`.
 
+### File exchange
+
+The server scaffolds [MCP File Exchange](docs/guides/file-exchange.md)
+wiring — download direction is registered by default (on for HTTP/SSE,
+off for stdio); an upload direction ships fully commented-out for
+opt-in via `register_file_exchange_upload(...)`. See the guide for
+producing / consuming / uploading patterns and the env-var matrix, or
+[`CLAUDE.md`](CLAUDE.md#file-exchange-register_file_exchange--opt-in-upload)
+for the wiring pattern.
+
 ## Configuration
 
 All configuration is via environment variables with the `MARKDOWN_VAULT_MCP_` prefix (except embedding provider settings, which use their own conventions).
