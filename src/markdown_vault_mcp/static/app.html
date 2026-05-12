@@ -387,7 +387,7 @@ if(__exports != exports)module.exports = exports;return module.exports}));
     font-size: 12px; cursor: not-allowed; opacity: 0.6; font-family: inherit;
   }
 </style>
-<!-- vendor-spa-source-sha256:36e5b23914e3f7451e50e5f1968d9cbbdbf22c54eb8ddd58a530ace0c722e252 -->
+<!-- vendor-spa-source-sha256:7959dd094b0e71d5391719c2da490122fb7cd14d6ee2a32db6bd0d56be30852b -->
 </head>
 <body>
 <div class="app-container">
@@ -1298,7 +1298,7 @@ app.onteardown = () => {
     searchClear.style.display = '';
     try {
       const result = await app.callServerTool({
-        name: 'vault___vault_search', arguments: { query, mode: 'keyword', limit: 20 }
+        name: 'vault___vault_search', arguments: { query, mode: 'hybrid', limit: 20 }
       });
       const data = parseToolResult(result) || [];
       treeEl.innerHTML = '';

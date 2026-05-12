@@ -1180,7 +1180,7 @@ app.onteardown = () => {
     searchClear.style.display = '';
     try {
       const result = await app.callServerTool({
-        name: 'vault___vault_search', arguments: { query, mode: 'keyword', limit: 20 }
+        name: 'vault___vault_search', arguments: { query, mode: 'hybrid', limit: 20 }
       });
       const data = parseToolResult(result) || [];
       treeEl.innerHTML = '';

@@ -1511,7 +1511,11 @@ MCP Apps are browser-based views that MCP clients supporting the protocol can re
 | `_vault_graph_hubs` | Returns `{nodes, edges}` for the most-linked hub notes |
 | `_vault_list` | Returns `{folders, notes}` for a vault directory |
 | `_vault_read` | Returns note content, frontmatter, and metadata |
-| `_vault_search` | Returns keyword search results with snippets |
+| `_vault_search` | Returns search results with snippets (default mode `hybrid`) |
+
+**View navigation behavior**: backlinks, outlinks, and similar-note items rendered inside the Context Card are clickable, and a click loads that note's context **in the same Context Card view** rather than switching the active view. A dedicated "Open in Browser" button (`ctx-browse-btn`) is the only path that calls `navigateTo('browse', {path})` to switch into the Vault Browser. This supersedes any earlier wording that suggested item clicks themselves perform cross-view navigation — keeping the click in-view preserves an exploration flow without losing scroll position or the surrounding dossier.
+
+**Host context updates**: the Graph Explorer calls `app.updateContext(...)` whenever the active note or the visible neighborhood changes, supplying the active path, title, visible node count, and visible link count. The exact wording of the string is an implementation detail of the SPA; clients should read the structured fields (path/title/counts) rather than parse the string.
 
 **Vendored dependencies** (bundled inline at build time via `scripts/vendor_spa.py`):
 - `vis-network` — force-directed graph rendering for Graph Explorer
