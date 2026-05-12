@@ -1838,7 +1838,7 @@ class GitWriteStrategy:
                             if abort_proc.returncode != 0:
                                 logger.error(
                                     "Git pull: failed to abort rebase: %s",
-                                    (abort_proc.stderr or "").strip(),
+                                    self._redact((abort_proc.stderr or "").strip()),
                                 )
                             # After abort, the working tree reverts to the
                             # pre-rebase state (MCP commits), so the original
