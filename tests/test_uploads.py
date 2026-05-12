@@ -321,10 +321,11 @@ class TestUploadEndToEnd:
                 f"got {response.status_code}: {response.text}"
             )
 
+    @pytest.mark.parametrize("http_transport", ["http", "sse", "streamable-http"])
     async def test_create_upload_link_registered_via_make_server_arg(
-        self, _upload_vault: Path
+        self, _upload_vault: Path, http_transport: str
     ) -> None:
-        """``create_upload_link`` is registered when ``make_server`` gets ``transport="http"``.
+        """``create_upload_link`` is registered for every HTTP-flavoured transport.
 
         Regression test for the ``transport="auto"`` footgun: pvl-core's
         ``register_file_exchange_upload(transport="auto")`` reads
@@ -335,15 +336,20 @@ class TestUploadEndToEnd:
         derive ``fx_transport`` from its own ``transport`` arg and pass it
         through explicitly.
 
+        Also a regression test for #459: ``"streamable-http"`` previously
+        fell through to ``fx_transport="stdio"`` and disabled the upload
+        route silently for third-party embedders calling ``make_server``
+        with that value.
+
         ``_upload_vault`` clears both env vars (see ``_CLEAR_VARS``) so
         this test fails if ``make_server`` ever regresses to passing
         ``"auto"``.
         """
-        server = make_server(transport="http")
+        server = make_server(transport=http_transport)
         async with Client(server) as client:
             tools = await client.list_tools()
             tool_names = {tool.name for tool in tools}
             assert "create_upload_link" in tool_names, (
-                f"create_upload_link not registered (transport wiring regression?). "
+                f"create_upload_link not registered for transport={http_transport!r}. "
                 f"Registered tools: {sorted(tool_names)}"
             )

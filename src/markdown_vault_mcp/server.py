@@ -288,7 +288,9 @@ def make_server(transport: str = "stdio") -> FastMCP:
     # without also exporting one of those env vars.  The CLI knows the
     # transport from its own ``--transport`` flag and passes it to
     # ``make_server``, so we have the authoritative value here.
-    fx_transport: str = "http" if transport in ("http", "sse") else "stdio"
+    fx_transport: str = (
+        "http" if transport in ("http", "sse", "streamable-http") else "stdio"
+    )
     register_file_exchange_upload(
         mcp,
         namespace="markdown-vault-mcp",
