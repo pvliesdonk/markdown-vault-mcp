@@ -1053,8 +1053,9 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
                 Omit for full history.
             until: ISO 8601 datetime string or git date expression, passed as
                 --until to git log. Both 'since' and 'until' boundaries are
-                inclusive: a commit whose author date equals either endpoint
-                is included in the result. Omit to disable the upper bound.
+                inclusive: a commit whose committer date equals either
+                endpoint is included in the result. Omit to disable the upper
+                bound.
             limit: Maximum number of commits to return. Default 20, max 100.
 
         Returns:

@@ -2044,8 +2044,8 @@ class GitWriteStrategy:
                 *since*).  ``None`` disables the filter.  When both *since*
                 and *until* are given the window is bounded on both sides,
                 inclusive at both endpoints (git's ``--since`` / ``--until``
-                semantics: a commit whose author date equals either boundary
-                is included).
+                semantics: a commit whose committer date equals either
+                boundary is included).
 
         Returns:
             List of :class:`HistoryEntry` ordered from newest to oldest.

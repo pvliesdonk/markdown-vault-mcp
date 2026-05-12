@@ -789,7 +789,7 @@ class Collection:
             until: ISO 8601 datetime string or git date expression, passed as
                 ``--until`` to ``git log``.  ``None`` disables the filter.
                 Both ``since`` and ``until`` boundaries are **inclusive**: a
-                commit whose author date equals either endpoint is included
+                commit whose committer date equals either endpoint is included
                 in the result.
             limit: Maximum number of commits to return.  Clamped to
                 ``[1, 100]``.  Defaults to ``20``.
