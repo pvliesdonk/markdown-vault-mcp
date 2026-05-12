@@ -510,7 +510,11 @@ class HistoryEntry:
         timestamp: ISO 8601 commit timestamp.
         author: Commit author name and email.
         message: First line of the commit message.
-        paths_changed: Relative paths of files changed in this commit.
+        paths_changed: Files touched by the commit.  Populated for vault-wide
+            queries (``path=None``).  Always empty for single-note queries,
+            since the path is already determined by the query arguments —
+            callers know which file the commit touched without needing it
+            echoed back.
     """
 
     sha: str

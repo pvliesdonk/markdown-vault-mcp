@@ -1066,8 +1066,10 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
             - author (str): Committer name and email, e.g. "Name <email>".
             - message (str): First line of the commit message.
             - paths_changed (list[str]): Files touched by the commit.
-              Populated for vault-wide queries. Always [] for single-note
-              queries (the queried note path is implicit).
+              Populated for vault-wide queries (path=None). Always empty for
+              single-note queries, since the path is already determined by
+              the query arguments — callers know which file the commit
+              touched without needing it echoed back.
 
         Raises:
             ToolError: If the path is invalid.
@@ -1111,11 +1113,14 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
                 Must end with ".md".
             since_sha: A commit SHA (full or abbreviated, at least 4 hex digits)
                 to diff from. Mutually exclusive with since_timestamp.
-            since_timestamp: ISO 8601 datetime string. Resolved via
-                `git rev-list --before=<ts>` to the most recent commit at or
-                before that instant — boundary is inclusive, so a commit
-                whose author date equals since_timestamp IS the resolved ref.
-                Mutually exclusive with since_sha.
+            since_timestamp: ISO 8601 datetime string, resolved via
+                `git rev-list --before=<ts>` to the most recent commit
+                strictly before that instant. Boundary is exclusive: a
+                commit whose author date equals since_timestamp is not
+                included in the resolved ref (you will get the commit
+                immediately preceding it). For inclusive behavior, pass the
+                SHA directly via since_sha. Mutually exclusive with
+                since_sha.
             per_commit: When False (default), return a single unified diff from
                 the reference point to HEAD. When True, return one diff per
                 intervening commit.

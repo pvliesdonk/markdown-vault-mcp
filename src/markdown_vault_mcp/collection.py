@@ -797,7 +797,12 @@ class Collection:
         Returns:
             List of :class:`~markdown_vault_mcp.types.HistoryEntry` ordered
             newest-first.  Empty list when the vault has no git history or
-            the note has no commits in the given range.
+            the note has no commits in the given range.  The
+            ``paths_changed`` field on each entry is populated for vault-wide
+            queries (``path=None``); it is always empty for single-note
+            queries, since the path is already determined by the query
+            arguments — callers know which file the commit touched without
+            needing it echoed back.
 
         Raises:
             ValueError: If *path* is provided but fails path validation.
@@ -829,9 +834,14 @@ class Collection:
             since_sha: A commit SHA (full or abbreviated, at least 4 hex
                 digits) to diff from.  Mutually exclusive with
                 *since_timestamp*.
-            since_timestamp: ISO 8601 datetime string resolved to the most
-                recent commit at or before that point via ``git rev-list``
-                (boundary inclusive).  Mutually exclusive with *since_sha*.
+            since_timestamp: ISO 8601 datetime string, resolved via
+                ``git rev-list --before=<ts>`` to the most recent commit
+                strictly before that instant.  Boundary is exclusive: a
+                commit whose author date equals *since_timestamp* is not
+                included in the resolved ref (you will get the commit
+                immediately preceding it).  For inclusive behaviour, pass
+                the SHA directly via *since_sha*.  Mutually exclusive with
+                *since_sha*.
             per_commit: When ``False`` (default), return a single unified diff
                 string from the reference point to HEAD.  When ``True``,
                 return one :class:`~markdown_vault_mcp.types.CommitDiff` per

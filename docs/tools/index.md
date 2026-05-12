@@ -721,7 +721,7 @@ List commits that touched a note (or the whole vault) within an optional time wi
 | `timestamp` | string | ISO 8601 author timestamp |
 | `author` | string | Committer name and email |
 | `message` | string | First line of the commit message |
-| `paths_changed` | list[string] | Files touched (populated for vault-wide queries; empty for single-note queries) |
+| `paths_changed` | list[string] | Files touched by the commit. Populated for vault-wide queries (`path=null`); always empty for single-note queries, since the path is already determined by the query arguments — callers know which file the commit touched without needing it echoed back. |
 
 **Raises:** `ToolError` if `path` is invalid.
 
@@ -735,7 +735,7 @@ Return the diff of a specific note between a reference point and `HEAD`. Only av
 |-----------|------|---------|-------------|
 | `path` | string | required | Relative vault path. Must end with `.md`. |
 | `since_sha` | string | `null` | A commit SHA (full or abbreviated, at least 4 hex digits) to diff from. Mutually exclusive with `since_timestamp`. |
-| `since_timestamp` | string | `null` | ISO 8601 datetime string. Resolved via `git rev-list --before=<ts>` to the most recent commit at or before that instant (boundary inclusive). Mutually exclusive with `since_sha`. |
+| `since_timestamp` | string | `null` | ISO 8601 datetime string, resolved via `git rev-list --before=<ts>` to the most recent commit strictly before that instant. Boundary is exclusive: a commit whose author date equals `since_timestamp` is not included in the resolved ref (you will get the commit immediately preceding it). For inclusive behavior, pass the SHA directly via `since_sha`. Mutually exclusive with `since_sha`. |
 | `per_commit` | bool | `false` | When `false`, return a single unified diff. When `true`, return one diff per intervening commit, newest-first. |
 | `limit` | int | `null` | Only meaningful when `per_commit=true`. Caps the number of commits returned to the `limit` most recent ones. Clamped to `[1, 100]`. `null` = unbounded (still bounded by the `since..HEAD` range). Silently ignored when `per_commit=false`. |
 

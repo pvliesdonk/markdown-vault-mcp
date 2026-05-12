@@ -2195,9 +2195,12 @@ class GitWriteStrategy:
         """Return a unified diff of *path* from *ref* to HEAD.
 
         Exactly one of *ref* or *since_timestamp* must be supplied.  When
-        *since_timestamp* is given, it is resolved to the most recent commit
-        at or before that instant via ``git rev-list`` (boundary inclusive:
-        a commit whose author date equals *since_timestamp* is selected).
+        *since_timestamp* is given, it is resolved via
+        ``git rev-list --before=<ts>`` to the most recent commit strictly
+        before that instant.  Boundary is exclusive: a commit whose author
+        date equals *since_timestamp* is not included in the resolved ref
+        (you will get the commit immediately preceding it).  For inclusive
+        behaviour, pass the SHA directly via *ref*.
 
         Args:
             repo_path: Path inside the git repository.
