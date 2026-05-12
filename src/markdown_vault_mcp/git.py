@@ -2150,8 +2150,8 @@ class GitWriteStrategy:
             )
         return entries
 
+    @staticmethod
     def _resolve_path_at_ref(
-        self,
         git_root: Path,
         ref: str,
         cur_rel: str,
@@ -2166,8 +2166,8 @@ class GitWriteStrategy:
                     str(git_root),
                     "diff",
                     "--name-status",
-                    # 10% threshold (vs git default 50): rename-with-edits per #338
-                    "--find-renames=10",
+                    # 30% threshold: catch rename-with-edits per #338, avoid template false-positives.
+                    "--find-renames=30",
                     ref,
                     "HEAD",
                 ],
@@ -2309,7 +2309,10 @@ class GitWriteStrategy:
                         env=env,
                     )
                 except subprocess.CalledProcessError as exc:
-                    raise ValueError(f"Commit {ref!r} not found in history") from exc
+                    raise ValueError(
+                        f"Could not compute diff against {ref!r}: invalid ref or "
+                        f"path not present at that revision"
+                    ) from exc
                 diff = result.stdout
                 if len(diff.encode()) > _DIFF_MAX_BYTES:
                     omitted = len(diff.encode()) - _DIFF_MAX_BYTES

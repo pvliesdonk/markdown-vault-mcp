@@ -2537,7 +2537,7 @@ class TestGetFileDiff:
         """get_file_diff raises ValueError for an unknown ref."""
         repo, _ = self._make_repo_with_commits(tmp_path)
         strategy = GitWriteStrategy()
-        with pytest.raises(ValueError, match="not found in history"):
+        with pytest.raises(ValueError, match="Could not compute diff against"):
             strategy.get_file_diff(repo, repo / "note.md", "deadbeef", per_commit=False)
 
     def test_since_timestamp_single_diff(self, tmp_path: Path) -> None:
