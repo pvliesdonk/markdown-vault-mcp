@@ -3314,6 +3314,40 @@ class TestGetDiffTool:
         # Newest-first ordering: the two most recent commit messages.
         assert [c["message"] for c in commits] == ["edit v4", "edit v3"]
 
+    async def test_get_diff_envelope_wire_shape_per_commit_true(
+        self, git_vault: Path
+    ) -> None:
+        """structured_content uses the `commits` envelope, not FastMCP's
+        synthetic `result` wrap key."""
+        sha = self._first_sha(git_vault)
+        server = make_server()
+        async with Client(server) as client:
+            result = await client.call_tool(
+                "get_diff",
+                {"path": "alpha.md", "since_sha": sha, "per_commit": True},
+            )
+        assert result.structured_content is not None
+        assert "commits" in result.structured_content
+        assert "total" in result.structured_content
+        # The whole point of the refactor: payload is self-describing on
+        # the wire — no opaque `result` key from auto-wrapping a list.
+        assert "result" not in result.structured_content
+
+    async def test_get_diff_output_schema_not_auto_wrapped(self) -> None:
+        """outputSchema must not carry FastMCP's `x-fastmcp-wrap-result`
+        marker — it appears only when FastMCP auto-wraps a list/primitive
+        return under a synthetic `result` key; the dict envelope skips it."""
+        server = make_server()
+        async with Client(server) as client:
+            tools = await client.list_tools()
+        gd = next(t for t in tools if t.name == "get_diff")
+        schema = gd.outputSchema
+        assert schema is not None
+        assert schema.get("type") == "object"
+        assert "x-fastmcp-wrap-result" not in schema
+        # And no synthetic `result` key in any declared properties.
+        assert "result" not in schema.get("properties", {})
+
 
 async def test_search_tool_accepts_chunks_per_file_and_snippet_words(
     tmp_path: Path,
