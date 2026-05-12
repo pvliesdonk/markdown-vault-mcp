@@ -619,6 +619,127 @@ class TestForceMethodsErrorBranches:
         assert result.to_sha == head_before
         assert result.conflict_files == ()
 
+    def test_force_pull_rebase_loop_hits_max_iterations(
+        self,
+        git_repo_pair: GitRepoPair,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """_resolve_rebase_conflicts cap exhaustion logs ERROR + returns partial saved (#468)."""
+        import logging
+        import subprocess as _real_subprocess
+
+        from markdown_vault_mcp.git import GitWriteStrategy
+        from markdown_vault_mcp.git import subprocess as git_subprocess
+
+        strategy = GitWriteStrategy(
+            enable_pull=True,
+            enable_push=False,
+            repo_path=git_repo_pair.local_path,
+        )
+
+        real_run = _real_subprocess.run
+
+        def _patched_run(args: list[str], **kwargs: object) -> object:
+            if not isinstance(args, list):
+                return real_run(args, **kwargs)
+            if "diff" in args and "--diff-filter=U" in args:
+                return _real_subprocess.CompletedProcess(
+                    args=args, returncode=0, stdout="README.md\n", stderr=""
+                )
+            if "show" in args and any(
+                isinstance(a, str) and a.startswith("REBASE_HEAD:") for a in args
+            ):
+                return _real_subprocess.CompletedProcess(
+                    args=args, returncode=0, stdout="# local\n", stderr=""
+                )
+            if "checkout" in args and "--ours" in args:
+                return _real_subprocess.CompletedProcess(
+                    args=args, returncode=0, stdout="", stderr=""
+                )
+            if "add" in args and "--" in args:
+                return _real_subprocess.CompletedProcess(
+                    args=args, returncode=0, stdout="", stderr=""
+                )
+            if "rebase" in args and "--continue" in args:
+                return _real_subprocess.CompletedProcess(
+                    args=args,
+                    returncode=1,
+                    stdout="",
+                    stderr="CONFLICT (content): merge conflict in README.md",
+                )
+            return real_run(args, **kwargs)
+
+        monkeypatch.setattr(git_subprocess, "run", _patched_run)
+
+        with caplog.at_level(logging.ERROR, logger="markdown_vault_mcp.git"):
+            saved = strategy._resolve_rebase_conflicts(
+                git_repo_pair.local_path, env=None
+            )
+
+        # README.md was "saved" on every iteration; dict dedup leaves one entry.
+        assert saved == [("README.md", "# local\n")]
+        log_messages = [r.getMessage() for r in caplog.records]
+        assert any("exceeded 50 iterations" in msg for msg in log_messages), (
+            f"expected max_iterations ERROR log; got: {log_messages}"
+        )
+
+    def test_force_pull_non_fast_forward_with_conflicts_when_abort_fails(
+        self, git_repo_pair: GitRepoPair, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Rebase-in-progress + abort failure surfaces non_fast_forward_with_conflicts (#468)."""
+        import subprocess as _real_subprocess
+
+        from markdown_vault_mcp.git import (
+            PULL_REASON_NON_FAST_FORWARD_WITH_CONFLICTS,
+            GitWriteStrategy,
+        )
+        from markdown_vault_mcp.git import subprocess as git_subprocess
+
+        _seed_remote_commit(
+            git_repo_pair,
+            clone_name="clone_nffwc",
+            file_name="README.md",
+            body="# remote\n",
+        )
+        (git_repo_pair.local_path / "README.md").write_text("# local\n")
+        _run_git(git_repo_pair.local_path, "add", "README.md")
+        _run_git(git_repo_pair.local_path, "commit", "-m", "local edit")
+
+        strategy = GitWriteStrategy(
+            enable_pull=True,
+            enable_push=False,
+            repo_path=git_repo_pair.local_path,
+        )
+
+        # Stub the helper: claim a save but DO NOT finish the rebase, so
+        # _rebase_in_progress reports True.
+        def _stub_resolve(*_args: object, **_kwargs: object) -> list[tuple[str, str]]:
+            return [("README.md", "# local\n")]
+
+        monkeypatch.setattr(strategy, "_resolve_rebase_conflicts", _stub_resolve)
+
+        real_run = _real_subprocess.run
+
+        def _patched_run(args: list[str], **kwargs: object) -> object:
+            if isinstance(args, list) and "rebase" in args and "--abort" in args:
+                return _real_subprocess.CompletedProcess(
+                    args=args,
+                    returncode=1,
+                    stdout="",
+                    stderr="fatal: simulated abort failure",
+                )
+            return real_run(args, **kwargs)
+
+        monkeypatch.setattr(git_subprocess, "run", _patched_run)
+
+        head_before = _run_git(git_repo_pair.local_path, "rev-parse", "HEAD").strip()
+        result = strategy.force_pull()
+
+        assert result.applied is False
+        assert result.reason == PULL_REASON_NON_FAST_FORWARD_WITH_CONFLICTS
+        assert result.from_sha == result.to_sha == head_before
+
     def test_force_push_to_unreachable_remote_returns_push_failed(
         self, git_repo_pair: GitRepoPair
     ) -> None:
