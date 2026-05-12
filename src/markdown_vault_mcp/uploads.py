@@ -29,6 +29,13 @@ def _vault_upload_receiver(record: UploadRecord, body: bytes) -> dict[str, Any]:
     and the MV-side pre-link validator runs additional checks at link
     creation time, so this function trusts the value.
 
+    Passes ``skip_size_cap=True`` to ``write_attachment`` because the
+    HTTP route already enforced ``MARKDOWN_VAULT_MCP_UPLOAD_MAX_BYTES``
+    against the request body, and these bytes never touch LLM context —
+    the inner ``MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB`` cap exists
+    only to protect context budget for base64 callers of the MCP
+    ``write`` tool.
+
     Args:
         record: pvl-core's :class:`~fastmcp_pvl_core.UploadRecord` —
             ``target_id`` is the vault-relative filename the agent passed
@@ -44,7 +51,7 @@ def _vault_upload_receiver(record: UploadRecord, body: bytes) -> dict[str, Any]:
     if record.target_id.endswith(".md"):
         collection.write(record.target_id, content=body.decode("utf-8"))
     else:
-        collection.write_attachment(record.target_id, body)
+        collection.write_attachment(record.target_id, body, skip_size_cap=True)
     return {"path": record.target_id, "size_bytes": len(body)}
 
 

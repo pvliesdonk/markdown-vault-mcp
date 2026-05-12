@@ -989,14 +989,25 @@ class Collection:
         return self._doc_mgr.read_attachment(path)
 
     def write_attachment(
-        self, path: str, content: bytes, if_match: str | None = None
+        self,
+        path: str,
+        content: bytes,
+        if_match: str | None = None,
+        *,
+        skip_size_cap: bool = False,
     ) -> WriteResult:
         """Create or overwrite a non-.md attachment.
 
-        Delegates to :meth:`DocumentManager.write_attachment`.
+        Delegates to :meth:`DocumentManager.write_attachment`.  Pass
+        ``skip_size_cap=True`` from callers that have their own size
+        gate (e.g. the ``create_upload_link`` receiver path, which has
+        already validated against ``MARKDOWN_VAULT_MCP_UPLOAD_MAX_BYTES``);
+        leave ``False`` for base64 callers of the MCP ``write`` tool.
         """
         self._ensure_initialized()
-        return self._doc_mgr.write_attachment(path, content, if_match=if_match)
+        return self._doc_mgr.write_attachment(
+            path, content, if_match=if_match, skip_size_cap=skip_size_cap
+        )
 
     def write(
         self,

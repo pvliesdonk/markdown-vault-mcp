@@ -2145,6 +2145,20 @@ class TestWriteAttachment:
         with pytest.raises(ValueError, match="exceeds"):
             col.write_attachment("assets/big.pdf", b"a" * 100)
 
+    def test_write_attachment_skip_size_cap_bypasses_limit(
+        self, vault_with_attachment: Path
+    ) -> None:
+        """write_attachment(..., skip_size_cap=True) accepts content > MAX_ATTACHMENT_SIZE_MB."""
+        col = Collection(
+            source_dir=vault_with_attachment,
+            read_only=False,
+            max_attachment_size_mb=0.000001,
+        )
+        raw = b"a" * 100
+        result = col.write_attachment("assets/big.pdf", raw, skip_size_cap=True)
+        assert result.created is True
+        assert (vault_with_attachment / "assets" / "big.pdf").read_bytes() == raw
+
     def test_write_attachment_disallowed_extension_raises(
         self, vault_with_attachment: Path
     ) -> None:

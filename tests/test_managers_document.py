@@ -497,6 +497,44 @@ class TestWriteAttachmentErrorMessage:
             mgr.write_attachment("big.bin", big_content)
 
 
+class TestWriteAttachmentSkipSizeCap:
+    """write_attachment(..., skip_size_cap=True) bypasses MAX_ATTACHMENT_SIZE_MB."""
+
+    def _mgr(self, doc_vault: Path) -> DocumentManager:
+        return DocumentManager(
+            fts=FTSIndex(db_path=":memory:"),
+            source_dir=doc_vault,
+            write_lock=threading.RLock(),
+            chunk_strategy=HeadingChunker(),
+            attachment_extensions=["bin"],
+            max_attachment_size_mb=1.0,
+            read_only=False,
+        )
+
+    def test_default_enforces_cap(self, doc_vault: Path) -> None:
+        big = b"x" * (2 * 1024 * 1024)
+        with pytest.raises(ValueError, match="exceeds"):
+            self._mgr(doc_vault).write_attachment("big.bin", big)
+
+    def test_default_explicit_false_enforces_cap(self, doc_vault: Path) -> None:
+        big = b"x" * (2 * 1024 * 1024)
+        with pytest.raises(ValueError, match="exceeds"):
+            self._mgr(doc_vault).write_attachment("big.bin", big, skip_size_cap=False)
+
+    def test_skip_size_cap_true_allows_oversize_write(self, doc_vault: Path) -> None:
+        big = b"x" * (2 * 1024 * 1024)
+        result = self._mgr(doc_vault).write_attachment(
+            "big.bin", big, skip_size_cap=True
+        )
+        assert result.created is True
+        assert (doc_vault / "big.bin").read_bytes() == big
+
+    def test_skip_size_cap_keyword_only(self, doc_vault: Path) -> None:
+        big = b"x" * (2 * 1024 * 1024)
+        with pytest.raises(TypeError):
+            self._mgr(doc_vault).write_attachment("big.bin", big, None, True)  # type: ignore[misc]
+
+
 # ---------------------------------------------------------------------------
 # Note read size-cap tests
 # ---------------------------------------------------------------------------

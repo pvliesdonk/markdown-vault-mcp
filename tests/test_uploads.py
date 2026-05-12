@@ -106,6 +106,34 @@ class TestVaultUploadReceiver:
             col.close()
             _server_deps._collection_singleton = saved
 
+    def test_attachment_upload_bypasses_max_attachment_size_mb(
+        self, tmp_path: Path
+    ) -> None:
+        """Receiver path commits attachments over MAX_ATTACHMENT_SIZE_MB.
+
+        The cap protects LLM context for base64 callers of the MCP write
+        tool.  Upload-link uploads flow over HTTP and are gated by
+        UPLOAD_MAX_BYTES, so the inner cap must NOT apply here.
+        """
+        col = Collection(
+            source_dir=tmp_path,
+            read_only=False,
+            attachment_extensions=["pdf"],
+            max_attachment_size_mb=0.000001,
+        )
+        col.build_index()
+        saved = _server_deps._collection_singleton
+        _server_deps.set_collection_singleton(col)
+        try:
+            payload = b"%PDF-1.4 " + b"\x00" * 1024
+            record = _make_record("big.pdf")
+            result = uploads._vault_upload_receiver(record, payload)
+            assert result == {"path": "big.pdf", "size_bytes": len(payload)}
+            assert (tmp_path / "big.pdf").read_bytes() == payload
+        finally:
+            col.close()
+            _server_deps._collection_singleton = saved
+
 
 class TestValidateUploadTarget:
     """``_validate_upload_target`` rejects bad paths at link-creation time."""
