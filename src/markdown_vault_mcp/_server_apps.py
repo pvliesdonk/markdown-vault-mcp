@@ -424,9 +424,9 @@ def register_apps(mcp: FastMCP) -> None:
                 for each interior node (requires embeddings to be configured;
                 silently omitted when unavailable).
             max_nodes: Soft cap on returned node count (default 200). BFS
-                stops once the cap is hit; the response sets
-                ``truncated=True``. Bounds dense-vault depth=2 traversals
-                that would otherwise bog down vis-network.
+                and any semantic expansion both stop once the cap is hit;
+                the response sets ``truncated=True``. Bounds dense-vault
+                depth=2 traversals that would otherwise bog down vis-network.
 
         Returns:
             Dict with:
@@ -536,6 +536,9 @@ def register_apps(mcp: FastMCP) -> None:
         if include_semantic:
             sem_seen: set[frozenset[str]] = set()
             for node_path in list(nodes.keys()):
+                if len(nodes) >= max_nodes:
+                    truncated = True
+                    break
                 try:
                     similar = await asyncio.to_thread(
                         collection.get_similar, node_path, limit=5
@@ -558,6 +561,9 @@ def register_apps(mcp: FastMCP) -> None:
                         continue
                     sem_seen.add(pair)
                     if sr.path not in nodes:
+                        if len(nodes) >= max_nodes:
+                            truncated = True
+                            break
                         sim_note = await asyncio.to_thread(collection.read, sr.path)
                         sim_label = (
                             sim_note.title

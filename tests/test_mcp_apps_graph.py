@@ -15,42 +15,10 @@ from fastmcp import Client
 
 from markdown_vault_mcp._server_apps import _hashed
 from markdown_vault_mcp.server import make_server
-from tests.conftest import get_app_html
+from tests.conftest import _CLEAR_VARS, get_app_html
 
 if TYPE_CHECKING:
     from pathlib import Path
-
-
-_CLEAR_VARS = (
-    "MARKDOWN_VAULT_MCP_INDEX_PATH",
-    "MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH",
-    "MARKDOWN_VAULT_MCP_STATE_PATH",
-    "MARKDOWN_VAULT_MCP_INDEXED_FIELDS",
-    "MARKDOWN_VAULT_MCP_REQUIRED_FIELDS",
-    "MARKDOWN_VAULT_MCP_EXCLUDE",
-    "MARKDOWN_VAULT_MCP_GIT_TOKEN",
-    "MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER",
-    "MARKDOWN_VAULT_MCP_SERVER_NAME",
-    "MARKDOWN_VAULT_MCP_INSTRUCTIONS",
-    "MARKDOWN_VAULT_MCP_BEARER_TOKEN",
-    "MARKDOWN_VAULT_MCP_AUTH_MODE",
-    "MARKDOWN_VAULT_MCP_BASE_URL",
-    "MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL",
-    "MARKDOWN_VAULT_MCP_OIDC_CLIENT_ID",
-    "MARKDOWN_VAULT_MCP_OIDC_CLIENT_SECRET",
-    "MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY",
-    "MARKDOWN_VAULT_MCP_OIDC_AUDIENCE",
-    "MARKDOWN_VAULT_MCP_OIDC_REQUIRED_SCOPES",
-    "MARKDOWN_VAULT_MCP_APP_DOMAIN",
-)
-
-
-@pytest.fixture
-def _mcp_env(vault_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault_path))
-    monkeypatch.delenv("MARKDOWN_VAULT_MCP_READ_ONLY", raising=False)
-    for var in _CLEAR_VARS:
-        monkeypatch.delenv(var, raising=False)
 
 
 def _parse_tool_data(result: Any) -> Any:
@@ -537,6 +505,49 @@ class TestGraphNeighborhoodMaxNodes:
             )
         data = _parse_tool_data(result)
         assert data["truncated"] is False
+
+    async def test_max_nodes_caps_semantic_expansion(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """max_nodes also bounds the semantic-expansion phase, not just BFS."""
+        from .conftest import MockEmbeddingProvider
+
+        # Star vault: forces BFS to hit the cap; semantic phase must not bypass it
+        vault = tmp_path / "sem_star"
+        vault.mkdir()
+        spokes = "\n".join(f"- [s{i}](spoke{i}.md)" for i in range(20))
+        (vault / "hub.md").write_text(f"# Hub\n\n{spokes}\n")
+        for i in range(20):
+            (vault / f"spoke{i}.md").write_text(f"# Spoke {i}\n\n[hub](hub.md)\n")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault))
+        monkeypatch.setenv(
+            "MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH", str(tmp_path / "embeddings")
+        )
+        for var in _CLEAR_VARS:
+            if var != "MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH":
+                monkeypatch.delenv(var, raising=False)
+
+        mock_prov = MockEmbeddingProvider()
+        with patch(
+            "markdown_vault_mcp.providers.get_embedding_provider",
+            return_value=mock_prov,
+        ):
+            server = make_server()
+            async with Client(server) as client:
+                result = await client.call_tool(
+                    _hashed("vault_graph_neighborhood"),
+                    {
+                        "path": "hub.md",
+                        "depth": 2,
+                        "max_nodes": 5,
+                        "include_semantic": True,
+                    },
+                )
+        data = _parse_tool_data(result)
+        assert len(data["nodes"]) <= 5
+        assert data["truncated"] is True
 
 
 @pytest.mark.usefixtures("_mcp_env")

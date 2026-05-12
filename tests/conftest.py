@@ -115,6 +115,41 @@ async def get_app_html() -> str:
         return resource[0].text if hasattr(resource[0], "text") else str(resource[0])
 
 
+# Shared env-var hygiene for MCP Apps tests — keep make_server() reads
+# deterministic by stripping host-leaked configuration.
+_CLEAR_VARS = (
+    "MARKDOWN_VAULT_MCP_INDEX_PATH",
+    "MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH",
+    "MARKDOWN_VAULT_MCP_STATE_PATH",
+    "MARKDOWN_VAULT_MCP_INDEXED_FIELDS",
+    "MARKDOWN_VAULT_MCP_REQUIRED_FIELDS",
+    "MARKDOWN_VAULT_MCP_EXCLUDE",
+    "MARKDOWN_VAULT_MCP_GIT_TOKEN",
+    "MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER",
+    "MARKDOWN_VAULT_MCP_SERVER_NAME",
+    "MARKDOWN_VAULT_MCP_INSTRUCTIONS",
+    "MARKDOWN_VAULT_MCP_BEARER_TOKEN",
+    "MARKDOWN_VAULT_MCP_AUTH_MODE",
+    "MARKDOWN_VAULT_MCP_BASE_URL",
+    "MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL",
+    "MARKDOWN_VAULT_MCP_OIDC_CLIENT_ID",
+    "MARKDOWN_VAULT_MCP_OIDC_CLIENT_SECRET",
+    "MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY",
+    "MARKDOWN_VAULT_MCP_OIDC_AUDIENCE",
+    "MARKDOWN_VAULT_MCP_OIDC_REQUIRED_SCOPES",
+    "MARKDOWN_VAULT_MCP_APP_DOMAIN",
+)
+
+
+@pytest.fixture
+def _mcp_env(vault_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Set minimal env vars for make_server()."""
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault_path))
+    monkeypatch.delenv("MARKDOWN_VAULT_MCP_READ_ONLY", raising=False)
+    for var in _CLEAR_VARS:
+        monkeypatch.delenv(var, raising=False)
+
+
 @pytest.fixture
 def vault_path(tmp_path: Path, fixtures_path: Path) -> Path:
     """Copy fixtures into a temp directory.

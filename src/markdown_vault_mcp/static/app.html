@@ -387,7 +387,7 @@ if(__exports != exports)module.exports = exports;return module.exports}));
     font-size: 12px; cursor: not-allowed; opacity: 0.6; font-family: inherit;
   }
 </style>
-<!-- vendor-spa-source-sha256:7959dd094b0e71d5391719c2da490122fb7cd14d6ee2a32db6bd0d56be30852b -->
+<!-- vendor-spa-source-sha256:44d3a8d9966af461479c0d78b8467c3a6b2735ea3fe80eda0f5ab989295366b2 -->
 </head>
 <body>
 <div class="app-container">
@@ -990,8 +990,9 @@ app.onteardown = () => {
       const data = parseToolResult(result);
       if (!data) return;
       addGraphData(data);
+      const truncSuffix = data.truncated ? ' (truncated — zoom in for more)' : '';
       window.updateContext('graph explorer', path, nodesDS.get(path)?.label,
-        'Visible: ' + nodesDS.length + ' notes, ' + edgesDS.length + ' links');
+        'Visible: ' + nodesDS.length + ' notes, ' + edgesDS.length + ' links' + truncSuffix);
     } catch (err) {
       console.warn('Graph expand failed:', err);
     }

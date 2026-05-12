@@ -7,7 +7,7 @@ HTML context card rendering.
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import pytest
 from fastmcp import Client
@@ -15,41 +15,6 @@ from fastmcp import Client
 from markdown_vault_mcp._server_apps import _hashed
 from markdown_vault_mcp.server import make_server
 from tests.conftest import get_app_html
-
-if TYPE_CHECKING:
-    from pathlib import Path
-
-
-_CLEAR_VARS = (
-    "MARKDOWN_VAULT_MCP_INDEX_PATH",
-    "MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH",
-    "MARKDOWN_VAULT_MCP_STATE_PATH",
-    "MARKDOWN_VAULT_MCP_INDEXED_FIELDS",
-    "MARKDOWN_VAULT_MCP_REQUIRED_FIELDS",
-    "MARKDOWN_VAULT_MCP_EXCLUDE",
-    "MARKDOWN_VAULT_MCP_GIT_TOKEN",
-    "MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER",
-    "MARKDOWN_VAULT_MCP_SERVER_NAME",
-    "MARKDOWN_VAULT_MCP_INSTRUCTIONS",
-    "MARKDOWN_VAULT_MCP_BEARER_TOKEN",
-    "MARKDOWN_VAULT_MCP_AUTH_MODE",
-    "MARKDOWN_VAULT_MCP_BASE_URL",
-    "MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL",
-    "MARKDOWN_VAULT_MCP_OIDC_CLIENT_ID",
-    "MARKDOWN_VAULT_MCP_OIDC_CLIENT_SECRET",
-    "MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY",
-    "MARKDOWN_VAULT_MCP_OIDC_AUDIENCE",
-    "MARKDOWN_VAULT_MCP_OIDC_REQUIRED_SCOPES",
-    "MARKDOWN_VAULT_MCP_APP_DOMAIN",
-)
-
-
-@pytest.fixture
-def _mcp_env(vault_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault_path))
-    monkeypatch.delenv("MARKDOWN_VAULT_MCP_READ_ONLY", raising=False)
-    for var in _CLEAR_VARS:
-        monkeypatch.delenv(var, raising=False)
 
 
 def _parse_tool_data(result: Any) -> Any:

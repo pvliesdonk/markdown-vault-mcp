@@ -872,8 +872,9 @@ app.onteardown = () => {
       const data = parseToolResult(result);
       if (!data) return;
       addGraphData(data);
+      const truncSuffix = data.truncated ? ' (truncated — zoom in for more)' : '';
       window.updateContext('graph explorer', path, nodesDS.get(path)?.label,
-        'Visible: ' + nodesDS.length + ' notes, ' + edgesDS.length + ' links');
+        'Visible: ' + nodesDS.length + ' notes, ' + edgesDS.length + ' links' + truncSuffix);
     } catch (err) {
       console.warn('Graph expand failed:', err);
     }
