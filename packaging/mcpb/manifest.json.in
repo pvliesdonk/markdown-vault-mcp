@@ -82,21 +82,21 @@
       "default": ".obsidian/**,.trash/**,.git/**"
     },
     "state_path": {
-      "type": "directory",
-      "title": "State directory",
-      "description": "Where to store the FTS5 index and embeddings. Blank uses .markdown_vault_mcp next to the vault.",
+      "type": "file",
+      "title": "State file path",
+      "description": "Path to the change-tracking state JSON file. Blank uses {source_dir}/.markdown_vault_mcp/state.json.",
       "required": false
     },
     "index_path": {
       "type": "file",
       "title": "FTS5 index path",
-      "description": "Override location of the SQLite FTS5 index file. Blank uses state_path/index.sqlite.",
+      "description": "Path to the SQLite FTS5 index file. Blank uses an in-memory index (rebuilt on every startup).",
       "required": false
     },
     "embeddings_path": {
       "type": "file",
-      "title": "Embeddings path",
-      "description": "Override location of the embeddings .npy sidecar. Blank uses state_path/embeddings.npy.",
+      "title": "Embeddings sidecar base path",
+      "description": "Base path for the embeddings .npy sidecar (suffix is appended by the runtime). Blank disables embeddings.",
       "required": false
     },
     "fastembed_cache_dir": {
