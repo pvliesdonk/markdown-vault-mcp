@@ -38,6 +38,16 @@
         "MARKDOWN_VAULT_MCP_GIT_REPO_URL":     "${user_config.git_repo_url}",
         "MARKDOWN_VAULT_MCP_GIT_TOKEN":        "${user_config.git_token}",
         "MARKDOWN_VAULT_MCP_GIT_PUSH_DELAY_S": "${user_config.git_push_delay_s}",
+        "MARKDOWN_VAULT_MCP_BEARER_TOKEN":           "${user_config.bearer_token}",
+        "MARKDOWN_VAULT_MCP_OIDC_AUDIENCE":          "${user_config.oidc_audience}",
+        "MARKDOWN_VAULT_MCP_OIDC_CLIENT_ID":         "${user_config.oidc_client_id}",
+        "MARKDOWN_VAULT_MCP_OIDC_CLIENT_SECRET":     "${user_config.oidc_client_secret}",
+        "MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL":        "${user_config.oidc_config_url}",
+        "MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY":   "${user_config.oidc_jwt_signing_key}",
+        "MARKDOWN_VAULT_MCP_OIDC_REQUIRED_SCOPES":   "${user_config.oidc_required_scopes}",
+        "MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH":        "${user_config.embeddings_path}",
+        "MARKDOWN_VAULT_MCP_INDEX_PATH":             "${user_config.index_path}",
+        "MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR":    "${user_config.fastembed_cache_dir}",
         "FASTMCP_LOG_LEVEL":                   "${user_config.log_level}"
       }
     }
@@ -75,6 +85,24 @@
       "type": "directory",
       "title": "State directory",
       "description": "Where to store the FTS5 index and embeddings. Blank uses .markdown_vault_mcp next to the vault.",
+      "required": false
+    },
+    "index_path": {
+      "type": "directory",
+      "title": "FTS5 index path",
+      "description": "Override location of the SQLite FTS5 index file. Blank uses state_path/index.sqlite.",
+      "required": false
+    },
+    "embeddings_path": {
+      "type": "directory",
+      "title": "Embeddings path",
+      "description": "Override location of the embeddings .npy sidecar. Blank uses state_path/embeddings.npy.",
+      "required": false
+    },
+    "fastembed_cache_dir": {
+      "type": "directory",
+      "title": "FastEmbed cache directory",
+      "description": "Where FastEmbed caches downloaded model files. Blank uses the default user cache.",
       "required": false
     },
     "embedding_provider": {
@@ -132,6 +160,51 @@
       "default": 30,
       "min": 0,
       "max": 3600
+    },
+    "bearer_token": {
+      "type": "string",
+      "title": "Bearer token",
+      "description": "Static bearer token for HTTP transports. Leave blank to disable bearer auth.",
+      "required": false,
+      "sensitive": true
+    },
+    "oidc_config_url": {
+      "type": "string",
+      "title": "OIDC discovery URL",
+      "description": "Issuer's .well-known/openid-configuration URL. Set this to enable OIDC; leave blank to disable.",
+      "required": false
+    },
+    "oidc_audience": {
+      "type": "string",
+      "title": "OIDC audience",
+      "description": "Expected audience claim for OIDC token validation.",
+      "required": false
+    },
+    "oidc_required_scopes": {
+      "type": "string",
+      "title": "OIDC required scopes",
+      "description": "Space-separated scopes required on validated OIDC tokens.",
+      "required": false
+    },
+    "oidc_client_id": {
+      "type": "string",
+      "title": "OIDC client ID",
+      "description": "Client ID for OIDC proxy mode (Authelia and other non-DCR providers).",
+      "required": false
+    },
+    "oidc_client_secret": {
+      "type": "string",
+      "title": "OIDC client secret",
+      "description": "Client secret for OIDC proxy mode. Stored in the OS keychain.",
+      "required": false,
+      "sensitive": true
+    },
+    "oidc_jwt_signing_key": {
+      "type": "string",
+      "title": "OIDC JWT signing key",
+      "description": "PEM-encoded signing key issued for proxied OIDC tokens. Stored in the OS keychain.",
+      "required": false,
+      "sensitive": true
     },
     "log_level": {
       "type": "string",
