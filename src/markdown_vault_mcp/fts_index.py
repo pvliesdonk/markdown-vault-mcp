@@ -1152,17 +1152,18 @@ class FTSIndex:
             limit: Maximum number of results to return.
 
         Returns:
-            List of dicts with keys ``path``, ``title``, ``backlink_count``,
-            ordered by backlink_count descending.
+            List of dicts with keys ``path``, ``title``, ``folder``,
+            ``backlink_count``, ordered by backlink_count descending.
         """
         cur = self._conn.execute(
             """
             SELECT d.path,
                    d.title,
+                   d.folder,
                    COUNT(DISTINCT l.source_id) AS backlink_count
             FROM links l
             JOIN documents d ON d.path = l.target_path
-            GROUP BY d.path, d.title
+            GROUP BY d.path, d.title, d.folder
             ORDER BY backlink_count DESC
             LIMIT ?
             """,

@@ -613,15 +613,12 @@ def register_apps(mcp: FastMCP) -> None:
         seen_edges: set[tuple[str, str]] = set()
 
         for hub in hubs:
-            # TODO: extend get_most_linked to return folder, eliminating this per-hub read
-            hub_note = await asyncio.to_thread(collection.read, hub.path)
-            hub_folder = hub_note.folder if hub_note else ""
             nodes[hub.path] = {
                 "id": hub.path,
                 "label": hub.title,
                 "group": "hub",
                 "backlink_count": hub.backlink_count,
-                "folder": hub_folder,
+                "folder": hub.folder,
             }
 
             # Get immediate connections for each hub

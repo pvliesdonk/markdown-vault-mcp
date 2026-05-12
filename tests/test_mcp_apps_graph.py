@@ -204,6 +204,30 @@ class TestGraphDataTools:
             assert "nodes" in data
             assert "edges" in data
 
+    async def test_hubs_does_not_read_hub_documents(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """vault_graph_hubs uses MostLinkedNote.folder, not per-hub collection.read."""
+        from markdown_vault_mcp.collection import Collection
+
+        original_read = Collection.read
+        read_paths: list[str] = []
+
+        def _spy(self: Collection, path: str) -> Any:
+            read_paths.append(path)
+            return original_read(self, path)
+
+        monkeypatch.setattr(Collection, "read", _spy)
+        server = make_server()
+        async with Client(server) as client:
+            result = await client.call_tool(_hashed("vault_graph_hubs"), {})
+            data = _parse_tool_data(result)
+        hub_paths = {n["id"] for n in data["nodes"] if n["group"] == "hub"}
+        assert hub_paths, "fixture should produce at least one hub"
+        assert not (hub_paths & set(read_paths)), (
+            f"hub documents should not be read directly; read={read_paths}"
+        )
+
     async def test_edges_have_type(self) -> None:
         server = make_server()
         async with Client(server) as client:

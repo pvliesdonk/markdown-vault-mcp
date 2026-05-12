@@ -459,11 +459,13 @@ class MostLinkedNote:
     Attributes:
         path: Relative path from the vault root.
         title: Document title.
+        folder: Parent folder path (empty string for root-level documents).
         backlink_count: Number of other documents that link to this document.
     """
 
     path: str
     title: str
+    folder: str
     backlink_count: int
 
 

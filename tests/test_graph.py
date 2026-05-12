@@ -202,22 +202,25 @@ class TestFTSGetMostLinked:
         assert idx.get_most_linked() == []
 
     def test_most_linked_row_keys(self) -> None:
-        """Each row contains path, title, backlink_count."""
+        """Each row contains path, title, folder, backlink_count."""
         idx = FTSIndex(":memory:")
-        idx.upsert_note(make_note("target.md", title="Target Note"))
+        idx.upsert_note(make_note("notes/target.md", title="Target Note"))
         idx.upsert_note(
             make_note(
                 "src.md",
                 links=[
                     LinkInfo(
-                        target_path="target.md", link_text="T", link_type="markdown"
+                        target_path="notes/target.md",
+                        link_text="T",
+                        link_type="markdown",
                     )
                 ],
             )
         )
         rows = idx.get_most_linked()
-        assert rows[0]["path"] == "target.md"
+        assert rows[0]["path"] == "notes/target.md"
         assert rows[0]["title"] == "Target Note"
+        assert rows[0]["folder"] == "notes"
         assert "backlink_count" in rows[0]
 
 
@@ -289,6 +292,14 @@ class TestCollectionOrphanAndHub:
         col.build_index()
         results = col.get_most_linked(limit=1)
         assert len(results) == 1
+
+    def test_get_most_linked_includes_folder(self, graph_vault: Path) -> None:
+        """MostLinkedNote.folder is populated from the documents table."""
+        col = Collection(source_dir=graph_vault)
+        col.build_index()
+        results = col.get_most_linked()
+        hub = next(r for r in results if r.path == "hub.md")
+        assert hub.folder == ""
 
 
 # ---------------------------------------------------------------------------
