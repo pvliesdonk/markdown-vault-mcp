@@ -51,7 +51,7 @@ Restart Claude Code after setting the env var so the plugin picks it up.
 
 ## What you get
 
-The plugin wires up four env vars:
+The plugin wires up the following env vars. Vars with a default are filled in when the shell variable is unset; vars marked _(empty)_ stay blank when unset, which usually means "feature disabled" or "use the server's built-in default":
 
 | Env var | Default | Description |
 |---------|---------|-------------|
@@ -59,6 +59,11 @@ The plugin wires up four env vars:
 | `MARKDOWN_VAULT_MCP_READ_ONLY` | `true` | Set to `false` to enable write/edit/delete/rename tools |
 | `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` | _(empty)_ | Embedding backend (`fastembed`, `ollama`, `openai`); leave empty for keyword-only search |
 | `MARKDOWN_VAULT_MCP_EXCLUDE` | `.obsidian/**,.trash/**,.git/**` | Comma-separated glob patterns to exclude from indexing |
+| `MARKDOWN_VAULT_MCP_GIT_REPO_URL` | _(empty)_ | Remote repository URL for git-backed vault sync; leave empty to disable git integration |
+| `MARKDOWN_VAULT_MCP_GIT_TOKEN` | _(empty)_ | Personal access token for the git remote; leave empty to disable git integration |
+| `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` | _(empty)_ | Override the embeddings sidecar path; leave empty to use the `.markdown_vault_mcp/` default under the vault |
+| `MARKDOWN_VAULT_MCP_INDEX_PATH` | _(empty)_ | Override the FTS5 index path; leave empty to use the `.markdown_vault_mcp/` default under the vault |
+| `OLLAMA_HOST` | `http://localhost:11434` | Base URL for the Ollama API; only used when `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER=ollama` |
 
 In addition to the MCP server, the plugin installs the **`vault-workflow` skill**, which gives Claude guidance on:
 
