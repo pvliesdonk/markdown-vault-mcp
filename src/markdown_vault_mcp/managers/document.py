@@ -384,7 +384,7 @@ class DocumentManager:
                     f"MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB "
                     f"({self._max_attachment_size_mb} MB). "
                     f"Use create_download_link({path!r}) for HTTP transfer, "
-                    f"or raise MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB if "
+                    f"or increase MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB if "
                     f"you need the bytes in context."
                 )
 
@@ -585,7 +585,7 @@ class DocumentManager:
                         f"({self._max_attachment_size_mb} MB). "
                         f"Use create_upload_link({path!r}) to push the "
                         f"bytes over HTTP without inflating LLM context, "
-                        f"or raise MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB "
+                        f"or increase MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB "
                         f"if you need the bytes in context."
                     )
             created = not abs_path.is_file()
