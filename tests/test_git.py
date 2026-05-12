@@ -1691,12 +1691,12 @@ class TestGitSyncOnce:
         assert len(result) == 1
         assert result[0] == ("README.md", "# MCP content\n")
 
-    def test_write_conflict_files_commit_failure_is_logged(
+    def test_write_conflict_files_commit_failure_returns_none(
         self,
         git_repo: Path,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """_write_conflict_files logs ERROR when git commit fails but does not raise."""
+        """_write_conflict_files returns None and logs ERROR when git commit fails."""
         strategy = GitWriteStrategy(token=None, push_delay_s=0)
 
         # Create a real file for the original path.
@@ -1728,10 +1728,50 @@ class TestGitSyncOnce:
         ):
             written = strategy._write_conflict_files(git_repo, saved, env=None)
 
-        # The method still returns the written conflict file paths.
-        assert len(written) == 1
+        # Commit failed: helper signals failure to its caller via None.
+        assert written is None
         # The ERROR was logged.
         assert any("conflict commit failed" in r.message for r in caplog.records)
+
+    def test_write_conflict_files_commit_failure_redacts_token(
+        self,
+        git_repo: Path,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Commit-failure stderr passes through _redact before being logged."""
+        strategy = GitWriteStrategy(token="secret-pat-xyz", push_delay_s=0)
+
+        (git_repo / "note.md").write_text("# Original\n")
+        saved = [("note.md", "# MCP version\n")]
+
+        import subprocess as sp
+
+        real_run = sp.run
+
+        def patched_run(cmd: list[str], **kwargs: object) -> object:
+            if isinstance(cmd, list) and "commit" in cmd:
+                from types import SimpleNamespace
+
+                return SimpleNamespace(
+                    returncode=1,
+                    stdout="",
+                    stderr="fatal: auth failed for secret-pat-xyz@host",
+                )
+            return real_run(cmd, **kwargs)
+
+        import unittest.mock as mock
+
+        with (
+            mock.patch(
+                "markdown_vault_mcp.git.subprocess.run", side_effect=patched_run
+            ),
+            caplog.at_level(logging.ERROR, logger="markdown_vault_mcp.git"),
+        ):
+            strategy._write_conflict_files(git_repo, saved, env=None)
+
+        joined = " ".join(r.getMessage() for r in caplog.records)
+        assert "secret-pat-xyz" not in joined
+        assert "***" in joined
 
     def test_write_conflict_files_invalid_frontmatter_logs_warning(
         self,

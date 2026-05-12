@@ -1068,7 +1068,7 @@ class GitWriteStrategy:
         git_root: Path,
         saved: list[tuple[str, str]],
         env: dict[str, str] | None,
-    ) -> list[str]:
+    ) -> list[str] | None:
         """Write conflict files and add ``conflict_with`` frontmatter to both sides.
 
         For each ``(relative_path, content)`` in *saved*:
@@ -1079,7 +1079,12 @@ class GitWriteStrategy:
            file's existing frontmatter.
 
         Returns:
-            List of conflict file relative paths that were written.
+            List of conflict file relative paths that were written and
+            committed.  Returns ``None`` when the final ``git commit`` step
+            failed (nothing-to-commit, hook failure, signing failure, etc.)
+            so callers can surface ``conflict_resolution_failed`` instead of
+            implying a successful conflict-resolution commit.  Returns an
+            empty list when *saved* is empty (nothing to do).
         """
         root = str(git_root)
         now = datetime.datetime.now(tz=datetime.UTC)
@@ -1170,8 +1175,11 @@ class GitWriteStrategy:
             logger.error(
                 "Git pull: conflict commit failed (rc=%d): %s",
                 commit_result.returncode,
-                (commit_result.stderr or commit_result.stdout or "").strip(),
+                self._redact(
+                    (commit_result.stderr or commit_result.stdout or "").strip()
+                ),
             )
+            return None
 
         return written
 
@@ -1498,6 +1506,10 @@ class GitWriteStrategy:
                 )
 
             written = self._write_conflict_files(git_root, saved, env)
+            if written is None:
+                return PullResult.head_unchanged_failure(
+                    from_sha, PULL_REASON_CONFLICT_RESOLUTION_FAILED
+                )
             for cf in written:
                 logger.warning(
                     "Git force_pull: conflict resolved, saved MCP version as %s",
@@ -1843,6 +1855,11 @@ class GitWriteStrategy:
 
                         if saved:
                             written = self._write_conflict_files(git_root, saved, env)
+                            if written is None:
+                                logger.warning(
+                                    "Git pull: conflict commit failed, skipping"
+                                )
+                                return False
                             for cf in written:
                                 logger.warning(
                                     "Git pull: conflict resolved, saved MCP version as %s",

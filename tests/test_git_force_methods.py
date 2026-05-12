@@ -564,6 +564,61 @@ class TestForceMethodsErrorBranches:
         assert not (git_repo_pair.local_path / ".git" / "rebase-merge").exists()
         assert not (git_repo_pair.local_path / ".git" / "rebase-apply").exists()
 
+    def test_force_pull_conflict_commit_failure_surfaces_resolution_failed(
+        self, git_repo_pair: GitRepoPair, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Conflict-resolution commit failure → reason=conflict_resolution_failed (#462)."""
+        import subprocess as _real_subprocess
+
+        from markdown_vault_mcp.git import (
+            PULL_REASON_CONFLICT_RESOLUTION_FAILED,
+            GitWriteStrategy,
+        )
+        from markdown_vault_mcp.git import subprocess as git_subprocess
+
+        _seed_remote_commit(
+            git_repo_pair,
+            clone_name="clone_commit_fail",
+            file_name="README.md",
+            body="# remote\n",
+        )
+        (git_repo_pair.local_path / "README.md").write_text("# local\n")
+        _run_git(git_repo_pair.local_path, "add", "README.md")
+        _run_git(git_repo_pair.local_path, "commit", "-m", "local edit")
+
+        strategy = GitWriteStrategy(
+            enable_pull=True,
+            enable_push=False,
+            repo_path=git_repo_pair.local_path,
+        )
+
+        real_run = _real_subprocess.run
+
+        def _patched_run(args: list[str], **kwargs: object) -> object:
+            if (
+                isinstance(args, list)
+                and "commit" in args
+                and any(isinstance(a, str) and a.startswith("conflict:") for a in args)
+            ):
+                return _real_subprocess.CompletedProcess(
+                    args=args,
+                    returncode=1,
+                    stdout="",
+                    stderr="error: pre-commit hook rejected the commit",
+                )
+            return real_run(args, **kwargs)
+
+        monkeypatch.setattr(git_subprocess, "run", _patched_run)
+
+        head_before = _run_git(git_repo_pair.local_path, "rev-parse", "HEAD").strip()
+        result = strategy.force_pull()
+
+        assert result.applied is False
+        assert result.reason == PULL_REASON_CONFLICT_RESOLUTION_FAILED
+        assert result.from_sha == head_before
+        assert result.to_sha == head_before
+        assert result.conflict_files == ()
+
     def test_force_push_to_unreachable_remote_returns_push_failed(
         self, git_repo_pair: GitRepoPair
     ) -> None:
