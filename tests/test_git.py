@@ -2659,6 +2659,66 @@ class TestGetFileDiff:
         # The rename commit should produce a non-empty diff
         assert diffs[0].diff
 
+    def test_single_diff_across_rename(self, tmp_path: Path) -> None:
+        """Single diff shows content delta across renames, not a full-file add."""
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        subprocess.run(
+            ["git", "-C", str(repo), "init"], capture_output=True, check=True
+        )
+        subprocess.run(
+            ["git", "-C", str(repo), "config", "user.email", "t@t.com"],
+            capture_output=True,
+            check=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(repo), "config", "user.name", "T"],
+            capture_output=True,
+            check=True,
+        )
+        # Commit 1: add note.md with baseline content
+        (repo / "note.md").write_text("# Title\nOriginal line\n")
+        subprocess.run(
+            ["git", "-C", str(repo), "add", "."], capture_output=True, check=True
+        )
+        subprocess.run(
+            ["git", "-C", str(repo), "commit", "-m", "add note"],
+            capture_output=True,
+            check=True,
+        )
+        first_sha = subprocess.run(
+            ["git", "-C", str(repo), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        # Commit 2: rename + modify content
+        subprocess.run(
+            ["git", "-C", str(repo), "mv", "note.md", "renamed.md"],
+            capture_output=True,
+            check=True,
+        )
+        (repo / "renamed.md").write_text("# Title\nModified line\n")
+        subprocess.run(
+            ["git", "-C", str(repo), "add", "."], capture_output=True, check=True
+        )
+        subprocess.run(
+            ["git", "-C", str(repo), "commit", "-m", "rename+edit"],
+            capture_output=True,
+            check=True,
+        )
+
+        strategy = GitWriteStrategy()
+        diff = strategy.get_file_diff(
+            repo, repo / "renamed.md", first_sha, per_commit=False
+        )
+        assert isinstance(diff, str)
+        # True content delta: the "Original line" must appear as a removal,
+        # and "Modified line" as an addition.  A naive `git diff <ref>..HEAD
+        # -- renamed.md` would show a full-file addition (no `-Original line`).
+        assert "-Original line" in diff
+        assert "+Modified line" in diff
+
     def test_git_log_failure_raises_value_error(self, tmp_path: Path) -> None:
         """get_file_history converts CalledProcessError to ValueError."""
         import unittest.mock as mock

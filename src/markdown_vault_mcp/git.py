@@ -2150,6 +2150,39 @@ class GitWriteStrategy:
             )
         return entries
 
+    def _resolve_path_at_ref(
+        self,
+        git_root: Path,
+        ref: str,
+        cur_rel: str,
+        env: dict[str, str] | None,
+    ) -> str | None:
+        """Return the path *cur_rel* had at *ref* via rename detection, else None."""
+        try:
+            result = subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(git_root),
+                    "diff",
+                    "--name-status",
+                    "--find-renames=10",
+                    ref,
+                    "HEAD",
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+                env=env,
+            )
+        except subprocess.CalledProcessError:
+            return None
+        for line in result.stdout.splitlines():
+            parts = line.split("\t")
+            if len(parts) >= 3 and parts[0].startswith("R") and parts[2] == cur_rel:
+                return parts[1]
+        return None
+
     def get_file_diff(
         self,
         repo_path: Path,
@@ -2236,17 +2269,38 @@ class GitWriteStrategy:
                 raise ValueError("Either 'ref' or 'since_timestamp' must be provided")
 
             if not per_commit:
+                # Recover path-at-ref so diffs across renames show real deltas.
+                try:
+                    cur_rel = path.resolve().relative_to(git_root).as_posix()
+                except ValueError:
+                    cur_rel = None
+                old_path = (
+                    self._resolve_path_at_ref(git_root, ref, cur_rel, env)
+                    if cur_rel is not None
+                    else None
+                )
+                if old_path is None or cur_rel is None or old_path == cur_rel:
+                    diff_cmd = [
+                        "git",
+                        "-C",
+                        str(git_root),
+                        "diff",
+                        f"{ref}..HEAD",
+                        "--",
+                        path_str,
+                    ]
+                else:
+                    diff_cmd = [
+                        "git",
+                        "-C",
+                        str(git_root),
+                        "diff",
+                        f"{ref}:{old_path}",
+                        f"HEAD:{cur_rel}",
+                    ]
                 try:
                     result = subprocess.run(
-                        [
-                            "git",
-                            "-C",
-                            str(git_root),
-                            "diff",
-                            f"{ref}..HEAD",
-                            "--",
-                            path_str,
-                        ],
+                        diff_cmd,
                         capture_output=True,
                         text=True,
                         check=True,
