@@ -251,6 +251,14 @@ so dossiers never re-apply the cap on top of the cap.  `get_context`
 defaults to `chunks_per_file=1` for compact dossiers; `search` and
 `get_similar` default to `chunks_per_file=2`.
 
+**Length-downweight is skipped in `get_similar` / `get_context.similar`** (issue
+#472).  Grouping already collapses multi-chunk dominators to one entry per file;
+compounding the downweight on top buries legitimately-long authoritative
+documents — e.g. a reference book scored highest by raw cosine for a similarity
+query whose reference doc is a summary of that book.  The three `search` modes
+(keyword/semantic/hybrid) keep the downweight because their use case (query →
+focused result) still benefits from biasing toward short focused docs.
+
 Replaces the per-path cap from PR #433 (`_apply_chunks_per_doc_cap`),
 which thinned duplicates but did not group them.
 

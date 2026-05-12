@@ -1145,9 +1145,16 @@ class SearchManager:
             )
             for r in raw_results
         ]
-        downweighted = _apply_length_downweight(
-            rows, alpha=self._length_downweight_alpha
-        )
+        # Grouping (_group_by_path below) already collapses multi-chunk
+        # dominators to one entry per file; the length-downweight from
+        # PR #433 is therefore redundant here, and compounding it with
+        # grouping buries legitimately-long authoritative docs (e.g. a
+        # reference book vs. its white-paper summary).  Skip the
+        # downweight in get_similar / get_context.similar — see #472.
+        # `_keyword_search` / `_semantic_search` / `_hybrid_search` keep
+        # the downweight because their use case (query → focused result)
+        # still benefits from biasing toward short focused docs.
+        downweighted = _apply_length_downweight(rows, alpha=0.0)
         groups = _group_by_path(downweighted, chunks_per_file=eff_cpf, file_limit=limit)
 
         return [

@@ -202,3 +202,61 @@ def test_sabsa_repro_one_reference_doc_dedups_target_chunks(tmp_path):
     )
     # Result paths are unique (file collapsing invariant)
     assert len(set(paths)) == len(paths), f"paths should be unique: {paths}"
+
+
+def test_get_similar_skips_length_downweight(monkeypatch, populated_collection):
+    """get_similar must not compound length-downweight with grouping (#472).
+
+    Grouping in _group_by_path structurally dedupes multi-chunk dominators
+    to one entry per file.  Compounding the length-downweight on top buries
+    legitimately-long authoritative docs (e.g. the SABSA reference book vs.
+    its white-paper summary — see issue #472 for the real-vault repro).
+
+    Pinned via spy on _apply_length_downweight: every call from get_similar
+    must use alpha=0.0 regardless of the configured instance default.
+    """
+    from markdown_vault_mcp.managers import search as search_mod
+
+    captured_alphas: list[float] = []
+    original = search_mod._apply_length_downweight
+
+    def spy(rows, *, alpha):
+        captured_alphas.append(alpha)
+        return original(rows, alpha=alpha)
+
+    monkeypatch.setattr(search_mod, "_apply_length_downweight", spy)
+
+    populated_collection.get_similar("multi.md", limit=5)
+
+    assert captured_alphas, (
+        "expected get_similar to call _apply_length_downweight at least once"
+    )
+    assert all(a == 0.0 for a in captured_alphas), (
+        f"get_similar called _apply_length_downweight with non-zero alpha; "
+        f"got {captured_alphas}.  See #472."
+    )
+
+
+def test_get_context_similar_skips_length_downweight(monkeypatch, populated_collection):
+    """get_context.similar delegates to get_similar, so it must also skip
+    the length-downweight (#472)."""
+    from markdown_vault_mcp.managers import search as search_mod
+
+    captured_alphas: list[float] = []
+    original = search_mod._apply_length_downweight
+
+    def spy(rows, *, alpha):
+        captured_alphas.append(alpha)
+        return original(rows, alpha=alpha)
+
+    monkeypatch.setattr(search_mod, "_apply_length_downweight", spy)
+
+    populated_collection.get_context("multi.md", similar_limit=3)
+
+    assert captured_alphas, (
+        "expected get_context to trigger _apply_length_downweight via get_similar"
+    )
+    assert all(a == 0.0 for a in captured_alphas), (
+        f"get_context.similar called _apply_length_downweight with non-zero "
+        f"alpha; got {captured_alphas}.  See #472."
+    )
