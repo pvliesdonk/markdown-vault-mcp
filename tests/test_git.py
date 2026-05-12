@@ -2758,6 +2758,86 @@ class TestGetFileDiff:
             is None
         )
 
+    def test_resolve_path_at_ref_skips_non_matching_rename(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Non-matching R entry advances i += 3 (does not re-read new-path as status)."""
+        # R row whose new-path is not cur_rel, followed by an M row.  If the
+        # parser advanced by 2 instead of 3 it would treat 'other_new.md' as the
+        # next status token and misread the stream; advancing by 3 lands on 'M'
+        # which doesn't match cur_rel either, so the final answer is None.
+        fake_stdout = "R092\0other_old.md\0other_new.md\0M\0target.md\0"
+
+        def fake_run(*_args: object, **_kw: object) -> subprocess.CompletedProcess[str]:
+            return subprocess.CompletedProcess(
+                args=[], returncode=0, stdout=fake_stdout, stderr=""
+            )
+
+        monkeypatch.setattr("markdown_vault_mcp.git.subprocess.run", fake_run)
+        assert (
+            GitWriteStrategy._resolve_path_at_ref(
+                tmp_path, "deadbeef", "target.md", env=None
+            )
+            is None
+        )
+
+    def test_resolve_path_at_ref_skips_copy_entries(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """C<score> entries (copies) are skipped, never returned as a rename match."""
+        fake_stdout = "C092\0source.md\0target.md\0"
+
+        def fake_run(*_args: object, **_kw: object) -> subprocess.CompletedProcess[str]:
+            return subprocess.CompletedProcess(
+                args=[], returncode=0, stdout=fake_stdout, stderr=""
+            )
+
+        monkeypatch.setattr("markdown_vault_mcp.git.subprocess.run", fake_run)
+        assert (
+            GitWriteStrategy._resolve_path_at_ref(
+                tmp_path, "deadbeef", "target.md", env=None
+            )
+            is None
+        )
+
+    def test_resolve_path_at_ref_handles_truncated_rename_output(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Truncated R<score>\\0old\\0 (missing new-path) returns None without raising."""
+        fake_stdout = "R092\0old.md\0"
+
+        def fake_run(*_args: object, **_kw: object) -> subprocess.CompletedProcess[str]:
+            return subprocess.CompletedProcess(
+                args=[], returncode=0, stdout=fake_stdout, stderr=""
+            )
+
+        monkeypatch.setattr("markdown_vault_mcp.git.subprocess.run", fake_run)
+        assert (
+            GitWriteStrategy._resolve_path_at_ref(
+                tmp_path, "deadbeef", "target.md", env=None
+            )
+            is None
+        )
+
+    def test_resolve_path_at_ref_handles_truncated_else_output(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Truncated M\\0 (missing path) returns None without raising."""
+        fake_stdout = "M\0"
+
+        def fake_run(*_args: object, **_kw: object) -> subprocess.CompletedProcess[str]:
+            return subprocess.CompletedProcess(
+                args=[], returncode=0, stdout=fake_stdout, stderr=""
+            )
+
+        monkeypatch.setattr("markdown_vault_mcp.git.subprocess.run", fake_run)
+        assert (
+            GitWriteStrategy._resolve_path_at_ref(
+                tmp_path, "deadbeef", "target.md", env=None
+            )
+            is None
+        )
+
     def test_git_log_failure_raises_value_error(self, tmp_path: Path) -> None:
         """get_file_history converts CalledProcessError to ValueError."""
         import unittest.mock as mock
