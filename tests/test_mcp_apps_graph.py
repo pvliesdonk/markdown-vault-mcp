@@ -549,6 +549,66 @@ class TestGraphNeighborhoodMaxNodes:
         assert len(data["nodes"]) <= 5
         assert data["truncated"] is True
 
+    async def test_max_nodes_caps_semantic_inner_branch(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Inner semantic-cap fires when expansion fills the cap mid-iteration (PR #478)."""
+        from .conftest import MockEmbeddingProvider
+
+        # Vault forces the *inner* cap branch in _vault_graph_neighborhood:
+        # BFS from center returns {center, B} = 2 nodes (below cap=4).
+        # Semantic expansion for `center` then adds enough fresh candidates
+        # to reach the cap mid-loop; the next non-member candidate must
+        # trigger the inner ``len(nodes) >= max_nodes`` guard (lines 564-566).
+        vault = tmp_path / "sem_inner"
+        vault.mkdir()
+        # center links only to B (BFS yields exactly {center, B} at depth=1)
+        (vault / "center.md").write_text("# Center\n\n[B](B.md)\n")
+        (vault / "B.md").write_text("# B\n\n[center](center.md)\n")
+        # Four semantic-only notes (unlinked from center/B). With max_nodes=4
+        # and nodes already at 2, the loop adds two and the third trips the
+        # inner cap regardless of MockEmbeddingProvider's similarity ordering.
+        for label in ("C", "D", "E", "F"):
+            (vault / f"{label}.md").write_text(
+                f"# {label}\n\nstandalone note {label}\n"
+            )
+
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault))
+        monkeypatch.setenv(
+            "MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH", str(tmp_path / "embeddings")
+        )
+        for var in _CLEAR_VARS:
+            if var != "MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH":
+                monkeypatch.delenv(var, raising=False)
+
+        mock_prov = MockEmbeddingProvider()
+        with patch(
+            "markdown_vault_mcp.providers.get_embedding_provider",
+            return_value=mock_prov,
+        ):
+            server = make_server()
+            async with Client(server) as client:
+                result = await client.call_tool(
+                    _hashed("vault_graph_neighborhood"),
+                    {
+                        "path": "center.md",
+                        "depth": 1,
+                        "max_nodes": 4,
+                        "include_semantic": True,
+                    },
+                )
+        data = _parse_tool_data(result)
+        assert len(data["nodes"]) == 4
+        assert data["truncated"] is True
+        # Inner branch fired: at least one semantic candidate was rejected
+        # because the cap was reached mid-loop, so not every standalone
+        # note (C/D/E/F) ended up in the result set.
+        node_ids = {n["id"] for n in data["nodes"]}
+        standalone = {"C.md", "D.md", "E.md", "F.md"}
+        assert len(standalone & node_ids) < len(standalone)
+
 
 @pytest.mark.usefixtures("_mcp_env")
 class TestGraphNeighborhoodMaxNodesDefault:
