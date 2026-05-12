@@ -205,16 +205,7 @@ def test_sabsa_repro_one_reference_doc_dedups_target_chunks(tmp_path):
 
 
 def test_get_similar_skips_length_downweight(monkeypatch, populated_collection):
-    """get_similar must not compound length-downweight with grouping (#472).
-
-    Grouping in _group_by_path structurally dedupes multi-chunk dominators
-    to one entry per file.  Compounding the length-downweight on top buries
-    legitimately-long authoritative docs (e.g. the SABSA reference book vs.
-    its white-paper summary — see issue #472 for the real-vault repro).
-
-    Pinned via spy on _apply_length_downweight: every call from get_similar
-    must use alpha=0.0 regardless of the configured instance default.
-    """
+    """#472: get_similar must call _apply_length_downweight with alpha=0.0."""
     from markdown_vault_mcp.managers import search as search_mod
 
     captured_alphas: list[float] = []
@@ -238,8 +229,7 @@ def test_get_similar_skips_length_downweight(monkeypatch, populated_collection):
 
 
 def test_get_context_similar_skips_length_downweight(monkeypatch, populated_collection):
-    """get_context.similar delegates to get_similar, so it must also skip
-    the length-downweight (#472)."""
+    """#472: get_context.similar inherits alpha=0.0 via get_similar delegation."""
     from markdown_vault_mcp.managers import search as search_mod
 
     captured_alphas: list[float] = []
