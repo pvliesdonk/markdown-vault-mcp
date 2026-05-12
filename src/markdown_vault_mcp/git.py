@@ -888,7 +888,7 @@ class GitWriteStrategy:
             )
         return saved, None
 
-    def _check_rebase_in_progress(
+    def _rebase_in_progress(
         self,
         git_root: Path,
         env: dict[str, str] | None,
@@ -1480,7 +1480,7 @@ class GitWriteStrategy:
             # limit, or exited via ``break`` without completing), abort
             # cleanly so the working tree is consistent before we write
             # conflict files.
-            rebase_in_progress = self._check_rebase_in_progress(git_root, env)
+            rebase_in_progress = self._rebase_in_progress(git_root, env)
 
             if rebase_in_progress:
                 if not self._abort_in_progress_rebase(git_root, env):
@@ -1803,24 +1803,8 @@ class GitWriteStrategy:
                         # saving the MCP version as a conflict file.
                         saved = self._resolve_rebase_conflicts(git_root, env)
 
-                        # Check if a rebase is still in progress (e.g. the
-                        # loop exited via break because no conflicting files
-                        # were found but rebase --continue had returned
-                        # non-zero, or the iteration limit was hit).
-                        rebase_head = subprocess.run(
-                            [
-                                "git",
-                                "-C",
-                                str(git_root),
-                                "rev-parse",
-                                "--verify",
-                                "REBASE_HEAD",
-                            ],
-                            capture_output=True,
-                            text=True,
-                            env=env,
-                        )
-                        rebase_in_progress = rebase_head.returncode == 0
+                        # Directory check (REBASE_HEAD lingers post-continue, #466).
+                        rebase_in_progress = self._rebase_in_progress(git_root, env)
 
                         if rebase_in_progress:
                             # Abort the incomplete rebase before committing

@@ -1769,6 +1769,37 @@ class TestGitSyncOnce:
         assert len(warnings) >= 1
 
 
+class TestRebaseInProgress:
+    """Tests for the _rebase_in_progress helper (refs #466)."""
+
+    def test_returns_false_on_clean_repo(self, git_repo: Path) -> None:
+        strategy = GitWriteStrategy(token=None, push_delay_s=0)
+        assert strategy._rebase_in_progress(git_repo, env=None) is False
+
+    def test_detects_rebase_merge_directory(self, git_repo: Path) -> None:
+        (git_repo / ".git" / "rebase-merge").mkdir()
+        strategy = GitWriteStrategy(token=None, push_delay_s=0)
+        assert strategy._rebase_in_progress(git_repo, env=None) is True
+
+    def test_detects_rebase_apply_directory(self, git_repo: Path) -> None:
+        (git_repo / ".git" / "rebase-apply").mkdir()
+        strategy = GitWriteStrategy(token=None, push_delay_s=0)
+        assert strategy._rebase_in_progress(git_repo, env=None) is True
+
+    def test_ignores_stale_rebase_head_ref(self, git_repo: Path) -> None:
+        """Stale REBASE_HEAD ref must not trip the in-progress check (refs #466)."""
+        head_sha = subprocess.run(
+            ["git", "-C", str(git_repo), "rev-parse", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        (git_repo / ".git" / "REBASE_HEAD").write_text(head_sha + "\n")
+
+        strategy = GitWriteStrategy(token=None, push_delay_s=0)
+        assert strategy._rebase_in_progress(git_repo, env=None) is False
+
+
 class TestGitPullLoop:
     def test_start_runs_tick_with_pause_and_on_pull(
         self,
