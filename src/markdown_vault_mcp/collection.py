@@ -835,13 +835,11 @@ class Collection:
                 digits) to diff from.  Mutually exclusive with
                 *since_timestamp*.
             since_timestamp: ISO 8601 datetime string, resolved via
-                ``git rev-list --before=<ts>`` to the most recent commit
-                strictly before that instant.  Boundary is exclusive: a
-                commit whose author date equals *since_timestamp* is not
-                included in the resolved ref (you will get the commit
-                immediately preceding it).  For inclusive behaviour, pass
-                the SHA directly via *since_sha*.  Mutually exclusive with
-                *since_sha*.
+                ``git rev-list --before=<ts> -1 HEAD`` to the most recent
+                commit at or before that instant.  Boundary is
+                **inclusive**: a commit whose committer date equals
+                *since_timestamp* IS the resolved ref.  Mutually exclusive
+                with *since_sha*.
             per_commit: When ``False`` (default), return a single unified diff
                 string from the reference point to HEAD.  When ``True``,
                 return one :class:`~markdown_vault_mcp.types.CommitDiff` per

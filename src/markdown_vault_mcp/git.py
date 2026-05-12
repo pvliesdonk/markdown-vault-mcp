@@ -2166,6 +2166,7 @@ class GitWriteStrategy:
                     str(git_root),
                     "diff",
                     "--name-status",
+                    # 10% threshold (vs git default 50): rename-with-edits per #338
                     "--find-renames=10",
                     ref,
                     "HEAD",
@@ -2196,11 +2197,9 @@ class GitWriteStrategy:
 
         Exactly one of *ref* or *since_timestamp* must be supplied.  When
         *since_timestamp* is given, it is resolved via
-        ``git rev-list --before=<ts>`` to the most recent commit strictly
-        before that instant.  Boundary is exclusive: a commit whose author
-        date equals *since_timestamp* is not included in the resolved ref
-        (you will get the commit immediately preceding it).  For inclusive
-        behaviour, pass the SHA directly via *ref*.
+        ``git rev-list --before=<ts> -1 HEAD`` to the most recent commit at
+        or before that instant.  Boundary is **inclusive**: a commit whose
+        committer date equals *since_timestamp* IS the resolved ref.
 
         Args:
             repo_path: Path inside the git repository.
