@@ -2168,6 +2168,8 @@ class GitWriteStrategy:
                     "--name-status",
                     # 30% threshold: catch rename-with-edits per #338, avoid template false-positives.
                     "--find-renames=30",
+                    # -z: NUL-terminated fields, tolerates tabs/newlines in paths.
+                    "-z",
                     ref,
                     "HEAD",
                 ],
@@ -2178,10 +2180,25 @@ class GitWriteStrategy:
             )
         except subprocess.CalledProcessError:
             return None
-        for line in result.stdout.splitlines():
-            parts = line.split("\t")
-            if len(parts) >= 3 and parts[0].startswith("R") and parts[2] == cur_rel:
-                return parts[1]
+        # Stream: <status>\0<path>\0  (R*/C* add a second path before the closing NUL).
+        items = result.stdout.split("\0")[:-1]
+        i = 0
+        while i < len(items):
+            status = items[i]
+            if status.startswith("R"):
+                if i + 2 >= len(items):
+                    break
+                if items[i + 2] == cur_rel:
+                    return items[i + 1]
+                i += 3
+            elif status.startswith("C"):
+                if i + 2 >= len(items):
+                    break
+                i += 3
+            else:
+                if i + 1 >= len(items):
+                    break
+                i += 2
         return None
 
     def get_file_diff(

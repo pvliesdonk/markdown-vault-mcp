@@ -2719,6 +2719,45 @@ class TestGetFileDiff:
         assert "-Original line" in diff
         assert "+Modified line" in diff
 
+    def test_resolve_path_at_ref_handles_tab_in_filename(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """_resolve_path_at_ref parses -z NUL output and tolerates tab in path."""
+        old_path = "dir/old\tname.md"
+        new_path = "dir/new\tname.md"
+        # Synthetic `git diff --name-status -z`: status\0path\0 (R adds 2nd path).
+        fake_stdout = f"M\0other.md\0R092\0{old_path}\0{new_path}\0"
+
+        def fake_run(*_args: object, **_kw: object) -> subprocess.CompletedProcess[str]:
+            return subprocess.CompletedProcess(
+                args=[], returncode=0, stdout=fake_stdout, stderr=""
+            )
+
+        monkeypatch.setattr("markdown_vault_mcp.git.subprocess.run", fake_run)
+        result = GitWriteStrategy._resolve_path_at_ref(
+            tmp_path, "deadbeef", new_path, env=None
+        )
+        assert result == old_path
+
+    def test_resolve_path_at_ref_returns_none_when_no_match(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """No rename row matching cur_rel -> None, not a crash."""
+        fake_stdout = "M\0other.md\0A\0added.md\0"
+
+        def fake_run(*_args: object, **_kw: object) -> subprocess.CompletedProcess[str]:
+            return subprocess.CompletedProcess(
+                args=[], returncode=0, stdout=fake_stdout, stderr=""
+            )
+
+        monkeypatch.setattr("markdown_vault_mcp.git.subprocess.run", fake_run)
+        assert (
+            GitWriteStrategy._resolve_path_at_ref(
+                tmp_path, "deadbeef", "missing.md", env=None
+            )
+            is None
+        )
+
     def test_git_log_failure_raises_value_error(self, tmp_path: Path) -> None:
         """get_file_history converts CalledProcessError to ValueError."""
         import unittest.mock as mock
