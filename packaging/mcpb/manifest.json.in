@@ -30,7 +30,7 @@
         "MARKDOWN_VAULT_MCP_SERVER_NAME":      "${user_config.server_name}",
         "MARKDOWN_VAULT_MCP_EXCLUDE":          "${user_config.exclude_patterns}",
         "MARKDOWN_VAULT_MCP_STATE_PATH":       "${user_config.state_path}",
-        "EMBEDDING_PROVIDER":                  "${user_config.embedding_provider}",
+        "MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER": "${user_config.embedding_provider}",
         "OLLAMA_HOST":                         "${user_config.ollama_host}",
         "MARKDOWN_VAULT_MCP_OLLAMA_MODEL":     "${user_config.ollama_model}",
         "MARKDOWN_VAULT_MCP_FASTEMBED_MODEL":  "${user_config.fastembed_model}",
@@ -88,13 +88,13 @@
       "required": false
     },
     "index_path": {
-      "type": "directory",
+      "type": "file",
       "title": "FTS5 index path",
       "description": "Override location of the SQLite FTS5 index file. Blank uses state_path/index.sqlite.",
       "required": false
     },
     "embeddings_path": {
-      "type": "directory",
+      "type": "file",
       "title": "Embeddings path",
       "description": "Override location of the embeddings .npy sidecar. Blank uses state_path/embeddings.npy.",
       "required": false
@@ -183,8 +183,9 @@
     "oidc_required_scopes": {
       "type": "string",
       "title": "OIDC required scopes",
-      "description": "Space-separated scopes required on validated OIDC tokens.",
-      "required": false
+      "description": "Space-separated scopes required on validated OIDC tokens. Leave blank for no scope requirement (recommended for multi-auth setups).",
+      "required": false,
+      "default": ""
     },
     "oidc_client_id": {
       "type": "string",
