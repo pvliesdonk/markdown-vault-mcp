@@ -612,11 +612,17 @@ class TestForceMethodsErrorBranches:
 
         head_before = _run_git(git_repo_pair.local_path, "rev-parse", "HEAD").strip()
         result = strategy.force_pull()
+        head_after = _run_git(git_repo_pair.local_path, "rev-parse", "HEAD").strip()
 
         assert result.applied is False
         assert result.reason == PULL_REASON_CONFLICT_RESOLUTION_FAILED
+        # ``from_sha`` is the pre-rebase HEAD; ``to_sha`` reflects the actual
+        # post-rebase HEAD because the rebase completed before the sibling
+        # commit failed.
         assert result.from_sha == head_before
-        assert result.to_sha == head_before
+        assert head_after != head_before
+        assert result.to_sha == head_after
+        assert result.to_sha != result.from_sha
         assert result.conflict_files == ()
 
     def test_force_pull_rebase_loop_hits_max_iterations(

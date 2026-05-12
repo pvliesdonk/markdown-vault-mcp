@@ -1505,10 +1505,18 @@ class GitWriteStrategy:
                     from_sha, PULL_REASON_CONFLICT_RESOLUTION_FAILED
                 )
 
+            # Rebase has already completed via ``git rebase --continue`` — HEAD
+            # has advanced even if the sibling-files commit below fails.
+            actual_head = self._head_sha(git_root)
             written = self._write_conflict_files(git_root, saved, env)
             if written is None:
-                return PullResult.head_unchanged_failure(
-                    from_sha, PULL_REASON_CONFLICT_RESOLUTION_FAILED
+                return PullResult(
+                    applied=False,
+                    fast_forward=False,
+                    commits_pulled=0,
+                    from_sha=from_sha,
+                    to_sha=actual_head,
+                    reason=PULL_REASON_CONFLICT_RESOLUTION_FAILED,
                 )
             for cf in written:
                 logger.warning(
