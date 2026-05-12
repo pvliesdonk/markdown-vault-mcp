@@ -491,3 +491,65 @@ class TestIncludeSemanticEdges:
         assert "edges" in data
         semantic_edges = [e for e in data["edges"] if e.get("type") == "semantic"]
         assert semantic_edges == []
+
+
+# ---------------------------------------------------------------------------
+# max_nodes BFS cap
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def _star_vault(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    # Star-pattern vault: hub.md links to 20 spokes; each spoke links back.
+    vault = tmp_path / "star_vault"
+    vault.mkdir()
+    spokes = "\n".join(f"- [s{i}](spoke{i}.md)" for i in range(20))
+    (vault / "hub.md").write_text(f"# Hub\n\n{spokes}\n")
+    for i in range(20):
+        (vault / f"spoke{i}.md").write_text(f"# Spoke {i}\n\n[hub](hub.md)\n")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault))
+    monkeypatch.delenv("MARKDOWN_VAULT_MCP_READ_ONLY", raising=False)
+    for var in _CLEAR_VARS:
+        monkeypatch.delenv(var, raising=False)
+    return vault
+
+
+class TestGraphNeighborhoodMaxNodes:
+    """Verify max_nodes caps BFS output and sets the truncated flag."""
+
+    async def test_max_nodes_caps_node_count(self, _star_vault: Path) -> None:
+        server = make_server()
+        async with Client(server) as client:
+            result = await client.call_tool(
+                _hashed("vault_graph_neighborhood"),
+                {"path": "hub.md", "depth": 2, "max_nodes": 5},
+            )
+        data = _parse_tool_data(result)
+        assert len(data["nodes"]) <= 5
+        assert data["truncated"] is True
+
+    async def test_truncated_false_when_under_cap(self, _star_vault: Path) -> None:
+        server = make_server()
+        async with Client(server) as client:
+            result = await client.call_tool(
+                _hashed("vault_graph_neighborhood"),
+                {"path": "hub.md", "depth": 2, "max_nodes": 500},
+            )
+        data = _parse_tool_data(result)
+        assert data["truncated"] is False
+
+
+@pytest.mark.usefixtures("_mcp_env")
+class TestGraphNeighborhoodMaxNodesDefault:
+    """Default max_nodes preserves prior behavior on small fixture vault."""
+
+    async def test_default_does_not_truncate_small_vault(self) -> None:
+        server = make_server()
+        async with Client(server) as client:
+            result = await client.call_tool(
+                _hashed("vault_graph_neighborhood"),
+                {"path": "simple.md", "depth": 2},
+            )
+        data = _parse_tool_data(result)
+        assert data["truncated"] is False
+        assert len(data["nodes"]) < 200

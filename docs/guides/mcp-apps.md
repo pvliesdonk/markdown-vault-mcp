@@ -21,7 +21,7 @@ Click any linked note to navigate to its context card.
 
 Interactive force-directed link graph of the vault, powered by vis-network. Two modes:
 
-- **Neighborhood** — shows a note and its direct connections (configurable depth)
+- **Neighborhood** — shows a note and its direct connections (configurable depth, soft-capped at `max_nodes=200` by default; the response carries `truncated=true` when the BFS hit the cap so the SPA can warn the user)
 - **Hubs** — shows the most-linked notes in the vault and their connections
 
 Click a node to view that note's context card. Toggle semantic similarity edges when embeddings are available.

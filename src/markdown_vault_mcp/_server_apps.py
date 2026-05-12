@@ -409,6 +409,7 @@ def register_apps(mcp: FastMCP) -> None:
         path: str,
         depth: int = 1,
         include_semantic: bool = False,
+        max_nodes: int = 200,
         collection: Collection = Depends(get_collection),
     ) -> dict[str, Any]:
         """Return the link neighborhood of a note as a node/edge graph (app-only).
@@ -422,6 +423,10 @@ def register_apps(mcp: FastMCP) -> None:
             include_semantic: When True, add dashed semantic-similarity edges
                 for each interior node (requires embeddings to be configured;
                 silently omitted when unavailable).
+            max_nodes: Soft cap on returned node count (default 200). BFS
+                stops once the cap is hit; the response sets
+                ``truncated=True``. Bounds dense-vault depth=2 traversals
+                that would otherwise bog down vis-network.
 
         Returns:
             Dict with:
@@ -439,13 +444,19 @@ def register_apps(mcp: FastMCP) -> None:
               - from (str): Source node ID.
               - to (str): Target node ID.
               - type (str): "markdown", "wikilink", "reference", or "semantic".
+
+            - truncated (bool): True when BFS hit the ``max_nodes`` cap.
         """
         nodes: dict[str, dict[str, Any]] = {}
         edges: list[dict[str, Any]] = []
         visited: set[str] = set()
         queue: collections.deque[tuple[str, int]] = collections.deque([(path, 0)])
+        truncated = False
 
         while queue:
+            if len(nodes) >= max_nodes:
+                truncated = True
+                break
             current, d = queue.popleft()
             if current in visited:
                 continue
@@ -565,7 +576,11 @@ def register_apps(mcp: FastMCP) -> None:
                         {"from": node_path, "to": sr.path, "type": "semantic"}
                     )
 
-        return {"nodes": list(nodes.values()), "edges": unique_edges}
+        return {
+            "nodes": list(nodes.values()),
+            "edges": unique_edges,
+            "truncated": truncated,
+        }
 
     @mcp.tool(
         icons=_TOOL_ICONS["vault_graph_hubs"],
