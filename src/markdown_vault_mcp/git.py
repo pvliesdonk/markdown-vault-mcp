@@ -1807,20 +1807,9 @@ class GitWriteStrategy:
                         # loop exited via break because no conflicting files
                         # were found but rebase --continue had returned
                         # non-zero, or the iteration limit was hit).
-                        rebase_head = subprocess.run(
-                            [
-                                "git",
-                                "-C",
-                                str(git_root),
-                                "rev-parse",
-                                "--verify",
-                                "REBASE_HEAD",
-                            ],
-                            capture_output=True,
-                            text=True,
-                            env=env,
+                        rebase_in_progress = self._check_rebase_in_progress(
+                            git_root, env
                         )
-                        rebase_in_progress = rebase_head.returncode == 0
 
                         if rebase_in_progress:
                             # Abort the incomplete rebase before committing
