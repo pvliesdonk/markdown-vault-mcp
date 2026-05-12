@@ -134,8 +134,8 @@ def _format_pull_dict(result: PullResult, dry_run: bool) -> dict[str, Any]:
     if result.conflict_files:
         pull_dict["conflict_files"] = list(result.conflict_files)
     if dry_run:
-        # Dry-run reports the projected outcome, not actual.
-        pull_dict["would_apply"] = result.commits_pulled > 0
+        # SHA comparison: handles force_pull's up-to-date early-return cleanly.
+        pull_dict["would_apply"] = result.from_sha != result.to_sha
     return pull_dict
 
 

@@ -1343,7 +1343,7 @@ class GitWriteStrategy:
                         )
 
                 if remote_sha == from_sha:
-                    # Already up to date — successful no-op.
+                    # Already up to date — successful no-op (applied=True even on dry_run).
                     return PullResult(
                         applied=True,
                         fast_forward=True,

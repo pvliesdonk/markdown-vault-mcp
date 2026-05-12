@@ -190,6 +190,28 @@ class TestGitSync:
         assert payload["pull"]["commits_pulled"] == 1
         assert not (git_repo_pair.local_path / "dryseed.md").exists()
 
+    async def test_dry_run_pull_already_up_to_date_would_apply_false(
+        self, _git_managed_env: Path
+    ) -> None:
+        """Refs #467: dry-run pull on an up-to-date clone reports would_apply=False."""
+        server = make_server()
+        async with Client(server) as client:
+            result = await client.call_tool(
+                "git_sync", {"direction": "pull", "dry_run": True}
+            )
+
+        payload = _parse_tool_data(result)
+
+        assert payload["dry_run"] is True
+        assert payload["pull"] is not None
+        # force_pull early-returns applied=True for an already-up-to-date
+        # clone regardless of dry_run; would_apply must be False because
+        # from_sha == to_sha (no commits to apply).
+        assert payload["pull"]["applied"] is True
+        assert payload["pull"]["would_apply"] is False
+        assert payload["pull"]["commits_pulled"] == 0
+        assert payload["pull"]["from_sha"] == payload["pull"]["to_sha"]
+
     async def test_dry_run_both_reports_push_dry_run_unsupported(
         self, git_repo_pair: GitRepoPair, _git_managed_env: Path
     ) -> None:
