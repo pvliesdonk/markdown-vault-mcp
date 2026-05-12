@@ -136,9 +136,9 @@ def make_server(transport: str = "stdio") -> FastMCP:
       built-in.  Default: disabled.
 
     Args:
-        transport: ``"stdio"`` / ``"http"`` / ``"sse"``.  Used for the
-            ``ArtifactStore`` route guard (HTTP-only) and as ``transport=%s``
-            in the startup log.
+        transport: ``"stdio"`` / ``"http"`` / ``"sse"`` / ``"streamable-http"``.
+            Used for the ``ArtifactStore`` route guard (HTTP-only) and as
+            ``transport=%s`` in the startup log.
 
     Returns:
         A fully configured :class:`~fastmcp.FastMCP` instance ready to run.

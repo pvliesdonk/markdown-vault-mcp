@@ -281,13 +281,24 @@ class TestUploadEndToEnd:
             # 4. Verify the file actually landed in the vault on disk.
             assert (_upload_vault / "uploaded.md").read_bytes() == payload
 
-            # 5. Verify it is now readable via the ``read`` MCP tool —
-            #    proves the FTS index was updated synchronously by
-            #    Collection.write (not just the filesystem write).
+            # 5. Verify it is now readable via the ``read`` MCP tool.
+            #    ``read`` for a whole-document .md reads disk directly,
+            #    so this only proves the file landed on disk.
             read_result = await client.call_tool("read", {"path": "uploaded.md"})
             read_data = json.loads(read_result.content[0].text)
             assert read_data["path"] == "uploaded.md"
             assert read_data["content"] == payload.decode("utf-8")
+
+            # 6. Verify the upload is searchable — proves Collection.write
+            #    upserted the FTS index synchronously.  A regression that
+            #    drops ``self._fts.upsert_note(note)`` would fail this.
+            search_result = await client.call_tool("search", {"query": "Uploaded"})
+            search_data = json.loads(search_result.content[0].text)
+            assert isinstance(search_data, list)
+            search_paths = {r["path"] for r in search_data}
+            assert "uploaded.md" in search_paths, (
+                f"uploaded.md should be searchable after upload; got {search_paths}"
+            )
 
     async def test_invalid_utf8_md_upload_returns_400(
         self, _upload_vault: Path
