@@ -1072,7 +1072,9 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
                   for single-note queries, since the path is already
                   determined by the query arguments — callers know which
                   file the commit touched without needing it echoed back.
-            - total (int): Number of entries in `commits`.
+            - total (int): Count of entries in `commits` (always equals
+              `len(commits)`; does NOT indicate how many commits exist
+              beyond the `limit` cap).
 
         Raises:
             ToolError: If the path is invalid.
@@ -1148,7 +1150,9 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
                     - timestamp (str): ISO 8601 author timestamp.
                     - message (str): First line of commit message.
                     - diff (str): Unified diff for this commit.
-                - total (int): Number of entries in `commits`.
+                - total (int): Count of entries in `commits` (always equals
+                  `len(commits)`; does NOT indicate how many commits exist
+                  beyond the `limit` cap).
 
         Raises:
             ToolError: If neither or both reference parameters are supplied,

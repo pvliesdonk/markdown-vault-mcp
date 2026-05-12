@@ -712,7 +712,7 @@ List commits that touched a note (or the whole vault) within an optional time wi
 | `until` | string | `null` | ISO 8601 datetime string or git date expression, passed as `--until` to `git log`. Combined with `since` to bound a window. Inclusive at the boundary. |
 | `limit` | int | `20` | Maximum number of commits to return. Capped at 100. |
 
-**Returns:** Object with `commits` (list of commit entries, newest-first) and `total` (count). The envelope keeps the structured payload self-describing on the wire instead of relying on FastMCP's auto-wrapping `result` key. Each entry in `commits` contains:
+**Returns:** Object with `commits` (list of commit entries, newest-first) and `total` (count — always equals `len(commits)`; does NOT indicate how many commits exist beyond the `limit` cap). The envelope keeps the structured payload self-describing on the wire instead of relying on FastMCP's auto-wrapping `result` key. Each entry in `commits` contains:
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -744,7 +744,7 @@ Exactly one of `since_sha` / `since_timestamp` must be supplied.
 **Returns:**
 
 - `per_commit=false`: object with `diff` (string) — unified diff from reference to HEAD. May include `[diff truncated: N bytes omitted]` if output exceeds 50 KB.
-- `per_commit=true`: object with `commits` (list of per-commit entries, newest-first — each containing `sha`, `short_sha`, `timestamp`, `message`, and `diff`) and `total` (count). The envelope keeps the structured payload self-describing on the wire instead of relying on FastMCP's auto-wrapping `result` key.
+- `per_commit=true`: object with `commits` (list of per-commit entries, newest-first — each containing `sha`, `short_sha`, `timestamp`, `message`, and `diff`) and `total` (count — always equals `len(commits)`; does NOT indicate how many commits exist beyond the `limit` cap). The envelope keeps the structured payload self-describing on the wire instead of relying on FastMCP's auto-wrapping `result` key.
 
 **Raises:** `ToolError` if parameters are invalid or the reference commit is not found.
 
