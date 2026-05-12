@@ -14,6 +14,7 @@ from fastmcp import Client
 
 from markdown_vault_mcp._server_apps import _hashed
 from markdown_vault_mcp.server import make_server
+from tests.conftest import get_app_html
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -68,78 +69,70 @@ def _parse_tool_data(result: Any) -> Any:
 class TestBrowserHTML:
     """Verify browser elements exist in the SPA HTML."""
 
-    async def _get_html(self) -> str:
-        server = make_server()
-        async with Client(server) as client:
-            resource = await client.read_resource("ui://vault/app.html")
-            return (
-                resource[0].text if hasattr(resource[0], "text") else str(resource[0])
-            )
-
     async def test_marked_js_vendored(self) -> None:
-        html = await self._get_html()
+        html = await get_app_html()
         assert "marked@" in html
         assert "(vendored)" in html
 
     async def test_dompurify_vendored(self) -> None:
-        html = await self._get_html()
+        html = await get_app_html()
         assert "dompurify@" in html
         assert "(vendored)" in html
         assert "DOMPurify.sanitize" in html
 
     async def test_browser_layout(self) -> None:
-        html = await self._get_html()
+        html = await get_app_html()
         assert "browser-layout" in html
         assert "browser-sidebar" in html
         assert "browser-preview" in html
 
     async def test_folder_tree(self) -> None:
-        html = await self._get_html()
+        html = await get_app_html()
         assert 'id="browser-tree"' in html
         assert "tree-folder" in html
         assert "tree-note" in html
 
     async def test_search_input(self) -> None:
-        html = await self._get_html()
+        html = await get_app_html()
         assert 'id="browser-search-input"' in html
         assert "Search vault" in html
 
     async def test_search_clear_button(self) -> None:
-        html = await self._get_html()
+        html = await get_app_html()
         assert 'id="browser-search-clear"' in html
 
     async def test_preview_panel(self) -> None:
-        html = await self._get_html()
+        html = await get_app_html()
         assert 'id="browser-preview"' in html
         assert "preview-content" in html
 
     async def test_disabled_edit_button(self) -> None:
-        html = await self._get_html()
+        html = await get_app_html()
         assert "edit-btn-disabled" in html
         assert "Coming soon" in html
 
     async def test_send_to_claude_in_preview(self) -> None:
-        html = await self._get_html()
+        html = await get_app_html()
         assert "preview-send-btn" in html
 
     async def test_context_button_in_preview(self) -> None:
-        html = await self._get_html()
+        html = await get_app_html()
         assert "preview-ctx-btn" in html
 
     async def test_graph_button_in_preview(self) -> None:
-        html = await self._get_html()
+        html = await get_app_html()
         assert "preview-graph-btn" in html
 
     async def test_marked_parse_call(self) -> None:
-        html = await self._get_html()
+        html = await get_app_html()
         assert "marked.parse" in html
 
     async def test_host_font_inheritance(self) -> None:
-        html = await self._get_html()
+        html = await get_app_html()
         assert "font-family: inherit" in html or "--font-sans" in html
 
     async def test_update_model_context(self) -> None:
-        html = await self._get_html()
+        html = await get_app_html()
         assert "'browser'" in html
         assert "updateContext" in html
 

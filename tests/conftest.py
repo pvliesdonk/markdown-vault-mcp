@@ -103,6 +103,18 @@ def populated_collection(tmp_path: Path):
     return col
 
 
+async def get_app_html() -> str:
+    """Spin up a fresh server and fetch the SPA HTML resource."""
+    from fastmcp import Client
+
+    from markdown_vault_mcp.server import make_server
+
+    server = make_server()
+    async with Client(server) as client:
+        resource = await client.read_resource("ui://vault/app.html")
+        return resource[0].text if hasattr(resource[0], "text") else str(resource[0])
+
+
 @pytest.fixture
 def vault_path(tmp_path: Path, fixtures_path: Path) -> Path:
     """Copy fixtures into a temp directory.

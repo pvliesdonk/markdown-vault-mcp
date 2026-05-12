@@ -15,6 +15,7 @@ from fastmcp import Client
 
 from markdown_vault_mcp._server_apps import _hashed
 from markdown_vault_mcp.server import make_server
+from tests.conftest import get_app_html
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -69,55 +70,47 @@ def _parse_tool_data(result: Any) -> Any:
 class TestGraphExplorerHTML:
     """Verify graph explorer elements exist in the SPA HTML."""
 
-    async def _get_html(self) -> str:
-        server = make_server()
-        async with Client(server) as client:
-            resource = await client.read_resource("ui://vault/app.html")
-            return (
-                resource[0].text if hasattr(resource[0], "text") else str(resource[0])
-            )
-
     async def test_vis_network_vendored(self) -> None:
-        html = await self._get_html()
+        html = await get_app_html()
         assert "vis-network@" in html
         assert "(vendored)" in html
 
     async def test_graph_container(self) -> None:
-        html = await self._get_html()
+        html = await get_app_html()
         assert 'id="graph-container"' in html
 
     async def test_vis_network_initialization(self) -> None:
-        html = await self._get_html()
+        html = await get_app_html()
         assert "vis.Network" in html
         assert "vis.DataSet" in html
 
     async def test_click_handler(self) -> None:
-        html = await self._get_html()
+        html = await get_app_html()
         assert "network.on('click'" in html
 
     async def test_hover_tooltip(self) -> None:
-        html = await self._get_html()
+        html = await get_app_html()
         # Tooltip via node.title property
         assert "tooltipDelay" in html
 
     async def test_double_click_handler(self) -> None:
-        html = await self._get_html()
+        html = await get_app_html()
         assert "doubleClick" in html
         # Double-click triggers focus mode (clear + reload for this node only)
         assert "loadGraph(nodeId)" in html
 
     async def test_dynamic_expansion(self) -> None:
-        html = await self._get_html()
+        html = await get_app_html()
         assert "expandNode" in html
         assert _hashed("vault_graph_neighborhood") in html
 
     async def test_hub_view(self) -> None:
-        html = await self._get_html()
+        html = await get_app_html()
         assert _hashed("vault_graph_hubs") in html
         assert "loadHubs" in html
 
     async def test_node_visual_encoding(self) -> None:
-        html = await self._get_html()
+        html = await get_app_html()
         # Node size proportional to backlink_count via value
         assert "backlink_count" in html
         # Edge color by type
@@ -126,31 +119,31 @@ class TestGraphExplorerHTML:
         assert "borderDashes" in html
 
     async def test_send_to_claude_button(self) -> None:
-        html = await self._get_html()
+        html = await get_app_html()
         assert 'id="graph-send-btn"' in html
 
     async def test_fullscreen_button(self) -> None:
-        html = await self._get_html()
+        html = await get_app_html()
         assert 'id="graph-fullscreen-btn"' in html
 
     async def test_mini_context_card(self) -> None:
-        html = await self._get_html()
+        html = await get_app_html()
         assert 'id="graph-mini-card"' in html
         assert "showMiniCard" in html
         assert "Full Context" in html
         assert "Open in Browser" in html
 
     async def test_xss_protection_eschtml(self) -> None:
-        html = await self._get_html()
+        html = await get_app_html()
         assert "escHtml" in html
 
     async def test_cdn_crash_guard(self) -> None:
-        html = await self._get_html()
+        html = await get_app_html()
         # loadGraph must check nodesDS before calling clear()
         assert "vis CDN failed" in html or "!nodesDS" in html
 
     async def test_host_css_variables_in_graph(self) -> None:
-        html = await self._get_html()
+        html = await get_app_html()
         assert "getColors" in html
         assert "--color-text-info" in html
 
@@ -298,40 +291,32 @@ class TestGraphDataTools:
 class TestSemanticGraphHTML:
     """Verify semantic similarity graph features in the SPA HTML."""
 
-    async def _get_html(self) -> str:
-        server = make_server()
-        async with Client(server) as client:
-            resource = await client.read_resource("ui://vault/app.html")
-            return (
-                resource[0].text if hasattr(resource[0], "text") else str(resource[0])
-            )
-
     async def test_semantic_toggle_button(self) -> None:
-        html = await self._get_html()
+        html = await get_app_html()
         assert 'id="graph-semantic-btn"' in html
 
     async def test_include_semantic_passed_to_tool(self) -> None:
-        html = await self._get_html()
+        html = await get_app_html()
         assert "include_semantic" in html
         assert "semanticEnabled" in html
 
     async def test_semantic_edge_color_constant(self) -> None:
-        html = await self._get_html()
+        html = await get_app_html()
         assert "_SEMANTIC_EDGE_COLOR" in html
 
     async def test_semantic_edge_dashed(self) -> None:
-        html = await self._get_html()
+        html = await get_app_html()
         # Semantic edges rendered as dashed lines
         assert "isSemantic" in html
         assert "dashes" in html
 
     async def test_folder_color_palette(self) -> None:
-        html = await self._get_html()
+        html = await get_app_html()
         assert "_FOLDER_COLORS" in html
         assert "_folderColor" in html
 
     async def test_cross_view_currentpath(self) -> None:
-        html = await self._get_html()
+        html = await get_app_html()
         assert "currentPath" in html
 
 

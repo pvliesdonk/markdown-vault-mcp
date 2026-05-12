@@ -14,6 +14,7 @@ from fastmcp import Client
 
 from markdown_vault_mcp._server_apps import _hashed
 from markdown_vault_mcp.server import make_server
+from tests.conftest import get_app_html
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -68,26 +69,18 @@ def _parse_tool_data(result: Any) -> Any:
 class TestContextCardHTML:
     """Verify context card sections exist in the SPA HTML."""
 
-    async def _get_html(self) -> str:
-        server = make_server()
-        async with Client(server) as client:
-            resource = await client.read_resource("ui://vault/app.html")
-            return (
-                resource[0].text if hasattr(resource[0], "text") else str(resource[0])
-            )
-
     async def test_context_card_container(self) -> None:
-        html = await self._get_html()
+        html = await get_app_html()
         assert 'id="context-card"' in html
 
     async def test_context_header_elements(self) -> None:
-        html = await self._get_html()
+        html = await get_app_html()
         assert 'id="ctx-title"' in html
         assert 'id="ctx-path"' in html
         assert 'id="ctx-folder"' in html
 
     async def test_collapsible_sections(self) -> None:
-        html = await self._get_html()
+        html = await get_app_html()
         for section_id in [
             "ctx-frontmatter",
             "ctx-tags",
@@ -99,45 +92,45 @@ class TestContextCardHTML:
             assert f'id="{section_id}"' in html
 
     async def test_send_to_claude_button(self) -> None:
-        html = await self._get_html()
+        html = await get_app_html()
         assert 'id="ctx-send-btn"' in html
         assert "sendToLLM" in html
 
     async def test_call_server_tool_for_context(self) -> None:
-        html = await self._get_html()
+        html = await get_app_html()
         assert "callServerTool" in html
         assert _hashed("vault_context") in html
 
     async def test_clickable_link_items(self) -> None:
-        html = await self._get_html()
+        html = await get_app_html()
         assert "link-item" in html
         assert "data-path" in html
 
     async def test_host_css_variables(self) -> None:
-        html = await self._get_html()
+        html = await get_app_html()
         assert "var(--color-text-info" in html
         assert "var(--color-border-primary" in html
         assert "var(--color-text-secondary" in html
 
     async def test_update_model_context_on_view(self) -> None:
-        html = await self._get_html()
+        html = await get_app_html()
         assert "updateContext" in html
         assert "'context card'" in html
 
     async def test_link_type_badges(self) -> None:
-        html = await self._get_html()
+        html = await get_app_html()
         assert "link-type-badge" in html
 
     async def test_similar_score_bar(self) -> None:
-        html = await self._get_html()
+        html = await get_app_html()
         assert "similar-score-fill" in html
 
     async def test_tag_pills(self) -> None:
-        html = await self._get_html()
+        html = await get_app_html()
         assert "tag-pill" in html
 
     async def test_frontmatter_table(self) -> None:
-        html = await self._get_html()
+        html = await get_app_html()
         assert "fm-table" in html
 
 
@@ -234,22 +227,14 @@ class TestShowContextTool:
 class TestNoHardcodedColors:
     """Verify context card CSS uses variables instead of hardcoded hex colours."""
 
-    async def _get_html(self) -> str:
-        server = make_server()
-        async with Client(server) as client:
-            resource = await client.read_resource("ui://vault/app.html")
-            return (
-                resource[0].text if hasattr(resource[0], "text") else str(resource[0])
-            )
-
     async def test_success_color_is_variable(self) -> None:
-        html = await self._get_html()
+        html = await get_app_html()
         assert "var(--color-text-success" in html
 
     async def test_error_color_is_variable(self) -> None:
-        html = await self._get_html()
+        html = await get_app_html()
         assert "var(--color-text-danger" in html
 
     async def test_accent_fg_color_is_variable(self) -> None:
-        html = await self._get_html()
+        html = await get_app_html()
         assert "var(--color-text-inverse" in html
