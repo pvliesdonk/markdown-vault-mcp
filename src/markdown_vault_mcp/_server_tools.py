@@ -1038,7 +1038,7 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
         until: str | None = None,
         limit: int = 20,
         collection: Collection = Depends(get_collection),
-    ) -> list[dict[str, Any]]:
+    ) -> dict[str, Any]:
         """List commits that touched a note or the whole vault.
 
         Only available for git-backed vaults. Use 'stats' to check
@@ -1058,18 +1058,21 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
             limit: Maximum number of commits to return. Default 20, max 100.
 
         Returns:
-            List of commit dicts, newest-first. Each contains:
+            Envelope dict with the following fields:
 
-            - sha (str): Full 40-character commit SHA.
-            - short_sha (str): 7-character abbreviated SHA.
-            - timestamp (str): ISO 8601 author timestamp.
-            - author (str): Committer name and email, e.g. "Name <email>".
-            - message (str): First line of the commit message.
-            - paths_changed (list[str]): Files touched by the commit.
-              Populated for vault-wide queries (path=None). Always empty for
-              single-note queries, since the path is already determined by
-              the query arguments — callers know which file the commit
-              touched without needing it echoed back.
+            - commits (list[dict]): Commit entries, newest-first. Each entry
+              contains:
+                - sha (str): Full 40-character commit SHA.
+                - short_sha (str): 7-character abbreviated SHA.
+                - timestamp (str): ISO 8601 author timestamp.
+                - author (str): Committer name and email, e.g. "Name <email>".
+                - message (str): First line of the commit message.
+                - paths_changed (list[str]): Files touched by the commit.
+                  Populated for vault-wide queries (path=None). Always empty
+                  for single-note queries, since the path is already
+                  determined by the query arguments — callers know which
+                  file the commit touched without needing it echoed back.
+            - total (int): Number of entries in `commits`.
 
         Raises:
             ToolError: If the path is invalid.
@@ -1084,7 +1087,8 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
             )
         except ValueError as exc:
             raise ToolError(str(exc)) from exc
-        return [asdict(r) for r in results]
+        commits = [asdict(r) for r in results]
+        return {"commits": commits, "total": len(commits)}
 
     @mcp.tool(
         icons=_TOOL_ICONS["get_diff"],
@@ -1101,7 +1105,7 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
         per_commit: bool = False,
         limit: int | None = None,
         collection: Collection = Depends(get_collection),
-    ) -> dict[str, Any] | list[dict[str, Any]]:
+    ) -> dict[str, Any]:
         """Return the diff of a note between a reference point and HEAD.
 
         Only available for git-backed vaults. Exactly one of 'since_sha' or
@@ -1130,20 +1134,21 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
                 auditing long histories.
 
         Returns:
-            When per_commit=False: dict with a single field:
+            Envelope dict whose shape depends on `per_commit`:
 
-            - diff (str): Unified diff from the reference to HEAD. Empty
-              string when there are no changes. May include a truncation
-              notice if the diff exceeds 50 KB.
-
-            When per_commit=True: list of commit dicts, newest-first, each
-            containing:
-
-            - sha (str): Full commit SHA.
-            - short_sha (str): Abbreviated SHA.
-            - timestamp (str): ISO 8601 author timestamp.
-            - message (str): First line of commit message.
-            - diff (str): Unified diff for this commit.
+            - When per_commit=False:
+                - diff (str): Unified diff from the reference to HEAD. Empty
+                  string when there are no changes. May include a truncation
+                  notice if the diff exceeds 50 KB.
+            - When per_commit=True:
+                - commits (list[dict]): Per-commit entries, newest-first.
+                  Each contains:
+                    - sha (str): Full commit SHA.
+                    - short_sha (str): Abbreviated SHA.
+                    - timestamp (str): ISO 8601 author timestamp.
+                    - message (str): First line of commit message.
+                    - diff (str): Unified diff for this commit.
+                - total (int): Number of entries in `commits`.
 
         Raises:
             ToolError: If neither or both reference parameters are supplied,
@@ -1161,7 +1166,8 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
         except ValueError as exc:
             raise ToolError(str(exc)) from exc
         if isinstance(result, list):
-            return [asdict(r) for r in result]
+            commits = [asdict(r) for r in result]
+            return {"commits": commits, "total": len(commits)}
         return {"diff": result}
 
     # --- Index management tools ---

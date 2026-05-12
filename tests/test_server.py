@@ -3096,9 +3096,12 @@ class TestGetHistoryTool:
         server = make_server()
         async with Client(server) as client:
             result = await client.call_tool("get_history", {})
-        entries = _parse_tool_data(result)
+        data = _parse_tool_data(result)
+        assert isinstance(data, dict)
+        entries = data["commits"]
         assert isinstance(entries, list)
         assert len(entries) == 2
+        assert data["total"] == 2
         messages = [e["message"] for e in entries]
         assert "edit: alpha.md" in messages
         assert "write: alpha.md" in messages
@@ -3108,17 +3111,19 @@ class TestGetHistoryTool:
         server = make_server()
         async with Client(server) as client:
             result = await client.call_tool("get_history", {"path": "alpha.md"})
-        entries = _parse_tool_data(result)
-        assert isinstance(entries, list)
-        assert len(entries) == 2
+        data = _parse_tool_data(result)
+        assert isinstance(data, dict)
+        assert isinstance(data["commits"], list)
+        assert len(data["commits"]) == 2
+        assert data["total"] == 2
 
     async def test_history_entry_fields(self) -> None:
         """Each history entry has the expected fields."""
         server = make_server()
         async with Client(server) as client:
             result = await client.call_tool("get_history", {"limit": 1})
-        entries = _parse_tool_data(result)
-        entry = entries[0]
+        data = _parse_tool_data(result)
+        entry = data["commits"][0]
         assert "sha" in entry and len(entry["sha"]) == 40
         assert "short_sha" in entry
         assert "timestamp" in entry
@@ -3131,8 +3136,9 @@ class TestGetHistoryTool:
         server = make_server()
         async with Client(server) as client:
             result = await client.call_tool("get_history", {"limit": 1})
-        entries = _parse_tool_data(result)
-        assert len(entries) == 1
+        data = _parse_tool_data(result)
+        assert len(data["commits"]) == 1
+        assert data["total"] == 1
 
     async def test_invalid_path_raises_tool_error(self) -> None:
         """A path that escapes the vault raises ToolError."""
@@ -3158,6 +3164,34 @@ class TestGetHistoryTool:
             tools = await client.list_tools()
         names = [t.name for t in tools]
         assert "get_diff" in names
+
+    async def test_get_history_envelope_wire_shape(self) -> None:
+        """structured_content uses the `commits` envelope, not FastMCP's
+        synthetic `result` wrap key."""
+        server = make_server()
+        async with Client(server) as client:
+            result = await client.call_tool("get_history", {})
+        assert result.structured_content is not None
+        assert "commits" in result.structured_content
+        assert "total" in result.structured_content
+        # The whole point of the refactor: payload is self-describing on
+        # the wire — no opaque `result` key from auto-wrapping a list.
+        assert "result" not in result.structured_content
+
+    async def test_get_history_output_schema_not_auto_wrapped(self) -> None:
+        """outputSchema must not carry FastMCP's `x-fastmcp-wrap-result`
+        marker — it appears only when FastMCP auto-wraps a list/primitive
+        return under a synthetic `result` key; the dict envelope skips it."""
+        server = make_server()
+        async with Client(server) as client:
+            tools = await client.list_tools()
+        gh = next(t for t in tools if t.name == "get_history")
+        schema = gh.outputSchema
+        assert schema is not None
+        assert schema.get("type") == "object"
+        assert "x-fastmcp-wrap-result" not in schema
+        # And no synthetic `result` key in any declared properties.
+        assert "result" not in schema.get("properties", {})
 
 
 class TestGetDiffTool:
@@ -3190,7 +3224,7 @@ class TestGetDiffTool:
         assert "Version" in data["diff"] or data["diff"] == ""
 
     async def test_per_commit_diff(self, git_vault: Path) -> None:
-        """get_diff with per_commit=True returns a list of commit diffs."""
+        """get_diff with per_commit=True returns a {commits, total} envelope."""
         sha = self._first_sha(git_vault)
         server = make_server()
         async with Client(server) as client:
@@ -3199,10 +3233,12 @@ class TestGetDiffTool:
                 {"path": "alpha.md", "since_sha": sha, "per_commit": True},
             )
         data = _parse_tool_data(result)
-        assert isinstance(data, list)
-        assert len(data) == 1
-        assert "sha" in data[0]
-        assert "diff" in data[0]
+        assert isinstance(data, dict)
+        assert isinstance(data["commits"], list)
+        assert len(data["commits"]) == 1
+        assert data["total"] == 1
+        assert "sha" in data["commits"][0]
+        assert "diff" in data["commits"][0]
 
     async def test_no_reference_raises_tool_error(self) -> None:
         """Calling get_diff without any reference raises ToolError."""
@@ -3271,10 +3307,12 @@ class TestGetDiffTool:
                 },
             )
         data = _parse_tool_data(result)
-        assert isinstance(data, list)
-        assert len(data) == 2
+        assert isinstance(data, dict)
+        commits = data["commits"]
+        assert len(commits) == 2
+        assert data["total"] == 2
         # Newest-first ordering: the two most recent commit messages.
-        assert [c["message"] for c in data] == ["edit v4", "edit v3"]
+        assert [c["message"] for c in commits] == ["edit v4", "edit v3"]
 
 
 async def test_search_tool_accepts_chunks_per_file_and_snippet_words(
@@ -3378,10 +3416,14 @@ class TestGitToolsUntilParam:
             future = await client.call_tool(
                 "get_history", {"until": "2099-01-01T00:00:00"}
             )
-        assert len(_parse_tool_data(future)) == 2
+        future_data = _parse_tool_data(future)
+        assert len(future_data["commits"]) == 2
+        assert future_data["total"] == 2
 
         async with Client(server) as client:
             past = await client.call_tool(
                 "get_history", {"until": "2000-01-01T00:00:00"}
             )
-        assert _parse_tool_data(past) == []
+        past_data = _parse_tool_data(past)
+        assert past_data["commits"] == []
+        assert past_data["total"] == 0

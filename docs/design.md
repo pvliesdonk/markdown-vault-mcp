@@ -1669,6 +1669,8 @@ Safety branch mode for push failures is tracked separately (see #119).
 
 Both methods use the existing `_git_env()` / `_cleanup_git_env()` pattern for credential forwarding and cleanup. Path arguments are always validated via `Collection._validate_path()` before being passed to the git layer. No shell injection is possible because all subprocess calls use list arguments with `shell=False`.
 
+**MCP response envelope**: the MCP wrappers for `get_history` and `get_diff(per_commit=True)` return a `{"commits": [...], "total": N}` envelope rather than a bare list, so the structured payload is self-describing on the wire. FastMCP otherwise auto-wraps list-typed tool returns under a synthetic `"result"` key (`x-fastmcp-wrap-result: true` in the output schema), which forces clients re-reading persisted MCP content to know FastMCP's wrapping convention to find the data. The Python facade (`Collection.get_history`, `Collection.get_diff`) stays list-returning — only the MCP-tool wrapper transforms to the envelope. `get_diff(per_commit=False)` keeps its existing `{"diff": str}` shape since it is already self-describing.
+
 ### Release channels
 
 The release workflow (`.github/workflows/release.yml`) publishes two
