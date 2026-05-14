@@ -165,24 +165,24 @@ For reverse proxy (Traefik) and deployment setup, see [`docs/deployment.md`](doc
 
 ### Server info
 
-The server registers a built-in `get_server_info` tool (via `fastmcp_pvl_core.register_server_info_tool`) so operators can confirm the deployed version with a single MCP call. The response carries `server_name`, `server_version`, and `core_version`. Wire upstream version reporting (when applicable) inside the `DOMAIN-UPSTREAM-START` / `DOMAIN-UPSTREAM-END` sentinel in `src/markdown_vault_mcp/server.py`.
+The server registers a built-in `get_server_info` tool (via `fastmcp_pvl_core.register_server_info_tool`) so operators can confirm the deployed version with a single MCP call. The response carries `server_name`, `server_version`, and `core_version`.
 
 ### File exchange
 
-A `DOMAIN-FILE-EXCHANGE-START` / `DOMAIN-FILE-EXCHANGE-END` sentinel
-block in `server.py` wires the
-[MCP File Exchange](docs/guides/file-exchange.md) helpers from
-`fastmcp-pvl-core`. The **upload direction is wired** (#443) — agents
-mint a one-time HTTPS POST URL via `create_upload_link(target_id,
-ttl_seconds)` and push bytes outside the MCP context, with the route
-mounted only on HTTP/SSE transports when `MARKDOWN_VAULT_MCP_BASE_URL`
-is set. The **download direction remains deferred to #431** because
-the spec-compliant `create_download_link(origin_id, ttl_seconds)` tool
-collides on name with MV's existing `create_download_link(path,
-ttl_seconds)` registered via `ArtifactStore`. See the guide for the
-upload-flow walkthrough and the producer / consumer patterns waiting on
-#431, or [`CLAUDE.md`](CLAUDE.md#file-exchange-register_file_exchange--opt-in-upload)
-for the wiring overview.
+`markdown-vault-mcp` participates in the
+[MCP File Exchange](docs/guides/file-exchange.md) convention via
+`fastmcp-pvl-core` helpers. The **upload direction is wired** (#443) —
+agents call `create_upload_link(target_id, ttl_seconds)` to mint a
+one-time HTTPS POST URL and push bytes outside the MCP context. The
+route mounts only on HTTP/SSE transports when
+`MARKDOWN_VAULT_MCP_BASE_URL` is set, and uploads are gated by
+`MARKDOWN_VAULT_MCP_READ_ONLY=false`. The **download direction is
+deferred to #431** because the spec-compliant
+`create_download_link(origin_id, ttl_seconds)` tool collides on name
+with MV's existing `create_download_link(path, ttl_seconds)`
+(registered via `ArtifactStore`). See the
+[guide](docs/guides/file-exchange.md) for the upload-flow walkthrough
+and the producer / consumer patterns waiting on #431.
 
 ## Configuration
 

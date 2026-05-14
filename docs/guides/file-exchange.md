@@ -11,10 +11,7 @@ remote clients):
   spec-compliant `create_upload_link(target_id, ttl_seconds)` tool and
   a one-time `POST /markdown-vault-mcp/uploads/{token}` route.
 
-Both helpers' wiring lives inside the
-`DOMAIN-FILE-EXCHANGE-START` / `DOMAIN-FILE-EXCHANGE-END` sentinel
-block in `src/markdown_vault_mcp/server.py`. The block is preserved
-across `copier update`.
+Both helpers are wired in `src/markdown_vault_mcp/server.py`.
 
 ## Status in markdown-vault-mcp
 
@@ -34,9 +31,9 @@ across `copier update`.
     pvl-core's spec-compliant `create_download_link(origin_id,
     ttl_seconds)` tool name collides with MV's existing
     `create_download_link(path, ttl_seconds)` (registered via
-    `ArtifactStore` in the `DOMAIN-WIRING` block). Wiring both would
-    silently shadow one or the other depending on registration order,
-    so `register_file_exchange(...)` is intentionally not called in
+    `ArtifactStore`). Wiring both would silently shadow one or the
+    other depending on registration order, so
+    `register_file_exchange(...)` is intentionally not called in
     `server.py` until #431 resolves the collision.
 
 ## Today
@@ -87,9 +84,9 @@ today; download-direction variables
 The migration in #431 will:
 
 1. Drop MV's bespoke `create_download_link` tool registration.
-2. Drop the `ArtifactStore` HTTP route in the `DOMAIN-WIRING` block.
-3. Uncomment the `register_file_exchange(...)` call in the
-   `DOMAIN-FILE-EXCHANGE` sentinel block.
+2. Drop the `ArtifactStore` HTTP route registration.
+3. Add the `register_file_exchange(...)` call in
+   `src/markdown_vault_mcp/server.py`.
 4. Update this guide to retire the "deferred" half of the status
    admonition and document the wired download patterns.
 
