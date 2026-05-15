@@ -1391,7 +1391,11 @@ class FTSIndex:
         deeply-sectioned documents rare.
 
         Returns:
-            A dict with section data, or ``None`` when not found.
+            A dict with the following fields, or ``None`` when not found:
+
+            * ``content``: The section's text content.
+            * ``heading``: The matched heading string (as stored).
+            * ``heading_level``: The heading level (1-6).
         """
         norm_query = _normalize_heading(heading)
         if not norm_query:
@@ -1437,21 +1441,13 @@ class FTSIndex:
             FROM sections s
             JOIN documents d ON d.id = s.document_id
             WHERE d.path = ? AND s.heading IS NOT NULL
-            ORDER BY s.start_line ASC
+            GROUP BY s.heading
+            ORDER BY MIN(s.start_line) ASC
+            LIMIT ?
             """,
-            (path,),
+            (path, limit),
         ).fetchall()
-        seen: set[str] = set()
-        out: list[str] = []
-        for row in rows:
-            heading = row["heading"]
-            if heading in seen:
-                continue
-            seen.add(heading)
-            out.append(heading)
-            if len(out) >= limit:
-                break
-        return out
+        return [row["heading"] for row in rows]
 
     def close(self) -> None:
         """Close the underlying database connection.
