@@ -261,6 +261,15 @@ class HeadingChunker:
                     base_line=chunk.start_line + 1,
                 )
                 if sub_chunks:
+                    # The first sub-chunk may be the preamble of the parent
+                    # section (text between the parent's heading and the
+                    # first sub-heading).  ``_split_at_levels`` assigns it
+                    # ``heading=None``; promote it to inherit the parent's
+                    # heading so the inter-heading text stays attributed
+                    # to the parent rather than appearing orphaned.
+                    if sub_chunks[0].heading is None:
+                        sub_chunks[0].heading = chunk.heading
+                        sub_chunks[0].heading_level = chunk.heading_level
                     out.extend(
                         self._refine_oversize(sub_chunks, current_level=next_level)
                     )
@@ -270,19 +279,28 @@ class HeadingChunker:
         return out
 
     def _budget_split(self, chunk: Chunk) -> list[Chunk]:
-        """Split *chunk* on paragraph and word boundaries until each fragment
-        fits within ``max_chunk_words``.
+        """Split *chunk* on paragraph, line, and word boundaries until each
+        fragment fits within ``max_chunk_words``.
 
         Used as the last-resort splitter when no deeper heading is available
         (e.g. an H6 section longer than the budget, or a preamble with no
         internal structure).  Preserves the parent chunk's ``heading`` and
         ``heading_level`` on every fragment; ``start_line`` is the parent's
-        ``start_line`` offset by the paragraph's line offset within the
+        ``start_line`` offset by the paragraph or line offset within the
         parent content.
 
-        Word-level splits within a single oversize paragraph share the same
-        ``start_line`` because the segment boundary does not align with a
-        line break in the source.
+        Splitting hierarchy (each level used only when the previous level
+        cannot keep the budget):
+        1. Paragraph boundaries — multiple paragraphs bin-pack into a
+           single chunk when their combined word count fits the budget,
+           preserving inter-paragraph blank lines.
+        2. Line boundaries inside an oversize paragraph — lines bin-pack
+           the same way, so tables, lists, code blocks, and other
+           line-structured content keep their layout.
+        3. Word boundaries inside an oversize single line — last resort
+           for a pathological single line longer than the whole budget;
+           collapses internal whitespace and loses line structure (but
+           the alternative is silent truncation by the embedding model).
 
         Args:
             chunk: A chunk whose word count exceeds ``max_chunk_words``.
@@ -324,19 +342,20 @@ class HeadingChunker:
         pending_lines: list[str] = []
         pending_words = 0
 
+        def make_chunk(content: str, offset: int) -> Chunk:
+            return Chunk(
+                heading=chunk.heading,
+                heading_level=chunk.heading_level,
+                content=content,
+                start_line=chunk.start_line + offset,
+            )
+
         def emit() -> None:
             nonlocal pending_offset, pending_lines, pending_words
             if not pending_lines:
                 return
             assert pending_offset is not None
-            out.append(
-                Chunk(
-                    heading=chunk.heading,
-                    heading_level=chunk.heading_level,
-                    content="".join(pending_lines),
-                    start_line=chunk.start_line + pending_offset,
-                )
-            )
+            out.append(make_chunk("".join(pending_lines), pending_offset))
             pending_offset = None
             pending_lines = []
             pending_words = 0
@@ -345,21 +364,12 @@ class HeadingChunker:
             words_in_para = sum(len(line.split()) for line in lines)
 
             if words_in_para > budget:
-                # Single paragraph exceeds the budget — flush, then split on
-                # word boundaries.  Word-segment start_line collapses to the
-                # paragraph offset since word breaks aren't line breaks.
+                # Single paragraph exceeds the budget — flush, then bin-pack
+                # its lines.  This preserves line-structured content
+                # (tables, lists, code blocks) within an oversize paragraph
+                # rather than flattening it via word-split.
                 emit()
-                tokens = "".join(lines).split()
-                for i in range(0, len(tokens), budget):
-                    segment = " ".join(tokens[i : i + budget])
-                    out.append(
-                        Chunk(
-                            heading=chunk.heading,
-                            heading_level=chunk.heading_level,
-                            content=segment,
-                            start_line=chunk.start_line + offset,
-                        )
-                    )
+                self._budget_split_lines(lines, offset, budget, out, make_chunk)
                 continue
 
             if pending_words + words_in_para > budget:
@@ -375,6 +385,78 @@ class HeadingChunker:
 
         emit()
         return out
+
+    def _budget_split_lines(
+        self,
+        lines: list[str],
+        paragraph_offset: int,
+        budget: int,
+        out: list[Chunk],
+        make_chunk: Any,
+    ) -> None:
+        """Bin-pack the lines of a single oversize paragraph within *budget*.
+
+        Each line keeps its trailing newline (``splitlines(keepends=True)``
+        from the caller) so concatenation preserves the original layout —
+        tables stay tabular, lists stay listed, code blocks stay
+        line-broken.  Only when an individual line itself exceeds the
+        budget do we resort to ``" ".join(tokens[i:i+budget])`` word-split
+        on that single line; this final fallback collapses internal
+        whitespace but is bounded to pathological cases (a single line
+        carrying more words than the entire budget).
+
+        Emits chunks via *make_chunk(content, offset)* so the parent
+        chunk's ``heading`` / ``heading_level`` / ``start_line`` baseline
+        is applied uniformly.
+
+        Args:
+            lines: All lines of the oversize paragraph, each with its
+                trailing newline preserved.
+            paragraph_offset: Line offset of the paragraph within the
+                parent chunk's content.
+            budget: Maximum word count per emitted chunk.
+            out: Mutable list to append emitted chunks to.
+            make_chunk: Callable ``(content, offset) -> Chunk`` that
+                stamps the parent's metadata onto each fragment.
+        """
+        line_pending: list[str] = []
+        line_pending_words = 0
+        line_pending_offset: int | None = None
+
+        def flush_pending() -> None:
+            nonlocal line_pending, line_pending_words, line_pending_offset
+            if not line_pending:
+                return
+            assert line_pending_offset is not None
+            out.append(make_chunk("".join(line_pending), line_pending_offset))
+            line_pending = []
+            line_pending_words = 0
+            line_pending_offset = None
+
+        for li, line in enumerate(lines):
+            line_words = len(line.split())
+            line_offset = paragraph_offset + li
+
+            if line_words > budget:
+                # Single line over budget — flush pending, then word-split
+                # this one line.  Collapses internal whitespace; bounded to
+                # pathological cases where one line carries more words than
+                # the entire budget would allow.
+                flush_pending()
+                tokens = line.split()
+                for i in range(0, len(tokens), budget):
+                    segment = " ".join(tokens[i : i + budget])
+                    out.append(make_chunk(segment, line_offset))
+                continue
+
+            if line_pending_words + line_words > budget:
+                flush_pending()
+            if line_pending_offset is None:
+                line_pending_offset = line_offset
+            line_pending.append(line)
+            line_pending_words += line_words
+
+        flush_pending()
 
 
 def _resolve_title(metadata: dict[str, Any], content: str, path: Path) -> str:
