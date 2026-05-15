@@ -1025,7 +1025,10 @@ if the file does not exist. Raises `EditConflictError` if `old_text` is
 not found (after both exact and normalized matching) or appears more than
 once. When both exact and normalized match fail, `EditConflictError`
 includes diagnostic fields: `closest_match_line`, `first_diff_char`,
-`expected_snippet`, `found_snippet`.
+`expected_snippet`, `found_snippet`. For a multi-line `old_text` these
+locate the *first line that genuinely diverges* from the file — the
+diagnostic anchors on the first line, then walks subsequent lines so a
+later-line mismatch is reported rather than a perfectly-matching first line.
 
 **`delete()` behavior**: removes the file from disk, deletes FTS and embedding
 entries, triggers `on_write`. Raises `DocumentNotFoundError` if not found.

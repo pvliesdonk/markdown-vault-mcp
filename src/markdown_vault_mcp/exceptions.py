@@ -17,10 +17,10 @@ class EditConflictError(MarkdownMCPError):
     """Raised when ``old_text`` is not found or appears more than once in a document.
 
     Attributes:
-        closest_match_line: 1-based line number of the nearest fuzzy match, if any.
-        first_diff_char: Character offset of the first difference from the nearest match.
-        expected_snippet: The ``old_text`` that was searched for (truncated).
-        found_snippet: The nearest match found in the document (truncated).
+        closest_match_line: 1-based file line where ``old_text`` first diverges.
+        first_diff_char: Character offset of the divergence within that line.
+        expected_snippet: The divergent ``old_text`` line (truncated).
+        found_snippet: The corresponding file line (truncated, empty past EOF).
     """
 
     def __init__(

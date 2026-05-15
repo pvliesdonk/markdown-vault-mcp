@@ -149,45 +149,63 @@ def build_position_map(original: str, normalized: str) -> list[int]:
 def find_closest_match(old_text: str, file_content: str) -> dict[str, Any]:
     """Find the closest fuzzy match for diagnostic error reporting.
 
-    Compares the first line of *old_text* against every line in the file
-    using ``difflib.SequenceMatcher``.  If a match with ratio >= 0.6 is
-    found, returns diagnostic info about the first character divergence.
+    Anchors on the first line of *old_text* — the file line most similar to
+    it (``difflib.SequenceMatcher`` ratio >= 0.6) — then walks the remaining
+    lines of *old_text* against the file region starting at that anchor to
+    locate the *first line that genuinely diverges*.  This matters for
+    multi-line ``old_text``: when the first line matches the file exactly,
+    reporting that line would show two identical snippets and a meaningless
+    diff position; the real mismatch is on a later line.
 
     Args:
         old_text: The text the caller tried to match.
         file_content: The full file content.
 
     Returns:
-        A dict with ``closest_match_line``, ``first_diff_char``,
-        ``expected_snippet``, and ``found_snippet``; or an empty dict
-        if no match with ratio >= 0.6 is found.
+        A dict with ``closest_match_line`` (1-based file line of the first
+        divergent line), ``first_diff_char`` (char offset within that line),
+        ``expected_snippet`` (the divergent ``old_text`` line), and
+        ``found_snippet`` (the corresponding file line, empty if ``old_text``
+        extends past the file region); or an empty dict if no anchor line
+        with ratio >= 0.6 is found.
     """
-    first_line = old_text.split("\n", 1)[0]
+    old_lines = old_text.split("\n")
     file_lines = file_content.split("\n")
-    best_ratio = 0.0
-    best_line_num = 0
-    best_line_text = ""
 
-    for i, line in enumerate(file_lines, 1):
-        ratio = SequenceMatcher(None, first_line, line).ratio()
+    best_ratio = 0.0
+    anchor_idx = -1  # 0-based index into file_lines
+    for i, line in enumerate(file_lines):
+        ratio = SequenceMatcher(None, old_lines[0], line).ratio()
         if ratio > best_ratio:
             best_ratio = ratio
-            best_line_num = i
-            best_line_text = line
+            anchor_idx = i
 
     if best_ratio < 0.6:
         return {}
 
-    # Find first character difference.
+    # Walk old_text lines against the file region; find the first that differs.
+    diff_offset = len(old_lines) - 1  # fallback: every line matched by content
+    for offset, old_line in enumerate(old_lines):
+        file_idx = anchor_idx + offset
+        file_line = file_lines[file_idx] if file_idx < len(file_lines) else None
+        if file_line is None or old_line != file_line:
+            diff_offset = offset
+            break
+
+    expected_line = old_lines[diff_offset]
+    file_idx = anchor_idx + diff_offset
+    found_line = file_lines[file_idx] if file_idx < len(file_lines) else ""
+
+    # First character difference within the divergent line pair.
     diff_pos = 0
-    min_len = min(len(first_line), len(best_line_text))
-    while diff_pos < min_len and first_line[diff_pos] == best_line_text[diff_pos]:
+    min_len = min(len(expected_line), len(found_line))
+    while diff_pos < min_len and expected_line[diff_pos] == found_line[diff_pos]:
         diff_pos += 1
 
     ctx = 30
     return {
-        "closest_match_line": best_line_num,
+        "closest_match_line": file_idx + 1,
         "first_diff_char": diff_pos,
-        "expected_snippet": first_line[max(0, diff_pos - ctx) : diff_pos + ctx],
-        "found_snippet": best_line_text[max(0, diff_pos - ctx) : diff_pos + ctx],
+        "expected_snippet": expected_line[max(0, diff_pos - ctx) : diff_pos + ctx],
+        "found_snippet": found_line[max(0, diff_pos - ctx) : diff_pos + ctx],
     }
