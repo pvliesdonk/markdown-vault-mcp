@@ -658,17 +658,22 @@ class FTSIndex:
             content_expr = "f.content AS content"
             snippet_params = []
 
-        # Correlated subquery picks the matching sections row to source
-        # start_line for each FTS hit, so the keyword/hybrid channels can
-        # honour the documented (score DESC, start_line ASC) within-group
-        # tie-break.  Matching is on (document_id, content, heading) —
-        # sections.content stores the chunk text unmodified, the same value
-        # that notes_fts.content stores; the snippet() projection only
-        # rewrites the SELECT list, not the underlying f.content column
-        # referenced here.  COALESCE on heading treats NULL/empty as
-        # equivalent so identical-content chunks under different headings
-        # don't cross-match.  MIN()+fallback 0 handles legacy on-disk
-        # indices that pre-date this query (preserves prior behaviour).
+        # Correlated subqueries pick the matching sections row to source
+        # start_line and section_id for each FTS hit, so the keyword/hybrid
+        # channels can honour the documented (score DESC, start_line ASC,
+        # section_id ASC) within-group tie-break.  Matching is on
+        # (document_id, content, heading) — sections.content stores the
+        # chunk text unmodified, the same value that notes_fts.content
+        # stores; the snippet() projection only rewrites the SELECT list,
+        # not the underlying f.content column referenced here.  COALESCE on
+        # heading treats NULL/empty as equivalent so identical-content
+        # chunks under different headings don't cross-match.  MIN()+fallback
+        # 0 handles legacy on-disk indices that pre-date this query
+        # (preserves prior behaviour).  Sections are inserted in document
+        # order, so within one document MIN(s.id) and MIN(s.start_line)
+        # resolve to the same row.  The trailing f.rowid tie-break makes the
+        # candidate set itself deterministic at the LIMIT boundary when
+        # several hits share a bm25 rank.
         sql = f"""
             SELECT
                 f.path,
@@ -684,13 +689,20 @@ class FTSIndex:
                     WHERE s.document_id = d.id
                       AND s.content = f.content
                       AND COALESCE(s.heading, '') = COALESCE(f.heading, '')
-                ), 0) AS start_line
+                ), 0) AS start_line,
+                COALESCE((
+                    SELECT MIN(s.id)
+                    FROM sections s
+                    WHERE s.document_id = d.id
+                      AND s.content = f.content
+                      AND COALESCE(s.heading, '') = COALESCE(f.heading, '')
+                ), 0) AS section_id
             FROM notes_fts f
             JOIN documents d ON d.path = f.path
             WHERE notes_fts MATCH ?
               {folder_clause}
               {tag_filter_sql}
-            ORDER BY score DESC
+            ORDER BY score DESC, f.rowid ASC
             LIMIT ?
         """
 
@@ -740,6 +752,7 @@ class FTSIndex:
                     score=row["score"],
                     chunk_count=row["chunk_count"],
                     start_line=row["start_line"],
+                    section_id=row["section_id"],
                 )
             )
         return results

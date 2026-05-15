@@ -108,16 +108,19 @@ def _apply_length_downweight(
 class _GroupableRow(Protocol):
     """Row contract consumed by :func:`_group_by_path`.
 
-    Adds ``heading`` and ``start_line`` to the cap-helper's contract so
-    grouped output preserves section identity and breaks score ties
-    deterministically.  ``start_line`` defaults to ``0`` for legacy vector
-    rows loaded from older .json sidecars.
+    Adds ``heading``, ``start_line`` and ``section_id`` to the cap-helper's
+    contract so grouped output preserves section identity and breaks score
+    ties deterministically.  ``start_line`` defaults to ``0`` for legacy
+    vector rows loaded from older .json sidecars; ``section_id`` is the
+    final tie-break (the ``sections`` rowid) and is ``0`` for any channel
+    that cannot resolve it (vector rows, legacy indices).
     """
 
     path: str
     heading: str | None
     score: float
     start_line: int
+    section_id: int
 
 
 _GroupableT = TypeVar("_GroupableT", bound=_GroupableRow)
@@ -132,7 +135,11 @@ def _group_by_path(
     of groups.  Each group is a list of rows sharing the same ``path``,
     capped at ``chunks_per_file`` rows.  At most ``file_limit`` groups are
     returned.  Sections within a group are sorted ``(score DESC,
-    start_line ASC)`` so ties surface in document order.
+    start_line ASC, section_id ASC)`` so ties surface in document order.
+    The ``section_id`` key (the ``sections`` rowid) makes the order fully
+    deterministic even when chunks share a ``start_line`` — e.g. word-split
+    fragments of a single oversize source line, which the chunker emits
+    with identical ``start_line`` values.
 
     Args:
         rows: Rows pre-sorted by descending score.
@@ -160,9 +167,13 @@ def _group_by_path(
         elif len(existing) < chunks_per_file:
             existing.append(row)
 
-    # Sort each group's sections by (score DESC, start_line ASC) so ties
-    # within a file surface in document order.
-    return [sorted(groups[p], key=lambda r: (-r.score, r.start_line)) for p in order]
+    # Sort each group's sections by (score DESC, start_line ASC, section_id
+    # ASC) so ties within a file surface in document order — section_id is
+    # the final tie-break for chunks sharing a start_line.
+    return [
+        sorted(groups[p], key=lambda r: (-r.score, r.start_line, r.section_id))
+        for p in order
+    ]
 
 
 def _compute_snippet_for_semantic(
@@ -234,7 +245,14 @@ def _compute_snippet_for_semantic(
 
 @dataclass
 class _SemanticRow:
-    """Adapter row for vector search results so they expose .score / .chunk_count."""
+    """Adapter row for vector search results so they expose .score / .chunk_count.
+
+    ``section_id`` is always ``0``: the vector store keys chunks by metadata,
+    not by ``sections`` rowid, and vector scores essentially never tie
+    (distinct embeddings → distinct cosine), so the tie-break never engages
+    for a pure semantic channel.  The field exists only to satisfy the
+    :class:`_GroupableRow` protocol.
+    """
 
     path: str
     title: str
@@ -244,12 +262,13 @@ class _SemanticRow:
     score: float
     chunk_count: int
     start_line: int = 0
+    section_id: int = 0
 
 
 @dataclass
 class _GroupableFTS:
-    """Adapter row exposing title/folder/content/start_line to _group_by_path
-    for the keyword channel."""
+    """Adapter row exposing title/folder/content/start_line/section_id to
+    _group_by_path for the keyword and hybrid channels."""
 
     path: str
     title: str
@@ -258,6 +277,7 @@ class _GroupableFTS:
     content: str
     score: float
     start_line: int
+    section_id: int = 0
 
 
 class SearchManager:
@@ -583,6 +603,7 @@ class SearchManager:
                 content=r.content,
                 score=r.score,
                 start_line=r.start_line,
+                section_id=r.section_id,
             )
             for r in downweighted
         ]
@@ -832,6 +853,7 @@ class SearchManager:
                     "content": fr.content,
                     "search_type": "keyword",
                     "start_line": fr.start_line,
+                    "section_id": fr.section_id,
                 },
             )
 
@@ -849,6 +871,7 @@ class SearchManager:
                     "content": vr.content,
                     "search_type": "semantic",
                     "start_line": vr.start_line,
+                    "section_id": vr.section_id,
                 },
             )
 
@@ -866,6 +889,7 @@ class SearchManager:
                 content=chunk_meta[k]["content"],
                 score=rrf_scores[k],
                 start_line=int(chunk_meta[k].get("start_line", 0)),
+                section_id=int(chunk_meta[k].get("section_id", 0)),
             )
             for k in sorted_keys
         ]

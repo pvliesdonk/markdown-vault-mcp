@@ -243,8 +243,12 @@ chunks under their parent document via `_group_by_path`:
 2. The helper walks rows, opening a new group per unseen path until
    `file_limit` groups exist; subsequent rows from a seen path append
    to the existing group up to `chunks_per_file` rows.
-3. Sections within a group are sorted `(score DESC, start_line ASC)`
-   so ties surface in document order.
+3. Sections within a group are sorted `(score DESC, start_line ASC,
+   section_id ASC)` so ties surface in document order. The `section_id`
+   key (the `sections` rowid) makes the order fully deterministic even
+   when chunks share a `start_line` — e.g. word-split fragments of one
+   oversize source line, which the adaptive chunker emits with identical
+   `start_line` values.
 
 The returned shape is `list[GroupedResult]` where each result wraps one
 file with a `sections: list[SectionHit]` sub-list (length 1..N).  File
@@ -583,8 +587,9 @@ class GroupedResult:
     score: float                      # file-level score = max(section.score)
     search_type: Literal["keyword", "semantic", "hybrid"]
     frontmatter: dict[str, Any]       # document frontmatter
-    sections: list[SectionHit]        # up to chunks_per_file sections,
-                                      # sorted by (score DESC, start_line ASC)
+    sections: list[SectionHit]        # up to chunks_per_file sections, sorted
+                                      # by (score DESC, start_line ASC,
+                                      # section_id ASC)
 
 @dataclass
 class SearchResult:

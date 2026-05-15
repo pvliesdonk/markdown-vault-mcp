@@ -410,6 +410,48 @@ class TestSearch:
         # column was actually plumbed through (vs. the prior hardcoded 0).
         assert {r.start_line for r in results} == {0, 10, 42}
 
+    def test_search_returns_section_id(self) -> None:
+        """search() propagates the sections rowid as section_id.
+
+        section_id is the final deterministic tie-break in
+        :func:`_group_by_path` for chunks sharing (score, start_line) — e.g.
+        word-split fragments of one oversize source line.  Each FTSResult
+        must carry the rowid of its matching sections row.
+        """
+        idx = FTSIndex(":memory:")
+        idx.upsert_note(
+            make_note(
+                "doc.md",
+                title="Doc",
+                chunks=[
+                    Chunk(
+                        heading="One",
+                        heading_level=1,
+                        content="alpha keyword first",
+                        start_line=0,
+                    ),
+                    Chunk(
+                        heading="Two",
+                        heading_level=1,
+                        content="alpha keyword second",
+                        start_line=8,
+                    ),
+                ],
+            )
+        )
+        results = idx.search("keyword", limit=10)
+        assert len(results) == 2
+        # Every result carries a positive section_id (SQLite rowid >= 1).
+        for r in results:
+            assert isinstance(r.section_id, int)
+            assert r.section_id >= 1
+        # The two chunks resolve to distinct sections rows.
+        assert len({r.section_id for r in results}) == 2
+        # section_id order matches start_line order (sections inserted in
+        # document order), so it is a valid document-order tie-break.
+        by_start = sorted(results, key=lambda r: r.start_line)
+        assert [r.section_id for r in by_start] == sorted(r.section_id for r in results)
+
     def test_sections_has_document_id_index(self) -> None:
         """sections.document_id is indexed for the correlated subquery in search().
 

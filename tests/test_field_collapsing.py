@@ -37,6 +37,7 @@ class _Row:
     content: str
     score: float
     start_line: int = 0
+    section_id: int = 0
 
 
 def test_group_by_path_collapses_same_file():
@@ -73,6 +74,26 @@ def test_group_by_path_section_ties_sort_by_start_line():
     headings = [r.heading for r in groups[0]]
     assert headings == ["Early", "Late"], (
         "ties on score should resolve by start_line ASC (document order)"
+    )
+
+
+def test_group_by_path_section_id_breaks_start_line_ties():
+    """Chunks tying on both score and start_line resolve by section_id ASC.
+
+    Models word-split fragments of one oversize source line: they share a
+    score (uniform term frequency) and a start_line (same source line), so
+    only section_id (the sections rowid, monotonic with document order)
+    gives a deterministic order.  Input is deliberately section_id-shuffled.
+    """
+    rows = [
+        _Row("a.md", "frag3", "", 0.9, 10, section_id=303),
+        _Row("a.md", "frag1", "", 0.9, 10, section_id=101),
+        _Row("a.md", "frag2", "", 0.9, 10, section_id=202),
+    ]
+    groups = _group_by_path(rows, chunks_per_file=5, file_limit=10)
+    headings = [r.heading for r in groups[0]]
+    assert headings == ["frag1", "frag2", "frag3"], (
+        "score+start_line ties must resolve by section_id ASC"
     )
 
 

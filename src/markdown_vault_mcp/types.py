@@ -130,7 +130,10 @@ class GroupedResult:
         search_type: ``"keyword"``, ``"semantic"``, or ``"hybrid"``.
         frontmatter: Parsed YAML frontmatter.
         sections: Up to the per-file cap best-matching sections, sorted by
-            ``(score DESC, start_line ASC)`` so ties surface in document order.
+            ``(score DESC, start_line ASC, section_id ASC)`` so ties surface
+            in document order — the ``section_id`` key gives a fully
+            deterministic order even when chunks share a ``start_line``
+            (e.g. word-split fragments of one oversize source line).
     """
 
     path: str
@@ -159,6 +162,11 @@ class FTSResult:
         start_line: Line number of the chunk's first line in the source
             document.  Defaults to ``0`` for the document intro chunk and as
             a fallback when the underlying section row cannot be resolved.
+        section_id: ``sections`` table rowid of the matched chunk, used as
+            the final deterministic tie-break when chunks share both
+            ``score`` and ``start_line`` (e.g. word-split fragments of one
+            oversize source line).  Defaults to ``0`` when the section row
+            cannot be resolved (legacy index) or for non-keyword channels.
     """
 
     path: str
@@ -169,6 +177,7 @@ class FTSResult:
     score: float
     chunk_count: int = 1
     start_line: int = 0
+    section_id: int = 0
 
 
 @dataclass
