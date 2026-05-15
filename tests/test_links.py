@@ -1646,27 +1646,27 @@ class TestResolveVaultWikilinks:
         (vault / "source.md").write_text(
             "# Source\n\nSee [[Target]].\n", encoding="utf-8"
         )
+        # Asymmetric depths so resolution is deterministic: a/Target.md is
+        # the shortest candidate before delete; aa/bb/Target.md is the only
+        # surviving twin afterwards.
         (vault / "a").mkdir()
         (vault / "a" / "Target.md").write_text("# Target A\n", encoding="utf-8")
-        (vault / "b").mkdir()
-        (vault / "b" / "Target.md").write_text("# Target B\n", encoding="utf-8")
+        (vault / "aa" / "bb").mkdir(parents=True)
+        (vault / "aa" / "bb" / "Target.md").write_text(
+            "# Target deep\n", encoding="utf-8"
+        )
 
         col = Collection(source_dir=vault, read_only=False)
         col.build_index()
 
-        # Initial resolution picks the shortest path; both candidates are the
-        # same length so either is correct — record whichever wins.
         outlinks = col.get_outlinks("source.md")
-        initial_target = outlinks[0].target_path
-        assert initial_target in {"a/Target.md", "b/Target.md"}
+        assert outlinks[0].target_path == "a/Target.md"
         assert outlinks[0].exists is True
 
-        col.delete(initial_target)
+        col.delete("a/Target.md")
 
-        # The surviving twin must take over.
         outlinks = col.get_outlinks("source.md")
-        survivor = "b/Target.md" if initial_target == "a/Target.md" else "a/Target.md"
-        assert outlinks[0].target_path == survivor
+        assert outlinks[0].target_path == "aa/bb/Target.md"
         assert outlinks[0].exists is True
         assert col.get_broken_links() == []
 

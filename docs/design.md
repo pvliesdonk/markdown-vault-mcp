@@ -843,13 +843,15 @@ vault-wide resolution rules rather than relative path resolution:
   shortest path wins. Path matches always take priority over alias matches.
 
 `resolve_vault_wikilinks()` is called automatically at the end of
-`Collection.build_index()` and `Collection.reindex()` and at the end of
-every `DocumentManager` write operation — `write()`, `edit()`, `delete()`,
-and `rename()` — so that the `links` table always reflects the fully
-resolved vault state.  Without the per-write call, wikilinks introduced by
-a tool-driven edit would remain stored as bare basenames (e.g.
-`Target.md`) and fail the exists check against full document paths (e.g.
-`notes/Target.md`).
+`Collection.build_index()`, `Collection.reindex()`, and every
+`DocumentManager` write that mutates the `links` table — `write()` and
+`edit()` of a `.md` document, `delete()` of a `.md` document, and
+`rename()` of a `.md` document.  Attachment writes do not invoke the
+resolver because attachments do not produce `links` rows.  Without the
+per-write call, wikilinks introduced or invalidated by a tool-driven edit
+would persist as bare basenames (e.g. `Target.md`) — leaving them as
+false-positive broken outlinks and invisible to backlink queries against
+the full document path (e.g. `notes/Target.md`).
 
 ### Graph Traversal
 
