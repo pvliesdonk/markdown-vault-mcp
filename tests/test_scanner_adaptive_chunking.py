@@ -109,6 +109,24 @@ def test_no_headings_oversize_doc_falls_back_to_word_budget_split():
     assert sum(len(c.content.split()) for c in chunks) == 60
 
 
+def test_budget_split_preserves_blank_line_separators():
+    """Bin-packed paragraphs keep their blank-line separators in chunk content."""
+    # 60 lines clears the short-doc bypass; two 20-word paragraphs joined by
+    # a blank line accumulate into one chunk (40 words < 100 budget) and
+    # must remain valid markdown — paragraphs separated by a blank line.
+    para1 = "\n".join([f"alpha{i}" for i in range(20)])
+    para2 = "\n".join([f"beta{i}" for i in range(20)])
+    body = para1 + "\n\n" + para2 + "\n"
+
+    chunker = HeadingChunker(max_chunk_words=100)
+    chunks = chunker.chunk(body, {})
+
+    assert len(chunks) == 1
+    assert "\n\n" in chunks[0].content, (
+        "blank line between paragraphs was lost during bin-packing"
+    )
+
+
 def test_budget_split_bin_packs_small_paragraphs():
     """Sub-budget paragraphs accumulate then flush before the next overflow."""
     # Build a body with 6 distinct paragraphs of ~40 words each, separated by
@@ -133,10 +151,14 @@ def test_budget_split_bin_packs_small_paragraphs():
 
 
 def test_no_chunk_exceeds_budget_anywhere():
-    """Across every entry path, every emitted chunk respects the budget."""
-    # 6000-word flat preamble + a 5000-word H1 with no sub-headings + a
-    # short trailing section — exercises the preamble path and the leaf
-    # heading path together.
+    """Short-doc bypass also honours the budget when content is oversize.
+
+    Each token-stream is space-joined (single line), so the body lands
+    under the 30-line short-doc threshold and enters the
+    ``len(lines) <= short_doc_lines`` branch.  _budget_split fragments
+    the single emitted chunk; assertion checks the budget invariant
+    holds on every fragment.
+    """
     body = (
         " ".join(["alpha"] * 6000)
         + "\n\n# Big H1\n\n"

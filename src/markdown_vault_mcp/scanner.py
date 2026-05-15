@@ -366,6 +366,10 @@ class HeadingChunker:
                 emit()
             if pending_offset is None:
                 pending_offset = offset
+            else:
+                # Restore the blank-line separator that paragraph collection
+                # stripped, so accumulated paragraphs stay valid markdown.
+                pending_lines.append("\n")
             pending_lines.extend(lines)
             pending_words += words_in_para
 
