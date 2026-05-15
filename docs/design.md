@@ -216,7 +216,9 @@ Four complementary mechanisms improve result diversity and bound LLM context cos
    no-headings document), the chunker falls back to a paragraph- and word-boundary
    split so the budget is a **hard** invariant for every emitted chunk. Default
    threshold: 400 words. This matters for embedding providers with context limits
-   (e.g. `nomic-embed-text-v1.5` trains on 2048 tokens — silently truncates beyond).
+   (e.g. the default FastEmbed model `BAAI/bge-small-en-v1.5` exposes a 512-token
+   context; `nomic-embed-text-v1.5` has 8192 tokens natively but Ollama serves it
+   with `n_ctx_train=2048` by default — both silently truncate beyond their cap).
 
 **Config knobs:**
 

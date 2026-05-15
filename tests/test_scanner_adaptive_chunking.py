@@ -109,6 +109,29 @@ def test_no_headings_oversize_doc_falls_back_to_word_budget_split():
     assert sum(len(c.content.split()) for c in chunks) == 60
 
 
+def test_budget_split_bin_packs_small_paragraphs():
+    """Sub-budget paragraphs accumulate then flush before the next overflow."""
+    # Build a body with 6 distinct paragraphs of ~40 words each, separated by
+    # blank lines so the paragraph collector sees them as separate units.
+    # 40 lines per paragraph + blank line * 6 paragraphs clears 30-line bypass.
+    paragraphs = []
+    for tag in range(6):
+        words = [f"p{tag}word{i}" for i in range(40)]
+        paragraphs.append("\n".join(words))
+    body = ("\n\n".join(paragraphs)) + "\n"
+
+    chunker = HeadingChunker(max_chunk_words=100)
+    chunks = chunker.chunk(body, {})
+
+    # No paragraph (40 words) exceeds the budget, so word-split never fires.
+    # Pairs of paragraphs (80 words) fit; adding a third (120) would overflow,
+    # so chunks bin-pack two paragraphs at a time → 3 emitted chunks.
+    assert len(chunks) == 3
+    assert all(len(c.content.split()) <= 100 for c in chunks)
+    # Every fragment is a preamble (no heading) because the body has no headings.
+    assert all(c.heading is None for c in chunks)
+
+
 def test_no_chunk_exceeds_budget_anywhere():
     """Across every entry path, every emitted chunk respects the budget."""
     # 6000-word flat preamble + a 5000-word H1 with no sub-headings + a
