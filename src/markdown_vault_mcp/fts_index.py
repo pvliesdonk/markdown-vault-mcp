@@ -1380,6 +1380,16 @@ class FTSIndex:
             heading: Heading string to match (internal whitespace
                 collapsed before comparison).
 
+        Performance: comparison runs in Python after fetching all section
+        rows for ``path``, since SQLite has no portable regex-collapse
+        operator that would let us push the normalisation into the WHERE
+        clause.  ``idx_sections_docid`` keeps the per-doc fetch cheap (a
+        few tens to low hundreds of rows for a typical note); documents
+        with thousands of sections would prefer a stored ``heading_norm``
+        column.  Not optimising preemptively — the chunker's
+        ``chunks_per_file`` ceiling and adaptive splitting make very
+        deeply-sectioned documents rare.
+
         Returns:
             A dict with section data, or ``None`` when not found.
         """

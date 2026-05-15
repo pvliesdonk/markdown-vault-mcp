@@ -96,7 +96,12 @@ def test_read_section_collapses_internal_whitespace(tmp_path):
         chunk_strategy=chunker,
     )
 
+    # Two-spaces stored, one-space lookup — the production failure shape.
     nc = mgr.read("a.md", section="1.3. Reducing excessive dependencies")
+    assert nc is not None
+    assert "body content" in nc.content
+    # Symmetric: two-spaces stored, three-spaces lookup also collapses.
+    nc = mgr.read("a.md", section="1.3.   Reducing excessive dependencies")
     assert nc is not None
     assert "body content" in nc.content
 

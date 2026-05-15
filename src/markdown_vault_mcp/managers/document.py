@@ -338,6 +338,11 @@ class DocumentManager:
             )
         section_row = self._fts.get_section(path, heading)
         if section_row is None:
+            # Miss path only — fires a second SELECT over the same rows
+            # get_section already fetched. Acceptable because the miss
+            # path is by definition rare (LLM caller already gave us a
+            # bad heading) and consolidating the queries would couple
+            # get_section's return shape to error-message rendering.
             available = self._fts.list_section_headings(path, limit=10)
             if available:
                 suggestion = " — available headings include: " + ", ".join(
