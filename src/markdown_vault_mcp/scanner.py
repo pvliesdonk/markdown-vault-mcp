@@ -82,15 +82,16 @@ class HeadingChunker:
     fits or no headings of the next level exist inside.  In adaptive mode, if
     H1/H2 yielded nothing the chunker descends H3→H6 to find the shallowest
     heading level present — so a doc with only H3 headings is still split at
-    H3 rather than dropped into a single chunk.  Note: the cap is *soft*. A
-    chunk with no deeper headings inside (e.g. a 5000-word section under a
-    single H2) stays at that size — no paragraph- or sentence-level splitting
-    is performed.
+    H3 rather than dropped into a single chunk.  When heading-based
+    refinement cannot make further progress — a leaf section with no deeper
+    headings, a preamble with no headings at all, or a short-doc / no-heading
+    document — :meth:`_budget_split` falls back to paragraph and word
+    boundaries so the invariant ``words(chunk) <= max_chunk_words`` holds for
+    every emitted chunk regardless of source structure.
 
     Short documents (fewer than ``short_doc_lines`` lines) are returned as a
-    single chunk without splitting. Preamble (content before the first
-    heading) is never refined further regardless of size — there are no
-    deeper headings to split on.
+    single chunk when they fit within ``max_chunk_words``; if they exceed
+    it, the same word-budget fallback applies.
 
     This is the default chunking strategy.
     """
@@ -126,7 +127,13 @@ class HeadingChunker:
         lines = content.splitlines(keepends=True)
 
         if len(lines) <= self.short_doc_lines:
-            return [Chunk(heading=None, heading_level=0, content=content, start_line=0)]
+            single = Chunk(heading=None, heading_level=0, content=content, start_line=0)
+            if (
+                self.max_chunk_words is not None
+                and len(content.split()) > self.max_chunk_words
+            ):
+                return self._budget_split(single)
+            return [single]
 
         # Try the canonical H1+H2 split first.
         chunks = self._split_at_levels(lines, levels=(1, 2), base_line=0)
@@ -147,7 +154,13 @@ class HeadingChunker:
 
         if not chunks:
             # No headings at all → single chunk with no heading.
-            return [Chunk(heading=None, heading_level=0, content=content, start_line=0)]
+            single = Chunk(heading=None, heading_level=0, content=content, start_line=0)
+            if (
+                self.max_chunk_words is not None
+                and len(content.split()) > self.max_chunk_words
+            ):
+                return self._budget_split(single)
+            return [single]
 
         if self.max_chunk_words is not None:
             chunks = self._refine_oversize(chunks, current_level=deepest_split_level)
@@ -226,32 +239,137 @@ class HeadingChunker:
         """Recursively re-split chunks that exceed ``max_chunk_words``.
 
         ``current_level`` is the deepest heading level already used as a
-        split point. Refinement attempts ``current_level + 1`` next.
+        split point. Refinement attempts ``current_level + 1`` next; if no
+        deeper headings exist inside an oversize chunk (or we have already
+        reached H6), :meth:`_budget_split` fragments it on paragraph and
+        word boundaries so the invariant
+        ``len(chunk.content.split()) <= max_chunk_words`` holds for every
+        emitted chunk — including preamble chunks with no heading at all.
         """
         assert self.max_chunk_words is not None  # guarded by caller
-        if current_level >= 6:
-            return chunks
-
-        next_level = current_level + 1
         out: list[Chunk] = []
         for chunk in chunks:
-            if chunk.heading is None:
-                # Preamble: no deeper headings exist inside it; keep as-is.
-                out.append(chunk)
-                continue
             if len(chunk.content.split()) <= self.max_chunk_words:
                 out.append(chunk)
                 continue
 
-            sub_lines = chunk.content.splitlines(keepends=True)
-            sub_chunks = self._split_at_levels(
-                sub_lines, levels=(next_level,), base_line=chunk.start_line + 1
+            if chunk.heading is not None and current_level < 6:
+                next_level = current_level + 1
+                sub_chunks = self._split_at_levels(
+                    chunk.content.splitlines(keepends=True),
+                    levels=(next_level,),
+                    base_line=chunk.start_line + 1,
+                )
+                if sub_chunks:
+                    out.extend(
+                        self._refine_oversize(sub_chunks, current_level=next_level)
+                    )
+                    continue
+
+            out.extend(self._budget_split(chunk))
+        return out
+
+    def _budget_split(self, chunk: Chunk) -> list[Chunk]:
+        """Split *chunk* on paragraph and word boundaries until each fragment
+        fits within ``max_chunk_words``.
+
+        Used as the last-resort splitter when no deeper heading is available
+        (e.g. an H6 section longer than the budget, or a preamble with no
+        internal structure).  Preserves the parent chunk's ``heading`` and
+        ``heading_level`` on every fragment; ``start_line`` is the parent's
+        ``start_line`` offset by the paragraph's line offset within the
+        parent content.
+
+        Word-level splits within a single oversize paragraph share the same
+        ``start_line`` because the segment boundary does not align with a
+        line break in the source.
+
+        Args:
+            chunk: A chunk whose word count exceeds ``max_chunk_words``.
+
+        Returns:
+            One or more chunks, each respecting the budget.  Returns
+            ``[chunk]`` unchanged when the content is whitespace-only (no
+            paragraphs to split on).
+        """
+        assert self.max_chunk_words is not None  # guarded by caller
+        budget = self.max_chunk_words
+
+        # Group consecutive non-blank lines into paragraphs and record each
+        # paragraph's line offset within the chunk so fragments can carry
+        # accurate ``start_line`` values.
+        raw_lines = chunk.content.splitlines(keepends=True)
+        paragraphs: list[tuple[int, list[str]]] = []
+        cur_offset: int | None = None
+        cur_lines: list[str] = []
+        for idx, line in enumerate(raw_lines):
+            if line.strip():
+                if cur_offset is None:
+                    cur_offset = idx
+                cur_lines.append(line)
+            elif cur_lines:
+                assert cur_offset is not None
+                paragraphs.append((cur_offset, cur_lines))
+                cur_lines = []
+                cur_offset = None
+        if cur_lines:
+            assert cur_offset is not None
+            paragraphs.append((cur_offset, cur_lines))
+
+        if not paragraphs:
+            return [chunk]
+
+        out: list[Chunk] = []
+        pending_offset: int | None = None
+        pending_lines: list[str] = []
+        pending_words = 0
+
+        def emit() -> None:
+            nonlocal pending_offset, pending_lines, pending_words
+            if not pending_lines:
+                return
+            assert pending_offset is not None
+            out.append(
+                Chunk(
+                    heading=chunk.heading,
+                    heading_level=chunk.heading_level,
+                    content="".join(pending_lines),
+                    start_line=chunk.start_line + pending_offset,
+                )
             )
-            if not sub_chunks:
-                # No headings of next_level inside; cannot split further.
-                out.append(chunk)
+            pending_offset = None
+            pending_lines = []
+            pending_words = 0
+
+        for offset, lines in paragraphs:
+            words_in_para = sum(len(line.split()) for line in lines)
+
+            if words_in_para > budget:
+                # Single paragraph exceeds the budget — flush, then split on
+                # word boundaries.  Word-segment start_line collapses to the
+                # paragraph offset since word breaks aren't line breaks.
+                emit()
+                tokens = "".join(lines).split()
+                for i in range(0, len(tokens), budget):
+                    segment = " ".join(tokens[i : i + budget])
+                    out.append(
+                        Chunk(
+                            heading=chunk.heading,
+                            heading_level=chunk.heading_level,
+                            content=segment,
+                            start_line=chunk.start_line + offset,
+                        )
+                    )
                 continue
-            out.extend(self._refine_oversize(sub_chunks, current_level=next_level))
+
+            if pending_words + words_in_para > budget:
+                emit()
+            if pending_offset is None:
+                pending_offset = offset
+            pending_lines.extend(lines)
+            pending_words += words_in_para
+
+        emit()
         return out
 
 

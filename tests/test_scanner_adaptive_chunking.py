@@ -36,8 +36,9 @@ def test_max_chunk_words_none_preserves_h1_h2_only_behavior():
 
 def test_oversize_h1_splits_at_h2():
     """An H1 chunk exceeding max_chunk_words is re-split at H2."""
-    # Use one word per line so the fixture clears the 30-line short-doc bypass.
-    sub_body = "\n".join(["lorem"] * 300)
+    # Sub_body sized to fit within the budget once split at H2, isolating
+    # the H2-split mechanism from the word-budget fallback.
+    sub_body = "\n".join(["lorem"] * 50)
     body = f"# Top\n## Sub A\n{sub_body}\n## Sub B\n{sub_body}\n"
     chunker = HeadingChunker(max_chunk_words=200)
     chunks = chunker.chunk(body, {})
@@ -64,29 +65,64 @@ def test_recursion_descends_to_h6():
     assert "L6a" in headings and "L6b" in headings
 
 
-def test_oversize_chunk_with_no_deeper_headings_stays_one_chunk():
-    """A 1000-word H6 with no deeper headings stays as one chunk."""
+def test_oversize_h6_leaf_falls_back_to_word_budget_split():
+    """An oversize H6 leaf with no deeper headings splits on word budget."""
     body = "###### Solo\n" + "\n".join(["lorem"] * 100) + "\n"
     chunker = HeadingChunker(max_chunk_words=50)
     chunks = chunker.chunk(body, {})
-    assert len(chunks) == 1
-    assert chunks[0].heading == "Solo"
+    assert len(chunks) >= 2
+    assert all(c.heading == "Solo" for c in chunks)
+    assert all(c.heading_level == 6 for c in chunks)
+    assert all(len(c.content.split()) <= 50 for c in chunks)
 
 
-def test_preamble_stays_one_chunk_regardless_of_size():
-    """Preamble (no heading) is not refined further."""
+def test_oversize_preamble_falls_back_to_word_budget_split():
+    """Preamble (no heading) that exceeds the budget is fragmented."""
+    # One word per line so the body clears the 30-line short-doc bypass and
+    # the document enters the heading-split path, putting the long preamble
+    # into the preamble-leaf branch of _refine_oversize.
     preamble_words = 1000
     body = (
-        " ".join(["lorem"] * preamble_words)
-        + "\n\n# Heading\n\n"
-        + " ".join(["ipsum"] * 50)
+        "\n".join(["lorem"] * preamble_words)
+        + "\n# Heading\n"
+        + "\n".join(["ipsum"] * 50)
         + "\n"
     )
     chunker = HeadingChunker(max_chunk_words=200)
     chunks = chunker.chunk(body, {})
-    # First chunk is the oversize preamble (heading=None), preserved.
-    assert chunks[0].heading is None
-    assert len(chunks[0].content.split()) >= preamble_words
+    preamble_chunks = [c for c in chunks if c.heading is None]
+    assert len(preamble_chunks) >= 2
+    assert all(len(c.content.split()) <= 200 for c in preamble_chunks)
+    total = sum(len(c.content.split()) for c in preamble_chunks)
+    assert total == preamble_words
+
+
+def test_no_headings_oversize_doc_falls_back_to_word_budget_split():
+    """A long doc with no headings at all still respects the budget."""
+    # 60 lines (clears 30-line short-doc bypass), no markdown headings.
+    body = "\n".join(["lorem"] * 60) + "\n"
+    chunker = HeadingChunker(max_chunk_words=20)
+    chunks = chunker.chunk(body, {})
+    assert len(chunks) >= 2
+    assert all(c.heading is None for c in chunks)
+    assert all(len(c.content.split()) <= 20 for c in chunks)
+    assert sum(len(c.content.split()) for c in chunks) == 60
+
+
+def test_no_chunk_exceeds_budget_anywhere():
+    """Across every entry path, every emitted chunk respects the budget."""
+    # 6000-word flat preamble + a 5000-word H1 with no sub-headings + a
+    # short trailing section — exercises the preamble path and the leaf
+    # heading path together.
+    body = (
+        " ".join(["alpha"] * 6000)
+        + "\n\n# Big H1\n\n"
+        + " ".join(["beta"] * 5000)
+        + "\n\n## Small Trailer\n\nshort\n"
+    )
+    chunker = HeadingChunker(max_chunk_words=300)
+    chunks = chunker.chunk(body, {})
+    assert all(len(c.content.split()) <= 300 for c in chunks)
 
 
 def test_short_doc_bypass_still_applies():
