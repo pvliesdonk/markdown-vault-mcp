@@ -166,8 +166,10 @@ def find_closest_match(old_text: str, file_content: str) -> dict[str, Any]:
         divergent line), ``first_diff_char`` (char offset within that line),
         ``expected_snippet`` (the divergent ``old_text`` line), and
         ``found_snippet`` (the corresponding file line, empty if ``old_text``
-        extends past the file region); or an empty dict if no anchor line
-        with ratio >= 0.6 is found.
+        extends past the file region).  Returns an empty dict when no useful
+        diagnostic can be produced — either no anchor line reaches ratio
+        >= 0.6, or every line of ``old_text`` matches the file region (no
+        genuine divergence to point at).
     """
     old_lines = old_text.split("\n")
     file_lines = file_content.split("\n")
@@ -184,13 +186,19 @@ def find_closest_match(old_text: str, file_content: str) -> dict[str, Any]:
         return {}
 
     # Walk old_text lines against the file region; find the first that differs.
-    diff_offset = len(old_lines) - 1  # fallback: every line matched by content
+    diff_offset: int | None = None
     for offset, old_line in enumerate(old_lines):
         file_idx = anchor_idx + offset
         file_line = file_lines[file_idx] if file_idx < len(file_lines) else None
         if file_line is None or old_line != file_line:
             diff_offset = offset
             break
+
+    if diff_offset is None:
+        # Every line of old_text matched the file region — no genuine
+        # divergence to point at.  Emit no diagnostic rather than a
+        # misleading one with two identical snippets.
+        return {}
 
     expected_line = old_lines[diff_offset]
     file_idx = anchor_idx + diff_offset

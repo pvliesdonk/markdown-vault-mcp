@@ -126,9 +126,10 @@ class TestBuildPositionMap:
 
 
 class TestFindClosestMatch:
-    def test_exact_match(self) -> None:
+    def test_exact_match_returns_empty(self) -> None:
+        """A fully-matching old_text has no divergence to report."""
         result = find_closest_match("hello world", "hello world\ngoodbye")
-        assert result["closest_match_line"] == 1
+        assert result == {}
 
     def test_no_match(self) -> None:
         result = find_closest_match("xxxxxxxxx", "hello\nworld")
@@ -146,10 +147,9 @@ class TestFindClosestMatch:
         result = find_closest_match("abcdef", "xyzxyz\n123456")
         assert result == {}
 
-    def test_single_line_file(self) -> None:
+    def test_single_line_file_full_match_returns_empty(self) -> None:
         result = find_closest_match("hello", "hello")
-        assert result["closest_match_line"] == 1
-        assert result["first_diff_char"] == 5  # past end
+        assert result == {}
 
     def test_diff_position_reported(self) -> None:
         result = find_closest_match("abcXef", "abcdef")
@@ -183,3 +183,10 @@ class TestFindClosestMatch:
         assert result["closest_match_line"] == 3
         assert result["found_snippet"] == ""
         assert result["expected_snippet"] == "gamma"
+
+    def test_multiline_all_lines_match_returns_empty(self) -> None:
+        """Every old_text line matches the file region — no diagnostic."""
+        old = "alpha\nbeta\ngamma"
+        file_content = "intro\nalpha\nbeta\ngamma\ntail"
+        result = find_closest_match(old, file_content)
+        assert result == {}
