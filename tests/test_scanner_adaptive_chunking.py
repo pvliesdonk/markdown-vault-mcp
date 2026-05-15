@@ -110,20 +110,28 @@ def test_no_headings_oversize_doc_falls_back_to_word_budget_split():
 
 
 def test_budget_split_preserves_blank_line_separators():
-    """Bin-packed paragraphs keep their blank-line separators in chunk content."""
-    # 60 lines clears the short-doc bypass; two 20-word paragraphs joined by
-    # a blank line accumulate into one chunk (40 words < 100 budget) and
-    # must remain valid markdown — paragraphs separated by a blank line.
-    para1 = "\n".join([f"alpha{i}" for i in range(20)])
-    para2 = "\n".join([f"beta{i}" for i in range(20)])
-    body = para1 + "\n\n" + para2 + "\n"
+    """Bin-packed paragraphs keep their blank-line separators in chunk content.
 
-    chunker = HeadingChunker(max_chunk_words=100)
+    Four 10-word paragraphs (40 words total) with budget=25 force
+    `_budget_split` to fire (40 > 25) and produce two chunks each
+    bin-packing two paragraphs (10 + 10 = 20, no emit; +10 = 30 > 25,
+    emit).  Each emitted chunk must preserve the inter-paragraph blank
+    line — without the fix the separator gets stripped during paragraph
+    collection and `pending_lines.extend(lines)` joins the line-ended
+    paragraphs with no blank between them.
+    """
+    paragraphs = [
+        "\n".join([f"{tag}{i}" for i in range(10)])
+        for tag in ("alpha", "beta", "gamma", "delta")
+    ]
+    body = "\n\n".join(paragraphs) + "\n"
+
+    chunker = HeadingChunker(max_chunk_words=25)
     chunks = chunker.chunk(body, {})
 
-    assert len(chunks) == 1
-    assert "\n\n" in chunks[0].content, (
-        "blank line between paragraphs was lost during bin-packing"
+    assert len(chunks) == 2
+    assert all("\n\n" in c.content for c in chunks), (
+        "blank line between bin-packed paragraphs was lost"
     )
 
 
