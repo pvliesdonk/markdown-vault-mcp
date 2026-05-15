@@ -93,10 +93,13 @@ Read the full content of a document or attachment by path. When combined with se
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `path` | string | required | Relative path to the document or attachment (e.g. `"Journal/note.md"` or `"assets/diagram.pdf"`) |
-| `section` | string | `null` | Optional heading to select a single section chunk. Pass the `heading` field from a `search` result to retrieve the full chunk content. Raises an error if the heading is not found or is empty. |
+| `section` | string | `null` | Optional heading to select a single section chunk. Pass the `heading` field from a `search` result to retrieve the full chunk content. Matching collapses internal whitespace on both sides — `"1.3.  Reducing..."` (two spaces) matches a stored `"1.3. Reducing..."` (one space) and vice versa. On miss, the error lists the document's actual stored headings so callers can recover. Raises an error if the heading is not found or is empty. |
 
 !!! tip "Recovering full chunks after search"
     When `search` returns a snippet result, pass `result["heading"]` as the `section` parameter to recover the complete chunk: `read(path=result["path"], section=result["heading"])`. If the document has no sub-headings (preamble content), omit `section` to read the whole document.
+
+!!! note "Heading matching tolerates whitespace differences"
+    The `section` lookup compares heading strings after collapsing all whitespace runs to single spaces (and stripping leading/trailing whitespace). This handles the common case where an LLM caller infers a heading from a rendered TOC that normalises whitespace differently from the source markdown. Markdown emphasis (`**bold**`, `_italic_`) and case are still significant — pass the heading as it would appear in the document source.
 
 **Context cost:** every byte returned counts against the LLM's context
 budget. Reads above `MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES` (default

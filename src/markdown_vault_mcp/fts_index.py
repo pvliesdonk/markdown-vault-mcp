@@ -143,6 +143,18 @@ def _derive_folder(path: str) -> str:
     return "" if folder == "." else folder
 
 
+def _normalize_heading(heading: str) -> str:
+    """Collapse all whitespace runs in *heading* to single spaces and strip.
+
+    Used by :meth:`FTSIndex.get_section` to compare stored vs queried
+    heading strings tolerantly: rendered TOCs and markdown editors
+    normalise whitespace inconsistently (single vs double space after
+    a numbered prefix, tabs vs spaces, trailing whitespace), but the
+    semantic identity of the heading is unchanged.
+    """
+    return " ".join(heading.split())
+
+
 def _open_connection(db_path: Path | str) -> sqlite3.Connection:
     """Open an SQLite connection with required pragmas and schema applied.
 
@@ -1356,31 +1368,80 @@ class FTSIndex:
         ``'heading_level'`` on hit; ``None`` when the heading is not found
         in the document.  Tie-breaks by ``start_line ASC``.
 
+        Matching collapses internal whitespace on both sides — the lookup
+        ``"1.3.  Reducing..."`` (two spaces) hits a stored heading
+        ``"1.3. Reducing..."`` (one space) and vice versa.  Markdown
+        editors and rendered TOC widgets normalise whitespace
+        unpredictably, so LLM callers rarely reproduce the on-disk byte
+        sequence; this collapse closes that gap without changing storage.
+
         Args:
             path: Relative document path.
-            heading: Exact heading string to match.
+            heading: Heading string to match (internal whitespace
+                collapsed before comparison).
 
         Returns:
             A dict with section data, or ``None`` when not found.
         """
-        row = self._conn.execute(
+        norm_query = _normalize_heading(heading)
+        if not norm_query:
+            return None
+        rows = self._conn.execute(
             """
             SELECT s.content, s.heading, s.heading_level
             FROM sections s
             JOIN documents d ON d.id = s.document_id
-            WHERE d.path = ? AND s.heading = ?
+            WHERE d.path = ? AND s.heading IS NOT NULL
             ORDER BY s.start_line ASC
-            LIMIT 1
             """,
-            (path, heading),
-        ).fetchone()
-        if row is None:
-            return None
-        return {
-            "content": row["content"],
-            "heading": row["heading"],
-            "heading_level": row["heading_level"],
-        }
+            (path,),
+        ).fetchall()
+        for row in rows:
+            if _normalize_heading(row["heading"]) == norm_query:
+                return {
+                    "content": row["content"],
+                    "heading": row["heading"],
+                    "heading_level": row["heading_level"],
+                }
+        return None
+
+    def list_section_headings(self, path: str, *, limit: int = 50) -> list[str]:
+        """Return up to *limit* section headings for *path*, in document order.
+
+        Used to build "did you mean" suggestions when
+        :meth:`get_section` misses.  Sections without a heading
+        (preamble) are skipped — only string headings worth suggesting
+        to a caller are returned.
+
+        Args:
+            path: Relative document path.
+            limit: Maximum number of headings to return.
+
+        Returns:
+            List of heading strings in document order, deduplicated while
+            preserving the first-occurrence order.
+        """
+        rows = self._conn.execute(
+            """
+            SELECT s.heading
+            FROM sections s
+            JOIN documents d ON d.id = s.document_id
+            WHERE d.path = ? AND s.heading IS NOT NULL
+            ORDER BY s.start_line ASC
+            """,
+            (path,),
+        ).fetchall()
+        seen: set[str] = set()
+        out: list[str] = []
+        for row in rows:
+            heading = row["heading"]
+            if heading in seen:
+                continue
+            seen.add(heading)
+            out.append(heading)
+            if len(out) >= limit:
+                break
+        return out
 
     def close(self) -> None:
         """Close the underlying database connection.

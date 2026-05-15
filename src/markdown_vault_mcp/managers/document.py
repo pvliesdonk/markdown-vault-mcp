@@ -338,7 +338,16 @@ class DocumentManager:
             )
         section_row = self._fts.get_section(path, heading)
         if section_row is None:
-            raise ValueError(f"Section '{heading}' not found in document {path}")
+            available = self._fts.list_section_headings(path, limit=10)
+            if available:
+                suggestion = " — available headings include: " + ", ".join(
+                    repr(h) for h in available
+                )
+            else:
+                suggestion = " (document has no indexed headings)"
+            raise ValueError(
+                f"Section '{heading}' not found in document {path}{suggestion}"
+            )
 
         folder = str(Path(path).parent)
         if folder == ".":
