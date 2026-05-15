@@ -110,21 +110,32 @@ def test_no_headings_oversize_doc_falls_back_to_word_budget_split():
 
 
 def test_subsplit_preamble_inherits_parent_heading():
-    """When refining at a deeper level, preamble before the first sub-heading
-    inherits the parent's heading rather than appearing as heading=None.
+    """A parent section's body-before-first-subheading inherits the parent's
+    heading attribution rather than dropping to None when the parent's
+    content recurses to a deeper heading level.
+
+    Uses three heading levels so the recursion path actually fires: H1/H2
+    are handled at the top-level `_split_at_levels(levels=(1, 2))`, but
+    the "Parent" H2 chunk exceeds budget and recurses with `levels=(3,)`.
+    Inside that recursion `_split_at_levels` returns a preamble with
+    `heading=None`; the fix promotes it to inherit Parent's heading.
+    Without the fix the test would observe `heading=None` on those
+    preamble chunks.
     """
     body = (
-        "# Parent\n"
-        + "\n".join(["intro line"] * 16)  # 32 words in parent's preamble
-        + "\n## Child\n"
-        + "\n".join(["child body"] * 16)
+        "# Top\n"
+        + "\n".join(["top body"] * 5)
+        + "\n## Parent\n"
+        + "\n".join(["parent preamble"] * 15)  # 30 words → preamble of Parent
+        + "\n### Child\n"
+        + "\n".join(["child body"] * 20)  # 40 words under Child
         + "\n"
     )
-    chunker = HeadingChunker(max_chunk_words=30)
+    chunker = HeadingChunker(max_chunk_words=50)
     chunks = chunker.chunk(body, {})
-    intro_chunks = [c for c in chunks if "intro line" in c.content]
-    assert intro_chunks, "preamble text should appear in at least one chunk"
-    for c in intro_chunks:
+    preamble_chunks = [c for c in chunks if "parent preamble" in c.content]
+    assert preamble_chunks, "preamble text should appear in at least one chunk"
+    for c in preamble_chunks:
         assert c.heading == "Parent", (
             f"preamble chunk got heading={c.heading!r}, expected 'Parent'"
         )
@@ -132,8 +143,10 @@ def test_subsplit_preamble_inherits_parent_heading():
 
 def test_budget_split_preserves_line_structure_in_oversize_paragraph():
     """An oversize paragraph keeps line boundaries — tables stay tabular."""
-    # 30 consecutive table rows (no blank lines → one paragraph), 90 words,
-    # budget=60.  Word-split would strip every newline; line-bin-pack
+    # 30 consecutive table rows (no blank lines → one paragraph).  Each
+    # row "| alpha | beta | gamma |" tokenises to 7 words (pipes count as
+    # tokens via str.split()), so total = 210 words.  Budget=60 → roughly
+    # 8 rows per chunk; word-split would strip every newline, line-bin-pack
     # keeps them so the table still renders.
     rows = ["| alpha | beta | gamma |"] * 30
     body = "\n".join(rows) + "\n"
@@ -146,13 +159,26 @@ def test_budget_split_preserves_line_structure_in_oversize_paragraph():
     assert all(len(c.content.split()) <= 60 for c in chunks)
 
 
-def test_budget_split_word_splits_single_oversize_line():
-    """Single line exceeding budget on its own still falls back to word split."""
-    body = " ".join([f"word{i}" for i in range(200)]) + "\n"
+def test_budget_split_word_splits_only_individual_oversize_lines():
+    """Word-split fires only for a single line that itself exceeds budget;
+    surrounding normal lines line-bin-pack and keep their newlines.
+
+    Distinguishes the new line-level-first fallback from the previous
+    global word-split: a regression that reverts to "join all lines and
+    word-split" would strip newlines from the surrounding short lines.
+    """
+    short_lines = [f"a{i} b{i} c{i}" for i in range(10)]  # 10 lines, 3 words each
+    oversize = " ".join([f"x{i}" for i in range(200)])  # 1 line, 200 words
+    body = "\n".join([*short_lines, oversize, *short_lines]) + "\n"
     chunker = HeadingChunker(max_chunk_words=50)
     chunks = chunker.chunk(body, {})
     assert all(len(c.content.split()) <= 50 for c in chunks)
-    assert sum(len(c.content.split()) for c in chunks) == 200
+    # Some chunks must have internal newlines (line-bin-packed short lines)
+    # AND some must not (word-split fragments of the single oversize line).
+    has_newline = [c for c in chunks if "\n" in c.content]
+    no_newline = [c for c in chunks if "\n" not in c.content]
+    assert has_newline, "short-line bin-pack output lost newlines"
+    assert no_newline, "no word-split chunk emitted for the oversize single line"
 
 
 def test_budget_split_preserves_blank_line_separators():
