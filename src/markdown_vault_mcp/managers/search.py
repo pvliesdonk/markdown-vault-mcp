@@ -742,6 +742,7 @@ class SearchManager:
                 score=r["score"],
                 chunk_count=chunk_counts.get(r["path"], 1),
                 start_line=int(r.get("start_line", 0)),
+                section_id=0,  # vector store has no sections rowid; see dataclass
             )
             for r in filtered
         ]
@@ -827,6 +828,7 @@ class SearchManager:
                 score=r["score"],
                 chunk_count=vec_chunk_counts.get(r["path"], 1),
                 start_line=int(r.get("start_line", 0)),
+                section_id=0,  # vector store has no sections rowid; see dataclass
             )
             for r in vec_filtered
         ]
@@ -839,6 +841,12 @@ class SearchManager:
         keyword_keys: set[tuple[str, str | None]] = set()
         vec_keys: set[tuple[str, str | None]] = set()
 
+        # FTS results are walked before vector results, so chunk_meta's
+        # setdefault keeps the keyword channel's section_id (a real sections
+        # rowid >= 1) for any chunk present in both channels; a vector-only
+        # chunk keeps section_id=0.  Both are correct: the keyword rowid is
+        # the authoritative tie-break value, and vector-only ties are
+        # measure-zero (distinct embeddings -> distinct cosine scores).
         for rank, fr in enumerate(fts_results, start=1):
             key = (fr.path, fr.heading)
             rrf_scores[key] = rrf_scores.get(key, 0.0) + 1.0 / (_RRF_K + rank)
@@ -1166,6 +1174,7 @@ class SearchManager:
                 score=r.get("score", 0.0),
                 chunk_count=chunk_counts.get(r["path"], 1),
                 start_line=int(r.get("start_line", 0)),
+                section_id=0,  # vector store has no sections rowid; see dataclass
             )
             for r in raw_results
         ]
