@@ -513,6 +513,7 @@ class DocumentManager:
 
             note = parse_note(abs_path, self._source_dir, self._chunk_strategy)
             self._fts.upsert_note(note)
+            self._fts.resolve_vault_wikilinks()
             self._on_vector_update(note)
 
             result = WriteResult(path=path, created=created)
@@ -735,6 +736,7 @@ class DocumentManager:
 
             note = parse_note(abs_path, self._source_dir, self._chunk_strategy)
             self._fts.upsert_note(note)
+            self._fts.resolve_vault_wikilinks()
             self._on_vector_update(note)
 
         self._on_write_callback(abs_path, new_content, "edit")
@@ -888,6 +890,7 @@ class DocumentManager:
                         )
                 abs_path.unlink()
                 self._fts.delete_by_path(path)
+                self._fts.resolve_vault_wikilinks()
                 self._on_vector_dirty(path)
             else:
                 abs_path = self._validate_attachment_path(path)
@@ -989,6 +992,7 @@ class DocumentManager:
                     old_path, new_path, backlinks
                 )
                 updated_links = len(backlink_callbacks)
+                self._fts.resolve_vault_wikilinks()
             else:
                 old_abs = self._validate_attachment_path(old_path)
                 new_abs = self._validate_attachment_path(new_path)

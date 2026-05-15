@@ -1600,6 +1600,102 @@ class TestResolveVaultWikilinks:
         # Note.md (length 7) is shorter than sub/Note.md (length 11).
         assert outlinks[0].target_path == "Note.md"
 
+    def test_write_resolves_new_wikilinks(self, tmp_path: Path) -> None:
+        """write() re-runs vault-wide resolution so new wikilinks aren't broken."""
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        (vault / "notes").mkdir()
+        (vault / "notes" / "Target.md").write_text("# Target\n", encoding="utf-8")
+
+        col = Collection(source_dir=vault, read_only=False)
+        col.build_index()
+
+        col.write("source.md", "# Source\n\nSee [[Target]].\n")
+
+        outlinks = col.get_outlinks("source.md")
+        assert len(outlinks) == 1
+        assert outlinks[0].target_path == "notes/Target.md"
+        assert outlinks[0].exists is True
+        assert col.get_broken_links() == []
+
+    def test_edit_resolves_new_wikilinks(self, tmp_path: Path) -> None:
+        """edit() re-runs vault-wide resolution after the source content changes."""
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        (vault / "source.md").write_text(
+            "# Source\n\nNo links yet.\n", encoding="utf-8"
+        )
+        (vault / "notes").mkdir()
+        (vault / "notes" / "Target.md").write_text("# Target\n", encoding="utf-8")
+
+        col = Collection(source_dir=vault, read_only=False)
+        col.build_index()
+
+        col.edit("source.md", old_text="No links yet.", new_text="See [[Target]].")
+
+        outlinks = col.get_outlinks("source.md")
+        assert len(outlinks) == 1
+        assert outlinks[0].target_path == "notes/Target.md"
+        assert outlinks[0].exists is True
+        assert col.get_broken_links() == []
+
+    def test_delete_target_falls_back_to_basename_twin(self, tmp_path: Path) -> None:
+        """delete() re-resolves inlinks; if a basename twin exists, they pick it up."""
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        (vault / "source.md").write_text(
+            "# Source\n\nSee [[Target]].\n", encoding="utf-8"
+        )
+        (vault / "a").mkdir()
+        (vault / "a" / "Target.md").write_text("# Target A\n", encoding="utf-8")
+        (vault / "b").mkdir()
+        (vault / "b" / "Target.md").write_text("# Target B\n", encoding="utf-8")
+
+        col = Collection(source_dir=vault, read_only=False)
+        col.build_index()
+
+        # Initial resolution picks the shortest path; both candidates are the
+        # same length so either is correct — record whichever wins.
+        outlinks = col.get_outlinks("source.md")
+        initial_target = outlinks[0].target_path
+        assert initial_target in {"a/Target.md", "b/Target.md"}
+        assert outlinks[0].exists is True
+
+        col.delete(initial_target)
+
+        # The surviving twin must take over.
+        outlinks = col.get_outlinks("source.md")
+        survivor = "b/Target.md" if initial_target == "a/Target.md" else "a/Target.md"
+        assert outlinks[0].target_path == survivor
+        assert outlinks[0].exists is True
+        assert col.get_broken_links() == []
+
+    def test_rename_target_keeps_inlinks_resolved(self, tmp_path: Path) -> None:
+        """rename() re-resolves inlinks after the target moves to a new path."""
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        (vault / "source.md").write_text(
+            "# Source\n\nSee [[Target]].\n", encoding="utf-8"
+        )
+        (vault / "Target.md").write_text("# Target\n", encoding="utf-8")
+
+        col = Collection(source_dir=vault, read_only=False)
+        col.build_index()
+
+        # Initial: bare [[Target]] resolves to root-level Target.md.
+        outlinks = col.get_outlinks("source.md")
+        assert outlinks[0].target_path == "Target.md"
+        assert outlinks[0].exists is True
+
+        col.rename("Target.md", "other/Target.md")
+
+        # After rename, the inlink must point at the new location.
+        outlinks = col.get_outlinks("source.md")
+        assert len(outlinks) == 1
+        assert outlinks[0].target_path == "other/Target.md"
+        assert outlinks[0].exists is True
+        assert col.get_broken_links() == []
+
 
 # ---------------------------------------------------------------------------
 # Alias resolution in wikilinks
