@@ -380,7 +380,7 @@ class Collection:
     def _indexed_document_count(self) -> int:
         """Return the number of documents currently stored in the FTS index."""
         row = self._fts._conn.execute("SELECT COUNT(*) FROM documents").fetchone()
-        return int(row[0]) if row is not None else 0
+        return int(row[0])
 
     @property
     def _vectors(self) -> VectorIndex | None:

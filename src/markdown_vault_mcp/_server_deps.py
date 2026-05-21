@@ -111,7 +111,8 @@ def make_collection_lifespan(config: CollectionConfig) -> Any:
         # Build embeddings eagerly only when a vector sidecar already exists.
         # Initial corpus embedding can take minutes or hours and must not block
         # the MCP initialize handshake; use the explicit indexing command/tool.
-        if kwargs.get("embedding_provider") is not None:
+        embeddings_path = kwargs.get("embeddings_path")
+        if kwargs.get("embedding_provider") is not None and embeddings_path is not None:
             if collection.has_embedding_index_sidecar():
                 chunks_embedded = await asyncio.to_thread(collection.build_embeddings)
                 logger.info("Embeddings ready: %d chunks", chunks_embedded)
@@ -119,7 +120,7 @@ def make_collection_lifespan(config: CollectionConfig) -> Any:
                 logger.info(
                     "Skipping eager embedding build because %s.npy is missing; "
                     "run the indexing command/tool to build vectors offline",
-                    kwargs.get("embeddings_path"),
+                    embeddings_path,
                 )
 
         # Start background tasks (e.g. git pull loop) after index is built.

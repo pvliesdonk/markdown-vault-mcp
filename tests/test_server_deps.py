@@ -109,6 +109,62 @@ class TestCollectionLifespan:
             await agen.aclose()
 
     @pytest.mark.asyncio
+    async def test_startup_skips_embedding_sidecar_probe_without_path(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """A provider without embeddings_path disables semantic startup work."""
+        instances: list[FakeCollection] = []
+
+        class FakeCollection:
+            def __init__(self, **kwargs: Any) -> None:
+                self.kwargs = kwargs
+                self.sidecar_checked = 0
+                self.embeddings_built = 0
+                instances.append(self)
+
+            def sync_from_remote_before_index(self) -> None:
+                pass
+
+            def build_index(self) -> IndexStats:
+                return IndexStats(documents_indexed=1, chunks_indexed=1, skipped=0)
+
+            def has_embedding_index_sidecar(self) -> bool:
+                self.sidecar_checked += 1
+                return False
+
+            def build_embeddings(self) -> int:
+                self.embeddings_built += 1
+                return 1
+
+            def start(self) -> None:
+                pass
+
+            def close(self) -> None:
+                pass
+
+        class FakeConfig:
+            source_dir = tmp_path
+
+            def to_collection_kwargs(self) -> dict[str, Any]:
+                return {
+                    "source_dir": tmp_path,
+                    "embedding_provider": object(),
+                    "embeddings_path": None,
+                }
+
+        import markdown_vault_mcp._server_deps as _deps_module
+
+        monkeypatch.setattr(_deps_module, "Collection", FakeCollection)
+        lifespan = make_collection_lifespan(FakeConfig())
+        agen = lifespan._fn(None)
+        try:
+            await agen.__anext__()
+            assert instances[0].sidecar_checked == 0
+            assert instances[0].embeddings_built == 0
+        finally:
+            await agen.aclose()
+
+    @pytest.mark.asyncio
     async def test_startup_builds_embeddings_when_sidecar_exists(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
