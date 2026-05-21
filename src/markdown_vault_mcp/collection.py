@@ -11,6 +11,7 @@ import logging
 import queue
 import re
 import threading
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 from markdown_vault_mcp.fts_index import FTSIndex
@@ -46,7 +47,6 @@ from markdown_vault_mcp.utils import effective_attachment_extensions
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
-    from pathlib import Path
 
     from markdown_vault_mcp.git import GitWriteStrategy
     from markdown_vault_mcp.providers import EmbeddingProvider
@@ -195,8 +195,9 @@ class Collection:
         )
         self._tracker = ChangeTracker(self._state_path)
 
-        # Lazy initialisation flag.
-        self._initialized = False
+        # Lazy initialisation flag.  Persistent indexes can already contain
+        # documents when a new process starts, so seed the flag from the DB.
+        self._initialized = self._persistent_index_has_documents()
 
         # Serialise concurrent write operations on this instance.
         # Re-entrant: periodic pull tick blocks writes, then reindex() acquires
@@ -357,6 +358,30 @@ class Collection:
         if not self._initialized:
             self.build_index()
 
+    def _persistent_index_has_documents(self) -> bool:
+        """Return whether the configured on-disk index already has documents."""
+        if self._index_path is None:
+            return False
+        try:
+            row = self._fts._conn.execute(
+                "SELECT 1 FROM documents LIMIT 1"
+            ).fetchone()
+        except Exception:
+            logger.debug(
+                "Could not probe existing FTS index; falling back to startup scan",
+                exc_info=True,
+            )
+            return False
+        if row is not None:
+            logger.debug("build_index: persistent index already contains documents")
+            return True
+        return False
+
+    def _indexed_document_count(self) -> int:
+        """Return the number of documents currently stored in the FTS index."""
+        row = self._fts._conn.execute("SELECT COUNT(*) FROM documents").fetchone()
+        return int(row[0]) if row is not None else 0
+
     @property
     def _vectors(self) -> VectorIndex | None:
         """Bridge property: vector index is owned by SearchManager."""
@@ -487,14 +512,14 @@ class Collection:
         """
         # Check if index already has data and we are not forcing.
         if not force and self._initialized:
-            existing = self._fts.list_notes()
-            if existing:
+            existing_count = self._indexed_document_count()
+            if existing_count > 0:
                 logger.debug(
                     "build_index: index already populated (%d docs), skipping",
-                    len(existing),
+                    existing_count,
                 )
                 return IndexStats(
-                    documents_indexed=len(existing),
+                    documents_indexed=existing_count,
                     chunks_indexed=0,
                     skipped=0,
                 )
@@ -529,6 +554,12 @@ class Collection:
         """
         self._ensure_initialized()
         return self._index_mgr.build_embeddings(force=force)
+
+    def has_embedding_index_sidecar(self) -> bool:
+        """Return whether the vector index sidecar exists on disk."""
+        if self._embeddings_path is None:
+            return False
+        return Path(str(self._embeddings_path) + ".npy").exists()
 
     def embeddings_status(self) -> dict:
         """Return status information about the vector index.

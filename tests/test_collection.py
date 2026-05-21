@@ -3004,7 +3004,14 @@ class TestBuildIndexNoOp:
             scan_calls.append(args)
             return original_scan(*args, **kwargs)
 
-        with patch.object(idx_mod, "scan_directory", side_effect=tracking_scan):
+        with (
+            patch.object(idx_mod, "scan_directory", side_effect=tracking_scan),
+            patch.object(
+                col._fts,
+                "list_notes",
+                side_effect=AssertionError("no-op path must not materialize rows"),
+            ),
+        ):
             stats2 = col.build_index()
 
         # scan_directory must not have been invoked on the second call.
@@ -3012,6 +3019,62 @@ class TestBuildIndexNoOp:
         # Returned stats reflect the existing index content.
         assert stats2.documents_indexed == 9
         assert stats2.chunks_indexed == 0
+
+    def test_persistent_index_is_noop_on_new_collection(
+        self, vault_path: Path, tmp_path: Path
+    ) -> None:
+        """A new process skips scanning when the persistent index has documents."""
+        index_path = tmp_path / "index.db"
+
+        col1 = _make_collection(
+            vault_path,
+            index_path=index_path,
+            state_path=tmp_path / "state1.json",
+        )
+        col1.build_index()
+        col1.close()
+
+        col2 = _make_collection(
+            vault_path,
+            index_path=index_path,
+            state_path=tmp_path / "state2.json",
+        )
+
+        import markdown_vault_mcp.managers.index as idx_mod
+
+        with (
+            patch.object(
+                idx_mod,
+                "scan_directory",
+                side_effect=AssertionError("persistent fast path must not scan"),
+            ),
+            patch.object(
+                col2._fts,
+                "list_notes",
+                side_effect=AssertionError("fast path must use COUNT(*)"),
+            ),
+        ):
+            stats = col2.build_index()
+
+        assert stats.documents_indexed == 9
+        assert stats.chunks_indexed == 0
+        col2.close()
+
+    def test_has_embedding_index_sidecar(
+        self, vault_path: Path, tmp_path: Path, mock_provider: MockEmbeddingProvider
+    ) -> None:
+        """Vector sidecar detection is based on the persisted .npy file."""
+        embeddings_path = tmp_path / "embeddings"
+        col = _make_collection(
+            vault_path,
+            embeddings_path=embeddings_path,
+            embedding_provider=mock_provider,
+        )
+
+        assert col.has_embedding_index_sidecar() is False
+        col.build_index()
+        col.build_embeddings()
+        assert col.has_embedding_index_sidecar() is True
 
 
 # ---------------------------------------------------------------------------
