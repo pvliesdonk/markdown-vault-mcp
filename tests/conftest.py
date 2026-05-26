@@ -26,6 +26,7 @@ class MockEmbeddingProvider(EmbeddingProvider):
             dim: Embedding dimension. Defaults to 32.
         """
         self._dim = dim
+        self.embed_calls = 0
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         """Return deterministic hash-based vectors for each text.
@@ -36,6 +37,7 @@ class MockEmbeddingProvider(EmbeddingProvider):
         Returns:
             List of embedding vectors, one per input text.
         """
+        self.embed_calls += len(texts)
         vectors = []
         for text in texts:
             seed = int(hashlib.md5(text.encode()).hexdigest(), 16) % 2**31

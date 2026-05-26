@@ -11,6 +11,7 @@ import logging
 import queue
 import re
 import threading
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 from markdown_vault_mcp.fts_index import FTSIndex
@@ -46,7 +47,6 @@ from markdown_vault_mcp.utils import effective_attachment_extensions
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
-    from pathlib import Path
 
     from markdown_vault_mcp.git import GitWriteStrategy
     from markdown_vault_mcp.providers import EmbeddingProvider
@@ -586,20 +586,40 @@ class Collection:
         self._ensure_initialized()
         return self._index_mgr.reindex()
 
-    def build_embeddings(self, *, force: bool = False) -> int:
+    def build_embeddings(
+        self, *, force: bool = False, skip_if_missing: bool = False
+    ) -> int:
         """Build the vector index from all chunks currently in the FTS index.
 
         Args:
             force: If ``True``, rebuild from scratch even if a vector index
                 already exists on disk.
+            skip_if_missing: If ``True`` and the ``.npy`` sidecar does not yet
+                exist on disk, log a warning pointing operators at the
+                ``markdown-vault-mcp reindex`` CLI command and return 0
+                without doing any embedding work.  Used by the server
+                lifespan so MCP startup is not blocked on an initial
+                corpus build (#513).  Has no effect when ``force=True``.
 
         Returns:
-            Total number of chunks embedded.
+            Total number of chunks embedded (or 0 when skipped).
 
         Raises:
             ValueError: If ``embedding_provider`` or ``embeddings_path`` is
                 not configured.
         """
+        if skip_if_missing and not force and self._embeddings_path is not None:
+            npy_path = Path(str(self._embeddings_path) + ".npy")
+            if not npy_path.exists():
+                logger.warning(
+                    "build_embeddings: %s.npy missing — skipping initial corpus "
+                    "build to keep the MCP handshake non-blocking.  Run "
+                    "'markdown-vault-mcp reindex' to bootstrap the vector index, "
+                    "or wait for the background indexing thread to finish.",
+                    self._embeddings_path,
+                )
+                return 0
+
         self._ensure_initialized()
         return self._index_mgr.build_embeddings(force=force)
 

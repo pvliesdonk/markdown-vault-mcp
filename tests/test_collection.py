@@ -4089,3 +4089,86 @@ class TestInitializeAsync:
             assert col._initialized is False
         finally:
             col.close()
+
+
+class TestBuildEmbeddingsSkipIfMissing:
+    """build_embeddings(skip_if_missing=True) skips the initial corpus build."""
+
+    def test_skip_when_sidecar_missing(
+        self,
+        vault_path: Path,
+        tmp_path: Path,
+        mock_provider: MockEmbeddingProvider,
+    ) -> None:
+        """Returns 0 + warns when .npy is absent and skip_if_missing=True."""
+        embeddings_path = tmp_path / "embeddings"
+        col = _make_collection(
+            vault_path,
+            embeddings_path=embeddings_path,
+            embedding_provider=mock_provider,
+            state_path=tmp_path / "state.json",
+        )
+        try:
+            col.build_index()
+            mock_provider.embed_calls = 0  # type: ignore[attr-defined]
+
+            n = col.build_embeddings(skip_if_missing=True)
+
+            assert n == 0
+            assert mock_provider.embed_calls == 0  # type: ignore[attr-defined]
+        finally:
+            col.close()
+
+    def test_load_when_sidecar_present(
+        self,
+        vault_path: Path,
+        tmp_path: Path,
+        mock_provider: MockEmbeddingProvider,
+    ) -> None:
+        """Loads the existing sidecar instead of bootstrapping when skip_if_missing=True."""
+        embeddings_path = tmp_path / "embeddings"
+        col1 = _make_collection(
+            vault_path,
+            embeddings_path=embeddings_path,
+            embedding_provider=mock_provider,
+            state_path=tmp_path / "state1.json",
+        )
+        col1.build_index()
+        bootstrap_count = col1.build_embeddings()
+        col1.close()
+        assert bootstrap_count > 0
+
+        col2 = _make_collection(
+            vault_path,
+            embeddings_path=embeddings_path,
+            embedding_provider=mock_provider,
+            state_path=tmp_path / "state2.json",
+        )
+        try:
+            mock_provider.embed_calls = 0  # type: ignore[attr-defined]
+            n = col2.build_embeddings(skip_if_missing=True)
+            assert n == bootstrap_count
+            assert mock_provider.embed_calls == 0  # type: ignore[attr-defined]
+        finally:
+            col2.close()
+
+    def test_default_still_bootstraps(
+        self,
+        vault_path: Path,
+        tmp_path: Path,
+        mock_provider: MockEmbeddingProvider,
+    ) -> None:
+        """The default (skip_if_missing=False) still bootstraps when .npy is missing."""
+        embeddings_path = tmp_path / "embeddings"
+        col = _make_collection(
+            vault_path,
+            embeddings_path=embeddings_path,
+            embedding_provider=mock_provider,
+            state_path=tmp_path / "state.json",
+        )
+        try:
+            col.build_index()
+            n = col.build_embeddings()
+            assert n > 0
+        finally:
+            col.close()
