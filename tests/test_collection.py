@@ -4374,3 +4374,59 @@ class TestIndexStatus:
             col._background_index_thread = None
             col._fts_done_event.set()
             col.close()
+
+    def test_ensure_initialized_falls_back_after_timeout(
+        self, vault_path: Path, tmp_path: Path
+    ) -> None:
+        """When _fts_done_event never fires within 60s, _ensure_initialized falls back to inline build_index()."""
+        import threading
+        from unittest.mock import MagicMock
+
+        col = _make_collection(
+            vault_path,
+            index_path=tmp_path / "index.db",
+            state_path=tmp_path / "state.json",
+        )
+        try:
+            # Inject a fake in-flight bg thread and a never-firing FTS event,
+            # mock the wait() to return False immediately (simulating timeout).
+            fake_thread = MagicMock(spec=threading.Thread)
+            fake_thread.is_alive.return_value = True
+            col._background_index_thread = fake_thread
+            col._initialized = False
+            col._fts_done_event.clear()
+
+            with patch.object(col._fts_done_event, "wait", return_value=False):
+                col._ensure_initialized()
+
+            # After fallback, _initialized should be True (build_index ran inline).
+            assert col._initialized is True
+        finally:
+            col._background_index_thread = None
+            col.close()
+
+    def test_ensure_initialized_self_thread_skips_wait(
+        self, vault_path: Path, tmp_path: Path
+    ) -> None:
+        """When called from the bg worker thread itself, _ensure_initialized must not wait on its own event."""
+        import threading
+
+        col = _make_collection(
+            vault_path,
+            index_path=tmp_path / "index.db",
+            state_path=tmp_path / "state.json",
+        )
+        try:
+            # Simulate "we are the bg thread" by setting _background_index_thread to the current thread.
+            col._background_index_thread = threading.current_thread()
+            col._initialized = False
+            col._fts_done_event.clear()  # event is unset — would deadlock if we waited
+
+            # If the guard is missing, this would block forever on _fts_done_event.
+            # With the guard, it falls through to inline build_index().
+            col._ensure_initialized()
+
+            assert col._initialized is True
+        finally:
+            col._background_index_thread = None
+            col.close()

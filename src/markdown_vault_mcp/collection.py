@@ -350,11 +350,7 @@ class Collection:
         is non-blocking (#513).
         """
         self._initialized = self._fts_has_documents()
-        logger.debug(
-            "initialize_async: _initialized=%s (DB has rows=%s)",
-            self._initialized,
-            self._initialized,
-        )
+        logger.debug("initialize_async: _initialized=%s", self._initialized)
 
     def get_index_status(self) -> IndexStatusPayload:
         """Return current background-index status for client / monitoring callers.
@@ -427,10 +423,11 @@ class Collection:
         """Worker target for the background reindex thread.
 
         Runs ``reindex()`` then ``build_embeddings()`` (if a provider is
-        configured). Drives status transitions ``embedding -> ready``;
-        the scheduler sets ``indexing`` before this method starts.  On
-        failure, sets status to ``failed`` and records the message; the
-        server itself is never crashed by an indexing error.
+        configured).  Status transitions: ``indexing -> embedding -> ready``
+        when an embedding provider is configured, ``indexing -> ready`` when
+        it isn't.  On uncaught exceptions, transitions to ``failed`` (unless
+        shutdown was signalled, in which case the run exits without changing
+        status).
         """
         try:
             if self._index_shutdown.is_set():
@@ -474,8 +471,17 @@ class Collection:
     def close(self) -> None:
         """Release resources held by the collection.
 
-        Flushes deferred embeddings and pending write callbacks, then
-        closes the SQLite connection and git strategy.
+        Shutdown steps:
+
+        1. Flush deferred embeddings (re-embed dirty documents, save ``.npy``).
+        2. Signal the background reindex thread and join with a 30-second
+           timeout.  Daemon-abandoned on timeout; SQLite WAL handles partial
+           state on next startup (#513).
+        3. Drain the background write-callback queue (waits for pending git
+           commits).
+        4. Close the :class:`~markdown_vault_mcp.git.GitWriteStrategy`
+           (flushes and pushes pending commits).
+        5. Close the SQLite database connection.
         """
         # 1. Flush any deferred embedding updates.
         self._index_mgr.flush_dirty_embeddings()
@@ -526,10 +532,15 @@ class Collection:
         """Build the FTS index on first access if it has not been built yet.
 
         If a background reindex thread is currently in flight (#513), wait
-        for it to finish before falling back to a synchronous
-        :meth:`build_index` call.  Without this guard, a foreground tool
-        call and the background daemon both run ``build_index`` against
-        the same SQLite connection and collide on inserts.
+        for its FTS phase to complete before proceeding.  Without this guard,
+        a foreground tool call and the background daemon both run
+        ``build_index`` against the same SQLite connection and collide on
+        inserts.
+
+        If the background thread does not signal FTS completion within 60
+        seconds, this method logs a warning and falls back to running
+        :meth:`build_index` inline; the inline call surfaces any indexing
+        error to the caller.
 
         The wait is skipped when the calling thread *is* the background
         reindex thread itself (otherwise the worker would deadlock waiting
@@ -757,8 +768,10 @@ class Collection:
         """Scan source_dir and build the FTS index.
 
         If the index already contains documents and *force* is ``False``,
-        this is a no-op.  ``force=True`` drops all existing data and rebuilds
-        from scratch.
+        takes the warm-start fast path: existing rows are kept, but any rows
+        whose paths now match ``exclude_patterns`` are purged from the FTS DB
+        and vector sidecar.  ``force=True`` drops all existing data and
+        rebuilds from scratch.
 
         Args:
             force: When ``True``, drop and rebuild the index unconditionally.

@@ -478,7 +478,7 @@ The MCP server lifespan delegates the slow parts of indexing to a background thr
 5. `collection.start()` — begin periodic tasks (git pull loop, etc.).
 6. `yield` — MCP handshake is unblocked.
 
-The background thread holds `_write_lock` during its mutation phase, so concurrent write tool calls serialise naturally.  Foreground reads observe whatever FTS state is currently durable — partial results during the initial scan, full results once `Collection.build_index` finishes (the worker sets `_fts_done_event` between the FTS and embedding phases so foreground `_ensure_initialized` calls unblock as soon as FTS rows are queryable, even while embeddings are still building).  Shutdown signals the thread via `_index_shutdown` and joins with a 30s timeout; SQLite WAL handles any partial state on next startup.
+The background thread holds `_write_lock` during its mutation phase, so concurrent write tool calls serialise naturally.  Foreground reads observe whatever FTS state is currently durable — partial results during the initial scan, full results once the FTS phase of the background reindex (`Collection.reindex`) finishes (the worker sets `_fts_done_event` between the FTS and embedding phases so foreground `_ensure_initialized` calls unblock as soon as FTS rows are queryable, even while embeddings are still building).  Shutdown signals the thread via `_index_shutdown` and joins with a 30s timeout; SQLite WAL handles any partial state on next startup.
 
 ### Lifecycle: Collection.close()
 
