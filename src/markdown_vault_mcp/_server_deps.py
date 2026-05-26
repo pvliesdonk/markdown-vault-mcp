@@ -100,23 +100,18 @@ def make_collection_lifespan(config: CollectionConfig) -> Any:
         # build_index() scans the freshest working tree.
         await asyncio.to_thread(collection.sync_from_remote_before_index)
 
-        # Build index eagerly so first tool call is fast.
-        stats = await asyncio.to_thread(collection.build_index)
-        logger.info(
-            "Index built: %d documents, %d chunks",
-            stats.documents_indexed,
-            stats.chunks_indexed,
-        )
-
-        # Build embeddings eagerly when an embedding provider is configured.
-        # build_embeddings() skips work if the vector index already exists on disk,
-        # so this is safe to call on every startup.
-        if kwargs.get("embedding_provider") is not None:
-            chunks_embedded = await asyncio.to_thread(collection.build_embeddings)
-            logger.info("Embeddings ready: %d chunks", chunks_embedded)
-
-        # Start background tasks (e.g. git pull loop) after index is built.
+        # Start background tasks (git pull loop, etc.) so reindex can see
+        # the freshest tree if a pull happens early.
         collection.start()
+
+        # Kick off the background reindex (FTS + embeddings if configured).
+        # Returns immediately; foreground tools are usable straight away,
+        # initially returning empty/partial results until the worker fills
+        # in the index. Clients learn the state via stats / get_server_info.
+        collection.start_background_reindex()
+        logger.info(
+            "Background reindex started; server is accepting requests immediately"
+        )
 
         # Artifact store singleton is wired in make_server(), not here —
         # the HTTP route captures the store at server-construction time and

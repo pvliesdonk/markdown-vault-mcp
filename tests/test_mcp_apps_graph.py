@@ -15,7 +15,7 @@ from fastmcp import Client
 
 from markdown_vault_mcp._server_apps import _hashed
 from markdown_vault_mcp.server import make_server
-from tests.conftest import _CLEAR_VARS, get_app_html
+from tests.conftest import _CLEAR_VARS, get_app_html, mcp_client_ready
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -127,7 +127,7 @@ class TestGraphDataTools:
 
     async def test_neighborhood_returns_graph(self) -> None:
         server = make_server()
-        async with Client(server) as client:
+        async with mcp_client_ready(server) as client:
             result = await client.call_tool(
                 _hashed("vault_graph_neighborhood"), {"path": "simple.md"}
             )
@@ -144,7 +144,7 @@ class TestGraphDataTools:
 
     async def test_neighborhood_with_depth(self) -> None:
         server = make_server()
-        async with Client(server) as client:
+        async with mcp_client_ready(server) as client:
             r1 = await client.call_tool(
                 _hashed("vault_graph_neighborhood"), {"path": "simple.md", "depth": 1}
             )
@@ -159,7 +159,7 @@ class TestGraphDataTools:
 
     async def test_hubs_returns_graph(self) -> None:
         server = make_server()
-        async with Client(server) as client:
+        async with mcp_client_ready(server) as client:
             result = await client.call_tool(_hashed("vault_graph_hubs"), {})
             data = _parse_tool_data(result)
             assert "nodes" in data
@@ -180,7 +180,7 @@ class TestGraphDataTools:
 
         monkeypatch.setattr(Collection, "read", _spy)
         server = make_server()
-        async with Client(server) as client:
+        async with mcp_client_ready(server) as client:
             result = await client.call_tool(_hashed("vault_graph_hubs"), {})
             data = _parse_tool_data(result)
         hub_paths = {n["id"] for n in data["nodes"] if n["group"] == "hub"}
@@ -191,7 +191,7 @@ class TestGraphDataTools:
 
     async def test_edges_have_type(self) -> None:
         server = make_server()
-        async with Client(server) as client:
+        async with mcp_client_ready(server) as client:
             result = await client.call_tool(
                 _hashed("vault_graph_neighborhood"), {"path": "simple.md"}
             )
@@ -203,7 +203,7 @@ class TestGraphDataTools:
 
     async def test_neighborhood_nodes_have_backlink_count(self) -> None:
         server = make_server()
-        async with Client(server) as client:
+        async with mcp_client_ready(server) as client:
             result = await client.call_tool(
                 _hashed("vault_graph_neighborhood"), {"path": "simple.md"}
             )
@@ -214,7 +214,7 @@ class TestGraphDataTools:
 
     async def test_edges_deduplicated(self) -> None:
         server = make_server()
-        async with Client(server) as client:
+        async with mcp_client_ready(server) as client:
             result = await client.call_tool(
                 _hashed("vault_graph_neighborhood"), {"path": "simple.md"}
             )
@@ -225,7 +225,7 @@ class TestGraphDataTools:
     async def test_include_semantic_false_by_default(self) -> None:
         """Default call returns no semantic edges."""
         server = make_server()
-        async with Client(server) as client:
+        async with mcp_client_ready(server) as client:
             result = await client.call_tool(
                 _hashed("vault_graph_neighborhood"), {"path": "simple.md"}
             )
@@ -236,7 +236,7 @@ class TestGraphDataTools:
     async def test_include_semantic_true_no_embeddings(self) -> None:
         """include_semantic=True without embeddings returns graph without semantic edges."""
         server = make_server()
-        async with Client(server) as client:
+        async with mcp_client_ready(server) as client:
             result = await client.call_tool(
                 _hashed("vault_graph_neighborhood"),
                 {"path": "simple.md", "include_semantic": True},
@@ -313,8 +313,15 @@ class TestIncludeSemanticEdges:
             "markdown_vault_mcp.providers.get_embedding_provider",
             return_value=mock_prov,
         ):
+            from markdown_vault_mcp._server_deps import get_collection_singleton
+            from tests.conftest import wait_for_background_reindex
+
             server = make_server()
+
             async with Client(server) as client:
+                collection = get_collection_singleton()
+
+                await wait_for_background_reindex(collection)
                 result = await client.call_tool(
                     _hashed("vault_graph_neighborhood"),
                     {"path": "simple.md", "include_semantic": True},
@@ -347,8 +354,15 @@ class TestIncludeSemanticEdges:
             "markdown_vault_mcp.providers.get_embedding_provider",
             return_value=mock_prov,
         ):
+            from markdown_vault_mcp._server_deps import get_collection_singleton
+            from tests.conftest import wait_for_background_reindex
+
             server = make_server()
+
             async with Client(server) as client:
+                collection = get_collection_singleton()
+
+                await wait_for_background_reindex(collection)
                 result = await client.call_tool(
                     _hashed("vault_graph_neighborhood"),
                     {"path": "simple.md", "include_semantic": True},
@@ -378,8 +392,15 @@ class TestIncludeSemanticEdges:
             "markdown_vault_mcp.providers.get_embedding_provider",
             return_value=mock_prov,
         ):
+            from markdown_vault_mcp._server_deps import get_collection_singleton
+            from tests.conftest import wait_for_background_reindex
+
             server = make_server()
+
             async with Client(server) as client:
+                collection = get_collection_singleton()
+
+                await wait_for_background_reindex(collection)
                 result = await client.call_tool(
                     _hashed("vault_graph_neighborhood"),
                     {"path": "simple.md", "depth": 0, "include_semantic": True},
@@ -413,8 +434,15 @@ class TestIncludeSemanticEdges:
                 side_effect=ValueError("not found"),
             ),
         ):
+            from markdown_vault_mcp._server_deps import get_collection_singleton
+            from tests.conftest import wait_for_background_reindex
+
             server = make_server()
+
             async with Client(server) as client:
+                collection = get_collection_singleton()
+
+                await wait_for_background_reindex(collection)
                 result = await client.call_tool(
                     _hashed("vault_graph_neighborhood"),
                     {"path": "simple.md", "include_semantic": True},
@@ -448,8 +476,15 @@ class TestIncludeSemanticEdges:
                 side_effect=RuntimeError("embedding backend unavailable"),
             ),
         ):
+            from markdown_vault_mcp._server_deps import get_collection_singleton
+            from tests.conftest import wait_for_background_reindex
+
             server = make_server()
+
             async with Client(server) as client:
+                collection = get_collection_singleton()
+
+                await wait_for_background_reindex(collection)
                 result = await client.call_tool(
                     _hashed("vault_graph_neighborhood"),
                     {"path": "simple.md", "include_semantic": True},
@@ -487,7 +522,7 @@ class TestGraphNeighborhoodMaxNodes:
 
     async def test_max_nodes_caps_node_count(self, _star_vault: Path) -> None:
         server = make_server()
-        async with Client(server) as client:
+        async with mcp_client_ready(server) as client:
             result = await client.call_tool(
                 _hashed("vault_graph_neighborhood"),
                 {"path": "hub.md", "depth": 2, "max_nodes": 5},
@@ -498,7 +533,7 @@ class TestGraphNeighborhoodMaxNodes:
 
     async def test_truncated_false_when_under_cap(self, _star_vault: Path) -> None:
         server = make_server()
-        async with Client(server) as client:
+        async with mcp_client_ready(server) as client:
             result = await client.call_tool(
                 _hashed("vault_graph_neighborhood"),
                 {"path": "hub.md", "depth": 2, "max_nodes": 500},
@@ -534,8 +569,15 @@ class TestGraphNeighborhoodMaxNodes:
             "markdown_vault_mcp.providers.get_embedding_provider",
             return_value=mock_prov,
         ):
+            from markdown_vault_mcp._server_deps import get_collection_singleton
+            from tests.conftest import wait_for_background_reindex
+
             server = make_server()
+
             async with Client(server) as client:
+                collection = get_collection_singleton()
+
+                await wait_for_background_reindex(collection)
                 result = await client.call_tool(
                     _hashed("vault_graph_neighborhood"),
                     {
@@ -588,8 +630,15 @@ class TestGraphNeighborhoodMaxNodes:
             "markdown_vault_mcp.providers.get_embedding_provider",
             return_value=mock_prov,
         ):
+            from markdown_vault_mcp._server_deps import get_collection_singleton
+            from tests.conftest import wait_for_background_reindex
+
             server = make_server()
+
             async with Client(server) as client:
+                collection = get_collection_singleton()
+
+                await wait_for_background_reindex(collection)
                 result = await client.call_tool(
                     _hashed("vault_graph_neighborhood"),
                     {
@@ -616,7 +665,7 @@ class TestGraphNeighborhoodMaxNodesDefault:
 
     async def test_default_does_not_truncate_small_vault(self) -> None:
         server = make_server()
-        async with Client(server) as client:
+        async with mcp_client_ready(server) as client:
             result = await client.call_tool(
                 _hashed("vault_graph_neighborhood"),
                 {"path": "simple.md", "depth": 2},

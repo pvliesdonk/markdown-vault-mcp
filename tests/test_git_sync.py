@@ -12,10 +12,10 @@ import json
 from typing import TYPE_CHECKING, Any
 
 import pytest
-from fastmcp import Client
 
 from markdown_vault_mcp import _server_deps
 from markdown_vault_mcp.server import make_server
+from tests.conftest import mcp_client_ready
 from tests.fixtures.git import _run_git
 
 if TYPE_CHECKING:
@@ -120,7 +120,7 @@ class TestGitSync:
         _run_git(git_repo_pair.local_path, "commit", "-m", "local commit")
 
         server = make_server()
-        async with Client(server) as client:
+        async with mcp_client_ready(server) as client:
             result = await client.call_tool("git_sync", {"direction": "both"})
 
         payload = _parse_tool_data(result)
@@ -148,7 +148,7 @@ class TestGitSync:
         )
 
         server = make_server()
-        async with Client(server) as client:
+        async with mcp_client_ready(server) as client:
             result = await client.call_tool("git_sync", {"direction": "pull"})
 
         payload = _parse_tool_data(result)
@@ -173,7 +173,7 @@ class TestGitSync:
         head_before = _run_git(git_repo_pair.local_path, "rev-parse", "HEAD").strip()
 
         server = make_server()
-        async with Client(server) as client:
+        async with mcp_client_ready(server) as client:
             result = await client.call_tool(
                 "git_sync", {"direction": "pull", "dry_run": True}
             )
@@ -195,7 +195,7 @@ class TestGitSync:
     ) -> None:
         """Refs #467: dry-run pull on an up-to-date clone reports would_apply=False."""
         server = make_server()
-        async with Client(server) as client:
+        async with mcp_client_ready(server) as client:
             result = await client.call_tool(
                 "git_sync", {"direction": "pull", "dry_run": True}
             )
@@ -238,7 +238,7 @@ class TestGitSync:
         )
 
         server = make_server()
-        async with Client(server) as client:
+        async with mcp_client_ready(server) as client:
             result = await client.call_tool(
                 "git_sync", {"direction": "both", "dry_run": True}
             )
@@ -288,7 +288,7 @@ class TestGitSync:
         _run_git(git_repo_pair.local_path, "commit", "-m", "local edit")
 
         server = make_server()
-        async with Client(server) as client:
+        async with mcp_client_ready(server) as client:
             result = await client.call_tool("git_sync", {"direction": "pull"})
 
         payload = _parse_tool_data(result)
@@ -346,7 +346,7 @@ class TestGitSync:
         )
 
         server = make_server()
-        async with Client(server) as client:
+        async with mcp_client_ready(server) as client:
             # Lifespan has set the singleton; monkey-patch reindex BEFORE
             # the tool call so the post-pull bookkeeping path raises.
             collection = _server_deps.get_collection_singleton()
@@ -401,7 +401,7 @@ class TestGitSync:
         _run_git(git_repo_pair.local_path, "commit", "-m", "would push")
 
         server = make_server()
-        async with Client(server) as client:
+        async with mcp_client_ready(server) as client:
             collection = _server_deps.get_collection_singleton()
             strategy = collection._git_strategy
 
@@ -453,7 +453,7 @@ class TestGitSyncVisibility:
     async def test_visible_in_managed_mode(self, _git_managed_env: Path) -> None:
         """git_sync IS listed in managed git + read-write mode."""
         server = make_server()
-        async with Client(server) as client:
+        async with mcp_client_ready(server) as client:
             tools = await client.list_tools()
         names = [t.name for t in tools]
         assert "git_sync" in names
@@ -470,7 +470,7 @@ class TestGitSyncVisibility:
         # commit-only branch, which builds a strategy with managed=False.
 
         server = make_server()
-        async with Client(server) as client:
+        async with mcp_client_ready(server) as client:
             tools = await client.list_tools()
         names = [t.name for t in tools]
         assert "git_sync" not in names
@@ -496,7 +496,7 @@ class TestGitSyncVisibility:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_PUSH_DELAY_S", "0")
 
         server = make_server()
-        async with Client(server) as client:
+        async with mcp_client_ready(server) as client:
             tools = await client.list_tools()
         names = [t.name for t in tools]
         assert "git_sync" not in names

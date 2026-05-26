@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 import numpy as np
 import pytest
+from fastmcp import Client
 
 from markdown_vault_mcp.providers import EmbeddingProvider
 
@@ -177,3 +181,41 @@ def vault_path(tmp_path: Path, fixtures_path: Path) -> Path:
         shutil.copy2(src, dest)
 
     return vault
+
+
+async def wait_for_background_reindex(collection) -> None:
+    """Wait for the background reindex task to complete.
+
+    Args:
+        collection: The Collection instance.
+    """
+    # Poll index_status until background_running is False
+    max_attempts = 300  # ~15 seconds at 50ms intervals
+    attempt = 0
+    while attempt < max_attempts:
+        status = collection.index_status()
+        if not status.get("background_running", False):
+            break
+        await asyncio.sleep(0.05)
+        attempt += 1
+
+
+@asynccontextmanager
+async def mcp_client_ready(server) -> AsyncIterator[Client]:
+    """Connect a Client and wait for the background reindex to complete.
+
+    Most MCP tests need the index to be populated before calling tools;
+    this helper centralises the wait pattern.
+
+    Args:
+        server: The FastMCP server instance.
+
+    Yields:
+        Connected Client with the background reindex completed.
+    """
+    from markdown_vault_mcp._server_deps import get_collection_singleton
+
+    async with Client(server) as client:
+        collection = get_collection_singleton()
+        await wait_for_background_reindex(collection)
+        yield client

@@ -10,11 +10,10 @@ import json
 from typing import Any
 
 import pytest
-from fastmcp import Client
 
 from markdown_vault_mcp._server_apps import _hashed
 from markdown_vault_mcp.server import make_server
-from tests.conftest import get_app_html
+from tests.conftest import get_app_html, mcp_client_ready
 
 
 def _parse_tool_data(result: Any) -> Any:
@@ -110,7 +109,7 @@ class TestVaultContextToolData:
 
     async def test_all_context_fields_present(self) -> None:
         server = make_server()
-        async with Client(server) as client:
+        async with mcp_client_ready(server) as client:
             result = await client.call_tool(
                 _hashed("vault_context"), {"path": "simple.md"}
             )
@@ -128,7 +127,7 @@ class TestVaultContextToolData:
 
     async def test_context_with_frontmatter(self) -> None:
         server = make_server()
-        async with Client(server) as client:
+        async with mcp_client_ready(server) as client:
             result = await client.call_tool(
                 _hashed("vault_context"), {"path": "full_frontmatter.md"}
             )
@@ -148,7 +147,7 @@ class TestShowContextTool:
 
     async def test_returns_view_and_summary(self) -> None:
         server = make_server()
-        async with Client(server) as client:
+        async with mcp_client_ready(server) as client:
             result = await client.call_tool("show_context", {"path": "simple.md"})
             data = _parse_tool_data(result)
             assert data["view"] == "context"
@@ -157,7 +156,7 @@ class TestShowContextTool:
 
     async def test_summary_contains_relationship_counts(self) -> None:
         server = make_server()
-        async with Client(server) as client:
+        async with mcp_client_ready(server) as client:
             result = await client.call_tool("show_context", {"path": "simple.md"})
             data = _parse_tool_data(result)
             summary = data["summary"]
@@ -167,7 +166,7 @@ class TestShowContextTool:
 
     async def test_show_context_visible_to_llm(self) -> None:
         server = make_server()
-        async with Client(server) as client:
+        async with mcp_client_ready(server) as client:
             tools = await client.list_tools()
             names = [t.name for t in tools]
             assert "show_context" in names
@@ -176,7 +175,7 @@ class TestShowContextTool:
 
     async def test_missing_note_returns_error_summary(self) -> None:
         server = make_server()
-        async with Client(server) as client:
+        async with mcp_client_ready(server) as client:
             result = await client.call_tool("show_context", {"path": "nonexistent.md"})
             data = _parse_tool_data(result)
             assert data["view"] == "context"

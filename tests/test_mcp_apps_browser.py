@@ -10,11 +10,10 @@ import json
 from typing import Any
 
 import pytest
-from fastmcp import Client
 
 from markdown_vault_mcp._server_apps import _hashed
 from markdown_vault_mcp.server import make_server
-from tests.conftest import get_app_html
+from tests.conftest import get_app_html, mcp_client_ready
 
 
 def _parse_tool_data(result: Any) -> Any:
@@ -113,7 +112,7 @@ class TestBrowserDataTools:
 
     async def test_vault_list_root(self) -> None:
         server = make_server()
-        async with Client(server) as client:
+        async with mcp_client_ready(server) as client:
             result = await client.call_tool(_hashed("vault_list"), {})
             data = _parse_tool_data(result)
             assert "folders" in data
@@ -125,7 +124,7 @@ class TestBrowserDataTools:
 
     async def test_vault_list_subfolder(self) -> None:
         server = make_server()
-        async with Client(server) as client:
+        async with mcp_client_ready(server) as client:
             result = await client.call_tool(
                 _hashed("vault_list"), {"folder": "subfolder"}
             )
@@ -135,7 +134,7 @@ class TestBrowserDataTools:
 
     async def test_vault_read_note(self) -> None:
         server = make_server()
-        async with Client(server) as client:
+        async with mcp_client_ready(server) as client:
             result = await client.call_tool(
                 _hashed("vault_read"), {"path": "simple.md"}
             )
@@ -149,7 +148,7 @@ class TestBrowserDataTools:
 
     async def test_vault_read_with_frontmatter(self) -> None:
         server = make_server()
-        async with Client(server) as client:
+        async with mcp_client_ready(server) as client:
             result = await client.call_tool(
                 _hashed("vault_read"), {"path": "full_frontmatter.md"}
             )
@@ -159,7 +158,7 @@ class TestBrowserDataTools:
 
     async def test_vault_search_keyword(self) -> None:
         server = make_server()
-        async with Client(server) as client:
+        async with mcp_client_ready(server) as client:
             result = await client.call_tool(
                 _hashed("vault_search"), {"query": "simple", "mode": "keyword"}
             )
@@ -173,7 +172,7 @@ class TestBrowserDataTools:
 
     async def test_vault_search_respects_limit(self) -> None:
         server = make_server()
-        async with Client(server) as client:
+        async with mcp_client_ready(server) as client:
             result = await client.call_tool(
                 _hashed("vault_search"),
                 {"query": "document", "mode": "keyword", "limit": 2},
@@ -183,7 +182,7 @@ class TestBrowserDataTools:
 
     async def test_notes_have_kind_field(self) -> None:
         server = make_server()
-        async with Client(server) as client:
+        async with mcp_client_ready(server) as client:
             result = await client.call_tool(_hashed("vault_list"), {})
             data = _parse_tool_data(result)
             for note in data["notes"]:

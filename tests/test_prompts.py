@@ -13,10 +13,10 @@ from __future__ import annotations
 from pathlib import Path  # noqa: TC003
 
 import pytest
-from fastmcp import Client
 
 from markdown_vault_mcp._server_prompts import _load_user_prompt_defs
 from markdown_vault_mcp.server import make_server
+from tests.conftest import mcp_client_ready
 
 # ---------------------------------------------------------------------------
 # _load_user_prompt_defs unit tests
@@ -249,7 +249,7 @@ class TestUserPromptNoArgs:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_PROMPTS_FOLDER", str(prompts_dir))
 
         server = make_server()
-        async with Client(server) as client:
+        async with mcp_client_ready(server) as client:
             result = await client.get_prompt("greet", {})
         text = result.messages[0].content.text
         assert text == "Hello from user prompt!"
@@ -267,7 +267,7 @@ class TestUserPromptNoArgs:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_PROMPTS_FOLDER", str(prompts_dir))
 
         server = make_server()
-        async with Client(server) as client:
+        async with mcp_client_ready(server) as client:
             prompts = await client.list_prompts()
         names = {p.name for p in prompts}
         assert "greet" in names
@@ -296,7 +296,7 @@ class TestUserPromptWithArgs:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_PROMPTS_FOLDER", str(prompts_dir))
 
         server = make_server()
-        async with Client(server) as client:
+        async with mcp_client_ready(server) as client:
             result = await client.get_prompt("myread", {"path": "notes/foo.md"})
         text = result.messages[0].content.text
         assert "notes/foo.md" in text
@@ -320,7 +320,7 @@ class TestUserPromptWithArgs:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_PROMPTS_FOLDER", str(prompts_dir))
 
         server = make_server()
-        async with Client(server) as client:
+        async with mcp_client_ready(server) as client:
             result = await client.get_prompt("styled", {})
         text = result.messages[0].content.text
         assert "[]" in text  # empty string substituted
@@ -348,7 +348,7 @@ class TestUserPromptOverride:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_PROMPTS_FOLDER", str(prompts_dir))
 
         server = make_server()
-        async with Client(server) as client:
+        async with mcp_client_ready(server) as client:
             result = await client.get_prompt("summarize", {"path": "some.md"})
         text = result.messages[0].content.text
         assert "CUSTOM SUMMARIZE" in text
@@ -367,7 +367,7 @@ class TestUserPromptOverride:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_PROMPTS_FOLDER", str(prompts_dir))
 
         server = make_server()
-        async with Client(server) as client:
+        async with mcp_client_ready(server) as client:
             result = await client.get_prompt(
                 "compare", {"path1": "a.md", "path2": "b.md"}
             )
@@ -386,7 +386,7 @@ class TestUserPromptOverride:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_PROMPTS_FOLDER", str(prompts_dir))
 
         server = make_server()
-        async with Client(server) as client:
+        async with mcp_client_ready(server) as client:
             prompts = await client.list_prompts()
         summarize_entries = [p for p in prompts if p.name == "summarize"]
         assert len(summarize_entries) == 1
@@ -407,7 +407,7 @@ class TestUserPromptWriteTag:
         # READ_ONLY is True by default (env not set)
 
         server = make_server()
-        async with Client(server) as client:
+        async with mcp_client_ready(server) as client:
             prompts = await client.list_prompts()
         names = {p.name for p in prompts}
         assert "mywriter" not in names
@@ -424,7 +424,7 @@ class TestUserPromptWriteTag:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
 
         server = make_server()
-        async with Client(server) as client:
+        async with mcp_client_ready(server) as client:
             prompts = await client.list_prompts()
         names = {p.name for p in prompts}
         assert "mywriter" in names
@@ -436,7 +436,7 @@ class TestNoPromptsFolder:
     @pytest.mark.usefixtures("_clear_vars")
     async def test_all_builtins_present_without_prompts_folder(self) -> None:
         server = make_server()
-        async with Client(server) as client:
+        async with mcp_client_ready(server) as client:
             prompts = await client.list_prompts()
         names = {p.name for p in prompts}
         # Read-only mode: these built-ins should be present
@@ -459,7 +459,7 @@ class TestProposeLinks:
         # propose-links is tagged "write"; must enable write mode to see it.
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
         server = make_server()
-        async with Client(server) as client:
+        async with mcp_client_ready(server) as client:
             prompts = await client.list_prompts()
         propose_links = next(p for p in prompts if p.name == "propose-links")
         assert (
@@ -478,7 +478,7 @@ class TestProposeLinks:
         """Invoking propose-links substitutes $scope and $per_note_limit into the body."""
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
         server = make_server()
-        async with Client(server) as client:
+        async with mcp_client_ready(server) as client:
             result = await client.get_prompt(
                 "propose-links", {"scope": "1-Projects", "per_note_limit": "7"}
             )

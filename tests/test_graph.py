@@ -9,6 +9,7 @@ import pytest
 
 from markdown_vault_mcp.collection import Collection
 from markdown_vault_mcp.fts_index import FTSIndex
+from markdown_vault_mcp.server import make_server
 from markdown_vault_mcp.types import (
     Chunk,
     LinkInfo,
@@ -16,6 +17,7 @@ from markdown_vault_mcp.types import (
     NoteInfo,
     ParsedNote,
 )
+from tests.conftest import mcp_client_ready
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -336,12 +338,8 @@ def _mcp_env_graph(mcp_graph_vault: Path, monkeypatch: pytest.MonkeyPatch) -> No
 class TestMCPGraphTools:
     async def test_get_orphan_notes_tool(self, _mcp_env_graph: None) -> None:
         """get_orphan_notes MCP tool returns orphan notes."""
-        from fastmcp import Client
-
-        from markdown_vault_mcp.server import make_server
-
         server = make_server()
-        async with Client(server) as client:
+        async with mcp_client_ready(server) as client:
             result = await client.call_tool("get_orphan_notes", {})
         items = _parse_tool_data(result)
         assert isinstance(items, list)
@@ -351,12 +349,8 @@ class TestMCPGraphTools:
 
     async def test_get_most_linked_tool(self, _mcp_env_graph: None) -> None:
         """get_most_linked MCP tool returns hub note first."""
-        from fastmcp import Client
-
-        from markdown_vault_mcp.server import make_server
-
         server = make_server()
-        async with Client(server) as client:
+        async with mcp_client_ready(server) as client:
             result = await client.call_tool("get_most_linked", {"limit": 5})
         items = _parse_tool_data(result)
         assert isinstance(items, list)
@@ -366,12 +360,8 @@ class TestMCPGraphTools:
 
     async def test_get_most_linked_tool_limit(self, _mcp_env_graph: None) -> None:
         """get_most_linked respects the limit parameter."""
-        from fastmcp import Client
-
-        from markdown_vault_mcp.server import make_server
-
         server = make_server()
-        async with Client(server) as client:
+        async with mcp_client_ready(server) as client:
             result = await client.call_tool("get_most_linked", {"limit": 1})
         items = _parse_tool_data(result)
         assert len(items) == 1
@@ -656,12 +646,8 @@ def _mcp_env_path(mcp_path_vault: Path, monkeypatch: pytest.MonkeyPatch) -> None
 class TestMCPGetConnectionPath:
     async def test_found_path(self, _mcp_env_path: None) -> None:
         """get_connection_path tool returns found=True and correct path."""
-        from fastmcp import Client
-
-        from markdown_vault_mcp.server import make_server
-
         server = make_server()
-        async with Client(server) as client:
+        async with mcp_client_ready(server) as client:
             result = await client.call_tool(
                 "get_connection_path", {"source": "a.md", "target": "c.md"}
             )
@@ -672,12 +658,8 @@ class TestMCPGetConnectionPath:
 
     async def test_not_found_path(self, _mcp_env_path: None) -> None:
         """get_connection_path tool returns found=False when no path exists."""
-        from fastmcp import Client
-
-        from markdown_vault_mcp.server import make_server
-
         server = make_server()
-        async with Client(server) as client:
+        async with mcp_client_ready(server) as client:
             result = await client.call_tool(
                 "get_connection_path",
                 {"source": "a.md", "target": "isolated.md"},
@@ -689,12 +671,8 @@ class TestMCPGetConnectionPath:
 
     async def test_source_equals_target(self, _mcp_env_path: None) -> None:
         """get_connection_path tool returns found=True with 0 hops for source==target."""
-        from fastmcp import Client
-
-        from markdown_vault_mcp.server import make_server
-
         server = make_server()
-        async with Client(server) as client:
+        async with mcp_client_ready(server) as client:
             result = await client.call_tool(
                 "get_connection_path", {"source": "a.md", "target": "a.md"}
             )
@@ -705,13 +683,10 @@ class TestMCPGetConnectionPath:
 
     async def test_invalid_source_raises_error(self, _mcp_env_path: None) -> None:
         """get_connection_path tool surfaces ValueError for an unindexed source path."""
-        from fastmcp import Client
         from fastmcp.exceptions import ToolError
 
-        from markdown_vault_mcp.server import make_server
-
         server = make_server()
-        async with Client(server) as client:
+        async with mcp_client_ready(server) as client:
             with pytest.raises(ToolError):
                 await client.call_tool(
                     "get_connection_path",
