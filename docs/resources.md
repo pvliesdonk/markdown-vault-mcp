@@ -38,7 +38,7 @@ Current collection configuration and runtime state.
 
 ## `stats://vault`
 
-Collection statistics — document count, chunk count, and capabilities.
+Collection statistics — document count, chunk count, capabilities, and background-index state.
 
 **Response:**
 
@@ -49,9 +49,16 @@ Collection statistics — document count, chunk count, and capabilities.
   "folder_count": 5,
   "semantic_search_available": true,
   "indexed_frontmatter_fields": ["tags", "cluster"],
-  "attachment_extensions": ["pdf", "png", "jpg"]
+  "attachment_extensions": ["pdf", "png", "jpg"],
+  "index_status": {
+    "status": "indexing",
+    "indexed": 800,
+    "error": null
+  }
 }
 ```
+
+The `index_status` field reports the background reindexing thread's current state. `status` is one of `ready` (idle), `indexing` (FTS phase running), `embedding` (vector phase running), or `failed`. `indexed` is the current FTS document count (cheap `COUNT(*)`). `error` is the last failure message or `null`. This resource is non-blocking: during a cold-start indexing run the counts reflect whatever persistent FTS state currently exists (often `0`), so callers can poll `stats://vault` cheaply to track progress without waiting for the indexing thread to finish.
 
 ## `tags://vault`
 

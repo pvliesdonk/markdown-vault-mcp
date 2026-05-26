@@ -12,7 +12,7 @@ import queue
 import re
 import threading
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, TypedDict
 
 from markdown_vault_mcp.fts_index import FTSIndex
 from markdown_vault_mcp.scanner import (
@@ -56,6 +56,21 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_STATE_SUBDIR = ".markdown_vault_mcp"
 _DEFAULT_STATE_FILENAME = "state.json"
+
+
+IndexStatusLiteral = Literal["ready", "indexing", "embedding", "failed"]
+
+
+class IndexStatusPayload(TypedDict):
+    """Shape of the ``get_index_status`` return value.
+
+    Also serialised as the ``index_status`` field of the ``stats://vault``
+    MCP resource — treat as a public contract.
+    """
+
+    status: IndexStatusLiteral
+    indexed: int
+    error: str | None
 
 
 def _resolve_chunk_strategy(strategy: str | ChunkStrategy) -> ChunkStrategy:
@@ -280,9 +295,7 @@ class Collection:
         # ``_fts_done_event`` fires earlier — right after the FTS phase —
         # so foreground tool calls see partial FTS results without waiting
         # for the embedding phase.
-        self._index_status: Literal["ready", "indexing", "embedding", "failed"] = (
-            "ready"
-        )
+        self._index_status: IndexStatusLiteral = "ready"
         self._index_status_error: str | None = None
         self._index_status_lock = threading.Lock()
         self._background_index_thread: threading.Thread | None = None
@@ -343,11 +356,11 @@ class Collection:
             self._initialized,
         )
 
-    def get_index_status(self) -> dict[str, Any]:
+    def get_index_status(self) -> IndexStatusPayload:
         """Return current background-index status for client / monitoring callers.
 
         Returns:
-            Dict with three keys:
+            :class:`IndexStatusPayload` with three keys:
 
             - ``status``: one of ``"ready"``, ``"indexing"``, ``"embedding"``,
               ``"failed"``.
@@ -363,7 +376,7 @@ class Collection:
 
     def _set_index_status(
         self,
-        status: Literal["ready", "indexing", "embedding", "failed"],
+        status: IndexStatusLiteral,
         *,
         error: str | None = None,
     ) -> None:
@@ -438,8 +451,12 @@ class Collection:
             self._set_index_status("ready")
             logger.info("background reindex complete")
         except Exception as exc:
-            logger.error("background reindex failed", exc_info=True)
-            self._set_index_status("failed", error=str(exc))
+            if self._index_shutdown.is_set():
+                logger.info("background reindex aborted by shutdown: %s", exc)
+                # Don't mark failed — shutdown is the cause, not a real fault.
+            else:
+                logger.error("background reindex failed", exc_info=True)
+                self._set_index_status("failed", error=str(exc))
         finally:
             self._fts_done_event.set()
             self._index_done_event.set()
@@ -531,8 +548,16 @@ class Collection:
             bg_thread is not None
             and bg_thread.is_alive()
             and bg_thread is not threading.current_thread()
+            and not self._fts_done_event.wait(timeout=60)
         ):
-            self._fts_done_event.wait()
+            logger.warning(
+                "_ensure_initialized: background reindex did not finish FTS "
+                "phase within 60s; proceeding with inline build_index() as "
+                "fallback"
+            )
+            # Fall through — the ``if not self._initialized: ...`` line below
+            # runs ``build_index()`` synchronously and surfaces any real
+            # error to the caller.
 
         if not self._initialized:
             self.build_index()
@@ -555,9 +580,20 @@ class Collection:
         return row is not None
 
     def _count_documents(self) -> int:
-        """Return ``COUNT(*)`` of rows currently in the FTS documents table."""
-        row = self._fts._conn.execute("SELECT COUNT(*) FROM documents").fetchone()
-        return int(row[0]) if row is not None else 0
+        """Return ``COUNT(*)`` of rows in the FTS documents table.
+
+        Returns 0 on any SQLite error (e.g. closed connection during shutdown,
+        transient lock contention).  Used by ``get_index_status()`` and by the
+        warm-start fast path in ``build_index()``; both callers must remain
+        non-blocking and crash-resistant for the status resource to stay
+        operator-useful during indexing (#513).
+        """
+        try:
+            row = self._fts._conn.execute("SELECT COUNT(*) FROM documents").fetchone()
+        except Exception:
+            logger.debug("could not count FTS documents", exc_info=True)
+            return 0
+        return int(row[0])  # COUNT(*) always returns exactly one row
 
     def _purge_excluded_rows(self) -> int:
         """Delete FTS+vector rows whose paths match the configured exclude_patterns.
@@ -774,9 +810,12 @@ class Collection:
             skip_if_missing: If ``True`` and the ``.npy`` sidecar does not yet
                 exist on disk, log a warning pointing operators at the
                 ``markdown-vault-mcp reindex`` CLI command and return 0
-                without doing any embedding work.  Used by the server
-                lifespan so MCP startup is not blocked on an initial
-                corpus build (#513).  Has no effect when ``force=True``.
+                without doing any embedding work.  Originally designed for
+                non-blocking startup (#513); the production lifespan now
+                uses ``schedule_background_reindex()`` instead, but this
+                parameter remains available for direct callers (CLI, tests,
+                custom integrations) that want a non-blocking variant.  Has
+                no effect when ``force=True``.
 
         Returns:
             Total number of chunks embedded (or 0 when skipped).
@@ -1158,10 +1197,16 @@ class Collection:
     def stats(self) -> CollectionStats:
         """Return collection-wide statistics.
 
+        Non-blocking on cold-start: the persistent FTS state is reported as-is,
+        without waiting for a background reindex to finish.  Zero counts during
+        cold-start indexing are the correct/expected reading and let the
+        ``stats://vault`` resource stay a fast status probe (#513).
+
         Returns:
             :class:`~markdown_vault_mcp.types.CollectionStats` snapshot.
         """
-        self._ensure_initialized()
+        # Deliberately do NOT call ``_ensure_initialized()`` here; the stats
+        # resource must never block on the background indexing thread.
 
         rows = self._fts.list_notes()
         doc_count = len(rows)

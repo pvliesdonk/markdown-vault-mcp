@@ -4247,18 +4247,26 @@ class TestIndexStatus:
         tmp_path: Path,
     ) -> None:
         """A second call while a thread is in flight returns without spawning."""
+        import threading
+        from unittest.mock import MagicMock
+
         col = _make_collection(
             vault_path,
             state_path=tmp_path / "state.json",
         )
         try:
+            # Inject a fake "in-flight" thread so idempotency is deterministic.
+            fake = MagicMock(spec=threading.Thread)
+            fake.is_alive.return_value = True
+            col._background_index_thread = fake
+
             col.schedule_background_reindex()
-            first_thread = col._background_index_thread
-            col.schedule_background_reindex()
-            assert col._background_index_thread is first_thread
-            col._index_done_event.wait(timeout=30)
-            assert col.get_index_status()["status"] == "ready"
+            assert col._background_index_thread is fake, (
+                "second schedule should be a no-op while a thread is in flight"
+            )
         finally:
+            # Restore so close() doesn't try to join the mock.
+            col._background_index_thread = None
             col.close()
 
     def test_schedule_background_reindex_failure_sets_status_failed(
@@ -4324,3 +4332,45 @@ class TestIndexStatus:
         if thread is not None:
             thread.join(timeout=1)
         assert thread is None or not thread.is_alive()
+
+    def test_stats_does_not_block_during_background_reindex(
+        self,
+        vault_path: Path,
+        tmp_path: Path,
+    ) -> None:
+        """stats() must return immediately even while a bg reindex is in flight (#513).
+
+        Simulates a stuck background thread by clearing _fts_done_event and
+        injecting a fake live thread. If stats() were to wait on the event
+        (via _ensure_initialized), the call would hang past the timeout below.
+        """
+        import threading
+        import time
+        from unittest.mock import MagicMock
+
+        col = _make_collection(
+            vault_path,
+            state_path=tmp_path / "state.json",
+        )
+        try:
+            # Simulate "bg reindex in flight, FTS phase still running".
+            col._initialized = False
+            col._fts_done_event.clear()
+            fake = MagicMock(spec=threading.Thread)
+            fake.is_alive.return_value = True
+            col._background_index_thread = fake
+
+            start = time.monotonic()
+            result = col.stats()
+            elapsed = time.monotonic() - start
+
+            assert elapsed < 1.0, (
+                f"stats() blocked for {elapsed:.2f}s; must be non-blocking"
+            )
+            # Persistent FTS state should be reported as-is; counts may be 0.
+            assert result.document_count >= 0
+        finally:
+            # Restore so close() doesn't try to join the mock.
+            col._background_index_thread = None
+            col._fts_done_event.set()
+            col.close()

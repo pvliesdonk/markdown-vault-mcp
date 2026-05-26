@@ -406,8 +406,18 @@ class TestStatsTool:
 
     @pytest.mark.usefixtures("_mcp_env")
     async def test_stats(self) -> None:
+        """stats reports populated counts once background indexing finishes (#513).
+
+        ``stats()`` is non-blocking: we must wait on the singleton's done
+        event before asserting non-zero counts, otherwise we race the
+        cold-start background reindex.
+        """
+        from markdown_vault_mcp._server_deps import get_collection_singleton
+
         server = make_server()
         async with Client(server) as client:
+            col = get_collection_singleton()
+            assert col._index_done_event.wait(timeout=30)
             result = await client.call_tool("stats", {})
         data = result.data
         assert isinstance(data, dict)
