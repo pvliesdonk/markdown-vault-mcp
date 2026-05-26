@@ -195,8 +195,11 @@ class Collection:
         )
         self._tracker = ChangeTracker(self._state_path)
 
-        # Lazy initialisation flag.
-        self._initialized = False
+        # Lazy initialisation flag.  Seed from the on-disk FTS DB so a
+        # persistent index built by a prior process (CLI ``reindex`` or
+        # a previous server run) short-circuits the startup scan — see
+        # #513 / issue #509.
+        self._initialized = self._fts_has_documents()
 
         # Serialise concurrent write operations on this instance.
         # Re-entrant: periodic pull tick blocks writes, then reindex() acquires
@@ -356,6 +359,23 @@ class Collection:
         """Build the FTS index on first access if it has not been built yet."""
         if not self._initialized:
             self.build_index()
+
+    def _fts_has_documents(self) -> bool:
+        """Return True if the FTS DB currently has at least one row.
+
+        Used to seed ``_initialized`` so warm-start lifespans don't trigger
+        a full filesystem scan when a prior process already built the
+        persistent index.
+        """
+        try:
+            row = self._fts._conn.execute("SELECT 1 FROM documents LIMIT 1").fetchone()
+        except Exception:
+            logger.debug(
+                "could not probe FTS DB for warm-start; assuming cold start",
+                exc_info=True,
+            )
+            return False
+        return row is not None
 
     @property
     def _vectors(self) -> VectorIndex | None:

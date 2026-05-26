@@ -3962,3 +3962,58 @@ def test_collection_search_honours_default_chunks_per_file(tmp_path):
     long_groups = [r for r in results if r.path == "long.md"]
     if long_groups:
         assert len(long_groups[0].sections) <= 2
+
+
+class TestInitializeAsync:
+    """Collection.initialize_async() synchronously seeds _initialized from FTS DB."""
+
+    def test_warm_start_marks_initialized(
+        self, vault_path: Path, tmp_path: Path
+    ) -> None:
+        """A pre-populated persistent DB sets _initialized=True on construction."""
+        index_path = tmp_path / "index.db"
+        col1 = _make_collection(
+            vault_path,
+            index_path=index_path,
+            state_path=tmp_path / "state1.json",
+        )
+        col1.build_index()
+        col1.close()
+
+        col2 = _make_collection(
+            vault_path,
+            index_path=index_path,
+            state_path=tmp_path / "state2.json",
+        )
+        try:
+            assert col2._initialized is True
+        finally:
+            col2.close()
+
+    def test_cold_start_leaves_initialized_false(
+        self, vault_path: Path, tmp_path: Path
+    ) -> None:
+        """An empty (or missing) persistent DB leaves _initialized=False."""
+        col = _make_collection(
+            vault_path,
+            index_path=tmp_path / "fresh-index.db",
+            state_path=tmp_path / "state.json",
+        )
+        try:
+            assert col._initialized is False
+        finally:
+            col.close()
+
+    def test_in_memory_db_leaves_initialized_false(
+        self, vault_path: Path, tmp_path: Path
+    ) -> None:
+        """In-memory FTS (no index_path) cannot be pre-populated; flag stays False."""
+        col = _make_collection(
+            vault_path,
+            index_path=None,
+            state_path=tmp_path / "state.json",
+        )
+        try:
+            assert col._initialized is False
+        finally:
+            col.close()
