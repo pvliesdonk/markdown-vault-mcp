@@ -399,30 +399,31 @@ class Collection:
 
         from markdown_vault_mcp.utils import is_path_excluded
 
-        # Reuse SearchManager.vectors so an already-loaded vector index is
-        # mutated in place.  If embeddings are configured but not yet loaded,
-        # load now so we can purge the sidecar in lock-step with the FTS rows.
-        vectors = self._search_mgr.vectors
-        if (
-            vectors is None
-            and self._embedding_provider is not None
-            and self._embeddings_path is not None
-        ):
-            self._search_mgr._load_vectors()
+        with self._write_lock:
+            # Reuse SearchManager.vectors so an already-loaded vector index is
+            # mutated in place.  If embeddings are configured but not yet loaded,
+            # load now so we can purge the sidecar in lock-step with the FTS rows.
             vectors = self._search_mgr.vectors
+            if (
+                vectors is None
+                and self._embedding_provider is not None
+                and self._embeddings_path is not None
+            ):
+                self._search_mgr._load_vectors()
+                vectors = self._search_mgr.vectors
 
-        purged = 0
-        for row in self._fts.list_notes():
-            if is_path_excluded(row["path"], self._exclude_patterns):
-                self._fts.delete_by_path(row["path"])
-                if vectors is not None:
-                    vectors.delete_by_path(row["path"])
-                purged += 1
+            purged = 0
+            for row in self._fts.list_notes():
+                if is_path_excluded(row["path"], self._exclude_patterns):
+                    self._fts.delete_by_path(row["path"])
+                    if vectors is not None:
+                        vectors.delete_by_path(row["path"])
+                    purged += 1
 
-        if purged and vectors is not None and self._embeddings_path is not None:
-            vectors.save(self._embeddings_path)
+            if purged and vectors is not None and self._embeddings_path is not None:
+                vectors.save(self._embeddings_path)
 
-        return purged
+            return purged
 
     @property
     def _vectors(self) -> VectorIndex | None:
