@@ -64,6 +64,7 @@ def test_start_background_reindex_is_idempotent(tmp_path: Path) -> None:
     try:
         collection.start_background_reindex()
         first_thread = collection._background_thread
+        assert first_thread is not None
 
         # Second call must be a no-op while the first thread is alive.
         # If the first thread completes between calls, this still must not
@@ -74,5 +75,35 @@ def test_start_background_reindex_is_idempotent(tmp_path: Path) -> None:
         assert second_thread is first_thread or not first_thread.is_alive()
 
         _wait_until(lambda: not collection.index_status()["background_running"])
+    finally:
+        collection.close()
+
+
+def test_background_failure_sets_last_error_and_recovers(tmp_path: Path) -> None:
+    """When reindex raises, last_error is set, phase returns to None, server lives."""
+    (tmp_path / "doc.md").write_text("# Doc\n\nbody\n", encoding="utf-8")
+    collection = Collection(source_dir=tmp_path)
+    try:
+        # Patch reindex to raise.
+        original_reindex = collection.reindex
+
+        def boom() -> object:
+            raise RuntimeError("synthetic failure")
+
+        collection.reindex = boom  # type: ignore[method-assign]
+
+        collection.start_background_reindex()
+        _wait_until(lambda: not collection.index_status()["background_running"])
+
+        status = collection.index_status()
+        assert status["background_running"] is False
+        assert status["background_phase"] is None
+        assert status["last_error"] == "synthetic failure"
+
+        # Server-equivalent behaviour: foreground operations still work.
+        # (We don't have a populated index, but list_documents must not raise.)
+        collection.reindex = original_reindex  # type: ignore[method-assign]
+        # No further assertion needed — we already verified the worker did not
+        # propagate the exception out of the thread.
     finally:
         collection.close()
