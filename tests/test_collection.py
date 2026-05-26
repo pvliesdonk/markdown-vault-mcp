@@ -4260,3 +4260,39 @@ class TestIndexStatus:
             assert col.get_index_status()["status"] == "ready"
         finally:
             col.close()
+
+    def test_schedule_background_reindex_failure_sets_status_failed(
+        self,
+        vault_path: Path,
+        tmp_path: Path,
+    ) -> None:
+        """A failing reindex sets status=failed + records the error, server stays up."""
+
+        class _ExplodingProvider:
+            provider_name = "exploding"
+            model_name = "test-bomb"
+            dimension = 4
+
+            def embed(self, texts: list[str]) -> list[list[float]]:  # noqa: ARG002
+                raise RuntimeError("embedding failed")
+
+            def normalise(self, vec: list[float]) -> list[float]:
+                return vec
+
+        col = _make_collection(
+            vault_path,
+            index_path=tmp_path / "index.db",
+            embeddings_path=tmp_path / "embeddings",
+            embedding_provider=_ExplodingProvider(),
+            state_path=tmp_path / "state.json",
+        )
+        try:
+            col.schedule_background_reindex()
+            done = col._index_done_event.wait(timeout=30)
+            assert done, "background reindex did not complete within 30s"
+            status = col.get_index_status()
+            assert status["status"] == "failed"
+            assert status["error"] is not None
+            assert "embedding failed" in status["error"]
+        finally:
+            col.close()
