@@ -553,6 +553,7 @@ class TestGraphNeighborhoodMaxNodes:
         ):
             server = make_server()
             async with Client(server) as client:
+                _wait_for_background_index()
                 result = await client.call_tool(
                     _hashed("vault_graph_neighborhood"),
                     {
@@ -607,6 +608,7 @@ class TestGraphNeighborhoodMaxNodes:
         ):
             server = make_server()
             async with Client(server) as client:
+                _wait_for_background_index()
                 result = await client.call_tool(
                     _hashed("vault_graph_neighborhood"),
                     {
