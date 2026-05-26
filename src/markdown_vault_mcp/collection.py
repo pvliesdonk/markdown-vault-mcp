@@ -334,10 +334,24 @@ class Collection:
         Flushes deferred embeddings and pending write callbacks, then
         closes the SQLite connection and git strategy.
         """
-        # 1. Flush any deferred embedding updates.
+        # 1. Signal the background reindex thread and join with a bounded timeout.
+        #    daemon=True ensures the process can still exit if the thread is stuck
+        #    inside reindex()'s scanner work; SQLite WAL recovers on next startup.
+        self._background_shutdown.set()
+        thread = self._background_thread
+        if thread is not None and thread.is_alive():
+            thread.join(timeout=30.0)
+            if thread.is_alive():
+                logger.warning(
+                    "background_reindex_thread_join_timeout "
+                    "thread=%s — abandoning (daemon=True ensures process exit)",
+                    thread.name,
+                )
+
+        # 2. Flush any deferred embedding updates.
         self._index_mgr.flush_dirty_embeddings()
 
-        # 2. Drain the write-callback queue (git commits).
+        # 3. Drain the write-callback queue (git commits).
         if self._callback_worker is not None and self._callback_worker.is_alive():
             self._callback_queue.put(None)  # sentinel
             self._callback_worker.join(timeout=30)
@@ -347,7 +361,7 @@ class Collection:
                     "pending git commits may be lost."
                 )
 
-        # 3. Close git strategy (flush push, etc.).
+        # 4. Close git strategy (flush push, etc.).
         if self._git_strategy is not None:
             self._git_strategy.close()
         if (
@@ -357,7 +371,7 @@ class Collection:
         ):
             self._on_write.close()  # type: ignore[union-attr]
 
-        # 4. Close SQLite.
+        # 5. Close SQLite.
         self._fts.close()
 
     # ------------------------------------------------------------------

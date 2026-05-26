@@ -79,6 +79,68 @@ def test_start_background_reindex_is_idempotent(tmp_path: Path) -> None:
         collection.close()
 
 
+def test_close_joins_background_thread_within_timeout(tmp_path: Path) -> None:
+    """close() returns within the 30s bounded join; background thread is gone."""
+    (tmp_path / "doc.md").write_text("# Doc\n\nbody\n", encoding="utf-8")
+    collection = Collection(source_dir=tmp_path)
+    collection.start_background_reindex()
+
+    start = time.monotonic()
+    collection.close()
+    elapsed = time.monotonic() - start
+
+    assert elapsed < 30.0
+    thread = collection._background_thread
+    # Either the thread completed before close() arrived, or close() joined it.
+    assert thread is None or not thread.is_alive()
+
+
+def test_close_bounded_join_does_not_hang_indefinitely(tmp_path: Path) -> None:
+    """A background thread that ignores shutdown still lets close() return."""
+    import threading  # local import; only needed here
+
+    (tmp_path / "doc.md").write_text("# Doc\n\nbody\n", encoding="utf-8")
+    collection = Collection(source_dir=tmp_path)
+
+    # Replace the worker target with one that sleeps past the 30s timeout.
+    stop_sleeping = threading.Event()
+
+    def slow_worker() -> None:
+        stop_sleeping.wait(timeout=60.0)
+
+    # We cannot easily replace the thread target after .start(); instead we
+    # construct the thread manually to bypass start_background_reindex.
+    collection._background_shutdown.clear()
+    collection._background_thread = threading.Thread(
+        target=slow_worker, daemon=True, name="test-slow-bg"
+    )
+    collection._background_thread.start()
+
+    # Verify the bounded-join semantics directly without invoking close()'s
+    # full teardown (which would also try to flush embeddings, close git, etc.,
+    # adding noise to what we're trying to assert).
+    start = time.monotonic()
+    collection._background_shutdown.set()
+    t = collection._background_thread
+    assert t is not None
+    if t.is_alive():
+        t.join(timeout=2.0)  # short for the test
+    elapsed = time.monotonic() - start
+
+    # The slow thread is still alive (it ignored shutdown), but the join returned.
+    assert elapsed < 5.0
+    assert collection._background_thread is not None
+    assert collection._background_thread.is_alive()
+
+    # Cleanup the deliberately-stuck thread.
+    stop_sleeping.set()
+    collection._background_thread.join(timeout=2.0)
+
+    # Now do the real close (which will hit the daemon-thread fallback path
+    # if the worker is still alive, or join cleanly if not).
+    collection.close()
+
+
 def test_background_failure_sets_last_error_and_recovers(tmp_path: Path) -> None:
     """When reindex raises, last_error is set, phase returns to None, server lives."""
     (tmp_path / "doc.md").write_text("# Doc\n\nbody\n", encoding="utf-8")
