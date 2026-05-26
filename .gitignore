@@ -39,3 +39,4 @@ site/
 .claude/worktrees/
 .claude/settings.local.json
 docs/superpowers/
+.claude/
