@@ -4296,3 +4296,31 @@ class TestIndexStatus:
             assert "embedding failed" in status["error"]
         finally:
             col.close()
+
+    def test_close_signals_background_thread(
+        self,
+        vault_path: Path,
+        tmp_path: Path,
+        mock_provider: MockEmbeddingProvider,
+    ) -> None:
+        """close() sets the shutdown flag and joins the background thread within timeout."""
+        col = _make_collection(
+            vault_path,
+            index_path=tmp_path / "index.db",
+            embeddings_path=tmp_path / "embeddings",
+            embedding_provider=mock_provider,
+            state_path=tmp_path / "state.json",
+        )
+        col.schedule_background_reindex()
+        # Don't wait for completion — close() must handle the in-flight case.
+        col.close()
+
+        # After close(): the shutdown event must be set, and either the
+        # thread completed (done event set) or was abandoned (no live thread
+        # blocking subsequent work).
+        assert col._index_shutdown.is_set()
+        thread = col._background_index_thread
+        # Allow up to 30s for the thread to wind down (matches close() timeout).
+        if thread is not None:
+            thread.join(timeout=1)
+        assert thread is None or not thread.is_alive()

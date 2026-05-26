@@ -441,6 +441,20 @@ class Collection:
         # 1. Flush any deferred embedding updates.
         self._index_mgr.flush_dirty_embeddings()
 
+        # Signal the background reindex thread to stop and give it a bounded
+        # window to wind down.  SQLite WAL + the existing crash-resilience
+        # paths handle any partial mutation if the daemon thread is abandoned
+        # after the timeout (#513).
+        self._index_shutdown.set()
+        bg_thread = self._background_index_thread
+        if bg_thread is not None and bg_thread.is_alive():
+            bg_thread.join(timeout=30)
+            if bg_thread.is_alive():
+                logger.warning(
+                    "Collection.close: background reindex thread still alive "
+                    "after 30s — abandoning (daemon)"
+                )
+
         # 2. Drain the write-callback queue (git commits).
         if self._callback_worker is not None and self._callback_worker.is_alive():
             self._callback_queue.put(None)  # sentinel
