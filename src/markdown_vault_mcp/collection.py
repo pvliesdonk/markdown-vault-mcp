@@ -394,10 +394,10 @@ class Collection:
         """Worker target for the background reindex thread.
 
         Runs ``reindex()`` then ``build_embeddings()`` (if a provider is
-        configured) with status transitions:
-        ``indexing -> embedding -> ready``.  On failure, sets status to
-        ``failed`` and records the message; the server itself is never
-        crashed by an indexing error.
+        configured). Drives status transitions ``embedding -> ready``;
+        the scheduler sets ``indexing`` before this method starts.  On
+        failure, sets status to ``failed`` and records the message; the
+        server itself is never crashed by an indexing error.
         """
         try:
             if self._index_shutdown.is_set():

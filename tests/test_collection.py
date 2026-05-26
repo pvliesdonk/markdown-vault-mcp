@@ -4257,5 +4257,6 @@ class TestIndexStatus:
             col.schedule_background_reindex()
             assert col._background_index_thread is first_thread
             col._index_done_event.wait(timeout=30)
+            assert col.get_index_status()["status"] == "ready"
         finally:
             col.close()
