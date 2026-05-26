@@ -4201,3 +4201,19 @@ class TestIndexStatus:
             assert status["status"] in {"ready", "indexing", "embedding", "failed"}
         finally:
             col.close()
+
+    def test_set_index_status_clears_error_on_non_failed_transition(
+        self, vault_path: Path, tmp_path: Path
+    ) -> None:
+        """Transitioning from 'failed' to any other status clears the recorded error."""
+        col = _make_collection(
+            vault_path,
+            state_path=tmp_path / "state.json",
+        )
+        try:
+            col._set_index_status("failed", error="boom")
+            assert col.get_index_status()["error"] == "boom"
+            col._set_index_status("ready")
+            assert col.get_index_status()["error"] is None
+        finally:
+            col.close()
