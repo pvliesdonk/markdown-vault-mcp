@@ -860,6 +860,34 @@ class FTSIndex:
         row = self._conn.execute("SELECT COUNT(*) FROM sections").fetchone()
         return row[0] if row else 0
 
+    def count_documents(self) -> int:
+        """Return the total number of rows in the ``documents`` table.
+
+        Cheaper than materialising ``list_notes()`` for callers that only
+        need the count (e.g. ``stats://vault`` and the background-index
+        status probe in #513).
+
+        Returns:
+            Integer count of all indexed documents.
+        """
+        row = self._conn.execute("SELECT COUNT(*) FROM documents").fetchone()
+        return int(row[0]) if row else 0
+
+    def has_documents(self) -> bool:
+        """Return ``True`` if the ``documents`` table has at least one row.
+
+        Cheaper than ``count_documents()`` because the probe stops at the
+        first row.  Used by the warm-start fast path to skip a full
+        filesystem scan when a prior process already built the persistent
+        index (#513).
+
+        Returns:
+            ``True`` when at least one document is indexed, ``False``
+            otherwise.
+        """
+        row = self._conn.execute("SELECT 1 FROM documents LIMIT 1").fetchone()
+        return row is not None
+
     def get_toc(self, path: str) -> list[dict[str, str | int]]:
         """Return headings for a document, ordered by position.
 

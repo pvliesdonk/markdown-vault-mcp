@@ -359,16 +359,21 @@ class Collection:
             :class:`IndexStatusPayload` with three keys:
 
             - ``status``: one of ``"ready"``, ``"indexing"``, ``"embedding"``,
-              ``"failed"``.
+                ``"failed"``.
             - ``indexed``: current FTS document count (cheap ``COUNT(*)``).
             - ``error``: the last failure message, or ``None``.
         """
+        # Only ``status`` and ``error`` are guarded by the status lock; the
+        # FTS ``COUNT(*)`` is a separate SQLite read and must not extend the
+        # critical section that background writers also contend on.
         with self._index_status_lock:
-            return {
-                "status": self._index_status,
-                "indexed": self._count_documents(),
-                "error": self._index_status_error,
-            }
+            status = self._index_status
+            error = self._index_status_error
+        return {
+            "status": status,
+            "indexed": self._count_documents(),
+            "error": error,
+        }
 
     def _set_index_status(
         self,
@@ -578,17 +583,17 @@ class Collection:
 
         Used to seed ``_initialized`` so warm-start lifespans don't trigger
         a full filesystem scan when a prior process already built the
-        persistent index.
+        persistent index.  Returns ``False`` on any SQLite error so the
+        startup path treats the DB as cold rather than crashing.
         """
         try:
-            row = self._fts._conn.execute("SELECT 1 FROM documents LIMIT 1").fetchone()
+            return self._fts.has_documents()
         except Exception:
             logger.debug(
                 "could not probe FTS DB for warm-start; assuming cold start",
                 exc_info=True,
             )
             return False
-        return row is not None
 
     def _count_documents(self) -> int:
         """Return ``COUNT(*)`` of rows in the FTS documents table.
@@ -600,11 +605,10 @@ class Collection:
         operator-useful during indexing (#513).
         """
         try:
-            row = self._fts._conn.execute("SELECT COUNT(*) FROM documents").fetchone()
+            return self._fts.count_documents()
         except Exception:
             logger.debug("could not count FTS documents", exc_info=True)
             return 0
-        return int(row[0])  # COUNT(*) always returns exactly one row
 
     def _purge_excluded_rows(self) -> int:
         """Delete FTS+vector rows whose paths match the configured exclude_patterns.
@@ -1221,8 +1225,11 @@ class Collection:
         # Deliberately do NOT call ``_ensure_initialized()`` here; the stats
         # resource must never block on the background indexing thread.
 
-        rows = self._fts.list_notes()
-        doc_count = len(rows)
+        # Use the dedicated ``COUNT(*)`` helper so this method stays
+        # consistent with ``get_index_status()['indexed']`` (both hit the
+        # same SQLite query) and avoids materialising every row just for a
+        # number (#515 review).
+        doc_count = self._fts.count_documents()
 
         # Chunk count via the public FTSIndex method.
         chunk_count = self._fts.count_chunks()

@@ -4430,3 +4430,61 @@ class TestIndexStatus:
         finally:
             col._background_index_thread = None
             col.close()
+
+    def test_fts_done_event_fires_before_embedding_phase(
+        self,
+        vault_path: Path,
+        tmp_path: Path,
+        mock_provider: MockEmbeddingProvider,
+    ) -> None:
+        """Foreground readers unblock as soon as FTS phase completes, not after embeddings."""
+        import threading
+
+        # Block build_embeddings on a gate so we can observe the intermediate state.
+        gate = threading.Event()
+        embedding_started = threading.Event()
+
+        col = _make_collection(
+            vault_path,
+            index_path=tmp_path / "index.db",
+            embeddings_path=tmp_path / "embeddings",
+            embedding_provider=mock_provider,
+            state_path=tmp_path / "state.json",
+        )
+        original_build_embeddings = col.build_embeddings
+
+        def gated_build_embeddings(*args, **kwargs):
+            embedding_started.set()
+            gate.wait(timeout=10)
+            return original_build_embeddings(*args, **kwargs)
+
+        try:
+            with patch.object(
+                col, "build_embeddings", side_effect=gated_build_embeddings
+            ):
+                col.schedule_background_reindex()
+
+                # Wait for the worker to reach the embedding phase.
+                assert embedding_started.wait(timeout=30), (
+                    "background thread did not reach embedding phase"
+                )
+
+                # At this point: FTS phase is done, embedding phase is paused.
+                assert col._fts_done_event.is_set(), (
+                    "FTS event should fire after reindex()"
+                )
+                assert not col._index_done_event.is_set(), (
+                    "full-pipeline event should not fire yet (embedding paused)"
+                )
+
+                # Foreground _ensure_initialized must return immediately (event is set).
+                col._ensure_initialized()  # would block if waiting on the wrong event
+
+                # Release the gate and let the worker finish.
+                gate.set()
+                assert col._index_done_event.wait(timeout=30), (
+                    "background thread did not complete after gate release"
+                )
+        finally:
+            gate.set()  # ensure no hang on teardown
+            col.close()
