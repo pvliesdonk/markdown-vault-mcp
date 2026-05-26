@@ -178,8 +178,9 @@ class IndexManager:
         this is a no-op.  ``force=True`` drops all existing data and rebuilds
         from scratch.
 
-        Note: the caller is responsible for setting any ``_initialized``
-        flag after this method returns.
+        Note: :meth:`Collection.build_index` sets ``self._initialized`` after
+        this returns to short-circuit redundant calls; no other caller should
+        need to.
 
         Args:
             force: When ``True``, drop and rebuild the index unconditionally.

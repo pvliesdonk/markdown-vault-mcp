@@ -488,6 +488,8 @@ an error to wait out. This rule is enforced by
 stop. The PR #515 abandonment retrospective in
 `memory/feedback_background_indexing_abandon.md` explains why.
 
+Note: every startup briefly reports `background_running=True` even on a warm restart with a fully-populated FTS DB on disk. The background worker calls `reindex()`, which always runs a change-tracker pass to confirm the persisted index matches the on-disk vault. On warm restart that pass finds no changes and completes quickly, but `index_status` will show indexing briefly. To skip that confirmation pass entirely (i.e. trust the persisted index), call the CLI `markdown-vault-mcp index` before starting the server.
+
 ### Lifecycle: Collection.close()
 
 `Collection.close()` must be called on shutdown to release resources:

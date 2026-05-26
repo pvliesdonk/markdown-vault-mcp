@@ -100,8 +100,11 @@ def make_collection_lifespan(config: CollectionConfig) -> Any:
         # build_index() scans the freshest working tree.
         await asyncio.to_thread(collection.sync_from_remote_before_index)
 
-        # Start background tasks (git pull loop, etc.) so reindex can see
-        # the freshest tree if a pull happens early.
+        # Start background tasks (git pull loop, etc.) so reindex sees the
+        # freshest tree if a pull happens early. Both start() (pull callback)
+        # and start_background_reindex() (initial reindex) may call reindex();
+        # they serialise via Collection._write_lock, which is safe but means an
+        # early git pull can briefly delay the initial reindex.
         collection.start()
 
         # Kick off the background reindex (FTS + embeddings if configured).

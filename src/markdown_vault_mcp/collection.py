@@ -196,7 +196,7 @@ class Collection:
         )
         self._tracker = ChangeTracker(self._state_path)
 
-        # Lazy initialisation flag.
+        # Set to True by build_index() so a redundant call can short-circuit.
         self._initialized = False
 
         # Serialise concurrent write operations on this instance.
@@ -347,6 +347,10 @@ class Collection:
                     "thread=%s — abandoning (daemon=True ensures process exit)",
                     thread.name,
                 )
+                self._set_background_completed(
+                    error="abandoned at shutdown after 30s join timeout"
+                )
+                self._set_background_phase(None)
 
         # 2. Flush any deferred embedding updates.
         self._index_mgr.flush_dirty_embeddings()
@@ -414,7 +418,14 @@ class Collection:
             if self._background_shutdown.is_set():
                 return
             self._set_background_phase("indexing")
-            self.reindex()
+            reindex_result = self.reindex()
+            logger.info(
+                "background_reindex_indexing_completed added=%s modified=%s deleted=%s unchanged=%s",
+                reindex_result.added,
+                reindex_result.modified,
+                reindex_result.deleted,
+                reindex_result.unchanged,
+            )
 
             if (
                 self._embedding_provider is not None
@@ -423,12 +434,16 @@ class Collection:
                 if self._background_shutdown.is_set():
                     return
                 self._set_background_phase("embedding")
-                self.build_embeddings()
+                embedded_count = self.build_embeddings()
+                logger.info(
+                    "background_reindex_embedding_completed chunks_embedded=%s",
+                    embedded_count,
+                )
 
             self._set_background_completed(error=None)
         except Exception as exc:
             logger.error("background_reindex_failed", exc_info=True)
-            self._set_background_completed(error=str(exc))
+            self._set_background_completed(error=f"{type(exc).__name__}: {exc!r}")
         finally:
             self._set_background_phase(None)
 
@@ -437,7 +452,9 @@ class Collection:
         with self._background_state_lock:
             existing = self._background_thread
             if existing is not None and existing.is_alive():
-                logger.debug("start_background_reindex skipped — thread already alive")
+                logger.info(
+                    "start_background_reindex skipped — previous run still in progress"
+                )
                 return
             self._background_shutdown.clear()
             self._background_last_started_at = datetime.now(UTC).isoformat()

@@ -60,7 +60,7 @@ _IDLE_INDEX_STATUS = {
     "background_phase": None,
     "last_run_started_at": None,
     "last_run_completed_at": None,
-    "last_error": None,
+    "last_error": "collection not yet initialised — server lifespan has not run",
 }
 
 
@@ -73,6 +73,7 @@ def _index_status_for_server_info() -> dict[str, object]:
     from ._server_deps import _collection_singleton as live_singleton
 
     if live_singleton is None:
+        logger.warning("index_status_requested_before_collection_initialized")
         return dict(_IDLE_INDEX_STATUS)
     return live_singleton.index_status()
 

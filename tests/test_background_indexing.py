@@ -60,25 +60,47 @@ def test_start_background_reindex_runs_and_completes(tmp_path: Path) -> None:
         collection.close()
 
 
-def test_start_background_reindex_is_idempotent(tmp_path: Path) -> None:
+def test_start_background_reindex_is_idempotent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Calling start twice while a thread is alive does not spawn a second thread."""
+    import threading as _threading
+
     (tmp_path / "doc.md").write_text("# Doc\n\nbody\n", encoding="utf-8")
     collection = Collection(source_dir=tmp_path)
+
+    # Block the first reindex inside an event so it's guaranteed alive
+    # when the second start_background_reindex() call lands.
+    release = _threading.Event()
+    original_reindex = collection.reindex
+
+    def slow_reindex():
+        release.wait(timeout=5.0)
+        return original_reindex()
+
+    monkeypatch.setattr(collection, "reindex", slow_reindex)
+
     try:
         collection.start_background_reindex()
+
+        # Wait briefly until the worker has stored the thread reference.
+        _wait_until(lambda: collection._background_thread is not None)
         first_thread = collection._background_thread
         assert first_thread is not None
+        assert first_thread.is_alive()
 
         # Second call must be a no-op while the first thread is alive.
-        # If the first thread completes between calls, this still must not
-        # raise — we just accept whichever invariant holds.
         collection.start_background_reindex()
         second_thread = collection._background_thread
 
-        assert second_thread is first_thread or not first_thread.is_alive()
+        # Same thread — idempotency held under guaranteed-alive conditions.
+        assert second_thread is first_thread
 
+        # Now let the first run complete.
+        release.set()
         _wait_until(lambda: not collection.index_status()["background_running"])
     finally:
+        release.set()
         collection.close()
 
 
@@ -144,18 +166,18 @@ def test_close_bounded_join_does_not_hang_indefinitely(tmp_path: Path) -> None:
     collection.close()
 
 
-def test_background_failure_sets_last_error_and_recovers(tmp_path: Path) -> None:
+def test_background_failure_sets_last_error_and_recovers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """When reindex raises, last_error is set, phase returns to None, server lives."""
     (tmp_path / "doc.md").write_text("# Doc\n\nbody\n", encoding="utf-8")
     collection = Collection(source_dir=tmp_path)
     try:
-        # Patch reindex to raise.
-        original_reindex = collection.reindex
 
         def boom() -> object:
             raise RuntimeError("synthetic failure")
 
-        collection.reindex = boom  # type: ignore[method-assign]
+        monkeypatch.setattr(collection, "reindex", boom)
 
         collection.start_background_reindex()
         _wait_until(lambda: not collection.index_status()["background_running"])
@@ -163,11 +185,9 @@ def test_background_failure_sets_last_error_and_recovers(tmp_path: Path) -> None
         status = collection.index_status()
         assert status["background_running"] is False
         assert status["background_phase"] is None
-        assert status["last_error"] == "synthetic failure"
+        assert "synthetic failure" in (status["last_error"] or "")
+        assert "RuntimeError" in (status["last_error"] or "")
 
-        # Server-equivalent behaviour: foreground operations still work.
-        # (We don't have a populated index, but list_documents must not raise.)
-        collection.reindex = original_reindex  # type: ignore[method-assign]
         # No further assertion needed — we already verified the worker did not
         # propagate the exception out of the thread.
     finally:
@@ -265,6 +285,27 @@ def test_foreground_reads_never_block_on_background(tmp_path: Path) -> None:
             )
     finally:
         collection.close()
+
+
+def test_index_status_for_server_info_fallback_when_singleton_unset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When the lifespan hasn't set the collection singleton (early
+    health check, broken startup), the fallback returns a snapshot whose
+    last_error indicates uninitialisation rather than a healthy idle."""
+    from markdown_vault_mcp import _server_deps
+    from markdown_vault_mcp.server import _index_status_for_server_info
+
+    monkeypatch.setattr(_server_deps, "_collection_singleton", None)
+    status = _index_status_for_server_info()
+    assert status["background_running"] is False
+    assert status["last_error"] is not None
+    assert "not yet initialised" in status["last_error"]
+
+    # Returned dict must be a copy — mutating it must not affect future calls.
+    status["last_error"] = "mutated"
+    status2 = _index_status_for_server_info()
+    assert status2["last_error"] != "mutated"
 
 
 def test_stats_includes_index_status_field(tmp_path: Path) -> None:
