@@ -1838,6 +1838,26 @@ class TestResources:
         assert resource_data["chunk_count"] == tool_data["chunk_count"]
 
     @pytest.mark.usefixtures("_mcp_env_with_fields")
+    async def test_stats_resource_includes_index_status(self) -> None:
+        """stats://vault exposes background index_status with the expected shape.
+
+        Operators detect "server is up but still indexing" by polling this
+        resource. The contract is fixed by ``Collection.get_index_status()``:
+        keys ``status`` / ``indexed`` / ``error`` with ``status`` drawn from
+        the four-state enum.
+        """
+        server = make_server()
+        async with Client(server) as client:
+            resource_result = await client.read_resource("stats://vault")
+        resource_data = json.loads(resource_result[0].text)
+        assert "index_status" in resource_data
+        idx = resource_data["index_status"]
+        assert set(idx.keys()) == {"status", "indexed", "error"}
+        assert idx["status"] in {"ready", "indexing", "embedding", "failed"}
+        assert isinstance(idx["indexed"], int)
+        assert idx["error"] is None or isinstance(idx["error"], str)
+
+    @pytest.mark.usefixtures("_mcp_env_with_fields")
     async def test_tags_resource_grouped(self) -> None:
         server = make_server()
         async with Client(server) as client:

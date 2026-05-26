@@ -76,9 +76,18 @@ def register_resources(mcp: FastMCP) -> None:
     async def vault_stats(
         collection: Collection = Depends(get_collection),
     ) -> str:
-        """Collection statistics — document count, chunk count, capabilities."""
+        """Collection statistics — document count, chunk count, capabilities.
+
+        The payload mirrors :class:`~markdown_vault_mcp.types.CollectionStats`
+        and adds an ``index_status`` field so operators can detect "server is
+        up but still indexing" without a second round-trip. ``index_status``
+        carries ``status`` / ``indexed`` / ``error`` per
+        :meth:`Collection.get_index_status`.
+        """
         result = await asyncio.to_thread(collection.stats)
-        return json.dumps(asdict(result))
+        payload = asdict(result)
+        payload["index_status"] = await asyncio.to_thread(collection.get_index_status)
+        return json.dumps(payload)
 
     @mcp.resource(
         "tags://vault", mime_type="application/json", icons=_TOOL_ICONS["list_tags"]
