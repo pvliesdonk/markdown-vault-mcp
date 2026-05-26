@@ -96,26 +96,21 @@ def make_collection_lifespan(config: CollectionConfig) -> Any:
         collection = Collection(**kwargs)
         set_collection_singleton(collection)
 
-        # If periodic git pull is enabled, sync before building the initial index so
-        # build_index() scans the freshest working tree.
+        # Sync the remote (if configured) so the background reindex thread
+        # sees the freshest working tree.
         await asyncio.to_thread(collection.sync_from_remote_before_index)
 
-        # Build index eagerly so first tool call is fast.
-        stats = await asyncio.to_thread(collection.build_index)
-        logger.info(
-            "Index built: %d documents, %d chunks",
-            stats.documents_indexed,
-            stats.chunks_indexed,
-        )
+        # Probe persistent state synchronously (sub-second, no filesystem
+        # scan) so warm-start callers see ``_initialized=True``.
+        collection.initialize_async()
 
-        # Build embeddings eagerly when an embedding provider is configured.
-        # build_embeddings() skips work if the vector index already exists on disk,
-        # so this is safe to call on every startup.
-        if kwargs.get("embedding_provider") is not None:
-            chunks_embedded = await asyncio.to_thread(collection.build_embeddings)
-            logger.info("Embeddings ready: %d chunks", chunks_embedded)
+        # Schedule the background reindex daemon thread (#513). MCP
+        # ``initialize`` handshake is unblocked here even on cold-start
+        # large vaults; clients see partial FTS results until the thread
+        # finishes, and ``stats://vault`` exposes progress.
+        collection.schedule_background_reindex()
 
-        # Start background tasks (e.g. git pull loop) after index is built.
+        # Start background tasks (e.g. periodic git pull loop).
         collection.start()
 
         # Artifact store singleton is wired in make_server(), not here —

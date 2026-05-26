@@ -323,6 +323,21 @@ class Collection:
             on_pull=self.reindex,
         )
 
+    def initialize_async(self) -> None:
+        """Synchronously probe persistent state.  No filesystem scan.
+
+        Idempotent.  After this returns, ``_initialized`` reflects whether
+        the persistent FTS DB contains documents.  Used by the server
+        lifespan in place of the blocking ``build_index()`` so MCP startup
+        is non-blocking (#513).
+        """
+        self._initialized = self._fts_has_documents()
+        logger.debug(
+            "initialize_async: _initialized=%s (DB has rows=%s)",
+            self._initialized,
+            self._initialized,
+        )
+
     def get_index_status(self) -> dict[str, Any]:
         """Return current background-index status for client / monitoring callers.
 
@@ -483,7 +498,34 @@ class Collection:
     # ------------------------------------------------------------------
 
     def _ensure_initialized(self) -> None:
-        """Build the FTS index on first access if it has not been built yet."""
+        """Build the FTS index on first access if it has not been built yet.
+
+        If a background reindex thread is currently in flight (#513), wait
+        for it to finish before falling back to a synchronous
+        :meth:`build_index` call.  Without this guard, a foreground tool
+        call and the background daemon both run ``build_index`` against
+        the same SQLite connection and collide on inserts.
+
+        The wait is skipped when the calling thread *is* the background
+        reindex thread itself (otherwise the worker would deadlock waiting
+        for its own completion event).
+        """
+        if self._initialized:
+            return
+
+        # If the background reindex thread is in flight, wait for it to
+        # finish — it will set ``_initialized`` itself via build_index().
+        # Skip the wait when called from inside the background thread; the
+        # worker target must drive build_index() forward.
+        with self._index_status_lock:
+            bg_thread = self._background_index_thread
+        if (
+            bg_thread is not None
+            and bg_thread.is_alive()
+            and bg_thread is not threading.current_thread()
+        ):
+            self._index_done_event.wait()
+
         if not self._initialized:
             self.build_index()
 

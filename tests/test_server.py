@@ -2270,8 +2270,14 @@ class TestLifespanAutoEmbeddings:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """With EMBEDDINGS_PATH set, startup builds vectors automatically."""
+        """With EMBEDDINGS_PATH set, startup builds vectors automatically.
+
+        Indexing now runs in a background thread (#513), so we wait on the
+        Collection singleton's done event before asserting.
+        """
         from unittest.mock import patch
+
+        from markdown_vault_mcp._server_deps import get_collection_singleton
 
         from .conftest import MockEmbeddingProvider
 
@@ -2292,6 +2298,9 @@ class TestLifespanAutoEmbeddings:
         ):
             server = make_server()
             async with Client(server) as client:
+                # Wait for the background reindex thread to finish embedding.
+                col = get_collection_singleton()
+                assert col._index_done_event.wait(timeout=30)
                 result = await client.call_tool_mcp("embeddings_status", {})
         data = json.loads(result.content[0].text)
         assert data["chunk_count"] > 0
@@ -2302,8 +2311,14 @@ class TestLifespanAutoEmbeddings:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """With existing embeddings on disk, startup loads them without rebuilding."""
+        """With existing embeddings on disk, startup loads them without rebuilding.
+
+        Indexing now runs in a background thread (#513), so we wait on the
+        Collection singleton's done event before asserting.
+        """
         from unittest.mock import patch
+
+        from markdown_vault_mcp._server_deps import get_collection_singleton
 
         from .conftest import MockEmbeddingProvider
 
@@ -2322,6 +2337,8 @@ class TestLifespanAutoEmbeddings:
         ):
             server = make_server()
             async with Client(server) as client:
+                col = get_collection_singleton()
+                assert col._index_done_event.wait(timeout=30)
                 r1 = await client.call_tool_mcp("embeddings_status", {})
         count1 = json.loads(r1.content[0].text)["chunk_count"]
         assert count1 > 0
@@ -2342,6 +2359,8 @@ class TestLifespanAutoEmbeddings:
         ):
             server2 = make_server()
             async with Client(server2) as client2:
+                col2 = get_collection_singleton()
+                assert col2._index_done_event.wait(timeout=30)
                 r2 = await client2.call_tool_mcp("embeddings_status", {})
         count2 = json.loads(r2.content[0].text)["chunk_count"]
         assert count2 == count1
