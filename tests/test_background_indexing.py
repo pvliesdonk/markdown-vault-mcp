@@ -6,6 +6,7 @@ import time
 from pathlib import Path  # noqa: TC003
 
 from markdown_vault_mcp.collection import Collection
+from markdown_vault_mcp.providers import EmbeddingProvider
 
 
 def test_index_status_idle_before_anything_runs(tmp_path: Path) -> None:
@@ -167,5 +168,98 @@ def test_background_failure_sets_last_error_and_recovers(tmp_path: Path) -> None
         collection.reindex = original_reindex  # type: ignore[method-assign]
         # No further assertion needed — we already verified the worker did not
         # propagate the exception out of the thread.
+    finally:
+        collection.close()
+
+
+# ---------------------------------------------------------------------------
+# Slow embedding provider for the no-foreground-waiter regression test
+# ---------------------------------------------------------------------------
+
+
+class _SlowEmbeddingProvider(EmbeddingProvider):
+    """Deterministic provider that sleeps per call to simulate a slow backend.
+
+    Used by the no-foreground-waiter regression test. Each ``embed`` call
+    blocks for ``per_call_delay`` seconds before returning a fixed vector
+    per input text, letting the test assert foreground reads stay
+    responsive while a background embedding pass is in flight.
+    """
+
+    def __init__(self, *, per_call_delay: float = 0.5, dim: int = 8) -> None:
+        self._per_call_delay = per_call_delay
+        self._dim = dim
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        time.sleep(self._per_call_delay)
+        # Deterministic non-zero vector per text.
+        return [[1.0] * self._dim for _ in texts]
+
+    @property
+    def dimension(self) -> int:
+        return self._dim
+
+    @property
+    def provider_name(self) -> str:
+        return "slow-test"
+
+    @property
+    def model_name(self) -> str:
+        return "slow-test-v0"
+
+
+def test_foreground_reads_never_block_on_background(tmp_path: Path) -> None:
+    """REGRESSION TEST FOR PR #515.
+
+    Foreground methods must NOT wait on the background thread. With a
+    deliberately slow embedding provider, search/list/stats/
+    index_status must all return promptly while the background thread
+    is mid-embedding. If this test ever fails, a foreground waiter has
+    been reintroduced — find and remove it before re-running.
+
+    See docs/superpowers/specs/2026-05-26-background-indexing-v2-design.md
+    section "The load-bearing rule".
+    """
+    # Seed a handful of docs so the embedding phase has real work.
+    for i in range(5):
+        (tmp_path / f"doc{i}.md").write_text(
+            f"# Doc {i}\n\nbody {i}\n", encoding="utf-8"
+        )
+
+    embeddings_path = tmp_path / ".embeddings"
+    collection = Collection(
+        source_dir=tmp_path,
+        embedding_provider=_SlowEmbeddingProvider(per_call_delay=0.2),
+        embeddings_path=embeddings_path,
+    )
+    try:
+        # Pre-build the FTS index synchronously so search has something to
+        # return; the slow path we're testing is the embedding phase.
+        collection.build_index()
+
+        collection.start_background_reindex()
+
+        # Wait until the worker enters the embedding phase (deterministic
+        # signal that the slow path is now active).
+        _wait_until(
+            lambda: collection.index_status()["background_phase"] == "embedding",
+            timeout=5.0,
+        )
+
+        # Each foreground call must return within 500ms while the slow
+        # embedding loop is in flight.
+        for op_name, op in [
+            ("search", lambda: collection.search("body", limit=5)),
+            ("list", lambda: collection.list()),
+            ("stats", lambda: collection.stats()),
+            ("index_status", lambda: collection.index_status()),
+        ]:
+            start = time.monotonic()
+            op()
+            elapsed = time.monotonic() - start
+            assert elapsed < 0.5, (
+                f"{op_name} took {elapsed:.3f}s — a foreground waiter has been "
+                "reintroduced. See spec section 'The load-bearing rule'."
+            )
     finally:
         collection.close()
