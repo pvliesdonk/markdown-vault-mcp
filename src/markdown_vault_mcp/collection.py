@@ -273,6 +273,20 @@ class Collection:
         self._callback_worker: threading.Thread | None = None
         self._callback_worker_lock = threading.Lock()
 
+        # Background reindex state (#513). The reindex daemon thread reads
+        # and writes ``_index_status`` / ``_index_status_error`` under
+        # ``_index_status_lock``; ``_index_done_event`` lets callers
+        # (tests, ``close()``) wait deterministically for completion.
+        self._index_status: Literal["ready", "indexing", "embedding", "failed"] = (
+            "ready"
+        )
+        self._index_status_error: str | None = None
+        self._index_status_lock = threading.Lock()
+        self._background_index_thread: threading.Thread | None = None
+        self._index_done_event = threading.Event()
+        self._index_done_event.set()  # initial state: no work in flight
+        self._index_shutdown = threading.Event()
+
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
@@ -308,6 +322,36 @@ class Collection:
             pause_writes=self.pause_writes,
             on_pull=self.reindex,
         )
+
+    def get_index_status(self) -> dict[str, Any]:
+        """Return current background-index status for client / monitoring callers.
+
+        Returns:
+            Dict with three keys:
+
+            - ``status``: one of ``"ready"``, ``"indexing"``, ``"embedding"``,
+              ``"failed"``.
+            - ``indexed``: current FTS document count (cheap ``COUNT(*)``).
+            - ``error``: the last failure message, or ``None``.
+        """
+        with self._index_status_lock:
+            return {
+                "status": self._index_status,
+                "indexed": self._count_documents(),
+                "error": self._index_status_error,
+            }
+
+    def _set_index_status(
+        self,
+        status: Literal["ready", "indexing", "embedding", "failed"],
+        *,
+        error: str | None = None,
+    ) -> None:
+        """Update background-index status under the status lock."""
+        with self._index_status_lock:
+            self._index_status = status
+            self._index_status_error = error if status == "failed" else None
+        logger.debug("index_status set status=%s error=%s", status, error)
 
     def stop(self) -> None:
         """Stop background tasks (e.g. git pull loop) without closing the collection.

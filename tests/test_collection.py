@@ -4172,3 +4172,32 @@ class TestBuildEmbeddingsSkipIfMissing:
             assert n > 0
         finally:
             col.close()
+
+
+class TestIndexStatus:
+    """Collection exposes a structured index status for clients."""
+
+    def test_initial_status_is_ready(self, vault_path: Path, tmp_path: Path) -> None:
+        col = _make_collection(
+            vault_path,
+            state_path=tmp_path / "state.json",
+        )
+        try:
+            status = col.get_index_status()
+            assert status["status"] == "ready"
+            assert status["error"] is None
+            assert isinstance(status["indexed"], int)
+        finally:
+            col.close()
+
+    def test_status_dict_shape(self, vault_path: Path, tmp_path: Path) -> None:
+        col = _make_collection(
+            vault_path,
+            state_path=tmp_path / "state.json",
+        )
+        try:
+            status = col.get_index_status()
+            assert set(status.keys()) == {"status", "indexed", "error"}
+            assert status["status"] in {"ready", "indexing", "embedding", "failed"}
+        finally:
+            col.close()
