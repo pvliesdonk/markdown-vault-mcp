@@ -276,7 +276,10 @@ class Collection:
         # Background reindex state (#513). The reindex daemon thread reads
         # and writes ``_index_status`` / ``_index_status_error`` under
         # ``_index_status_lock``; ``_index_done_event`` lets callers
-        # (tests, ``close()``) wait deterministically for completion.
+        # (tests, ``close()``) wait deterministically for full completion;
+        # ``_fts_done_event`` fires earlier — right after the FTS phase —
+        # so foreground tool calls see partial FTS results without waiting
+        # for the embedding phase.
         self._index_status: Literal["ready", "indexing", "embedding", "failed"] = (
             "ready"
         )
@@ -285,6 +288,8 @@ class Collection:
         self._background_index_thread: threading.Thread | None = None
         self._index_done_event = threading.Event()
         self._index_done_event.set()  # initial state: no work in flight
+        self._fts_done_event = threading.Event()
+        self._fts_done_event.set()  # initial state: no work in flight
         self._index_shutdown = threading.Event()
 
     # ------------------------------------------------------------------
@@ -393,6 +398,7 @@ class Collection:
             self._index_status = "indexing"
             self._index_status_error = None
             self._index_done_event.clear()
+            self._fts_done_event.clear()
             self._index_shutdown.clear()
 
             thread = threading.Thread(
@@ -401,8 +407,7 @@ class Collection:
                 daemon=True,
             )
             self._background_index_thread = thread
-
-        thread.start()
+            thread.start()
         logger.info("background reindex thread started")
 
     def _background_reindex_target(self) -> None:
@@ -420,6 +425,7 @@ class Collection:
                 return
 
             self.reindex()
+            self._fts_done_event.set()
 
             if self._index_shutdown.is_set():
                 logger.info("background reindex aborted after FTS phase")
@@ -435,6 +441,7 @@ class Collection:
             logger.error("background reindex failed", exc_info=True)
             self._set_index_status("failed", error=str(exc))
         finally:
+            self._fts_done_event.set()
             self._index_done_event.set()
 
     def stop(self) -> None:
@@ -461,6 +468,7 @@ class Collection:
         # paths handle any partial mutation if the daemon thread is abandoned
         # after the timeout (#513).
         self._index_shutdown.set()
+        self._fts_done_event.set()
         bg_thread = self._background_index_thread
         if bg_thread is not None and bg_thread.is_alive():
             bg_thread.join(timeout=30)
@@ -524,7 +532,7 @@ class Collection:
             and bg_thread.is_alive()
             and bg_thread is not threading.current_thread()
         ):
-            self._index_done_event.wait()
+            self._fts_done_event.wait()
 
         if not self._initialized:
             self.build_index()

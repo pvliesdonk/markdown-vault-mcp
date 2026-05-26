@@ -14,8 +14,22 @@ import pytest
 from fastmcp import Client
 
 from markdown_vault_mcp._server_apps import _hashed
+from markdown_vault_mcp._server_deps import get_collection_singleton
 from markdown_vault_mcp.server import make_server
 from tests.conftest import _CLEAR_VARS, get_app_html
+
+
+def _wait_for_background_index(timeout: float = 30.0) -> None:
+    """Block until the background reindex thread finishes embeddings, too.
+
+    Foreground reads only wait for the FTS phase (see Collection
+    ``_ensure_initialized``); tests that need semantic search must wait for
+    the full pipeline.
+    """
+    col = get_collection_singleton()
+    if not col._index_done_event.wait(timeout=timeout):
+        raise RuntimeError("background index did not finish within timeout")
+
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -315,6 +329,7 @@ class TestIncludeSemanticEdges:
         ):
             server = make_server()
             async with Client(server) as client:
+                _wait_for_background_index()
                 result = await client.call_tool(
                     _hashed("vault_graph_neighborhood"),
                     {"path": "simple.md", "include_semantic": True},
@@ -349,6 +364,7 @@ class TestIncludeSemanticEdges:
         ):
             server = make_server()
             async with Client(server) as client:
+                _wait_for_background_index()
                 result = await client.call_tool(
                     _hashed("vault_graph_neighborhood"),
                     {"path": "simple.md", "include_semantic": True},
@@ -380,6 +396,7 @@ class TestIncludeSemanticEdges:
         ):
             server = make_server()
             async with Client(server) as client:
+                _wait_for_background_index()
                 result = await client.call_tool(
                     _hashed("vault_graph_neighborhood"),
                     {"path": "simple.md", "depth": 0, "include_semantic": True},
