@@ -73,7 +73,7 @@ def _index_status_for_server_info() -> dict[str, object]:
     from ._server_deps import _collection_singleton as live_singleton
 
     if live_singleton is None:
-        logger.warning("index_status_requested_before_collection_initialized")
+        logger.debug("index_status_requested_before_collection_initialized")
         return dict(_IDLE_INDEX_STATUS)
     return live_singleton.index_status()
 

@@ -96,8 +96,8 @@ def make_collection_lifespan(config: CollectionConfig) -> Any:
         collection = Collection(**kwargs)
         set_collection_singleton(collection)
 
-        # If periodic git pull is enabled, sync before building the initial index so
-        # build_index() scans the freshest working tree.
+        # If periodic git pull is enabled, sync before kicking off the initial
+        # background reindex so reindex() scans the freshest working tree.
         await asyncio.to_thread(collection.sync_from_remote_before_index)
 
         # Start background tasks (git pull loop, etc.) so reindex sees the

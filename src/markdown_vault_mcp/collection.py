@@ -87,8 +87,10 @@ def _resolve_chunk_strategy(strategy: str | ChunkStrategy) -> ChunkStrategy:
 class Collection:
     """Facade over FTS5 index, vector index, and change tracker.
 
-    Instantiate once per collection root.  Call :meth:`build_index` (or let
-    lazy initialisation handle it) before querying.
+    Instantiate once per collection root. Call :meth:`build_index` or
+    :meth:`start_background_reindex` before querying; otherwise foreground
+    reads return whatever is currently in the FTS/vector index (possibly
+    empty).
 
     Args:
         source_dir: Root directory of the markdown collection.
@@ -416,6 +418,9 @@ class Collection:
         """Daemon-thread target: run reindex() then build_embeddings()."""
         try:
             if self._background_shutdown.is_set():
+                self._set_background_completed(
+                    error="aborted: shutdown signalled before indexing"
+                )
                 return
             self._set_background_phase("indexing")
             reindex_result = self.reindex()
@@ -432,6 +437,9 @@ class Collection:
                 and self._embeddings_path is not None
             ):
                 if self._background_shutdown.is_set():
+                    self._set_background_completed(
+                        error="aborted: shutdown signalled before embedding"
+                    )
                     return
                 self._set_background_phase("embedding")
                 embedded_count = self.build_embeddings()
@@ -458,7 +466,6 @@ class Collection:
                 return
             self._background_shutdown.clear()
             self._background_last_started_at = datetime.now(UTC).isoformat()
-            self._background_last_error = None
             thread = threading.Thread(
                 target=self._background_reindex_worker,
                 name="markdown-vault-mcp-bg-reindex",
