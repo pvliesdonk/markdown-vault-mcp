@@ -11,6 +11,7 @@ import logging
 import queue
 import re
 import threading
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal
 
 from markdown_vault_mcp.fts_index import FTSIndex
@@ -381,6 +382,59 @@ class Collection:
                 "last_run_completed_at": self._background_last_completed_at,
                 "last_error": self._background_last_error,
             }
+
+    def _set_background_phase(self, phase: str | None) -> None:
+        """Update the background phase field under the state lock."""
+        with self._background_state_lock:
+            self._background_phase = phase
+
+    def _set_background_completed(self, error: str | None) -> None:
+        """Mark a background run as completed under the state lock."""
+        with self._background_state_lock:
+            self._background_last_completed_at = datetime.now(UTC).isoformat()
+            self._background_last_error = error
+
+    def _background_reindex_worker(self) -> None:
+        """Daemon-thread target: run reindex() then build_embeddings()."""
+        try:
+            if self._background_shutdown.is_set():
+                return
+            self._set_background_phase("indexing")
+            self.reindex()
+
+            if (
+                self._embedding_provider is not None
+                and self._embeddings_path is not None
+            ):
+                if self._background_shutdown.is_set():
+                    return
+                self._set_background_phase("embedding")
+                self.build_embeddings()
+
+            self._set_background_completed(error=None)
+        except Exception as exc:
+            logger.error("background_reindex_failed", exc_info=True)
+            self._set_background_completed(error=str(exc))
+        finally:
+            self._set_background_phase(None)
+
+    def start_background_reindex(self) -> None:
+        """Spawn a daemon thread that runs reindex() then build_embeddings()."""
+        with self._background_state_lock:
+            existing = self._background_thread
+            if existing is not None and existing.is_alive():
+                logger.debug("start_background_reindex skipped — thread already alive")
+                return
+            self._background_shutdown.clear()
+            self._background_last_started_at = datetime.now(UTC).isoformat()
+            self._background_last_error = None
+            thread = threading.Thread(
+                target=self._background_reindex_worker,
+                name="markdown-vault-mcp-bg-reindex",
+                daemon=True,
+            )
+            self._background_thread = thread
+            thread.start()
 
     def _ensure_initialized(self) -> None:
         """Build the FTS index on first access if it has not been built yet."""
