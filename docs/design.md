@@ -494,12 +494,14 @@ This ensures no work is lost on shutdown. The full lifecycle contract is:
 ```
 Collection(...)
   → sync_from_remote_before_index()   # git fetch + ff-only before first index
-  → build_index()                     # build FTS index
-  → build_embeddings()                # build vector index (when configured)
+  → initialize_async()                # warm-start probe (seeds _initialized from persistent FTS)
+  → schedule_background_reindex()     # spawn daemon thread for reindex() + build_embeddings()
   → start()                           # launch background pull loop
   → zero or more read/write operations
-  → close()                           # stop pull loop, flush git, release SQLite
+  → close()                           # signal background indexer, stop pull loop, flush git, release SQLite
 ```
+
+Direct library callers (CLI, tests, custom integrations) may still call `build_index()` and `build_embeddings()` synchronously instead of `schedule_background_reindex()` when they want to block until indexing completes.
 
 `stop()` may also be called independently to pause the pull loop without closing
 the collection (e.g. during maintenance or test teardown). It is a no-op if the
