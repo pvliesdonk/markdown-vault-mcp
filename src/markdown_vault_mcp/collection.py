@@ -203,6 +203,17 @@ class Collection:
         # this lock again for its mutation phase.
         self._write_lock = threading.RLock()
 
+        # Background reindex state (see docs/superpowers/specs/2026-05-26-background-indexing-v2-design.md).
+        # These fields exist so background indexing state is visible to read-only
+        # snapshots; foreground methods MUST NOT wait on any of them.
+        self._background_thread: threading.Thread | None = None
+        self._background_shutdown: threading.Event = threading.Event()
+        self._background_state_lock: threading.Lock = threading.Lock()
+        self._background_phase: str | None = None  # "indexing" | "embedding" | None
+        self._background_last_started_at: str | None = None
+        self._background_last_completed_at: str | None = None
+        self._background_last_error: str | None = None
+
         # Manager modules (dependency-injected, no back-reference).
         from markdown_vault_mcp.managers.document import DocumentManager
         from markdown_vault_mcp.managers.index import IndexManager
@@ -351,6 +362,25 @@ class Collection:
     # ------------------------------------------------------------------
     # Lazy initialisation
     # ------------------------------------------------------------------
+
+    def index_status(self) -> dict[str, Any]:
+        """Snapshot of background reindex state. Never blocks.
+
+        Returns:
+            Dict with keys ``background_running``, ``background_phase``,
+            ``last_run_started_at``, ``last_run_completed_at``, ``last_error``.
+            Phase is ``"indexing"``, ``"embedding"``, or ``None``.
+            Timestamps are ISO-8601 UTC strings or ``None``.
+        """
+        with self._background_state_lock:
+            thread = self._background_thread
+            return {
+                "background_running": thread is not None and thread.is_alive(),
+                "background_phase": self._background_phase,
+                "last_run_started_at": self._background_last_started_at,
+                "last_run_completed_at": self._background_last_completed_at,
+                "last_error": self._background_last_error,
+            }
 
     def _ensure_initialized(self) -> None:
         """Build the FTS index on first access if it has not been built yet."""
