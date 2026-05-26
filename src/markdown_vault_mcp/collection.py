@@ -446,9 +446,18 @@ class Collection:
                 logger.info("background reindex aborted after FTS phase")
                 return
 
-            if self._embedding_provider is not None:
+            if (
+                self._embedding_provider is not None
+                and self._embeddings_path is not None
+            ):
                 self._set_index_status("embedding")
                 self.build_embeddings()
+            elif self._embedding_provider is not None:
+                logger.info(
+                    "background reindex: embedding provider configured but "
+                    "embeddings_path is unset; skipping vector build "
+                    "(semantic search disabled)"
+                )
 
             self._set_index_status("ready")
             logger.info("background reindex complete")

@@ -4305,6 +4305,32 @@ class TestIndexStatus:
         finally:
             col.close()
 
+    def test_schedule_background_reindex_skips_embeddings_without_path(
+        self,
+        vault_path: Path,
+        tmp_path: Path,
+        mock_provider: MockEmbeddingProvider,
+    ) -> None:
+        # Configuring an embedding provider without an embeddings_path means
+        # the operator opted out of semantic search; the bg worker must not
+        # mark the run as 'failed' for that valid config.
+        col = _make_collection(
+            vault_path,
+            index_path=tmp_path / "index.db",
+            embeddings_path=None,
+            embedding_provider=mock_provider,
+            state_path=tmp_path / "state.json",
+        )
+        try:
+            col.schedule_background_reindex()
+            done = col._index_done_event.wait(timeout=30)
+            assert done, "background reindex did not complete within 30s"
+            status = col.get_index_status()
+            assert status["status"] == "ready"
+            assert status["error"] is None
+        finally:
+            col.close()
+
     def test_close_signals_background_thread(
         self,
         vault_path: Path,
