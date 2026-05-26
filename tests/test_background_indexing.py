@@ -5,6 +5,8 @@ from __future__ import annotations
 import time
 from pathlib import Path  # noqa: TC003
 
+import pytest  # noqa: TC002 — runtime use for monkeypatch fixture annotation
+
 from markdown_vault_mcp.collection import Collection
 from markdown_vault_mcp.providers import EmbeddingProvider
 
@@ -284,3 +286,41 @@ def test_stats_includes_index_status_field(tmp_path: Path) -> None:
         }
     finally:
         collection.close()
+
+
+def test_get_server_info_exposes_index_status(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """get_server_info payload carries the background-index snapshot under
+    the ``index_status`` key (we repurpose pvl-core's upstream slot for it,
+    since markdown-vault-mcp has no remote upstream to report on).
+    """
+    import asyncio
+
+    from fastmcp import Client
+
+    from markdown_vault_mcp.server import make_server
+
+    (tmp_path / "doc.md").write_text("# Doc\n\nbody\n", encoding="utf-8")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    server = make_server()
+
+    async def _call() -> dict:
+        async with Client(server) as client:
+            result = await client.call_tool("get_server_info", {})
+            payload = result.data if hasattr(result, "data") else result
+            assert isinstance(payload, dict)
+            return payload
+
+    payload = asyncio.run(_call())
+
+    assert "index_status" in payload, payload
+    status = payload["index_status"]
+    assert isinstance(status, dict)
+    assert set(status.keys()) == {
+        "background_running",
+        "background_phase",
+        "last_run_started_at",
+        "last_run_completed_at",
+        "last_error",
+    }

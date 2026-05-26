@@ -55,6 +55,28 @@ from ._server_tools import register_tools
 logger = logging.getLogger(__name__)
 
 
+_IDLE_INDEX_STATUS = {
+    "background_running": False,
+    "background_phase": None,
+    "last_run_started_at": None,
+    "last_run_completed_at": None,
+    "last_error": None,
+}
+
+
+def _index_status_for_server_info() -> dict[str, object]:
+    """Provide the background-index status to ``get_server_info``.
+
+    Reads the Collection singleton if set (lifespan has run); otherwise
+    returns an idle snapshot so early health checks don't fail.
+    """
+    from ._server_deps import _collection_singleton as live_singleton
+
+    if live_singleton is None:
+        return dict(_IDLE_INDEX_STATUS)
+    return live_singleton.index_status()
+
+
 # ---------------------------------------------------------------------------
 # Event store
 # ---------------------------------------------------------------------------
@@ -226,14 +248,13 @@ def make_server(transport: str = "stdio") -> FastMCP:
         mcp,
         server_name=server_name,
         server_version=pkg_ver,
-        # DOMAIN-UPSTREAM-START — wire upstream version reporting for servers
-        # that talk to a remote service (paperless-mcp, etc.). The provider is
-        # a zero-arg callable; the simplest pattern is a module-level upstream
-        # client (typically constructed from env vars at import time) whose
-        # version method is referenced here.
-        # Uncomment the kwargs below as additional arguments to this call:
-        # upstream_version=lambda: _upstream_client.remote_version(),
-        # upstream_label="paperless",
+        # DOMAIN-UPSTREAM-START — markdown-vault-mcp has no remote upstream
+        # service to report on, so we repurpose the upstream block to expose
+        # the background-indexing status snapshot (see #513). This is the
+        # documented extension point: upstream_version returns a dict that
+        # gets placed under upstream_label in the response payload.
+        upstream_version=_index_status_for_server_info,
+        upstream_label="index_status",
         # DOMAIN-UPSTREAM-END
     )
 
