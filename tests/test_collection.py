@@ -393,6 +393,78 @@ class TestBuildIndex:
         vec_paths2 = [m["path"] for m in col2._vectors._metadata]
         assert ".claude/test.md" not in vec_paths2
 
+    def test_warm_start_uses_count_not_list_notes(
+        self, vault_path: Path, tmp_path: Path
+    ) -> None:
+        """The warm-start no-op path uses COUNT(*), not list_notes()."""
+        index_path = tmp_path / "index.db"
+
+        col1 = _make_collection(
+            vault_path,
+            index_path=index_path,
+            state_path=tmp_path / "state1.json",
+        )
+        col1.build_index()
+        col1.close()
+
+        col2 = _make_collection(
+            vault_path,
+            index_path=index_path,
+            state_path=tmp_path / "state2.json",
+        )
+
+        with patch.object(
+            col2._fts,
+            "list_notes",
+            side_effect=AssertionError("warm-start must not materialise rows"),
+        ):
+            stats = col2.build_index()
+
+        assert stats.documents_indexed == 9
+        assert stats.chunks_indexed == 0
+        col2.close()
+
+    def test_warm_start_purges_newly_excluded_paths(
+        self, vault_path: Path, tmp_path: Path
+    ) -> None:
+        """Reopening with new exclude_patterns purges stale rows via the warm-start path."""
+        # Phase 1: build index without excludes; .claude/test.md ends up in the DB.
+        excluded_dir = vault_path / ".claude"
+        excluded_dir.mkdir(parents=True, exist_ok=True)
+        (excluded_dir / "test.md").write_text("# Excluded\nSome content.\n")
+        index_path = tmp_path / "index.db"
+
+        col1 = _make_collection(
+            vault_path,
+            index_path=index_path,
+            state_path=tmp_path / "state1.json",
+        )
+        col1.build_index()
+        paths1 = [row["path"] for row in col1._fts.list_notes()]
+        assert ".claude/test.md" in paths1
+        col1.close()
+
+        # Phase 2: reopen with exclude_patterns; warm-start must still purge.
+        col2 = _make_collection(
+            vault_path,
+            index_path=index_path,
+            state_path=tmp_path / "state2.json",
+            exclude_patterns=[".claude/**"],
+        )
+        # Confirm the warm-start path is taken: scan_directory must not be invoked.
+        import markdown_vault_mcp.managers.index as idx_mod
+
+        with patch.object(
+            idx_mod,
+            "scan_directory",
+            side_effect=AssertionError("warm-start must not scan"),
+        ):
+            col2.build_index()
+
+        paths2 = [row["path"] for row in col2._fts.list_notes()]
+        assert ".claude/test.md" not in paths2
+        col2.close()
+
 
 # ---------------------------------------------------------------------------
 # Lazy initialisation

@@ -377,6 +377,53 @@ class Collection:
             return False
         return row is not None
 
+    def _count_documents(self) -> int:
+        """Return ``COUNT(*)`` of rows currently in the FTS documents table."""
+        row = self._fts._conn.execute("SELECT COUNT(*) FROM documents").fetchone()
+        return int(row[0]) if row is not None else 0
+
+    def _purge_excluded_rows(self) -> int:
+        """Delete FTS+vector rows whose paths match the configured exclude_patterns.
+
+        Runs purely against the persistent DB — no filesystem scan — so it is
+        cheap enough to call on every warm-start ``build_index()``.  Returns
+        the number of rows purged so callers can log progress.
+
+        When embeddings are configured but the vector sidecar has not been
+        loaded yet, this loads it on demand so stale rows can be purged from
+        the on-disk ``.npy`` too (mirrors the IndexManager full-scan
+        behaviour from #255).
+        """
+        if not self._exclude_patterns:
+            return 0
+
+        from markdown_vault_mcp.utils import is_path_excluded
+
+        # Reuse SearchManager.vectors so an already-loaded vector index is
+        # mutated in place.  If embeddings are configured but not yet loaded,
+        # load now so we can purge the sidecar in lock-step with the FTS rows.
+        vectors = self._search_mgr.vectors
+        if (
+            vectors is None
+            and self._embedding_provider is not None
+            and self._embeddings_path is not None
+        ):
+            self._search_mgr._load_vectors()
+            vectors = self._search_mgr.vectors
+
+        purged = 0
+        for row in self._fts.list_notes():
+            if is_path_excluded(row["path"], self._exclude_patterns):
+                self._fts.delete_by_path(row["path"])
+                if vectors is not None:
+                    vectors.delete_by_path(row["path"])
+                purged += 1
+
+        if purged and vectors is not None and self._embeddings_path is not None:
+            vectors.save(self._embeddings_path)
+
+        return purged
+
     @property
     def _vectors(self) -> VectorIndex | None:
         """Bridge property: vector index is owned by SearchManager."""
@@ -505,19 +552,24 @@ class Collection:
         Returns:
             :class:`~markdown_vault_mcp.types.IndexStats` describing what was indexed.
         """
-        # Check if index already has data and we are not forcing.
-        if not force and self._initialized:
-            existing = self._fts.list_notes()
-            if existing:
-                logger.debug(
-                    "build_index: index already populated (%d docs), skipping",
-                    len(existing),
-                )
-                return IndexStats(
-                    documents_indexed=len(existing),
-                    chunks_indexed=0,
-                    skipped=0,
-                )
+        # Warm-start fast path: persistent DB already has rows.  Use
+        # ``COUNT(*)`` for the doc count (cheap) and run a DB-only purge for
+        # any rows that match the configured ``exclude_patterns`` — without
+        # this, reopening a Collection with new excludes leaves stale rows
+        # behind (#513, regression killed by PR #510).
+        if not force and self._initialized and self._count_documents() > 0:
+            purged = self._purge_excluded_rows()
+            doc_count = self._count_documents()
+            logger.info(
+                "build_index: persistent DB has %d documents (%d purged by excludes)",
+                doc_count,
+                purged,
+            )
+            return IndexStats(
+                documents_indexed=doc_count,
+                chunks_indexed=0,
+                skipped=0,
+            )
 
         result = self._index_mgr.build_index(force=force)
         self._initialized = True
