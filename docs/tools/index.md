@@ -180,9 +180,18 @@ Get an overview of the collection's size, capabilities, and configuration. Call 
   "folder_count": 5,
   "semantic_search_available": true,
   "indexed_frontmatter_fields": ["tags", "cluster"],
-  "attachment_extensions": ["pdf", "png", "jpg"]
+  "attachment_extensions": ["pdf", "png", "jpg"],
+  "index_status": {
+    "background_running": true,
+    "background_phase": "embedding",
+    "last_run_started_at": "2026-05-26T10:15:30Z",
+    "last_run_completed_at": null,
+    "last_error": null
+  }
 }
 ```
+
+- `index_status`: snapshot of background reindex state. Keys: `background_running` (bool), `background_phase` (`"indexing"` | `"embedding"` | `null`), `last_run_started_at`, `last_run_completed_at`, `last_error`.
 
 ### `embeddings_status`
 

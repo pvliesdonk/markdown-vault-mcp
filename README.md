@@ -23,6 +23,7 @@ Point it at a directory of Markdown files (an Obsidian vault, a docs folder, a Z
 > **Upgrading.** As of this release, `search` returns query-relevant snippets in the `content` field by default (approximately 200 words). Pass `snippet_words=0` to recover the prior full-chunk behaviour, or use `read(path, section=heading)` to fetch a specific chunk after seeing a snippet. Documents are also re-chunked on next `reindex` to honour the adaptive `MARKDOWN_VAULT_MCP_MAX_CHUNK_WORDS` threshold (default 400).
 - **Frontmatter-aware** — indexes YAML frontmatter fields, supports required field enforcement
 - **Incremental reindexing** — hash-based change detection, only re-processes modified files
+- **Non-blocking startup** — the server starts immediately and builds its index in the background; tools are usable straight away and clients can check progress via the `stats` tool's `index_status` field
 - **Write operations** — create, edit, delete, rename documents with automatic index updates
 - **Attachment support** — read, write, delete, and list non-markdown files (PDFs, images, etc.)
 - **Git integration** — optional auto-commit and push on every write via `GIT_ASKPASS`

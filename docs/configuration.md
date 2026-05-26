@@ -13,7 +13,7 @@ All configuration is via environment variables. Most use the `MARKDOWN_VAULT_MCP
 | `MARKDOWN_VAULT_MCP_STATE_PATH` | path | `{SOURCE_DIR}/.markdown_vault_mcp/state.json` | No | Path to the change-tracking state file |
 | `MARKDOWN_VAULT_MCP_INDEXED_FIELDS` | csv | — | No | Comma-separated frontmatter fields to promote to the tag index for structured filtering |
 | `MARKDOWN_VAULT_MCP_REQUIRED_FIELDS` | csv | — | No | Comma-separated frontmatter fields required on every document; documents missing any are excluded from the index |
-| `MARKDOWN_VAULT_MCP_EXCLUDE` | csv | — | No | Comma-separated glob patterns to exclude from scanning (e.g. `.obsidian/**,.trash/**`) |
+| `MARKDOWN_VAULT_MCP_EXCLUDE` | csv | — | No | Comma-separated glob patterns to exclude from scanning (e.g. `.obsidian/**,.trash/**`). Changes take effect on the next background reindex (server start or periodic git pull). |
 | `MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER` | string | `_templates` | No | Relative folder path used by the `create_from_template` prompt to discover/read template files |
 | `MARKDOWN_VAULT_MCP_PROMPTS_FOLDER` | path | — | No | Path to a directory of `.md` prompt files that extend or override built-in prompts |
 

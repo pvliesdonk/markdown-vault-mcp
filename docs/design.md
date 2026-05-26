@@ -467,6 +467,27 @@ attachment write operations.
 `read()` validates the path inline rather than via `_validate_path()`: if the
 resolved path escapes `source_dir`, it returns `None` instead of raising.
 
+### Background indexing (non-blocking startup)
+
+The MCP `initialize` handshake never blocks on FTS or embedding work. On
+server start, `Collection.start_background_reindex()` spawns a daemon
+thread that runs `reindex()` followed by `build_embeddings()` (when an
+embedding provider is configured). Tools become available immediately;
+read tools return whatever's currently in the index. Clients learn the
+state via `stats` or `get_server_info`, both of which carry a nested
+`index_status` snapshot (`background_running`, `background_phase`,
+`last_run_started_at`, `last_run_completed_at`, `last_error`).
+
+**Load-bearing rule:** No public method on `Collection` may block on
+background indexing state. Foreground reads return whatever's currently
+in the FTS/vector index. Empty-during-cold-start is a valid result, not
+an error to wait out. This rule is enforced by
+`test_foreground_reads_never_block_on_background` in
+`tests/test_background_indexing.py` — if you find yourself adding a
+`threading.Event.wait()` or `Thread.join()` to a foreground method,
+stop. The PR #515 abandonment retrospective in
+`memory/feedback_background_indexing_abandon.md` explains why.
+
 ### Lifecycle: Collection.close()
 
 `Collection.close()` must be called on shutdown to release resources:

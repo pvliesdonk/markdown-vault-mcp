@@ -280,7 +280,7 @@ You should see a commit from `markdown-vault-mcp`. Delete the test note when don
 
 ### Pre-build embeddings before first launch
 
-For large vaults, building embeddings on first startup can take several minutes — long enough for Claude Desktop to time out the connection. Pre-build from the command line instead:
+Pre-building the index before the first launch is **no longer required** — the server starts immediately and fills in the FTS and vector indexes in the background. Pre-building remains the **fastest path to immediate full readiness**: if you want all tools to return complete results on the very first request after startup, run `markdown-vault-mcp index` before launching the server. For large vaults, building embeddings on first startup can take several minutes — long enough for Claude Desktop to time out the connection. Pre-build from the command line instead:
 
 === "macOS / Linux"
 
