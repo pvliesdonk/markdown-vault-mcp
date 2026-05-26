@@ -278,9 +278,11 @@ You should see a commit from `markdown-vault-mcp`. Delete the test note when don
 - `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` — `fastembed`, `ollama`, or `openai`
 - `MARKDOWN_VAULT_MCP_FASTEMBED_MODEL` / `MARKDOWN_VAULT_MCP_OLLAMA_MODEL` — which model to use
 
-### Pre-build embeddings before first launch
+### Pre-build embeddings before first launch (optional)
 
-For large vaults, building embeddings on first startup can take several minutes — long enough for Claude Desktop to time out the connection. Pre-build from the command line instead:
+For large vaults, the server can take a long time to build the initial FTS index and embeddings.  Since v1.29 this happens on a background thread, so the MCP handshake completes immediately and Claude Desktop attaches successfully — but search results will be partial until the background indexing finishes (visible via `stats://vault` → `index_status`).
+
+If you want the server fully indexed before first launch, pre-build from the command line:
 
 === "macOS / Linux"
 
@@ -306,10 +308,10 @@ For large vaults, building embeddings on first startup can take several minutes 
     markdown-vault-mcp reindex
     ```
 
-`reindex` builds (or updates) both the FTS index and the embedding vectors. Once complete, Claude Desktop will load the pre-built index on startup without needing to re-embed anything.
+`reindex` builds (or updates) both the FTS index and the embedding vectors.  Once complete, Claude Desktop will load the pre-built index on startup with no further background work needed.
 
 !!! note "Subsequent startups are fast"
-    After the initial build, only new or changed files are reindexed. You can run `reindex` again any time to catch up if you edited files outside Claude.
+    After the initial build, only changed files are reindexed in the background on each startup. You can run `reindex` again any time to catch up if you edited files outside Claude.
 
 ### Restart and verify
 

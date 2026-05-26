@@ -467,6 +467,19 @@ attachment write operations.
 `read()` validates the path inline rather than via `_validate_path()`: if the
 resolved path escapes `source_dir`, it returns `None` instead of raising.
 
+### Startup sequence (server lifespan)
+
+The MCP server lifespan delegates the slow parts of indexing to a background thread so the MCP handshake is never blocked:
+
+1. Construct `Collection` — probes the persistent FTS DB and seeds `_initialized`.
+2. `sync_from_remote_before_index()` — pull from the configured remote (if any).
+3. `collection.initialize_async()` — no-op probe so warm-start callers see the persistent state.
+4. `collection.schedule_background_reindex()` — spawns a daemon thread that runs `reindex()` then `build_embeddings()`.  Status visible via `get_index_status()` / `stats://vault`.
+5. `collection.start()` — begin periodic tasks (git pull loop, etc.).
+6. `yield` — MCP handshake is unblocked.
+
+The background thread holds `_write_lock` during its mutation phase, so concurrent write tool calls serialise naturally.  Foreground reads observe whatever FTS state is currently durable — partial results during the initial scan, full results once `Collection.build_index` finishes (the worker sets `_fts_done_event` between the FTS and embedding phases so foreground `_ensure_initialized` calls unblock as soon as FTS rows are queryable, even while embeddings are still building).  Shutdown signals the thread via `_index_shutdown` and joins with a 30s timeout; SQLite WAL handles any partial state on next startup.
+
 ### Lifecycle: Collection.close()
 
 `Collection.close()` must be called on shutdown to release resources:
