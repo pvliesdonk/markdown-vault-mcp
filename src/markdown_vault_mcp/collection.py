@@ -450,11 +450,6 @@ class Collection:
             self._background_thread = thread
             thread.start()
 
-    def _ensure_initialized(self) -> None:
-        """Build the FTS index on first access if it has not been built yet."""
-        if not self._initialized:
-            self.build_index()
-
     @property
     def _vectors(self) -> VectorIndex | None:
         """Bridge property: vector index is owned by SearchManager."""
@@ -504,7 +499,6 @@ class Collection:
             ValueError: If *mode* is ``"semantic"`` or ``"hybrid"`` but no
                 embedding provider or embeddings path is configured.
         """
-        self._ensure_initialized()
         return self._search_mgr.search(
             query,
             limit=limit,
@@ -534,7 +528,6 @@ class Collection:
             A :class:`~markdown_vault_mcp.types.NoteContent` instance, or ``None``
             if the file does not exist.
         """
-        self._ensure_initialized()
         return self._doc_mgr.read(path, section=section)
 
     def list(
@@ -561,7 +554,6 @@ class Collection:
             optionally :class:`~markdown_vault_mcp.types.AttachmentInfo`)
             objects.
         """
-        self._ensure_initialized()
         return self._search_mgr.list(
             folder=folder, pattern=pattern, include_attachments=include_attachments
         )
@@ -608,7 +600,6 @@ class Collection:
             :class:`~markdown_vault_mcp.types.ReindexResult` with counts of changes
             applied.
         """
-        self._ensure_initialized()
         return self._index_mgr.reindex()
 
     def build_embeddings(self, *, force: bool = False) -> int:
@@ -625,7 +616,6 @@ class Collection:
             ValueError: If ``embedding_provider`` or ``embeddings_path`` is
                 not configured.
         """
-        self._ensure_initialized()
         return self._index_mgr.build_embeddings(force=force)
 
     def embeddings_status(self) -> dict:
@@ -647,7 +637,6 @@ class Collection:
         Returns:
             Sorted list of folder strings (``""`` for the collection root).
         """
-        self._ensure_initialized()
         return self._search_mgr.list_folders()
 
     def list_tags(self, field: str = "tags") -> list[str]:
@@ -661,7 +650,6 @@ class Collection:
         Returns:
             Sorted list of distinct value strings.
         """
-        self._ensure_initialized()
         return self._search_mgr.list_tags(field)
 
     def get_toc(self, path: str) -> list[dict[str, Any]]:
@@ -680,7 +668,6 @@ class Collection:
         Raises:
             ValueError: If no document exists at the given path.
         """
-        self._ensure_initialized()
         return self._doc_mgr.get_toc(path)
 
     def get_backlinks(self, path: str) -> list[BacklinkInfo]:
@@ -697,7 +684,6 @@ class Collection:
         Raises:
             ValueError: If no document exists at the given path.
         """
-        self._ensure_initialized()
         return self._link_mgr.get_backlinks(path)
 
     def get_outlinks(self, path: str) -> list[OutlinkInfo]:
@@ -717,7 +703,6 @@ class Collection:
         Raises:
             ValueError: If no document exists at the given path.
         """
-        self._ensure_initialized()
         return self._link_mgr.get_outlinks(path)
 
     def get_broken_links(self, *, folder: str | None = None) -> list[BrokenLinkInfo]:
@@ -730,7 +715,6 @@ class Collection:
         Returns:
             List of :class:`~markdown_vault_mcp.types.BrokenLinkInfo` objects.
         """
-        self._ensure_initialized()
         return self._link_mgr.get_broken_links(folder=folder)
 
     def get_similar(
@@ -755,7 +739,6 @@ class Collection:
         Returns:
             List of grouped results.
         """
-        self._ensure_initialized()
         return self._search_mgr.get_similar(
             path, limit=limit, chunks_per_file=chunks_per_file
         )
@@ -774,7 +757,6 @@ class Collection:
             List of :class:`~markdown_vault_mcp.types.NoteInfo` objects
             ordered by modification time (most recent first).
         """
-        self._ensure_initialized()
         return self._search_mgr.get_recent(limit=limit, folder=folder)
 
     def get_context(
@@ -805,7 +787,6 @@ class Collection:
         Raises:
             ValueError: If no document exists at the given path.
         """
-        self._ensure_initialized()
         return self._search_mgr.get_context(
             path, similar_limit=similar_limit, link_limit=link_limit
         )
@@ -820,7 +801,6 @@ class Collection:
             List of :class:`~markdown_vault_mcp.types.NoteInfo` objects,
             ordered by path.
         """
-        self._ensure_initialized()
         return self._link_mgr.get_orphan_notes()
 
     def get_most_linked(self, *, limit: int = 10) -> list[MostLinkedNote]:
@@ -833,7 +813,6 @@ class Collection:
             List of :class:`~markdown_vault_mcp.types.MostLinkedNote` ordered
             by backlink_count descending.
         """
-        self._ensure_initialized()
         return self._link_mgr.get_most_linked(limit=limit)
 
     def get_connection_path(
@@ -857,7 +836,6 @@ class Collection:
         Raises:
             ValueError: If *source* or *target* is not found in the index.
         """
-        self._ensure_initialized()
         return self._link_mgr.get_connection_path(source, target, max_depth=max_depth)
 
     # ------------------------------------------------------------------
@@ -989,7 +967,6 @@ class Collection:
         Returns:
             :class:`~markdown_vault_mcp.types.CollectionStats` snapshot.
         """
-        self._ensure_initialized()
 
         rows = self._fts.list_notes()
         doc_count = len(rows)
@@ -1110,7 +1087,6 @@ class Collection:
         already validated against ``MARKDOWN_VAULT_MCP_UPLOAD_MAX_BYTES``);
         leave ``False`` for base64 callers of the MCP ``write`` tool.
         """
-        self._ensure_initialized()
         return self._doc_mgr.write_attachment(
             path, content, if_match=if_match, skip_size_cap=skip_size_cap
         )
@@ -1145,7 +1121,6 @@ class Collection:
                 not match the current file hash.
             ValueError: If *path* escapes the source directory.
         """
-        self._ensure_initialized()
         return self._doc_mgr.write(
             path, content, frontmatter=frontmatter, if_match=if_match
         )
@@ -1186,7 +1161,6 @@ class Collection:
                 not match.
             ValueError: If *path* escapes the source directory.
         """
-        self._ensure_initialized()
         return self._doc_mgr.edit(
             path,
             old_text=old_text,
@@ -1216,7 +1190,6 @@ class Collection:
                 not match.
             DocumentNotFoundError: If *path* does not exist.
         """
-        self._ensure_initialized()
         return self._doc_mgr.delete(path, if_match=if_match)
 
     def rename(
@@ -1252,7 +1225,6 @@ class Collection:
             ValueError: If *old_path* or *new_path* escapes the source
                 directory.
         """
-        self._ensure_initialized()
         return self._doc_mgr.rename(
             old_path, new_path, if_match=if_match, update_links=update_links
         )
