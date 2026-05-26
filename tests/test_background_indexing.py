@@ -263,3 +263,24 @@ def test_foreground_reads_never_block_on_background(tmp_path: Path) -> None:
             )
     finally:
         collection.close()
+
+
+def test_stats_includes_index_status_field(tmp_path: Path) -> None:
+    """CollectionStats now carries the index_status snapshot."""
+    (tmp_path / "doc.md").write_text("# Doc\n\nbody\n", encoding="utf-8")
+    collection = Collection(source_dir=tmp_path)
+    try:
+        collection.build_index()
+        result = collection.stats()
+        # Either dataclass attribute or dict key — depends on dataclass shape.
+        assert hasattr(result, "index_status")
+        status = result.index_status
+        assert set(status.keys()) == {
+            "background_running",
+            "background_phase",
+            "last_run_started_at",
+            "last_run_completed_at",
+            "last_error",
+        }
+    finally:
+        collection.close()

@@ -366,6 +366,8 @@ class CollectionStats:
         link_count: Total number of links extracted from all documents.
         broken_link_count: Number of links whose target does not exist.
         orphan_count: Number of documents with no inbound or outbound links.
+        index_status: Snapshot of background reindex state. See
+            :meth:`~markdown_vault_mcp.collection.Collection.index_status`.
     """
 
     document_count: int
@@ -377,6 +379,7 @@ class CollectionStats:
     link_count: int = 0
     broken_link_count: int = 0
     orphan_count: int = 0
+    index_status: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
