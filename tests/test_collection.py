@@ -4217,3 +4217,45 @@ class TestIndexStatus:
             assert col.get_index_status()["error"] is None
         finally:
             col.close()
+
+    def test_schedule_background_reindex_transitions_to_ready(
+        self,
+        vault_path: Path,
+        tmp_path: Path,
+        mock_provider: MockEmbeddingProvider,
+    ) -> None:
+        """schedule_background_reindex() runs reindex+embed in a thread, ending in 'ready'."""
+        col = _make_collection(
+            vault_path,
+            index_path=tmp_path / "index.db",
+            embeddings_path=tmp_path / "embeddings",
+            embedding_provider=mock_provider,
+            state_path=tmp_path / "state.json",
+        )
+        try:
+            col.schedule_background_reindex()
+            done = col._index_done_event.wait(timeout=30)
+            assert done, "background reindex did not complete within 30s"
+            assert col.get_index_status()["status"] == "ready"
+            assert col.get_index_status()["indexed"] > 0
+        finally:
+            col.close()
+
+    def test_schedule_background_reindex_is_idempotent(
+        self,
+        vault_path: Path,
+        tmp_path: Path,
+    ) -> None:
+        """A second call while a thread is in flight returns without spawning."""
+        col = _make_collection(
+            vault_path,
+            state_path=tmp_path / "state.json",
+        )
+        try:
+            col.schedule_background_reindex()
+            first_thread = col._background_index_thread
+            col.schedule_background_reindex()
+            assert col._background_index_thread is first_thread
+            col._index_done_event.wait(timeout=30)
+        finally:
+            col.close()

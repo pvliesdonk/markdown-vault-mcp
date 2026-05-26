@@ -353,6 +353,75 @@ class Collection:
             self._index_status_error = error if status == "failed" else None
         logger.debug("index_status set status=%s error=%s", status, error)
 
+    def schedule_background_reindex(self) -> None:
+        """Spawn a daemon thread that runs ``reindex()`` then ``build_embeddings()``.
+
+        Returns immediately so the MCP ``initialize`` handshake can complete.
+        Idempotent: if a background thread is currently running, this is a
+        no-op.  Status visible via :meth:`get_index_status`.
+
+        The worker uses ``_write_lock`` for its mutation phase (same as a
+        manual ``reindex()`` call from the CLI), so concurrent write tool
+        calls serialise naturally.  Failures are caught and surfaced via
+        ``get_index_status()["error"]`` — the server itself stays up.
+        """
+        with self._index_status_lock:
+            if (
+                self._background_index_thread is not None
+                and self._background_index_thread.is_alive()
+            ):
+                logger.debug(
+                    "schedule_background_reindex: thread already in flight, skipping"
+                )
+                return
+
+            self._index_status = "indexing"
+            self._index_status_error = None
+            self._index_done_event.clear()
+            self._index_shutdown.clear()
+
+            thread = threading.Thread(
+                target=self._background_reindex_target,
+                name="markdown-vault-mcp-bg-reindex",
+                daemon=True,
+            )
+            self._background_index_thread = thread
+
+        thread.start()
+        logger.info("background reindex thread started")
+
+    def _background_reindex_target(self) -> None:
+        """Worker target for the background reindex thread.
+
+        Runs ``reindex()`` then ``build_embeddings()`` (if a provider is
+        configured) with status transitions:
+        ``indexing -> embedding -> ready``.  On failure, sets status to
+        ``failed`` and records the message; the server itself is never
+        crashed by an indexing error.
+        """
+        try:
+            if self._index_shutdown.is_set():
+                logger.info("background reindex aborted before start")
+                return
+
+            self.reindex()
+
+            if self._index_shutdown.is_set():
+                logger.info("background reindex aborted after FTS phase")
+                return
+
+            if self._embedding_provider is not None:
+                self._set_index_status("embedding")
+                self.build_embeddings()
+
+            self._set_index_status("ready")
+            logger.info("background reindex complete")
+        except Exception as exc:
+            logger.error("background reindex failed", exc_info=True)
+            self._set_index_status("failed", error=str(exc))
+        finally:
+            self._index_done_event.set()
+
     def stop(self) -> None:
         """Stop background tasks (e.g. git pull loop) without closing the collection.
 
