@@ -24,10 +24,22 @@ logger = logging.getLogger(__name__)
 
 
 class IndexStatus(TypedDict):
-    """Snapshot of background index progress."""
+    """Snapshot of background index progress.
+
+    Fields:
+        state: lifecycle state. ``"failed"`` implies ``error`` is set; the
+            other states leave ``error`` as ``None``.
+        error: failure message when ``state == "failed"``, else ``None``.
+        error_type: exception class name when ``state == "failed"``, else
+            ``None``. Lets callers distinguish e.g. a transient
+            ``sqlite3.OperationalError`` from a persistent ``ValueError``.
+        documents_indexed: count populated after ``build_index`` returns.
+        chunks_indexed: count populated after ``build_index`` returns.
+    """
 
     state: Literal["idle", "indexing", "embedding", "ready", "failed"]
     error: str | None
+    error_type: str | None
     documents_indexed: int
     chunks_indexed: int
 
@@ -35,9 +47,13 @@ class IndexStatus(TypedDict):
 class BackgroundIndexer:
     """Drives the post-handshake index build on a daemon thread.
 
+    Single-shot: once :meth:`stop` has been called the indexer cannot be
+    restarted. Construct a new instance to retry.
+
     Args:
         collection: The synchronous :class:`Collection` to drive.
-        has_provider: Whether an embedding provider is configured. When
+        has_provider: Whether the collection is configured for embeddings
+            (both an embedding provider *and* an embeddings path). When
             ``False``, the worker skips the embedding phase.
     """
 
@@ -50,6 +66,7 @@ class BackgroundIndexer:
         self._status: IndexStatus = {
             "state": "idle",
             "error": None,
+            "error_type": None,
             "documents_indexed": 0,
             "chunks_indexed": 0,
         }
@@ -59,6 +76,12 @@ class BackgroundIndexer:
         """Thread-safe snapshot of the current status."""
         with self._lock:
             return dict(self._status)  # type: ignore[return-value]
+
+    @property
+    def is_started(self) -> bool:
+        """``True`` once :meth:`start` has been called at least once."""
+        with self._lock:
+            return self._thread is not None
 
     def start(self) -> None:
         """Spawn the worker thread. Idempotent — a second call is a no-op."""
@@ -75,10 +98,18 @@ class BackgroundIndexer:
     def stop(self, timeout: float = 30.0) -> bool:
         """Signal the worker to stop and join with a bounded wait.
 
+        The stop signal is checked between the indexing and embedding
+        phases. A ``build_index()`` or ``build_embeddings()`` call already
+        in progress cannot be interrupted; the join may therefore time out
+        on a vault large enough that one phase exceeds *timeout*.
+
         Returns:
             ``True`` if the thread exited within the timeout (or was never
             started); ``False`` if the join timed out and the daemon was
-            abandoned.
+            abandoned. When ``False``, the caller should treat any
+            subsequent ``Collection`` shutdown as potentially racing with
+            in-flight SQLite writes; SQLite's WAL recovers any partial
+            write on next startup.
         """
         with self._lock:
             thread = self._thread
@@ -102,6 +133,7 @@ class BackgroundIndexer:
             Literal["idle", "indexing", "embedding", "ready", "failed"] | None
         ) = None,
         error: str | None = None,
+        error_type: str | None = None,
         documents_indexed: int | None = None,
         chunks_indexed: int | None = None,
     ) -> None:
@@ -110,6 +142,8 @@ class BackgroundIndexer:
                 self._status["state"] = state
             if error is not None:
                 self._status["error"] = error
+            if error_type is not None:
+                self._status["error_type"] = error_type
             if documents_indexed is not None:
                 self._status["documents_indexed"] = documents_indexed
             if chunks_indexed is not None:
@@ -137,4 +171,4 @@ class BackgroundIndexer:
             )
         except Exception as exc:
             logger.error("background_indexer_failed", exc_info=True)
-            self._set(state="failed", error=str(exc))
+            self._set(state="failed", error=str(exc), error_type=type(exc).__name__)

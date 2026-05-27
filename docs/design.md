@@ -382,17 +382,24 @@ yields immediately; the MCP `initialize` handshake therefore never
 blocks on indexing work (issue #513).
 
 `Collection` itself is purely synchronous and has no awareness of
-threading. Concurrency lives one layer up in the orchestrator. Teardown
-is linear: the lifespan calls `indexer.stop(timeout=30)` to join the
-daemon, then `Collection.close()` to release the SQLite connection.
-This ordering makes it structurally impossible for the SQLite
-connection to be closed while the worker is mid-write.
+threading. Concurrency lives one layer up in the orchestrator.
+Teardown: the lifespan calls `indexer.stop(timeout=30)` to join the
+daemon, then `Collection.close()`. When the join succeeds (the
+expected case) the SQLite connection is released only after the worker
+has exited. If the join times out — possible on a vault large enough
+that `build_index()` or `build_embeddings()` exceeds 30s and cannot be
+interrupted between phases — `Collection.close()` proceeds regardless;
+any in-flight SQLite write the daemon attempts after close raises
+inside `_run`'s ``except`` and SQLite's WAL recovers any partial state
+on next startup.
 
 Read tools on a collection where the background indexer has not yet
 finished return whatever the FTS database currently contains (possibly
-empty). Operators observe the warmup state via the `get_index_status`
-MCP tool. The daemon thread is WAL-resilient — if the join times out,
-the daemon is abandoned, and the next startup recovers via SQLite WAL.
+empty). The orchestrator's `status` snapshot is reachable to MCP tools
+via `get_indexer(ctx)` in `_server_deps.py`; a dedicated
+`get_index_status` MCP tool that surfaces the snapshot to clients
+lands in a follow-up PR (see
+[issue #513 status-surfacing](superpowers/specs/2026-05-27-issue-513-background-indexer-design.md#status-surfacing--separate-get_index_status-tool)).
 
 ### Error Handling
 

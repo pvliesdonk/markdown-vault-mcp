@@ -348,11 +348,13 @@ class Collection:
         self._fts.close()
 
     def _ensure_initialized(self) -> None:
-        """No-op. Retained so the 23 in-class call sites stay stable; the
-        lazy build it used to drive moved out of ``Collection`` into
-        :class:`~markdown_vault_mcp.background_indexer.BackgroundIndexer`.
-
-        See issue #513.
+        """No-op shim. The lazy build it used to drive moved out of
+        ``Collection`` into
+        :class:`~markdown_vault_mcp.background_indexer.BackgroundIndexer`
+        (issue #513). The shim is retained instead of stripped from its
+        in-class call sites to avoid the call-site sweep that contributed
+        to PR #515's failure to converge; future PRs may inline-remove
+        the callers and then this method.
         """
         return
 
@@ -479,14 +481,6 @@ class Collection:
         runs (including the ``exclude_patterns`` purge), and ``_index_built``
         is set to ``True`` on success. ``force=True`` drops all existing
         data and rebuilds unconditionally.
-
-        Called by:
-
-        - :class:`~markdown_vault_mcp.background_indexer.BackgroundIndexer`,
-          which runs this method on a daemon thread after the MCP lifespan
-          yields (issue #513).
-        - The CLI ``markdown-vault-mcp index`` command.
-        - Tests, directly.
 
         Args:
             force: When ``True``, drop and rebuild the index unconditionally.

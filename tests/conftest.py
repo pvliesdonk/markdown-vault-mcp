@@ -42,7 +42,11 @@ async def wait_for_indexer_ready(client: Any, *, timeout: float = 10.0) -> None:
         if isinstance(data, dict) and data.get("document_count", 0) > 0:
             return
         await asyncio.sleep(0.05)
-    msg = f"background indexer did not complete within {timeout}s"
+    msg = (
+        f"background indexer did not complete within {timeout}s "
+        f"(may indicate the indexer transitioned to state='failed' — "
+        f"check server logs for 'background_indexer_failed')"
+    )
     raise TimeoutError(msg)
 
 

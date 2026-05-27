@@ -103,9 +103,16 @@ def make_collection_lifespan(config: CollectionConfig) -> Any:
         # build_index() scans the freshest working tree.
         await asyncio.to_thread(collection.sync_from_remote_before_index)
 
+        # Embedding phase requires BOTH a provider and a sidecar path; if
+        # either is missing, Collection.build_embeddings() raises ValueError.
+        # Gate has_provider on both to avoid `state="failed"` on every startup
+        # when a provider is configured but the path isn't (PR #515 hit this).
         indexer = BackgroundIndexer(
             collection,
-            has_provider=kwargs.get("embedding_provider") is not None,
+            has_provider=(
+                kwargs.get("embedding_provider") is not None
+                and kwargs.get("embeddings_path") is not None
+            ),
         )
         indexer.start()
         logger.info("background_indexer_started")
@@ -128,7 +135,16 @@ def make_collection_lifespan(config: CollectionConfig) -> Any:
             set_collection_singleton(None)
             joined = indexer.stop(timeout=30.0)
             if not joined:
-                logger.warning("background_indexer_join_timed_out")
+                # Daemon still mid-write. Closing the SQLite connection here
+                # would race with that write. We accept the race because the
+                # alternative (skipping close) leaks the handle and the next
+                # startup's SQLite WAL recovery handles any partial state. Any
+                # exception the daemon hits post-close is caught by _run's
+                # ``except Exception`` and logged.
+                logger.warning(
+                    "background_indexer_join_timed_out: proceeding with "
+                    "collection.close(); WAL will recover any partial write."
+                )
             collection.close()
             logger.info("Collection shut down")
 
