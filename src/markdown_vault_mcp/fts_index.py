@@ -403,26 +403,46 @@ class FTSIndex:
             sqlite3.ProgrammingError: If :meth:`close` has already been
                 called on this instance.
         """
-        # The _closed check is intentionally outside _reg_lock: it's a cheap
-        # boolean read written exactly once, holding _reg_lock here would
-        # deadlock against close()'s own with-block, and the contract is
-        # already "callers stop using the collection before close()".
+        # Fast path: lock-free read of the cached per-thread connection. The
+        # _closed check here is an early-rejection optimisation — the slow
+        # path re-checks under _reg_lock to close the TOCTOU window with
+        # close().
         if self._closed:
             raise sqlite3.ProgrammingError("Cannot operate on a closed FTSIndex")
         conn = getattr(self._local, "conn", None)
-        if conn is None:
-            conn = sqlite3.connect(
-                self._connect_string,
-                check_same_thread=False,
-                uri=self._connect_uri,
-                factory=_WeakRefableConnection,
-            )
-            conn.row_factory = sqlite3.Row
-            _apply_pragmas(conn)
-            self._local.conn = conn
-            with self._reg_lock:
-                self._all_conns.append(weakref.ref(conn))
-        return conn
+        if conn is not None:
+            return conn
+
+        # Slow path: open a new connection. Re-check _closed under _reg_lock
+        # so a concurrent close() cannot leave us with a live connection
+        # outside the registry. Holding _reg_lock here does NOT deadlock —
+        # close() runs from a separate call stack, not nested within _conn().
+        new_conn = sqlite3.connect(
+            self._connect_string,
+            check_same_thread=False,
+            uri=self._connect_uri,
+            factory=_WeakRefableConnection,
+        )
+        new_conn.row_factory = sqlite3.Row
+        try:
+            _apply_pragmas(new_conn)
+        except sqlite3.Error:
+            # Failure-path cleanup: don't leak the freshly-opened connection
+            # if pragma application failed (disk full, locked DB beyond
+            # busy_timeout, etc.). Caller sees the OperationalError.
+            new_conn.close()
+            raise
+
+        with self._reg_lock:
+            if self._closed:
+                # close() ran while we were opening. Drop the new connection
+                # and raise — caller should not see a live conn on a closed
+                # index.
+                new_conn.close()
+                raise sqlite3.ProgrammingError("Cannot operate on a closed FTSIndex")
+            self._local.conn = new_conn
+            self._all_conns.append(weakref.ref(new_conn))
+        return new_conn
 
     # ------------------------------------------------------------------
     # Internal helpers

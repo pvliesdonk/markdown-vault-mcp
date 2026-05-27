@@ -186,6 +186,52 @@ def test_closed_index_rejects_new_thread_access(tmp_collection_path):
     )
 
 
+def test_concurrent_close_and_new_thread_conn_open_is_safe(tmp_collection_path):
+    """close() racing with a new thread's _conn() must not leave live conns outside the registry — issue #519, preflight TOCTOU finding."""
+    from markdown_vault_mcp.collection import Collection
+
+    coll = Collection(source_dir=tmp_collection_path)
+    coll.build_index()
+    fts = coll._fts
+
+    # Both threads block on the barrier so they hit _conn()/close() as
+    # close to simultaneously as possible.
+    barrier = threading.Barrier(2)
+    errors: list[BaseException] = []
+    opened: list[object] = []
+
+    def opener() -> None:
+        try:
+            barrier.wait()
+            opened.append(fts._conn())
+        except sqlite3.ProgrammingError:
+            # Acceptable: close() won the race; new conn correctly rejected.
+            pass
+        except BaseException as exc:
+            errors.append(exc)
+
+    def closer() -> None:
+        try:
+            barrier.wait()
+            coll.close()
+        except BaseException as exc:
+            errors.append(exc)
+
+    t_open = threading.Thread(target=opener)
+    t_close = threading.Thread(target=closer)
+    t_open.start()
+    t_close.start()
+    t_open.join(timeout=10)
+    t_close.join(timeout=10)
+
+    assert errors == [], f"unexpected errors: {errors}"
+    # After close(), _closed is True, so a fresh _conn() from this thread
+    # must raise — confirms the index is fully closed regardless of which
+    # thread won the race.
+    with pytest.raises(sqlite3.ProgrammingError):
+        fts._conn()
+
+
 def test_concurrent_build_and_reads_pr518_pattern(multi_thread_collection):
     """PR #518 failure pattern: background reindex + main thread mixed ops, no errors (issue #519)."""
     coll = multi_thread_collection
