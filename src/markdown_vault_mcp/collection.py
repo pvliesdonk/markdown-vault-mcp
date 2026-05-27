@@ -125,6 +125,28 @@ class Collection:
             ``0`` disables the limit (default ``1.0``).
         max_note_read_bytes: Maximum bytes returned by full-document reads.
             ``0`` disables the limit (default ``262144``, i.e. 256 KB).
+
+    Thread-safety:
+        All public methods are safe to call from any thread.
+
+        - Read methods (``read``, ``search``, ``list``, ``get_backlinks``,
+          ``get_outlinks``, ``get_similar``, ``get_context``, etc.) may
+          run concurrently with other reads and with writes from any
+          other thread.
+        - Write methods (``write``, ``edit``, ``delete``, ``rename``)
+          serialise against each other via the internal ``_write_lock``
+          (RLock).
+        - :meth:`close` is safe to call from any thread. After
+          :meth:`close`, the Collection must not be used.
+        - Cross-method atomicity is the caller's responsibility:
+          ``_write_lock`` is per-method, not per-logical-operation.
+          Calling ``write()`` then ``edit()`` from one thread does NOT
+          guarantee another thread sees neither or both — only that
+          each individual call is internally atomic.
+        - ``fork()`` is not supported. The connection model assumes a
+          threaded server.
+
+        See issue #519 for the SQLite connection model details.
     """
 
     def __init__(

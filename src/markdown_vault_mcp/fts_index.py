@@ -291,9 +291,35 @@ def _open_connection(
 class FTSIndex:
     """SQLite FTS5 index providing BM25 search and tag filtering.
 
-    Wraps a single SQLite database file (or in-memory database) and exposes
-    CRUD operations and full-text search over a collection of markdown
-    documents.
+    Wraps a SQLite database file (or in-memory database) and exposes CRUD
+    operations and full-text search over a collection of markdown documents.
+
+    Thread-safety:
+        Each thread that calls a method on this class gets its own
+        ``sqlite3.Connection`` (lazily opened on first touch via
+        :meth:`_conn`, stored in ``threading.local``, registered in
+        ``_all_conns`` for cleanup). Connections are never shared across
+        threads. Sequential operations from the same thread reuse the
+        same connection.
+
+        :meth:`close` is safe to call from any thread; it iterates the
+        registry and closes every per-thread connection. After
+        :meth:`close`, subsequent operations on any thread raise
+        ``sqlite3.ProgrammingError``.
+
+        Concurrent writers are serialised at the application layer by
+        :attr:`Collection._write_lock` (an RLock). This class does NOT
+        serialise concurrent writers itself; callers that don't hold
+        ``_write_lock`` and write concurrently from multiple threads may
+        see ``sqlite3.OperationalError`` (SQLITE_BUSY) on contending
+        writes (the per-connection ``busy_timeout=5000ms`` mitigates this
+        for short transactions).
+
+        In-memory databases (``db_path=":memory:"``) are transparently
+        mapped to a unique shared-cache URI per ``FTSIndex`` instance so
+        that all per-thread connections see the same database. Per-thread
+        access to ``:memory:`` is therefore safe, including from the MCP
+        server's ``asyncio.to_thread`` dispatch path.
 
     Tag indexing behaviour is controlled by ``indexed_frontmatter_fields``:
     only the listed frontmatter keys are promoted into the ``document_tags``
@@ -302,15 +328,10 @@ class FTSIndex:
     types (nested dicts, objects) are stored in the raw JSON blob only and
     are not indexed.
 
-    In-memory databases (``db_path=":memory:"``) are transparently mapped to
-    a unique shared-cache URI per :class:`FTSIndex` instance, so per-thread
-    connections all see the same database. This makes ``":memory:"`` safe
-    for multi-threaded callers including the MCP server's
-    ``asyncio.to_thread`` dispatch.
-
     Args:
         db_path: Path to the SQLite database file.  Pass ``":memory:"`` (the
-            default) for a transient in-memory database.
+            default) for a transient in-memory database (transparently
+            shared across threads via a per-instance shared-cache URI).
         indexed_frontmatter_fields: Frontmatter keys whose values are
             promoted to the ``document_tags`` table.  ``None`` means no tag
             indexing.
