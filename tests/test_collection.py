@@ -264,10 +264,6 @@ class TestBuildIndex:
             index_path=index_path,
             exclude_patterns=[".claude/**"],
         )
-        # Bypass the _ensure_initialized() guard: col2 shares the same
-        # persistent DB as col1, so the index already exists — we want to
-        # test reindex() directly, not build_index().
-        col2._initialized = True
         col2.reindex()
 
         # The stale excluded doc should be purged.
@@ -312,7 +308,6 @@ class TestBuildIndex:
             embedding_provider=mock_provider,
             exclude_patterns=[".claude/**"],
         )
-        col2._initialized = True
         col2.reindex()
 
         paths2 = [row["path"] for row in col2._fts.list_notes()]

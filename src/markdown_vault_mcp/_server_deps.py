@@ -77,8 +77,10 @@ def make_collection_lifespan(config: CollectionConfig) -> Any:
 
     Returns:
         A FastMCP lifespan coroutine that initialises the
-        :class:`~markdown_vault_mcp.collection.Collection` and yields
-        ``{"collection": collection, "config": config}`` to the lifespan context.
+        :class:`~markdown_vault_mcp.collection.Collection` and the
+        :class:`~markdown_vault_mcp.background_indexer.BackgroundIndexer`,
+        and yields ``{"collection": collection, "config": config, "indexer":
+        indexer}`` to the lifespan context.
     """
 
     @lifespan
