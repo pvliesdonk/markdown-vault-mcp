@@ -86,8 +86,8 @@ def _resolve_chunk_strategy(strategy: str | ChunkStrategy) -> ChunkStrategy:
 class Collection:
     """Facade over FTS5 index, vector index, and change tracker.
 
-    Instantiate once per collection root.  Call :meth:`build_index` (or let
-    lazy initialisation handle it) before querying.
+    Instantiate once per collection root.  Call :meth:`build_index` before
+    querying — queries against an unbuilt index return empty results.
 
     Args:
         source_dir: Root directory of the markdown collection.
@@ -355,13 +355,14 @@ class Collection:
     def _ensure_initialized(self) -> None:
         """Mark the collection as ready for queries without forcing a build.
 
-        Tool methods call this before reading from the index. Originally it
+        Tool methods call this before reading from the index. Previously it
         would synchronously run :meth:`build_index` if the index had not been
-        built yet; that blocked the MCP handshake on cold start. The lifespan
-        now drives the initial build via
-        :class:`~markdown_vault_mcp.background_indexer.BackgroundIndexer`, so
-        this method only flips the flag — tools see whatever the FTS DB
-        currently contains, which may be empty during cold-start indexing.
+        built yet, which blocked the MCP handshake on cold start. It now
+        only flips the ``_initialized`` flag; callers see whatever the FTS
+        database currently contains, which may be empty until
+        :meth:`build_index` runs. Scheduling that initial build is the
+        responsibility of the caller (the MCP lifespan, the CLI, or a test).
+        See issue #513.
         """
         self._initialized = True
 

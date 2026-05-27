@@ -365,10 +365,11 @@ Two methods manage the index:
   adds/modifies/deletes since the last scan and applies only the delta.
   Applies `exclude_patterns` filtering and purges stale excluded documents.
 
-**Lazy initialization**: on first call to `search()`, `list()`, or `read()`,
-`Collection` lazily builds the FTS index from `source_dir` if no pre-built
-`index_path` was provided. `build_index()` can be called explicitly to
-pre-warm the index or to force a rebuild.
+**Explicit initialization**: callers (the MCP lifespan, the CLI, tests)
+must call `build_index()` before querying. Tool methods on an unbuilt
+`Collection` return empty results; they do not trigger a filesystem
+scan. `build_index()` can also be called to force a rebuild
+(`force=True`).
 
 ### Error Handling
 
@@ -999,9 +1000,9 @@ class Collection:
 - `embeddings_path=None`: semantic search is disabled.
 - `state_path=None`: defaults to `{source_dir}/.markdown_vault_mcp/state.json`.
 
-**Lazy initialization**: on first call to `search()`, `list()`, or `read()`,
-`Collection` lazily builds the FTS index from `source_dir` if no pre-built
-`index_path` was provided.
+**Explicit initialization**: callers (the MCP lifespan, the CLI, tests)
+must call `build_index()` before querying. Tool methods on an unbuilt
+`Collection` return empty results.
 
 **Write operations** (`write`, `edit`, `delete`, `rename`) raise
 `ReadOnlyError` when `read_only=True`.
