@@ -222,3 +222,33 @@ def test_concurrent_writers_serialize_via_write_lock(multi_thread_collection):
     docs = {d.path for d in coll.list()}
     expected = {f"a_{i}.md" for i in range(20)} | {f"b_{i}.md" for i in range(20)}
     assert expected.issubset(docs), f"missing writes: {expected - docs}"
+
+
+@pytest.mark.benchmark
+def test_perf_1000_searches_on_1k_docs(tmp_path):
+    """1000 search() calls on a 1k-doc vault, single thread. Manual perf gate for #519."""
+    import time
+
+    from markdown_vault_mcp.collection import Collection
+
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    for i in range(1000):
+        (vault / f"doc_{i:04d}.md").write_text(
+            f"# Doc {i}\n\nQuick brown fox jumps over lazy dog {i}.\n"
+        )
+
+    coll = Collection(source_dir=vault, read_only=False)
+    coll.build_index()
+
+    # Warm-up.
+    for _ in range(10):
+        coll.search("brown fox", limit=10)
+
+    start = time.perf_counter()
+    for _ in range(1000):
+        coll.search("brown fox", limit=10)
+    elapsed = time.perf_counter() - start
+
+    coll.close()
+    print(f"\n1000 searches on 1k docs: {elapsed:.3f}s")
