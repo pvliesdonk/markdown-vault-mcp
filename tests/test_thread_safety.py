@@ -160,6 +160,32 @@ def test_close_is_idempotent(tmp_collection_path):
     coll.close()  # must not raise
 
 
+def test_closed_index_rejects_new_thread_access(tmp_collection_path):
+    """After close(), _conn() from a NEW thread raises ProgrammingError (issue #519)."""
+    from markdown_vault_mcp.collection import Collection
+
+    coll = Collection(source_dir=tmp_collection_path)
+    coll.build_index()
+    coll.close()
+
+    error: list[BaseException] = []
+
+    def worker() -> None:
+        try:
+            coll._fts._conn()
+        except BaseException as exc:
+            error.append(exc)
+
+    t = threading.Thread(target=worker)
+    t.start()
+    t.join()
+
+    assert len(error) == 1, "worker should have raised exactly one exception"
+    assert isinstance(error[0], sqlite3.ProgrammingError), (
+        f"expected ProgrammingError, got {type(error[0]).__name__}: {error[0]}"
+    )
+
+
 def test_concurrent_build_and_reads_pr518_pattern(multi_thread_collection):
     """PR #518 failure pattern: background reindex + main thread mixed ops, no errors (issue #519)."""
     coll = multi_thread_collection

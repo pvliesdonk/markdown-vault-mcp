@@ -8,6 +8,7 @@ import logging
 import sqlite3
 import threading
 import uuid
+import weakref
 from collections import deque
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -157,6 +158,17 @@ def _normalize_heading(heading: str) -> str:
     return " ".join(heading.split())
 
 
+class _WeakRefableConnection(sqlite3.Connection):
+    """``sqlite3.Connection`` subclass that supports :mod:`weakref`.
+
+    CPython's built-in ``sqlite3.Connection`` does not implement
+    ``__weakref__``, so :func:`weakref.ref` raises ``TypeError``. Subclassing
+    adds the slot. Used via ``sqlite3.connect(..., factory=...)`` so the
+    per-thread connection registry can hold weak references — dead-thread
+    connections are GC'd naturally rather than leaking until :meth:`close`.
+    """
+
+
 def _apply_pragmas(conn: sqlite3.Connection) -> None:
     """Apply per-connection pragmas. MUST be called on every new connection.
 
@@ -281,10 +293,18 @@ def _open_connection(
     DB file for file-backed DBs; for ``":memory:"`` the shared-cache URI
     ensures per-thread connections see the same schema).
     """
-    conn = sqlite3.connect(connect_string, check_same_thread=False, uri=uri)
+    conn = sqlite3.connect(
+        connect_string,
+        check_same_thread=False,
+        uri=uri,
+        factory=_WeakRefableConnection,
+    )
     conn.row_factory = sqlite3.Row
-    _init_schema(conn, db_path)
+    # Pragmas (notably busy_timeout=5000) MUST be applied before schema
+    # initialisation so the ALTER TABLE / CREATE INDEX migration statements
+    # wait on a concurrent-process lock rather than failing immediately.
     _apply_pragmas(conn)
+    _init_schema(conn, db_path)
     return conn
 
 
@@ -346,15 +366,18 @@ class FTSIndex:
         self._connect_string, self._connect_uri = _resolve_connect_uri(db_path)
         self._indexed_fields: list[str] = indexed_frontmatter_fields or []
         # Per-thread connections: thread-local slot + side registry for close().
+        # Weak refs so connections from threads that have exited are GC'd
+        # naturally; close() skips weakrefs whose referent is already gone.
         self._local = threading.local()
-        self._all_conns: list[sqlite3.Connection] = []
+        self._all_conns: list[weakref.ref[sqlite3.Connection]] = []
         self._reg_lock = threading.Lock()
+        self._closed = False
         # Primary connection: runs schema + migrations + pragmas, then
         # registers itself so close() can clean it up like any other.
         primary = _open_connection(db_path, self._connect_string, self._connect_uri)
         self._local.conn = primary
         with self._reg_lock:
-            self._all_conns.append(primary)
+            self._all_conns.append(weakref.ref(primary))
 
     def _conn(self) -> sqlite3.Connection:
         """Return the calling thread's SQLite connection, opening one on first touch.
@@ -369,26 +392,36 @@ class FTSIndex:
         ``check_same_thread=False`` is required — :meth:`close` runs from
         one thread and must close connections opened on other threads).
 
-        Connections opened by threads that have since exited remain in
-        ``_all_conns`` until :meth:`close` is called; intentional for the
-        long-lived MCP server use case but worth knowing for callers that
-        spawn unbounded short-lived threads.
+        Per-thread connections are tracked via :mod:`weakref`, so connections
+        from threads that have exited are garbage-collected automatically;
+        :meth:`close` will skip already-gone references.
 
         Returns:
             The Connection owned by the calling thread.
+
+        Raises:
+            sqlite3.ProgrammingError: If :meth:`close` has already been
+                called on this instance.
         """
+        # The _closed check is intentionally outside _reg_lock: it's a cheap
+        # boolean read written exactly once, holding _reg_lock here would
+        # deadlock against close()'s own with-block, and the contract is
+        # already "callers stop using the collection before close()".
+        if self._closed:
+            raise sqlite3.ProgrammingError("Cannot operate on a closed FTSIndex")
         conn = getattr(self._local, "conn", None)
         if conn is None:
             conn = sqlite3.connect(
                 self._connect_string,
                 check_same_thread=False,
                 uri=self._connect_uri,
+                factory=_WeakRefableConnection,
             )
             conn.row_factory = sqlite3.Row
             _apply_pragmas(conn)
             self._local.conn = conn
             with self._reg_lock:
-                self._all_conns.append(conn)
+                self._all_conns.append(weakref.ref(conn))
         return conn
 
     # ------------------------------------------------------------------
@@ -1622,10 +1655,23 @@ class FTSIndex:
         ("Cannot operate on a closed database") on their next access.
         """
         with self._reg_lock:
-            for conn in self._all_conns:
+            self._closed = True
+            for conn_ref in self._all_conns:
+                conn = conn_ref()
+                if conn is None:
+                    # Owning thread has exited; the connection was GC'd.
+                    continue
                 try:
                     conn.close()
-                except sqlite3.Error as exc:
-                    logger.warning("FTSIndex.close: error closing connection: %s", exc)
+                except sqlite3.ProgrammingError:
+                    # Benign: connection already closed (idempotent close).
+                    logger.debug("FTSIndex.close: connection already closed")
+                except sqlite3.Error:
+                    logger.error(
+                        "FTSIndex.close: failed to close connection (db_path=%s)",
+                        self._db_path,
+                        exc_info=True,
+                    )
+                    # Continue — don't strand other connections.
             self._all_conns.clear()
         logger.debug("FTSIndex closed (db_path=%s)", self._db_path)
