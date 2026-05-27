@@ -188,7 +188,13 @@ class IndexManager:
             :class:`~markdown_vault_mcp.types.IndexStats` describing what
             was indexed.
 
-        Thread-safety: safe to call from any thread, including a background daemon thread (motivation for issue #519). Acquires ``_write_lock`` for the bulk-write phase; concurrent readers may interleave under WAL.
+        Thread-safety: safe to call from any thread, including from a
+        background daemon thread (motivation for issue #519). Does NOT
+        acquire ``_write_lock``; callers that build the index
+        concurrently with write/edit/delete/rename operations must
+        coordinate at a higher layer (the BackgroundIndexer design in
+        issue #513 will own that coordination). Concurrent readers may
+        interleave under WAL.
         """
         if force:
             logger.info("build_index(force=True): dropping and rebuilding index")
@@ -293,7 +299,11 @@ class IndexManager:
             :class:`~markdown_vault_mcp.types.ReindexResult` with counts
             of changes applied.
 
-        Thread-safety: safe to call from any thread. Acquires ``_write_lock`` for the bulk-write phase; concurrent readers may interleave under WAL.
+        Thread-safety: safe to call from any thread, including from a
+        background daemon thread. The filesystem scan runs without holding
+        ``_write_lock`` (read-only), then the mutation phase acquires the
+        lock to prevent races with concurrent write/edit/delete/rename
+        operations. Concurrent readers may interleave under WAL.
         """
         # Phase 1: scan (outside lock — read-only filesystem walk + hashing).
         changes = self._tracker.detect_changes(self._source_dir)
