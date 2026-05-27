@@ -113,7 +113,7 @@ def tmp_collection_path(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def tmp_collection(tmp_collection_path: Path):
-    """Tempfile-backed Collection; safe for multi-threaded tests unlike :memory: (issue #519)."""
+    """Tempfile-backed Collection with a file-on-disk DB (enables WAL pragma for realistic perf)."""
     from markdown_vault_mcp.collection import Collection
 
     coll = Collection(source_dir=tmp_collection_path)

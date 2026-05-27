@@ -590,6 +590,12 @@ without ever hitting `SQLITE_BUSY`. The `busy_timeout=5000ms`
 per-connection pragma is the safety net for the rare case where an
 out-of-process holder (e.g. a sidecar tool) holds a lock.
 
+The `synchronous = NORMAL` pragma trades durability for write throughput:
+an OS crash (not process crash) may lose the last committed transaction.
+This is acceptable here because the index is derived from the source
+markdown files — a crash rebuild is safe and the source files are the
+source of truth.
+
 ### In-memory databases
 
 `sqlite3.connect(":memory:")` opens a fresh, empty database per

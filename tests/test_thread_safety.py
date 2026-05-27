@@ -15,7 +15,7 @@ import pytest
 
 @pytest.fixture
 def multi_thread_collection(tmp_collection_path):
-    """Tempfile-backed Collection for multi-thread tests (:memory: is per-connection; issue #519)."""
+    """File-backed Collection with seed docs (WAL pragma requires file DB; issue #519)."""
     from markdown_vault_mcp.collection import Collection
 
     coll = Collection(
@@ -91,28 +91,35 @@ def test_pragmas_applied_per_connection(multi_thread_collection):
     assert captured["journal_mode"].lower() == "wal", "WAL must persist across opens"
 
 
-def test_migrations_dont_rerun_on_per_thread_open(tmp_collection):
-    """Per-thread open applies pragmas only — no ALTER/CREATE TABLE on worker connections."""
-    fts = tmp_collection._fts
-    traced: list[str] = []
+def test_init_schema_runs_once_across_all_threads(tmp_collection_path):
+    """`_init_schema` is called exactly once (primary connection); per-thread opens skip it (issue #519)."""
+    from unittest.mock import patch
 
-    def worker() -> None:
-        conn = fts._conn()
-        conn.set_trace_callback(traced.append)
-        conn.execute("SELECT 1").fetchone()
-        conn.set_trace_callback(None)
+    from markdown_vault_mcp import fts_index as fts_module
+    from markdown_vault_mcp.collection import Collection
 
-    t = threading.Thread(target=worker)
-    t.start()
-    t.join()
+    original = fts_module._init_schema
+    with patch.object(fts_module, "_init_schema", wraps=original) as spy:
+        coll = Collection(source_dir=tmp_collection_path)
+        coll.build_index()
+        fts = coll._fts
 
-    for stmt in traced:
-        assert "ALTER TABLE" not in stmt.upper(), (
-            f"per-thread open must not re-run migrations; saw: {stmt!r}"
+        def worker() -> None:
+            fts._conn()
+
+        threads = [threading.Thread(target=worker) for _ in range(3)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        # Primary connection ran schema once at __init__; worker threads must not.
+        assert spy.call_count == 1, (
+            f"_init_schema must run exactly once across all threads; "
+            f"got {spy.call_count} calls (worker threads re-ran schema)"
         )
-        assert "CREATE TABLE" not in stmt.upper(), (
-            f"per-thread open must not re-run schema; saw: {stmt!r}"
-        )
+
+    coll.close()
 
 
 def test_close_closes_all_per_thread_connections(tmp_collection_path):

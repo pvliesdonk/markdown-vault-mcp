@@ -369,6 +369,11 @@ class FTSIndex:
         ``check_same_thread=False`` is required — :meth:`close` runs from
         one thread and must close connections opened on other threads).
 
+        Connections opened by threads that have since exited remain in
+        ``_all_conns`` until :meth:`close` is called; intentional for the
+        long-lived MCP server use case but worth knowing for callers that
+        spawn unbounded short-lived threads.
+
         Returns:
             The Connection owned by the calling thread.
         """
@@ -653,8 +658,9 @@ class FTSIndex:
             Total number of chunks (sections) indexed.
         """
         total_chunks = 0
-        with self._conn():
-            cur = self._conn().cursor()
+        conn = self._conn()
+        with conn:
+            cur = conn.cursor()
             for note in notes:
                 folder = _derive_folder(note.path)
                 self._delete_document(cur, note.path)
@@ -685,8 +691,9 @@ class FTSIndex:
             Number of chunks (sections) indexed for this document.
         """
         folder = _derive_folder(note.path)
-        with self._conn():
-            cur = self._conn().cursor()
+        conn = self._conn()
+        with conn:
+            cur = conn.cursor()
             self._delete_document(cur, note.path)
             doc_id = self._insert_document(cur, note, folder)
             self._insert_sections(cur, doc_id, note)
@@ -707,8 +714,9 @@ class FTSIndex:
         Returns:
             Number of document rows deleted (0 if path was not indexed).
         """
-        with self._conn():
-            cur = self._conn().cursor()
+        conn = self._conn()
+        with conn:
+            cur = conn.cursor()
             deleted = self._delete_document(cur, path)
         if deleted:
             logger.debug("delete_by_path: removed %s", path)
@@ -1185,10 +1193,9 @@ class FTSIndex:
             if new_path != row["target_path"]:
                 updates.append((new_path, row["id"]))
 
-        with self._conn():
-            self._conn().executemany(
-                "UPDATE links SET target_path = ? WHERE id = ?", updates
-            )
+        conn = self._conn()
+        with conn:
+            conn.executemany("UPDATE links SET target_path = ? WHERE id = ?", updates)
         updated = len(updates)
 
         if updated:
