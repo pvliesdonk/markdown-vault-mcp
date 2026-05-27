@@ -395,18 +395,17 @@ class TestBuildIndex:
 
 
 # ---------------------------------------------------------------------------
-# Lazy initialisation
+# Explicit initialisation
 # ---------------------------------------------------------------------------
 
 
-class TestLazyInitialisation:
+class TestExplicitInitialisation:
     def test_search_without_build_index_returns_empty(self, vault_path: Path) -> None:
         """search() on an unbuilt index returns empty list without crashing.
 
-        After the fast-probe change, _ensure_initialized() only sets the
-        _initialized flag — it does not call build_index(). Tool methods
-        therefore see an empty index on first call if build_index() was
-        never invoked.
+        _ensure_initialized() only sets the _initialized flag — it does not
+        call build_index(). Tool methods see an empty index until
+        build_index() is invoked explicitly.
         """
         col = _make_collection(vault_path)
 
@@ -417,9 +416,9 @@ class TestLazyInitialisation:
     def test_list_without_build_index_returns_empty(self, vault_path: Path) -> None:
         """list() on an unbuilt index returns empty list without crashing.
 
-        After the fast-probe change, _ensure_initialized() only sets the
-        _initialized flag — it does not call build_index(). Callers that
-        need documents must invoke build_index() explicitly.
+        _ensure_initialized() only sets the _initialized flag — it does not
+        call build_index(). Callers that need documents must invoke
+        build_index() explicitly.
         """
         col = _make_collection(vault_path)
 
