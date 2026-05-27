@@ -155,31 +155,37 @@ def _normalize_heading(heading: str) -> str:
     return " ".join(heading.split())
 
 
-def _open_connection(db_path: Path | str) -> sqlite3.Connection:
-    """Open an SQLite connection with required pragmas and schema applied.
+def _apply_pragmas(conn: sqlite3.Connection) -> None:
+    """Apply per-connection pragmas. MUST be called on every new connection.
 
-    Args:
-        db_path: Filesystem path or ``":memory:"`` for an in-memory database.
-
-    Returns:
-        An open :class:`sqlite3.Connection` with the schema applied and
-        ``foreign_keys`` enforcement active.
+    These pragmas are connection-scoped (not persisted in the DB header) so
+    every ``sqlite3.connect()`` must re-apply them. See SQLite docs on
+    ``PRAGMA foreign_keys``, ``PRAGMA busy_timeout``, ``PRAGMA synchronous``.
     """
-    conn = sqlite3.connect(str(db_path), check_same_thread=False)
-    conn.row_factory = sqlite3.Row
-    # Apply schema; executescript commits implicitly.
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA busy_timeout = 5000")
+    conn.execute("PRAGMA synchronous = NORMAL")
+
+
+def _init_schema(conn: sqlite3.Connection, db_path: Path | str) -> None:
+    """Run schema DDL, migrations, and one-time DB-header pragmas.
+
+    Called exactly once per :class:`FTSIndex` instance, on the constructing
+    thread, before any per-thread connections are opened. Subsequent
+    per-thread opens (via :meth:`FTSIndex._conn`) must NOT re-run this.
+    """
+    # Base schema (idempotent via CREATE TABLE IF NOT EXISTS).
     conn.executescript(_SCHEMA_SQL)
-    # Migrate existing databases: add columns introduced after initial schema.
-    # ALTER TABLE ADD COLUMN is idempotent-guarded via try/except because
-    # SQLite only supports ADD COLUMN IF NOT EXISTS from version 3.35 onwards.
+
+    # Migration: links.raw_target column.
     try:
         conn.execute("ALTER TABLE links ADD COLUMN raw_target TEXT NOT NULL DEFAULT ''")
         conn.commit()
     except sqlite3.OperationalError as e:
         if "duplicate column name" not in str(e).lower():
-            raise  # Unexpected error — re-raise.
-    # Migrate: create document_aliases table if it does not exist (added for
-    # Obsidian-style alias resolution in wikilinks).
+            raise
+
+    # Migration: document_aliases table (added for Obsidian alias resolution).
     conn.executescript(
         """
         CREATE TABLE IF NOT EXISTS document_aliases (
@@ -193,9 +199,8 @@ def _open_connection(db_path: Path | str) -> sqlite3.Connection:
         CREATE INDEX IF NOT EXISTS idx_aliases_docid ON document_aliases(document_id);
         """
     )
-    # Migration: chunk_count was added 2026-04-30. ALTER TABLE is a no-op
-    # if the column already exists, but SQLite has no IF NOT EXISTS for
-    # columns, so we probe PRAGMA first.
+
+    # Migration: documents.chunk_count column (added 2026-04-30).
     cols = {r["name"] for r in conn.execute("PRAGMA table_info(documents)").fetchall()}
     if "chunk_count" not in cols:
         try:
@@ -209,25 +214,18 @@ def _open_connection(db_path: Path | str) -> sqlite3.Connection:
         except sqlite3.OperationalError as exc:
             if "duplicate column name" not in str(exc).lower():
                 raise
-            # Another process beat us to it; column now exists.
             logger.debug(
                 "fts_index: chunk_count column already added by concurrent process"
             )
-    # Migration: idx_sections_docid was added 2026-05-12 to back the
-    # correlated subquery on sections(document_id) used in keyword search
-    # for start_line propagation. CREATE INDEX IF NOT EXISTS is idempotent.
+
+    # Migration: idx_sections_docid index (added 2026-05-12).
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_sections_docid ON sections(document_id)"
     )
     conn.commit()
-    # Ensure foreign_keys stays ON for subsequent statements (executescript
-    # does not guarantee this survives across statement boundaries in all
-    # SQLite versions).
-    conn.execute("PRAGMA foreign_keys = ON")
-    # WAL mode allows concurrent readers during writes — essential for
-    # search queries running while reindex or write operations update the DB.
-    # In-memory databases do not support WAL; skip the pragma to avoid a
-    # spurious warning (SQLite silently uses 'memory' journal mode).
+
+    # WAL is a one-time DB-header pragma — persists across opens. Skip for
+    # in-memory DBs (no WAL support; would emit a noisy warning).
     if str(db_path) != ":memory:":
         result = conn.execute("PRAGMA journal_mode = WAL").fetchone()
         if result is None or result[0].lower() != "wal":
@@ -237,6 +235,21 @@ def _open_connection(db_path: Path | str) -> sqlite3.Connection:
                 result[0] if result else "no result",
             )
     conn.commit()
+
+
+def _open_connection(db_path: Path | str) -> sqlite3.Connection:
+    """Open the PRIMARY connection: schema + migrations + pragmas.
+
+    Used only by :meth:`FTSIndex.__init__` for the constructing-thread
+    connection. Subsequent per-thread connections are opened by
+    :meth:`FTSIndex._conn` and apply pragmas only (schema persists in the
+    DB file for file-backed DBs; ``:memory:`` is single-thread by contract —
+    see design spec).
+    """
+    conn = sqlite3.connect(str(db_path), check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    _init_schema(conn, db_path)
+    _apply_pragmas(conn)
     return conn
 
 
