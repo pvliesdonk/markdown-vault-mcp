@@ -8,21 +8,14 @@ from __future__ import annotations
 
 import sqlite3
 import threading
+from typing import Any
 
 import pytest
 
 
 @pytest.fixture
 def multi_thread_collection(tmp_collection_path):
-    """Tempfile-backed Collection for tests that exercise cross-thread access.
-
-    Use this fixture (NOT the default :memory: fixtures) for any test
-    that opens FTSIndex connections from multiple threads. SQLite
-    :memory: databases are connection-scoped: each per-thread connection
-    sees a fresh, EMPTY database. This fixture forces a file-backed DB
-    so all per-thread connections see the same data. See issue #519
-    design spec.
-    """
+    """Tempfile-backed Collection for multi-thread tests (:memory: is per-connection; issue #519)."""
     from markdown_vault_mcp.collection import Collection
 
     coll = Collection(
@@ -39,18 +32,13 @@ def multi_thread_collection(tmp_collection_path):
 
 
 def test_conn_is_per_thread(tmp_collection):
-    """index._conn() returns a different Connection object per thread.
-
-    Same thread → same connection (identity). Different threads → different
-    connections. This is the load-bearing invariant of the per-thread
-    connection model.
-    """
+    """_conn() returns identical connection within a thread, distinct across threads."""
     fts = tmp_collection._fts  # FTSIndex instance
     main_conn_1 = fts._conn()
     main_conn_2 = fts._conn()
     assert main_conn_1 is main_conn_2, "same thread should reuse one connection"
 
-    captured: dict[str, object] = {}
+    captured: dict[str, Any] = {}
 
     def worker() -> None:
         captured["worker_conn"] = fts._conn()
@@ -82,14 +70,9 @@ def test_registry_tracks_per_thread_connections(tmp_collection):
 
 
 def test_pragmas_applied_per_connection(multi_thread_collection):
-    """Worker-thread connections see foreign_keys, busy_timeout, synchronous,
-    AND the persisted WAL journal mode (without re-applying it).
-
-    Uses the file-backed fixture because :memory: DBs skip WAL by design
-    (SQLite emits a noisy warning and falls back to ``memory`` journal).
-    """
+    """Worker-thread connections see foreign_keys, busy_timeout, synchronous, and persisted WAL."""
     fts = multi_thread_collection._fts
-    captured: dict[str, object] = {}
+    captured: dict[str, Any] = {}
 
     def worker() -> None:
         conn = fts._conn()
@@ -109,12 +92,7 @@ def test_pragmas_applied_per_connection(multi_thread_collection):
 
 
 def test_migrations_dont_rerun_on_per_thread_open(tmp_collection):
-    """sqlite3 trace callback on a worker-thread connection sees no ALTER TABLE.
-
-    Schema DDL runs once on the constructing thread; per-thread opens
-    apply pragmas only. Catches accidental re-introduction of migration
-    logic into the per-thread open path.
-    """
+    """Per-thread open applies pragmas only — no ALTER/CREATE TABLE on worker connections."""
     fts = tmp_collection._fts
     traced: list[str] = []
 
@@ -176,13 +154,7 @@ def test_close_is_idempotent(tmp_collection_path):
 
 
 def test_concurrent_build_and_reads_pr518_pattern(multi_thread_collection):
-    """Background thread builds index repeatedly while main thread does mixed ops.
-
-    Acceptance criterion for issue #519. Reproduces the exact failure
-    pattern from PR #518 (sqlite3.OperationalError / InterfaceError on
-    Python 3.12+ from cross-thread connection sharing). Must pass on
-    3.11, 3.12, 3.13, and 3.14 (see tox.ini).
-    """
+    """PR #518 failure pattern: background reindex + main thread mixed ops, no errors (issue #519)."""
     coll = multi_thread_collection
     errors: list[BaseException] = []
     stop = threading.Event()

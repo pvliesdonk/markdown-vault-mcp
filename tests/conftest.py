@@ -113,13 +113,7 @@ def tmp_collection_path(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def tmp_collection(tmp_collection_path: Path):
-    """Tempfile-backed Collection. Safe for multi-threaded tests, unlike :memory:.
-
-    ``:memory:`` SQLite databases are connection-scoped — every per-thread
-    connection sees a fresh empty DB. Multi-thread tests MUST use this
-    fixture (or the dedicated multi_thread_collection fixture). See
-    ``docs/superpowers/specs/2026-05-27-issue-519-...md`` for rationale.
-    """
+    """Tempfile-backed Collection; safe for multi-threaded tests unlike :memory: (issue #519)."""
     from markdown_vault_mcp.collection import Collection
 
     coll = Collection(source_dir=tmp_collection_path)
