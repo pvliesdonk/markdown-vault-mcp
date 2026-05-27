@@ -195,7 +195,8 @@ class Collection:
         )
         self._tracker = ChangeTracker(self._state_path)
 
-        # Lazy initialisation flag.
+        # Query-readiness flag — flipped by _ensure_initialized; does not
+        # imply build_index has run.
         self._initialized = False
 
         # Serialise concurrent write operations on this instance.
@@ -349,7 +350,7 @@ class Collection:
         self._fts.close()
 
     # ------------------------------------------------------------------
-    # Lazy initialisation
+    # Query-readiness probe
     # ------------------------------------------------------------------
 
     def _ensure_initialized(self) -> None:
