@@ -109,8 +109,11 @@ class TestVaultContextToolData:
     """Verify _vault_context returns complete NoteContext fields."""
 
     async def test_all_context_fields_present(self) -> None:
+        from tests.conftest import wait_for_indexer_ready
+
         server = make_server()
         async with Client(server) as client:
+            await wait_for_indexer_ready(client)
             result = await client.call_tool(
                 _hashed("vault_context"), {"path": "simple.md"}
             )
@@ -127,8 +130,11 @@ class TestVaultContextToolData:
             assert "tags" in data
 
     async def test_context_with_frontmatter(self) -> None:
+        from tests.conftest import wait_for_indexer_ready
+
         server = make_server()
         async with Client(server) as client:
+            await wait_for_indexer_ready(client)
             result = await client.call_tool(
                 _hashed("vault_context"), {"path": "full_frontmatter.md"}
             )
@@ -147,8 +153,11 @@ class TestShowContextTool:
     """Verify show_context primary tool behaviour (AC2)."""
 
     async def test_returns_view_and_summary(self) -> None:
+        from tests.conftest import wait_for_indexer_ready
+
         server = make_server()
         async with Client(server) as client:
+            await wait_for_indexer_ready(client)
             result = await client.call_tool("show_context", {"path": "simple.md"})
             data = _parse_tool_data(result)
             assert data["view"] == "context"
@@ -156,8 +165,11 @@ class TestShowContextTool:
             assert "Backlinks:" in data["summary"]
 
     async def test_summary_contains_relationship_counts(self) -> None:
+        from tests.conftest import wait_for_indexer_ready
+
         server = make_server()
         async with Client(server) as client:
+            await wait_for_indexer_ready(client)
             result = await client.call_tool("show_context", {"path": "simple.md"})
             data = _parse_tool_data(result)
             summary = data["summary"]

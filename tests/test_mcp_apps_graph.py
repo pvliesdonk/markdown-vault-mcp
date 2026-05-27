@@ -178,9 +178,12 @@ class TestGraphDataTools:
             read_paths.append(path)
             return original_read(self, path)
 
+        from tests.conftest import wait_for_indexer_ready
+
         monkeypatch.setattr(Collection, "read", _spy)
         server = make_server()
         async with Client(server) as client:
+            await wait_for_indexer_ready(client)
             result = await client.call_tool(_hashed("vault_graph_hubs"), {})
             data = _parse_tool_data(result)
         hub_paths = {n["id"] for n in data["nodes"] if n["group"] == "hub"}
@@ -308,6 +311,8 @@ class TestIncludeSemanticEdges:
         embeddings_path = str(tmp_path / "embeddings")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH", embeddings_path)
 
+        from tests.conftest import wait_for_embeddings_ready
+
         mock_prov = MockEmbeddingProvider()
         with patch(
             "markdown_vault_mcp.providers.get_embedding_provider",
@@ -315,6 +320,7 @@ class TestIncludeSemanticEdges:
         ):
             server = make_server()
             async with Client(server) as client:
+                await wait_for_embeddings_ready(client)
                 result = await client.call_tool(
                     _hashed("vault_graph_neighborhood"),
                     {"path": "simple.md", "include_semantic": True},
@@ -373,6 +379,8 @@ class TestIncludeSemanticEdges:
         embeddings_path = str(tmp_path / "embeddings")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH", embeddings_path)
 
+        from tests.conftest import wait_for_embeddings_ready
+
         mock_prov = MockEmbeddingProvider()
         with patch(
             "markdown_vault_mcp.providers.get_embedding_provider",
@@ -380,6 +388,7 @@ class TestIncludeSemanticEdges:
         ):
             server = make_server()
             async with Client(server) as client:
+                await wait_for_embeddings_ready(client)
                 result = await client.call_tool(
                     _hashed("vault_graph_neighborhood"),
                     {"path": "simple.md", "depth": 0, "include_semantic": True},
@@ -486,8 +495,11 @@ class TestGraphNeighborhoodMaxNodes:
     """Verify max_nodes caps BFS output and sets the truncated flag."""
 
     async def test_max_nodes_caps_node_count(self, _star_vault: Path) -> None:
+        from tests.conftest import wait_for_indexer_ready
+
         server = make_server()
         async with Client(server) as client:
+            await wait_for_indexer_ready(client)
             result = await client.call_tool(
                 _hashed("vault_graph_neighborhood"),
                 {"path": "hub.md", "depth": 2, "max_nodes": 5},
@@ -529,6 +541,8 @@ class TestGraphNeighborhoodMaxNodes:
             if var != "MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH":
                 monkeypatch.delenv(var, raising=False)
 
+        from tests.conftest import wait_for_embeddings_ready
+
         mock_prov = MockEmbeddingProvider()
         with patch(
             "markdown_vault_mcp.providers.get_embedding_provider",
@@ -536,6 +550,7 @@ class TestGraphNeighborhoodMaxNodes:
         ):
             server = make_server()
             async with Client(server) as client:
+                await wait_for_embeddings_ready(client)
                 result = await client.call_tool(
                     _hashed("vault_graph_neighborhood"),
                     {
@@ -583,6 +598,8 @@ class TestGraphNeighborhoodMaxNodes:
             if var != "MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH":
                 monkeypatch.delenv(var, raising=False)
 
+        from tests.conftest import wait_for_embeddings_ready
+
         mock_prov = MockEmbeddingProvider()
         with patch(
             "markdown_vault_mcp.providers.get_embedding_provider",
@@ -590,6 +607,7 @@ class TestGraphNeighborhoodMaxNodes:
         ):
             server = make_server()
             async with Client(server) as client:
+                await wait_for_embeddings_ready(client)
                 result = await client.call_tool(
                     _hashed("vault_graph_neighborhood"),
                     {

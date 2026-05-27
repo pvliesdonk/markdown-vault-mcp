@@ -15,6 +15,7 @@ from fastmcp.dependencies import CurrentContext
 from fastmcp.server.context import Context
 from fastmcp.server.lifespan import lifespan
 
+from markdown_vault_mcp.background_indexer import BackgroundIndexer
 from markdown_vault_mcp.collection import Collection
 
 if TYPE_CHECKING:
@@ -100,22 +101,14 @@ def make_collection_lifespan(config: CollectionConfig) -> Any:
         # build_index() scans the freshest working tree.
         await asyncio.to_thread(collection.sync_from_remote_before_index)
 
-        # Build index eagerly so first tool call is fast.
-        stats = await asyncio.to_thread(collection.build_index)
-        logger.info(
-            "Index built: %d documents, %d chunks",
-            stats.documents_indexed,
-            stats.chunks_indexed,
+        indexer = BackgroundIndexer(
+            collection,
+            has_provider=kwargs.get("embedding_provider") is not None,
         )
+        indexer.start()
+        logger.info("background_indexer_started")
 
-        # Build embeddings eagerly when an embedding provider is configured.
-        # build_embeddings() skips work if the vector index already exists on disk,
-        # so this is safe to call on every startup.
-        if kwargs.get("embedding_provider") is not None:
-            chunks_embedded = await asyncio.to_thread(collection.build_embeddings)
-            logger.info("Embeddings ready: %d chunks", chunks_embedded)
-
-        # Start background tasks (e.g. git pull loop) after index is built.
+        # Start background tasks (e.g. git pull loop).
         collection.start()
 
         # Artifact store singleton is wired in make_server(), not here —
@@ -125,12 +118,15 @@ def make_collection_lifespan(config: CollectionConfig) -> Any:
         # Collection to the HTTP handler.
 
         try:
-            yield {"collection": collection, "config": config}
+            yield {"collection": collection, "config": config, "indexer": indexer}
         finally:
             # Clear the singleton before closing so any in-flight HTTP handler
             # gets a clean RuntimeError instead of touching a Collection
             # mid-close().
             set_collection_singleton(None)
+            joined = indexer.stop(timeout=30.0)
+            if not joined:
+                logger.warning("background_indexer_join_timed_out")
             collection.close()
             logger.info("Collection shut down")
 
@@ -150,3 +146,19 @@ def get_collection(ctx: Context = CurrentContext()) -> Collection:
         msg = "Collection not initialised — server lifespan has not run"
         raise RuntimeError(msg)
     return collection
+
+
+def get_indexer(ctx: Context = CurrentContext()) -> BackgroundIndexer:
+    """Resolve the BackgroundIndexer from lifespan context.
+
+    Used as a ``Depends()`` default in tool signatures that need access
+    to background-index status.
+
+    Raises:
+        RuntimeError: If the server lifespan has not run.
+    """
+    indexer: BackgroundIndexer | None = ctx.lifespan_context.get("indexer")
+    if indexer is None:
+        msg = "BackgroundIndexer not initialised — lifespan did not run."
+        raise RuntimeError(msg)
+    return indexer

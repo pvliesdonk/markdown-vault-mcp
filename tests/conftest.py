@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pytest
@@ -14,6 +16,63 @@ from markdown_vault_mcp.providers import EmbeddingProvider
 # test module without requiring a per-file import (which would trip ruff's
 # F811 redefinition check on the parameter shadowing).
 from tests.fixtures.git import git_repo_pair  # noqa: F401
+
+
+async def wait_for_indexer_ready(client: Any, *, timeout: float = 10.0) -> None:
+    """Poll ``stats`` until the background indexer has indexed at least one document.
+
+    The background indexer (issue #513) runs ``build_index()`` on a daemon
+    thread after the lifespan yields.  MCP tests that call tools expecting
+    indexed data must wait for indexing to complete before asserting results.
+    Polling ``stats`` is sufficient: the tool reads from the same FTS database
+    as all other tools, so a non-zero ``document_count`` means the index is
+    ready for any subsequent tool call within the same lifespan.
+
+    Args:
+        client: An active :class:`fastmcp.Client` connected to the server.
+        timeout: Maximum seconds to wait before raising ``TimeoutError``.
+
+    Raises:
+        TimeoutError: If the indexer does not complete within *timeout* seconds.
+    """
+    deadline = asyncio.get_event_loop().time() + timeout
+    while asyncio.get_event_loop().time() < deadline:
+        result = await client.call_tool("stats", {})
+        data = result.data
+        if isinstance(data, dict) and data.get("document_count", 0) > 0:
+            return
+        await asyncio.sleep(0.05)
+    msg = f"background indexer did not complete within {timeout}s"
+    raise TimeoutError(msg)
+
+
+async def wait_for_embeddings_ready(client: Any, *, timeout: float = 15.0) -> None:
+    """Poll ``embeddings_status`` until the background indexer has embedded at least
+    one chunk.
+
+    Use this in tests that require the embedding phase to complete (e.g.
+    semantic search or ``include_semantic=True`` graph queries). It implies
+    ``wait_for_indexer_ready`` because the embedding phase runs after the
+    indexing phase.
+
+    Args:
+        client: An active :class:`fastmcp.Client` connected to the server.
+        timeout: Maximum seconds to wait before raising ``TimeoutError``.
+
+    Raises:
+        TimeoutError: If the embedding phase does not complete within *timeout* seconds.
+    """
+    import json
+
+    deadline = asyncio.get_event_loop().time() + timeout
+    while asyncio.get_event_loop().time() < deadline:
+        result = await client.call_tool_mcp("embeddings_status", {})
+        data = json.loads(result.content[0].text)
+        if data.get("chunk_count", 0) > 0:
+            return
+        await asyncio.sleep(0.05)
+    msg = f"background embedding phase did not complete within {timeout}s"
+    raise TimeoutError(msg)
 
 
 class MockEmbeddingProvider(EmbeddingProvider):

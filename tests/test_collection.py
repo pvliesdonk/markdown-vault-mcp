@@ -395,29 +395,26 @@ class TestBuildIndex:
 
 
 # ---------------------------------------------------------------------------
-# Lazy initialisation
+# _ensure_initialized is a no-op (issue #513)
 # ---------------------------------------------------------------------------
 
 
-class TestLazyInitialisation:
-    def test_search_without_build_index(self, vault_path: Path) -> None:
-        """search() triggers lazy initialisation without an explicit build_index()."""
+class TestEnsureInitializedNoOp:
+    def test_search_without_build_index_returns_empty(self, vault_path: Path) -> None:
+        """search() on an unbuilt Collection returns empty results without crashing."""
         col = _make_collection(vault_path)
 
-        # Do NOT call build_index() — search() should initialise automatically.
         results = col.search("simple")
 
-        # Either finds something or returns [] — the key is it does not crash.
-        assert isinstance(results, list)
+        assert results == []
 
-    def test_list_without_build_index(self, vault_path: Path) -> None:
-        """list() triggers lazy initialisation without an explicit build_index()."""
+    def test_list_without_build_index_returns_empty(self, vault_path: Path) -> None:
+        """list() on an unbuilt Collection returns empty results without crashing."""
         col = _make_collection(vault_path)
 
         notes = col.list()
 
-        assert isinstance(notes, list)
-        assert len(notes) == 9
+        assert notes == []
 
 
 # ---------------------------------------------------------------------------

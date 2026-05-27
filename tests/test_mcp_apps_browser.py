@@ -112,8 +112,11 @@ class TestBrowserDataTools:
     """Verify browser data tools return expected structures."""
 
     async def test_vault_list_root(self) -> None:
+        from tests.conftest import wait_for_indexer_ready
+
         server = make_server()
         async with Client(server) as client:
+            await wait_for_indexer_ready(client)
             result = await client.call_tool(_hashed("vault_list"), {})
             data = _parse_tool_data(result)
             assert "folders" in data
@@ -158,8 +161,11 @@ class TestBrowserDataTools:
             assert len(data["frontmatter"]) > 0
 
     async def test_vault_search_keyword(self) -> None:
+        from tests.conftest import wait_for_indexer_ready
+
         server = make_server()
         async with Client(server) as client:
+            await wait_for_indexer_ready(client)
             result = await client.call_tool(
                 _hashed("vault_search"), {"query": "simple", "mode": "keyword"}
             )

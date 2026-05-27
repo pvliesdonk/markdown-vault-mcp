@@ -329,8 +329,11 @@ class TestShowContextTool:
             assert "show_context" in names
 
     async def test_returns_context_summary(self) -> None:
+        from tests.conftest import wait_for_indexer_ready
+
         server = make_server()
         async with Client(server) as client:
+            await wait_for_indexer_ready(client)
             result = await client.call_tool("show_context", {"path": "simple.md"})
             data = _parse_tool_data(result)
             assert data["path"] == "simple.md"
@@ -349,8 +352,11 @@ class TestAppOnlyTools:
     """Tests for app-only tools (visibility=["app"])."""
 
     async def test_vault_context_returns_note_context(self) -> None:
+        from tests.conftest import wait_for_indexer_ready
+
         server = make_server()
         async with Client(server) as client:
+            await wait_for_indexer_ready(client)
             result = await client.call_tool(
                 _hashed("vault_context"), {"path": "simple.md"}
             )
@@ -437,8 +443,11 @@ class TestAppOnlyTools:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
         for var in _CLEAR_VARS:
             monkeypatch.delenv(var, raising=False)
+        from tests.conftest import wait_for_indexer_ready
+
         server = make_server()
         async with Client(server) as client:
+            await wait_for_indexer_ready(client)
             result = await client.call_tool(_hashed("vault_list"), {})
             data = _parse_tool_data(result)
             # 'ai' must appear even though list_folders() only returns 'ai/llm'
@@ -561,8 +570,11 @@ class TestAppToolData:
             assert "Vault:" in data["summary"]
 
     async def test_show_context_tool(self) -> None:
+        from tests.conftest import wait_for_indexer_ready
+
         server = make_server()
         async with Client(server) as client:
+            await wait_for_indexer_ready(client)
             result = await client.call_tool("show_context", {"path": "simple.md"})
             data = _parse_tool_data(result)
             assert data["path"] == "simple.md"
@@ -653,8 +665,11 @@ class TestAppToolLinkedData:
     """Cover graph traversal paths that require inter-note links."""
 
     async def test_vault_graph_neighborhood_with_links(self) -> None:
+        from tests.conftest import wait_for_indexer_ready
+
         server = make_server()
         async with Client(server) as client:
+            await wait_for_indexer_ready(client)
             result = await client.call_tool(
                 _hashed("vault_graph_neighborhood"), {"path": "linked_a.md", "depth": 2}
             )
@@ -686,8 +701,11 @@ class TestAppToolLinkedData:
                 assert len(data["edges"]) > 0
 
     async def test_vault_context_with_links(self) -> None:
+        from tests.conftest import wait_for_indexer_ready
+
         server = make_server()
         async with Client(server) as client:
+            await wait_for_indexer_ready(client)
             result = await client.call_tool(
                 _hashed("vault_context"), {"path": "linked_a.md"}
             )
@@ -700,6 +718,8 @@ class TestAppToolLinkedData:
     async def test_show_context_with_tags(
         self, vault_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        from tests.conftest import wait_for_indexer_ready
+
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault_path))
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_INDEXED_FIELDS", "tags")
         for var in _CLEAR_VARS:
@@ -707,6 +727,7 @@ class TestAppToolLinkedData:
                 monkeypatch.delenv(var, raising=False)
         server = make_server()
         async with Client(server) as client:
+            await wait_for_indexer_ready(client)
             result = await client.call_tool("show_context", {"path": "linked_b.md"})
             data = _parse_tool_data(result)
             assert "Tags:" in data["summary"]

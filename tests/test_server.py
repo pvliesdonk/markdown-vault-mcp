@@ -263,8 +263,11 @@ class TestSearchTool:
 
     @pytest.mark.usefixtures("_mcp_env")
     async def test_keyword_search(self) -> None:
+        from tests.conftest import wait_for_indexer_ready
+
         server = make_server()
         async with Client(server) as client:
+            await wait_for_indexer_ready(client)
             result = await client.call_tool(
                 "search", {"query": "simple document", "limit": 5}
             )
@@ -276,8 +279,11 @@ class TestSearchTool:
 
     @pytest.mark.usefixtures("_mcp_env")
     async def test_search_with_folder_filter(self) -> None:
+        from tests.conftest import wait_for_indexer_ready
+
         server = make_server()
         async with Client(server) as client:
+            await wait_for_indexer_ready(client)
             result = await client.call_tool(
                 "search",
                 {"query": "subfolder nested", "folder": "subfolder"},
@@ -339,8 +345,11 @@ class TestListDocumentsTool:
 
     @pytest.mark.usefixtures("_mcp_env")
     async def test_list_all(self) -> None:
+        from tests.conftest import wait_for_indexer_ready
+
         server = make_server()
         async with Client(server) as client:
+            await wait_for_indexer_ready(client)
             result = await client.call_tool("list_documents", {})
         data = _parse_tool_data(result)
         assert isinstance(data, list)
@@ -350,8 +359,11 @@ class TestListDocumentsTool:
 
     @pytest.mark.usefixtures("_mcp_env")
     async def test_list_by_folder(self) -> None:
+        from tests.conftest import wait_for_indexer_ready
+
         server = make_server()
         async with Client(server) as client:
+            await wait_for_indexer_ready(client)
             result = await client.call_tool("list_documents", {"folder": "subfolder"})
         data = _parse_tool_data(result)
         assert isinstance(data, list)
@@ -363,12 +375,15 @@ class TestListDocumentsTool:
 
     @pytest.mark.usefixtures("_mcp_env")
     async def test_list_templates_folder(self, vault_path: Path) -> None:
+        from tests.conftest import wait_for_indexer_ready
+
         template_path = vault_path / "_templates" / "daily.md"
         template_path.parent.mkdir(parents=True, exist_ok=True)
         template_path.write_text("# Daily Template\n\n## Highlights\n\n- \n")
 
         server = make_server()
         async with Client(server) as client:
+            await wait_for_indexer_ready(client)
             result = await client.call_tool("list_documents", {"folder": "_templates"})
         data = _parse_tool_data(result)
         paths = {doc["path"] for doc in data}
@@ -380,8 +395,11 @@ class TestListFoldersTool:
 
     @pytest.mark.usefixtures("_mcp_env")
     async def test_list_folders(self) -> None:
+        from tests.conftest import wait_for_indexer_ready
+
         server = make_server()
         async with Client(server) as client:
+            await wait_for_indexer_ready(client)
             result = await client.call_tool("list_folders", {})
         folders = result.data
         assert isinstance(folders, list)
@@ -393,8 +411,11 @@ class TestListTagsTool:
 
     @pytest.mark.usefixtures("_mcp_env_with_fields")
     async def test_list_tags(self) -> None:
+        from tests.conftest import wait_for_indexer_ready
+
         server = make_server()
         async with Client(server) as client:
+            await wait_for_indexer_ready(client)
             result = await client.call_tool("list_tags", {"field": "cluster"})
         tags = result.data
         assert isinstance(tags, list)
@@ -406,8 +427,11 @@ class TestStatsTool:
 
     @pytest.mark.usefixtures("_mcp_env")
     async def test_stats(self) -> None:
+        from tests.conftest import wait_for_indexer_ready
+
         server = make_server()
         async with Client(server) as client:
+            await wait_for_indexer_ready(client)
             result = await client.call_tool("stats", {})
         data = result.data
         assert isinstance(data, dict)
@@ -434,8 +458,11 @@ class TestReindexTool:
 
     @pytest.mark.usefixtures("_mcp_env")
     async def test_reindex_no_changes(self) -> None:
+        from tests.conftest import wait_for_indexer_ready
+
         server = make_server()
         async with Client(server) as client:
+            await wait_for_indexer_ready(client)
             result = await client.call_tool("reindex", {})
         data = result.data
         assert isinstance(data, dict)
@@ -473,8 +500,11 @@ class TestWriteTool:
 
     @pytest.mark.usefixtures("_mcp_env_writable")
     async def test_write_creates_document(self) -> None:
+        from tests.conftest import wait_for_indexer_ready
+
         server = make_server()
         async with Client(server) as client:
+            await wait_for_indexer_ready(client)
             result = await client.call_tool(
                 "write", {"path": "new_note.md", "content": "# New\n\nBody.\n"}
             )
@@ -485,8 +515,11 @@ class TestWriteTool:
 
     @pytest.mark.usefixtures("_mcp_env_writable")
     async def test_write_overwrites_existing(self) -> None:
+        from tests.conftest import wait_for_indexer_ready
+
         server = make_server()
         async with Client(server) as client:
+            await wait_for_indexer_ready(client)
             result = await client.call_tool(
                 "write", {"path": "simple.md", "content": "# Replaced\n"}
             )
@@ -496,8 +529,11 @@ class TestWriteTool:
     @pytest.mark.usefixtures("_mcp_env_writable")
     async def test_write_with_frontmatter(self) -> None:
         """write tool with frontmatter parameter creates document and returns created=True."""
+        from tests.conftest import wait_for_indexer_ready
+
         server = make_server()
         async with Client(server) as client:
+            await wait_for_indexer_ready(client)
             result = await client.call_tool(
                 "write",
                 {
@@ -517,8 +553,11 @@ class TestEditTool:
 
     @pytest.mark.usefixtures("_mcp_env_writable")
     async def test_edit_patches_document(self) -> None:
+        from tests.conftest import wait_for_indexer_ready
+
         server = make_server()
         async with Client(server) as client:
+            await wait_for_indexer_ready(client)
             result = await client.call_tool(
                 "edit",
                 {
@@ -543,8 +582,11 @@ class TestEditTool:
 
     @pytest.mark.usefixtures("_mcp_env_writable")
     async def test_edit_conflict_returns_error(self) -> None:
+        from tests.conftest import wait_for_indexer_ready
+
         server = make_server()
         async with Client(server) as client:
+            await wait_for_indexer_ready(client)
             result = await client.call_tool_mcp(
                 "edit",
                 {"path": "simple.md", "old_text": "missing text", "new_text": "b"},
@@ -554,8 +596,11 @@ class TestEditTool:
     @pytest.mark.usefixtures("_mcp_env_writable")
     async def test_edit_line_range(self) -> None:
         """MCP edit tool accepts line_start/line_end."""
+        from tests.conftest import wait_for_indexer_ready
+
         server = make_server()
         async with Client(server) as client:
+            await wait_for_indexer_ready(client)
             await client.call_tool(
                 "write",
                 {"path": "lines.md", "content": "line1\nline2\nline3\n"},
@@ -576,8 +621,11 @@ class TestEditTool:
     @pytest.mark.usefixtures("_mcp_env_writable")
     async def test_edit_normalized_match(self) -> None:
         """MCP edit response includes match_type."""
+        from tests.conftest import wait_for_indexer_ready
+
         server = make_server()
         async with Client(server) as client:
+            await wait_for_indexer_ready(client)
             await client.call_tool(
                 "write",
                 {"path": "norm.md", "content": "hello \u2014 world\n"},
@@ -596,8 +644,11 @@ class TestEditTool:
     @pytest.mark.usefixtures("_mcp_env_writable")
     async def test_edit_diagnostic_error(self) -> None:
         """MCP edit error includes diagnostic info."""
+        from tests.conftest import wait_for_indexer_ready
+
         server = make_server()
         async with Client(server) as client:
+            await wait_for_indexer_ready(client)
             await client.call_tool(
                 "write",
                 {"path": "diag.md", "content": "the quick brown fox\n"},
@@ -620,8 +671,11 @@ class TestDeleteTool:
 
     @pytest.mark.usefixtures("_mcp_env_writable")
     async def test_delete_removes_document(self) -> None:
+        from tests.conftest import wait_for_indexer_ready
+
         server = make_server()
         async with Client(server) as client:
+            await wait_for_indexer_ready(client)
             result = await client.call_tool("delete", {"path": "simple.md"})
         data = result.data
         assert data["path"] == "simple.md"
@@ -639,8 +693,11 @@ class TestRenameTool:
 
     @pytest.mark.usefixtures("_mcp_env_writable")
     async def test_rename_moves_document(self) -> None:
+        from tests.conftest import wait_for_indexer_ready
+
         server = make_server()
         async with Client(server) as client:
+            await wait_for_indexer_ready(client)
             result = await client.call_tool(
                 "rename", {"old_path": "simple.md", "new_path": "renamed.md"}
             )
@@ -701,8 +758,11 @@ class TestMCPExcludePatterns:
             if var != "MARKDOWN_VAULT_MCP_EXCLUDE":
                 monkeypatch.delenv(var, raising=False)
 
+        from tests.conftest import wait_for_indexer_ready
+
         server = make_server()
         async with Client(server) as client:
+            await wait_for_indexer_ready(client)
             result = await client.call_tool("list_documents", {})
 
         data = _parse_tool_data(result)
@@ -1459,8 +1519,11 @@ class TestMCPListDocumentsAttachments:
     async def test_list_documents_include_attachments_returns_both(
         self, _mcp_env_writable_with_attachments: Path
     ) -> None:
+        from tests.conftest import wait_for_indexer_ready
+
         server = make_server()
         async with Client(server) as client:
+            await wait_for_indexer_ready(client)
             result = await client.call_tool(
                 "list_documents", {"include_attachments": True}
             )
@@ -1533,8 +1596,11 @@ class TestLinkTools:
 
     @pytest.mark.usefixtures("_mcp_env_linked")
     async def test_get_backlinks(self) -> None:
+        from tests.conftest import wait_for_indexer_ready
+
         server = make_server()
         async with Client(server) as client:
+            await wait_for_indexer_ready(client)
             result = await client.call_tool("get_backlinks", {"path": "notes/topic.md"})
         data = _parse_tool_data(result)
         assert len(data) == 1
@@ -1550,8 +1616,11 @@ class TestLinkTools:
 
     @pytest.mark.usefixtures("_mcp_env_linked")
     async def test_get_outlinks(self) -> None:
+        from tests.conftest import wait_for_indexer_ready
+
         server = make_server()
         async with Client(server) as client:
+            await wait_for_indexer_ready(client)
             result = await client.call_tool("get_outlinks", {"path": "index.md"})
         data = _parse_tool_data(result)
         assert len(data) == 2
@@ -1572,8 +1641,11 @@ class TestLinkTools:
 
     @pytest.mark.usefixtures("_mcp_env_linked")
     async def test_get_broken_links(self) -> None:
+        from tests.conftest import wait_for_indexer_ready
+
         server = make_server()
         async with Client(server) as client:
+            await wait_for_indexer_ready(client)
             result = await client.call_tool("get_broken_links", {})
         data = _parse_tool_data(result)
         assert len(data) == 1
@@ -1607,8 +1679,11 @@ class TestSimilarTool:
     @pytest.mark.usefixtures("_mcp_env")
     async def test_get_similar_no_embeddings_returns_empty(self) -> None:
         """get_similar returns empty list when embeddings not configured."""
+        from tests.conftest import wait_for_indexer_ready
+
         server = make_server()
         async with Client(server) as client:
+            await wait_for_indexer_ready(client)
             result = await client.call_tool("get_similar", {"path": "simple.md"})
         data = _parse_tool_data(result)
         assert data == []
@@ -1623,8 +1698,11 @@ class TestSimilarTool:
     @pytest.mark.usefixtures("_mcp_env")
     async def test_get_similar_tool_accepts_chunks_per_file(self) -> None:
         """The `get_similar` MCP tool surfaces the chunks_per_file kwarg."""
+        from tests.conftest import wait_for_indexer_ready
+
         server = make_server()
         async with Client(server) as client:
+            await wait_for_indexer_ready(client)
             # Without embeddings this returns []; the assertion is that the
             # call_tool schema accepts the chunks_per_file kwarg without raising.
             result = await client.call_tool(
@@ -1710,8 +1788,11 @@ class TestContextTool:
     @pytest.mark.usefixtures("_mcp_env_context")
     async def test_get_context_basic_fields(self) -> None:
         """get_context returns expected top-level fields."""
+        from tests.conftest import wait_for_indexer_ready
+
         server = make_server()
         async with Client(server) as client:
+            await wait_for_indexer_ready(client)
             result = await client.call_tool("get_context", {"path": "index.md"})
         data = _parse_tool_data(result)
         assert data["path"] == "index.md"
@@ -1727,8 +1808,11 @@ class TestContextTool:
     @pytest.mark.usefixtures("_mcp_env_context")
     async def test_get_context_modified_at_matches_read(self) -> None:
         """modified_at in context matches the value from read()."""
+        from tests.conftest import wait_for_indexer_ready
+
         server = make_server()
         async with Client(server) as client:
+            await wait_for_indexer_ready(client)
             ctx = _parse_tool_data(
                 await client.call_tool("get_context", {"path": "index.md"})
             )
@@ -1738,8 +1822,11 @@ class TestContextTool:
     @pytest.mark.usefixtures("_mcp_env_context")
     async def test_get_context_backlinks(self) -> None:
         """notes/topic.md has a backlink from index.md."""
+        from tests.conftest import wait_for_indexer_ready
+
         server = make_server()
         async with Client(server) as client:
+            await wait_for_indexer_ready(client)
             result = await client.call_tool("get_context", {"path": "notes/topic.md"})
         data = _parse_tool_data(result)
         sources = [b["source_path"] for b in data["backlinks"]]
@@ -1748,8 +1835,11 @@ class TestContextTool:
     @pytest.mark.usefixtures("_mcp_env_context")
     async def test_get_context_outlinks(self) -> None:
         """index.md has an outlink to notes/topic.md."""
+        from tests.conftest import wait_for_indexer_ready
+
         server = make_server()
         async with Client(server) as client:
+            await wait_for_indexer_ready(client)
             result = await client.call_tool("get_context", {"path": "index.md"})
         data = _parse_tool_data(result)
         targets = [o["target_path"] for o in data["outlinks"]]
@@ -1758,8 +1848,11 @@ class TestContextTool:
     @pytest.mark.usefixtures("_mcp_env_context")
     async def test_get_context_folder_notes_excludes_self(self) -> None:
         """folder_notes for notes/topic.md contains peer.md but not topic.md."""
+        from tests.conftest import wait_for_indexer_ready
+
         server = make_server()
         async with Client(server) as client:
+            await wait_for_indexer_ready(client)
             result = await client.call_tool("get_context", {"path": "notes/topic.md"})
         data = _parse_tool_data(result)
         assert "notes/topic.md" not in data["folder_notes"]
@@ -1768,8 +1861,11 @@ class TestContextTool:
     @pytest.mark.usefixtures("_mcp_env_context")
     async def test_get_context_tags(self) -> None:
         """Indexed frontmatter tags appear in context.tags."""
+        from tests.conftest import wait_for_indexer_ready
+
         server = make_server()
         async with Client(server) as client:
+            await wait_for_indexer_ready(client)
             result = await client.call_tool("get_context", {"path": "index.md"})
         data = _parse_tool_data(result)
         assert "tags" in data["tags"]
@@ -1779,8 +1875,11 @@ class TestContextTool:
     @pytest.mark.usefixtures("_mcp_env_context")
     async def test_get_context_similar_empty_without_embeddings(self) -> None:
         """similar is empty when embeddings are not configured."""
+        from tests.conftest import wait_for_indexer_ready
+
         server = make_server()
         async with Client(server) as client:
+            await wait_for_indexer_ready(client)
             result = await client.call_tool("get_context", {"path": "index.md"})
         data = _parse_tool_data(result)
         assert data["similar"] == []
@@ -1850,8 +1949,11 @@ class TestResources:
 
     @pytest.mark.usefixtures("_mcp_env_with_fields")
     async def test_tags_resource_by_field(self) -> None:
+        from tests.conftest import wait_for_indexer_ready
+
         server = make_server()
         async with Client(server) as client:
+            await wait_for_indexer_ready(client)
             result = await client.read_resource("tags://vault/cluster")
         data = json.loads(result[0].text)
         assert isinstance(data, list)
@@ -1860,8 +1962,11 @@ class TestResources:
 
     @pytest.mark.usefixtures("_mcp_env")
     async def test_folders_resource(self) -> None:
+        from tests.conftest import wait_for_indexer_ready
+
         server = make_server()
         async with Client(server) as client:
+            await wait_for_indexer_ready(client)
             result = await client.read_resource("folders://vault")
         data = json.loads(result[0].text)
         assert isinstance(data, list)
@@ -1870,8 +1975,11 @@ class TestResources:
 
     @pytest.mark.usefixtures("_mcp_env")
     async def test_toc_resource(self) -> None:
+        from tests.conftest import wait_for_indexer_ready
+
         server = make_server()
         async with Client(server) as client:
+            await wait_for_indexer_ready(client)
             result = await client.read_resource("toc://vault/simple.md")
         data = json.loads(result[0].text)
         assert isinstance(data, list)
@@ -2127,10 +2235,12 @@ class TestIfMatchParameter:
     async def test_write_accepts_if_match_when_correct(self, vault_path: Path) -> None:
         """write tool succeeds when if_match matches the current file etag."""
         from markdown_vault_mcp.hashing import compute_file_hash
+        from tests.conftest import wait_for_indexer_ready
 
         server = make_server()
         current_etag = compute_file_hash(vault_path / "simple.md")
         async with Client(server) as client:
+            await wait_for_indexer_ready(client)
             result = await client.call_tool(
                 "write",
                 {
@@ -2162,10 +2272,12 @@ class TestIfMatchParameter:
     async def test_edit_accepts_if_match_when_correct(self, vault_path: Path) -> None:
         """edit tool succeeds when if_match matches the current file etag."""
         from markdown_vault_mcp.hashing import compute_file_hash
+        from tests.conftest import wait_for_indexer_ready
 
         server = make_server()
         current_etag = compute_file_hash(vault_path / "simple.md")
         async with Client(server) as client:
+            await wait_for_indexer_ready(client)
             result = await client.call_tool(
                 "edit",
                 {
@@ -2198,10 +2310,12 @@ class TestIfMatchParameter:
     async def test_delete_accepts_if_match_when_correct(self, vault_path: Path) -> None:
         """delete tool succeeds when if_match matches the current file etag."""
         from markdown_vault_mcp.hashing import compute_file_hash
+        from tests.conftest import wait_for_indexer_ready
 
         server = make_server()
         current_etag = compute_file_hash(vault_path / "simple.md")
         async with Client(server) as client:
+            await wait_for_indexer_ready(client)
             result = await client.call_tool(
                 "delete",
                 {"path": "simple.md", "if_match": current_etag},
@@ -2224,10 +2338,12 @@ class TestIfMatchParameter:
     async def test_rename_accepts_if_match_when_correct(self, vault_path: Path) -> None:
         """rename tool succeeds when if_match matches the current file etag."""
         from markdown_vault_mcp.hashing import compute_file_hash
+        from tests.conftest import wait_for_indexer_ready
 
         server = make_server()
         current_etag = compute_file_hash(vault_path / "simple.md")
         async with Client(server) as client:
+            await wait_for_indexer_ready(client)
             result = await client.call_tool(
                 "rename",
                 {
@@ -2292,8 +2408,15 @@ class TestLifespanAutoEmbeddings:
         ):
             server = make_server()
             async with Client(server) as client:
-                result = await client.call_tool_mcp("embeddings_status", {})
-        data = json.loads(result.content[0].text)
+                import asyncio as _asyncio
+
+                deadline = _asyncio.get_event_loop().time() + 15.0
+                while _asyncio.get_event_loop().time() < deadline:
+                    result = await client.call_tool_mcp("embeddings_status", {})
+                    data = json.loads(result.content[0].text)
+                    if data["chunk_count"] > 0:
+                        break
+                    await _asyncio.sleep(0.05)
         assert data["chunk_count"] > 0
 
     async def test_subsequent_startup_skips_rebuild(
@@ -2322,7 +2445,14 @@ class TestLifespanAutoEmbeddings:
         ):
             server = make_server()
             async with Client(server) as client:
-                r1 = await client.call_tool_mcp("embeddings_status", {})
+                import asyncio as _asyncio
+
+                deadline = _asyncio.get_event_loop().time() + 15.0
+                while _asyncio.get_event_loop().time() < deadline:
+                    r1 = await client.call_tool_mcp("embeddings_status", {})
+                    if json.loads(r1.content[0].text)["chunk_count"] > 0:
+                        break
+                    await _asyncio.sleep(0.05)
         count1 = json.loads(r1.content[0].text)["chunk_count"]
         assert count1 > 0
 

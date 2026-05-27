@@ -365,10 +365,34 @@ Two methods manage the index:
   adds/modifies/deletes since the last scan and applies only the delta.
   Applies `exclude_patterns` filtering and purges stale excluded documents.
 
-**Lazy initialization**: on first call to `search()`, `list()`, or `read()`,
-`Collection` lazily builds the FTS index from `source_dir` if no pre-built
-`index_path` was provided. `build_index()` can be called explicitly to
-pre-warm the index or to force a rebuild.
+**Explicit initialization**: callers (the MCP lifespan via
+`BackgroundIndexer`, the CLI, tests) call `build_index()` explicitly.
+Tool methods on an unbuilt `Collection` return empty results without
+triggering a scan. `build_index(force=True)` drops existing data and
+rebuilds.
+
+### Background indexer
+
+`BackgroundIndexer` (`src/markdown_vault_mcp/background_indexer.py`)
+owns the daemon thread that runs `Collection.build_index()` and, when
+an embedding provider is configured, `Collection.build_embeddings()`
+after the MCP server lifespan has yielded. The lifespan
+(`_server_deps.py`) constructs the orchestrator, calls `start()`, and
+yields immediately; the MCP `initialize` handshake therefore never
+blocks on indexing work (issue #513).
+
+`Collection` itself is purely synchronous and has no awareness of
+threading. Concurrency lives one layer up in the orchestrator. Teardown
+is linear: the lifespan calls `indexer.stop(timeout=30)` to join the
+daemon, then `Collection.close()` to release the SQLite connection.
+This ordering makes it structurally impossible for the SQLite
+connection to be closed while the worker is mid-write.
+
+Read tools on a collection where the background indexer has not yet
+finished return whatever the FTS database currently contains (possibly
+empty). Operators observe the warmup state via the `get_index_status`
+MCP tool. The daemon thread is WAL-resilient — if the join times out,
+the daemon is abandoned, and the next startup recovers via SQLite WAL.
 
 ### Error Handling
 
@@ -999,9 +1023,11 @@ class Collection:
 - `embeddings_path=None`: semantic search is disabled.
 - `state_path=None`: defaults to `{source_dir}/.markdown_vault_mcp/state.json`.
 
-**Lazy initialization**: on first call to `search()`, `list()`, or `read()`,
-`Collection` lazily builds the FTS index from `source_dir` if no pre-built
-`index_path` was provided.
+**Explicit initialization**: callers (the MCP lifespan via
+`BackgroundIndexer`, the CLI, tests) call `build_index()` explicitly.
+Tool methods on an unbuilt `Collection` return empty results without
+triggering a scan. `build_index(force=True)` drops existing data and
+rebuilds.
 
 **Write operations** (`write`, `edit`, `delete`, `rename`) raise
 `ReadOnlyError` when `read_only=True`.

@@ -339,9 +339,11 @@ class TestMCPGraphTools:
         from fastmcp import Client
 
         from markdown_vault_mcp.server import make_server
+        from tests.conftest import wait_for_indexer_ready
 
         server = make_server()
         async with Client(server) as client:
+            await wait_for_indexer_ready(client)
             result = await client.call_tool("get_orphan_notes", {})
         items = _parse_tool_data(result)
         assert isinstance(items, list)
@@ -354,9 +356,11 @@ class TestMCPGraphTools:
         from fastmcp import Client
 
         from markdown_vault_mcp.server import make_server
+        from tests.conftest import wait_for_indexer_ready
 
         server = make_server()
         async with Client(server) as client:
+            await wait_for_indexer_ready(client)
             result = await client.call_tool("get_most_linked", {"limit": 5})
         items = _parse_tool_data(result)
         assert isinstance(items, list)
@@ -369,9 +373,11 @@ class TestMCPGraphTools:
         from fastmcp import Client
 
         from markdown_vault_mcp.server import make_server
+        from tests.conftest import wait_for_indexer_ready
 
         server = make_server()
         async with Client(server) as client:
+            await wait_for_indexer_ready(client)
             result = await client.call_tool("get_most_linked", {"limit": 1})
         items = _parse_tool_data(result)
         assert len(items) == 1
@@ -659,9 +665,11 @@ class TestMCPGetConnectionPath:
         from fastmcp import Client
 
         from markdown_vault_mcp.server import make_server
+        from tests.conftest import wait_for_indexer_ready
 
         server = make_server()
         async with Client(server) as client:
+            await wait_for_indexer_ready(client)
             result = await client.call_tool(
                 "get_connection_path", {"source": "a.md", "target": "c.md"}
             )
@@ -675,9 +683,11 @@ class TestMCPGetConnectionPath:
         from fastmcp import Client
 
         from markdown_vault_mcp.server import make_server
+        from tests.conftest import wait_for_indexer_ready
 
         server = make_server()
         async with Client(server) as client:
+            await wait_for_indexer_ready(client)
             result = await client.call_tool(
                 "get_connection_path",
                 {"source": "a.md", "target": "isolated.md"},
@@ -692,9 +702,11 @@ class TestMCPGetConnectionPath:
         from fastmcp import Client
 
         from markdown_vault_mcp.server import make_server
+        from tests.conftest import wait_for_indexer_ready
 
         server = make_server()
         async with Client(server) as client:
+            await wait_for_indexer_ready(client)
             result = await client.call_tool(
                 "get_connection_path", {"source": "a.md", "target": "a.md"}
             )

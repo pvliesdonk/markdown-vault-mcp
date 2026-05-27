@@ -86,8 +86,8 @@ def _resolve_chunk_strategy(strategy: str | ChunkStrategy) -> ChunkStrategy:
 class Collection:
     """Facade over FTS5 index, vector index, and change tracker.
 
-    Instantiate once per collection root.  Call :meth:`build_index` (or let
-    lazy initialisation handle it) before querying.
+    Instantiate once per collection root.  Call :meth:`build_index` before
+    querying.
 
     Args:
         source_dir: Root directory of the markdown collection.
@@ -195,8 +195,7 @@ class Collection:
         )
         self._tracker = ChangeTracker(self._state_path)
 
-        # Lazy initialisation flag.
-        self._initialized = False
+        self._index_built = False
 
         # Serialise concurrent write operations on this instance.
         # Re-entrant: periodic pull tick blocks writes, then reindex() acquires
@@ -348,14 +347,14 @@ class Collection:
         # 4. Close SQLite.
         self._fts.close()
 
-    # ------------------------------------------------------------------
-    # Lazy initialisation
-    # ------------------------------------------------------------------
-
     def _ensure_initialized(self) -> None:
-        """Build the FTS index on first access if it has not been built yet."""
-        if not self._initialized:
-            self.build_index()
+        """No-op. Retained so the 23 in-class call sites stay stable; the
+        lazy build it used to drive moved out of ``Collection`` into
+        :class:`~markdown_vault_mcp.background_indexer.BackgroundIndexer`.
+
+        See issue #513.
+        """
+        return
 
     @property
     def _vectors(self) -> VectorIndex | None:
@@ -475,18 +474,28 @@ class Collection:
     def build_index(self, *, force: bool = False) -> IndexStats:
         """Scan source_dir and build the FTS index.
 
-        If the index already contains documents and *force* is ``False``,
-        this is a no-op.  ``force=True`` drops all existing data and rebuilds
-        from scratch.
+        Returns early when ``force=False`` and ``_index_built`` is ``True``
+        and the FTS database already has rows. Otherwise the underlying scan
+        runs (including the ``exclude_patterns`` purge), and ``_index_built``
+        is set to ``True`` on success. ``force=True`` drops all existing
+        data and rebuilds unconditionally.
+
+        Called by:
+
+        - :class:`~markdown_vault_mcp.background_indexer.BackgroundIndexer`,
+          which runs this method on a daemon thread after the MCP lifespan
+          yields (issue #513).
+        - The CLI ``markdown-vault-mcp index`` command.
+        - Tests, directly.
 
         Args:
             force: When ``True``, drop and rebuild the index unconditionally.
 
         Returns:
-            :class:`~markdown_vault_mcp.types.IndexStats` describing what was indexed.
+            :class:`~markdown_vault_mcp.types.IndexStats` describing what
+            was indexed.
         """
-        # Check if index already has data and we are not forcing.
-        if not force and self._initialized:
+        if not force and self._index_built:
             existing = self._fts.list_notes()
             if existing:
                 logger.debug(
@@ -500,7 +509,7 @@ class Collection:
                 )
 
         result = self._index_mgr.build_index(force=force)
-        self._initialized = True
+        self._index_built = True
         return result
 
     def reindex(self) -> ReindexResult:
