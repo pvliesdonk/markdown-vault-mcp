@@ -353,9 +353,17 @@ class Collection:
     # ------------------------------------------------------------------
 
     def _ensure_initialized(self) -> None:
-        """Build the FTS index on first access if it has not been built yet."""
-        if not self._initialized:
-            self.build_index()
+        """Mark the collection as ready for queries without forcing a build.
+
+        Tool methods call this before reading from the index. Originally it
+        would synchronously run :meth:`build_index` if the index had not been
+        built yet; that blocked the MCP handshake on cold start. The lifespan
+        now drives the initial build via
+        :class:`~markdown_vault_mcp.background_indexer.BackgroundIndexer`, so
+        this method only flips the flag — tools see whatever the FTS DB
+        currently contains, which may be empty during cold-start indexing.
+        """
+        self._initialized = True
 
     @property
     def _vectors(self) -> VectorIndex | None:

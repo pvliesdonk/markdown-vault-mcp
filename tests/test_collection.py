@@ -400,19 +400,38 @@ class TestBuildIndex:
 
 
 class TestLazyInitialisation:
-    def test_search_without_build_index(self, vault_path: Path) -> None:
-        """search() triggers lazy initialisation without an explicit build_index()."""
+    def test_search_without_build_index_returns_empty(self, vault_path: Path) -> None:
+        """search() on an unbuilt index returns empty list without crashing.
+
+        After the fast-probe change, _ensure_initialized() only sets the
+        _initialized flag — it does not call build_index(). Tool methods
+        therefore see an empty index on first call if build_index() was
+        never invoked.
+        """
         col = _make_collection(vault_path)
 
-        # Do NOT call build_index() — search() should initialise automatically.
         results = col.search("simple")
 
-        # Either finds something or returns [] — the key is it does not crash.
-        assert isinstance(results, list)
+        assert results == []
 
-    def test_list_without_build_index(self, vault_path: Path) -> None:
-        """list() triggers lazy initialisation without an explicit build_index()."""
+    def test_list_without_build_index_returns_empty(self, vault_path: Path) -> None:
+        """list() on an unbuilt index returns empty list without crashing.
+
+        After the fast-probe change, _ensure_initialized() only sets the
+        _initialized flag — it does not call build_index(). Callers that
+        need documents must invoke build_index() explicitly.
+        """
         col = _make_collection(vault_path)
+
+        notes = col.list()
+
+        assert isinstance(notes, list)
+        assert len(notes) == 0
+
+    def test_list_after_explicit_build_index(self, vault_path: Path) -> None:
+        """list() returns all documents when build_index() is called first."""
+        col = _make_collection(vault_path)
+        col.build_index()
 
         notes = col.list()
 
