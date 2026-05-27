@@ -537,6 +537,75 @@ unless overridden by `-v` (sets both app and FastMCP to `DEBUG`). When
 configuration details (secrets redacted). At `INFO`, only the auth mode
 decision and a startup summary line are emitted.
 
+## Collection thread-safety contract
+
+`Collection` and its `FTSIndex` use per-thread SQLite connections. Each
+thread that calls a method on `FTSIndex` gets its own `sqlite3.Connection`,
+opened lazily on first touch via `_conn()`, stored in `threading.local`,
+and registered in `_all_conns` for deterministic cleanup at `close()`.
+
+### Why per-thread connections
+
+Python's stdlib `sqlite3` reports `threadsafety=1` ("threads may share
+the module, but not connections"). SQLite's own documentation says:
+"no single database connection nor any object derived from database
+connection, such as a prepared statement, is used in two or more
+threads at the same time" ([sqlite.org/threadsafe.html](https://www.sqlite.org/threadsafe.html)).
+
+Python 3.12 tightened enforcement of these rules; sharing one connection
+across threads (which earlier versions of this codebase did) deterministically
+raises `sqlite3.OperationalError` or `InterfaceError` on 3.12+. Issue #519
+introduced the per-thread connection model that resolves this.
+
+### Connection lifecycle
+
+- **Constructing thread** (the thread that creates `Collection`):
+  `FTSIndex.__init__` opens the primary connection, runs schema DDL and
+  all migrations, sets WAL (one-time DB-header pragma), applies per-connection
+  pragmas (`foreign_keys=ON`, `busy_timeout=5000`, `synchronous=NORMAL`),
+  stores in `threading.local`, and appends to `_all_conns`.
+- **Subsequent threads** (any thread that later calls a method): on first
+  call to `_conn()`, opens a new connection, applies per-connection
+  pragmas only (schema DDL skipped — already persisted in the DB file),
+  stores in TLS, appends to `_all_conns`.
+- **`close()`**: iterates `_all_conns` from whichever thread invokes it
+  and closes every registered connection. Safe cross-thread because
+  `check_same_thread=False`. After `close()`, every per-thread connection
+  raises `ProgrammingError` on next access.
+
+### Why `check_same_thread=False`
+
+Python's `sqlite3` enforces `check_same_thread` on `Connection.close()`
+too. With `check_same_thread=True`, `Collection.close()` would be unable
+to close connections opened on other threads — defeating the registry's
+entire purpose. TLS routing in `_conn()` is the actual safety mechanism:
+each thread only ever receives its own connection.
+
+### Concurrent writers
+
+WAL mode permits unlimited concurrent readers with one writer at a time
+at the SQLite level. `Collection._write_lock` (RLock) serialises writers
+at the Python layer, so concurrent in-process writes queue cleanly
+without ever hitting `SQLITE_BUSY`. The `busy_timeout=5000ms`
+per-connection pragma is the safety net for the rare case where an
+out-of-process holder (e.g. a sidecar tool) holds a lock.
+
+### In-memory databases
+
+`sqlite3.connect(":memory:")` opens a fresh, empty database per
+connection. To make `:memory:` (the production default when
+`MARKDOWN_VAULT_MCP_INDEX_PATH` is unset) usable under the per-thread
+model, `FTSIndex` transparently translates `:memory:` to a unique
+shared-cache URI of the form `file:fts_<uuid4hex>?mode=memory&cache=shared`
+on construction. All per-thread connections opened by the same
+`FTSIndex` instance see the same in-memory database; different
+`FTSIndex` instances stay isolated.
+
+### References
+
+- Issue [#519](https://github.com/pvliesdonk/markdown-vault-mcp/issues/519) — the refactor that introduced this model, including a verified-baseline comment summarising official SQLite / Python sqlite3 docs.
+- Issue [#513](https://github.com/pvliesdonk/markdown-vault-mcp/issues/513) — the original consumer (non-blocking MCP initialise via background indexing) that requires this prerequisite.
+
 ## Data Types
 
 All public return types and major internal structures:
