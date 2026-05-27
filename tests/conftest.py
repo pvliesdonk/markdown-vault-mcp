@@ -103,6 +103,31 @@ def populated_collection(tmp_path: Path):
     return col
 
 
+@pytest.fixture
+def tmp_collection_path(tmp_path: Path) -> Path:
+    """Tempdir path suitable for a file-backed Collection."""
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    return vault
+
+
+@pytest.fixture
+def tmp_collection(tmp_collection_path: Path):
+    """Tempfile-backed Collection. Safe for multi-threaded tests, unlike :memory:.
+
+    ``:memory:`` SQLite databases are connection-scoped — every per-thread
+    connection sees a fresh empty DB. Multi-thread tests MUST use this
+    fixture (or the dedicated multi_thread_collection fixture). See
+    ``docs/superpowers/specs/2026-05-27-issue-519-...md`` for rationale.
+    """
+    from markdown_vault_mcp.collection import Collection
+
+    coll = Collection(source_dir=tmp_collection_path)
+    coll.build_index()
+    yield coll
+    coll.close()
+
+
 async def get_app_html() -> str:
     """Spin up a fresh server and fetch the SPA HTML resource."""
     from fastmcp import Client

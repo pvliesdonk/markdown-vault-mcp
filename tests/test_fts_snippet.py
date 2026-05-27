@@ -55,7 +55,7 @@ def test_chunk_count_populated_on_fts_result(tmp_path):
     assert results[0].chunk_count >= 1
     assert (
         results[0].chunk_count
-        == fts._conn.execute(
-            "SELECT chunk_count FROM documents WHERE path = 'doc.md'"
-        ).fetchone()["chunk_count"]
+        == fts._conn()
+        .execute("SELECT chunk_count FROM documents WHERE path = 'doc.md'")
+        .fetchone()["chunk_count"]
     )

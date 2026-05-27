@@ -360,7 +360,7 @@ class TestSearch:
         # Replace the real connection with a mock that raises a non-FTS5 DB error.
         mock_conn = MagicMock()
         mock_conn.execute.side_effect = sqlite3.OperationalError("database is locked")
-        idx._conn = mock_conn
+        idx._conn = lambda: mock_conn  # type: ignore[method-assign]
 
         with pytest.raises(sqlite3.OperationalError, match="database is locked"):
             idx.search("hello")
@@ -463,7 +463,7 @@ class TestSearch:
         gap on ``sections`` was a perf regression flagged by local review.
         """
         idx = FTSIndex(":memory:")
-        cur = idx._conn.execute(
+        cur = idx._conn().execute(
             "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='sections'"
         )
         index_names = {row[0] for row in cur.fetchall()}
@@ -599,7 +599,7 @@ class TestDelete:
         )
 
         # Verify sections and tags exist before deletion.
-        conn = idx._conn
+        conn = idx._conn()
         sec_count = conn.execute(
             "SELECT COUNT(*) FROM sections WHERE document_id IN "
             "(SELECT id FROM documents WHERE path = ?)",
@@ -673,9 +673,11 @@ class TestTagIndexing:
         """A scalar frontmatter value produces exactly one document_tags row."""
         idx = _tagged_index()
         idx.upsert_note(make_note("scalar.md", frontmatter={"cluster": "fiction"}))
-        rows = idx._conn.execute(
-            "SELECT tag_value FROM document_tags WHERE tag_key = 'cluster'"
-        ).fetchall()
+        rows = (
+            idx._conn()
+            .execute("SELECT tag_value FROM document_tags WHERE tag_key = 'cluster'")
+            .fetchall()
+        )
         assert len(rows) == 1
         assert rows[0][0] == "fiction"
 
@@ -683,10 +685,14 @@ class TestTagIndexing:
         """A list frontmatter value creates one row per distinct item."""
         idx = _tagged_index()
         idx.upsert_note(make_note("list.md", frontmatter={"topics": ["a", "b", "a"]}))
-        rows = idx._conn.execute(
-            "SELECT tag_value FROM document_tags WHERE tag_key = 'topics' "
-            "ORDER BY tag_value"
-        ).fetchall()
+        rows = (
+            idx._conn()
+            .execute(
+                "SELECT tag_value FROM document_tags WHERE tag_key = 'topics' "
+                "ORDER BY tag_value"
+            )
+            .fetchall()
+        )
         assert len(rows) == 2
         assert rows[0][0] == "a"
         assert rows[1][0] == "b"
@@ -697,9 +703,11 @@ class TestTagIndexing:
         idx.upsert_note(
             make_note("complex.md", frontmatter={"cluster": {"key": "val"}})
         )
-        rows = idx._conn.execute(
-            "SELECT COUNT(*) FROM document_tags WHERE tag_key = 'cluster'"
-        ).fetchone()
+        rows = (
+            idx._conn()
+            .execute("SELECT COUNT(*) FROM document_tags WHERE tag_key = 'cluster'")
+            .fetchone()
+        )
         assert rows[0] == 0
 
 
@@ -757,13 +765,13 @@ class TestWALMode:
         """File-based FTSIndex uses WAL journal mode for concurrent reads."""
         db_path = tmp_path / "test.db"
         idx = FTSIndex(str(db_path))
-        mode = idx._conn.execute("PRAGMA journal_mode").fetchone()[0]
+        mode = idx._conn().execute("PRAGMA journal_mode").fetchone()[0]
         assert mode.lower() == "wal"
 
     def test_in_memory_index_uses_memory_journal_mode(self) -> None:
         """In-memory FTSIndex skips WAL and retains SQLite default 'memory' mode."""
         idx = FTSIndex(":memory:")
-        mode = idx._conn.execute("PRAGMA journal_mode").fetchone()[0]
+        mode = idx._conn().execute("PRAGMA journal_mode").fetchone()[0]
         # WAL pragma is skipped for :memory: databases; SQLite uses 'memory' mode.
         assert mode.lower() == "memory"
 
@@ -788,7 +796,7 @@ class TestWALMode:
             ),
             caplog.at_level(logging.WARNING, logger="markdown_vault_mcp.fts_index"),
         ):
-            _open_connection(db_path)
+            _open_connection(db_path, str(db_path), False)
 
         assert any(
             "Could not enable WAL journal mode" in r.message for r in caplog.records

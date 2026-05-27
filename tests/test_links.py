@@ -1394,7 +1394,7 @@ class TestStatsLinkCounts:
         """
         idx = FTSIndex(":memory:")
         # Simulate an old index file that predates link tracking.
-        idx._conn.execute("DROP TABLE links")
+        idx._conn().execute("DROP TABLE links")
         assert idx.count_links() == 0
         assert idx.count_broken_links() == 0
         assert idx.count_orphans() == 0

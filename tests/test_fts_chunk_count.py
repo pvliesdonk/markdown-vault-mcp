@@ -25,9 +25,11 @@ def test_chunk_count_populated_on_upsert(tmp_path):
     note = _make_note(tmp_path, "doc.md", body)
     fts.upsert_note(note)
 
-    row = fts._conn.execute(
-        "SELECT chunk_count FROM documents WHERE path = ?", (note.path,)
-    ).fetchone()
+    row = (
+        fts._conn()
+        .execute("SELECT chunk_count FROM documents WHERE path = ?", (note.path,))
+        .fetchone()
+    )
     assert row is not None
     assert row["chunk_count"] == len(note.chunks)
     # Sanity: the helper bypasses the 30-line short-doc rule so this fixture
@@ -45,7 +47,7 @@ def test_chunk_count_populated_on_build_from_notes(tmp_path):
     fts.build_from_notes(notes)
 
     counts = dict(
-        fts._conn.execute("SELECT path, chunk_count FROM documents").fetchall()
+        fts._conn().execute("SELECT path, chunk_count FROM documents").fetchall()
     )
     assert counts["a.md"] == len(notes[0].chunks)
     assert counts["b.md"] == len(notes[1].chunks)
@@ -56,9 +58,11 @@ def test_chunk_count_updates_on_reupsert(tmp_path):
     fts = FTSIndex(db_path=":memory:")
     note_v1 = _make_note(tmp_path, "doc.md", "# A\nbody\n")
     fts.upsert_note(note_v1)
-    v1_count = fts._conn.execute(
-        "SELECT chunk_count FROM documents WHERE path = ?", (note_v1.path,)
-    ).fetchone()["chunk_count"]
+    v1_count = (
+        fts._conn()
+        .execute("SELECT chunk_count FROM documents WHERE path = ?", (note_v1.path,))
+        .fetchone()["chunk_count"]
+    )
 
     note_v2 = _make_note(
         tmp_path,
@@ -66,9 +70,11 @@ def test_chunk_count_updates_on_reupsert(tmp_path):
         "# A\nbody\n## B\nmore\n## C\neven more\n",
     )
     fts.upsert_note(note_v2)
-    v2_count = fts._conn.execute(
-        "SELECT chunk_count FROM documents WHERE path = ?", (note_v2.path,)
-    ).fetchone()["chunk_count"]
+    v2_count = (
+        fts._conn()
+        .execute("SELECT chunk_count FROM documents WHERE path = ?", (note_v2.path,))
+        .fetchone()["chunk_count"]
+    )
 
     assert v2_count != v1_count
     assert v2_count == len(note_v2.chunks)
@@ -124,11 +130,14 @@ def test_migration_adds_column_to_pre_existing_db(tmp_path):
 
     fts = FTSIndex(db_path=db_path)
     cols = [
-        r["name"] for r in fts._conn.execute("PRAGMA table_info(documents)").fetchall()
+        r["name"]
+        for r in fts._conn().execute("PRAGMA table_info(documents)").fetchall()
     ]
     assert "chunk_count" in cols
     # Existing legacy row gets the default value.
-    row = fts._conn.execute(
-        "SELECT chunk_count FROM documents WHERE path = 'legacy.md'"
-    ).fetchone()
+    row = (
+        fts._conn()
+        .execute("SELECT chunk_count FROM documents WHERE path = 'legacy.md'")
+        .fetchone()
+    )
     assert row["chunk_count"] == 1
