@@ -402,6 +402,26 @@ def test_lifespan_warm_start_skips_background(
     )
 
 
+def test_bucket3_call_blocks_until_background_done(tmp_path: Path) -> None:
+    """A bucket-3 call made during a background build must block on the
+    completion event via _require_index_ready → wait_for_index_ready
+    delegation, not raise IndexNotReadyError immediately."""
+    vault = _vault(tmp_path)
+    for i in range(20):
+        _seed(vault, f"n_{i}.md", f"# N{i}\n\n" + ("body " * 200) + "\n")
+    col = Collection(source_dir=vault, index_path=tmp_path / "fts.db")
+
+    col.start_background_build_index()
+
+    # Direct bucket-3 call without explicit wait. With the proper
+    # delegation in _require_index_ready it returns correct results
+    # (empty list is OK — no actual backlinks); without it, raises.
+    result = col.get_backlinks("n_0.md")
+    assert isinstance(result, list)
+    assert col.is_index_ready()  # event is set + _index_built=True
+    col.close()
+
+
 def test_foreground_write_during_background_scan(tmp_path: Path) -> None:
     """A foreground write() racing with the background scan results in a
     consistent FTS row for that path after both finish.

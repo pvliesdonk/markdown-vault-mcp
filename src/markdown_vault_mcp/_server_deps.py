@@ -118,14 +118,16 @@ def make_collection_lifespan(config: CollectionConfig) -> Any:
                 stats.documents_indexed,
             )
 
-        # Embeddings stay foreground for PR1.  On a cold start where the
-        # background FTS is still running, this call is a no-op against
-        # the empty index; PR2 (#513 follow-up) moves it to the
-        # background sequence so semantic search becomes available
-        # without an operator-initiated rebuild.
         if kwargs.get("embedding_provider") is not None:
-            chunks_embedded = await asyncio.to_thread(collection.build_embeddings)
-            logger.info("Embeddings ready: %d chunks", chunks_embedded)
+            if collection.is_index_ready():
+                chunks_embedded = await asyncio.to_thread(collection.build_embeddings)
+                logger.info("Embeddings ready: %d chunks", chunks_embedded)
+            else:
+                logger.info(
+                    "Cold start: skipping embeddings build (FTS still indexing); "
+                    "semantic search returns empty until PR2 backgrounds embeddings "
+                    "or operator runs CLI 'markdown-vault-mcp index'"
+                )
 
         # Start background tasks (e.g. git pull loop) after index is built.
         collection.start()

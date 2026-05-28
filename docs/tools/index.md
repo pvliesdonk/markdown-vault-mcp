@@ -15,6 +15,7 @@ markdown-vault-mcp exposes MCP tools across several categories. Write tools are 
 | [`list_tags`](#list_tags) | Read | List all unique frontmatter tag values |
 | [`stats`](#stats) | Read | Get collection statistics and capabilities |
 | [`embeddings_status`](#embeddings_status) | Read | Check embedding provider and vector index status |
+| [`get_index_status`](#get_index_status) | Read | Poll background FTS build state during cold-start lifespan |
 | [`get_backlinks`](#get_backlinks) | Read | Find all documents that link to a given document |
 | [`get_outlinks`](#get_outlinks) | Read | Find all links from a document, with existence check |
 | [`get_broken_links`](#get_broken_links) | Read | Find all links pointing to non-existent documents |
@@ -198,6 +199,31 @@ Check the embedding provider configuration and vector index status. Use this to 
   "path": "/data/state/embeddings/embeddings"
 }
 ```
+
+### `get_index_status`
+
+Poll the state of the background FTS build. On cold start the lifespan routes the full-text index build to a background thread so the MCP handshake completes sub-second; this tool lets operators observe progress and confirm the index is ready before running search-dependent tools.
+
+`readOnlyHint: true`
+
+**Returns:**
+
+```json
+{
+  "status": "ready",
+  "documents_indexed": 42,
+  "error": null
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `status` | string | `"ready"` — index built and available; `"building"` — background build in progress or build not yet started; `"failed"` — background build raised an exception |
+| `documents_indexed` | int | Number of FTS rows currently committed; rises during `"building"` as the scan progresses |
+| `error` | string \| null | Exception message if `status == "failed"`, otherwise `null` |
+
+!!! note "Polling pattern"
+    On cold start, call `get_index_status` in a loop (e.g., every 500 ms) until `status == "ready"` before issuing `search` or other FTS-backed calls. Bucket-3 tools (`get_backlinks`, `get_outlinks`, etc.) block internally on the completion event, but `search` results will be incomplete while the build is in progress.
 
 ---
 

@@ -425,11 +425,13 @@ class Collection:
     # ------------------------------------------------------------------
 
     def _require_index_ready(self) -> None:
-        """Raise :exc:`IndexNotReadyError` if :meth:`build_index` has not run."""
-        if not self._index_built:
-            raise IndexNotReadyError(
-                "Index not built. Call build_index() before this method."
-            )
+        """Block until ready; delegate to :meth:`wait_for_index_ready`.
+
+        Bucket-3 and bucket-4 callsites call this helper; it inherits
+        the event-based blocking semantics so callers wait through a
+        background build rather than raise immediately.
+        """
+        self.wait_for_index_ready(timeout=None)
 
     def should_use_background_build(self) -> bool:
         """Return True iff the lifespan should route to the background
@@ -439,7 +441,7 @@ class Collection:
         lifespan in :mod:`markdown_vault_mcp._server_deps`.
         """
         # In-memory DBs cannot persist a sentinel; always build sync.
-        if self._fts._is_memory:
+        if self._index_path is None or str(self._index_path) == ":memory:":
             return False
         return not self._fts.is_build_completed()
 
@@ -513,12 +515,6 @@ class Collection:
         :meth:`is_index_ready` is False after that — that is the
         lifespan pattern.
         """
-        with self._write_lock:
-            if self._background_started:
-                return
-            self._background_started = True
-            self._background_build_error = None
-            self._background_build_done.clear()
 
         def _worker() -> None:
             try:
@@ -529,13 +525,19 @@ class Collection:
             finally:
                 self._background_build_done.set()
 
-        thread = threading.Thread(
-            target=_worker,
-            name="markdown-vault-mcp.background-build",
-            daemon=True,
-        )
-        self._background_build_thread = thread
-        thread.start()
+        with self._write_lock:
+            if self._background_started:
+                return
+            self._background_started = True
+            self._background_build_error = None
+            self._background_build_done.clear()
+            thread = threading.Thread(
+                target=_worker,
+                name="markdown-vault-mcp.background-build",
+                daemon=True,
+            )
+            self._background_build_thread = thread
+            thread.start()
 
     def get_index_status(self) -> dict[str, Any]:
         """Return a non-blocking snapshot of background-build state.
@@ -561,13 +563,21 @@ class Collection:
         elif not self._background_build_done.is_set():
             status = "building"
             error = None
-        else:
+        elif self._index_built:
             status = "ready"
+            error = None
+        else:
+            # Event set + no error but build never ran (e.g., fresh
+            # Collection before any build_index() call).
+            status = "building"
             error = None
         try:
             documents_indexed = len(self._fts.list_notes())
         except Exception:
-            # FTS may be closed during shutdown; degrade gracefully.
+            logger.debug(
+                "get_index_status: list_notes failed; reporting 0",
+                exc_info=True,
+            )
             documents_indexed = 0
         return {
             "status": status,
