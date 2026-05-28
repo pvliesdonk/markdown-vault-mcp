@@ -582,6 +582,33 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
         """
         return await asyncio.to_thread(collection.embeddings_status)
 
+    @mcp.tool(
+        icons=_TOOL_ICONS["get_index_status"],
+        annotations={
+            "readOnlyHint": True,
+            "openWorldHint": False,
+        },
+    )
+    async def get_index_status(
+        collection: Collection = Depends(get_collection),
+    ) -> dict[str, Any]:
+        """Return background-build state of the FTS index.
+
+        Use this when ``initialize`` returned but bucket-3 calls
+        (backlinks, similar, get_context, get_toc, …) raise
+        ``IndexNotReadyError`` — the field ``status`` distinguishes
+        "still building" from "build failed."
+
+        Returns:
+            Dict with the following fields:
+
+            - status (str): ``"ready"``, ``"building"``, or ``"failed"``.
+            - documents_indexed (int): count of documents committed to
+              the FTS index right now (rises during ``"building"``).
+            - error (str | None): ``None`` unless the background build raised.
+        """
+        return await asyncio.to_thread(collection.get_index_status)
+
     # --- Link tools (read-only) ---
 
     @mcp.tool(

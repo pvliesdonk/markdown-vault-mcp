@@ -412,7 +412,8 @@ class Collection:
         :meth:`build_index` returned, or after a background build
         completed without error. ``False`` while a background build is
         in flight, before any build was attempted, or after a build
-        raised. Use :meth:`wait_for_index_ready` to block.
+        raised. Use :meth:`get_index_status` for the failure-vs-pending
+        distinction; use :meth:`wait_for_index_ready` to block.
         """
         if not self._index_built:
             return False
@@ -497,6 +498,44 @@ class Collection:
         )
         self._background_build_thread = thread
         thread.start()
+
+    def get_index_status(self) -> dict[str, Any]:
+        """Return a non-blocking snapshot of background-build state.
+
+        Shape: ``{"status": "ready" | "building" | "failed",
+        "documents_indexed": int, "error": str | None}``.
+
+        - ``"ready"``: synchronous build returned or background build
+          completed cleanly; ``error`` is ``None``.
+        - ``"building"``: background build is in flight (event cleared);
+          ``error`` is ``None``.
+        - ``"failed"``: background build raised; ``error`` carries the
+          exception message.
+
+        ``documents_indexed`` is taken from :meth:`FTSIndex.list_notes`
+        and so reflects whatever rows are currently committed —
+        progress is observable in the ``"building"`` state as the count
+        rises.
+        """
+        if self._background_build_error is not None:
+            status = "failed"
+            error: str | None = str(self._background_build_error)
+        elif not self._background_build_done.is_set():
+            status = "building"
+            error = None
+        else:
+            status = "ready"
+            error = None
+        try:
+            documents_indexed = len(self._fts.list_notes())
+        except Exception:
+            # FTS may be closed during shutdown; degrade gracefully.
+            documents_indexed = 0
+        return {
+            "status": status,
+            "documents_indexed": documents_indexed,
+            "error": error,
+        }
 
     @property
     def _vectors(self) -> VectorIndex | None:

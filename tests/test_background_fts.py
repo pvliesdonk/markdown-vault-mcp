@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import threading
 import time
 from typing import TYPE_CHECKING
@@ -165,3 +166,67 @@ def test_start_background_build_index_idempotent(tmp_path: Path) -> None:
     col.start_background_build_index()
     assert col._background_build_thread is first_thread
     col.close()
+
+
+def test_get_index_status_ready(tmp_path: Path) -> None:
+    """A built Collection reports status=ready."""
+    vault = _vault(tmp_path)
+    _seed(vault)
+    col = Collection(source_dir=vault)
+    col.build_index()
+    status = col.get_index_status()
+    assert status["status"] == "ready"
+    assert status["documents_indexed"] == 1
+    assert status["error"] is None
+    col.close()
+
+
+def test_get_index_status_building(tmp_path: Path) -> None:
+    """While a background build is in flight, status=building."""
+    col = Collection(source_dir=_vault(tmp_path))
+    # Manually put the Collection into the "building" state without
+    # actually spawning a thread (so the test is deterministic).
+    col._background_build_done.clear()
+    col._background_started = True
+    status = col.get_index_status()
+    assert status["status"] == "building"
+    assert status["error"] is None
+    col._background_build_done.set()  # cleanup
+    col.close()
+
+
+def test_get_index_status_failed(tmp_path: Path) -> None:
+    """After a background build raised, status=failed and error is set."""
+    col = Collection(source_dir=_vault(tmp_path))
+    col._background_build_error = RuntimeError("scan failed for X")
+    status = col.get_index_status()
+    assert status["status"] == "failed"
+    assert "scan failed for X" in status["error"]
+    col.close()
+
+
+async def _call_status(server) -> dict:
+    from fastmcp import Client
+
+    async with Client(server) as client:
+        result = await client.call_tool("get_index_status", {})
+        return result.structured_content or {}
+
+
+def test_mcp_tool_get_index_status_reports_ready(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The new MCP tool surfaces the same dict as Collection.get_index_status."""
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    (vault / "n.md").write_text("# N\n\nbody\n")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_INDEX_PATH", str(tmp_path / "fts.db"))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_STATE_PATH", str(tmp_path / "s.json"))
+
+    from markdown_vault_mcp.server import make_server
+
+    server = make_server()
+    status = asyncio.run(_call_status(server))
+    assert status["status"] == "ready"
+    assert status["error"] is None
