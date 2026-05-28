@@ -84,8 +84,9 @@ class IndexNotReadyError(MarkdownMCPError):
 
 
 class IndexBuildFailedError(MarkdownMCPError):
-    """Raised when a background index build raised. The original
-    exception is available via ``__cause__``.
+    """Raised when a background index build failed with an exception.
+
+    The original exception is available via ``__cause__``.
 
     Distinguishes "build never finished" (:exc:`IndexNotReadyError`)
     from "build finished with an error" — both surface through
