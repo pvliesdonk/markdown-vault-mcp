@@ -103,6 +103,19 @@ class Collection:
     returns whatever is currently in the index (empty on cold start).
     See issue #525.
 
+    **Background build (issue #513 PR1).** :meth:`build_index` short-
+    circuits in O(1) when the persisted FTS DB carries the
+    completeness sentinel from a prior clean build. The MCP server
+    lifespan invokes that fast path first, then calls
+    :meth:`start_background_build_index` when
+    :meth:`is_index_ready` is still False — moving the full scan off
+    the handshake critical path. Bucket-3/4 calls during a background
+    build block on :meth:`wait_for_index_ready`; the call returns
+    when the build completes and raises
+    :exc:`~markdown_vault_mcp.exceptions.IndexBuildFailedError` if
+    the background build itself raised. :meth:`get_index_status`
+    gives operators a non-blocking snapshot for polling.
+
     **Thread safety (issue #519):** every public method on this class is safe
     to call from any thread, concurrently with other reads and writes from
     any other thread. Writes serialise against each other via the internal
@@ -730,6 +743,7 @@ class Collection:
 
         Raises:
             IndexNotReadyError: If :meth:`build_index` has not been called.
+            IndexBuildFailedError: If a prior background build raised.
         """
         self._require_index_ready()
         return self._index_mgr.reindex()
@@ -746,6 +760,7 @@ class Collection:
 
         Raises:
             IndexNotReadyError: If :meth:`build_index` has not been called.
+            IndexBuildFailedError: If a prior background build raised.
             ValueError: If ``embedding_provider`` or ``embeddings_path`` is
                 not configured.
         """
@@ -802,6 +817,7 @@ class Collection:
 
         Raises:
             IndexNotReadyError: If :meth:`build_index` has not been called.
+            IndexBuildFailedError: If a prior background build raised.
             ValueError: If no document exists at the given path.
         """
         self._require_index_ready()
@@ -820,6 +836,7 @@ class Collection:
 
         Raises:
             IndexNotReadyError: If :meth:`build_index` has not been called.
+            IndexBuildFailedError: If a prior background build raised.
             ValueError: If no document exists at the given path.
         """
         self._require_index_ready()
@@ -841,6 +858,7 @@ class Collection:
 
         Raises:
             IndexNotReadyError: If :meth:`build_index` has not been called.
+            IndexBuildFailedError: If a prior background build raised.
             ValueError: If no document exists at the given path.
         """
         self._require_index_ready()
@@ -882,6 +900,7 @@ class Collection:
 
         Raises:
             IndexNotReadyError: If :meth:`build_index` has not been called.
+            IndexBuildFailedError: If a prior background build raised.
         """
         self._require_index_ready()
         return self._search_mgr.get_similar(
@@ -931,6 +950,7 @@ class Collection:
 
         Raises:
             IndexNotReadyError: If :meth:`build_index` has not been called.
+            IndexBuildFailedError: If a prior background build raised.
             ValueError: If no document exists at the given path.
         """
         self._require_index_ready()
@@ -982,6 +1002,7 @@ class Collection:
 
         Raises:
             IndexNotReadyError: If :meth:`build_index` has not been called.
+            IndexBuildFailedError: If a prior background build raised.
             ValueError: If *source* or *target* is not found in the index.
         """
         self._require_index_ready()

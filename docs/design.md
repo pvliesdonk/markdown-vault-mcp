@@ -394,6 +394,19 @@ whatever is currently in the index (empty on cold start).
 raises `IndexNotReadyError` pre-#513; once the background indexer
 (#513) lands it will block on a completion event.
 
+**Cold-start background FTS (issue #513 PR1)**: when the persisted
+FTS DB is cold (sentinel absent), the MCP server lifespan invokes
+`Collection.start_background_build_index()` to spawn a daemon thread
+that runs `build_index()` to completion. Bucket-3/4 calls during the
+background build block on `wait_for_index_ready()`; a failed
+background build is observable via the `get_index_status` MCP tool
+(`{"status": "failed", "error": "..."}`) and surfaces to bucket-3/4
+callers as `IndexBuildFailedError`. Embeddings build remains on the
+synchronous lifespan path in PR1 — on cold start it is a no-op
+against the empty FTS, deferred to PR2. Warm starts continue to use
+PR #526's O(1) sentinel short-circuit and never spawn the background
+thread.
+
 To apply a configuration change (e.g. new `exclude_patterns`,
 `required_frontmatter`) to a pre-existing index, call
 `build_index(force=True)` — and, when embeddings are configured,

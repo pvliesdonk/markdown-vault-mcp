@@ -80,6 +80,9 @@ class IndexNotReadyError(MarkdownMCPError):
     methods. Once a background indexer lands (issue #513), the
     :meth:`Collection.wait_for_index_ready` primitive will block on a
     completion event instead of raising.
+
+    See :exc:`IndexBuildFailedError` for the related case where a
+    background build started but then raised.
     """
 
 
@@ -94,4 +97,7 @@ class IndexBuildFailedError(MarkdownMCPError):
     signal different operator action: not-ready means wait or check
     status; failed means inspect logs and decide whether to retry via
     CLI ``markdown-vault-mcp index``.
+
+    See :exc:`IndexNotReadyError` for the "build never finished /
+    never started" case.
     """
