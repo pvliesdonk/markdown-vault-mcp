@@ -145,3 +145,23 @@ def test_start_background_build_index_captures_error(
         col.wait_for_index_ready(timeout=5.0)
     assert col.is_index_ready() is False
     col.close()
+
+
+def test_start_background_build_index_idempotent(tmp_path: Path) -> None:
+    """Second call while a build is in flight (or finished) is a no-op
+    — at most one thread is ever spawned."""
+    col = Collection(source_dir=_vault(tmp_path))
+
+    col.start_background_build_index()
+    first_thread = col._background_build_thread
+    assert first_thread is not None
+
+    col.start_background_build_index()
+    assert col._background_build_thread is first_thread
+
+    col.wait_for_index_ready(timeout=5.0)
+
+    # After completion, another call still must not spawn a new thread.
+    col.start_background_build_index()
+    assert col._background_build_thread is first_thread
+    col.close()
