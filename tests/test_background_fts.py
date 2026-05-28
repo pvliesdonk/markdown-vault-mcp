@@ -205,6 +205,27 @@ def test_get_index_status_failed(tmp_path: Path) -> None:
     col.close()
 
 
+def test_close_joins_background_thread_within_timeout(tmp_path: Path) -> None:
+    """close() joins the background thread with a bounded timeout.
+
+    The thread for a small vault completes in milliseconds; close()
+    must return quickly and the thread must be observably finished.
+    """
+    vault = _vault(tmp_path)
+    for i in range(3):
+        _seed(vault, f"n_{i}.md", f"# N{i}\n\nbody {i}\n")
+    col = Collection(source_dir=vault)
+
+    col.start_background_build_index()
+    col.close()
+
+    thread = col._background_build_thread
+    assert thread is not None
+    assert not thread.is_alive(), (
+        "background thread should have finished within close() join"
+    )
+
+
 async def _call_status(server) -> dict:
     from fastmcp import Client
 
