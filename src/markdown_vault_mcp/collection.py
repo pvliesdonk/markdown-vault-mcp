@@ -412,8 +412,7 @@ class Collection:
         :meth:`build_index` returned, or after a background build
         completed without error. ``False`` while a background build is
         in flight, before any build was attempted, or after a build
-        raised. Use :meth:`get_index_status` for the failure-vs-pending
-        distinction; use :meth:`wait_for_index_ready` to block.
+        raised. Use :meth:`wait_for_index_ready` to block.
         """
         if not self._index_built:
             return False
