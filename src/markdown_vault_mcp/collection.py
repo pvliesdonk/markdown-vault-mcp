@@ -225,6 +225,18 @@ class Collection:
         # build_embeddings). See issue #525.
         self._index_built = False
 
+        # Background-build coordination (issue #513 PR1). The event is the
+        # blocking primitive bucket-3/4 callers wait on via
+        # wait_for_index_ready(); it is pre-set so the warm/synchronous path
+        # short-circuits to "ready" without ever entering the background
+        # branch. The background path clears it before spawning the thread
+        # and the thread sets it in its finally block.
+        self._background_build_thread: threading.Thread | None = None
+        self._background_build_done: threading.Event = threading.Event()
+        self._background_build_done.set()
+        self._background_build_error: BaseException | None = None
+        self._background_started: bool = False
+
         # Serialise concurrent write operations on this instance.
         # Re-entrant: periodic pull tick blocks writes, then reindex() acquires
         # this lock again for its mutation phase.
@@ -392,6 +404,20 @@ class Collection:
             raise IndexNotReadyError(
                 "Index not built. Call build_index() before this method."
             )
+
+    def is_index_ready(self) -> bool:
+        """Return ``True`` iff the FTS index is ready for bucket-3/4 calls.
+
+        Non-blocking. ``True`` after the synchronous warm-path
+        :meth:`build_index` returned, or after a background build
+        completed without error. ``False`` while a background build is
+        in flight, before any build was attempted, or after a build
+        raised. Use :meth:`get_index_status` for the failure-vs-pending
+        distinction; use :meth:`wait_for_index_ready` to block.
+        """
+        if not self._index_built:
+            return False
+        return self._background_build_error is None
 
     def wait_for_index_ready(self, timeout: float | None = None) -> None:
         """Block until the FTS index is ready, or raise.
