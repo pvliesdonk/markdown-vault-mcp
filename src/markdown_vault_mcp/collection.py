@@ -457,6 +457,47 @@ class Collection:
                 "Index not built. Call build_index() before this method."
             )
 
+    def start_background_build_index(self) -> None:
+        """Spawn a daemon thread that builds the FTS index.
+
+        Idempotent: returns immediately if a thread is already running
+        or has run to completion. The thread calls :meth:`build_index`
+        and unconditionally sets :attr:`_background_build_done` in its
+        finally block; on exception the original is captured into
+        :attr:`_background_build_error` and re-surfaced through
+        :meth:`wait_for_index_ready` as
+        :exc:`IndexBuildFailedError`.
+
+        Callers wanting "build only if needed" should call
+        :meth:`build_index` (which short-circuits via the PR #526
+        sentinel) first and only invoke this method when
+        :meth:`is_index_ready` is False after that — that is the
+        lifespan pattern.
+        """
+        with self._write_lock:
+            if self._background_started:
+                return
+            self._background_started = True
+            self._background_build_error = None
+            self._background_build_done.clear()
+
+        def _worker() -> None:
+            try:
+                self.build_index()
+            except BaseException as exc:
+                self._background_build_error = exc
+                logger.exception("Background index build failed")
+            finally:
+                self._background_build_done.set()
+
+        thread = threading.Thread(
+            target=_worker,
+            name="markdown-vault-mcp.background-build",
+            daemon=True,
+        )
+        self._background_build_thread = thread
+        thread.start()
+
     @property
     def _vectors(self) -> VectorIndex | None:
         """Bridge property: vector index is owned by SearchManager."""

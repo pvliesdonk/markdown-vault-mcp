@@ -108,3 +108,40 @@ def test_wait_for_index_ready_raises_build_failed_when_error_set(
         col.wait_for_index_ready(timeout=0.1)
     assert isinstance(excinfo.value.__cause__, RuntimeError)
     col.close()
+
+
+def test_start_background_build_index_eventually_ready(tmp_path: Path) -> None:
+    """After start_background_build_index(), wait_for_index_ready()
+    eventually returns and bucket-3 calls succeed."""
+    vault = _vault(tmp_path)
+    for i in range(5):
+        _seed(vault, f"n_{i}.md", f"# N{i}\n\nbody {i}\n")
+    col = Collection(source_dir=vault)
+
+    col.start_background_build_index()
+    col.wait_for_index_ready(timeout=5.0)
+
+    assert col.is_index_ready()
+    # Bucket-3 call must succeed now.
+    col.get_backlinks("n_0.md")  # may return [] but must not raise
+    col.close()
+
+
+def test_start_background_build_index_captures_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An exception raised by _index_mgr.build_index is captured into
+    _background_build_error; the event is still set so callers unblock;
+    subsequent wait_for_index_ready raises IndexBuildFailedError."""
+    col = Collection(source_dir=_vault(tmp_path))
+
+    def boom(*_a: object, **_kw: object) -> None:
+        raise RuntimeError("simulated scan failure")
+
+    monkeypatch.setattr(col._index_mgr, "build_index", boom)
+    col.start_background_build_index()
+
+    with pytest.raises(IndexBuildFailedError):
+        col.wait_for_index_ready(timeout=5.0)
+    assert col.is_index_ready() is False
+    col.close()
