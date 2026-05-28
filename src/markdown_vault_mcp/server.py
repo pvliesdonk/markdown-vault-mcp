@@ -12,6 +12,7 @@ configured :class:`~fastmcp.FastMCP` instance.
 from __future__ import annotations
 
 import logging
+import os
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
 from typing import TYPE_CHECKING
@@ -320,5 +321,17 @@ def make_server(transport: str = "stdio") -> FastMCP:
     # the broader cleanup of duplicate ``to_collection_kwargs`` calls.
     if config.git_repo_url is None:
         mcp.disable(tags={"git-managed"})
+
+    # Hide MCP-Apps UI tools (browse_vault, show_context) when the client
+    # does not render the MCP Apps panels. Set
+    # MARKDOWN_VAULT_MCP_DISABLE_APPS_UI=true to remove them from the tool
+    # listing (saves a few tokens; the LLM cannot call them anyway).
+    if os.environ.get("MARKDOWN_VAULT_MCP_DISABLE_APPS_UI", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }:
+        mcp.disable(tags={"apps-ui"})
 
     return mcp

@@ -238,6 +238,7 @@ def register_apps(mcp: FastMCP) -> None:
     # -- Primary tool: browse_vault -----------------------------------------
 
     @mcp.tool(
+        tags={"apps-ui"},
         icons=_TOOL_ICONS["browse_vault"],
         annotations={
             "readOnlyHint": True,
@@ -338,6 +339,7 @@ def register_apps(mcp: FastMCP) -> None:
         return asdict(ctx)
 
     @mcp.tool(
+        tags={"apps-ui"},
         icons=_TOOL_ICONS["show_context"],
         annotations={
             "readOnlyHint": True,
