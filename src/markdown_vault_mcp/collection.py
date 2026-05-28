@@ -714,11 +714,19 @@ class Collection:
         # exception leaves the Collection visibly not-ready. The sentinel
         # is cleared too so a crash mid-loop is detectable by the next
         # process (rows without sentinel = partial — see issue #525).
-        self._index_built = False
-        self._fts.clear_build_completed()
-        result = self._index_mgr.build_index(force=force)
-        self._fts.set_build_completed()
-        self._index_built = True
+        #
+        # _write_lock serialises all SQLite mutations (see DocumentManager).
+        # build_index() holds it for the duration so that a concurrent
+        # foreground write() doesn't race on the SQLite write lock — Python's
+        # sqlite3 module raises OperationalError immediately for same-process
+        # multi-connection write contention (busy_timeout only applies
+        # across OS processes).
+        with self._write_lock:
+            self._index_built = False
+            self._fts.clear_build_completed()
+            result = self._index_mgr.build_index(force=force)
+            self._fts.set_build_completed()
+            self._index_built = True
         return result
 
     def reindex(self) -> ReindexResult:

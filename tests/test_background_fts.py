@@ -400,3 +400,31 @@ def test_lifespan_warm_start_skips_background(
         "Warm-start lifespan must NOT spawn a background thread; "
         f"got thread={background_thread_seen[0]!r}"
     )
+
+
+def test_foreground_write_during_background_scan(tmp_path: Path) -> None:
+    """A foreground write() racing with the background scan results in a
+    consistent FTS row for that path after both finish.
+
+    Smoke test for the PR #523 per-thread-connection contract: both
+    writers use the FTS API concurrently; last-write-wins per path.
+    """
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    # Seed enough files that the scan takes a noticeable amount of time.
+    for i in range(50):
+        (vault / f"seed_{i}.md").write_text(f"# Seed {i}\n\n" + ("x " * 500) + "\n")
+
+    col = Collection(source_dir=vault, read_only=False)
+    col.start_background_build_index()
+
+    # Race in a foreground write.
+    col.write("racy.md", "# Racy\n\nforeground content\n")
+
+    col.wait_for_index_ready(timeout=10.0)
+
+    rows = {r["path"]: r for r in col._fts.list_notes()}
+    assert "racy.md" in rows, "foreground write must end up in the FTS"
+    # The disk content (which the scan also reads) is what foreground wrote.
+    assert "Racy" in rows["racy.md"]["title"]
+    col.close()
