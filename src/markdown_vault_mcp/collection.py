@@ -13,7 +13,7 @@ import re
 import threading
 from typing import TYPE_CHECKING, Any, Literal
 
-from markdown_vault_mcp.exceptions import IndexNotReadyError
+from markdown_vault_mcp.exceptions import IndexBuildFailedError, IndexNotReadyError
 from markdown_vault_mcp.fts_index import FTSIndex
 from markdown_vault_mcp.scanner import (
     ChunkStrategy,
@@ -421,20 +421,41 @@ class Collection:
     def wait_for_index_ready(self, timeout: float | None = None) -> None:
         """Block until the FTS index is ready, or raise.
 
-        Pre-#513 this is a synchronous readiness check: raises
-        :exc:`IndexNotReadyError` when :meth:`build_index` has not
-        completed. The *timeout* parameter is reserved for the
-        background-indexer variant (#513), which will wait on a
-        completion event with this budget.
+        - If a synchronous :meth:`build_index` has already returned
+          successfully, returns immediately.
+        - If a background build is in flight (event cleared), waits on
+          the completion event for up to *timeout* seconds.
+        - On wakeup (or already-set event), inspects
+          :attr:`_background_build_error`: raises
+          :exc:`IndexBuildFailedError` (with the original as
+          ``__cause__``) when set; raises :exc:`IndexNotReadyError`
+          when the index is still not built and no build is scheduled;
+          otherwise returns.
 
         Args:
-            timeout: Maximum seconds to wait. Currently unused.
+            timeout: Maximum seconds to wait on the completion event.
+                ``None`` (default) blocks indefinitely. MCP tool callers
+                are protected from infinite hangs by client-side
+                deadlines, so the default is correct for bucket-3/4
+                callsites.
 
         Raises:
-            IndexNotReadyError: If the index has not been built.
+            IndexBuildFailedError: A prior background build raised.
+            IndexNotReadyError: Index not built and no build scheduled,
+                or timeout exceeded while waiting on a background build.
         """
-        del timeout  # Reserved for #513 — no background build to wait on.
-        self._require_index_ready()
+        if not self._background_build_done.wait(timeout=timeout):
+            raise IndexNotReadyError(
+                f"Index build still in progress; timed out after {timeout}s."
+            )
+        if self._background_build_error is not None:
+            raise IndexBuildFailedError(
+                "Background index build raised; see __cause__ for details."
+            ) from self._background_build_error
+        if not self._index_built:
+            raise IndexNotReadyError(
+                "Index not built. Call build_index() before this method."
+            )
 
     @property
     def _vectors(self) -> VectorIndex | None:
