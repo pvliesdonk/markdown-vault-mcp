@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import TYPE_CHECKING, Any
 
@@ -28,6 +29,18 @@ def _parse_tool_data(result: Any) -> Any:
         raw = result.content[0].text if result.content else "[]"
         return json.loads(raw)
     return data
+
+
+async def _wait_for_index_ready(client: Any, timeout_steps: int = 50) -> None:
+    """Poll get_index_status until status == 'ready'."""
+    for _ in range(timeout_steps):
+        res = await client.call_tool("get_index_status", {})
+        status = (res.structured_content or {}).get("status")
+        if status == "ready":
+            return
+        await asyncio.sleep(0.05)
+    msg = "Index never reached 'ready' status"
+    raise TimeoutError(msg)
 
 
 # ---------------------------------------------------------------------------
@@ -342,6 +355,7 @@ class TestMCPGraphTools:
 
         server = make_server()
         async with Client(server) as client:
+            await _wait_for_index_ready(client)
             result = await client.call_tool("get_orphan_notes", {})
         items = _parse_tool_data(result)
         assert isinstance(items, list)
@@ -357,6 +371,7 @@ class TestMCPGraphTools:
 
         server = make_server()
         async with Client(server) as client:
+            await _wait_for_index_ready(client)
             result = await client.call_tool("get_most_linked", {"limit": 5})
         items = _parse_tool_data(result)
         assert isinstance(items, list)
@@ -372,6 +387,7 @@ class TestMCPGraphTools:
 
         server = make_server()
         async with Client(server) as client:
+            await _wait_for_index_ready(client)
             result = await client.call_tool("get_most_linked", {"limit": 1})
         items = _parse_tool_data(result)
         assert len(items) == 1
@@ -662,6 +678,7 @@ class TestMCPGetConnectionPath:
 
         server = make_server()
         async with Client(server) as client:
+            await _wait_for_index_ready(client)
             result = await client.call_tool(
                 "get_connection_path", {"source": "a.md", "target": "c.md"}
             )
@@ -678,6 +695,7 @@ class TestMCPGetConnectionPath:
 
         server = make_server()
         async with Client(server) as client:
+            await _wait_for_index_ready(client)
             result = await client.call_tool(
                 "get_connection_path",
                 {"source": "a.md", "target": "isolated.md"},
@@ -695,6 +713,7 @@ class TestMCPGetConnectionPath:
 
         server = make_server()
         async with Client(server) as client:
+            await _wait_for_index_ready(client)
             result = await client.call_tool(
                 "get_connection_path", {"source": "a.md", "target": "a.md"}
             )
@@ -712,6 +731,7 @@ class TestMCPGetConnectionPath:
 
         server = make_server()
         async with Client(server) as client:
+            await _wait_for_index_ready(client)
             with pytest.raises(ToolError):
                 await client.call_tool(
                     "get_connection_path",

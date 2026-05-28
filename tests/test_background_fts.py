@@ -237,7 +237,11 @@ async def _call_status(server) -> dict:
 def test_mcp_tool_get_index_status_reports_ready(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The new MCP tool surfaces the same dict as Collection.get_index_status."""
+    """The MCP tool surfaces the correct status dict.
+
+    On a cold start the lifespan routes the build to the background thread,
+    so status may initially be 'building'.  Poll until ready.
+    """
     vault = tmp_path / "vault"
     vault.mkdir()
     (vault / "n.md").write_text("# N\n\nbody\n")
@@ -248,6 +252,163 @@ def test_mcp_tool_get_index_status_reports_ready(
     from markdown_vault_mcp.server import make_server
 
     server = make_server()
-    status = asyncio.run(_call_status(server))
+
+    async def _run() -> dict:
+        from fastmcp import Client
+
+        async with Client(server) as client:
+            for _ in range(50):
+                status = await _call_status(client)  # type: ignore[arg-type]
+                if status.get("status") == "ready":
+                    return status
+                await asyncio.sleep(0.05)
+            return status  # type: ignore[return-value]
+
+    # Re-implement using direct client inside the async context.
+    async def _run2() -> dict:
+        from fastmcp import Client
+
+        async with Client(server) as client:
+            for _ in range(50):
+                result = await client.call_tool("get_index_status", {})
+                status = result.structured_content or {}
+                if status.get("status") == "ready":
+                    return status
+                await asyncio.sleep(0.05)
+            return status
+
+    status = asyncio.run(_run2())
     assert status["status"] == "ready"
     assert status["error"] is None
+
+
+def test_lifespan_cold_start_returns_quickly(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """On cold start (no persisted FTS), lifespan routes to the background
+    thread — get_index_status initially reports building, then ready once
+    the background build completes."""
+    import time as time_mod
+
+    from markdown_vault_mcp.server import make_server
+
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    for i in range(20):
+        (vault / f"n_{i}.md").write_text(f"# N{i}\n\n" + ("body " * 200) + "\n")
+
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_INDEX_PATH", str(tmp_path / "fts.db"))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_STATE_PATH", str(tmp_path / "s.json"))
+
+    server = make_server()
+
+    async def _run() -> tuple[float, dict]:
+        from fastmcp import Client
+
+        start = time_mod.perf_counter()
+        async with Client(server) as client:
+            handshake_elapsed = time_mod.perf_counter() - start
+            # Wait for the background build to complete via the status tool.
+            res: object = None
+            for _ in range(50):
+                res = await client.call_tool("get_index_status", {})
+                if (res.structured_content or {}).get("status") == "ready":
+                    break
+                await asyncio.sleep(0.1)
+            final = res.structured_content or {}
+        return handshake_elapsed, final
+
+    handshake_elapsed, final = asyncio.run(_run())
+    assert handshake_elapsed < 1.0, (
+        f"cold-start handshake took {handshake_elapsed:.3f}s, expected < 1.0s"
+    )
+    assert final["status"] == "ready"
+    assert final["documents_indexed"] == 20
+
+
+def test_lifespan_cold_start_spawns_background_thread(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """On cold start, the lifespan must route FTS build to the background
+    thread — the Collection's background thread is alive (or completed)
+    after handshake; a synchronous-only lifespan would leave it None."""
+    from markdown_vault_mcp._server_deps import get_collection_singleton
+    from markdown_vault_mcp.server import make_server
+
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    (vault / "n.md").write_text("# N\n\nbody\n")
+
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_INDEX_PATH", str(tmp_path / "fts.db"))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_STATE_PATH", str(tmp_path / "s.json"))
+
+    server = make_server()
+
+    background_thread_seen: list[object] = []
+
+    async def _run() -> None:
+        from fastmcp import Client
+
+        async with Client(server) as client:
+            col = get_collection_singleton()
+            background_thread_seen.append(col._background_build_thread)
+            # Drain to ready so close() doesn't race.
+            for _ in range(50):
+                res = await client.call_tool("get_index_status", {})
+                if (res.structured_content or {}).get("status") == "ready":
+                    break
+                await asyncio.sleep(0.05)
+
+    asyncio.run(_run())
+    # The background thread must have been spawned (not None).
+    assert background_thread_seen[0] is not None, (
+        "Cold-start lifespan must spawn a background build thread; "
+        "got None (synchronous path taken instead)"
+    )
+
+
+def test_lifespan_warm_start_skips_background(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """On warm start (sentinel present), lifespan uses the synchronous
+    short-circuit; no background thread is spawned."""
+    from markdown_vault_mcp._server_deps import get_collection_singleton
+    from markdown_vault_mcp.server import make_server
+
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    (vault / "n.md").write_text("# N\n\nbody\n")
+    index_path = tmp_path / "fts.db"
+
+    # Phase 1: pre-build via direct Collection so the sentinel is set.
+    pre = Collection(source_dir=vault, index_path=index_path)
+    pre.build_index()
+    pre.close()
+
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_INDEX_PATH", str(index_path))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_STATE_PATH", str(tmp_path / "s.json"))
+
+    server = make_server()
+
+    background_thread_seen: list[object] = []
+
+    async def _run() -> dict:
+        from fastmcp import Client
+
+        async with Client(server) as client:
+            col = get_collection_singleton()
+            background_thread_seen.append(col._background_build_thread)
+            res = await client.call_tool("get_index_status", {})
+            return res.structured_content or {}
+
+    status = asyncio.run(_run())
+    assert status["status"] == "ready"
+    assert status["documents_indexed"] == 1
+    # Warm path must NOT spawn a background thread.
+    assert background_thread_seen[0] is None, (
+        "Warm-start lifespan must NOT spawn a background thread; "
+        f"got thread={background_thread_seen[0]!r}"
+    )

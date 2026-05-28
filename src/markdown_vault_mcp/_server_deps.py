@@ -100,17 +100,29 @@ def make_collection_lifespan(config: CollectionConfig) -> Any:
         # build_index() scans the freshest working tree.
         await asyncio.to_thread(collection.sync_from_remote_before_index)
 
-        # Build index eagerly so first tool call is fast.
-        stats = await asyncio.to_thread(collection.build_index)
-        logger.info(
-            "Index built: %d documents, %d chunks",
-            stats.documents_indexed,
-            stats.chunks_indexed,
-        )
+        # Route the initial FTS build based on the DB state (#513 PR1):
+        #
+        # - Warm on-disk DB (sentinel present): build_index() short-circuits
+        #   in O(1); the MCP handshake stays fast.
+        # - Cold/partial on-disk DB: skip the synchronous scan; route to the
+        #   background thread so the handshake completes sub-second.
+        # - In-memory DB: always build synchronously — no prior sentinel can
+        #   exist, and background routing offers no benefit for ephemeral stores.
+        if collection.should_use_background_build():
+            logger.info("Cold start: scheduling background FTS build")
+            collection.start_background_build_index()
+        else:
+            stats = await asyncio.to_thread(collection.build_index)
+            logger.info(
+                "Index ready: %d documents",
+                stats.documents_indexed,
+            )
 
-        # Build embeddings eagerly when an embedding provider is configured.
-        # build_embeddings() skips work if the vector index already exists on disk,
-        # so this is safe to call on every startup.
+        # Embeddings stay foreground for PR1.  On a cold start where the
+        # background FTS is still running, this call is a no-op against
+        # the empty index; PR2 (#513 follow-up) moves it to the
+        # background sequence so semantic search becomes available
+        # without an operator-initiated rebuild.
         if kwargs.get("embedding_provider") is not None:
             chunks_embedded = await asyncio.to_thread(collection.build_embeddings)
             logger.info("Embeddings ready: %d chunks", chunks_embedded)
