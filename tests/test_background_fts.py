@@ -253,18 +253,6 @@ def test_mcp_tool_get_index_status_reports_ready(
 
     server = make_server()
 
-    async def _run() -> dict:
-        from fastmcp import Client
-
-        async with Client(server) as client:
-            for _ in range(50):
-                status = await _call_status(client)  # type: ignore[arg-type]
-                if status.get("status") == "ready":
-                    return status
-                await asyncio.sleep(0.05)
-            return status  # type: ignore[return-value]
-
-    # Re-implement using direct client inside the async context.
     async def _run2() -> dict:
         from fastmcp import Client
 

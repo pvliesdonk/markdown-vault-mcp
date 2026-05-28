@@ -355,7 +355,6 @@ class TestMCPGraphTools:
 
         server = make_server()
         async with Client(server) as client:
-            await _wait_for_index_ready(client)
             result = await client.call_tool("get_orphan_notes", {})
         items = _parse_tool_data(result)
         assert isinstance(items, list)
@@ -371,7 +370,6 @@ class TestMCPGraphTools:
 
         server = make_server()
         async with Client(server) as client:
-            await _wait_for_index_ready(client)
             result = await client.call_tool("get_most_linked", {"limit": 5})
         items = _parse_tool_data(result)
         assert isinstance(items, list)
@@ -387,7 +385,6 @@ class TestMCPGraphTools:
 
         server = make_server()
         async with Client(server) as client:
-            await _wait_for_index_ready(client)
             result = await client.call_tool("get_most_linked", {"limit": 1})
         items = _parse_tool_data(result)
         assert len(items) == 1

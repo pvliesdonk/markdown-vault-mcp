@@ -418,49 +418,14 @@ class Collection:
                 "Index not built. Call build_index() before this method."
             )
 
-    def is_index_persisted(self) -> bool:
-        """Return ``True`` iff a prior completed ``build_index`` committed
-        its completeness sentinel to the FTS database on disk.
-
-        This is a cheap O(1) read of the ``meta`` table.  The lifespan
-        uses it to choose between the synchronous warm-path
-        (``build_index()`` short-circuits in O(1)) and the cold-start
-        background path (``start_background_build_index()``), so the MCP
-        handshake stays sub-second on a cold vault.
-
-        In-memory databases cannot carry a sentinel across process
-        boundaries, so this always returns ``False`` for them — they
-        cannot be "warm" in any meaningful sense.  See
-        :meth:`should_use_background_build` for the full routing logic.
-
-        Returns:
-            ``True`` when the sentinel row is present in an on-disk DB
-            (warm restart); ``False`` for in-memory DBs or when the
-            sentinel is absent (cold or partial-build).
-        """
-        if self._fts._is_memory:
-            return False
-        return self._fts.is_build_completed()
-
     def should_use_background_build(self) -> bool:
-        """Return ``True`` iff the lifespan should route the initial
-        FTS build to the background thread.
-
-        Background routing is appropriate only when:
-
-        1. The FTS database is on-disk (in-memory DBs are always
-           rebuilt synchronously — background routing offers no benefit
-           for ephemeral stores and introduces unnecessary concurrency).
-        2. No completeness sentinel is present (cold or partial-build).
-
-        On a warm restart (sentinel present) the lifespan calls
-        :meth:`build_index` synchronously; the O(1) short-circuit means
-        the MCP handshake is fast anyway.
-
-        Returns:
-            ``True`` for disk-backed cold/partial DBs; ``False`` for
-            in-memory DBs or when the index is already warm.
+        """Return True iff the lifespan should route to the background
+        FTS build. False for warm on-disk DBs (sentinel set) and for
+        in-memory DBs (which have no persistent state to short-circuit
+        from). See :meth:`start_background_build_index` and the
+        lifespan in :mod:`markdown_vault_mcp._server_deps`.
         """
+        # In-memory DBs cannot persist a sentinel; always build sync.
         if self._fts._is_memory:
             return False
         return not self._fts.is_build_completed()
@@ -982,11 +947,7 @@ class Collection:
         Returns:
             List of :class:`~markdown_vault_mcp.types.NoteInfo` objects,
             ordered by path.
-
-        Raises:
-            IndexNotReadyError: If :meth:`build_index` has not been called.
         """
-        self._require_index_ready()
         return self._link_mgr.get_orphan_notes()
 
     def get_most_linked(self, *, limit: int = 10) -> list[MostLinkedNote]:
@@ -998,11 +959,7 @@ class Collection:
         Returns:
             List of :class:`~markdown_vault_mcp.types.MostLinkedNote` ordered
             by backlink_count descending.
-
-        Raises:
-            IndexNotReadyError: If :meth:`build_index` has not been called.
         """
-        self._require_index_ready()
         return self._link_mgr.get_most_linked(limit=limit)
 
     def get_connection_path(
