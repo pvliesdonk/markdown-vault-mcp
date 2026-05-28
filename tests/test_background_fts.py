@@ -415,7 +415,7 @@ def test_foreground_write_during_background_scan(tmp_path: Path) -> None:
     for i in range(50):
         (vault / f"seed_{i}.md").write_text(f"# Seed {i}\n\n" + ("x " * 500) + "\n")
 
-    col = Collection(source_dir=vault, read_only=False)
+    col = Collection(source_dir=vault, index_path=tmp_path / "fts.db", read_only=False)
     col.start_background_build_index()
 
     # Race in a foreground write.
