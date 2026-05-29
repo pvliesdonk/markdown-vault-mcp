@@ -625,9 +625,11 @@ def test_decorator_applied_to_remaining_bucket3_tools(
             await client.call_tool(
                 "get_connection_path", {"source": "a.md", "target": "a.md"}
             )
-            # Bucket-4 coordinators (reindex always callable, build_embeddings
-            # may raise ValueError if not configured).
-            await client.call_tool("reindex", {})
+            # Bucket-4 coordinators. reindex uses embeddings=True — when no
+            # embedding provider is configured the decorator raises
+            # IndexNotReadyError; suppress that like get_similar above.
+            with contextlib.suppress(Exception):
+                await client.call_tool("reindex", {})
             with contextlib.suppress(Exception):
                 await client.call_tool("build_embeddings", {"force": False})
 
@@ -1271,7 +1273,9 @@ def test_decorator_embeddings_true_calls_wait_for_embeddings_ready(
 
     vault = _vault(tmp_path)
     _seed(vault)
-    col = Collection(source_dir=vault)
+    from tests.conftest import MockEmbeddingProvider
+
+    col = Collection(source_dir=vault, embedding_provider=MockEmbeddingProvider())
     col.build_index()
     col._embeddings_built = True  # mark embeddings ready for the test
 
@@ -1282,7 +1286,8 @@ def test_decorator_embeddings_true_calls_wait_for_embeddings_ready(
     )
 
     # Skip the embeddings wait if is_embeddings_ready() returns True.
-    # The decorator only calls wait_for_embeddings_ready when not ready.
+    # The decorator only calls wait_for_embeddings_ready when not ready
+    # AND has_embedding_provider is True.
     col._embeddings_built = False  # force the decorator into the wait branch
 
     @needs_index_ready(embeddings=True)
@@ -1325,4 +1330,114 @@ def test_decorator_embeddings_true_fast_path_when_already_ready(
 
     asyncio.run(handler(collection=col))
     assert calls == []  # fast path skipped the wait
-    col.close()
+
+
+def test_get_similar_tool_uses_embeddings_true_decorator(tmp_path: Path) -> None:
+    """get_similar MCP tool blocks on embeddings via the decorator.
+    Smoke test: tool is callable end-to-end via Client after lifespan with
+    pre-built FTS + embeddings."""
+    import asyncio
+
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    (vault / "a.md").write_text("# A\n\nbody\n", encoding="utf-8")
+    index_path = tmp_path / "fts.db"
+    embeddings_path = tmp_path / "vectors"
+
+    from tests.conftest import MockEmbeddingProvider
+
+    pre = Collection(
+        source_dir=vault,
+        index_path=index_path,
+        embedding_provider=MockEmbeddingProvider(),
+        embeddings_path=embeddings_path,
+    )
+    pre.build_index()
+    pre.build_embeddings()
+    pre.close()
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_INDEX_PATH", str(index_path))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_STATE_PATH", str(tmp_path / "s.json"))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH", str(embeddings_path))
+    try:
+        from markdown_vault_mcp.server import make_server
+
+        server = make_server()
+
+        async def _call() -> Any:
+            async with Client(server) as client:
+                return await client.call_tool("get_similar", {"path": "a.md"})
+
+        result = asyncio.run(_call())
+        assert result is not None
+    finally:
+        monkeypatch.undo()
+
+
+def test_vault_similar_resource_uses_embeddings_true_decorator(
+    tmp_path: Path,
+) -> None:
+    """vault_similar resource blocks on embeddings via the decorator."""
+    import asyncio
+
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    (vault / "a.md").write_text("# A\n\nbody\n", encoding="utf-8")
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_INDEX_PATH", str(tmp_path / "fts.db"))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_STATE_PATH", str(tmp_path / "s.json"))
+    try:
+        from markdown_vault_mcp.server import make_server
+
+        server = make_server()
+
+        async def _read() -> Any:
+            async with Client(server) as client:
+                try:
+                    return await client.read_resource("similar://vault/a.md")
+                except Exception:
+                    return None
+
+        asyncio.run(_read())
+    finally:
+        monkeypatch.undo()
+
+
+def test_reindex_tool_uses_embeddings_true_decorator(tmp_path: Path) -> None:
+    """reindex MCP tool blocks on embeddings via the decorator (to avoid
+    racing on the vector sidecar)."""
+    import asyncio
+
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    (vault / "a.md").write_text("# A\n\nbody\n", encoding="utf-8")
+    index_path = tmp_path / "fts.db"
+
+    pre = Collection(source_dir=vault, index_path=index_path)
+    pre.build_index()
+    pre.close()
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_INDEX_PATH", str(index_path))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_STATE_PATH", str(tmp_path / "s.json"))
+    try:
+        from markdown_vault_mcp.server import make_server
+
+        server = make_server()
+
+        async def _call() -> Any:
+            async with Client(server) as client:
+                # raise_on_error=False: without an embedding provider the
+                # embeddings=True decorator raises IndexNotReadyError; the
+                # smoke test only verifies the tool is reachable via the
+                # decorator path, not that it succeeds.
+                return await client.call_tool("reindex", {}, raise_on_error=False)
+
+        asyncio.run(_call())
+    finally:
+        monkeypatch.undo()

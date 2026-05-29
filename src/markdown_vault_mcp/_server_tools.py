@@ -757,7 +757,7 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
             "idempotentHint": True,
         },
     )
-    @needs_index_ready()
+    @needs_index_ready(embeddings=True)
     async def get_similar(
         path: str,
         limit: int = 10,
@@ -1221,7 +1221,7 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
             "idempotentHint": True,
         },
     )
-    @needs_index_ready()
+    @needs_index_ready(embeddings=True)
     async def reindex(
         collection: Collection = Depends(get_collection),
     ) -> dict[str, Any]:

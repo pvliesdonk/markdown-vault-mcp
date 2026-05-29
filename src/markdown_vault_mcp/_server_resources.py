@@ -144,7 +144,7 @@ def register_resources(mcp: FastMCP) -> None:
         mime_type="application/json",
         icons=_TOOL_ICONS["get_similar"],
     )
-    @needs_index_ready()
+    @needs_index_ready(embeddings=True)
     async def vault_similar(
         path: str,
         collection: Collection = Depends(get_collection),

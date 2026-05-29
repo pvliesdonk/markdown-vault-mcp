@@ -475,6 +475,16 @@ class Collection:
             return False
         return self._background_build_done.is_set()
 
+    @property
+    def has_embedding_provider(self) -> bool:
+        """Return ``True`` iff an embedding provider is configured.
+
+        Used by the MCP-layer ``@needs_index_ready(embeddings=True)``
+        decorator to skip the embeddings wait when embeddings are
+        disabled (no provider = no vector sidecar race possible).
+        """
+        return self._embedding_provider is not None
+
     def is_embeddings_ready(self) -> bool:
         """Return ``True`` iff the embeddings phase is in a clean ready state.
 

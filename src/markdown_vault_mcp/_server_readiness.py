@@ -76,7 +76,11 @@ def needs_index_ready(
             effective = timeout if timeout is not None else _resolve_ready_timeout()
             if not collection.is_index_ready():
                 await asyncio.to_thread(collection.wait_for_index_ready, effective)
-            if embeddings and not collection.is_embeddings_ready():
+            if (
+                embeddings
+                and collection.has_embedding_provider
+                and not collection.is_embeddings_ready()
+            ):
                 await asyncio.to_thread(collection.wait_for_embeddings_ready, effective)
             return await handler(*args, **kwargs)
 
