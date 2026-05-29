@@ -496,32 +496,56 @@ class Collection:
         return self._embeddings_build_done.is_set()
 
     def start_background_build_index(self) -> None:
-        """Spawn a daemon thread that runs :meth:`build_index` to completion.
+        """Spawn a daemon thread that runs :meth:`build_index` and, when
+        an embedding provider is configured, :meth:`build_embeddings` to
+        completion (issue #513 PR1 + PR2).
 
-        Idempotent: second call after a successful start, after a
-        clean completion, OR after a failed ``thread.start()`` is a
-        no-op. The method is one-shot per Collection lifetime;
-        operator recovery from a failed start is via CLI
-        ``markdown-vault-mcp index`` or process restart, NOT by
-        calling this method again.
+        Idempotent: second call after a successful start, after a clean
+        completion, OR after a failed ``thread.start()`` is a no-op.
+        One-shot per Collection lifetime; operator recovery is CLI
+        ``markdown-vault-mcp index`` or process restart.
 
-        The worker thread catches ``BaseException`` → captures into
-        ``_background_build_error`` → always sets
-        ``_background_build_done`` in its finally clause.
+        Two phases in one worker:
+        1. FTS via :meth:`build_index`. On failure: captures error,
+           explicitly sets ``_embeddings_build_done`` so embeddings
+           waiters unblock promptly (rather than hanging for the full
+           timeout), returns before reaching phase 2.
+        2. Embeddings via :meth:`build_embeddings` — only when
+           ``_embedding_provider`` is configured. On failure: captures
+           error.
 
-        If ``thread.start()`` itself raises (system thread exhaustion
-        is the realistic case), the same capture-and-set happens
-        synchronously so callers waiting on the event never hang.
+        If ``thread.start()`` itself raises (system thread exhaustion),
+        the captures-and-set happens synchronously for BOTH events so
+        callers waiting on either event never hang.
         """
 
         def _worker() -> None:
+            # Phase 1: FTS.
             try:
                 self.build_index()
             except BaseException as exc:
                 self._background_build_error = exc
-                logger.exception("Background index build failed")
+                logger.exception("Background FTS build failed")
+                # CRITICAL: also set the embeddings event so any waiter
+                # on wait_for_embeddings_ready unblocks promptly.
+                self._embeddings_build_done.set()
+                return  # Skip embeddings phase entirely.
             finally:
                 self._background_build_done.set()
+
+            # Phase 2: embeddings (only when configured).
+            if self._embedding_provider is None:
+                # No provider — embeddings is "disabled," not "building."
+                # _embeddings_build_done was never cleared (see lock block
+                # below), so it stays at its pre-set value.
+                return
+            try:
+                self.build_embeddings()
+            except BaseException as exc:
+                self._embeddings_build_error = exc
+                logger.exception("Background embeddings build failed")
+            finally:
+                self._embeddings_build_done.set()
 
         with self._write_lock:
             if self._background_started:
@@ -529,6 +553,12 @@ class Collection:
             self._background_started = True
             self._background_build_error = None
             self._background_build_done.clear()
+            # Only clear the embeddings event when a provider is
+            # configured — otherwise embeddings is "disabled" and the
+            # pre-set event must stay set.
+            if self._embedding_provider is not None:
+                self._embeddings_build_error = None
+                self._embeddings_build_done.clear()
             thread = threading.Thread(
                 target=_worker,
                 name="markdown-vault-mcp.background-build",
@@ -541,6 +571,11 @@ class Collection:
                 # Synchronously surface the failure so waiters unblock.
                 self._background_build_error = exc
                 self._background_build_done.set()
+                if self._embedding_provider is not None:
+                    # We cleared _embeddings_build_done above; set it
+                    # back so any embeddings waiter unblocks promptly —
+                    # same hang fix as the worker's FTS except block.
+                    self._embeddings_build_done.set()
                 raise
 
     def should_use_background_build(self) -> bool:

@@ -1034,3 +1034,191 @@ def test_synchronous_build_embeddings_clears_prior_background_error(
     assert col._embeddings_build_done.is_set()
     assert col.is_embeddings_ready() is True
     col.close()
+
+
+# ---------------------------------------------------------------------------
+# Task 5 (PR2): Worker extension — embeddings phase + FTS-fail unblocks
+# ---------------------------------------------------------------------------
+
+
+def test_background_embeddings_runs_after_fts_completes(tmp_path: Path) -> None:
+    """Happy path: provider configured, cold start, background builds both
+    phases sequentially. Eventually both is_index_ready and
+    is_embeddings_ready return True."""
+    from tests.conftest import MockEmbeddingProvider
+
+    vault = _vault(tmp_path)
+    for i in range(3):
+        _seed(vault, f"n_{i}.md", f"# N{i}\n\nbody {i}\n")
+    col = Collection(
+        source_dir=vault,
+        index_path=tmp_path / "fts.db",
+        embedding_provider=MockEmbeddingProvider(),
+        embeddings_path=tmp_path / "vectors",
+    )
+
+    col.start_background_build_index()
+    col.wait_for_index_ready(timeout=5.0)
+    col.wait_for_embeddings_ready(timeout=5.0)
+
+    assert col.is_index_ready()
+    assert col.is_embeddings_ready()
+    col.close()
+
+
+def test_background_embeddings_failure_captured_and_surfaced(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """If embeddings phase raises, _embeddings_build_error is set and
+    wait_for_embeddings_ready raises IndexBuildFailedError."""
+    from markdown_vault_mcp.managers import index as index_mod
+    from tests.conftest import MockEmbeddingProvider
+
+    vault = _vault(tmp_path)
+    _seed(vault)
+    col = Collection(
+        source_dir=vault,
+        index_path=tmp_path / "fts.db",
+        embedding_provider=MockEmbeddingProvider(),
+        embeddings_path=tmp_path / "vectors",
+    )
+
+    def boom(self, *, force: bool = False) -> int:  # noqa: ARG001
+        raise RuntimeError("simulated embeddings failure")
+
+    monkeypatch.setattr(index_mod.IndexManager, "build_embeddings", boom)
+    col.start_background_build_index()
+
+    col.wait_for_index_ready(timeout=5.0)  # FTS still succeeds
+    with pytest.raises(IndexBuildFailedError):
+        col.wait_for_embeddings_ready(timeout=5.0)
+    assert col.is_embeddings_ready() is False
+    col.close()
+
+
+def test_no_provider_skips_embeddings_phase(tmp_path: Path) -> None:
+    """Cold start without an embedding provider: background runs FTS only;
+    embeddings event stays at its pre-set value; is_embeddings_ready is
+    False because _embeddings_built is False."""
+    vault = _vault(tmp_path)
+    _seed(vault)
+    col = Collection(source_dir=vault, index_path=tmp_path / "fts.db")
+    col.start_background_build_index()
+    col.wait_for_index_ready(timeout=5.0)
+    assert col.is_index_ready()
+    assert col._embeddings_build_done.is_set()  # pre-set, never cleared
+    assert col.is_embeddings_ready() is False
+    col.close()
+
+
+def test_fts_failure_skips_embeddings_phase_no_provider(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """FTS fails, no provider: embeddings event stays pre-set;
+    wait_for_embeddings_ready raises 'never scheduled' immediately."""
+    import time as time_mod
+
+    from markdown_vault_mcp.managers import index as index_mod
+
+    vault = _vault(tmp_path)
+    _seed(vault)
+    col = Collection(source_dir=vault, index_path=tmp_path / "fts.db")
+
+    def boom(self, *, force: bool = False):  # noqa: ARG001
+        raise RuntimeError("simulated FTS failure")
+
+    monkeypatch.setattr(index_mod.IndexManager, "build_index", boom)
+    col.start_background_build_index()
+
+    with pytest.raises(IndexBuildFailedError):
+        col.wait_for_index_ready(timeout=1.0)
+
+    start = time_mod.perf_counter()
+    with pytest.raises(IndexNotReadyError, match=r"never scheduled|not built"):
+        col.wait_for_embeddings_ready(timeout=0.1)
+    elapsed = time_mod.perf_counter() - start
+    assert elapsed < 0.05, f"wait_for_embeddings_ready took {elapsed:.3f}s"
+    col.close()
+
+
+def test_fts_failure_skips_embeddings_phase_with_provider(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """CRITICAL REGRESSION for the FTS-fail hang bug. Provider configured,
+    FTS fails. Worker's FTS except block MUST set _embeddings_build_done
+    explicitly — without it, wait_for_embeddings_ready would hang for the
+    full timeout. Test: wall-clock < 0.05s and raises 'never scheduled'."""
+    import time as time_mod
+
+    from markdown_vault_mcp.managers import index as index_mod
+    from tests.conftest import MockEmbeddingProvider
+
+    vault = _vault(tmp_path)
+    _seed(vault)
+    col = Collection(
+        source_dir=vault,
+        index_path=tmp_path / "fts.db",
+        embedding_provider=MockEmbeddingProvider(),
+        embeddings_path=tmp_path / "vectors",
+    )
+
+    def boom(self, *, force: bool = False):  # noqa: ARG001
+        raise RuntimeError("simulated FTS failure with provider configured")
+
+    monkeypatch.setattr(index_mod.IndexManager, "build_index", boom)
+    col.start_background_build_index()
+
+    with pytest.raises(IndexBuildFailedError):
+        col.wait_for_index_ready(timeout=1.0)
+
+    assert col._embeddings_build_done.is_set()  # CRITICAL: set by FTS except
+    start = time_mod.perf_counter()
+    with pytest.raises(IndexNotReadyError, match=r"never scheduled|not built"):
+        col.wait_for_embeddings_ready(timeout=0.1)
+    elapsed = time_mod.perf_counter() - start
+    assert elapsed < 0.05, (
+        f"wait_for_embeddings_ready took {elapsed:.3f}s — HANG BUG REGRESSION"
+    )
+    col.close()
+
+
+def test_thread_start_failure_with_provider_releases_embeddings_waiter(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """CRITICAL REGRESSION for the parallel thread-start hang bug. Provider
+    configured, threading.Thread.start raises. start_background_build_index's
+    except block MUST conditionally set _embeddings_build_done. Test: both
+    events set after raise; wait_for_embeddings_ready raises 'never
+    scheduled' within < 0.05s."""
+    import time as time_mod
+
+    from tests.conftest import MockEmbeddingProvider
+
+    vault = _vault(tmp_path)
+    _seed(vault)
+    col = Collection(
+        source_dir=vault,
+        index_path=tmp_path / "fts.db",
+        embedding_provider=MockEmbeddingProvider(),
+        embeddings_path=tmp_path / "vectors",
+    )
+
+    def boom_start(_self: threading.Thread) -> None:
+        raise RuntimeError("system thread exhaustion (simulated)")
+
+    monkeypatch.setattr(threading.Thread, "start", boom_start)
+
+    with pytest.raises(RuntimeError, match=r"thread exhaustion"):
+        col.start_background_build_index()
+
+    assert col._background_build_done.is_set()
+    assert col._embeddings_build_done.is_set()  # CRITICAL: parallel hang fix
+
+    start = time_mod.perf_counter()
+    with pytest.raises(IndexNotReadyError, match=r"never scheduled|not built"):
+        col.wait_for_embeddings_ready(timeout=0.1)
+    elapsed = time_mod.perf_counter() - start
+    assert elapsed < 0.05, (
+        f"wait_for_embeddings_ready took {elapsed:.3f}s — N1 HANG BUG REGRESSION"
+    )
+    col.close()
