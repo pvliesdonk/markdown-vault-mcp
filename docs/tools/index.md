@@ -15,7 +15,7 @@ markdown-vault-mcp exposes MCP tools across several categories. Write tools are 
 | [`list_tags`](#list_tags) | Read | List all unique frontmatter tag values |
 | [`stats`](#stats) | Read | Get collection statistics and capabilities |
 | [`embeddings_status`](#embeddings_status) | Read | Check embedding provider and vector index status |
-| [`get_index_status`](#get_index_status) | Read | Check background FTS build state (ready / building / failed) |
+| [`get_index_status`](#get_index_status) | Read | Check background FTS build state (queryable / building / failed) |
 | [`get_backlinks`](#get_backlinks) | Read | Find all documents that link to a given document |
 | [`get_outlinks`](#get_outlinks) | Read | Find all links from a document, with existence check |
 | [`get_broken_links`](#get_broken_links) | Read | Find all links pointing to non-existent documents |
@@ -204,11 +204,11 @@ Check the embedding provider configuration and vector index status. Use this to 
 
 Returns background-build state of the FTS index. Use this when
 `initialize` returned but bucket-3/4 calls block longer than expected
-or surface `IndexNotReadyError`/`IndexBuildFailedError` — the
+or surface `IndexNotReadyError` — the
 `status` field distinguishes "still building" from "build failed."
 
 **Returns:**
-- `status`: `"ready"`, `"building"`, or `"failed"`.
+- `status`: `"queryable"`, `"building"`, or `"failed"`.
 - `documents_indexed`: count of documents committed to the FTS index
   right now (rises during `"building"`).
 - `error`: `null` unless the background build raised; otherwise the
@@ -221,7 +221,7 @@ or surface `IndexNotReadyError`/`IndexBuildFailedError` — the
 ## Index Management
 
 !!! note "Cold-start blocking"
-    Calls to `reindex` and `build_embeddings` during a cold-start background FTS build block via the tool-layer `needs_index_ready` decorator. If the build takes longer than `MARKDOWN_VAULT_MCP_READY_TIMEOUT_S` (default 60s), the tool returns `IndexNotReadyError`. If a prior background build raised, it returns `IndexBuildFailedError`. Poll `get_index_status` to observe build state without blocking.
+    Calls to `reindex` and `build_embeddings` during a cold-start background FTS build block via the tool-layer `needs_index_ready` decorator. If the build takes longer than `MARKDOWN_VAULT_MCP_READY_TIMEOUT_S` (default 60s), the tool raises `IndexNotReadyError(reason="timeout")`. A captured background-build error does not gate this read; it is surfaced via the `error` field of `get_index_status`. Poll `get_index_status` to observe build state without blocking.
 
 ### `reindex`
 
@@ -608,7 +608,7 @@ managed git mode (`MARKDOWN_VAULT_MCP_GIT_REPO_URL` not set).
 ## Link Graph
 
 !!! note "Cold-start blocking"
-    Calls to `get_backlinks`, `get_outlinks`, `get_similar`, `get_context`, and `get_connection_path` during a cold-start background FTS build block via the tool-layer `needs_index_ready` decorator. If the build takes longer than `MARKDOWN_VAULT_MCP_READY_TIMEOUT_S` (default 60s), the tool returns `IndexNotReadyError`. If a prior background build raised, it returns `IndexBuildFailedError`. Poll `get_index_status` to observe build state without blocking.
+    Calls to `get_backlinks`, `get_outlinks`, `get_similar`, `get_context`, and `get_connection_path` during a cold-start background FTS build block via the tool-layer `needs_index_ready` decorator. If the build takes longer than `MARKDOWN_VAULT_MCP_READY_TIMEOUT_S` (default 60s), the tool raises `IndexNotReadyError(reason="timeout")`. A captured background-build error does not gate this read; it is surfaced via the `error` field of `get_index_status`. Poll `get_index_status` to observe build state without blocking.
 
 ### `get_backlinks`
 

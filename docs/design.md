@@ -404,11 +404,17 @@ arriving at the MCP layer go through the
 `src/markdown_vault_mcp/_server_readiness.py`), which blocks via
 `Collection.wait_for_index_ready(timeout)` with a configurable
 default (env `MARKDOWN_VAULT_MCP_READY_TIMEOUT_S`, default 60s).
-A failed background build surfaces to MCP clients as
-`IndexBuildFailedError` (the decorator's `wait_for_index_ready`
-call raises) and to operators as
-`get_index_status` reporting
-`{"status": "failed", "error": "..."}`. Embeddings stay on the
+A failed background build is a diagnostic event, not a gate on the
+read path. It surfaces to operators via `get_index_status` reporting
+`{"status": "failed", "error": "..."}` when the index is not
+queryable, or `{"status": "queryable", "error": "..."}` when a
+prior rebuild attempt errored but an older index remains usable.
+The `needs_index_ready` decorator raises `IndexNotReadyError` with a
+structured `reason` discriminator: `"never_built"` (build never
+scheduled), `"timeout"` (wait exceeded `MARKDOWN_VAULT_MCP_READY_TIMEOUT_S`),
+or `"broken"` (sqlite3.OperationalError caught at the decorator
+boundary). Issue #534 will further subdivide `"queryable"` into
+`"up_to_date"` and `"degraded"` once drift detection lands. Embeddings stay on the
 synchronous lifespan path in PR1 — on cold start
 `build_embeddings()` is skipped with a log entry and semantic
 search returns empty until PR2 backgrounds embeddings or the

@@ -95,7 +95,7 @@ The empty string `""` represents the root folder (top-level documents).
 Table of contents (heading outline) for a specific document. This is a URI template — replace `{path}` with the document's relative path.
 
 !!! note "Cold-start blocking"
-    Calls during a cold-start background FTS build block via the tool-layer `needs_index_ready` decorator and may surface `IndexBuildFailedError` if the background build raised. Poll `get_index_status` to observe build state without blocking.
+    Calls during a cold-start background FTS build block via the tool-layer `needs_index_ready` decorator. If the build takes longer than the configured timeout, the resource raises `IndexNotReadyError(reason="timeout")`. The `reason` field also takes values `"never_built"` (build never scheduled) and `"broken"` (sqlite3.OperationalError caught at the decorator boundary). A captured background-build error does not gate this read; it is surfaced via the `error` field of `get_index_status`. Poll `get_index_status` to observe build state without blocking.
 
 **Example:** `toc://vault/Journal/note.md`
 
@@ -118,7 +118,7 @@ The TOC prepends a synthetic H1 from the document title and deduplicates if the 
 Top 10 semantically similar notes for a document. Requires embeddings to be built. This is a URI template — replace `{path}` with the document's relative path.
 
 !!! note "Cold-start blocking"
-    Calls during a cold-start background FTS build block via the tool-layer `needs_index_ready` decorator and may surface `IndexBuildFailedError` if the background build raised. Poll `get_index_status` to observe build state without blocking.
+    Calls during a cold-start background FTS build block via the tool-layer `needs_index_ready` decorator. If the build takes longer than the configured timeout, the resource raises `IndexNotReadyError(reason="timeout")`. The `reason` field also takes values `"never_built"` (build never scheduled) and `"broken"` (sqlite3.OperationalError caught at the decorator boundary). A captured background-build error does not gate this read; it is surfaced via the `error` field of `get_index_status`. Poll `get_index_status` to observe build state without blocking.
 
 Results are **grouped per file** — each file appears at most once, with up to `chunks_per_file` (server default `2`) best-matching sections in a `sections` array. Each entry is a `GroupedResult` dict with `path`, `title`, `folder`, `score` (max section score), `search_type` (`"semantic"`), `frontmatter`, and `sections` — a list of `{heading, content, score}` dicts sorted by score then document order.
 
