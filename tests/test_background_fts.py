@@ -13,28 +13,10 @@ import pytest
 from fastmcp import Client
 
 from markdown_vault_mcp.collection import Collection
-from markdown_vault_mcp.exceptions import (
-    IndexBuildFailedError,
-    IndexNotReadyError,
-    MarkdownMCPError,
-)
+from markdown_vault_mcp.exceptions import IndexNotReadyError
 
 if TYPE_CHECKING:
     from pathlib import Path
-
-
-def test_index_build_failed_error_subclasses_base() -> None:
-    err = IndexBuildFailedError("scan failed")
-    assert isinstance(err, MarkdownMCPError)
-    assert str(err) == "scan failed"
-
-
-def test_index_build_failed_error_carries_cause() -> None:
-    original = RuntimeError("scan exploded")
-    try:
-        raise IndexBuildFailedError("background build failed") from original
-    except IndexBuildFailedError as err:
-        assert err.__cause__ is original
 
 
 def _vault(tmp_path: Path) -> Path:
@@ -170,9 +152,13 @@ def test_start_background_build_index_eventually_ready(tmp_path: Path) -> None:
     col.close()
 
 
-def test_start_background_build_index_captures_error(
+def test_start_background_build_index_captures_error_diagnostically(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """After #533, a captured background build error does NOT raise from
+    wait_for_index_ready. The error becomes a diagnostic event visible
+    via _background_build_error and get_index_status. The index stays
+    not-ready because _index_built was never set."""
     col = Collection(source_dir=_vault(tmp_path))
 
     def boom(*_a: object, **_kw: object) -> None:
@@ -181,9 +167,16 @@ def test_start_background_build_index_captures_error(
     monkeypatch.setattr(col._index_mgr, "build_index", boom)
     col.start_background_build_index()
 
-    with pytest.raises(IndexBuildFailedError):
+    # wait_for_index_ready raises 'never_built' (not 'IndexBuildFailedError').
+    with pytest.raises(IndexNotReadyError) as excinfo:
         col.wait_for_index_ready(timeout=5.0)
+    assert excinfo.value.reason == "never_built"
     assert col.is_index_ready() is False
+    # Diagnostic: captured error is visible.
+    assert isinstance(col._background_build_error, RuntimeError)
+    status = col.get_index_status()
+    assert status["status"] == "failed"
+    assert "simulated scan failure" in (status["error"] or "")
     col.close()
 
 
@@ -220,9 +213,10 @@ def test_start_background_build_index_one_shot_after_thread_start_failure(
     assert col._background_build_done.is_set()
     assert isinstance(col._background_build_error, RuntimeError)
 
-    # wait_for_index_ready surfaces it as IndexBuildFailedError.
-    with pytest.raises(IndexBuildFailedError):
+    # wait_for_index_ready raises 'never_built' (no IndexBuildFailedError).
+    with pytest.raises(IndexNotReadyError) as excinfo:
         col.wait_for_index_ready(timeout=0.1)
+    assert excinfo.value.reason == "never_built"
 
     # Retry is a no-op (one-shot semantics).
     monkeypatch.undo()
@@ -885,7 +879,7 @@ def test_synchronous_build_index_clears_prior_background_error(
 ) -> None:
     """Recovery path: after a failed background build, calling build_index()
     synchronously must clear _background_build_error so is_index_ready()
-    returns True and bucket-3/4 calls stop raising IndexBuildFailedError."""
+    returns True after build completion and bucket-3/4 calls operate normally."""
     vault = _vault(tmp_path)
     _seed(vault)
     col = Collection(source_dir=vault, index_path=tmp_path / "fts.db")
