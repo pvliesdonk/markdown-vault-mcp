@@ -99,19 +99,23 @@ def test_wait_for_index_ready_raises_on_timeout(tmp_path: Path) -> None:
     col = Collection(source_dir=_vault(tmp_path))
     col._background_build_done.clear()
     col._index_built = False
-    with pytest.raises(IndexNotReadyError, match=r"timed out"):
+    with pytest.raises(IndexNotReadyError) as excinfo:
         col.wait_for_index_ready(timeout=0.05)
+    assert excinfo.value.reason == "timeout"
     col.close()
 
 
-def test_wait_for_index_ready_raises_build_failed_when_error_set(
+def test_wait_for_index_ready_returns_when_built_with_captured_error(
     tmp_path: Path,
 ) -> None:
+    """The 'errors are events not states' rule (#533): a captured background
+    error on a previously-built index must NOT gate the read path.
+    wait_for_index_ready returns normally; the error is diagnostic-only."""
     col = Collection(source_dir=_vault(tmp_path))
-    col._background_build_error = RuntimeError("scan exploded")
-    with pytest.raises(IndexBuildFailedError) as excinfo:
-        col.wait_for_index_ready(timeout=0.1)
-    assert isinstance(excinfo.value.__cause__, RuntimeError)
+    col._index_built = True
+    col._background_build_done.set()
+    col._background_build_error = RuntimeError("prior scan exploded")
+    col.wait_for_index_ready(timeout=0.1)  # must not raise
     col.close()
 
 
@@ -121,8 +125,9 @@ def test_wait_for_index_ready_raises_when_never_scheduled(tmp_path: Path) -> Non
     let wait() return success without the explicit guard."""
     col = Collection(source_dir=_vault(tmp_path))
     # All defaults: event pre-set, no error, _index_built=False, no spawn.
-    with pytest.raises(IndexNotReadyError, match=r"never scheduled|not built"):
+    with pytest.raises(IndexNotReadyError) as excinfo:
         col.wait_for_index_ready(timeout=0.1)
+    assert excinfo.value.reason == "never_built"
     col.close()
 
 

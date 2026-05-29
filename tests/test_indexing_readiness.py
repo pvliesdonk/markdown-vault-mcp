@@ -284,8 +284,9 @@ class TestWaitForIndexReady:
         vault = _vault(tmp_path)
         col = Collection(source_dir=vault)
 
-        with pytest.raises(IndexNotReadyError):
+        with pytest.raises(IndexNotReadyError) as excinfo:
             col.wait_for_index_ready(timeout=0.1)
+        assert excinfo.value.reason == "never_built"
 
     def test_after_build_returns(self, tmp_path: Path) -> None:
         vault = _vault(tmp_path)

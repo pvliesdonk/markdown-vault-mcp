@@ -13,7 +13,7 @@ import re
 import threading
 from typing import TYPE_CHECKING, Any, Literal
 
-from markdown_vault_mcp.exceptions import IndexBuildFailedError, IndexNotReadyError
+from markdown_vault_mcp.exceptions import IndexNotReadyError
 from markdown_vault_mcp.fts_index import FTSIndex
 from markdown_vault_mcp.scanner import (
     ChunkStrategy,
@@ -575,53 +575,49 @@ class Collection:
         }
 
     def wait_for_index_ready(self, timeout: float | None = None) -> None:
-        """Block until the FTS index is ready, or raise.
+        """Block until the FTS index is queryable, or raise.
 
         Control flow (each step in order):
 
-        1. ``_background_build_done.wait(timeout)`` — if False
-           (timed out), raise
-           :exc:`IndexNotReadyError("…timed out…")`.
-        2. If ``_background_build_error`` is not None, raise
-           :exc:`IndexBuildFailedError` with the original as
-           ``__cause__``.
-        3. If ``_index_built`` is False, raise
-           :exc:`IndexNotReadyError("…never scheduled…")` — guards
-           the never-scheduled case (event pre-set, no error, no
-           build, no thread). Without it, callers on a fresh
-           Collection would silently return success.
-        4. Otherwise return.
+        1. ``_background_build_done.wait(timeout)`` — if False (timed
+           out), raise :exc:`IndexNotReadyError(reason="timeout")`.
+        2. If ``_index_built`` is False, raise
+           :exc:`IndexNotReadyError(reason="never_built")` — guards
+           the never-scheduled case (event pre-set, no build, no thread).
+           Without it, callers on a fresh Collection would silently
+           return success.
+        3. Otherwise return.
 
-        This method is opt-in for the MCP-layer `needs_index_ready`
-        decorator and for external callers that explicitly want to
-        wait. Library bucket-3/4 methods do NOT call this — they call
-        :meth:`_require_index_ready` which raises immediately. That
-        separation is the boundary that closed attempt 6's hole.
+        A captured ``_background_build_error`` no longer gates this
+        method (#533 unwind). The captured exception is surfaced via
+        :meth:`get_index_status` as a diagnostic event, not as a raised
+        ``IndexBuildFailedError`` — the class is gone.
+
+        This method is opt-in for the MCP-layer
+        :func:`needs_index_ready` decorator and for external callers that
+        explicitly want to wait. Library bucket-3/4 methods do NOT call
+        this — they call :meth:`_require_index_ready` which raises
+        immediately. That separation is the boundary that closed attempt
+        6's hole.
 
         Args:
             timeout: Maximum seconds to wait on the completion event.
-                ``None`` (default) blocks indefinitely. MCP tool
-                callers are protected from infinite hangs by the
-                bounded default in the decorator (60s) and by
-                client-side deadlines.
+                ``None`` (default) blocks indefinitely.
 
         Raises:
-            IndexBuildFailedError: A prior background build raised.
-            IndexNotReadyError: Index not built and either no build
-                was ever scheduled, or the timeout expired.
+            IndexNotReadyError: with ``reason="timeout"`` on timeout, or
+                ``reason="never_built"`` if the build was never scheduled.
         """
         if not self._background_build_done.wait(timeout=timeout):
             raise IndexNotReadyError(
-                f"Index build still in progress; timed out after {timeout}s."
+                f"Index build still in progress; timed out after {timeout}s.",
+                reason="timeout",
             )
-        if self._background_build_error is not None:
-            raise IndexBuildFailedError(
-                "Background index build raised; see __cause__ for details."
-            ) from self._background_build_error
         if not self._index_built:
             raise IndexNotReadyError(
                 "Index not built; background build was never scheduled. "
-                "Call build_index() or start_background_build_index() first."
+                "Call build_index() or start_background_build_index() first.",
+                reason="never_built",
             )
 
     @property
