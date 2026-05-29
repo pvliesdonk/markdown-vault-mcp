@@ -890,7 +890,16 @@ class Collection:
                 not configured.
         """
         self._require_index_ready()
-        return self._index_mgr.build_embeddings(force=force)
+        result = self._index_mgr.build_embeddings(force=force)
+        # A successful synchronous build is also a recovery path — clear
+        # any captured background-build error so is_embeddings_ready()
+        # returns True and the decorator stops surfacing
+        # IndexBuildFailedError. Mirrors what build_index() does for the
+        # FTS phase (PR1, R2 review fix).
+        self._embeddings_build_error = None
+        self._embeddings_built = True
+        self._embeddings_build_done.set()
+        return result
 
     def embeddings_status(self) -> dict:
         """Return status information about the vector index.

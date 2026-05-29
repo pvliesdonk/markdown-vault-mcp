@@ -997,3 +997,40 @@ def test_is_embeddings_ready_true_when_built_no_error_event_set(tmp_path: Path) 
     col._embeddings_build_done.set()
     assert col.is_embeddings_ready() is True
     col.close()
+
+
+# ---------------------------------------------------------------------------
+# Task 4 (PR2): build_embeddings() facade recovery path
+# ---------------------------------------------------------------------------
+
+
+def test_synchronous_build_embeddings_clears_prior_background_error(
+    tmp_path: Path,
+) -> None:
+    """Recovery path: after a failed background embeddings build, calling
+    build_embeddings() synchronously must clear _embeddings_build_error,
+    set _embeddings_built=True, and set _embeddings_build_done."""
+    from tests.conftest import MockEmbeddingProvider
+
+    vault = _vault(tmp_path)
+    _seed(vault)
+    col = Collection(
+        source_dir=vault,
+        embedding_provider=MockEmbeddingProvider(),
+        embeddings_path=tmp_path / "vectors",
+    )
+    col.build_index()  # FTS prerequisite
+
+    # Simulate a prior failed background embeddings.
+    col._embeddings_build_error = RuntimeError("simulated prior background failure")
+    col._embeddings_build_done.set()
+    assert col.is_embeddings_ready() is False
+
+    # Synchronous recovery.
+    col.build_embeddings()
+
+    assert col._embeddings_build_error is None
+    assert col._embeddings_built is True
+    assert col._embeddings_build_done.is_set()
+    assert col.is_embeddings_ready() is True
+    col.close()
