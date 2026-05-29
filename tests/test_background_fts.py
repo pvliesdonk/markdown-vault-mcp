@@ -1588,3 +1588,34 @@ def test_lifespan_warm_start_with_provider_builds_embeddings_synchronously(
     status = asyncio.run(_run())
     assert status["status"] == "ready"
     assert status["embeddings"]["status"] == "ready"
+
+
+# ---------------------------------------------------------------------------
+# Task 10 (PR2): get_context graceful degradation during embeddings build
+# ---------------------------------------------------------------------------
+
+
+def test_get_context_returns_empty_similar_during_embeddings_build(
+    tmp_path: Path,
+) -> None:
+    """Contract test: get_context during the FTS-done / embeddings-building
+    window must return a successful response with similar=[]. Locked in by
+    SearchManager.get_similar's count == 0 short-circuit at
+    managers/search.py:1160. Test guards against a future regression
+    where someone changes that short-circuit to raise."""
+    from tests.conftest import MockEmbeddingProvider
+
+    vault = _vault(tmp_path)
+    _seed(vault)
+    col = Collection(
+        source_dir=vault,
+        embedding_provider=MockEmbeddingProvider(),
+        embeddings_path=tmp_path / "vectors",  # no .npy yet
+    )
+    col.build_index()  # FTS ready
+    # Embeddings NOT built — empty in-memory VectorIndex via _load_vectors.
+
+    result = col.get_context("n.md")
+    # similar should be [] (graceful degradation), no exception.
+    assert result.similar == [] or len(result.similar) == 0
+    col.close()
