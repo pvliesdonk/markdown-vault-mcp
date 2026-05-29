@@ -526,31 +526,50 @@ class Collection:
         return not self._fts.is_build_completed()
 
     def get_index_status(self) -> dict[str, Any]:
-        """Return a non-blocking snapshot of background-build state.
+        """Return a non-blocking snapshot of FTS background-build state.
 
-        Shape: ``{"status": "ready" | "building" | "failed",
+        Shape: ``{"status": "queryable" | "building" | "failed",
         "documents_indexed": int, "error": str | None}``.
 
-        - ``"ready"``: ``is_index_ready()`` is True (synchronous build
-          returned cleanly or background build completed cleanly);
-          ``error`` is None.
-        - ``"failed"``: ``_background_build_error`` is non-None;
-          ``error`` carries its message.
+        Issue #533 reframed the meaning. Status is a present-tense
+        capability check; ``error`` is the diagnostic last-attempt
+        outcome.
+
+        - ``"queryable"`` (#533 rename from ``"ready"``): the FTS index
+          is readable right now. ``error`` may still be non-None —
+          a previously successful build left readable data on disk and
+          a subsequent rebuild captured an exception. Readers proceed
+          normally; operators see the diagnostic in ``error``.
+        - ``"failed"``: NOT queryable AND a build attempt errored.
+          Operator action: inspect ``error``, rebuild via CLI
+          ``markdown-vault-mcp index`` or restart.
         - ``"building"``: anything else — event cleared (in-flight)
-          OR event set but ``_index_built`` is False (never scheduled).
-          From the operator's perspective both mean "wait or poll."
+          or event set but ``_index_built`` False (never scheduled).
+
+        Forward-pointer (issue #534): the ``"queryable"`` value will
+        subdivide into ``"up_to_date"`` and ``"degraded"`` when drift
+        detection lands. Clients that haven't learned the new values
+        should treat any unknown queryable-like value as queryable
+        (graceful degradation).
 
         ``documents_indexed`` is taken from
         :meth:`FTSIndex.list_notes` and so reflects whatever rows are
-        currently committed — progress is observable in the
+        currently committed; progress is observable in the
         ``"building"`` state as the count rises.
         """
-        if self._background_build_error is not None:
+        if self.is_index_ready():
+            status = "queryable"
+            error: str | None = (
+                str(self._background_build_error)
+                if self._background_build_error is not None
+                else None
+            )
+        elif (
+            self._background_build_done.is_set()
+            and self._background_build_error is not None
+        ):
             status = "failed"
-            error: str | None = str(self._background_build_error)
-        elif self.is_index_ready():
-            status = "ready"
-            error = None
+            error = str(self._background_build_error)
         else:
             status = "building"
             error = None
