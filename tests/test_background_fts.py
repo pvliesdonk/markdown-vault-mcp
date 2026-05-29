@@ -918,3 +918,31 @@ def test_collection_has_embeddings_phase_state(tmp_path: Path) -> None:
     assert col._embeddings_build_error is None
     assert col._embeddings_built is False
     col.close()
+
+
+# ---------------------------------------------------------------------------
+# Task 2 (PR2): is_embeddings_ready()
+# ---------------------------------------------------------------------------
+
+
+def test_is_embeddings_ready_false_after_construction(tmp_path: Path) -> None:
+    col = Collection(source_dir=_vault(tmp_path))
+    assert col.is_embeddings_ready() is False
+    col.close()
+
+
+def test_is_embeddings_ready_false_when_error_captured(tmp_path: Path) -> None:
+    col = Collection(source_dir=_vault(tmp_path))
+    col._embeddings_built = True
+    col._embeddings_build_error = RuntimeError("simulated")
+    assert col.is_embeddings_ready() is False
+    col.close()
+
+
+def test_is_embeddings_ready_true_when_built_no_error_event_set(tmp_path: Path) -> None:
+    col = Collection(source_dir=_vault(tmp_path))
+    col._embeddings_built = True
+    col._embeddings_build_error = None
+    col._embeddings_build_done.set()
+    assert col.is_embeddings_ready() is True
+    col.close()

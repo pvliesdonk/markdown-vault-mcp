@@ -475,6 +475,26 @@ class Collection:
             return False
         return self._background_build_done.is_set()
 
+    def is_embeddings_ready(self) -> bool:
+        """Return ``True`` iff the embeddings phase is in a clean ready state.
+
+        Parallel to :meth:`is_index_ready` but for the embeddings phase
+        of the background build. Three-field check: ``_embeddings_built``
+        is True (a successful build_embeddings ran), ``_embeddings_build_error``
+        is None (no captured background failure), and
+        ``_embeddings_build_done`` is set. A freshly-constructed Collection
+        returns False because ``_embeddings_built`` is False even though
+        the event is pre-set.
+
+        Lock-free by design, same as :meth:`is_index_ready`. CPython GIL
+        assumed for cross-thread visibility.
+        """
+        if not self._embeddings_built:
+            return False
+        if self._embeddings_build_error is not None:
+            return False
+        return self._embeddings_build_done.is_set()
+
     def start_background_build_index(self) -> None:
         """Spawn a daemon thread that runs :meth:`build_index` to completion.
 
