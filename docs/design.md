@@ -423,11 +423,16 @@ without deadlocking on internal blocking.
 thread that handles FTS extends to a second phase when an
 ``embedding_provider`` is configured. After a successful FTS phase,
 the worker calls ``Collection.build_embeddings()`` to populate the
-vector sidecar. Bucket-3 surfaces that need vectors —
-``get_similar``, ``vault_similar``, and ``reindex`` (which directly
-mutates the vector sidecar via ``IndexManager.reindex``) — use the
-new ``@needs_index_ready(embeddings=True)`` decorator argument and
-wait for both phases at the MCP layer. The library never blocks on
+vector sidecar. Bucket-3/4 surfaces that need vectors —
+``get_similar``, ``vault_similar``, ``reindex`` (which directly
+mutates the vector sidecar via ``IndexManager.reindex``), and
+``build_embeddings`` (which calls ``IndexManager.build_embeddings``
+directly — the same code the worker's phase-2 runs) — use the new
+``@needs_index_ready(embeddings=True)`` decorator argument and wait
+for both phases at the MCP layer. The mutator surfaces require the
+embeddings wait to serialise against the still-running worker
+phase-2 (``IndexManager.build_embeddings`` is lock-free across its
+``_load_vectors``/``vectors.save`` critical region). The library never blocks on
 embeddings; ``_require_index_ready()`` is unchanged from PR1.
 ``get_index_status`` returns a nested shape with ``fts`` and
 ``embeddings`` substates plus a top-level reduction.

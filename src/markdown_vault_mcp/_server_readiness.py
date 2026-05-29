@@ -15,8 +15,13 @@ no-op otherwise — see :attr:`Collection.has_embedding_provider`).
 Worst-case total wait when a provider is configured is
 ``2 x MARKDOWN_VAULT_MCP_READY_TIMEOUT_S`` (60s per phase, 120s
 total with defaults). Applied
-to ``get_similar``, ``vault_similar``, and ``reindex`` — the three
-surfaces that read or mutate the vector sidecar.
+to ``get_similar``, ``vault_similar``, ``reindex``, and
+``build_embeddings`` — the four surfaces that read or mutate the
+vector sidecar. ``reindex`` and ``build_embeddings`` both run inside
+``IndexManager.build_embeddings`` (which is lock-free across its
+``_load_vectors``/``vectors.save`` critical region), so they must
+serialise against the background worker's phase-2 — the embeddings
+wait is what guarantees that ordering.
 """
 
 from __future__ import annotations
@@ -60,7 +65,10 @@ def needs_index_ready(
         embeddings: When True, also wait for the embeddings phase.
             Apply to handlers that need vector search (``get_similar``,
             ``vault_similar``) or that mutate the vector sidecar
-            (``reindex``).
+            (``reindex``, ``build_embeddings``) — the latter two
+            serialise against the background worker's phase-2 via this
+            wait (``IndexManager.build_embeddings`` is lock-free
+            across ``_load_vectors``/``vectors.save``).
 
     Stacking order: place ``@needs_index_ready(...)`` BELOW
     ``@mcp.tool(...)`` (or ``@mcp.resource(...)``) — closer to ``def``.

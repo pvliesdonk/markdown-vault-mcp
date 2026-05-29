@@ -239,9 +239,14 @@ field distinguishes "still building" from "build failed."
 !!! note "Cold-start blocking"
     Calls to `reindex` and `build_embeddings` during a cold-start background FTS build block via the tool-layer `needs_index_ready` decorator. If the build takes longer than `MARKDOWN_VAULT_MCP_READY_TIMEOUT_S` (default 60s), the tool returns `IndexNotReadyError`. If a prior background build raised, it returns `IndexBuildFailedError`. Poll `get_index_status` to observe build state without blocking.
 
-**Cold-start note:** `get_similar`, `vault_similar` (resource), and `reindex`
-wait for BOTH the FTS background build AND the embeddings background build
-to complete before returning (when an `embedding_provider` is configured).
+**Cold-start note:** `get_similar`, `vault_similar` (resource), `reindex`,
+and `build_embeddings` wait for BOTH the FTS background build AND the
+embeddings background build to complete before returning (when an
+`embedding_provider` is configured). For `reindex` and `build_embeddings`
+the embeddings wait is also what prevents a write-write race with the
+background worker on the vector sidecar — both routes end up inside
+`IndexManager.build_embeddings`, which is lock-free across its
+`_load_vectors`/`vectors.save` critical region.
 Worst-case wait is `2 × MARKDOWN_VAULT_MCP_READY_TIMEOUT_S` (60s per phase, 120s total with defaults).
 Poll `get_index_status` to observe progress without blocking. When no
 provider is configured, the embeddings wait is a no-op.

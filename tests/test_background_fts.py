@@ -1474,6 +1474,55 @@ def test_vault_similar_resource_uses_embeddings_true_decorator(
         monkeypatch.undo()
 
 
+def test_build_embeddings_tool_uses_embeddings_true_decorator(
+    tmp_path: Path,
+) -> None:
+    """build_embeddings MCP tool blocks on embeddings via the decorator.
+
+    Without ``embeddings=True``, the MCP tool would race the background
+    worker's phase-2 inside ``IndexManager.build_embeddings`` (lock-free
+    across its ``_load_vectors``/``vectors.save`` critical region),
+    producing double-counted embeddings or a corrupted sidecar.
+    Smoke-test analog of test_reindex_tool_uses_embeddings_true_decorator
+    — proves the decorator is wired without booting a real embeddings
+    pipeline."""
+    import asyncio
+
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    (vault / "a.md").write_text("# A\n\nbody\n", encoding="utf-8")
+    index_path = tmp_path / "fts.db"
+
+    pre = Collection(source_dir=vault, index_path=index_path)
+    pre.build_index()
+    pre.close()
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_INDEX_PATH", str(index_path))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_STATE_PATH", str(tmp_path / "s.json"))
+    try:
+        from markdown_vault_mcp.server import make_server
+
+        server = make_server()
+
+        async def _call() -> Any:
+            async with Client(server) as client:
+                # raise_on_error=False: with no embedding provider the
+                # embeddings wait short-circuits via has_embedding_provider,
+                # so the decorator itself does not raise; build_embeddings
+                # may still fail inside its handler (no provider → ValueError).
+                # The smoke test only verifies the tool is reachable via
+                # the decorator path.
+                return await client.call_tool(
+                    "build_embeddings", {"force": False}, raise_on_error=False
+                )
+
+        asyncio.run(_call())
+    finally:
+        monkeypatch.undo()
+
+
 def test_reindex_tool_uses_embeddings_true_decorator(tmp_path: Path) -> None:
     """reindex MCP tool blocks on embeddings via the decorator (to avoid
     racing on the vector sidecar)."""

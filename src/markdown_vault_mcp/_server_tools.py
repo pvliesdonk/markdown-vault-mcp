@@ -1254,7 +1254,7 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
             "idempotentHint": True,
         },
     )
-    @needs_index_ready()
+    @needs_index_ready(embeddings=True)
     async def build_embeddings(
         force: bool = False,
         collection: Collection = Depends(get_collection),
