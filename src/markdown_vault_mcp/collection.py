@@ -609,32 +609,36 @@ class Collection:
     def get_index_status(self) -> dict[str, Any]:
         """Return a non-blocking snapshot of background-build state.
 
-        Shape: ``{"status": "ready" | "building" | "failed",
-        "documents_indexed": int, "error": str | None}``.
+        Shape:
+        ``{
+            "status": "ready" | "building" | "failed",
+            "fts": {"status": ..., "documents_indexed": int, "error": str | None},
+            "embeddings": {
+                "status": "ready" | "building" | "failed" | "disabled",
+                "chunks_embedded": int,
+                "error": str | None,
+            },
+        }``
 
-        - ``"ready"``: ``is_index_ready()`` is True (synchronous build
-          returned cleanly or background build completed cleanly);
-          ``error`` is None.
-        - ``"failed"``: ``_background_build_error`` is non-None;
-          ``error`` carries its message.
-        - ``"building"``: anything else — event cleared (in-flight)
-          OR event set but ``_index_built`` is False (never scheduled).
-          From the operator's perspective both mean "wait or poll."
+        Top-level reduction:
+        - ``"failed"`` if either substate is ``"failed"``.
+        - ``"ready"`` if FTS is ``"ready"`` AND (embeddings is ``"ready"``
+          OR embeddings is ``"disabled"``).
+        - ``"building"`` otherwise.
 
-        ``documents_indexed`` is taken from
-        :meth:`FTSIndex.list_notes` and so reflects whatever rows are
-        currently committed — progress is observable in the
-        ``"building"`` state as the count rises.
+        Embeddings substate ``"disabled"`` when ``_embedding_provider`` is
+        None — distinguished from ``"building"`` only via this field.
         """
+        # FTS substate.
         if self._background_build_error is not None:
-            status = "failed"
-            error: str | None = str(self._background_build_error)
+            fts_status = "failed"
+            fts_error: str | None = str(self._background_build_error)
         elif self.is_index_ready():
-            status = "ready"
-            error = None
+            fts_status = "ready"
+            fts_error = None
         else:
-            status = "building"
-            error = None
+            fts_status = "building"
+            fts_error = None
         try:
             documents_indexed = len(self._fts.list_notes())
         except Exception:
@@ -643,11 +647,62 @@ class Collection:
                 exc_info=True,
             )
             documents_indexed = 0
+
+        # Embeddings substate.
+        if self._embedding_provider is None:
+            emb_status = "disabled"
+            emb_error: str | None = None
+            chunks_embedded = 0
+        elif self._embeddings_build_error is not None:
+            emb_status = "failed"
+            emb_error = str(self._embeddings_build_error)
+            chunks_embedded = self._safe_vector_count()
+        elif self.is_embeddings_ready():
+            emb_status = "ready"
+            emb_error = None
+            chunks_embedded = self._safe_vector_count()
+        else:
+            emb_status = "building"
+            emb_error = None
+            chunks_embedded = self._safe_vector_count()
+
+        # Top-level reduction.
+        if fts_status == "failed" or emb_status == "failed":
+            top = "failed"
+        elif fts_status == "ready" and emb_status in ("ready", "disabled"):
+            top = "ready"
+        else:
+            top = "building"
+
         return {
-            "status": status,
-            "documents_indexed": documents_indexed,
-            "error": error,
+            "status": top,
+            "fts": {
+                "status": fts_status,
+                "documents_indexed": documents_indexed,
+                "error": fts_error,
+            },
+            "embeddings": {
+                "status": emb_status,
+                "chunks_embedded": chunks_embedded,
+                "error": emb_error,
+            },
         }
+
+    def _safe_vector_count(self) -> int:
+        """Return the current persisted vector count, or 0 on any error.
+
+        The vector sidecar may not exist yet or may be being written.
+        """
+        if self._vectors is None:
+            return 0
+        try:
+            return int(self._vectors.count)
+        except Exception:
+            logger.debug(
+                "get_index_status: vector count read failed; reporting 0",
+                exc_info=True,
+            )
+            return 0
 
     def wait_for_index_ready(self, timeout: float | None = None) -> None:
         """Block until the FTS index is ready, or raise.

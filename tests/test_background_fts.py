@@ -290,8 +290,11 @@ def test_get_index_status_ready(tmp_path: Path) -> None:
     col.build_index()
     status = col.get_index_status()
     assert status["status"] == "ready"
-    assert status["documents_indexed"] == 1
-    assert status["error"] is None
+    assert status["fts"]["status"] == "ready"
+    assert status["fts"]["documents_indexed"] == 1
+    assert status["fts"]["error"] is None
+    assert status["embeddings"]["status"] == "disabled"
+    assert status["embeddings"]["error"] is None
     col.close()
 
 
@@ -301,7 +304,10 @@ def test_get_index_status_building_in_flight(tmp_path: Path) -> None:
     col._background_started = True
     status = col.get_index_status()
     assert status["status"] == "building"
-    assert status["error"] is None
+    assert status["fts"]["status"] == "building"
+    assert status["fts"]["error"] is None
+    assert status["embeddings"]["status"] == "disabled"
+    assert status["embeddings"]["error"] is None
     col._background_build_done.set()
     col.close()
 
@@ -312,7 +318,10 @@ def test_get_index_status_building_never_started(tmp_path: Path) -> None:
     col = Collection(source_dir=_vault(tmp_path))
     status = col.get_index_status()
     assert status["status"] == "building"
-    assert status["error"] is None
+    assert status["fts"]["status"] == "building"
+    assert status["fts"]["error"] is None
+    assert status["embeddings"]["status"] == "disabled"
+    assert status["embeddings"]["error"] is None
     col.close()
 
 
@@ -321,7 +330,62 @@ def test_get_index_status_failed(tmp_path: Path) -> None:
     col._background_build_error = RuntimeError("scan failed for X")
     status = col.get_index_status()
     assert status["status"] == "failed"
-    assert "scan failed for X" in status["error"]
+    assert status["fts"]["status"] == "failed"
+    assert "scan failed for X" in status["fts"]["error"]
+    assert status["embeddings"]["status"] == "disabled"
+    assert status["embeddings"]["error"] is None
+    col.close()
+
+
+def test_get_index_status_embeddings_disabled_when_no_provider(
+    tmp_path: Path,
+) -> None:
+    col = Collection(source_dir=_vault(tmp_path))
+    col.build_index()  # FTS ready, no provider
+    status = col.get_index_status()
+    assert status["status"] == "ready"  # FTS ready + embeddings disabled → ready
+    assert status["fts"]["status"] == "ready"
+    assert status["embeddings"]["status"] == "disabled"
+    assert status["embeddings"]["error"] is None
+    col.close()
+
+
+def test_get_index_status_both_ready_top_level_ready(tmp_path: Path) -> None:
+    from tests.conftest import MockEmbeddingProvider
+
+    vault = _vault(tmp_path)
+    _seed(vault)
+    col = Collection(
+        source_dir=vault,
+        embedding_provider=MockEmbeddingProvider(),
+        embeddings_path=tmp_path / "vectors",
+    )
+    col.build_index()
+    col.build_embeddings()
+    status = col.get_index_status()
+    assert status["status"] == "ready"
+    assert status["fts"]["status"] == "ready"
+    assert status["embeddings"]["status"] == "ready"
+    col.close()
+
+
+def test_get_index_status_embeddings_failed_top_level_failed(
+    tmp_path: Path,
+) -> None:
+    from tests.conftest import MockEmbeddingProvider
+
+    col = Collection(
+        source_dir=_vault(tmp_path),
+        embedding_provider=MockEmbeddingProvider(),
+        embeddings_path=tmp_path / "vectors",
+    )
+    col._embeddings_build_error = RuntimeError("embeddings crashed")
+    col._index_built = True  # FTS done
+    status = col.get_index_status()
+    assert status["status"] == "failed"
+    assert status["fts"]["status"] == "ready"
+    assert status["embeddings"]["status"] == "failed"
+    assert "embeddings crashed" in status["embeddings"]["error"]
     col.close()
 
 
@@ -351,7 +415,8 @@ def test_mcp_tool_get_index_status_reports_ready(
 
     status = asyncio.run(_call())
     assert status["status"] in ("ready", "building")  # depends on lifespan timing
-    assert status["error"] is None
+    assert "fts" in status
+    assert "embeddings" in status
 
 
 # ---------------------------------------------------------------------------
@@ -429,7 +494,7 @@ def test_lifespan_cold_start_handshake_under_1s(
         f"cold-start handshake took {handshake_elapsed:.3f}s, expected < 1.0s"
     )
     assert final["status"] == "ready"
-    assert final["documents_indexed"] == 20
+    assert final["fts"]["documents_indexed"] == 20
 
 
 def test_lifespan_warm_start_skips_background(
@@ -459,7 +524,7 @@ def test_lifespan_warm_start_skips_background(
 
     status = asyncio.run(_run())
     assert status["status"] == "ready"
-    assert status["documents_indexed"] == 1
+    assert status["fts"]["documents_indexed"] == 1
 
 
 def test_lifespan_cold_start_with_embeddings_skips_embeddings(

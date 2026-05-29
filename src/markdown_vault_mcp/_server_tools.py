@@ -593,23 +593,26 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
     async def get_index_status(
         collection: Collection = Depends(get_collection),
     ) -> dict[str, Any]:
-        """Return background-build state of the FTS index.
+        """Return background-build state of the FTS index and embeddings.
 
-        Use this when ``initialize`` returned but bucket-3/4 calls
-        block longer than expected or surface
-        ``IndexNotReadyError``/``IndexBuildFailedError`` — the
-        ``status`` field distinguishes "still building" from "build
-        failed."
+        Use this when ``initialize`` returned but bucket-3/4 calls block
+        longer than expected or surface
+        ``IndexNotReadyError``/``IndexBuildFailedError`` — the ``status``
+        field distinguishes "still building" from "build failed."
 
         Returns:
-            Dict with the following fields:
+            * ``status``: ``"ready"``, ``"building"``, or ``"failed"``.
+              Top-level reduction over both FTS and embeddings substates.
+            * ``fts``: ``{"status": "ready"|"building"|"failed",
+              "documents_indexed": int, "error": str|None}``.
+            * ``embeddings``: ``{"status": "ready"|"building"|"failed"
+              |"disabled", "chunks_embedded": int, "error": str|None}``.
+              "disabled" means no ``embedding_provider`` was configured.
 
-            - status (str): ``"ready"``, ``"building"``, or
-              ``"failed"``.
-            - documents_indexed (int): Count of documents committed to
-              the FTS index right now (rises during ``"building"``).
-            - error (str | None): ``None`` unless the background build
-              raised.
+        Operator note: if ``embeddings.status`` is ``"building"`` and
+        ``fts.status`` is ``"failed"``, embeddings will not advance —
+        the top-level ``status == "failed"`` is the signal to stop
+        polling and rebuild via CLI ``markdown-vault-mcp index``.
         """
         return await asyncio.to_thread(collection.get_index_status)
 
