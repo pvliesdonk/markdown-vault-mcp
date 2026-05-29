@@ -447,16 +447,22 @@ class Collection:
         diagnostic event surfaced via :meth:`get_index_status`, not a
         gate on the read path.
 
-        Note that under the current implementation
-        :meth:`build_index` resets ``_index_built = False`` before
-        rebuilding (so a mid-rebuild crash leaves the Collection
-        visibly not-ready — see issue #525). A queryable index whose
-        *subsequent* rebuild fails therefore transitions through
-        not-ready while the rebuild is in flight, and the failure
-        leaves it not-ready until the next successful build. The
-        "errors are events" principle is realised at the read-time
-        boundary: once :meth:`build_index` succeeds the captured
-        background error is cleared (see line 778).
+        Production-path note: every successful :meth:`build_index`
+        clears ``_background_build_error`` (both the warm-restart
+        short-circuit and the full-rebuild success path), so an index
+        that is queryable also has ``error=None`` in
+        :meth:`get_index_status` under normal flows. The defensive
+        priority in :meth:`get_index_status` that allows
+        ``status="queryable"`` to win over ``status="failed"`` is for
+        test scenarios and externally-injected state, not a state the
+        Collection produces on its own. :meth:`build_index` also
+        resets ``_index_built = False`` before rebuilding so a
+        mid-rebuild crash leaves the Collection visibly not-ready
+        (see #525); the synchronous path does not capture the
+        exception into ``_background_build_error`` (only the
+        background ``_worker`` does that), so a foreground rebuild
+        failure ends in ``status="building"`` with ``error=None``,
+        not ``"failed"``.
 
         Lock-free by design: plain attribute read of ``_index_built``
         + ``Event.is_set()``. Assumes CPython GIL semantics for
@@ -543,15 +549,14 @@ class Collection:
         outcome.
 
         - ``"queryable"`` (#533 rename from ``"ready"``): the FTS index
-          is readable right now. ``error`` may still be non-None when
-          a warm-restart short-circuit (:meth:`build_index` finding a
-          completeness sentinel + existing docs) flips the Collection
-          to ready while a captured background error from a prior
-          attempt is still surfaced. Readers proceed normally;
-          operators see the diagnostic in ``error``. (Under the
-          current implementation a *foreground* failed rebuild
-          transitions through not-ready and lands in ``"failed"``, not
-          ``"queryable"`` — see :meth:`is_index_ready` and #525.)
+          is readable right now. In production flows ``error`` is
+          ``None`` here — every successful :meth:`build_index` clears
+          the captured background error. The fact that the branch
+          still tolerates a non-None ``error`` is defensive: test
+          scenarios poke ``_background_build_error`` directly to
+          verify the priority flip (queryable wins over failed),
+          and a future change that lets a captured error outlive a
+          successful build would still be readable.
         - ``"failed"``: NOT queryable AND a build attempt errored.
           Operator action: inspect ``error``, rebuild via CLI
           ``markdown-vault-mcp index`` or restart.

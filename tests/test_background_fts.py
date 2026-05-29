@@ -958,6 +958,42 @@ def test_decorator_works_with_positional_collection_arg(tmp_path: Path) -> None:
     col.close()
 
 
+def test_get_index_status_foreground_rebuild_failure_reports_building(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Pin the foreground-rebuild failure transition (preflight gap PTA.1).
+
+    A previously-queryable index whose synchronous build_index(force=True)
+    raises mid-flight lands in ``status="building"`` with ``error=None``,
+    NOT in ``"failed"``: build_index resets ``_index_built=False`` at the
+    start of the rebuild, then the IndexManager exception propagates to the
+    caller without populating ``_background_build_error`` (only the
+    background worker except block writes that field). Documents the
+    actually-reachable behavior so a future docstring or refactor doesn't
+    drift from the code."""
+    from markdown_vault_mcp.managers import index as index_mod
+
+    vault = _vault(tmp_path)
+    _seed(vault)
+    col = Collection(source_dir=vault)
+    col.build_index()
+    assert col.is_index_ready() is True
+
+    def boom(self, *, force: bool = False):  # type: ignore[no-untyped-def]  # noqa: ARG001
+        raise RuntimeError("simulated mid-rebuild crash")
+
+    monkeypatch.setattr(index_mod.IndexManager, "build_index", boom)
+    with pytest.raises(RuntimeError, match="mid-rebuild crash"):
+        col.build_index(force=True)
+
+    assert col.is_index_ready() is False
+    assert col._background_build_error is None
+    status = col.get_index_status()
+    assert status["status"] == "building"
+    assert status["error"] is None
+    col.close()
+
+
 def test_decorator_surfaces_wait_for_index_ready_timeout_reason(
     tmp_path: Path,
 ) -> None:

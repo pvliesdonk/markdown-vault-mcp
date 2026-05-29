@@ -598,27 +598,30 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
         Use this when ``initialize`` returned but bucket-3/4 calls
         block longer than expected or raise ``IndexNotReadyError``.
         ``status`` reports whether the index is readable right now;
-        ``error`` is the diagnostic exit code of the last background
-        build attempt and may be populated even when ``status`` is
-        ``"queryable"`` (a previously successful build left readable
-        data and a subsequent attempt errored).
+        ``error`` carries the diagnostic message from the last
+        background-build attempt that raised.
 
         Returns:
             Dict with the following fields:
 
             - status (str): ``"queryable"`` (index is readable now),
               ``"building"`` (in-flight or never scheduled), or
-              ``"failed"`` (not readable AND a build attempt errored).
+              ``"failed"`` (a background build raised AND the index is
+              not currently readable; only the background ``_worker``
+              path populates the captured error — a foreground
+              :meth:`build_index` failure raises to its caller and
+              leaves status as ``"building"``).
               Issue #534 will further subdivide ``"queryable"`` into
               ``"up_to_date"`` and ``"degraded"`` once drift detection
               lands; clients should treat unknown queryable-like values
               as queryable.
             - documents_indexed (int): Count of documents committed to
               the FTS index right now (rises during ``"building"``).
-            - error (str | None): Diagnostic message from the most
-              recent build attempt that raised, if any. Always check
-              this field — ``status == "queryable"`` does NOT imply
-              the most recent build succeeded.
+            - error (str | None): Diagnostic message from the last
+              background-build attempt that raised, if any. In
+              production flows this is ``None`` when status is
+              ``"queryable"`` because every successful
+              :meth:`build_index` clears the captured error.
         """
         return await asyncio.to_thread(collection.get_index_status)
 
