@@ -224,7 +224,10 @@ field distinguishes "still building" from "build failed."
 - `fts.documents_indexed`: count of documents committed to the FTS index
   right now (rises during `"building"`).
 - `fts.error`: `null` unless the background FTS build raised.
-- `embeddings.status`: `"ready"`, `"building"`, `"failed"`, or `"not_configured"`.
+- `embeddings.status`: `"ready"`, `"building"`, `"failed"`, or `"disabled"`
+  (`"disabled"` when no `embedding_provider` is configured).
+- `embeddings.chunks_embedded`: count of chunks committed to the vector
+  index right now (rises during `"building"`).
 - `embeddings.error`: `null` unless the background embeddings build raised.
 
 **Tags:** read-only.

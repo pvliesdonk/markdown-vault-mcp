@@ -119,14 +119,12 @@ def make_collection_lifespan(config: CollectionConfig) -> Any:
                 stats.documents_indexed,
             )
             # Synchronous lifespan path runs embeddings inline.
+            # build_index() either succeeded (index ready) or raised
+            # (lifespan aborts before this point), so no readiness guard
+            # is needed here.
             if kwargs.get("embedding_provider") is not None:
-                if collection.is_index_ready():
-                    chunks = await asyncio.to_thread(collection.build_embeddings)
-                    logger.info("Embeddings ready: %d chunks", chunks)
-                else:
-                    logger.warning(
-                        "Embeddings skipped: index not ready post-sync-build"
-                    )
+                chunks = await asyncio.to_thread(collection.build_embeddings)
+                logger.info("Embeddings ready: %d chunks", chunks)
 
         # Start background tasks (e.g. git pull loop) after index is built.
         collection.start()

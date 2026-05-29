@@ -662,15 +662,19 @@ def test_decorator_applied_to_remaining_bucket3_tools(
             # Bucket-3 tools that take a path.
             for tool in ("get_outlinks", "get_context"):
                 await client.call_tool(tool, {"path": "a.md"})
-            # get_similar takes path; may error if no embeddings — accept either
+            # get_similar takes path; with no embedding provider the
+            # embeddings wait is a no-op (has_embedding_provider False),
+            # so the decorator does not raise here. The handler itself
+            # may error inside SearchManager — accept either outcome.
             with contextlib.suppress(Exception):
                 await client.call_tool("get_similar", {"path": "a.md"})
             await client.call_tool(
                 "get_connection_path", {"source": "a.md", "target": "a.md"}
             )
-            # Bucket-4 coordinators. reindex uses embeddings=True — when no
-            # embedding provider is configured the decorator raises
-            # IndexNotReadyError; suppress that like get_similar above.
+            # Bucket-4 coordinators. reindex / build_embeddings may error
+            # inside their handlers when no embedding provider is wired —
+            # the decorator itself does not raise here (embeddings wait
+            # short-circuits via has_embedding_provider False).
             with contextlib.suppress(Exception):
                 await client.call_tool("reindex", {})
             with contextlib.suppress(Exception):
