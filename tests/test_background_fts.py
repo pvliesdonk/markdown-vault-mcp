@@ -1222,3 +1222,107 @@ def test_thread_start_failure_with_provider_releases_embeddings_waiter(
         f"wait_for_embeddings_ready took {elapsed:.3f}s — N1 HANG BUG REGRESSION"
     )
     col.close()
+
+
+# ---------------------------------------------------------------------------
+# Task 6 (PR2): needs_index_ready gains embeddings=False arg
+# ---------------------------------------------------------------------------
+
+
+def test_decorator_embeddings_false_does_not_wait_for_embeddings(
+    tmp_path: Path,
+) -> None:
+    """Default behavior (embeddings=False) must not call
+    wait_for_embeddings_ready. Regression for the existing PR1 surfaces."""
+    import asyncio
+
+    from markdown_vault_mcp._server_readiness import needs_index_ready
+
+    vault = _vault(tmp_path)
+    _seed(vault)
+    col = Collection(source_dir=vault)
+    col.build_index()  # FTS ready, embeddings not built
+
+    calls: list[str] = []
+    original_wait_emb = col.wait_for_embeddings_ready
+    col.wait_for_embeddings_ready = lambda timeout=None: calls.append(  # type: ignore[assignment]  # noqa: ARG005
+        "wait_for_embeddings_ready"
+    )
+
+    @needs_index_ready()
+    async def handler(path: str, collection: Collection) -> str:  # noqa: ARG001
+        return f"got: {path}"
+
+    result = asyncio.run(handler("n.md", collection=col))
+    assert result == "got: n.md"
+    assert "wait_for_embeddings_ready" not in calls
+    col.wait_for_embeddings_ready = original_wait_emb  # type: ignore[assignment]
+    col.close()
+
+
+def test_decorator_embeddings_true_calls_wait_for_embeddings_ready(
+    tmp_path: Path,
+) -> None:
+    """embeddings=True must call wait_for_embeddings_ready in addition to
+    wait_for_index_ready."""
+    import asyncio
+
+    from markdown_vault_mcp._server_readiness import needs_index_ready
+
+    vault = _vault(tmp_path)
+    _seed(vault)
+    col = Collection(source_dir=vault)
+    col.build_index()
+    col._embeddings_built = True  # mark embeddings ready for the test
+
+    calls: list[str] = []
+    original_wait_emb = col.wait_for_embeddings_ready
+    col.wait_for_embeddings_ready = lambda timeout=None: calls.append(  # type: ignore[assignment]  # noqa: ARG005
+        "wait_for_embeddings_ready"
+    )
+
+    # Skip the embeddings wait if is_embeddings_ready() returns True.
+    # The decorator only calls wait_for_embeddings_ready when not ready.
+    col._embeddings_built = False  # force the decorator into the wait branch
+
+    @needs_index_ready(embeddings=True)
+    async def handler(path: str, collection: Collection) -> str:  # noqa: ARG001
+        return f"got: {path}"
+
+    result = asyncio.run(handler("n.md", collection=col))
+    assert result == "got: n.md"
+    assert "wait_for_embeddings_ready" in calls
+    col.wait_for_embeddings_ready = original_wait_emb  # type: ignore[assignment]
+    col.close()
+
+
+def test_decorator_embeddings_true_fast_path_when_already_ready(
+    tmp_path: Path,
+) -> None:
+    """When is_embeddings_ready() returns True, the decorator must NOT
+    call wait_for_embeddings_ready (no thread-pool overhead)."""
+    import asyncio
+
+    from markdown_vault_mcp._server_readiness import needs_index_ready
+
+    vault = _vault(tmp_path)
+    _seed(vault)
+    col = Collection(source_dir=vault)
+    col.build_index()
+    col._embeddings_built = True
+    col._embeddings_build_error = None
+    col._embeddings_build_done.set()
+    assert col.is_embeddings_ready() is True
+
+    calls: list[str] = []
+    col.wait_for_embeddings_ready = lambda timeout=None: calls.append(  # type: ignore[assignment]  # noqa: ARG005
+        "wait"
+    )
+
+    @needs_index_ready(embeddings=True)
+    async def handler(collection: Collection) -> str:  # noqa: ARG001
+        return "done"
+
+    asyncio.run(handler(collection=col))
+    assert calls == []  # fast path skipped the wait
+    col.close()
