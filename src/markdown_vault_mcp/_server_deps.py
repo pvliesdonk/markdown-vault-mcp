@@ -106,27 +106,27 @@ def make_collection_lifespan(config: CollectionConfig) -> Any:
         if collection.should_use_background_build():
             collection.start_background_build_index()
             logger.info("Cold start: scheduled background FTS build")
+            if kwargs.get("embedding_provider") is not None:
+                logger.info(
+                    "Embeddings will also build in background after FTS "
+                    "completes; use get_index_status MCP tool to observe "
+                    "progress"
+                )
         else:
             stats = await asyncio.to_thread(collection.build_index)
             logger.info(
                 "Index ready: %d documents (synchronous build)",
                 stats.documents_indexed,
             )
-
-        # Embeddings stay on the synchronous lifespan path for PR1. On
-        # cold start the FTS is still being built so we skip + log;
-        # PR2 follow-up backgrounds embeddings so semantic search
-        # becomes available without operator-initiated rebuild.
-        if kwargs.get("embedding_provider") is not None:
-            if collection.is_index_ready():
-                chunks_embedded = await asyncio.to_thread(collection.build_embeddings)
-                logger.info("Embeddings ready: %d chunks", chunks_embedded)
-            else:
-                logger.info(
-                    "Cold start: embeddings deferred; semantic search "
-                    "returns empty until PR2 backgrounds embeddings or "
-                    "operator runs CLI 'index'"
-                )
+            # Synchronous lifespan path runs embeddings inline.
+            if kwargs.get("embedding_provider") is not None:
+                if collection.is_index_ready():
+                    chunks = await asyncio.to_thread(collection.build_embeddings)
+                    logger.info("Embeddings ready: %d chunks", chunks)
+                else:
+                    logger.warning(
+                        "Embeddings skipped: index not ready post-sync-build"
+                    )
 
         # Start background tasks (e.g. git pull loop) after index is built.
         collection.start()

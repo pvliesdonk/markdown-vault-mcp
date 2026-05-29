@@ -527,19 +527,18 @@ def test_lifespan_warm_start_skips_background(
     assert status["fts"]["documents_indexed"] == 1
 
 
-def test_lifespan_cold_start_with_embeddings_skips_embeddings(
+def test_lifespan_cold_start_with_embeddings_logs_background(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """Provider configured + cold start: lifespan must log the skip and not block.
+    """Provider configured + cold start: lifespan logs that embeddings will
+    build in the background (PR2 behaviour). Handshake must not block.
 
-    Must inject a slow _index_mgr.build_index mock so the background thread is
-    reliably still running when the lifespan checks is_index_ready() — otherwise
-    on a tiny vault the background completes between spawn and check, embeddings
-    runs, and the test asserts the wrong thing.
+    No slow-build mock needed: the cold-start branch always routes to
+    background regardless of how fast build_index completes.
     """
     import logging
-    import time as time_mod
 
+    from markdown_vault_mcp import config as config_mod
     from markdown_vault_mcp.server import make_server
     from tests.conftest import MockEmbeddingProvider
 
@@ -551,31 +550,11 @@ def test_lifespan_cold_start_with_embeddings_skips_embeddings(
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_INDEX_PATH", str(tmp_path / "fts.db"))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_STATE_PATH", str(tmp_path / "s.json"))
 
-    # Patch IndexManager.build_index globally to sleep before returning,
-    # ensuring the background thread is still running when the lifespan
-    # makes the is_index_ready() decision.
-    from markdown_vault_mcp.managers import index as index_mod
-
-    original_build_index = index_mod.IndexManager.build_index
-
-    def slow_build_index(self, *, force: bool = False):  # type: ignore[no-untyped-def]
-        time_mod.sleep(0.5)
-        return original_build_index(self, force=force)
-
-    monkeypatch.setattr(index_mod.IndexManager, "build_index", slow_build_index)
-
-    # Inject a MockEmbeddingProvider into to_collection_kwargs so that
-    # kwargs["embedding_provider"] is non-None without needing a real provider.
-    # "mock" is not a registered provider name in get_embedding_provider(), so
-    # we patch at the config level instead.
-    from markdown_vault_mcp import config as config_mod
-
     original_to_kwargs = config_mod.CollectionConfig.to_collection_kwargs
 
     def patched_to_kwargs(self):  # type: ignore[no-untyped-def]
         kw = original_to_kwargs(self)
         kw["embedding_provider"] = MockEmbeddingProvider()
-        # embeddings_path is required when embedding_provider is set.
         if kw.get("embeddings_path") is None:
             kw["embeddings_path"] = tmp_path / "vectors"
         return kw
@@ -592,11 +571,10 @@ def test_lifespan_cold_start_with_embeddings_skips_embeddings(
             pass  # lifespan runs
 
     asyncio.run(_run())
-    assert any(
-        "embeddings deferred" in record.message.lower()
-        or "skipping embeddings" in record.message.lower()
-        for record in caplog.records
-    ), f"expected 'embeddings deferred' log; got: {[r.message for r in caplog.records]}"
+    msgs = " ".join(r.message for r in caplog.records).lower()
+    assert "background" in msgs and "embeddings" in msgs, (
+        f"expected background+embeddings log; got: {[r.message for r in caplog.records]}"
+    )
 
 
 def test_decorator_preflight_one_tool(
@@ -1506,3 +1484,107 @@ def test_reindex_tool_uses_embeddings_true_decorator(tmp_path: Path) -> None:
         asyncio.run(_call())
     finally:
         monkeypatch.undo()
+
+
+# ---------------------------------------------------------------------------
+# Task 9 (PR2): Lifespan update — embeddings path inside both branches
+# ---------------------------------------------------------------------------
+
+
+def test_lifespan_cold_start_with_provider_logs_embeddings_in_background(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Cold start with provider configured: lifespan logs that embeddings
+    will also build in the background. Handshake remains sub-second."""
+    import asyncio
+    import logging
+
+    from markdown_vault_mcp.config import CollectionConfig
+    from markdown_vault_mcp.server import make_server
+    from tests.conftest import MockEmbeddingProvider
+
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    (vault / "n.md").write_text("# N\n\nbody\n", encoding="utf-8")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_INDEX_PATH", str(tmp_path / "fts.db"))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_STATE_PATH", str(tmp_path / "s.json"))
+
+    original = CollectionConfig.to_collection_kwargs
+
+    def with_provider(self: CollectionConfig) -> dict[str, Any]:
+        kwargs = original(self)
+        kwargs["embedding_provider"] = MockEmbeddingProvider()
+        kwargs["embeddings_path"] = tmp_path / "vectors"
+        return kwargs
+
+    monkeypatch.setattr(CollectionConfig, "to_collection_kwargs", with_provider)
+
+    server = make_server()
+    caplog.set_level(logging.INFO)
+
+    async def _run() -> None:
+        async with Client(server):
+            pass
+
+    asyncio.run(_run())
+    msgs = " ".join(r.message for r in caplog.records).lower()
+    assert "background" in msgs
+    assert "embeddings" in msgs
+
+
+def test_lifespan_warm_start_with_provider_builds_embeddings_synchronously(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Warm-restart path: synchronous build_index short-circuits, then
+    synchronous build_embeddings runs inline. After lifespan returns,
+    is_embeddings_ready is True."""
+    import asyncio
+
+    from markdown_vault_mcp.config import CollectionConfig
+    from markdown_vault_mcp.server import make_server
+    from tests.conftest import MockEmbeddingProvider
+
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    (vault / "n.md").write_text("# N\n\nbody\n", encoding="utf-8")
+    index_path = tmp_path / "fts.db"
+    embeddings_path = tmp_path / "vectors"
+
+    # Pre-build FTS + embeddings so the lifespan finds a warm sentinel.
+    pre = Collection(
+        source_dir=vault,
+        index_path=index_path,
+        embedding_provider=MockEmbeddingProvider(),
+        embeddings_path=embeddings_path,
+    )
+    pre.build_index()
+    pre.build_embeddings()
+    pre.close()
+
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_INDEX_PATH", str(index_path))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_STATE_PATH", str(tmp_path / "s.json"))
+
+    original = CollectionConfig.to_collection_kwargs
+
+    def with_provider(self: CollectionConfig) -> dict[str, Any]:
+        kwargs = original(self)
+        kwargs["embedding_provider"] = MockEmbeddingProvider()
+        kwargs["embeddings_path"] = embeddings_path
+        return kwargs
+
+    monkeypatch.setattr(CollectionConfig, "to_collection_kwargs", with_provider)
+
+    server = make_server()
+
+    async def _run() -> dict[str, Any]:
+        async with Client(server) as client:
+            res = await client.call_tool("get_index_status", {})
+            return res.structured_content or {}
+
+    status = asyncio.run(_run())
+    assert status["status"] == "ready"
+    assert status["embeddings"]["status"] == "ready"
