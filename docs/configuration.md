@@ -28,6 +28,7 @@ All configuration is via environment variables. Most use the `MARKDOWN_VAULT_MCP
 | `MARKDOWN_VAULT_MCP_BASE_URL` | url | — | Public base URL of the server (e.g. `https://mcp.example.com`). Required for OIDC auth, `create_download_link` tool, and MCP Apps domain computation |
 | `MARKDOWN_VAULT_MCP_EVENT_STORE_URL` | url | `file:///data/state/events` | Event store backend for HTTP session persistence. `file:///path` survives restarts; `memory://` for dev (lost on restart) |
 | `MARKDOWN_VAULT_MCP_APP_DOMAIN` | string | (auto) | Override the Claude app domain used for MCP Apps iframe sandboxing. Auto-computed from `BASE_URL` when not set |
+| `MARKDOWN_VAULT_MCP_DISABLE_APPS_UI` | bool | `false` | Hide MCP-Apps UI tools (`browse_vault`, `show_context`) from the tool listing for clients that don't render MCP Apps panels |
 | `FASTMCP_LOG_LEVEL` | string | `INFO` | Log level for FastMCP internals (`DEBUG`, `INFO`, `WARNING`, `ERROR`). `-v` CLI flag overrides both app and FastMCP loggers to `DEBUG` |
 | `FASTMCP_ENABLE_RICH_LOGGING` | bool | `true` | Set to `false` for plain/structured JSON log output instead of Rich-formatted output |
 

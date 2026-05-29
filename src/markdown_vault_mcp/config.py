@@ -115,6 +115,10 @@ class CollectionConfig:
         event_store_url: URL for the FastMCP persistent event store used by
             the HTTP transport (e.g. ``"file:///data/state/events"``).
             ``None`` defaults to ``/data/state/events``.
+        disable_apps_ui: When ``True``, hides MCP-Apps UI tools
+            (``browse_vault``, ``show_context``) from the tool listing so
+            clients that don't render MCP Apps panels don't see them
+            (default ``False``).
         auth_mode: Explicit OIDC mode override: ``"oidc-proxy"`` or
             ``"remote"``.  ``None`` (default) means auto-detect from which
             OIDC env vars are present.  Bearer and multi-auth are determined
@@ -188,6 +192,7 @@ class CollectionConfig:
     templates_folder: str = "_templates"
     prompts_folder: str | None = None
     event_store_url: str | None = None
+    disable_apps_ui: bool = False
 
     # Server identity
     server_name: str = "markdown-vault-mcp"
@@ -399,6 +404,9 @@ def load_config() -> CollectionConfig:
     - ``MARKDOWN_VAULT_MCP_EVENT_STORE_URL``: event store backend for HTTP session
       persistence; ``file:///path`` (default ``/data/state/events``) or
       ``memory://`` (in-memory, lost on restart).
+    - ``MARKDOWN_VAULT_MCP_DISABLE_APPS_UI``: hide MCP-Apps UI tools
+      (``browse_vault``, ``show_context``) from the tool listing; default
+      ``false``.
 
     **Server identity:**
 
@@ -642,6 +650,14 @@ def load_config() -> CollectionConfig:
         "load_config: event_store_url=%s", event_store_url or "not set (file default)"
     )
 
+    raw_disable_apps_ui = _env("DISABLE_APPS_UI")
+    disable_apps_ui: bool = (
+        _parse_bool(raw_disable_apps_ui) if raw_disable_apps_ui is not None else False
+    )
+    logger.debug(
+        "load_config: disable_apps_ui=%s (raw=%r)", disable_apps_ui, raw_disable_apps_ui
+    )
+
     # --- Server identity ---
     raw_server_name = (_env("SERVER_NAME") or "").strip()
     server_name: str = raw_server_name or "markdown-vault-mcp"
@@ -844,6 +860,7 @@ def load_config() -> CollectionConfig:
         templates_folder=templates_folder,
         prompts_folder=prompts_folder,
         event_store_url=event_store_url,
+        disable_apps_ui=disable_apps_ui,
         server_name=server_name,
         instructions=instructions,
         auth_mode=auth_mode,

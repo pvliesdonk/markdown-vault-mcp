@@ -12,7 +12,6 @@ configured :class:`~fastmcp.FastMCP` instance.
 from __future__ import annotations
 
 import logging
-import os
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
 from typing import TYPE_CHECKING
@@ -326,12 +325,7 @@ def make_server(transport: str = "stdio") -> FastMCP:
     # does not render the MCP Apps panels. Set
     # MARKDOWN_VAULT_MCP_DISABLE_APPS_UI=true to remove them from the tool
     # listing (saves a few tokens; the LLM cannot call them anyway).
-    if os.environ.get(f"{_ENV_PREFIX}_DISABLE_APPS_UI", "").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }:
+    if config.disable_apps_ui:
         mcp.disable(tags={"apps-ui"})
 
     return mcp

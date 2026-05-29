@@ -212,6 +212,7 @@ All configuration is via environment variables with the `MARKDOWN_VAULT_MCP_` pr
 | `MARKDOWN_VAULT_MCP_HTTP_PATH` | `/mcp` | HTTP endpoint path for streamable HTTP transport (used by `serve --transport http`) |
 | `MARKDOWN_VAULT_MCP_EVENT_STORE_URL` | `file:///data/state/events` | Event store backend for HTTP session persistence. `file:///path` (default) survives restarts; `memory://` for dev (lost on restart). |
 | `MARKDOWN_VAULT_MCP_APP_DOMAIN` | (auto) | Override the Claude app domain used for MCP Apps iframe sandboxing. Auto-computed from `BASE_URL` when not set. |
+| `MARKDOWN_VAULT_MCP_DISABLE_APPS_UI` | `false` | Hide MCP-Apps UI tools (`browse_vault`, `show_context`) from the tool listing for clients that don't render MCP Apps panels. |
 | `FASTMCP_LOG_LEVEL` | `INFO` | Log level for FastMCP internals (`DEBUG`, `INFO`, `WARNING`, `ERROR`). App loggers default to `INFO`. `-v` overrides both to `DEBUG`. |
 | `FASTMCP_ENABLE_RICH_LOGGING` | `true` | Set to `false` for plain/structured JSON log output instead of Rich-formatted output. |
 
