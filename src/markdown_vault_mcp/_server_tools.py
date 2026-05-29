@@ -596,10 +596,10 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
         """Return background-build state of the FTS index.
 
         Use this when ``initialize`` returned but bucket-3/4 calls
-        block longer than expected or surface
-        ``IndexNotReadyError``/``IndexBuildFailedError`` — the
+        block longer than expected or raise ``IndexNotReadyError``. The
         ``status`` field distinguishes "still building" from "build
-        failed."
+        failed," and the ``error`` field surfaces any captured background
+        build exception.
 
         Returns:
             Dict with the following fields:

@@ -603,8 +603,7 @@ class Collection:
 
         A captured ``_background_build_error`` no longer gates this
         method (#533 unwind). The captured exception is surfaced via
-        :meth:`get_index_status` as a diagnostic event, not as a raised
-        ``IndexBuildFailedError`` — the class is gone.
+        :meth:`get_index_status` as a diagnostic event.
 
         This method is opt-in for the MCP-layer
         :func:`needs_index_ready` decorator and for external callers that
