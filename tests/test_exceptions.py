@@ -30,3 +30,13 @@ def test_index_not_ready_reason_alias_is_a_literal_string() -> None:
     for reason in ("never_built", "timeout", "broken"):
         err = IndexNotReadyError("x", reason=reason)
         assert err.reason == reason
+
+
+def test_index_build_failed_error_class_is_deleted() -> None:
+    """Regression-protect the #533 deletion against accidental
+    re-introduction in a future PR. Captured background errors are
+    diagnostic events (surfaced via Collection.get_index_status), not
+    exceptions raised from the read path."""
+    import markdown_vault_mcp.exceptions as exc_module
+
+    assert not hasattr(exc_module, "IndexBuildFailedError")
