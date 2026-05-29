@@ -904,3 +904,17 @@ def test_decorator_works_with_positional_collection_arg(tmp_path: Path) -> None:
     result = asyncio.run(handler("n.md", col))
     assert result == "got: n.md"
     col.close()
+
+
+# ---------------------------------------------------------------------------
+# Task 1 (PR2): Embeddings phase state
+# ---------------------------------------------------------------------------
+
+
+def test_collection_has_embeddings_phase_state(tmp_path: Path) -> None:
+    """Collection.__init__ must expose the embeddings-phase state fields."""
+    col = Collection(source_dir=_vault(tmp_path))
+    assert col._embeddings_build_done.is_set()  # pre-set
+    assert col._embeddings_build_error is None
+    assert col._embeddings_built is False
+    col.close()

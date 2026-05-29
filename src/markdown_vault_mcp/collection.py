@@ -252,6 +252,17 @@ class Collection:
         self._background_build_error: BaseException | None = None
         self._background_started: bool = False
 
+        # Embeddings phase state (issue #513 PR2). Mirrors the FTS state
+        # introduced by PR1 but for the second phase of the same worker.
+        # The event is pre-set so a freshly constructed Collection (no
+        # background spawn) is consistent — is_embeddings_ready() returns
+        # False because _embeddings_built is False, not because the event
+        # is cleared.
+        self._embeddings_build_done: threading.Event = threading.Event()
+        self._embeddings_build_done.set()
+        self._embeddings_build_error: BaseException | None = None
+        self._embeddings_built: bool = False
+
         # Serialise concurrent write operations on this instance.
         # Re-entrant: periodic pull tick blocks writes, then reindex() acquires
         # this lock again for its mutation phase.
