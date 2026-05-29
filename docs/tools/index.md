@@ -242,7 +242,7 @@ field distinguishes "still building" from "build failed."
 **Cold-start note:** `get_similar`, `vault_similar` (resource), and `reindex`
 wait for BOTH the FTS background build AND the embeddings background build
 to complete before returning (when an `embedding_provider` is configured).
-Worst-case wait is `2 × MARKDOWN_VAULT_MCP_READY_TIMEOUT_S` (default 120s).
+Worst-case wait is `2 × MARKDOWN_VAULT_MCP_READY_TIMEOUT_S` (60s per phase, 120s total with defaults).
 Poll `get_index_status` to observe progress without blocking. When no
 provider is configured, the embeddings wait is a no-op.
 
@@ -687,7 +687,7 @@ Find semantically similar notes by document path. Requires embeddings to be buil
     Returns one entry per file with up to `chunks_per_file` best-matching sections. Default is 2 sections per file; pass `chunks_per_file=1` for compact dossiers.
 
 !!! note "Cold-start blocking"
-    `get_similar` waits for BOTH the FTS and embeddings background builds when an `embedding_provider` is configured. Worst-case wait is `2 × MARKDOWN_VAULT_MCP_READY_TIMEOUT_S` (default 120s). When no provider is configured, the embeddings wait is a no-op. Poll `get_index_status` to observe progress without blocking.
+    `get_similar` waits for BOTH the FTS and embeddings background builds when an `embedding_provider` is configured. Worst-case wait is `2 × MARKDOWN_VAULT_MCP_READY_TIMEOUT_S` (60s per phase, 120s total with defaults). When no provider is configured, the embeddings wait is a no-op. Poll `get_index_status` to observe progress without blocking.
 
 ### `get_recent`
 

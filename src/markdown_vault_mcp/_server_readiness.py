@@ -13,7 +13,8 @@ for the embeddings phase in addition to FTS, but only when the
 Collection has an ``embedding_provider`` configured (the wait is a
 no-op otherwise — see :attr:`Collection.has_embedding_provider`).
 Worst-case total wait when a provider is configured is
-``2 x MARKDOWN_VAULT_MCP_READY_TIMEOUT_S`` (default 120s). Applied
+``2 x MARKDOWN_VAULT_MCP_READY_TIMEOUT_S`` (60s per phase, 120s
+total with defaults). Applied
 to ``get_similar``, ``vault_similar``, and ``reindex`` — the three
 surfaces that read or mutate the vector sidecar.
 """

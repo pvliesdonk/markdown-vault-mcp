@@ -1479,10 +1479,12 @@ def test_reindex_tool_uses_embeddings_true_decorator(tmp_path: Path) -> None:
 
         async def _call() -> Any:
             async with Client(server) as client:
-                # raise_on_error=False: without an embedding provider the
-                # embeddings=True decorator raises IndexNotReadyError; the
-                # smoke test only verifies the tool is reachable via the
-                # decorator path, not that it succeeds.
+                # raise_on_error=False: with no embedding provider the
+                # embeddings wait short-circuits via has_embedding_provider,
+                # so the decorator itself does not raise; reindex may still
+                # fail inside its handler for unrelated reasons. The smoke
+                # test only verifies the tool is reachable via the decorator
+                # path, not that it succeeds.
                 return await client.call_tool("reindex", {}, raise_on_error=False)
 
         asyncio.run(_call())
