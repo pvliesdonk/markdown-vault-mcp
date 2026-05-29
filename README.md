@@ -380,7 +380,7 @@ markdown-vault-mcp reindex [--source-dir PATH] [--index-path PATH]
 | `stats` | Get collection statistics (document count, chunk count, link health metrics, etc.) |
 | `build_embeddings` | Build or rebuild vector embeddings for semantic search |
 | `embeddings_status` | Check embedding provider and index status |
-| `get_index_status` | Check background FTS build state (`ready` / `building` / `failed`) |
+| `get_index_status` | Check background FTS build state (`queryable` / `building` / `failed`) |
 | `get_backlinks` | Find all documents that link to a given document |
 | `get_outlinks` | Find all links from a document, with existence check |
 | `get_broken_links` | Find all links pointing to non-existent documents |

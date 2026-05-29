@@ -447,9 +447,16 @@ class Collection:
         diagnostic event surfaced via :meth:`get_index_status`, not a
         gate on the read path.
 
-        A previously-built index whose subsequent rebuild captured an
-        error is still queryable: the on-disk index has the previously
-        ingested data; the next read uses it.
+        Note that under the current implementation
+        :meth:`build_index` resets ``_index_built = False`` before
+        rebuilding (so a mid-rebuild crash leaves the Collection
+        visibly not-ready — see issue #525). A queryable index whose
+        *subsequent* rebuild fails therefore transitions through
+        not-ready while the rebuild is in flight, and the failure
+        leaves it not-ready until the next successful build. The
+        "errors are events" principle is realised at the read-time
+        boundary: once :meth:`build_index` succeeds the captured
+        background error is cleared (see line 778).
 
         Lock-free by design: plain attribute read of ``_index_built``
         + ``Event.is_set()``. Assumes CPython GIL semantics for
@@ -536,10 +543,15 @@ class Collection:
         outcome.
 
         - ``"queryable"`` (#533 rename from ``"ready"``): the FTS index
-          is readable right now. ``error`` may still be non-None —
-          a previously successful build left readable data on disk and
-          a subsequent rebuild captured an exception. Readers proceed
-          normally; operators see the diagnostic in ``error``.
+          is readable right now. ``error`` may still be non-None when
+          a warm-restart short-circuit (:meth:`build_index` finding a
+          completeness sentinel + existing docs) flips the Collection
+          to ready while a captured background error from a prior
+          attempt is still surfaced. Readers proceed normally;
+          operators see the diagnostic in ``error``. (Under the
+          current implementation a *foreground* failed rebuild
+          transitions through not-ready and lands in ``"failed"``, not
+          ``"queryable"`` — see :meth:`is_index_ready` and #525.)
         - ``"failed"``: NOT queryable AND a build attempt errored.
           Operator action: inspect ``error``, rebuild via CLI
           ``markdown-vault-mcp index`` or restart.

@@ -596,20 +596,29 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
         """Return background-build state of the FTS index.
 
         Use this when ``initialize`` returned but bucket-3/4 calls
-        block longer than expected or raise ``IndexNotReadyError``. The
-        ``status`` field distinguishes "still building" from "build
-        failed," and the ``error`` field surfaces any captured background
-        build exception.
+        block longer than expected or raise ``IndexNotReadyError``.
+        ``status`` reports whether the index is readable right now;
+        ``error`` is the diagnostic exit code of the last background
+        build attempt and may be populated even when ``status`` is
+        ``"queryable"`` (a previously successful build left readable
+        data and a subsequent attempt errored).
 
         Returns:
             Dict with the following fields:
 
-            - status (str): ``"ready"``, ``"building"``, or
-              ``"failed"``.
+            - status (str): ``"queryable"`` (index is readable now),
+              ``"building"`` (in-flight or never scheduled), or
+              ``"failed"`` (not readable AND a build attempt errored).
+              Issue #534 will further subdivide ``"queryable"`` into
+              ``"up_to_date"`` and ``"degraded"`` once drift detection
+              lands; clients should treat unknown queryable-like values
+              as queryable.
             - documents_indexed (int): Count of documents committed to
               the FTS index right now (rises during ``"building"``).
-            - error (str | None): ``None`` unless the background build
-              raised.
+            - error (str | None): Diagnostic message from the most
+              recent build attempt that raised, if any. Always check
+              this field — ``status == "queryable"`` does NOT imply
+              the most recent build succeeded.
         """
         return await asyncio.to_thread(collection.get_index_status)
 

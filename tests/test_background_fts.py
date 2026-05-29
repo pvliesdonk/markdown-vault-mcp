@@ -958,6 +958,58 @@ def test_decorator_works_with_positional_collection_arg(tmp_path: Path) -> None:
     col.close()
 
 
+def test_decorator_surfaces_wait_for_index_ready_timeout_reason(
+    tmp_path: Path,
+) -> None:
+    """Issue #533: the decorator propagates ``reason="timeout"`` from
+    Collection.wait_for_index_ready through the asyncio.to_thread
+    boundary to the awaiting caller. Pins the reason discriminator
+    end-to-end on the cold path."""
+    import asyncio
+
+    from markdown_vault_mcp._server_readiness import needs_index_ready
+
+    col = Collection(source_dir=_vault(tmp_path))
+    # Clear the pre-set event so wait_for_index_ready blocks until
+    # the bounded timeout elapses.
+    col._background_build_done.clear()
+
+    @needs_index_ready(timeout=0.05)
+    async def handler(collection: Collection) -> str:  # noqa: ARG001
+        return "should never get here"
+
+    with pytest.raises(IndexNotReadyError) as excinfo:
+        asyncio.run(handler(col))
+    assert excinfo.value.reason == "timeout"
+    # Restore so col.close() doesn't deadlock on shutdown.
+    col._background_build_done.set()
+    col.close()
+
+
+def test_decorator_surfaces_wait_for_index_ready_never_built_reason(
+    tmp_path: Path,
+) -> None:
+    """Issue #533: the decorator propagates ``reason="never_built"``
+    when the event is pre-set but the Collection was never built. Pins
+    the reason discriminator end-to-end on the never-scheduled path."""
+    import asyncio
+
+    from markdown_vault_mcp._server_readiness import needs_index_ready
+
+    col = Collection(source_dir=_vault(tmp_path))
+    # Default state: _background_build_done pre-set, _index_built False,
+    # no error captured. wait_for_index_ready raises reason="never_built".
+
+    @needs_index_ready(timeout=1.0)
+    async def handler(collection: Collection) -> str:  # noqa: ARG001
+        return "should never get here"
+
+    with pytest.raises(IndexNotReadyError) as excinfo:
+        asyncio.run(handler(col))
+    assert excinfo.value.reason == "never_built"
+    col.close()
+
+
 def test_decorator_catches_sqlite_operational_error_and_remaps_to_broken(
     tmp_path: Path,
 ) -> None:
