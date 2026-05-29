@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import sqlite3
 import threading
 import time
 from typing import TYPE_CHECKING, Any
@@ -934,4 +935,114 @@ def test_decorator_works_with_positional_collection_arg(tmp_path: Path) -> None:
     # Call positionally (not via kwargs).
     result = asyncio.run(handler("n.md", col))
     assert result == "got: n.md"
+    col.close()
+
+
+def test_decorator_catches_sqlite_operational_error_and_remaps_to_broken(
+    tmp_path: Path,
+) -> None:
+    """Issue #533 reactive broken detection: when a handler bubbles a
+    sqlite3.OperationalError up through the decorator, the MCP boundary
+    remaps it to IndexNotReadyError(reason='broken') with __cause__ set
+    to the original."""
+    import asyncio
+
+    from markdown_vault_mcp._server_readiness import needs_index_ready
+
+    vault = _vault(tmp_path)
+    _seed(vault)
+    col = Collection(source_dir=vault)
+    col.build_index()
+
+    @needs_index_ready()
+    async def fake_handler(collection: Collection) -> None:  # noqa: ARG001
+        raise sqlite3.OperationalError("database disk image is malformed")
+
+    async def _call() -> Any:
+        try:
+            await fake_handler(col)  # type: ignore[arg-type]
+        except IndexNotReadyError as exc:
+            return exc
+        raise AssertionError("expected IndexNotReadyError")
+
+    err = asyncio.run(_call())
+    assert err.reason == "broken"
+    assert isinstance(err.__cause__, sqlite3.OperationalError)
+    col.close()
+
+
+def test_decorator_does_not_remap_sqlite_programming_error(
+    tmp_path: Path,
+) -> None:
+    """Narrow scope: only sqlite3.OperationalError is remapped. Other
+    sqlite3 subclasses (IntegrityError, ProgrammingError) bubble up
+    unwrapped because they indicate distinct caller-actionable bugs."""
+    import asyncio
+
+    from markdown_vault_mcp._server_readiness import needs_index_ready
+
+    vault = _vault(tmp_path)
+    _seed(vault)
+    col = Collection(source_dir=vault)
+    col.build_index()
+
+    @needs_index_ready()
+    async def fake_handler(collection: Collection) -> None:  # noqa: ARG001
+        raise sqlite3.ProgrammingError("bad statement binding")
+
+    async def _call() -> Any:
+        return await fake_handler(col)  # type: ignore[arg-type]
+
+    with pytest.raises(sqlite3.ProgrammingError):
+        asyncio.run(_call())
+    col.close()
+
+
+def test_decorator_does_not_remap_os_error(
+    tmp_path: Path,
+) -> None:
+    """OSError is out of scope for the decorator catch (#533 narrow
+    scope) — it bubbles up unwrapped."""
+    import asyncio
+
+    from markdown_vault_mcp._server_readiness import needs_index_ready
+
+    vault = _vault(tmp_path)
+    _seed(vault)
+    col = Collection(source_dir=vault)
+    col.build_index()
+
+    @needs_index_ready()
+    async def fake_handler(collection: Collection) -> None:  # noqa: ARG001
+        raise OSError("disk gone")
+
+    async def _call() -> Any:
+        return await fake_handler(col)  # type: ignore[arg-type]
+
+    with pytest.raises(OSError, match=r"disk gone"):
+        asyncio.run(_call())
+    col.close()
+
+
+def test_decorator_does_not_remap_generic_exception(
+    tmp_path: Path,
+) -> None:
+    import asyncio
+
+    from markdown_vault_mcp._server_readiness import needs_index_ready
+
+    vault = _vault(tmp_path)
+    _seed(vault)
+    col = Collection(source_dir=vault)
+    col.build_index()
+
+    @needs_index_ready()
+    async def fake_handler(collection: Collection) -> None:  # noqa: ARG001
+        raise ValueError("handler-level value error")
+
+    async def _call() -> Any:
+        return await fake_handler(col)  # type: ignore[arg-type]
+
+    with pytest.raises(ValueError, match=r"handler-level"):
+        asyncio.run(_call())
     col.close()

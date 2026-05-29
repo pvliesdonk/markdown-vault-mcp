@@ -16,7 +16,10 @@ import functools
 import inspect
 import logging
 import os
+import sqlite3
 from typing import TYPE_CHECKING, Any
+
+from markdown_vault_mcp.exceptions import IndexNotReadyError
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -54,8 +57,12 @@ def needs_index_ready(
     already-wrapped function.
 
     Raises (propagated to MCP client via FastMCP error middleware):
-        IndexNotReadyError: timeout exceeded; or never scheduled.
-        IndexBuildFailedError: a prior background build raised.
+        IndexNotReadyError: with ``reason="timeout"`` if the bounded
+            wait elapsed before the background build completed;
+            ``reason="never_built"`` if the build was never scheduled;
+            ``reason="broken"`` if the wrapped handler raised
+            ``sqlite3.OperationalError`` (reactive broken-detection
+            boundary — issue #533).
     """
 
     def deco(handler: Callable[..., Any]) -> Callable[..., Any]:
@@ -77,7 +84,13 @@ def needs_index_ready(
             if not collection.is_index_ready():
                 effective = timeout if timeout is not None else _resolve_ready_timeout()
                 await asyncio.to_thread(collection.wait_for_index_ready, effective)
-            return await handler(*args, **kwargs)
+            try:
+                return await handler(*args, **kwargs)
+            except sqlite3.OperationalError as exc:
+                raise IndexNotReadyError(
+                    "Index appears broken; operation could not complete.",
+                    reason="broken",
+                ) from exc
 
         return wrapper
 
