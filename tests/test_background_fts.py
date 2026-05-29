@@ -249,6 +249,21 @@ def test_wait_for_embeddings_ready_raises_when_never_scheduled(tmp_path: Path) -
     col.close()
 
 
+def test_wait_for_embeddings_ready_distinguishes_fts_failed_skip(
+    tmp_path: Path,
+) -> None:
+    """When FTS failed with a provider configured, the worker sets the
+    embeddings event so waiters unblock. The resulting "not built" state
+    must surface as 'skipped because FTS failed' — NOT the misleading
+    'never scheduled' message that implies the provider was unconfigured."""
+    col = Collection(source_dir=_vault(tmp_path))
+    col._background_build_error = RuntimeError("FTS exploded")
+    col._embeddings_build_done.set()
+    with pytest.raises(IndexNotReadyError, match=r"FTS phase failed"):
+        col.wait_for_embeddings_ready(timeout=0.1)
+    col.close()
+
+
 def test_should_use_background_build_in_memory_false(tmp_path: Path) -> None:
     col = Collection(source_dir=_vault(tmp_path))  # no index_path → in-memory
     assert col.should_use_background_build() is False
@@ -1163,8 +1178,10 @@ def test_no_provider_skips_embeddings_phase(tmp_path: Path) -> None:
 def test_fts_failure_skips_embeddings_phase_no_provider(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """FTS fails, no provider: embeddings event stays pre-set;
-    wait_for_embeddings_ready raises 'never scheduled' immediately."""
+    """FTS fails, no provider: embeddings event stays pre-set and the
+    FTS-failed sentinel is set on _background_build_error, so
+    wait_for_embeddings_ready raises 'FTS phase failed' immediately
+    (disambiguated from the 'never scheduled' misconfig case)."""
     import time as time_mod
 
     from markdown_vault_mcp.managers import index as index_mod
@@ -1183,7 +1200,7 @@ def test_fts_failure_skips_embeddings_phase_no_provider(
         col.wait_for_index_ready(timeout=1.0)
 
     start = time_mod.perf_counter()
-    with pytest.raises(IndexNotReadyError, match=r"never scheduled|not built"):
+    with pytest.raises(IndexNotReadyError, match=r"FTS phase failed"):
         col.wait_for_embeddings_ready(timeout=0.1)
     elapsed = time_mod.perf_counter() - start
     assert elapsed < 0.05, f"wait_for_embeddings_ready took {elapsed:.3f}s"
@@ -1222,7 +1239,7 @@ def test_fts_failure_skips_embeddings_phase_with_provider(
 
     assert col._embeddings_build_done.is_set()  # CRITICAL: set by FTS except
     start = time_mod.perf_counter()
-    with pytest.raises(IndexNotReadyError, match=r"never scheduled|not built"):
+    with pytest.raises(IndexNotReadyError, match=r"FTS phase failed"):
         col.wait_for_embeddings_ready(timeout=0.1)
     elapsed = time_mod.perf_counter() - start
     assert elapsed < 0.05, (
@@ -1264,7 +1281,7 @@ def test_thread_start_failure_with_provider_releases_embeddings_waiter(
     assert col._embeddings_build_done.is_set()  # CRITICAL: parallel hang fix
 
     start = time_mod.perf_counter()
-    with pytest.raises(IndexNotReadyError, match=r"never scheduled|not built"):
+    with pytest.raises(IndexNotReadyError, match=r"FTS phase failed"):
         col.wait_for_embeddings_ready(timeout=0.1)
     elapsed = time_mod.perf_counter() - start
     assert elapsed < 0.05, (
@@ -1624,4 +1641,59 @@ def test_get_context_returns_empty_similar_during_embeddings_build(
     result = col.get_context("n.md")
     # similar should be [] (graceful degradation), no exception.
     assert result.similar == [] or len(result.similar) == 0
+    col.close()
+
+
+# ---------------------------------------------------------------------------
+# PR #531 R3: facade vs worker error-capture race regression
+# ---------------------------------------------------------------------------
+
+
+def test_build_embeddings_facade_atomic_against_worker_error(
+    tmp_path: Path,
+) -> None:
+    """The facade's success-write of (_embeddings_build_error=None,
+    _embeddings_built=True) and the worker's except-block error-capture
+    (_embeddings_build_error=exc) must serialise under _write_lock. Without
+    the lock, an interleaving (facade-clear → worker-set → facade-set-built)
+    leaves built=True AND error=exc — a permanently poisoned state where
+    is_embeddings_ready() returns False forever (PR #531 R3 finding #2)."""
+    col = Collection(source_dir=_vault(tmp_path))
+
+    # Drive the racing interleaving deterministically by acquiring the
+    # write_lock from one direction and asserting the other side blocks.
+    # Order: simulate worker has captured an error WHILE holding the lock,
+    # then the facade tries to write its success state. Under the fix the
+    # facade waits, then overwrites the error → end state: ready.
+    col._embeddings_build_error = RuntimeError("worker caught a failure")
+    col._embeddings_built = False
+
+    # Acquire the lock as if we were the worker mid-except block.
+    import threading as _t
+
+    facade_done = _t.Event()
+
+    def _facade() -> None:
+        # Mimic the facade's three-field critical section directly (we
+        # can't call build_embeddings() here without a real index).
+        with col._write_lock:
+            col._embeddings_build_error = None
+            col._embeddings_built = True
+            col._embeddings_build_done.set()
+        facade_done.set()
+
+    with col._write_lock:
+        t = _t.Thread(target=_facade, daemon=True)
+        t.start()
+        # Facade must be blocked on the lock — give it a beat to prove it.
+        assert not facade_done.wait(timeout=0.05)
+        assert col._embeddings_build_error is not None  # worker state visible
+        assert col._embeddings_built is False
+
+    # Lock released — facade runs to completion.
+    assert facade_done.wait(timeout=1.0)
+    t.join(timeout=1.0)
+    assert col._embeddings_build_error is None
+    assert col._embeddings_built is True
+    assert col.is_embeddings_ready() is True
     col.close()

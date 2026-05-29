@@ -570,7 +570,13 @@ class Collection:
             try:
                 self.build_embeddings()
             except BaseException as exc:
-                self._embeddings_build_error = exc
+                # Under _write_lock so an operator-triggered
+                # build_embeddings() facade call (which updates the same
+                # three fields under the lock) cannot interleave its
+                # success-writes with this error-capture and leave a
+                # permanently poisoned state (built=True AND error=exc).
+                with self._write_lock:
+                    self._embeddings_build_error = exc
                 logger.exception("Background embeddings build failed")
             finally:
                 self._embeddings_build_done.set()
@@ -808,6 +814,16 @@ class Collection:
                 "Background embeddings build raised; see __cause__ for details."
             ) from self._embeddings_build_error
         if not self._embeddings_built:
+            if self._background_build_error is not None:
+                # Phase-2 was skipped because phase-1 (FTS) failed. The
+                # embeddings event was set in the worker's FTS except
+                # block to unblock waiters; surface that specifically so
+                # operators don't think they forgot to configure the
+                # provider.
+                raise IndexNotReadyError(
+                    "Embeddings build skipped because the FTS phase "
+                    "failed; call get_index_status() to see the FTS error."
+                )
             raise IndexNotReadyError(
                 "Embeddings not built; background embeddings build was never "
                 "scheduled. Call build_embeddings() or configure "
@@ -1014,9 +1030,14 @@ class Collection:
         # returns True and the decorator stops surfacing
         # IndexBuildFailedError. Mirrors what build_index() does for the
         # FTS phase (PR1, R2 review fix).
-        self._embeddings_build_error = None
-        self._embeddings_built = True
-        self._embeddings_build_done.set()
+        # Under _write_lock so the worker's except block (which writes
+        # _embeddings_build_error under the same lock) cannot interleave
+        # between these three assignments and leave a permanently poisoned
+        # state (built=True AND error=exc).
+        with self._write_lock:
+            self._embeddings_build_error = None
+            self._embeddings_built = True
+            self._embeddings_build_done.set()
         return result
 
     def embeddings_status(self) -> dict:
