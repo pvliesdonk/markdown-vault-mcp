@@ -118,7 +118,7 @@ The TOC prepends a synthetic H1 from the document title and deduplicates if the 
 Top 10 semantically similar notes for a document. Requires embeddings to be built. This is a URI template — replace `{path}` with the document's relative path.
 
 !!! note "Cold-start blocking"
-    Calls during a cold-start background FTS build block via the tool-layer `needs_index_ready` decorator and may surface `IndexBuildFailedError` if the background build raised. Poll `get_index_status` to observe build state without blocking.
+    `vault_similar` waits for BOTH the FTS and embeddings background builds when an `embedding_provider` is configured. Worst-case wait is `2 × MARKDOWN_VAULT_MCP_READY_TIMEOUT_S` (default 120s). When no provider is configured, the embeddings wait is a no-op. Poll `get_index_status` to observe progress without blocking. Raises `IndexBuildFailedError` if either background build failed.
 
 Results are **grouped per file** — each file appears at most once, with up to `chunks_per_file` (server default `2`) best-matching sections in a `sections` array. Each entry is a `GroupedResult` dict with `path`, `title`, `folder`, `score` (max section score), `search_type` (`"semantic"`), `frontmatter`, and `sections` — a list of `{heading, content, score}` dicts sorted by score then document order.
 

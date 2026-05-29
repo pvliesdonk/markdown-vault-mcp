@@ -118,6 +118,24 @@ class Collection:
     users) get the raise contract and handle "not ready" with
     caller-appropriate logic — never block.
 
+    **Embeddings background build (issue #513 PR2).** The same daemon
+    thread that handles FTS extends to a second phase: when
+    ``embedding_provider`` is configured, after a successful FTS build
+    the worker calls :meth:`build_embeddings` to populate the vector
+    sidecar. A parallel triple of state — ``_embeddings_build_done``
+    (event, pre-set; cleared by the start path when a provider is
+    configured), ``_embeddings_build_error``, ``_embeddings_built`` —
+    drives :meth:`is_embeddings_ready` and
+    :meth:`wait_for_embeddings_ready`. The MCP-layer decorator's
+    ``embeddings=True`` argument waits for both events when a provider
+    is configured (otherwise the embeddings wait is a no-op via
+    :attr:`has_embedding_provider`). Failure of the embeddings phase
+    does NOT propagate to FTS readiness: FTS-only tools continue to
+    work; only embeddings-consuming tools (``get_similar``,
+    ``vault_similar``, ``reindex``) raise :exc:`IndexBuildFailedError`.
+    The library itself never blocks on embeddings — the PR1 boundary
+    is preserved.
+
     **Thread safety (issue #519):** every public method on this class is safe
     to call from any thread, concurrently with other reads and writes from
     any other thread. Writes serialise against each other via the internal

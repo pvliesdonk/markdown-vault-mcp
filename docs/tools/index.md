@@ -202,17 +202,30 @@ Check the embedding provider configuration and vector index status. Use this to 
 
 ### `get_index_status`
 
-Returns background-build state of the FTS index. Use this when
-`initialize` returned but bucket-3/4 calls block longer than expected
-or surface `IndexNotReadyError`/`IndexBuildFailedError` — the
-`status` field distinguishes "still building" from "build failed."
+**PR2 (#513) shape change:** `get_index_status` now returns a nested object
+with `fts` and `embeddings` substates instead of the previous flat shape.
+Top-level `status` field is preserved but `documents_indexed` and `error`
+have moved into `fts`. See Returns below for the full shape.
+
+**Operator note:** if `embeddings.status` is `"building"` and `fts.status`
+is `"failed"`, embeddings will not advance — `status == "failed"` at the
+top level is the signal to stop polling and rebuild via CLI.
+
+Returns background-build state of the FTS and embeddings index. Use this
+when `initialize` returned but bucket-3/4 calls block longer than expected
+or surface `IndexNotReadyError`/`IndexBuildFailedError` — the `status`
+field distinguishes "still building" from "build failed."
 
 **Returns:**
-- `status`: `"ready"`, `"building"`, or `"failed"`.
-- `documents_indexed`: count of documents committed to the FTS index
+- `status`: top-level reduction — `"ready"` only when both FTS and
+  embeddings are ready; `"failed"` if either failed; `"building"` if either
+  is still in progress.
+- `fts.status`: `"ready"`, `"building"`, or `"failed"`.
+- `fts.documents_indexed`: count of documents committed to the FTS index
   right now (rises during `"building"`).
-- `error`: `null` unless the background build raised; otherwise the
-  exception message.
+- `fts.error`: `null` unless the background FTS build raised.
+- `embeddings.status`: `"ready"`, `"building"`, `"failed"`, or `"not_configured"`.
+- `embeddings.error`: `null` unless the background embeddings build raised.
 
 **Tags:** read-only.
 
@@ -222,6 +235,13 @@ or surface `IndexNotReadyError`/`IndexBuildFailedError` — the
 
 !!! note "Cold-start blocking"
     Calls to `reindex` and `build_embeddings` during a cold-start background FTS build block via the tool-layer `needs_index_ready` decorator. If the build takes longer than `MARKDOWN_VAULT_MCP_READY_TIMEOUT_S` (default 60s), the tool returns `IndexNotReadyError`. If a prior background build raised, it returns `IndexBuildFailedError`. Poll `get_index_status` to observe build state without blocking.
+
+**Cold-start note:** `get_similar`, `vault_similar` (resource), and `reindex`
+wait for BOTH the FTS background build AND the embeddings background build
+to complete before returning (when an `embedding_provider` is configured).
+Worst-case wait is `2 × MARKDOWN_VAULT_MCP_READY_TIMEOUT_S` (default 120s).
+Poll `get_index_status` to observe progress without blocking. When no
+provider is configured, the embeddings wait is a no-op.
 
 ### `reindex`
 
@@ -662,6 +682,9 @@ Find semantically similar notes by document path. Requires embeddings to be buil
 
 !!! note "Grouped result shape"
     Returns one entry per file with up to `chunks_per_file` best-matching sections. Default is 2 sections per file; pass `chunks_per_file=1` for compact dossiers.
+
+!!! note "Cold-start blocking"
+    `get_similar` waits for BOTH the FTS and embeddings background builds when an `embedding_provider` is configured. Worst-case wait is `2 × MARKDOWN_VAULT_MCP_READY_TIMEOUT_S` (default 120s). When no provider is configured, the embeddings wait is a no-op. Poll `get_index_status` to observe progress without blocking.
 
 ### `get_recent`
 

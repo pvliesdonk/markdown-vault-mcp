@@ -419,6 +419,33 @@ The library's `_require_index_ready()` is unchanged from PR #525
 pull loop and lifespan's embeddings path handle "not ready"
 without deadlocking on internal blocking.
 
+**Embeddings background build (issue #513 PR2).** The same daemon
+thread that handles FTS extends to a second phase when an
+``embedding_provider`` is configured. After a successful FTS phase,
+the worker calls ``Collection.build_embeddings()`` to populate the
+vector sidecar. Bucket-3 surfaces that need vectors —
+``get_similar``, ``vault_similar``, and ``reindex`` (which directly
+mutates the vector sidecar via ``IndexManager.reindex``) — use the
+new ``@needs_index_ready(embeddings=True)`` decorator argument and
+wait for both phases at the MCP layer. The library never blocks on
+embeddings; ``_require_index_ready()`` is unchanged from PR1.
+``get_index_status`` returns a nested shape with ``fts`` and
+``embeddings`` substates plus a top-level reduction.
+
+The embeddings wait is gated on ``Collection.has_embedding_provider``
+at the decorator level: when no provider is configured, no vector
+sidecar exists and the wait is a no-op (the three handlers run
+against an empty vector index naturally — ``get_similar`` returns
+``[]``, ``reindex`` skips its vector branches).
+
+The internal ``reindex`` callsites (git pull loop, ``_reindex_after_pull``
+in ``_server_tools.py``) are NOT guarded by the
+``embeddings=True`` decorator and may race with background embeddings
+on the vector sidecar in the cold-start window. The window is bounded
+by the background embeddings build duration and the git pull interval;
+operator recovery is CLI ``markdown-vault-mcp index``. PR3 (warm-start
+drift reindex) will revisit if a more general lock is needed.
+
 To apply a configuration change (e.g. new `exclude_patterns`,
 `required_frontmatter`) to a pre-existing index, call
 `build_index(force=True)` — and, when embeddings are configured,

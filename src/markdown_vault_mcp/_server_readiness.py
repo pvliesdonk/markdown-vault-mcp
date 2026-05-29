@@ -7,6 +7,15 @@ wants to wait" — is unambiguous. Internal callers (lifespan, git
 pull loop, CLI, direct library users) do NOT go through this
 decorator; they handle "not ready" with their own caller-appropriate
 logic (skip, log, retry on next interval).
+
+PR2 (#513) extension: ``@needs_index_ready(embeddings=True)`` waits
+for the embeddings phase in addition to FTS, but only when the
+Collection has an ``embedding_provider`` configured (the wait is a
+no-op otherwise — see :attr:`Collection.has_embedding_provider`).
+Worst-case total wait when a provider is configured is
+``2 x MARKDOWN_VAULT_MCP_READY_TIMEOUT_S`` (default 120s). Applied
+to ``get_similar``, ``vault_similar``, and ``reindex`` — the three
+surfaces that read or mutate the vector sidecar.
 """
 
 from __future__ import annotations
