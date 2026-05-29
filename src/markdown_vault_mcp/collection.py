@@ -788,10 +788,17 @@ class Collection:
            :exc:`IndexNotReadyError("…timed out…")`.
         2. If ``_embeddings_build_error`` is not None → raise
            :exc:`IndexBuildFailedError` with the original as ``__cause__``.
-        3. If ``_embeddings_built`` is False → raise
-           :exc:`IndexNotReadyError("…never scheduled…")`. Catches the
-           pre-set-event + never-scheduled case (fresh Collection, FTS
-           failed so embeddings skipped, no provider configured).
+        3. If ``_embeddings_built`` is False, distinguish two skip cases
+           via the ``_background_build_error`` sentinel:
+
+           a. ``_background_build_error is not None`` — FTS phase
+              failed, so phase 2 was never entered; raise
+              :exc:`IndexNotReadyError("…FTS phase failed…")` pointing
+              the caller at :meth:`get_index_status` for the underlying
+              FTS error.
+           b. Otherwise — fresh Collection, no provider configured, or
+              :meth:`start_background_build_index` never called; raise
+              :exc:`IndexNotReadyError("…never scheduled…")`.
         4. Otherwise return.
 
         Used by the MCP-layer ``@needs_index_ready(embeddings=True)``
@@ -802,8 +809,10 @@ class Collection:
 
         Raises:
             IndexBuildFailedError: A prior embeddings build raised.
-            IndexNotReadyError: Either the timeout expired or no
-                embeddings build was ever scheduled.
+            IndexNotReadyError: Timeout expired; FTS phase failed
+                before embeddings could run (see
+                :meth:`get_index_status`); or no embeddings build was
+                ever scheduled.
         """
         if not self._embeddings_build_done.wait(timeout=timeout):
             raise IndexNotReadyError(

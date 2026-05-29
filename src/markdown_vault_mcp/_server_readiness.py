@@ -66,7 +66,9 @@ def needs_index_ready(
     ``@mcp.tool(...)`` (or ``@mcp.resource(...)``) — closer to ``def``.
 
     Raises (propagated to MCP client):
-        IndexNotReadyError: timeout exceeded or never scheduled.
+        IndexNotReadyError: timeout exceeded; embeddings phase skipped
+            because the FTS phase failed (``embeddings=True`` only); or
+            no build was ever scheduled.
         IndexBuildFailedError: a prior background build (FTS or
             embeddings) raised.
     """

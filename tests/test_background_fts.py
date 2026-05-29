@@ -1213,7 +1213,10 @@ def test_fts_failure_skips_embeddings_phase_with_provider(
     """CRITICAL REGRESSION for the FTS-fail hang bug. Provider configured,
     FTS fails. Worker's FTS except block MUST set _embeddings_build_done
     explicitly — without it, wait_for_embeddings_ready would hang for the
-    full timeout. Test: wall-clock < 0.05s and raises 'never scheduled'."""
+    full timeout. Test: wall-clock < 0.05s and raises 'FTS phase failed'
+    (the disambiguated message added in PR #531 R3 commit 28930ae —
+    distinguishes the FTS-failed-skip case from genuine
+    'never scheduled')."""
     import time as time_mod
 
     from markdown_vault_mcp.managers import index as index_mod
