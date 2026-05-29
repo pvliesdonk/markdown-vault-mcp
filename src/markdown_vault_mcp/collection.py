@@ -439,29 +439,23 @@ class Collection:
             )
 
     def is_index_ready(self) -> bool:
-        """Return ``True`` iff the FTS index is in a clean ready state.
+        """Return ``True`` iff the FTS index is queryable right now.
 
-        Non-blocking. Returns ``True`` only when all three conditions
-        hold simultaneously: ``_index_built`` is True (a build returned
-        cleanly), ``_background_build_error`` is None (no captured
-        background failure), and ``_background_build_done`` is set (no
-        in-flight background). A freshly-constructed Collection
-        (event pre-set, no error, ``_index_built`` False) returns False
-        — the attempt-6 status lie is impossible by construction.
+        Two-field check after issue #533: ``_index_built`` is True AND
+        ``_background_build_done`` is set. The captured
+        ``_background_build_error`` no longer participates — it's a
+        diagnostic event surfaced via :meth:`get_index_status`, not a
+        gate on the read path.
 
-        Lock-free by design: reads ``_index_built`` (plain bool
-        attribute), checks ``_background_build_error is None`` (plain
-        attribute), and calls ``_background_build_done.is_set()``
-        (Event method, no lock). Safe to call on hot tool paths.
+        A previously-built index whose subsequent rebuild captured an
+        error is still queryable: the on-disk index has the previously
+        ingested data; the next read uses it.
 
-        Assumes CPython GIL semantics for cross-thread visibility of
-        the plain attribute reads. Not analyzed for Free-Threaded
-        Python 3.13+ (``python -X gil=0``); revisit if the project
-        moves off CPython GIL.
+        Lock-free by design: plain attribute read of ``_index_built``
+        + ``Event.is_set()``. Assumes CPython GIL semantics for
+        cross-thread visibility; not analyzed for Free-Threaded Python.
         """
         if not self._index_built:
-            return False
-        if self._background_build_error is not None:
             return False
         return self._background_build_done.is_set()
 

@@ -61,12 +61,38 @@ def test_is_index_ready_true_after_synchronous_build(tmp_path: Path) -> None:
     col.close()
 
 
-def test_is_index_ready_false_after_captured_background_error(tmp_path: Path) -> None:
-    """Direct state poke: simulate a finished-but-failed background by setting
-    the error and the event, leaving _index_built False."""
+def test_is_index_ready_true_after_captured_background_error_on_built_index(
+    tmp_path: Path,
+) -> None:
+    """Issue #533 meaning shift: a captured background error on a
+    previously-built index does NOT make the index unreadable. The
+    captured error is diagnostic only; is_index_ready stays True."""
+    vault = _vault(tmp_path)
+    _seed(vault)
+    col = Collection(source_dir=vault)
+    col.build_index()
+    col._background_build_error = RuntimeError("subsequent rebuild blew up")
+    assert col.is_index_ready() is True
+    col.close()
+
+
+def test_is_index_ready_false_when_not_built_regardless_of_error(
+    tmp_path: Path,
+) -> None:
     col = Collection(source_dir=_vault(tmp_path))
-    col._background_build_error = RuntimeError("simulated")
     col._background_build_done.set()
+    col._background_build_error = None
+    # _index_built is False by construction.
+    assert col.is_index_ready() is False
+    col.close()
+
+
+def test_is_index_ready_false_when_event_cleared_regardless_of_built(
+    tmp_path: Path,
+) -> None:
+    col = Collection(source_dir=_vault(tmp_path))
+    col._index_built = True
+    col._background_build_done.clear()
     assert col.is_index_ready() is False
     col.close()
 
