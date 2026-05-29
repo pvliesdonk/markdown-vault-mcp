@@ -198,6 +198,57 @@ def test_start_background_build_index_one_shot_after_thread_start_failure(
     col.close()
 
 
+def test_wait_for_embeddings_ready_returns_when_already_built(tmp_path: Path) -> None:
+    col = Collection(source_dir=_vault(tmp_path))
+    col._embeddings_built = True
+    col.wait_for_embeddings_ready(timeout=0.1)  # must not raise
+    col.close()
+
+
+def test_wait_for_embeddings_ready_blocks_until_event_set(tmp_path: Path) -> None:
+    col = Collection(source_dir=_vault(tmp_path))
+    col._embeddings_build_done.clear()
+    col._embeddings_built = False
+
+    def setter() -> None:
+        time.sleep(0.05)
+        col._embeddings_built = True
+        col._embeddings_build_done.set()
+
+    threading.Thread(target=setter).start()
+    col.wait_for_embeddings_ready(timeout=1.0)
+    col.close()
+
+
+def test_wait_for_embeddings_ready_raises_on_timeout(tmp_path: Path) -> None:
+    col = Collection(source_dir=_vault(tmp_path))
+    col._embeddings_build_done.clear()
+    col._embeddings_built = False
+    with pytest.raises(IndexNotReadyError, match=r"timed out"):
+        col.wait_for_embeddings_ready(timeout=0.05)
+    col.close()
+
+
+def test_wait_for_embeddings_ready_raises_build_failed_when_error_set(
+    tmp_path: Path,
+) -> None:
+    col = Collection(source_dir=_vault(tmp_path))
+    col._embeddings_build_error = RuntimeError("scan exploded")
+    with pytest.raises(IndexBuildFailedError) as excinfo:
+        col.wait_for_embeddings_ready(timeout=0.1)
+    assert isinstance(excinfo.value.__cause__, RuntimeError)
+    col.close()
+
+
+def test_wait_for_embeddings_ready_raises_when_never_scheduled(tmp_path: Path) -> None:
+    """Pre-set event + no error + _embeddings_built=False — fresh Collection
+    must raise IndexNotReadyError ('never scheduled')."""
+    col = Collection(source_dir=_vault(tmp_path))
+    with pytest.raises(IndexNotReadyError, match=r"never scheduled|not built"):
+        col.wait_for_embeddings_ready(timeout=0.1)
+    col.close()
+
+
 def test_should_use_background_build_in_memory_false(tmp_path: Path) -> None:
     col = Collection(source_dir=_vault(tmp_path))  # no index_path → in-memory
     assert col.should_use_background_build() is False

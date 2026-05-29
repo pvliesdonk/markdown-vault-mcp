@@ -654,6 +654,48 @@ class Collection:
                 "Call build_index() or start_background_build_index() first."
             )
 
+    def wait_for_embeddings_ready(self, timeout: float | None = None) -> None:
+        """Block until the embeddings phase is ready, or raise.
+
+        Parallel to :meth:`wait_for_index_ready` but for the second phase
+        of the background build. Same 4-step control flow:
+
+        1. ``_embeddings_build_done.wait(timeout)`` — False → raise
+           :exc:`IndexNotReadyError("…timed out…")`.
+        2. If ``_embeddings_build_error`` is not None → raise
+           :exc:`IndexBuildFailedError` with the original as ``__cause__``.
+        3. If ``_embeddings_built`` is False → raise
+           :exc:`IndexNotReadyError("…never scheduled…")`. Catches the
+           pre-set-event + never-scheduled case (fresh Collection, FTS
+           failed so embeddings skipped, no provider configured).
+        4. Otherwise return.
+
+        Used by the MCP-layer ``@needs_index_ready(embeddings=True)``
+        decorator. Library bucket-3/4 methods do NOT call this.
+
+        Args:
+            timeout: Maximum seconds to wait. ``None`` blocks indefinitely.
+
+        Raises:
+            IndexBuildFailedError: A prior embeddings build raised.
+            IndexNotReadyError: Either the timeout expired or no
+                embeddings build was ever scheduled.
+        """
+        if not self._embeddings_build_done.wait(timeout=timeout):
+            raise IndexNotReadyError(
+                f"Embeddings build still in progress; timed out after {timeout}s."
+            )
+        if self._embeddings_build_error is not None:
+            raise IndexBuildFailedError(
+                "Background embeddings build raised; see __cause__ for details."
+            ) from self._embeddings_build_error
+        if not self._embeddings_built:
+            raise IndexNotReadyError(
+                "Embeddings not built; background embeddings build was never "
+                "scheduled. Call build_embeddings() or configure "
+                "embedding_provider and call start_background_build_index()."
+            )
+
     @property
     def _vectors(self) -> VectorIndex | None:
         """Bridge property: vector index is owned by SearchManager."""
