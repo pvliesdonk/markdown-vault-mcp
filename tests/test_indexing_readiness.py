@@ -160,16 +160,18 @@ class TestBucket3Block:
         _seed(vault)
         col = Collection(source_dir=vault)
 
-        with pytest.raises(IndexNotReadyError):
+        with pytest.raises(IndexNotReadyError) as excinfo:
             col.get_backlinks("note.md")
+        assert excinfo.value.reason == "never_built"
 
     def test_get_outlinks_on_unbuilt_raises(self, tmp_path: Path) -> None:
         vault = _vault(tmp_path)
         _seed(vault)
         col = Collection(source_dir=vault)
 
-        with pytest.raises(IndexNotReadyError):
+        with pytest.raises(IndexNotReadyError) as excinfo:
             col.get_outlinks("note.md")
+        assert excinfo.value.reason == "never_built"
 
     def test_get_similar_on_unbuilt_raises(self, tmp_path: Path) -> None:
         vault = _vault(tmp_path)
@@ -180,16 +182,18 @@ class TestBucket3Block:
             embeddings_path=tmp_path / "vectors",
         )
 
-        with pytest.raises(IndexNotReadyError):
+        with pytest.raises(IndexNotReadyError) as excinfo:
             col.get_similar("note.md")
+        assert excinfo.value.reason == "never_built"
 
     def test_get_context_on_unbuilt_raises(self, tmp_path: Path) -> None:
         vault = _vault(tmp_path)
         _seed(vault)
         col = Collection(source_dir=vault)
 
-        with pytest.raises(IndexNotReadyError):
+        with pytest.raises(IndexNotReadyError) as excinfo:
             col.get_context("note.md")
+        assert excinfo.value.reason == "never_built"
 
     def test_get_connection_path_on_unbuilt_raises(self, tmp_path: Path) -> None:
         vault = _vault(tmp_path)
@@ -197,8 +201,9 @@ class TestBucket3Block:
         _seed(vault, "b.md")
         col = Collection(source_dir=vault)
 
-        with pytest.raises(IndexNotReadyError):
+        with pytest.raises(IndexNotReadyError) as excinfo:
             col.get_connection_path("a.md", "b.md")
+        assert excinfo.value.reason == "never_built"
 
     def test_get_toc_on_unbuilt_raises(self, tmp_path: Path) -> None:
         """get_toc reads from FTS so cold-start must raise readiness, not a
@@ -208,8 +213,9 @@ class TestBucket3Block:
         _seed(vault)
         col = Collection(source_dir=vault)
 
-        with pytest.raises(IndexNotReadyError):
+        with pytest.raises(IndexNotReadyError) as excinfo:
             col.get_toc("note.md")
+        assert excinfo.value.reason == "never_built"
 
 
 # ---------------------------------------------------------------------------
@@ -224,8 +230,9 @@ class TestBucket4Coordinate:
         _seed(vault)
         col = Collection(source_dir=vault)
 
-        with pytest.raises(IndexNotReadyError):
+        with pytest.raises(IndexNotReadyError) as excinfo:
             col.reindex()
+        assert excinfo.value.reason == "never_built"
 
     def test_build_embeddings_on_unbuilt_raises(self, tmp_path: Path) -> None:
         vault = _vault(tmp_path)
@@ -236,8 +243,9 @@ class TestBucket4Coordinate:
             embeddings_path=tmp_path / "vectors",
         )
 
-        with pytest.raises(IndexNotReadyError):
+        with pytest.raises(IndexNotReadyError) as excinfo:
             col.build_embeddings()
+        assert excinfo.value.reason == "never_built"
 
     def test_build_index_short_circuits_on_warm_restart(self, tmp_path: Path) -> None:
         """A second Collection on the same persistent FTS DB short-circuits.
@@ -375,8 +383,9 @@ class TestReadinessFlagSemantics:
         with pytest.raises(RuntimeError):
             col.build_index(force=True)
 
-        with pytest.raises(IndexNotReadyError):
+        with pytest.raises(IndexNotReadyError) as excinfo:
             col.get_backlinks("note.md")
+        assert excinfo.value.reason == "never_built"
 
     def test_failed_build_index_leaves_unready(self, tmp_path: Path) -> None:
         """If build_index() raises, subsequent bucket-3 calls still raise."""
@@ -393,5 +402,6 @@ class TestReadinessFlagSemantics:
         with pytest.raises(RuntimeError):
             col.build_index()
 
-        with pytest.raises(IndexNotReadyError):
+        with pytest.raises(IndexNotReadyError) as excinfo:
             col.get_backlinks("note.md")
+        assert excinfo.value.reason == "never_built"

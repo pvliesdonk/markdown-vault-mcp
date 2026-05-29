@@ -434,7 +434,8 @@ class Collection:
         """Raise :exc:`IndexNotReadyError` if :meth:`build_index` has not run."""
         if not self._index_built:
             raise IndexNotReadyError(
-                "Index not built. Call build_index() before this method."
+                "Index not built. Call build_index() before this method.",
+                reason="never_built",
             )
 
     def is_index_ready(self) -> bool:
