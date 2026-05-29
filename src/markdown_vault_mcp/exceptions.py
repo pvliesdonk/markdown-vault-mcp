@@ -1,5 +1,9 @@
 """Exception types for markdown-vault-mcp."""
 
+from __future__ import annotations
+
+from typing import Literal
+
 
 class MarkdownMCPError(Exception):
     """Base exception for all markdown-vault-mcp errors."""
@@ -66,24 +70,38 @@ class ConfigurationError(MarkdownMCPError):
     """Raised for invalid or unsupported configuration at startup."""
 
 
+IndexNotReadyReason = Literal["never_built", "timeout", "broken"]
+
+
 class IndexNotReadyError(MarkdownMCPError):
-    """Raised when a method requires a built FTS index and none exists.
+    """Raised when a method requires a built FTS index that is not currently usable.
 
-    Bucket-3 relational / FTS-backed queries (``get_backlinks``,
-    ``get_outlinks``, ``get_similar``, ``get_context``,
-    ``get_connection_path``, ``get_toc``) and bucket-4 coordinators
-    (``reindex``, ``build_embeddings``) cannot produce correct results
-    against an empty / never-built index. They raise this rather than
-    silently return wrong answers.
+    Carries a structured ``reason`` discriminator so callers (notably the
+    MCP layer and operators reading status output) can tell apart the
+    three not-ready cases without parsing exception messages:
 
-    Callers must call :meth:`Collection.build_index` before these
-    methods. Once a background indexer lands (issue #513), the
-    :meth:`Collection.wait_for_index_ready` primitive will block on a
-    completion event instead of raising.
+    - ``"never_built"``: ``Collection.build_index`` has not produced a
+      usable FTS DB yet (cold collection, in-flight first build, or a
+      previously-broken DB never recovered).
+    - ``"timeout"``: caller waited via
+      :meth:`Collection.wait_for_index_ready` and the bounded timeout
+      elapsed before the background build signaled completion.
+    - ``"broken"``: a ``sqlite3.OperationalError`` surfaced from the FTS
+      layer during the operation. Set only by the MCP-layer
+      :func:`needs_index_ready` decorator boundary — never by library
+      code.
 
-    See :exc:`IndexBuildFailedError` for the related case where a
-    background build started but then raised.
+    The previous PR #529 companion class ``IndexBuildFailedError`` was
+    deleted in issue #533: captured background-build errors are now
+    diagnostic events (surfaced via ``Collection.get_index_status``) and
+    no longer raised from the read path.
     """
+
+    reason: IndexNotReadyReason
+
+    def __init__(self, message: str, *, reason: IndexNotReadyReason) -> None:
+        super().__init__(message)
+        self.reason = reason
 
 
 class IndexBuildFailedError(MarkdownMCPError):
