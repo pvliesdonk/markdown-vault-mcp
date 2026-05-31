@@ -6,8 +6,12 @@ See `docs/superpowers/specs/2026-05-31-issue-559-single-writer-for-indexes-desig
 from __future__ import annotations
 
 import logging
+import queue
+import threading
+from collections.abc import Callable
+from concurrent.futures import CancelledError, Future
 from dataclasses import dataclass
-from typing import ClassVar
+from typing import Any, ClassVar, cast
 
 logger = logging.getLogger(__name__)
 
@@ -47,3 +51,111 @@ class FlushDirtyEmbeddings:
     """Drain the vector-dirty-paths set."""
 
     kind: ClassVar[str] = "flush_dirty_embeddings"
+
+
+# Sentinel placed in the queue by close() to wake the worker.
+_SHUTDOWN_SENTINEL: object = object()
+
+# Type alias for a job-runner: takes the job and a writer-supplied context,
+# returns the value to set on the Future. Exceptions propagate to the Future.
+JobRunner = Callable[[Any, Any], Any]
+
+
+class IndexWriter:
+    """Single-owner writer thread serving a FIFO job queue.
+
+    Construction does NOT start the worker thread; call :meth:`start`
+    explicitly. Submission is rejected after :meth:`close` returns.
+
+    Args:
+        runners: Mapping from job kind string to handler callable.
+        ctx: Opaque context object passed to every runner.
+    """
+
+    def __init__(
+        self,
+        *,
+        runners: dict[str, JobRunner],
+        ctx: Any,
+    ) -> None:
+        self._runners = dict(runners)
+        self._ctx = ctx
+        self._queue: queue.Queue[tuple[Any, Future[Any]] | object] = queue.Queue()
+        self._thread: threading.Thread | None = None
+        self._shutdown = threading.Event()
+        self._closed = threading.Event()
+
+    def start(self) -> None:
+        """Spawn the worker thread. Idempotent."""
+        if self._thread is not None:
+            return
+        self._thread = threading.Thread(
+            target=self._run,
+            name="markdown-vault-mcp.writer",
+            daemon=True,
+        )
+        self._thread.start()
+
+    def submit(self, job: Any) -> Future[Any]:
+        """Submit a job for execution.
+
+        Raises:
+            RuntimeError: If :meth:`close` has been called.
+        """
+        if self._closed.is_set():
+            msg = "IndexWriter is closed; cannot submit new jobs"
+            raise RuntimeError(msg)
+        future: Future[Any] = Future()
+        self._queue.put((job, future))
+        return future
+
+    def close(self, timeout: float = 30.0) -> None:
+        """Signal shutdown, drain in-flight job, abandon pending.
+
+        Pending queued jobs have their Futures resolved with
+        :class:`concurrent.futures.CancelledError`. The worker
+        thread is daemon; if the in-flight job exceeds *timeout*,
+        process exit kills it.
+        """
+        if self._closed.is_set():
+            return
+        self._closed.set()
+        self._shutdown.set()
+        self._queue.put(_SHUTDOWN_SENTINEL)
+        if self._thread is not None:
+            self._thread.join(timeout=timeout)
+
+    def is_closed(self) -> bool:
+        """Return True if :meth:`close` has been called."""
+        return self._closed.is_set()
+
+    def _run(self) -> None:
+        """Worker loop."""
+        while True:
+            item = self._queue.get()
+            if item is _SHUTDOWN_SENTINEL:
+                # Drain remaining pending jobs as CancelledError.
+                while True:
+                    try:
+                        leftover = self._queue.get_nowait()
+                    except queue.Empty:
+                        break
+                    if leftover is _SHUTDOWN_SENTINEL:
+                        continue
+                    _, leftover_future = cast("tuple[Any, Future[Any]]", leftover)
+                    if not leftover_future.cancel():
+                        # Future was already running (shouldn't happen
+                        # here since the worker is the only consumer);
+                        # force CancelledError for caller visibility.
+                        leftover_future.set_exception(CancelledError())
+                return
+            job, future = cast("tuple[Any, Future[Any]]", item)
+            if not future.set_running_or_notify_cancel():
+                continue
+            try:
+                runner = self._runners[job.kind]
+                result = runner(job, self._ctx)
+                future.set_result(result)
+            except BaseException as exc:
+                future.set_exception(exc)
+                logger.exception("Writer job %s failed", job.kind)
