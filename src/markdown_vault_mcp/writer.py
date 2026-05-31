@@ -112,20 +112,35 @@ class IndexWriter:
         return future
 
     def close(self, timeout: float = 30.0) -> None:
-        """Signal shutdown, drain in-flight job, abandon pending.
+        """Signal shutdown, cancel pending jobs, join the worker.
 
-        Pending queued jobs have their Futures resolved with
-        :class:`concurrent.futures.CancelledError`. The worker
-        thread is daemon; if the in-flight job exceeds *timeout*,
-        process exit kills it.
+        Pending queued jobs (those that haven't started running yet)
+        have their Futures resolved with
+        :class:`concurrent.futures.CancelledError`. The in-flight job
+        (if any) is allowed to complete normally. The worker thread is
+        daemon; if the in-flight job exceeds *timeout*, process exit
+        kills it.
         """
         with self._submit_lock:
             if self._closed.is_set():
                 return
             self._closed.set()
-        # Release the lock before posting the sentinel and joining
-        # so concurrent submit() calls see _closed and reject cleanly.
-        self._queue.put(_SHUTDOWN_SENTINEL)
+            # Drain pending items under the lock so no new submission can
+            # race with the cancellation pass. The worker may still be
+            # processing the in-flight item; FIFO ordering means anything
+            # already in the queue has not yet been pulled by the worker.
+            while True:
+                try:
+                    item = self._queue.get_nowait()
+                except queue.Empty:
+                    break
+                if item is _SHUTDOWN_SENTINEL:
+                    continue
+                _, future = cast("tuple[Any, Future[Any]]", item)
+                if not future.cancel() and not future.done():
+                    future.set_exception(CancelledError())
+            self._queue.put(_SHUTDOWN_SENTINEL)
+        # Sentinel posted; join outside the lock.
         if self._thread is not None:
             self._thread.join(timeout=timeout)
 
@@ -138,20 +153,6 @@ class IndexWriter:
         while True:
             item = self._queue.get()
             if item is _SHUTDOWN_SENTINEL:
-                # Drain remaining pending jobs as CancelledError.
-                while True:
-                    try:
-                        leftover = self._queue.get_nowait()
-                    except queue.Empty:
-                        break
-                    if leftover is _SHUTDOWN_SENTINEL:
-                        continue
-                    _, leftover_future = cast("tuple[Any, Future[Any]]", leftover)
-                    if not leftover_future.cancel():
-                        # Future was already running (shouldn't happen
-                        # here since the worker is the only consumer);
-                        # force CancelledError for caller visibility.
-                        leftover_future.set_exception(CancelledError())
                 return
             job, future = cast("tuple[Any, Future[Any]]", item)
             if not future.set_running_or_notify_cancel():
