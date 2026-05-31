@@ -65,7 +65,8 @@ class IndexWriter:
     """Single-owner writer thread serving a FIFO job queue.
 
     Construction does NOT start the worker thread; call :meth:`start`
-    explicitly. Submission is rejected after :meth:`close` returns.
+    explicitly. Submission is rejected from the moment :meth:`close`
+    is called.
 
     Args:
         runners: Mapping from job kind string to handler callable.
@@ -82,7 +83,7 @@ class IndexWriter:
         self._ctx = ctx
         self._queue: queue.Queue[tuple[Any, Future[Any]] | object] = queue.Queue()
         self._thread: threading.Thread | None = None
-        self._shutdown = threading.Event()
+        self._submit_lock = threading.Lock()
         self._closed = threading.Event()
 
     def start(self) -> None:
@@ -102,11 +103,12 @@ class IndexWriter:
         Raises:
             RuntimeError: If :meth:`close` has been called.
         """
-        if self._closed.is_set():
-            msg = "IndexWriter is closed; cannot submit new jobs"
-            raise RuntimeError(msg)
-        future: Future[Any] = Future()
-        self._queue.put((job, future))
+        with self._submit_lock:
+            if self._closed.is_set():
+                msg = "IndexWriter is closed; cannot submit new jobs"
+                raise RuntimeError(msg)
+            future: Future[Any] = Future()
+            self._queue.put((job, future))
         return future
 
     def close(self, timeout: float = 30.0) -> None:
@@ -117,10 +119,12 @@ class IndexWriter:
         thread is daemon; if the in-flight job exceeds *timeout*,
         process exit kills it.
         """
-        if self._closed.is_set():
-            return
-        self._closed.set()
-        self._shutdown.set()
+        with self._submit_lock:
+            if self._closed.is_set():
+                return
+            self._closed.set()
+        # Release the lock before posting the sentinel and joining
+        # so concurrent submit() calls see _closed and reject cleanly.
         self._queue.put(_SHUTDOWN_SENTINEL)
         if self._thread is not None:
             self._thread.join(timeout=timeout)
