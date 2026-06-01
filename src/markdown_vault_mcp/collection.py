@@ -415,9 +415,15 @@ class Collection:
         # 0a. Close the IndexWriter first so no further index mutations
         # can be submitted while we tear down downstream resources. The
         # hasattr guard handles the case where __init__ failed mid-way
-        # and _writer was never assigned (#559).
+        # and _writer was never assigned (#559).  After close(), any
+        # paths marked vector-dirty by an in-flight ProcessDirtyPaths
+        # job were unable to submit a follow-up FlushDirtyEmbeddings;
+        # drain them here so the vectors are flushed before teardown.
         if hasattr(self, "_writer") and self._writer is not None:
             self._writer.close(timeout=30.0)
+            leftover = self._writer.drain_dirty_embeddings()
+            if leftover:
+                self._index_mgr.flush_dirty_embeddings(leftover)
         # 0. Join background-build thread before any resource teardown.
         # Read the thread reference under _write_lock (matches the lock
         # held when start_background_build_index assigns it).

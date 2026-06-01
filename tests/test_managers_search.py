@@ -817,3 +817,34 @@ def test_fetch_snippet_map_widens_pool_to_match_caller(
     assert captured[0] >= 60, (
         f"snippet re-query limit {captured[0]} < initial pool floor 60"
     )
+
+
+def test_semantic_search_does_not_call_flush_embeddings(tmp_path, monkeypatch):
+    """_semantic_search must NOT call _flush_embeddings (writer owns flushes now)."""
+    from markdown_vault_mcp.collection import Collection
+    from tests.conftest import MockEmbeddingProvider
+
+    col = Collection(
+        source_dir=tmp_path,
+        read_only=False,
+        embeddings_path=tmp_path / "vec",
+        embedding_provider=MockEmbeddingProvider(),
+    )
+    try:
+        (tmp_path / "n.md").write_text("# n\n\nhello", encoding="utf-8")
+        col.build_index()
+        col.build_embeddings()
+
+        called: list[bool] = []
+        original = col._search_mgr._flush_embeddings
+
+        def _track(*a, **kw):
+            called.append(True)
+            return original(*a, **kw)
+
+        monkeypatch.setattr(col._search_mgr, "_flush_embeddings", _track)
+
+        col.search(query="hello", mode="semantic")
+        assert called == []
+    finally:
+        col.close()

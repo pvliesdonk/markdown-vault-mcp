@@ -717,7 +717,6 @@ class SearchManager:
         chunks_per_file: int,
         snippet_words: int,
     ) -> list[GroupedResult]:
-        self._flush_embeddings()
         vectors = self._load_vectors()
         candidate_limit = max(limit * (chunks_per_file + 4), 50)
         raw = vectors.search(query, limit=candidate_limit)
@@ -792,7 +791,6 @@ class SearchManager:
         snippet_words: int,
     ) -> list[GroupedResult]:
         """RRF merge of keyword and semantic results, then field-collapse."""
-        self._flush_embeddings()
         candidate_limit = max(limit * (chunks_per_file + 4), 50)
 
         fts_raw: list[FTSResult] = self._fts.search(

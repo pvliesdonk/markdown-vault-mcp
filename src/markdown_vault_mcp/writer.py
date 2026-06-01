@@ -5,6 +5,7 @@ See `docs/superpowers/specs/2026-05-31-issue-559-single-writer-for-indexes-desig
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import queue
 import threading
@@ -256,13 +257,23 @@ def run_process_dirty_paths(
     job: ProcessDirtyPaths,  # noqa: ARG001
     ctx: WriterContext,
 ) -> None:
-    """Drain the FTS-dirty set and route the snapshot to the index manager."""
+    """Drain the FTS-dirty set, update FTS, mark paths for embedding."""
     if ctx.writer is None:
         msg = "WriterContext.writer must be set before running jobs"
         raise RuntimeError(msg)
     snapshot = ctx.writer.drain_dirty_paths()
     ctx.index_manager.process_dirty_paths(snapshot)
-    ctx.writer.submit(FlushDirtyEmbeddings())
+    # After FTS is up-to-date, queue the same paths for vector re-embedding.
+    # This is what makes the inline `_flush_embeddings()` in semantic search
+    # (removed in this same task) unnecessary.
+    if snapshot:
+        ctx.writer.mark_embedding_dirty(snapshot)
+    # If close() is racing this job, the follow-up submit will raise; the
+    # marked paths are picked up by Collection.close()'s post-writer-close
+    # drain via flush_dirty_embeddings(snapshot).
+    if not ctx.writer.is_closed():
+        with contextlib.suppress(RuntimeError):
+            ctx.writer.submit(FlushDirtyEmbeddings())
 
 
 def run_flush_dirty_embeddings(

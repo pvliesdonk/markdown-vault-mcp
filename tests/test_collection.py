@@ -3792,7 +3792,14 @@ class TestDeferredEmbeddings:
         tmp_path: Path,
         mock_provider: MockEmbeddingProvider,
     ) -> None:
-        """Dirty documents are re-embedded when semantic_search is called."""
+        """Dirty documents are re-embedded via the writer after a write (#559).
+
+        Pre-#559 the test asserted on ``_index_mgr._dirty_embeddings`` and
+        relied on ``semantic_search`` triggering an inline flush.  Now the
+        single-owner :class:`IndexWriter` owns the vector-dirty set and
+        flushes it as a follow-up job; ``wait_for_writer_drain`` is the
+        observation point.
+        """
         col = Collection(
             source_dir=vault_path,
             embeddings_path=tmp_path / "embeddings",
@@ -3806,20 +3813,17 @@ class TestDeferredEmbeddings:
             "deferred_doc.md",
             "# Deferred Embedding\n\nUniqueContentForTest.\n",
         )
-        # The dirty set should contain this path.
-        assert "deferred_doc.md" in col._index_mgr._dirty_embeddings
 
-        # Drain the writer so the FTS update completes before semantic
-        # search runs (otherwise the read can race the writer's
-        # ProcessDirtyPaths transaction on `documents` (#559)).
+        # Drain the writer so FTS update + vector flush both complete.
         wait_for_writer_drain(col)
 
-        # Semantic search triggers flush.
+        # Semantic search no longer triggers an inline flush; the writer
+        # has already done the work by the time drain returns.
         results = col.search("UniqueContentForTest", mode="semantic")
         paths = [r.path for r in results]
         assert "deferred_doc.md" in paths
-        # Dirty set should now be empty.
-        assert len(col._index_mgr._dirty_embeddings) == 0
+        # Writer's vector-dirty set should be empty after the drain.
+        assert col._writer.get_status()["dirty_embeddings"] == 0
 
     def test_dirty_docs_flushed_on_close(
         self,
@@ -3827,7 +3831,11 @@ class TestDeferredEmbeddings:
         tmp_path: Path,
         mock_provider: MockEmbeddingProvider,
     ) -> None:
-        """Dirty documents are re-embedded when close() is called."""
+        """Dirty documents are re-embedded when close() is called (#559).
+
+        Post-#559 the writer joins on close, so any pending vector work
+        finishes before ``close()`` returns.
+        """
         embeddings_path = tmp_path / "embeddings"
         col = Collection(
             source_dir=vault_path,
@@ -3842,10 +3850,12 @@ class TestDeferredEmbeddings:
             "close_flush.md",
             "# Close Flush\n\nContent to be flushed on close.\n",
         )
-        assert "close_flush.md" in col._index_mgr._dirty_embeddings
 
         col.close()
-        assert len(col._index_mgr._dirty_embeddings) == 0
+        # After close, the writer's queue and dirty sets must be empty.
+        status = col._writer.get_status()
+        assert status["dirty_paths"] == 0
+        assert status["dirty_embeddings"] == 0
 
     def test_git_callback_fires_eventually(self, vault_path: Path) -> None:
         """Git callback fires in the background after write returns."""

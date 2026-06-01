@@ -348,7 +348,10 @@ def test_process_dirty_paths_drains_and_submits_flush():
         ):
             time.sleep(0.01)
         assert im.process_paths_calls == [{"a.md", "b.md"}]
-        assert im.flush_paths_calls == [set()]  # flush ran with empty set
+        # ProcessDirtyPaths now propagates the FTS-dirty snapshot to the
+        # writer's vector-dirty set so the auto-submitted
+        # FlushDirtyEmbeddings re-embeds the same paths (#559).
+        assert im.flush_paths_calls == [{"a.md", "b.md"}]
     finally:
         writer.close(timeout=5)
 
