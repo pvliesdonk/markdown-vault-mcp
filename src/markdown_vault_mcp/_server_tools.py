@@ -932,6 +932,7 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
         path: str,
         similar_limit: int = 5,
         link_limit: int = 10,
+        wait_for_drain: bool = False,
         collection: Collection = Depends(get_collection),
     ) -> dict[str, Any]:
         """Get a consolidated context dossier for a document.
@@ -955,9 +956,20 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
                 are not configured).
             link_limit: Maximum number of backlinks and outlinks to include
                 each (default 10).
+            wait_for_drain: When True, block until the IndexWriter has
+                no pending or in-flight work before answering. Bounded
+                by MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S (default 60s).
+                On timeout, returns the result with `stale=True` rather
+                than raising — best-effort fresh read. Default False
+                returns immediately and reports staleness via the
+                envelope's `stale` field.
 
         Returns:
-            Dict with the following fields:
+            Dict envelope with two keys:
+
+            - stale (bool): True when the IndexWriter had pending work
+              at response time.
+            - data (dict): The note context. Inner fields:
 
             - path (str): Relative path of the document.
             - title (str): Document title.
@@ -1010,13 +1022,18 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
         Raises:
             ValueError: If no document exists at the given path.
         """
+        if wait_for_drain:
+            await asyncio.to_thread(collection.wait_for_drain, timeout=_DRAIN_TIMEOUT_S)
         result = await asyncio.to_thread(
             collection.get_context,
             path,
             similar_limit=similar_limit,
             link_limit=link_limit,
         )
-        return asdict(result)
+        return {
+            "stale": not collection.is_drained(),
+            "data": asdict(result),
+        }
 
     @mcp.tool(
         icons=_TOOL_ICONS["get_orphan_notes"],

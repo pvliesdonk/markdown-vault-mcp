@@ -1790,8 +1790,11 @@ class TestContextTool:
         """get_context returns expected top-level fields."""
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool("get_context", {"path": "index.md"})
-        data = _parse_tool_data(result)
+        envelope = _parse_tool_data(result)
+        assert envelope["stale"] is False
+        data = envelope["data"]
         assert data["path"] == "index.md"
         assert data["title"] == "Index"
         assert "modified_at" in data
@@ -1807,10 +1810,13 @@ class TestContextTool:
         """modified_at in context matches the value from read()."""
         server = make_server()
         async with Client(server) as client:
-            ctx = _parse_tool_data(
+            await wait_for_mcp_writer_drain(client)
+            envelope = _parse_tool_data(
                 await client.call_tool("get_context", {"path": "index.md"})
             )
             read = (await client.call_tool("read", {"path": "index.md"})).data
+        assert envelope["stale"] is False
+        ctx = envelope["data"]
         assert ctx["modified_at"] == read["modified_at"]
 
     @pytest.mark.usefixtures("_mcp_env_context")
@@ -1818,8 +1824,11 @@ class TestContextTool:
         """notes/topic.md has a backlink from index.md."""
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool("get_context", {"path": "notes/topic.md"})
-        data = _parse_tool_data(result)
+        envelope = _parse_tool_data(result)
+        assert envelope["stale"] is False
+        data = envelope["data"]
         sources = [b["source_path"] for b in data["backlinks"]]
         assert "index.md" in sources
 
@@ -1828,8 +1837,11 @@ class TestContextTool:
         """index.md has an outlink to notes/topic.md."""
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool("get_context", {"path": "index.md"})
-        data = _parse_tool_data(result)
+        envelope = _parse_tool_data(result)
+        assert envelope["stale"] is False
+        data = envelope["data"]
         targets = [o["target_path"] for o in data["outlinks"]]
         assert "notes/topic.md" in targets
 
@@ -1838,8 +1850,11 @@ class TestContextTool:
         """folder_notes for notes/topic.md contains peer.md but not topic.md."""
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool("get_context", {"path": "notes/topic.md"})
-        data = _parse_tool_data(result)
+        envelope = _parse_tool_data(result)
+        assert envelope["stale"] is False
+        data = envelope["data"]
         assert "notes/topic.md" not in data["folder_notes"]
         assert "notes/peer.md" in data["folder_notes"]
 
@@ -1848,8 +1863,11 @@ class TestContextTool:
         """Indexed frontmatter tags appear in context.tags."""
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool("get_context", {"path": "index.md"})
-        data = _parse_tool_data(result)
+        envelope = _parse_tool_data(result)
+        assert envelope["stale"] is False
+        data = envelope["data"]
         assert "tags" in data["tags"]
         assert "ai" in data["tags"]["tags"]
         assert "research" in data["tags"]["tags"]
@@ -1859,8 +1877,11 @@ class TestContextTool:
         """similar is empty when embeddings are not configured."""
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool("get_context", {"path": "index.md"})
-        data = _parse_tool_data(result)
+        envelope = _parse_tool_data(result)
+        assert envelope["stale"] is False
+        data = envelope["data"]
         assert data["similar"] == []
 
     @pytest.mark.usefixtures("_mcp_env_context")
@@ -1879,6 +1900,19 @@ class TestContextTool:
             tools = await client.list_tools()
         names = {t.name for t in tools}
         assert "get_context" in names
+
+    @pytest.mark.usefixtures("_mcp_env_context")
+    async def test_get_context_with_wait_for_drain(self) -> None:
+        server = make_server()
+        async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
+            result = await client.call_tool(
+                "get_context",
+                {"path": "index.md", "wait_for_drain": True},
+            )
+        envelope = _parse_tool_data(result)
+        assert envelope["stale"] is False
+        assert envelope["data"]["path"] == "index.md"
 
 
 # ---------------------------------------------------------------------------
