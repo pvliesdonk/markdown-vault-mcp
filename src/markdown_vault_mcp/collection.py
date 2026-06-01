@@ -638,7 +638,11 @@ class Collection:
             True when ``queue_depth == 0``, ``in_flight is None``, the
             FTS-dirty set is empty, and the vector-dirty set is empty.
             Reflects the moment of call only; the writer can transition
-            in or out of "drained" the moment this returns.
+            in or out of "drained" the moment this returns. In
+            particular, a complete write cycle (enqueue → run → clear)
+            that fits between two consecutive ``is_drained()`` samples
+            is invisible to a caller comparing the two snapshots; the
+            drift-signal callsites accept this as best-effort.
         """
         status = self._writer.get_status()
         return (

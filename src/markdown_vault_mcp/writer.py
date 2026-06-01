@@ -257,10 +257,15 @@ class IndexWriter:
                 sentinel_seen = True
                 continue
             job, future = cast("tuple[Any, Future[Any]]", item)
-            if not future.set_running_or_notify_cancel():
-                continue
+            # Claim in_flight BEFORE notifying the future, so a
+            # concurrent get_status() cannot observe queue_depth=0
+            # together with in_flight=None during dispatch (#534/#573).
             with self._in_flight_lock:
                 self._in_flight_kind = job.kind
+            if not future.set_running_or_notify_cancel():
+                with self._in_flight_lock:
+                    self._in_flight_kind = None
+                continue
             try:
                 runner = self._runners[job.kind]
                 result = runner(job, self._ctx)
