@@ -406,3 +406,46 @@ class TestReadinessFlagSemantics:
         with pytest.raises(IndexUnavailableError) as excinfo:
             col.get_backlinks("note.md")
         assert excinfo.value.reason == "never_built"
+
+
+# ---------------------------------------------------------------------------
+# Lifespan: submits jobs and yields immediately (#559)
+# ---------------------------------------------------------------------------
+
+
+def test_lifespan_yields_quickly_on_cold_start(tmp_path: Path) -> None:
+    """Cold-start lifespan completes BuildIndex (#559) within a bounded
+    budget on a small vault.
+
+    The lifespan submits ``BuildIndex`` and (when configured)
+    ``BuildEmbeddings`` jobs to the :class:`IndexWriter`, waits for the
+    ``BuildIndex`` Future so the FTS index is queryable by the time the
+    server handles tool calls, and yields.  The warm-restart
+    short-circuit makes this near-instant on warm vaults; this test
+    bounds the cold-start scan on a 50-file vault.
+    """
+    import asyncio
+    import time
+
+    from markdown_vault_mcp._server_deps import make_collection_lifespan
+    from markdown_vault_mcp.config import CollectionConfig
+
+    # Construct a cold vault (many files, no existing DB).
+    for i in range(50):
+        (tmp_path / f"n{i}.md").write_text(f"# n{i}\n\nhello", encoding="utf-8")
+
+    config = CollectionConfig(source_dir=tmp_path, read_only=False)
+    lifespan_fn = make_collection_lifespan(config)
+
+    async def _run() -> None:
+        start = time.monotonic()
+        async with lifespan_fn(None) as ctx:  # type: ignore[arg-type]
+            elapsed = time.monotonic() - start
+            # Cold scan of 50 small files completes well under 2 seconds.
+            assert elapsed < 2.0, f"Lifespan took {elapsed:.2f}s to yield"
+            assert ctx["collection"] is not None
+            # FTS must be queryable when the lifespan yields, so the
+            # MCP server starts serving with a populated index.
+            assert ctx["collection"].is_queryable()
+
+    asyncio.run(_run())

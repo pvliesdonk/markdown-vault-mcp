@@ -368,6 +368,9 @@ class TestIncludeSemanticEdges:
     ) -> None:
         """With depth=0 only the center node is in the graph; similar notes are
         added as new nodes (exercises the `if sr.path not in nodes` branch)."""
+        import asyncio as _asyncio
+        import json as _json
+
         from .conftest import MockEmbeddingProvider
 
         embeddings_path = str(tmp_path / "embeddings")
@@ -380,6 +383,16 @@ class TestIncludeSemanticEdges:
         ):
             server = make_server()
             async with Client(server) as client:
+                # BuildEmbeddings runs on the writer FIFO; poll until chunks
+                # are present so the semantic-neighborhood query sees them.
+                for _ in range(50):
+                    status_res = await client.call_tool_mcp("embeddings_status", {})
+                    if (
+                        _json.loads(status_res.content[0].text).get("chunk_count", 0)
+                        > 0
+                    ):
+                        break
+                    await _asyncio.sleep(0.1)
                 result = await client.call_tool(
                     _hashed("vault_graph_neighborhood"),
                     {"path": "simple.md", "depth": 0, "include_semantic": True},

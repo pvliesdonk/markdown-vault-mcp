@@ -504,6 +504,16 @@ class Collection:
     def start_background_build_index(self) -> None:
         """Spawn a daemon thread that runs :meth:`build_index` to completion.
 
+        .. deprecated:: 1.28
+           Superseded by :meth:`build_index_async`, which submits a
+           :class:`BuildIndex` job to the single-owner
+           :class:`~markdown_vault_mcp.writer.IndexWriter` thread (#559).
+           The MCP server lifespan no longer calls this method; only
+           legacy tests retain it. Prefer :meth:`build_index_async`
+           for fire-and-forget initial builds and
+           :meth:`build_index` for synchronous builds with
+           Collection-level state management.
+
         Idempotent: second call after a successful start, after a
         clean completion, OR after a failed ``thread.start()`` is a
         no-op. The method is one-shot per Collection lifetime;
@@ -552,6 +562,13 @@ class Collection:
     def should_use_background_build(self) -> bool:
         """Return True iff the lifespan should route to the background
         FTS build path.
+
+        .. deprecated:: 1.28
+           The MCP server lifespan no longer branches on this predicate
+           — it always submits a :class:`BuildIndex` job to the
+           :class:`~markdown_vault_mcp.writer.IndexWriter` (#559). The
+           method survives only for legacy tests that still exercise
+           :meth:`start_background_build_index`.
 
         Returns True only for cold on-disk DBs (index_path is a real
         file path AND the FTS completeness sentinel from PR #526 is
@@ -876,11 +893,15 @@ class Collection:
         """Submit a full FTS index build and return the Future.
 
         Caller may either ``.result()`` to wait or fire-and-forget.
-        Unlike :meth:`build_index`, this method does NOT preserve the
-        warm-restart short-circuit or state-management semantics —
-        it always submits a real job to the writer. The runner inside
-        the writer applies the same short-circuit logic via
-        :meth:`IndexManager.build_index`'s no-op fast path.
+        On submission, clears ``_index_built`` and the background-build
+        completion event so concurrent readers see "building" until the
+        writer thread finishes the job.  Attaches a done-callback that
+        flips ``_index_built`` to True (and sets the completion event)
+        on success, or captures the exception on
+        ``_background_build_error`` while still setting the event so
+        waiters unblock.  This is the async counterpart to the
+        Collection-level state-management performed by the synchronous
+        :meth:`build_index`.
 
         Args:
             force: When ``True``, drop and rebuild the index unconditionally.
@@ -889,24 +910,61 @@ class Collection:
             ``concurrent.futures.Future`` carrying the
             :class:`IndexStats` once the worker completes the job.
         """
-        return self._writer.submit(BuildIndex(force=force))
+        # Reset state before submission so concurrent readers see the
+        # collection as "building" until the job completes.  The sentinel
+        # is also cleared so a crash mid-build is detectable by the next
+        # process.
+        self._index_built = False
+        self._fts.clear_build_completed()
+        self._background_build_error = None
+        self._background_build_done.clear()
+
+        future = self._writer.submit(BuildIndex(force=force))
+
+        def _on_done(fut: Future[IndexStats]) -> None:
+            try:
+                fut.result()
+            except BaseException as exc:
+                self._background_build_error = exc
+                logger.exception("Async index build failed")
+                # Leave _index_built False; sentinel left cleared so the
+                # next process treats this as partial.
+                self._background_build_done.set()
+                return
+            self._fts.set_build_completed()
+            self._index_built = True
+            self._background_build_error = None
+            self._background_build_done.set()
+
+        future.add_done_callback(_on_done)
+        return future
 
     def reindex_async(self) -> Future[ReindexResult]:
         """Submit an incremental FTS reindex and return the Future.
 
-        Raises:
-            IndexUnavailableError: If :meth:`build_index` has not been called.
+        Unlike the synchronous :meth:`reindex`, this method does NOT
+        require :meth:`build_index` to have run first.  The
+        :class:`~markdown_vault_mcp.writer.IndexWriter`'s FIFO queue
+        guarantees that any :class:`BuildIndex` job submitted earlier
+        (e.g. from the server lifespan via
+        :meth:`build_index_async`) runs before this :class:`ReindexAll`,
+        so the writer thread sees a built index when it dequeues the
+        job.
         """
-        self._require_built()
         return self._writer.submit(ReindexAll())
 
     def build_embeddings_async(self, *, force: bool = False) -> Future[int]:
         """Submit a vector index build and return the Future.
 
-        Raises:
-            IndexUnavailableError: If :meth:`build_index` has not been called.
+        Unlike the synchronous :meth:`build_embeddings`, this method
+        does NOT require :meth:`build_index` to have run first.  The
+        :class:`~markdown_vault_mcp.writer.IndexWriter`'s FIFO queue
+        guarantees that any :class:`BuildIndex` job submitted earlier
+        (e.g. from the server lifespan via
+        :meth:`build_index_async`) runs before this
+        :class:`BuildEmbeddings`, so the writer thread sees a built
+        index when it dequeues the job.
         """
-        self._require_built()
         return self._writer.submit(BuildEmbeddings(force=force))
 
     def embeddings_status(self) -> dict:

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from typing import TYPE_CHECKING, Any
 
 from fastmcp import FastMCP
@@ -96,39 +97,49 @@ def make_collection_lifespan(config: CollectionConfig) -> Any:
         collection = Collection(**kwargs)
         set_collection_singleton(collection)
 
-        # If periodic git pull is enabled, sync before building the initial index so
-        # build_index() scans the freshest working tree.
+        # If periodic git pull is enabled, sync before submitting the
+        # initial index build so the scan sees the latest working tree.
         await asyncio.to_thread(collection.sync_from_remote_before_index)
 
-        # PR #526 sentinel: warm on-disk DBs short-circuit in O(1) via
-        # synchronous build_index(); cold on-disk routes to background;
-        # in-memory always synchronous (test scenarios only). See #513 PR1.
-        if collection.should_use_background_build():
-            collection.start_background_build_index()
-            logger.info("Cold start: scheduled background FTS build")
-        else:
-            stats = await asyncio.to_thread(collection.build_index)
-            logger.info(
-                "Index built: %d documents (synchronous build)",
-                stats.documents_indexed,
+        # Submit the initial build jobs to the IndexWriter (#559).  The
+        # warm-restart short-circuit (PR #526 sentinel) inside
+        # :meth:`IndexManager.build_index` returns in O(1) so warm vaults
+        # complete near-instantly.  We run the synchronous
+        # :meth:`Collection.build_index` via :func:`asyncio.to_thread`
+        # so the FTS index is queryable by the time the lifespan yields
+        # and the MCP server starts handling tool calls — bucket-2
+        # tools (search/list/stats) would otherwise return empty until
+        # the writer drained.  Calling the synchronous wrapper (rather
+        # than the fire-and-forget :meth:`build_index_async`) gives us
+        # deterministic Collection-level state ordering:
+        # ``_index_built`` and the build-completion event flip on the
+        # calling thread the moment the writer's Future resolves.
+        # Embeddings are submitted to the same FIFO and left to drain
+        # in the background; semantic search returns empty until the
+        # BuildEmbeddings job completes.
+        build_timeout = float(
+            os.environ.get("MARKDOWN_VAULT_MCP_BUILD_TIMEOUT_S", "60")
+        )
+
+        async def _await_build_index() -> None:
+            await asyncio.to_thread(collection.build_index)
+
+        logger.info("Submitted BuildIndex job to writer")
+        try:
+            await asyncio.wait_for(_await_build_index(), timeout=build_timeout)
+            logger.info("BuildIndex job completed")
+        except TimeoutError:
+            logger.warning(
+                "BuildIndex job did not complete within %.1fs; yielding lifespan "
+                "with index still building (bucket-3/4 tools will wait)",
+                build_timeout,
             )
 
-        # Embeddings stay on the synchronous lifespan path for PR1. On
-        # cold start the FTS is still being built so we skip + log;
-        # PR2 follow-up backgrounds embeddings so semantic search
-        # becomes available without operator-initiated rebuild.
         if kwargs.get("embedding_provider") is not None:
-            if collection.is_queryable():
-                chunks_embedded = await asyncio.to_thread(collection.build_embeddings)
-                logger.info("Embeddings ready: %d chunks", chunks_embedded)
-            else:
-                logger.info(
-                    "Cold start: embeddings deferred; semantic search "
-                    "returns empty until PR2 backgrounds embeddings or "
-                    "operator runs CLI 'index'"
-                )
+            collection.build_embeddings_async()
+            logger.info("Submitted BuildEmbeddings job to writer")
 
-        # Start background tasks (e.g. git pull loop) after index is built.
+        # Start any other background tasks (e.g. git pull loop).
         collection.start()
 
         # Artifact store singleton is wired in make_server(), not here —

@@ -2281,7 +2281,9 @@ class TestLifespanAutoEmbeddings:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """With EMBEDDINGS_PATH set, startup builds vectors automatically."""
+        """With EMBEDDINGS_PATH set, startup submits a BuildEmbeddings job
+        that the writer drains in the background (#559)."""
+        import asyncio as _asyncio
         from unittest.mock import patch
 
         from .conftest import MockEmbeddingProvider
@@ -2303,8 +2305,15 @@ class TestLifespanAutoEmbeddings:
         ):
             server = make_server()
             async with Client(server) as client:
-                result = await client.call_tool_mcp("embeddings_status", {})
-        data = json.loads(result.content[0].text)
+                # BuildEmbeddings is fire-and-forget on the writer FIFO;
+                # poll until the writer drains and chunks are present.
+                data: dict[str, Any] = {}
+                for _ in range(50):
+                    result = await client.call_tool_mcp("embeddings_status", {})
+                    data = json.loads(result.content[0].text)
+                    if data.get("chunk_count", 0) > 0:
+                        break
+                    await _asyncio.sleep(0.1)
         assert data["chunk_count"] > 0
 
     async def test_subsequent_startup_skips_rebuild(
@@ -2314,6 +2323,7 @@ class TestLifespanAutoEmbeddings:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """With existing embeddings on disk, startup loads them without rebuilding."""
+        import asyncio as _asyncio
         from unittest.mock import patch
 
         from .conftest import MockEmbeddingProvider
@@ -2326,15 +2336,20 @@ class TestLifespanAutoEmbeddings:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH", embeddings_path)
 
         mock_prov = MockEmbeddingProvider()
-        # First startup: build embeddings from scratch.
+        count1 = 0
+        # First startup: build embeddings from scratch (writer-async).
         with patch(
             "markdown_vault_mcp.providers.get_embedding_provider",
             return_value=mock_prov,
         ):
             server = make_server()
             async with Client(server) as client:
-                r1 = await client.call_tool_mcp("embeddings_status", {})
-        count1 = json.loads(r1.content[0].text)["chunk_count"]
+                for _ in range(50):
+                    r1 = await client.call_tool_mcp("embeddings_status", {})
+                    count1 = json.loads(r1.content[0].text)["chunk_count"]
+                    if count1 > 0:
+                        break
+                    await _asyncio.sleep(0.1)
         assert count1 > 0
 
         # Second startup: should load from disk, not re-embed.
@@ -2347,14 +2362,19 @@ class TestLifespanAutoEmbeddings:
             return original_embed(texts)
 
         mock_prov2.embed = tracking_embed  # type: ignore[method-assign]
+        count2 = 0
         with patch(
             "markdown_vault_mcp.providers.get_embedding_provider",
             return_value=mock_prov2,
         ):
             server2 = make_server()
             async with Client(server2) as client2:
-                r2 = await client2.call_tool_mcp("embeddings_status", {})
-        count2 = json.loads(r2.content[0].text)["chunk_count"]
+                for _ in range(50):
+                    r2 = await client2.call_tool_mcp("embeddings_status", {})
+                    count2 = json.loads(r2.content[0].text)["chunk_count"]
+                    if count2 == count1:
+                        break
+                    await _asyncio.sleep(0.1)
         assert count2 == count1
         # embed() must NOT have been called — vectors were loaded from disk.
         assert embed_calls == [], f"embed() was called with {embed_calls} texts"
