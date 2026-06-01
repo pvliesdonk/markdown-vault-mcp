@@ -3610,6 +3610,49 @@ class TestStageAndCommitAuthorSplit:
         assert self._get_log(git_repo, "%cN") == "bot"
         assert self._get_log(git_repo, "%aE") == self._get_log(git_repo, "%cE")
 
+    def test_newline_in_author_name_is_stripped(self, git_repo: Path) -> None:
+        """Newlines in author_name are stripped to prevent commit-object header injection."""
+        from markdown_vault_mcp.git import _stage_and_commit
+
+        f = git_repo / "note.md"
+        f.write_text("# hi\n")
+        _stage_and_commit(
+            git_repo,
+            f,
+            "write",
+            commit_name="bot",
+            commit_email="bot@srv.com",
+            author_name="Alice\ngpgsig: injected",
+            author_email="alice@humans.org",
+        )
+
+        author_name = self._get_log(git_repo, "%aN")
+        # The newline is stripped, preventing header injection; the remaining
+        # text is stored as part of the author name (harmless).
+        assert "\n" not in author_name
+        assert "Alice" in author_name
+
+    def test_angle_brackets_in_author_name_are_stripped(self, git_repo: Path) -> None:
+        """Angle brackets in author_name are stripped so the Name <email> format is not broken."""
+        from markdown_vault_mcp.git import _stage_and_commit
+
+        f = git_repo / "note.md"
+        f.write_text("# hi\n")
+        _stage_and_commit(
+            git_repo,
+            f,
+            "write",
+            commit_name="bot",
+            commit_email="bot@srv.com",
+            author_name="Alice <injected@evil.com>",
+            author_email="alice@humans.org",
+        )
+
+        author_name = self._get_log(git_repo, "%aN")
+        assert "<" not in author_name
+        assert ">" not in author_name
+        assert "Alice" in author_name
+
 
 class TestOidcClaimAuthorCommitterSplit:
     """GitWriteStrategy uses OIDC claims for author only; committer stays static."""

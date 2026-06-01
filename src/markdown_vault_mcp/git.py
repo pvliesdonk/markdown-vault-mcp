@@ -11,6 +11,7 @@ import contextlib
 import datetime
 import logging
 import os
+import re
 import stat
 import subprocess
 import tempfile
@@ -2515,6 +2516,21 @@ def git_write_strategy(
     return GitWriteStrategy(token=token, push_delay_s=push_delay_s, git_lfs=git_lfs)
 
 
+_GIT_IDENTITY_UNSAFE = re.compile(r"[\r\n<>]")
+
+
+def _sanitize_git_identity(value: str) -> str:
+    """Strip characters that break git commit-object header parsing.
+
+    Git commit objects use line-based headers; a newline or carriage return in
+    an author/committer field can inject additional header lines.  Angle
+    brackets break the ``Name <email>`` format git expects.  OIDC claim values
+    are user-influenceable at the IdP, so sanitization is required before
+    interpolating them into the ``--author`` string.
+    """
+    return _GIT_IDENTITY_UNSAFE.sub("", value)
+
+
 def _stage_and_commit(
     git_root: Path,
     path: Path,
@@ -2532,13 +2548,14 @@ def _stage_and_commit(
         operation: The write operation type.
         commit_name: Git committer name (overrides git config).
         commit_email: Git committer email (overrides git config).
-        author_name: Git author name.  When provided and different from
-            *commit_name* (or when *author_email* also differs), the commit
-            is recorded with a separate ``--author`` field so the author and
-            committer identities are distinct.  Falls back to *commit_name*
-            when ``None``.
-        author_email: Git author e-mail.  Same split semantics as
-            *author_name*.  Falls back to *commit_email* when ``None``.
+        author_name: Git author name override.  Falls back to *commit_name*
+            when ``None``.  Evaluated independently of *author_email*: when
+            only one field is provided, the other is taken from the committer
+            identity, producing a mixed ``--author`` string.
+        author_email: Git author e-mail override.  Falls back to *commit_email*
+            when ``None``.  Both values are sanitized (``\\r``, ``\\n``,
+            ``<``, ``>`` stripped) before being interpolated into the
+            ``--author`` string to prevent commit-object header injection.
     """
     root = str(git_root)
 
@@ -2604,8 +2621,13 @@ def _stage_and_commit(
     commit_msg = f"{operation}: {rel_path}"
 
     # Build author string when per-request identity differs from committer.
-    eff_author_name = author_name or commit_name
-    eff_author_email = author_email or commit_email
+    # Sanitize OIDC claim values to prevent commit-object header injection.
+    eff_author_name = _sanitize_git_identity(
+        author_name if author_name is not None else commit_name
+    )
+    eff_author_email = _sanitize_git_identity(
+        author_email if author_email is not None else commit_email
+    )
     author_args: list[str] = []
     if eff_author_name != commit_name or eff_author_email != commit_email:
         author_args = ["--author", f"{eff_author_name} <{eff_author_email}>"]
