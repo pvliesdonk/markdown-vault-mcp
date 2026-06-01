@@ -930,6 +930,37 @@ def test_build_index_async_warm_restart_short_circuit(tmp_path: Path) -> None:
     col.close()
 
 
+def test_build_index_async_submit_failure_unblocks_waiters(tmp_path: Path) -> None:
+    """If ``submit()`` raises in ``build_index_async``'s cold path, the
+    completion event is still set with the captured error so
+    ``wait_until_queryable()`` doesn't hang until timeout (#559).
+
+    Regression guard for the lock-discipline audit: the cold-path
+    event-clear / submit / attach trio used to leave the event cleared
+    if submit() raised, so any caller already blocked on
+    ``wait_until_queryable()`` would wait until its timeout fired even
+    though the submission had failed synchronously.
+    """
+    col = Collection(source_dir=_vault(tmp_path))
+    # Force the writer closed so submit() raises RuntimeError on the
+    # next call.
+    col._writer.close(timeout=5)
+    try:
+        with pytest.raises(RuntimeError, match="closed"):
+            col.build_index_async()
+        # The cold-path try/except must have set the event before
+        # re-raising; wait_until_queryable() must therefore return
+        # quickly with IndexUnavailableError rather than blocking.
+        with pytest.raises(IndexUnavailableError) as excinfo:
+            col.wait_until_queryable(timeout=2.0)
+        # never_built is the expected reason: event set, _index_built
+        # False, _background_build_error populated.
+        assert excinfo.value.reason == "never_built"
+        assert isinstance(col._background_build_error, RuntimeError)
+    finally:
+        col.close()
+
+
 def test_synchronous_build_index_warm_path_clears_prior_background_error(
     tmp_path: Path,
 ) -> None:

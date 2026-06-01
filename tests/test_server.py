@@ -3472,6 +3472,7 @@ async def test_read_tool_returns_only_named_section(
 
     server = make_server()
     async with Client(server) as client:
+        await wait_for_mcp_writer_drain(client)
         whole = await client.call_tool("read", {"path": "a.md"})
         assert "first body" in whole.data["content"]
         assert "second body" in whole.data["content"]

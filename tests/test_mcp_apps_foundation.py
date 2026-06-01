@@ -291,6 +291,7 @@ class TestBrowseVaultTool:
     async def test_with_path_returns_note_info(self) -> None:
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool("browse_vault", {"path": "simple.md"})
             data = _parse_tool_data(result)
             assert data["path"] == "simple.md"
@@ -299,6 +300,7 @@ class TestBrowseVaultTool:
     async def test_with_view_override(self) -> None:
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool("browse_vault", {"view": "graph"})
             data = _parse_tool_data(result)
             assert data["view"] == "graph"
@@ -306,6 +308,7 @@ class TestBrowseVaultTool:
     async def test_missing_path(self) -> None:
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool(
                 "browse_vault", {"path": "nonexistent/path.md"}
             )
@@ -384,6 +387,7 @@ class TestAppOnlyTools:
     async def test_vault_graph_hubs(self) -> None:
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool(_hashed("vault_graph_hubs"), {})
             data = _parse_tool_data(result)
             assert "nodes" in data
@@ -563,6 +567,7 @@ class TestAppToolData:
     async def test_browse_vault_no_path(self) -> None:
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool("browse_vault", {})
             data = _parse_tool_data(result)
             assert "Vault:" in data["summary"]
@@ -580,6 +585,7 @@ class TestAppToolData:
     async def test_vault_graph_hubs(self) -> None:
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool(_hashed("vault_graph_hubs"), {})
             data = _parse_tool_data(result)
             assert "nodes" in data

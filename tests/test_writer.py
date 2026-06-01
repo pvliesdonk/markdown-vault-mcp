@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+import time
 from dataclasses import dataclass, field
 
 import pytest
@@ -91,7 +92,12 @@ def test_submit_after_close_raises():
 
 def test_start_failure_leaves_thread_unset(monkeypatch):
     """If thread.start() raises, IndexWriter.start() re-raises and leaves
-    _thread None so a subsequent start() can retry (#559 / replays #528)."""
+    _thread None so a subsequent start() can retry (#559 / replays #528).
+
+    This test also exercises the lock-protected check-create-assign path
+    in :meth:`IndexWriter.start` — the failure path must release
+    ``_submit_lock`` cleanly so a retry can re-acquire it.
+    """
     import threading as _threading
 
     real_thread_cls = _threading.Thread
@@ -192,7 +198,7 @@ def test_close_drains_pending_jobs():
     # slow_runner return so close() can join.
     close_thread = threading.Thread(target=writer.close, kwargs={"timeout": 5})
     close_thread.start()
-    threading.Event().wait(0.05)
+    time.sleep(0.05)
     can_finish.set()
     close_thread.join(timeout=5)
 
@@ -365,8 +371,6 @@ def test_build_embeddings_job_calls_index_manager():
 
 
 def test_process_dirty_paths_drains_and_submits_flush():
-    import time
-
     im = _FakeIndexManager()
     writer = _make_real_writer(im)
     writer.mark_dirty(["a.md", "b.md"])
@@ -394,23 +398,23 @@ def test_process_dirty_paths_drains_and_submits_flush():
 
 
 def test_process_dirty_paths_empty_set_is_noop():
-    import time
-
     im = _FakeIndexManager()
     writer = _make_real_writer(im)
     writer.start()
     try:
         writer.submit(ProcessDirtyPaths()).result(timeout=5)
-        # Wait for follow-up FlushDirtyEmbeddings to complete.
+        # Wait for any follow-up work to finish before asserting.
         deadline = time.monotonic() + 5
         while time.monotonic() < deadline and (
             writer.get_status()["queue_depth"] > 0
             or writer.get_status()["in_flight"] is not None
         ):
             time.sleep(0.01)
-        # process_dirty_paths is called with an empty set; flush is still
-        # submitted (and runs with empty set too).
+        # process_dirty_paths is called with an empty set;
+        # FlushDirtyEmbeddings is NOT submitted because
+        # run_process_dirty_paths guards with `if snapshot:`.
         assert im.process_paths_calls == [set()]
+        assert im.flush_paths_calls == []
     finally:
         writer.close(timeout=5)
 

@@ -69,6 +69,28 @@ class IndexWriter:
     explicitly. Submission is rejected from the moment :meth:`close`
     is called.
 
+    State machine::
+
+        Constructed -> Started -> (Closing | Crashed) -> Terminal
+
+    All transitions between states are atomic under ``_submit_lock``.
+    The lock protects:
+
+    - :meth:`start` — thread creation and ``_thread`` assignment.
+    - :meth:`submit` — ``_closed`` check + queue ``put()``.
+    - :meth:`close` — ``_closed.set()`` + pending-queue drain.
+    - Worker BaseException branch in :meth:`_run` —
+      ``_closed.set()`` + pending drain.
+
+    Future-side atomicity (``set_running_or_notify_cancel`` /
+    ``not future.done()`` guards) prevents secondary exceptions when a
+    Future is in transient states between the worker's runner call and
+    the surrounding lock release.
+
+    External observers (:meth:`is_closed`, :meth:`submit`, callers
+    waiting on Futures returned by :meth:`submit`) see a consistent
+    view of writer state regardless of which transition is in flight.
+
     Args:
         runners: Mapping from job kind string to handler callable.
         ctx: Opaque context object passed to every runner.
@@ -93,27 +115,31 @@ class IndexWriter:
         self._in_flight_kind: str | None = None
 
     def start(self) -> None:
-        """Spawn the worker thread. Idempotent.
+        """Spawn the worker thread. Idempotent and thread-safe.
+
+        The check-create-assign sequence runs under ``_submit_lock`` so
+        two concurrent callers cannot both pass the ``_thread is None``
+        check and both create a worker thread.
 
         Raises:
             RuntimeError: If thread creation fails (e.g. system thread
                 limit exhausted). ``self._thread`` is left ``None`` so
                 a retry can attempt to start again — the failed thread
-                is never latched.
+                is never latched (replay-guard for the PR #528 finding).
         """
-        if self._thread is not None:
-            return
-        thread = threading.Thread(
-            target=self._run,
-            name="markdown-vault-mcp.writer",
-            daemon=True,
-        )
-        # Assign self._thread only AFTER thread.start() succeeds so a
-        # thread-creation failure leaves the writer retry-able instead
-        # of latching the never-started thread (replay-guard for the
-        # PR #528 finding).
-        thread.start()
-        self._thread = thread
+        with self._submit_lock:
+            if self._thread is not None:
+                return
+            thread = threading.Thread(
+                target=self._run,
+                name="markdown-vault-mcp.writer",
+                daemon=True,
+            )
+            # Assign self._thread only AFTER thread.start() succeeds so
+            # a thread-creation failure leaves the writer retry-able
+            # instead of latching the never-started thread.
+            thread.start()
+            self._thread = thread
 
     def submit(self, job: Any) -> Future[Any]:
         """Submit a job for execution.
@@ -247,28 +273,38 @@ class IndexWriter:
                 # so the worker thread terminates. The finally block clears
                 # _in_flight_kind before the re-raise so status reads on
                 # other threads are not stuck on a stale value.
-                future.set_exception(exc)
+                #
+                # Guard against ``future`` already being completed (e.g.
+                # ``set_result`` ran a moment earlier and the BaseException
+                # bubbled from a later statement): ``set_exception`` on a
+                # done Future raises ``RuntimeError`` and shadows the
+                # original BaseException.
+                if not future.done():
+                    future.set_exception(exc)
                 logger.error(
                     "writer_job_basexception kind=%s",
                     job.kind,
                     exc_info=True,
                 )
-                # Worker thread is terminating. Mark writer closed so
-                # subsequent external submits fail fast with RuntimeError
-                # rather than enqueueing Futures nobody will ever dequeue.
-                # Then drain any already-queued items as CancelledError so
-                # callers waiting on .result() unblock instead of hanging.
-                self._closed.set()
-                while True:
-                    try:
-                        queued = self._queue.get_nowait()
-                    except queue.Empty:
-                        break
-                    if queued is _SHUTDOWN_SENTINEL:
-                        continue
-                    _, pending_future = cast("tuple[Any, Future[Any]]", queued)
-                    if not pending_future.cancel() and not pending_future.done():
-                        pending_future.set_exception(_CancelledError())
+                # Worker thread is terminating. Mark writer closed AND
+                # drain pending items atomically under _submit_lock so a
+                # concurrent submit() cannot pass the is_set() check and
+                # queue.put() a Future past the drain (orphan-Future
+                # leak).  Subsequent external submits fail fast with
+                # RuntimeError; drained Futures unblock waiters with
+                # CancelledError instead of hanging.
+                with self._submit_lock:
+                    self._closed.set()
+                    while True:
+                        try:
+                            queued = self._queue.get_nowait()
+                        except queue.Empty:
+                            break
+                        if queued is _SHUTDOWN_SENTINEL:
+                            continue
+                        _, pending_future = cast("tuple[Any, Future[Any]]", queued)
+                        if not pending_future.cancel() and not pending_future.done():
+                            pending_future.set_exception(_CancelledError())
                 raise
             finally:
                 with self._in_flight_lock:

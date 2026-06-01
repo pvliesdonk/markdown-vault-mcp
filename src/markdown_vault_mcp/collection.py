@@ -966,7 +966,19 @@ class Collection:
         self._background_build_error = None
         self._background_build_done.clear()
 
-        future = self._writer.submit(BuildIndex(force=force))
+        # If submit() raises (typically RuntimeError when the writer is
+        # already closed, but also BaseException variants like
+        # KeyboardInterrupt mid-put), the event would stay cleared and
+        # the done-callback would never attach — any caller already on
+        # ``wait_until_queryable()`` would block until timeout.  Restore
+        # the event with the captured error so waiters unblock with the
+        # real cause, then re-raise to the caller.
+        try:
+            future = self._writer.submit(BuildIndex(force=force))
+        except BaseException as exc:
+            self._background_build_error = exc
+            self._background_build_done.set()
+            raise
 
         def _on_done(fut: Future[IndexStats]) -> None:
             try:
@@ -1493,9 +1505,23 @@ class Collection:
         # Race: writer may close between is_closed() check and submit().
         # The dirty marks survive on the writer's set and will be picked
         # up by any future ProcessDirtyPaths (or discarded cleanly on
-        # shutdown), so swallow the RuntimeError here.
-        with contextlib.suppress(RuntimeError):
+        # shutdown), so swallow the RuntimeError raised by submit() in
+        # that narrow case.  Other RuntimeError variants (which submit()
+        # does NOT raise today, but might gain in future) propagate so
+        # they are not silently masked by a blanket suppress().
+        try:
             self._writer.submit(ProcessDirtyPaths())
+        except RuntimeError:
+            # Confirm the cause was writer-closed; re-check the flag
+            # rather than parsing the exception message.  If the writer
+            # is NOT closed, the RuntimeError came from elsewhere and
+            # must propagate.
+            if not self._writer.is_closed():
+                raise
+            logger.debug(
+                "mark_paths_dirty_writer_closed_after_submit "
+                "marks_retained_on_writer_set=True"
+            )
 
     def read_attachment(self, path: str) -> AttachmentContent:
         """Read the binary content of a non-.md attachment.

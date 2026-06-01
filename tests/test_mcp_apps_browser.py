@@ -187,6 +187,7 @@ class TestBrowserDataTools:
     async def test_notes_have_kind_field(self) -> None:
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool(_hashed("vault_list"), {})
             data = _parse_tool_data(result)
             for note in data["notes"]:
