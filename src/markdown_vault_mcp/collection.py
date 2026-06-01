@@ -640,6 +640,33 @@ class Collection:
             and status["dirty_embeddings"] == 0
         )
 
+    def wait_for_drain(self, timeout: float | None = None) -> bool:
+        """Block until :meth:`is_drained` returns True, or until *timeout*.
+
+        Polls writer state with a 50ms interval. Does not hold any lock
+        during the wait; the writer is free to process jobs while a
+        caller waits.
+
+        Args:
+            timeout: Maximum seconds to wait. ``None`` blocks indefinitely;
+                production callers should always pass a finite timeout.
+
+        Returns:
+            True if the writer drained within the budget; False on
+            timeout. Does not raise on timeout — best-effort semantics
+            so callers can fall through to a stale read.
+        """
+        import time
+
+        deadline = None if timeout is None else time.monotonic() + timeout
+        poll_interval = 0.05
+        while True:
+            if self.is_drained():
+                return True
+            if deadline is not None and time.monotonic() >= deadline:
+                return False
+            time.sleep(poll_interval)
+
     def get_index_status(self) -> dict[str, Any]:
         """Return a non-blocking snapshot of background-build state.
 

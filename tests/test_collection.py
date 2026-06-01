@@ -4244,3 +4244,79 @@ class TestIsDrained:
                 fut.result(timeout=5)
         finally:
             col.close()
+
+
+class TestWaitForDrain:
+    """Tests for Collection.wait_for_drain() (#534)."""
+
+    def test_returns_true_immediately_when_already_drained(
+        self, tmp_path: Path
+    ) -> None:
+        import time
+
+        from markdown_vault_mcp.collection import Collection
+
+        col = Collection(source_dir=tmp_path, read_only=False)
+        try:
+            col.build_index()
+            start = time.monotonic()
+            drained = col.wait_for_drain(timeout=1.0)
+            elapsed = time.monotonic() - start
+            assert drained is True
+            assert elapsed < 0.2
+        finally:
+            col.close()
+
+    def test_returns_true_after_writer_drains(self, tmp_path: Path) -> None:
+        import threading
+
+        from markdown_vault_mcp.collection import Collection
+        from markdown_vault_mcp.writer import BuildIndex
+
+        col = Collection(source_dir=tmp_path, read_only=False)
+        try:
+            col.build_index()
+            release = threading.Event()
+            started = threading.Event()
+            original_runner = col._writer._runners["build_index"]
+
+            def _blocking_runner(job, ctx):
+                started.set()
+                release.wait(timeout=5)
+                return original_runner(job, ctx)
+
+            col._writer._runners["build_index"] = _blocking_runner
+            fut = col._writer.submit(BuildIndex())
+            started.wait(timeout=5)
+            threading.Timer(0.1, release.set).start()
+            assert col.wait_for_drain(timeout=5.0) is True
+            fut.result(timeout=5)
+        finally:
+            col.close()
+
+    def test_returns_false_on_timeout(self, tmp_path: Path) -> None:
+        import threading
+
+        from markdown_vault_mcp.collection import Collection
+        from markdown_vault_mcp.writer import BuildIndex
+
+        col = Collection(source_dir=tmp_path, read_only=False)
+        try:
+            col.build_index()
+            release = threading.Event()
+            started = threading.Event()
+            original_runner = col._writer._runners["build_index"]
+
+            def _blocking_runner(job, ctx):
+                started.set()
+                release.wait(timeout=5)
+                return original_runner(job, ctx)
+
+            col._writer._runners["build_index"] = _blocking_runner
+            fut = col._writer.submit(BuildIndex())
+            started.wait(timeout=5)
+            assert col.wait_for_drain(timeout=0.1) is False
+            release.set()
+            fut.result(timeout=5)
+        finally:
+            col.close()
