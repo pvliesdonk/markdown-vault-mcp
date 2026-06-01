@@ -180,6 +180,7 @@ async def _reindex_after_pull(
     Mutates ``pull_dict`` in place on failure.
     """
 
+    # TODO(#559): remove pause_writes wrapping once Task 12 removes _write_lock
     def _pause_and_reindex() -> None:
         with collection.pause_writes():
             collection.reindex()

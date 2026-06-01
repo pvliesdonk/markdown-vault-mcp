@@ -1972,6 +1972,7 @@ class GitWriteStrategy:
             try:
                 did_advance = self.sync_once(repo_path)
                 if did_advance and self._on_pull is not None:
+                    # TODO(#559): remove pause_writes wrapping once Task 12 removes _write_lock
                     pause = self._pause_writes
                     if pause is None:
                         self._on_pull()
