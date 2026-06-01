@@ -3600,3 +3600,67 @@ class TestGitToolsUntilParam:
         past_data = _parse_tool_data(past)
         assert past_data["commits"] == []
         assert past_data["total"] == 0
+
+
+class TestB3StaleSignal:
+    """Tests for the writer-state staleness signal on B3 tools (#534)."""
+
+    @pytest.fixture
+    def _mcp_env_linked(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Create a vault with interlinked notes for B3 tool stale-signal tests."""
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        (vault / "index.md").write_text(
+            "# Index\n\nSee [Topic](notes/topic.md) and [Ghost](ghost.md).\n",
+            encoding="utf-8",
+        )
+        (vault / "notes").mkdir()
+        (vault / "notes" / "topic.md").write_text(
+            "# Topic\n\nBack to [Index](../index.md).\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault))
+        monkeypatch.delenv("MARKDOWN_VAULT_MCP_READ_ONLY", raising=False)
+        for var in _CLEAR_VARS:
+            monkeypatch.delenv(var, raising=False)
+
+    @pytest.mark.usefixtures("_mcp_env_linked")
+    async def test_stale_true_when_writer_has_pending_dirty_paths(
+        self,
+    ) -> None:
+        from markdown_vault_mcp._server_deps import get_collection_singleton
+
+        server = make_server()
+        async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
+            # Make the writer non-idle by marking a path dirty directly
+            # on the writer (no submit, so no in-flight job, just a
+            # non-empty dirty-paths set — that alone should set stale=True).
+            col = get_collection_singleton()
+            col._writer.mark_dirty(["sentinel.md"])
+            try:
+                result = await client.call_tool(
+                    "get_backlinks", {"path": "notes/topic.md"}
+                )
+            finally:
+                # Clear the sentinel so subsequent tests are not affected
+                # by leaked dirty-set state.
+                col._writer.drain_dirty_paths()
+        envelope = _parse_tool_data(result)
+        assert envelope["stale"] is True
+        # The data is still returned despite stale=True.
+        assert isinstance(envelope["data"], list)
+
+    @pytest.mark.usefixtures("_mcp_env_linked")
+    async def test_wait_for_drain_clears_stale_when_writer_idle(
+        self,
+    ) -> None:
+        server = make_server()
+        async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
+            result = await client.call_tool(
+                "get_backlinks",
+                {"path": "notes/topic.md", "wait_for_drain": True},
+            )
+        envelope = _parse_tool_data(result)
+        assert envelope["stale"] is False
