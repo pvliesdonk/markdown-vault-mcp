@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 import queue
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from concurrent.futures import CancelledError, Future
 from dataclasses import dataclass
 from typing import Any, ClassVar, cast
@@ -85,6 +85,9 @@ class IndexWriter:
         self._thread: threading.Thread | None = None
         self._submit_lock = threading.Lock()
         self._closed = threading.Event()
+        self._dirty_lock = threading.Lock()
+        self._dirty_paths: set[str] = set()
+        self._dirty_embeddings: set[str] = set()
 
     def start(self) -> None:
         """Spawn the worker thread. Idempotent."""
@@ -147,6 +150,40 @@ class IndexWriter:
     def is_closed(self) -> bool:
         """Return True if :meth:`close` has been called."""
         return self._closed.is_set()
+
+    def mark_dirty(self, paths: Iterable[str]) -> None:
+        """Mark file paths needing FTS re-index."""
+        with self._dirty_lock:
+            self._dirty_paths.update(paths)
+
+    def mark_embedding_dirty(self, paths: Iterable[str]) -> None:
+        """Mark file paths needing vector re-embedding."""
+        with self._dirty_lock:
+            self._dirty_embeddings.update(paths)
+
+    def snapshot_dirty_paths(self) -> set[str]:
+        """Return a snapshot of the FTS-dirty set without clearing it."""
+        with self._dirty_lock:
+            return set(self._dirty_paths)
+
+    def snapshot_dirty_embeddings(self) -> set[str]:
+        """Return a snapshot of the vector-dirty set without clearing it."""
+        with self._dirty_lock:
+            return set(self._dirty_embeddings)
+
+    def drain_dirty_paths(self) -> set[str]:
+        """Snapshot-and-clear the FTS-dirty set under the lock."""
+        with self._dirty_lock:
+            snapshot = set(self._dirty_paths)
+            self._dirty_paths.clear()
+        return snapshot
+
+    def drain_dirty_embeddings(self) -> set[str]:
+        """Snapshot-and-clear the vector-dirty set under the lock."""
+        with self._dirty_lock:
+            snapshot = set(self._dirty_embeddings)
+            self._dirty_embeddings.clear()
+        return snapshot
 
     def _run(self) -> None:
         """Worker loop."""

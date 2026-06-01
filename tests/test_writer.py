@@ -161,3 +161,33 @@ def test_close_cancels_pending_jobs():
     slow_future.result(timeout=5)  # completes normally
     with pytest.raises(CancelledError):
         pending_future.result(timeout=5)
+
+
+def test_mark_dirty_adds_paths():
+    writer = IndexWriter(runners={}, ctx=None)
+    writer.mark_dirty(["a.md", "b.md"])
+    writer.mark_dirty(["c.md"])
+    assert writer.snapshot_dirty_paths() == {"a.md", "b.md", "c.md"}
+
+
+def test_drain_dirty_paths_clears_and_returns():
+    writer = IndexWriter(runners={}, ctx=None)
+    writer.mark_dirty(["a.md", "b.md"])
+    drained = writer.drain_dirty_paths()
+    assert drained == {"a.md", "b.md"}
+    assert writer.snapshot_dirty_paths() == set()
+
+
+def test_mark_embedding_dirty_adds_paths():
+    writer = IndexWriter(runners={}, ctx=None)
+    writer.mark_embedding_dirty(["a.md"])
+    writer.mark_embedding_dirty(["b.md", "a.md"])
+    assert writer.snapshot_dirty_embeddings() == {"a.md", "b.md"}
+
+
+def test_drain_dirty_embeddings_clears_and_returns():
+    writer = IndexWriter(runners={}, ctx=None)
+    writer.mark_embedding_dirty(["a.md", "b.md"])
+    drained = writer.drain_dirty_embeddings()
+    assert drained == {"a.md", "b.md"}
+    assert writer.snapshot_dirty_embeddings() == set()
