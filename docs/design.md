@@ -574,11 +574,13 @@ in-flight work and the `data` payload may not reflect the latest
 committed state.
 
 Each B3 tool accepts an optional `wait_for_drain: bool = false`
-parameter. When `true`, the tool blocks on `Collection.wait_for_drain()`
-(bounded by `MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S`, default 60s)
-before executing the query. On timeout, the tool returns the
-result with `stale=true` rather than raising — best-effort
-fresh-read semantics.
+parameter. When `true`, the tool layer polls `Collection.is_drained()`
+with `asyncio.sleep` until the writer drains or
+`MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S` (default 60s) elapses, then
+runs the query. On timeout the tool returns the result with
+`stale=true` rather than raising — best-effort fresh-read
+semantics. (`Collection.wait_for_drain()` is the synchronous
+counterpart for in-process callers.)
 
 The drift signal reflects writer-internal state only: paths in
 `dirty_paths`, paths in `dirty_embeddings`, the in-flight job
