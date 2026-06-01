@@ -28,12 +28,12 @@ If the resolved set contains more than 100 notes, pause and ask the user whether
 
 For each note in scope:
 
-1. Call `get_similar(path=<note path>, limit=$per_note_limit)` (default limit: 5).
-2. If `get_similar` returns an empty list (no embeddings configured), fall back to `search(query=<note title>, mode='keyword', limit=$per_note_limit)` and drop the note itself from the result.
+1. Call `get_similar(path=<note path>, limit=$per_note_limit)` (default limit: 5). The tool returns a `{"stale": bool, "data": [...]}` envelope — use the `data` list for the candidates.
+2. If `get_similar`'s `data` list is empty (no embeddings configured), fall back to `search(query=<note title>, mode='keyword', limit=$per_note_limit)` and drop the note itself from the result.
 
 ## Step 3: Filter out already-linked pairs
 
-For each scanned note, call `get_outlinks(path=<note>)` once. For each candidate pair (A, B), drop the candidate if A already links to B — compare the candidate path `B` against each outlink's `target_path` (the resolved vault-relative path of the link target, which is what you want for equality checks). `raw_target` is the literal link text as written (and may be a wikilink without `.md`) — only fall back to comparing against `raw_target` when `target_path` is empty (e.g., the link hasn't been resolved).
+For each scanned note, call `get_outlinks(path=<note>)` once. The tool returns a `{"stale": bool, "data": [...]}` envelope; iterate `data` for the outlink dicts. For each candidate pair (A, B), drop the candidate if A already links to B — compare the candidate path `B` against each outlink's `target_path` (the resolved vault-relative path of the link target, which is what you want for equality checks). `raw_target` is the literal link text as written (and may be a wikilink without `.md`) — only fall back to comparing against `raw_target` when `target_path` is empty (e.g., the link hasn't been resolved).
 
 ## Step 4: Apply LLM judgment
 

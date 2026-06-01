@@ -625,11 +625,14 @@ class Collection:
     def is_drained(self) -> bool:
         """Return True iff the IndexWriter has no pending or in-flight work.
 
-        Cheap, non-blocking. A snapshot of the writer's current state —
-        the four indicators are sampled under the writer's per-field
-        locks (queue depth via ``Queue.qsize()`` is lock-free), not a
-        single cross-field lock, so the writer can transition briefly
-        between sample points.
+        Cheap (microsecond-scale). Acquires the writer's per-field
+        ``threading.Lock``s briefly to sample state — not technically
+        non-blocking from an asyncio perspective, but the lock-hold
+        durations are bounded by the writer's own short critical
+        sections. The four indicators (queue depth, in-flight kind,
+        FTS-dirty count, vector-dirty count) are sampled under
+        per-field locks rather than a single cross-field lock, so the
+        writer can transition briefly between sample points.
 
         Returns:
             True when ``queue_depth == 0``, ``in_flight is None``, the

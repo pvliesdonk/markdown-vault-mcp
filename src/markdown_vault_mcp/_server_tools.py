@@ -722,9 +722,14 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
         drained_on_request = await _maybe_wait_for_drain(
             collection, wait_for_drain, "get_backlinks"
         )
+        drained_before_read = collection.is_drained()
         results = await asyncio.to_thread(collection.get_backlinks, path)
         return {
-            "stale": (not drained_on_request) or (not collection.is_drained()),
+            "stale": (
+                (not drained_on_request)
+                or (not drained_before_read)
+                or (not collection.is_drained())
+            ),
             "data": [asdict(r) for r in results],
         }
 
@@ -787,9 +792,14 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
         drained_on_request = await _maybe_wait_for_drain(
             collection, wait_for_drain, "get_outlinks"
         )
+        drained_before_read = collection.is_drained()
         results = await asyncio.to_thread(collection.get_outlinks, path)
         return {
-            "stale": (not drained_on_request) or (not collection.is_drained()),
+            "stale": (
+                (not drained_on_request)
+                or (not drained_before_read)
+                or (not collection.is_drained())
+            ),
             "data": [asdict(r) for r in results],
         }
 
@@ -907,6 +917,7 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
         drained_on_request = await _maybe_wait_for_drain(
             collection, wait_for_drain, "get_similar"
         )
+        drained_before_read = collection.is_drained()
         results = await asyncio.to_thread(
             collection.get_similar,
             path,
@@ -914,7 +925,11 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
             chunks_per_file=chunks_per_file,
         )
         return {
-            "stale": (not drained_on_request) or (not collection.is_drained()),
+            "stale": (
+                (not drained_on_request)
+                or (not drained_before_read)
+                or (not collection.is_drained())
+            ),
             "data": [asdict(r) for r in results],
         }
 
@@ -1062,6 +1077,7 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
         drained_on_request = await _maybe_wait_for_drain(
             collection, wait_for_drain, "get_context"
         )
+        drained_before_read = collection.is_drained()
         result = await asyncio.to_thread(
             collection.get_context,
             path,
@@ -1069,7 +1085,11 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
             link_limit=link_limit,
         )
         return {
-            "stale": (not drained_on_request) or (not collection.is_drained()),
+            "stale": (
+                (not drained_on_request)
+                or (not drained_before_read)
+                or (not collection.is_drained())
+            ),
             "data": asdict(result),
         }
 
@@ -1189,6 +1209,7 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
         drained_on_request = await _maybe_wait_for_drain(
             collection, wait_for_drain, "get_connection_path"
         )
+        drained_before_read = collection.is_drained()
         result: list[str] | None = await asyncio.to_thread(
             collection.get_connection_path, source, target, max_depth
         )
@@ -1198,7 +1219,11 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
         else:
             inner = {"found": True, "path": result, "hops": len(result) - 1}
         return {
-            "stale": (not drained_on_request) or (not collection.is_drained()),
+            "stale": (
+                (not drained_on_request)
+                or (not drained_before_read)
+                or (not collection.is_drained())
+            ),
             "data": inner,
         }
 
