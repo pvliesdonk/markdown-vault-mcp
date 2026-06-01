@@ -152,9 +152,6 @@ The endpoint is only available on HTTP/SSE transports. To set up:
 
 The periodic pull loop (`GIT_PULL_INTERVAL_S`) remains active as a belt-and-suspenders fallback for missed webhook deliveries.
 
-!!! note "File watcher interaction"
-    The GitHub webhook is mutually exclusive with the file watcher (`FILE_WATCHER`). When `GITHUB_WEBHOOK_SECRET` is set, the file watcher is automatically disabled to prevent double-reindex races during git checkout.
-
 ## Attachments
 
 Non-markdown file support for PDFs, images, spreadsheets, and more.

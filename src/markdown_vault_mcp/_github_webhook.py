@@ -102,8 +102,9 @@ def make_webhook_handler(secret: str) -> Callable[[Request], Any]:
     - Returns 200 + ``{"ok": true}`` for non-``push`` events (ignored).
     - On ``push`` events: calls ``Collection.force_pull()``, then
       ``reindex()`` when HEAD actually moved.
-    - Returns 200 for deferred cases (collection not yet queryable) so
-      GitHub does not retry the delivery.
+    - Returns 503 when the collection is not yet queryable (cold start)
+      so GitHub retries the delivery (~5 s, ~25 s, ~90 s delays) rather
+      than losing the push event until the next periodic pull tick.
 
     Args:
         secret: HMAC secret configured via
@@ -132,15 +133,23 @@ def make_webhook_handler(secret: str) -> Callable[[Request], Any]:
             return JSONResponse({"ok": True, "message": "event ignored"})
 
         # push event — pull + conditional reindex
+        #
+        # Return 503 (not 200) when the collection isn't ready so GitHub
+        # retries the delivery.  GitHub's retry delays are ~5 s, ~25 s, ~90 s —
+        # well within any realistic cold-start window.  A 200 "deferred" would
+        # mark the delivery as acknowledged, meaning the commits would only be
+        # picked up by the next periodic pull tick (up to GIT_PULL_INTERVAL_S).
         try:
             collection = get_collection_singleton()
         except RuntimeError:
-            logger.info("github_webhook: collection not initialised, deferring")
-            return JSONResponse({"ok": True, "message": "deferred"})
+            logger.info("github_webhook: collection not initialised, returning 503")
+            return JSONResponse(
+                {"error": "collection not initialised"}, status_code=503
+            )
 
         if not collection.is_queryable():
-            logger.info("github_webhook: collection not queryable, deferring")
-            return JSONResponse({"ok": True, "message": "deferred"})
+            logger.info("github_webhook: collection not queryable, returning 503")
+            return JSONResponse({"error": "collection not queryable"}, status_code=503)
 
         pull_result = await asyncio.to_thread(collection.force_pull)
 

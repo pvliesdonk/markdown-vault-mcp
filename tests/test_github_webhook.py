@@ -286,8 +286,8 @@ def test_webhook_push_skips_reindex_when_pull_fails():
     col.reindex.assert_not_called()
 
 
-def test_webhook_push_deferred_when_collection_not_queryable():
-    """Cold start — index still building; don't pull yet."""
+def test_webhook_push_returns_503_when_collection_not_queryable():
+    """Cold start — index still building; 503 so GitHub retries rather than losing the event."""
     col = _mock_collection(queryable=False)
     client = _make_client()
     body = _push_body()
@@ -303,15 +303,13 @@ def test_webhook_push_deferred_when_collection_not_queryable():
                 "Content-Type": "application/json",
             },
         )
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data["ok"] is True
-    assert "deferred" in data.get("message", "").lower()
+    assert resp.status_code == 503
+    assert "error" in resp.json()
     col.force_pull.assert_not_called()
 
 
-def test_webhook_push_deferred_when_singleton_not_initialized():
-    """Server lifespan not yet complete — singleton not set."""
+def test_webhook_push_returns_503_when_singleton_not_initialized():
+    """Server lifespan not yet complete — 503 so GitHub retries."""
     client = _make_client()
     body = _push_body()
     with patch(
@@ -327,10 +325,8 @@ def test_webhook_push_deferred_when_singleton_not_initialized():
                 "Content-Type": "application/json",
             },
         )
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data["ok"] is True
-    assert "deferred" in data.get("message", "").lower()
+    assert resp.status_code == 503
+    assert "error" in resp.json()
 
 
 def test_webhook_push_no_git_strategy_returns_200():
