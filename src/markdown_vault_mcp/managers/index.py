@@ -637,7 +637,15 @@ class IndexManager:
             self._embedding_flush_timer.start()
 
     def process_dirty_paths(self, paths: set[str]) -> None:
-        """Re-parse each path and update FTS, skipping per-path failures (#559)."""
+        """Re-parse each path and update FTS, skipping per-path failures (#559).
+
+        After all paths are processed, ``resolve_vault_wikilinks()`` runs
+        once over the whole vault so newly-added, edited, deleted, and
+        renamed documents all leave the link graph consistent — this
+        mirrors the behavior that the pre-#559 inline DocumentManager
+        callsites delivered (write/edit/delete/rename each ended with
+        ``resolve_vault_wikilinks()``).
+        """
         if not paths:
             return
         for path in paths:
@@ -652,12 +660,12 @@ class IndexManager:
                         self._fts.delete_by_path(path)
                         continue
                     self._fts.upsert_note(note)
-                    self._fts.resolve_vault_wikilinks()
                 else:
                     self._fts.delete_by_path(path)
             except (OSError, UnicodeDecodeError) as exc:
                 logger.warning("process_dirty_paths: skipping %s: %s", path, exc)
                 continue
+        self._fts.resolve_vault_wikilinks()
 
     def flush_dirty_embeddings(self, paths: set[str] | None = None) -> None:
         """Re-embed dirty documents and save the vector index once.

@@ -40,6 +40,7 @@ from markdown_vault_mcp.utils.text import (
 from markdown_vault_mcp.utils.text import (
     normalize_text as _normalize_text,
 )
+from tests.conftest import wait_for_writer_drain
 
 if TYPE_CHECKING:
     from .conftest import MockEmbeddingProvider
@@ -833,6 +834,7 @@ class TestWrite:
         writable.write(
             "searchable.md", "# Unique Xylophone\n\nRare content for testing.\n"
         )
+        wait_for_writer_drain(writable)
 
         results = writable.search("xylophone", mode="keyword")
         paths = [r.path for r in results]
@@ -873,6 +875,7 @@ class TestWrite:
             "new_semantic.md",
             "# Unique Quantum Entanglement\n\nContent about quantum physics.\n",
         )
+        wait_for_writer_drain(writable_with_embeddings)
 
         results = writable_with_embeddings.search(
             "quantum entanglement", mode="semantic"
@@ -911,6 +914,7 @@ class TestWrite:
             "unicode_note.md",
             "# Unicode Test\n\nCafé naïve résumé \U0001f600\n",
         )
+        wait_for_writer_drain(writable)
 
         results = writable.search("unicode test", mode="keyword")
         paths = [r.path for r in results]
@@ -965,6 +969,7 @@ class TestEdit:
         """Edited content is immediately searchable."""
         writable.write("editable.md", "# Old Title\n\nOld body text.\n")
         writable.edit("editable.md", "Old Title", "New Unique Xylophone Title")
+        wait_for_writer_drain(writable)
 
         results = writable.search("xylophone", mode="keyword")
         paths = [r.path for r in results]
@@ -988,12 +993,14 @@ class TestEdit:
     def test_edit_old_content_removed_from_fts(self, writable: Collection) -> None:
         """edit() removes the old content from FTS; old text is no longer searchable."""
         writable.write("editable_fts.md", "# OldUniqueTitle\n\nOld body text.\n")
+        wait_for_writer_drain(writable)
 
         # Confirm old text is searchable before edit.
         before = writable.search("OldUniqueTitle", mode="keyword")
         assert any(r.path == "editable_fts.md" for r in before)
 
         writable.edit("editable_fts.md", "OldUniqueTitle", "NewReplacedTitle")
+        wait_for_writer_drain(writable)
 
         # Old text must no longer appear in results.
         after_old = writable.search("OldUniqueTitle", mode="keyword")
@@ -1012,6 +1019,7 @@ class TestEdit:
             "original text",
             "quantum mechanics discussion",
         )
+        wait_for_writer_drain(writable_with_embeddings)
 
         results = writable_with_embeddings.search("quantum mechanics", mode="semantic")
         paths = [r.path for r in results]
@@ -1071,6 +1079,7 @@ class TestEdit:
         writable.edit(
             "lines.md", new_text="# Xylophone Title\n", line_start=1, line_end=1
         )
+        wait_for_writer_drain(writable)
         results = writable.search("xylophone", mode="keyword")
         assert any(r.path == "lines.md" for r in results)
 
@@ -1483,6 +1492,7 @@ class TestDelete:
         assert any(r.path == "simple.md" for r in results_before)
 
         writable.delete("simple.md")
+        wait_for_writer_drain(writable)
 
         results_after = writable.search("Simple Document", mode="keyword")
         assert not any(r.path == "simple.md" for r in results_after)
@@ -1513,6 +1523,7 @@ class TestDelete:
         assert any(r.path == "simple.md" for r in before)
 
         writable_with_embeddings.delete("simple.md")
+        wait_for_writer_drain(writable_with_embeddings)
 
         after = writable_with_embeddings.search("simple document", mode="semantic")
         assert not any(r.path == "simple.md" for r in after)
@@ -1532,6 +1543,7 @@ class TestRename:
     def test_rename_updates_search(self, writable: Collection) -> None:
         """After rename, search finds the document at the new path only."""
         writable.rename("simple.md", "moved.md")
+        wait_for_writer_drain(writable)
 
         results = writable.search("Simple Document", mode="keyword")
         paths = [r.path for r in results]
@@ -1576,6 +1588,7 @@ class TestRename:
     def test_rename_folder_updated(self, writable: Collection) -> None:
         """rename() updates the folder derivation after move."""
         writable.rename("simple.md", "new_folder/simple.md")
+        wait_for_writer_drain(writable)
 
         notes = writable.list(folder="new_folder")
         paths = [n.path for n in notes]
@@ -1599,6 +1612,7 @@ class TestRename:
         assert any(r.path == "simple.md" for r in before)
 
         writable.rename("simple.md", "after_rename.md")
+        wait_for_writer_drain(writable)
 
         after = writable.search("Simple Document", mode="keyword")
         assert not any(r.path == "simple.md" for r in after)
@@ -1608,6 +1622,7 @@ class TestRename:
     ) -> None:
         """rename() with embeddings configured indexes the new path, drops the old."""
         writable_with_embeddings.rename("simple.md", "renamed_semantic.md")
+        wait_for_writer_drain(writable_with_embeddings)
 
         after = writable_with_embeddings.search("simple document", mode="semantic")
         paths = [r.path for r in after]
@@ -1641,6 +1656,8 @@ class TestConcurrentWrites:
             futures = [executor.submit(do_write, p) for p in paths]
             for fut in concurrent.futures.as_completed(futures):
                 fut.result()  # re-raise any exception from the thread
+
+        wait_for_writer_drain(writable)
 
         # All 10 files must exist on disk.
         for p in paths:
@@ -3791,6 +3808,11 @@ class TestDeferredEmbeddings:
         )
         # The dirty set should contain this path.
         assert "deferred_doc.md" in col._index_mgr._dirty_embeddings
+
+        # Drain the writer so the FTS update completes before semantic
+        # search runs (otherwise the read can race the writer's
+        # ProcessDirtyPaths transaction on `documents` (#559)).
+        wait_for_writer_drain(col)
 
         # Semantic search triggers flush.
         results = col.search("UniqueContentForTest", mode="semantic")

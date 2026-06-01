@@ -48,6 +48,7 @@ from markdown_vault_mcp.writer import (
     BuildEmbeddings,
     BuildIndex,
     IndexWriter,
+    ProcessDirtyPaths,
     ReindexAll,
     WriterContext,
     run_build_embeddings,
@@ -58,7 +59,7 @@ from markdown_vault_mcp.writer import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Iterable, Iterator
     from concurrent.futures import Future
     from pathlib import Path
 
@@ -342,6 +343,7 @@ class Collection:
             on_write_callback=self._fire_write_callback,
             on_vector_update=self._index_mgr.update_vector_index,
             on_vector_dirty=self._index_mgr.mark_dirty,
+            mark_paths_dirty=self._mark_paths_dirty_for_writer,
         )
 
         # Deferred write callback queue (issue #175).  Git commit (on_write
@@ -1361,6 +1363,28 @@ class Collection:
             return
         self._ensure_callback_worker()
         self._callback_queue.put((abs_path, content, operation))
+
+    def _mark_paths_dirty_for_writer(self, paths: Iterable[str]) -> None:
+        """Route DocumentManager dirty-marks through the writer (#559).
+
+        Called by :class:`DocumentManager` after a successful write,
+        edit, delete, or rename.  Stages the affected vault-relative
+        paths on the :class:`IndexWriter` dirty set and submits a
+        :class:`ProcessDirtyPaths` job so the FTS update runs on the
+        single-owner writer thread.  The dirty set is updated
+        unconditionally; only the follow-up :class:`ProcessDirtyPaths`
+        submission is skipped when the writer is closed (avoiding a
+        ``RuntimeError`` on a closed writer during shutdown).
+        """
+        self._writer.mark_dirty(paths)
+        if self._writer.is_closed():
+            return
+        # Race: writer may close between is_closed() check and submit().
+        # The dirty marks survive on the writer's set and will be picked
+        # up by any future ProcessDirtyPaths (or discarded cleanly on
+        # shutdown), so swallow the RuntimeError here.
+        with contextlib.suppress(RuntimeError):
+            self._writer.submit(ProcessDirtyPaths())
 
     def read_attachment(self, path: str) -> AttachmentContent:
         """Read the binary content of a non-.md attachment.

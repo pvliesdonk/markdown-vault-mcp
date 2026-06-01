@@ -150,6 +150,38 @@ def _mcp_env(vault_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv(var, raising=False)
 
 
+def wait_for_writer_drain(col: object, timeout: float = 5.0) -> None:
+    """Wait for IndexWriter queue + dirty-sets to drain (#559).
+
+    Used by Collection-level tests that need to assert FTS / vector
+    state after a write / edit / delete / rename — which now go through
+    the single-owner :class:`IndexWriter` and complete asynchronously.
+
+    Args:
+        col: The :class:`Collection` instance under test.
+        timeout: Maximum wait in seconds.
+
+    Raises:
+        AssertionError: If the writer did not drain within *timeout*.
+    """
+    import time
+
+    deadline = time.monotonic() + timeout
+    status: dict[str, object] = {}
+    while time.monotonic() < deadline:
+        status = col._writer.get_status()  # type: ignore[attr-defined]
+        if (
+            status["queue_depth"] == 0
+            and status["in_flight"] is None
+            and status["dirty_paths"] == 0
+            and status["dirty_embeddings"] == 0
+        ):
+            return
+        time.sleep(0.01)
+    msg = f"Writer did not drain in {timeout}s: {status}"
+    raise AssertionError(msg)
+
+
 @pytest.fixture
 def vault_path(tmp_path: Path, fixtures_path: Path) -> Path:
     """Copy fixtures into a temp directory.

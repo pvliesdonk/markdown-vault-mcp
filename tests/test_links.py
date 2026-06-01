@@ -19,6 +19,7 @@ from markdown_vault_mcp.types import (
     OutlinkInfo,
     ParsedNote,
 )
+from tests.conftest import wait_for_writer_drain
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -1300,6 +1301,7 @@ class TestRenameUpdateLinks:
         col.build_index()
 
         col.rename("target.md", "renamed.md", update_links=True)
+        wait_for_writer_drain(col)
 
         # linker_md now has a link to renamed.md, not target.md
         outlinks = col._fts.get_outlinks("linker_md.md")
@@ -1611,6 +1613,7 @@ class TestResolveVaultWikilinks:
         col.build_index()
 
         col.write("source.md", "# Source\n\nSee [[Target]].\n")
+        wait_for_writer_drain(col)
 
         outlinks = col.get_outlinks("source.md")
         assert len(outlinks) == 1
@@ -1632,6 +1635,7 @@ class TestResolveVaultWikilinks:
         col.build_index()
 
         col.edit("source.md", old_text="No links yet.", new_text="See [[Target]].")
+        wait_for_writer_drain(col)
 
         outlinks = col.get_outlinks("source.md")
         assert len(outlinks) == 1
@@ -1664,6 +1668,7 @@ class TestResolveVaultWikilinks:
         assert outlinks[0].exists is True
 
         col.delete("a/Target.md")
+        wait_for_writer_drain(col)
 
         outlinks = col.get_outlinks("source.md")
         assert outlinks[0].target_path == "aa/bb/Target.md"
@@ -1688,6 +1693,7 @@ class TestResolveVaultWikilinks:
         assert outlinks[0].exists is True
 
         col.rename("Target.md", "other/Target.md")
+        wait_for_writer_drain(col)
 
         # After rename, the inlink must point at the new location.
         outlinks = col.get_outlinks("source.md")

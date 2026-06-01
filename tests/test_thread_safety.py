@@ -25,6 +25,7 @@ if TYPE_CHECKING:
 
 from markdown_vault_mcp.collection import Collection
 from markdown_vault_mcp.fts_index import FTSIndex
+from tests.conftest import wait_for_writer_drain
 
 
 @pytest.fixture
@@ -368,6 +369,7 @@ def test_concurrent_writers_serialize_via_collection_write_lock(
 
     try:
         assert not errors, f"writer errors: {errors!r}"
+        wait_for_writer_drain(coll)
         docs = coll.list()
         assert len(docs) == 40
     finally:
