@@ -407,6 +407,7 @@ class TestAppOnlyTools:
         """Root listing must not include notes from subfolders."""
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool(_hashed("vault_list"), {})
             data = _parse_tool_data(result)
             for note in data["notes"]:
@@ -594,6 +595,7 @@ class TestAppToolData:
     async def test_vault_list_root(self) -> None:
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool(_hashed("vault_list"), {})
             data = _parse_tool_data(result)
             assert "folders" in data
@@ -605,6 +607,7 @@ class TestAppToolData:
     async def test_vault_read_note(self) -> None:
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool(
                 _hashed("vault_read"), {"path": "simple.md"}
             )
@@ -615,6 +618,7 @@ class TestAppToolData:
     async def test_vault_search_keyword(self) -> None:
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool(
                 _hashed("vault_search"), {"query": "simple", "mode": "keyword"}
             )
