@@ -824,9 +824,10 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
         Uses stored embedding vectors — no re-embedding needed. The
         reference document is excluded from results. Requires semantic
         search to be configured (check 'stats' for
-        semantic_search_available). Returns an empty list if embeddings
-        are not configured (check 'embeddings_status') or the document has
-        no stored vectors (call 'build_embeddings' to embed missing chunks).
+        semantic_search_available). The envelope's ``data`` field is an
+        empty list if embeddings are not configured (check
+        'embeddings_status') or the document has no stored vectors (call
+        'build_embeddings' to embed missing chunks).
 
         Args:
             path: Relative path of the reference document (e.g.
