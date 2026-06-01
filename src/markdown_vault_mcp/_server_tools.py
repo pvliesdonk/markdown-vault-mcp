@@ -1111,6 +1111,7 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
         source: str,
         target: str,
         max_depth: int = 10,
+        wait_for_drain: bool = False,
         collection: Collection = Depends(get_collection),
     ) -> dict[str, Any]:
         """Find the shortest connection path between two notes in the link graph.
@@ -1126,9 +1127,20 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
             source: Vault-relative path of the starting note (e.g. 'Ideas/spark.md').
             target: Vault-relative path of the destination note.
             max_depth: Maximum number of hops to search. Default 10, max 10.
+            wait_for_drain: When True, block until the IndexWriter has
+                no pending or in-flight work before answering. Bounded
+                by MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S (default 60s).
+                On timeout, returns the result with `stale=True` rather
+                than raising — best-effort fresh read. Default False
+                returns immediately and reports staleness via the
+                envelope's `stale` field.
 
         Returns:
-            A dict with the following fields:
+            Dict envelope with two keys:
+
+            - stale (bool): True when the IndexWriter had pending work
+              at response time.
+            - data (dict): The connection-path result. Inner fields:
 
             - `found` (bool): Whether a path was found within `max_depth` hops.
             - `path` (list[str]): Ordered list of note paths from source to target,
@@ -1136,13 +1148,20 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
             - `hops` (int): Number of edges in the path (`len(path) - 1`), or -1 if
               not found.
         """
+        if wait_for_drain:
+            await asyncio.to_thread(collection.wait_for_drain, timeout=_DRAIN_TIMEOUT_S)
         result: list[str] | None = await asyncio.to_thread(
             collection.get_connection_path, source, target, max_depth
         )
 
         if result is None:
-            return {"found": False, "path": [], "hops": -1}
-        return {"found": True, "path": result, "hops": len(result) - 1}
+            inner: dict[str, Any] = {"found": False, "path": [], "hops": -1}
+        else:
+            inner = {"found": True, "path": result, "hops": len(result) - 1}
+        return {
+            "stale": not collection.is_drained(),
+            "data": inner,
+        }
 
     # --- Git history tools ---
 

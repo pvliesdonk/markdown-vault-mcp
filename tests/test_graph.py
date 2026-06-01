@@ -666,10 +666,13 @@ class TestMCPGetConnectionPath:
 
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool(
                 "get_connection_path", {"source": "a.md", "target": "c.md"}
             )
-        data = _parse_tool_data(result)
+        envelope = _parse_tool_data(result)
+        assert envelope["stale"] is False
+        data = envelope["data"]
         assert data["found"] is True
         assert data["path"] == ["a.md", "b.md", "c.md"]
         assert data["hops"] == 2
@@ -682,11 +685,14 @@ class TestMCPGetConnectionPath:
 
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool(
                 "get_connection_path",
                 {"source": "a.md", "target": "isolated.md"},
             )
-        data = _parse_tool_data(result)
+        envelope = _parse_tool_data(result)
+        assert envelope["stale"] is False
+        data = envelope["data"]
         assert data["found"] is False
         assert data["path"] == []
         assert data["hops"] == -1
@@ -699,10 +705,13 @@ class TestMCPGetConnectionPath:
 
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool(
                 "get_connection_path", {"source": "a.md", "target": "a.md"}
             )
-        data = _parse_tool_data(result)
+        envelope = _parse_tool_data(result)
+        assert envelope["stale"] is False
+        data = envelope["data"]
         assert data["found"] is True
         assert data["path"] == ["a.md"]
         assert data["hops"] == 0
@@ -721,3 +730,26 @@ class TestMCPGetConnectionPath:
                     "get_connection_path",
                     {"source": "nonexistent.md", "target": "a.md"},
                 )
+
+    async def test_get_connection_path_with_wait_for_drain(
+        self, _mcp_env_path: None
+    ) -> None:
+        """wait_for_drain=True blocks until writer drained, then returns envelope."""
+        from fastmcp import Client
+
+        from markdown_vault_mcp.server import make_server
+
+        server = make_server()
+        async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
+            result = await client.call_tool(
+                "get_connection_path",
+                {
+                    "source": "a.md",
+                    "target": "c.md",
+                    "wait_for_drain": True,
+                },
+            )
+        envelope = _parse_tool_data(result)
+        assert envelope["stale"] is False
+        assert envelope["data"]["found"] is True
