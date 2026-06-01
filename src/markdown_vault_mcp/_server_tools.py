@@ -34,11 +34,10 @@ from ._server_queryable import needs_queryable
 logger = logging.getLogger(__name__)
 
 
-# Drift-aware B3 reader timeout (#534). Bounds wait_for_drain=True calls
-# on the five B3 tools (get_backlinks, get_outlinks, get_similar,
-# get_context, get_connection_path). Default 60s matches the existing
-# BUILD_TIMEOUT_S precedent.
-_DRAIN_TIMEOUT_S = float(os.environ.get("MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S", "60"))
+def _resolve_drain_timeout() -> float:
+    """Read env var at call time so tests can monkeypatch.setenv it."""
+    return float(os.environ.get("MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S", "60"))
+
 
 _ALLOWED_FETCH_SCHEMES = frozenset({"http", "https"})
 
@@ -687,7 +686,9 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
             ValueError: If no document exists at the given path.
         """
         if wait_for_drain:
-            await asyncio.to_thread(collection.wait_for_drain, timeout=_DRAIN_TIMEOUT_S)
+            await asyncio.to_thread(
+                collection.wait_for_drain, timeout=_resolve_drain_timeout()
+            )
         results = await asyncio.to_thread(collection.get_backlinks, path)
         return {
             "stale": not collection.is_drained(),
@@ -751,7 +752,9 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
             ValueError: If no document exists at the given path.
         """
         if wait_for_drain:
-            await asyncio.to_thread(collection.wait_for_drain, timeout=_DRAIN_TIMEOUT_S)
+            await asyncio.to_thread(
+                collection.wait_for_drain, timeout=_resolve_drain_timeout()
+            )
         results = await asyncio.to_thread(collection.get_outlinks, path)
         return {
             "stale": not collection.is_drained(),
@@ -847,19 +850,19 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
             - data (list[dict]): Result dicts ranked by file similarity.
               Each entry contains:
 
-            - path (str): Relative path of the similar document.
-            - title (str): Document title.
-            - folder (str): Parent folder path.
-            - score (float): File-level cosine similarity (max of section
-              scores), 0.0-1.0; higher = more similar.
-            - search_type (str): Always "semantic".
-            - frontmatter (dict): Parsed YAML frontmatter.
-            - sections (list[dict]): Up to chunks_per_file best-matching
-              sections, each with:
+              - path (str): Relative path of the similar document.
+              - title (str): Document title.
+              - folder (str): Parent folder path.
+              - score (float): File-level cosine similarity (max of section
+                scores), 0.0-1.0; higher = more similar.
+              - search_type (str): Always "semantic".
+              - frontmatter (dict): Parsed YAML frontmatter.
+              - sections (list[dict]): Up to chunks_per_file best-matching
+                sections, each with:
 
-              - heading (str | None): Section heading or null for intro.
-              - content (str): Matched chunk text.
-              - score (float): Chunk-level score for this section.
+                - heading (str | None): Section heading or null for intro.
+                - content (str): Matched chunk text.
+                - score (float): Chunk-level score for this section.
 
         Useful for finding link candidates that aren't yet wikilinked — the
         vault's organic graph is almost always denser than its explicit one.
@@ -869,7 +872,9 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
             ValueError: If no document exists at the given path.
         """
         if wait_for_drain:
-            await asyncio.to_thread(collection.wait_for_drain, timeout=_DRAIN_TIMEOUT_S)
+            await asyncio.to_thread(
+                collection.wait_for_drain, timeout=_resolve_drain_timeout()
+            )
         results = await asyncio.to_thread(
             collection.get_similar,
             path,
@@ -971,49 +976,49 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
               at response time.
             - data (dict): The note context. Inner fields:
 
-            - path (str): Relative path of the document.
-            - title (str): Document title.
-            - folder (str): Parent folder path.
-            - frontmatter (dict): Parsed YAML frontmatter.
-            - modified_at (float): Unix timestamp of last modification.
-            - backlinks (list): Documents linking to this note. List of dicts,
-              each with:
-
-              - source_path (str): Path of the document containing the link.
-              - source_title (str): Title of the source document.
-              - link_text (str): The clickable text of the link.
-              - link_type (str): One of "markdown", "wikilink", or "reference".
-              - fragment (str | None): Heading anchor (e.g. "#section"), or null.
-              - raw_target (str): Literal link target as written in the source.
-
-            - outlinks (list): Links from this note. List of dicts, each with:
-
-              - target_path (str): Path of the linked document.
-              - link_text (str): The clickable text of the link.
-              - link_type (str): One of "markdown", "wikilink", or "reference".
-              - fragment (str | None): Heading anchor (e.g. "#section"), or null.
-              - raw_target (str): Literal link target as written in the source.
-              - exists (bool): True if the target document is indexed.
-
-            - similar (list): Semantically similar notes, field-collapsed by
-              file (chunks_per_file=1 for compact dossiers).  List of dicts,
-              each with:
-
-              - path (str): Relative path of the similar document.
+              - path (str): Relative path of the document.
               - title (str): Document title.
               - folder (str): Parent folder path.
-              - score (float): File-level cosine similarity 0.0-1.0 = score
-                of the best matching section.
-              - search_type (str): Always "semantic".
               - frontmatter (dict): Parsed YAML frontmatter.
-              - sections (list): Single best-matching section, each with
-                heading (str|null), content (str), score (float).
-                Call get_similar(path, chunks_per_file=N) for more sections.
+              - modified_at (float): Unix timestamp of last modification.
+              - backlinks (list): Documents linking to this note. List of dicts,
+                each with:
 
-            - folder_notes (list[str]): Paths of other notes in the same
-              folder (up to 20). Plain strings, not dicts.
-            - tags (dict[str, list[str]]): Indexed frontmatter field →
-              distinct values for this note.
+                - source_path (str): Path of the document containing the link.
+                - source_title (str): Title of the source document.
+                - link_text (str): The clickable text of the link.
+                - link_type (str): One of "markdown", "wikilink", or "reference".
+                - fragment (str | None): Heading anchor (e.g. "#section"), or null.
+                - raw_target (str): Literal link target as written in the source.
+
+              - outlinks (list): Links from this note. List of dicts, each with:
+
+                - target_path (str): Path of the linked document.
+                - link_text (str): The clickable text of the link.
+                - link_type (str): One of "markdown", "wikilink", or "reference".
+                - fragment (str | None): Heading anchor (e.g. "#section"), or null.
+                - raw_target (str): Literal link target as written in the source.
+                - exists (bool): True if the target document is indexed.
+
+              - similar (list): Semantically similar notes, field-collapsed by
+                file (chunks_per_file=1 for compact dossiers).  List of dicts,
+                each with:
+
+                - path (str): Relative path of the similar document.
+                - title (str): Document title.
+                - folder (str): Parent folder path.
+                - score (float): File-level cosine similarity 0.0-1.0 = score
+                  of the best matching section.
+                - search_type (str): Always "semantic".
+                - frontmatter (dict): Parsed YAML frontmatter.
+                - sections (list): Single best-matching section, each with
+                  heading (str|null), content (str), score (float).
+                  Call get_similar(path, chunks_per_file=N) for more sections.
+
+              - folder_notes (list[str]): Paths of other notes in the same
+                folder (up to 20). Plain strings, not dicts.
+              - tags (dict[str, list[str]]): Indexed frontmatter field →
+                distinct values for this note.
 
         The ``similar`` field in the response surfaces notes that may warrant
         explicit links to the context note but don't yet — a common input to
@@ -1023,7 +1028,9 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
             ValueError: If no document exists at the given path.
         """
         if wait_for_drain:
-            await asyncio.to_thread(collection.wait_for_drain, timeout=_DRAIN_TIMEOUT_S)
+            await asyncio.to_thread(
+                collection.wait_for_drain, timeout=_resolve_drain_timeout()
+            )
         result = await asyncio.to_thread(
             collection.get_context,
             path,
@@ -1142,14 +1149,16 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
               at response time.
             - data (dict): The connection-path result. Inner fields:
 
-            - `found` (bool): Whether a path was found within `max_depth` hops.
-            - `path` (list[str]): Ordered list of note paths from source to target,
-              or an empty list if not found.
-            - `hops` (int): Number of edges in the path (`len(path) - 1`), or -1 if
-              not found.
+              - `found` (bool): Whether a path was found within `max_depth` hops.
+              - `path` (list[str]): Ordered list of note paths from source to target,
+                or an empty list if not found.
+              - `hops` (int): Number of edges in the path (`len(path) - 1`), or -1 if
+                not found.
         """
         if wait_for_drain:
-            await asyncio.to_thread(collection.wait_for_drain, timeout=_DRAIN_TIMEOUT_S)
+            await asyncio.to_thread(
+                collection.wait_for_drain, timeout=_resolve_drain_timeout()
+            )
         result: list[str] | None = await asyncio.to_thread(
             collection.get_connection_path, source, target, max_depth
         )

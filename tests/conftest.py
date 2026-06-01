@@ -209,6 +209,7 @@ async def wait_for_mcp_writer_drain(client: object, timeout: float = 5.0) -> Non
             and status.get("queue_depth", 0) == 0
             and status.get("in_flight") is None
             and status.get("dirty_paths", 0) == 0
+            and status.get("dirty_embeddings", 0) == 0
         ):
             return
         await _asyncio.sleep(0.05)
