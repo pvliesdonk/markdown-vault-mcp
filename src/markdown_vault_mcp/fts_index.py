@@ -4,21 +4,97 @@ from __future__ import annotations
 
 import contextlib
 import datetime
+import functools
 import json
 import logging
 import sqlite3
 import threading
+import time
 import uuid
 from collections import deque
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from markdown_vault_mcp.types import FTSResult, ParsedNote
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Callable, Iterable
 
 logger = logging.getLogger(__name__)
+
+
+_T = TypeVar("_T")
+
+# Match the busy_timeout setting; SQLITE_LOCKED needs application-level retry
+# because sqlite3.OperationalError("...locked...") is error code 6 (LOCKED)
+# rather than 5 (BUSY), and Python's sqlite3 / SQLite C-level busy_handler
+# only handles BUSY. See https://www.sqlite.org/rescode.html#locked.
+_SQLITE_LOCKED_RETRY_TIMEOUT_S = 5.0
+_SQLITE_LOCKED_INITIAL_SLEEP_S = 0.01
+_SQLITE_LOCKED_MAX_SLEEP_S = 0.5
+
+
+def _retry_on_sqlite_locked(
+    operation: Callable[[], _T],
+    *,
+    timeout: float = _SQLITE_LOCKED_RETRY_TIMEOUT_S,
+) -> _T:
+    """Retry *operation* on transient SQLite "locked" errors.
+
+    Python's ``sqlite3.Connection``'s ``busy_timeout`` only retries on
+    ``SQLITE_BUSY`` (error code 5). FTS5 virtual-table internal locking
+    raises ``SQLITE_LOCKED`` (error code 6) which is never retried by the
+    SQLite C-level busy handler — see #560. This helper provides
+    application-level retry with exponential backoff so transient FTS5
+    locks (writer mid-upsert blocking a concurrent reader, or vice
+    versa) don't surface as user-visible failures.
+
+    Non-"locked" ``OperationalError``s propagate immediately.
+
+    Args:
+        operation: Callable to invoke. Re-invoked on each retry, so the
+            caller is responsible for any state reset (e.g. running
+            inside a fresh ``with conn:`` transaction that auto-rolls
+            back on exception).
+        timeout: Maximum total wall-clock retry budget in seconds.
+
+    Returns:
+        Whatever *operation* returns on success.
+
+    Raises:
+        sqlite3.OperationalError: If the operation continues to raise a
+            "locked" error past *timeout*, or if it raises an
+            ``OperationalError`` that does not mention "locked".
+    """
+    deadline = time.monotonic() + timeout
+    sleep = _SQLITE_LOCKED_INITIAL_SLEEP_S
+    while True:
+        try:
+            return operation()
+        except sqlite3.OperationalError as exc:
+            if "locked" not in str(exc).lower():
+                raise
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(min(sleep, _SQLITE_LOCKED_MAX_SLEEP_S))
+            sleep *= 2
+
+
+def _retry_on_locked(method: Callable[..., _T]) -> Callable[..., _T]:
+    """Method decorator: retry the method body on SQLITE_LOCKED.
+
+    Wraps the method so the entire body (including any ``with conn:``
+    transaction) is re-invoked on a locked error. This is safe because
+    Python's sqlite3 ``with conn:`` block rolls back the transaction on
+    exception before the wrapper sees it — the retry starts from a
+    clean state.
+    """
+
+    @functools.wraps(method)
+    def wrapper(self: object, *args: object, **kwargs: object) -> _T:
+        return _retry_on_sqlite_locked(lambda: method(self, *args, **kwargs))
+
+    return wrapper
 
 
 def _json_default(obj: Any) -> str:
@@ -697,6 +773,7 @@ class FTSIndex:
     # Public API
     # ------------------------------------------------------------------
 
+    @_retry_on_locked
     def build_from_notes(self, notes: Iterable[ParsedNote]) -> int:
         """Bulk-insert all notes, replacing any existing data.
 
@@ -732,6 +809,7 @@ class FTSIndex:
         logger.info("build_from_notes: indexed %d chunks total", total_chunks)
         return total_chunks
 
+    @_retry_on_locked
     def upsert_note(self, note: ParsedNote) -> int:
         """Insert or replace a single document in the index.
 
@@ -759,6 +837,7 @@ class FTSIndex:
         )
         return len(note.chunks)
 
+    @_retry_on_locked
     def delete_by_path(self, path: str) -> int:
         """Remove a document and all its data from the index.
 
@@ -780,6 +859,7 @@ class FTSIndex:
     # Build completeness sentinel (issue #525)
     # ------------------------------------------------------------------
 
+    @_retry_on_locked
     def is_build_completed(self) -> bool:
         """Return ``True`` iff a prior ``build_index`` run committed the
         completeness sentinel into the ``meta`` table.
@@ -796,6 +876,7 @@ class FTSIndex:
             ).fetchone()
         return row is not None
 
+    @_retry_on_locked
     def set_build_completed(self) -> None:
         """Mark the FTS index as the result of a clean full build."""
         conn = self._conn()
@@ -806,12 +887,14 @@ class FTSIndex:
                 (_META_BUILD_COMPLETED_KEY, ts),
             )
 
+    @_retry_on_locked
     def clear_build_completed(self) -> None:
         """Erase the completeness sentinel (before a destructive rebuild)."""
         conn = self._conn()
         with conn:
             conn.execute("DELETE FROM meta WHERE key = ?", (_META_BUILD_COMPLETED_KEY,))
 
+    @_retry_on_locked
     def search(
         self,
         query: str,
@@ -970,6 +1053,7 @@ class FTSIndex:
             )
         return results
 
+    @_retry_on_locked
     def get_note(self, path: str) -> dict | None:
         """Return document metadata for a single note.
 
@@ -995,6 +1079,7 @@ class FTSIndex:
             return None
         return dict(row)
 
+    @_retry_on_locked
     def list_notes(self, *, folder: str | None = None) -> list[dict]:
         """List all indexed documents, optionally filtered by folder.
 
@@ -1030,6 +1115,7 @@ class FTSIndex:
             )
         return [dict(row) for row in cur.fetchall()]
 
+    @_retry_on_locked
     def list_folders(self) -> list[str]:
         """Return all distinct folder values across the index.
 
@@ -1041,6 +1127,7 @@ class FTSIndex:
         )
         return [row[0] for row in cur.fetchall()]
 
+    @_retry_on_locked
     def list_field_values(self, field: str) -> list[str]:
         """Return all distinct tag values for a given frontmatter field.
 
@@ -1064,6 +1151,7 @@ class FTSIndex:
         )
         return [row[0] for row in cur.fetchall()]
 
+    @_retry_on_locked
     def count_chunks(self) -> int:
         """Return the total number of chunk rows in the ``sections`` table.
 
@@ -1072,6 +1160,7 @@ class FTSIndex:
         """
         return self._conn().execute("SELECT COUNT(*) FROM sections").fetchone()[0]
 
+    @_retry_on_locked
     def get_toc(self, path: str) -> list[dict[str, str | int]]:
         """Return headings for a document, ordered by position.
 
@@ -1102,6 +1191,7 @@ class FTSIndex:
             for row in cur.fetchall()
         ]
 
+    @_retry_on_locked
     def get_backlinks(self, path: str, *, limit: int | None = None) -> list[dict]:
         """Return all documents that link TO the given path.
 
@@ -1134,6 +1224,7 @@ class FTSIndex:
         )
         return [dict(row) for row in cur.fetchall()]
 
+    @_retry_on_locked
     def get_outlinks(self, path: str, *, limit: int | None = None) -> list[dict]:
         """Return all links FROM the given document.
 
@@ -1170,6 +1261,7 @@ class FTSIndex:
         )
         return [dict(row) for row in cur.fetchall()]
 
+    @_retry_on_locked
     def resolve_vault_wikilinks(self) -> int:
         """Resolve vault-wide wikilink ``target_path`` values against the document set.
 
@@ -1282,6 +1374,7 @@ class FTSIndex:
             logger.debug("resolve_vault_wikilinks: resolved %d wikilink(s)", updated)
         return updated
 
+    @_retry_on_locked
     def get_broken_links(self, *, folder: str | None = None) -> list[dict]:
         """Return all links whose target does not exist as an indexed document.
 
@@ -1320,6 +1413,7 @@ class FTSIndex:
         cur = self._conn().execute(sql, params)
         return [dict(row) for row in cur.fetchall()]
 
+    @_retry_on_locked
     def get_recent(self, *, limit: int = 20, folder: str | None = None) -> list[dict]:
         """Return the most recently modified documents.
 
@@ -1358,6 +1452,7 @@ class FTSIndex:
             )
         return [dict(row) for row in cur.fetchall()]
 
+    @_retry_on_locked
     def get_orphan_notes(self) -> list[dict]:
         """Return all documents with no inbound or outbound links.
 
@@ -1380,6 +1475,7 @@ class FTSIndex:
         )
         return [dict(row) for row in cur.fetchall()]
 
+    @_retry_on_locked
     def get_most_linked(self, limit: int = 10) -> list[dict]:
         """Return the documents with the most distinct source documents linking to them.
 
@@ -1406,6 +1502,7 @@ class FTSIndex:
         )
         return [dict(row) for row in cur.fetchall()]
 
+    @_retry_on_locked
     def get_connection_path(
         self, source_path: str, target_path: str, max_depth: int = 10
     ) -> list[str] | None:
@@ -1511,6 +1608,7 @@ class FTSIndex:
                 return 0
             raise
 
+    @_retry_on_locked
     def count_links(self) -> int:
         """Return the total number of link rows in the links table.
 
@@ -1519,6 +1617,7 @@ class FTSIndex:
         """
         return self._count_links_query("SELECT COUNT(*) FROM links")
 
+    @_retry_on_locked
     def count_broken_links(self) -> int:
         """Return the number of links whose target is not in the documents table.
 
@@ -1535,6 +1634,7 @@ class FTSIndex:
             """
         )
 
+    @_retry_on_locked
     def count_orphans(self) -> int:
         """Return the number of documents with no inbound or outbound links.
 
@@ -1550,6 +1650,7 @@ class FTSIndex:
             """
         )
 
+    @_retry_on_locked
     def get_chunk_count(self, path: str) -> int:
         """Return the chunk_count for a single document, defaulting to 1.
 
@@ -1567,6 +1668,7 @@ class FTSIndex:
         )
         return int(row["chunk_count"]) if row else 1
 
+    @_retry_on_locked
     def get_chunk_counts(self, paths: Iterable[str]) -> dict[str, int]:
         """Return a ``{path: chunk_count}`` map for the given paths.
 
@@ -1592,6 +1694,7 @@ class FTSIndex:
         )
         return {r["path"]: int(r["chunk_count"]) for r in rows}
 
+    @_retry_on_locked
     def get_section(self, path: str, heading: str) -> dict[str, Any] | None:
         """Return the first section row for (path, heading), or ``None``.
 
@@ -1654,6 +1757,7 @@ class FTSIndex:
                 }
         return None
 
+    @_retry_on_locked
     def list_section_headings(self, path: str, *, limit: int = 50) -> list[str]:
         """Return up to *limit* section headings for *path*, in document order.
 
