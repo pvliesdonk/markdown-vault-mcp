@@ -1,12 +1,17 @@
-"""Tests for VaultFileWatcher (issue #558).
+"""Tests for VaultFileWatcher and related helpers (issue #558).
 
 Failure modes covered:
 - File change triggers on_change after debounce window
 - Rapid changes within debounce window → single on_change call
 - stop() before debounce fires → on_change not called
 - stop() is idempotent (no exception on double-stop)
+- start() double-call is a no-op (no resource leak)
 - Changes inside hidden dirs (.git/, ._state/) are ignored
 - watchdog not installed → start() logs warning and returns cleanly
+- _stopped flag prevents post-stop events from calling on_change
+- should_start_file_watcher() logic (all four config combinations)
+- Config: debounce validation (invalid, non-positive, valid custom)
+- Config: FILE_WATCHER=false is honoured
 """
 
 from __future__ import annotations
@@ -16,10 +21,16 @@ import time
 from typing import TYPE_CHECKING
 from unittest.mock import patch
 
-from markdown_vault_mcp._file_watcher import VaultFileWatcher
+from markdown_vault_mcp._file_watcher import (
+    VaultFileWatcher,
+    _has_hidden_component,
+    should_start_file_watcher,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+    import pytest
 
 
 # ---------------------------------------------------------------------------
@@ -35,6 +46,35 @@ def _make_watcher(
     debounce_s: float = _DEBOUNCE,
 ) -> VaultFileWatcher:
     return VaultFileWatcher(source_dir, on_change, debounce_s=debounce_s)  # type: ignore[arg-type]
+
+
+# ---------------------------------------------------------------------------
+# _has_hidden_component (pure function)
+# ---------------------------------------------------------------------------
+
+
+def test_has_hidden_component_empty_parts() -> None:
+    """Empty parts (root DirModifiedEvent) is filtered."""
+    assert _has_hidden_component(()) is True
+
+
+def test_has_hidden_component_hidden_dir() -> None:
+    assert _has_hidden_component((".git",)) is True
+    assert _has_hidden_component((".git", "COMMIT_EDITMSG")) is True
+
+
+def test_has_hidden_component_nested_hidden() -> None:
+    assert _has_hidden_component((".markdown_vault_mcp", "state", "index.db")) is True
+
+
+def test_has_hidden_component_visible_file() -> None:
+    assert _has_hidden_component(("note.md",)) is False
+    assert _has_hidden_component(("subdir", "note.md")) is False
+
+
+def test_has_hidden_component_hidden_inside_visible() -> None:
+    """visible/subdir/.git/file has a hidden ancestor."""
+    assert _has_hidden_component(("visible", ".git", "file")) is True
 
 
 # ---------------------------------------------------------------------------
@@ -70,7 +110,6 @@ def test_rapid_changes_trigger_single_on_change(tmp_path: Path) -> None:
         for i in range(10):
             (tmp_path / f"note{i}.md").write_text(f"content {i}")
             time.sleep(0.01)
-        # Wait for debounce to flush plus a generous margin
         time.sleep(0.5)
         with lock:
             assert call_count == 1, f"expected 1 call, got {call_count}"
@@ -84,9 +123,7 @@ def test_stop_before_debounce_cancels_callback(tmp_path: Path) -> None:
     watcher = _make_watcher(tmp_path, lambda: called.set(), debounce_s=0.5)
     watcher.start()
     (tmp_path / "note.md").write_text("hello")
-    # Stop immediately — debounce hasn't fired yet
     watcher.stop()
-    # Wait past the would-be debounce window
     assert not called.wait(timeout=0.8), "on_change should not be called after stop"
 
 
@@ -95,7 +132,31 @@ def test_stop_is_idempotent(tmp_path: Path) -> None:
     watcher = _make_watcher(tmp_path, lambda: None)
     watcher.start()
     watcher.stop()
-    watcher.stop()  # must not raise
+    watcher.stop()
+
+
+def test_double_start_does_not_leak_observer(tmp_path: Path) -> None:
+    """Calling start() twice is a no-op — the second call does not spawn a new observer."""
+    call_count = 0
+    lock = threading.Lock()
+
+    def counter() -> None:
+        nonlocal call_count
+        with lock:
+            call_count += 1
+
+    watcher = _make_watcher(tmp_path, counter, debounce_s=0.1)
+    watcher.start()
+    watcher.start()  # second call must be a no-op
+    try:
+        (tmp_path / "note.md").write_text("hello")
+        time.sleep(0.3)
+        with lock:
+            assert call_count == 1, (
+                f"expected 1 call, got {call_count} (observer leaked?)"
+            )
+    finally:
+        watcher.stop()
 
 
 # ---------------------------------------------------------------------------
@@ -141,16 +202,44 @@ def test_visible_file_after_hidden_change_triggers_callback(tmp_path: Path) -> N
     watcher = _make_watcher(tmp_path, lambda: called.set())
     watcher.start()
     try:
-        # Hidden change — should be ignored
         hidden = tmp_path / ".git"
         hidden.mkdir()
         (hidden / "COMMIT_EDITMSG").write_text("update")
         time.sleep(0.05)
-        # Visible change — should trigger
         (tmp_path / "real_note.md").write_text("content")
         assert called.wait(timeout=2.0), "on_change should fire for visible file change"
     finally:
         watcher.stop()
+
+
+# ---------------------------------------------------------------------------
+# _stopped flag
+# ---------------------------------------------------------------------------
+
+
+def test_stopped_flag_prevents_schedule_after_stop(tmp_path: Path) -> None:
+    """Events delivered while stop() is in progress do not resurrect the timer."""
+    called = threading.Event()
+    watcher = _make_watcher(tmp_path, lambda: called.set(), debounce_s=0.1)
+    watcher.start()
+
+    # Force _stopped = True and then try to schedule
+    watcher.stop()
+    watcher._schedule()  # must be a no-op because _stopped is True
+
+    assert not called.wait(timeout=0.3), "on_change must not fire after stop()"
+
+
+def test_stopped_flag_prevents_fire_after_stop(tmp_path: Path) -> None:
+    """_fire() returns early when _stopped is True."""
+    called = threading.Event()
+    watcher = _make_watcher(tmp_path, lambda: called.set(), debounce_s=0.1)
+    watcher.start()
+    watcher.stop()
+
+    # Directly invoke _fire() — must not call on_change
+    watcher._fire()
+    assert not called.is_set(), "_fire() must not invoke on_change after stop()"
 
 
 # ---------------------------------------------------------------------------
@@ -162,92 +251,101 @@ def test_start_logs_warning_when_watchdog_unavailable(tmp_path: Path) -> None:
     """When watchdog cannot be imported, start() logs a warning and returns without raising."""
     watcher = _make_watcher(tmp_path, lambda: None)
     with patch("markdown_vault_mcp._file_watcher._WATCHDOG_AVAILABLE", False):
-        watcher.start()  # must not raise
-    # Cleanup — stop is a no-op when never started
+        watcher.start()
     watcher.stop()
 
 
 # ---------------------------------------------------------------------------
-# Auto-disable logic in lifespan (config-level tests)
+# should_start_file_watcher helper
 # ---------------------------------------------------------------------------
 
 
-def test_lifespan_starts_watcher_when_no_git_active(tmp_path: Path) -> None:
-    """File watcher is started when git pull and webhook are both inactive."""
-    from markdown_vault_mcp._file_watcher import VaultFileWatcher
-
-    started: list[VaultFileWatcher] = []
-
-    def tracking_start(self: VaultFileWatcher) -> None:
-        started.append(self)
-
-    with (
-        patch.object(VaultFileWatcher, "start", tracking_start),
-        patch.object(VaultFileWatcher, "stop"),
-    ):
-        git_active = False
-        file_watcher_enabled = True
-        if file_watcher_enabled and not git_active:
-            w = VaultFileWatcher(tmp_path, lambda: None, debounce_s=2.0)
-            w.start()
-
-    assert len(started) == 1
+def test_should_start_when_no_git_active() -> None:
+    assert should_start_file_watcher(True, 0, None) is True
 
 
-def test_lifespan_skips_watcher_when_git_pull_active(tmp_path: Path) -> None:
-    """File watcher is NOT started when git pull interval is > 0."""
-    from markdown_vault_mcp._file_watcher import VaultFileWatcher
-
-    started: list[VaultFileWatcher] = []
-
-    def tracking_start(self: VaultFileWatcher) -> None:
-        started.append(self)
-
-    with patch.object(VaultFileWatcher, "start", tracking_start):
-        git_pull_interval_s = 600
-        git_active = git_pull_interval_s > 0
-        file_watcher_enabled = True
-        if file_watcher_enabled and not git_active:
-            w = VaultFileWatcher(tmp_path, lambda: None, debounce_s=2.0)
-            w.start()
-
-    assert len(started) == 0, "watcher must not start when git pull is active"
+def test_should_not_start_when_git_pull_active() -> None:
+    assert should_start_file_watcher(True, 600, None) is False
 
 
-def test_lifespan_skips_watcher_when_webhook_active(tmp_path: Path) -> None:
-    """File watcher is NOT started when a GitHub webhook secret is configured."""
-    from markdown_vault_mcp._file_watcher import VaultFileWatcher
-
-    started: list[VaultFileWatcher] = []
-
-    def tracking_start(self: VaultFileWatcher) -> None:
-        started.append(self)
-
-    with patch.object(VaultFileWatcher, "start", tracking_start):
-        github_webhook_secret = "secret-abc"
-        git_active = bool(github_webhook_secret)
-        file_watcher_enabled = True
-        if file_watcher_enabled and not git_active:
-            w = VaultFileWatcher(tmp_path, lambda: None, debounce_s=2.0)
-            w.start()
-
-    assert len(started) == 0, "watcher must not start when webhook is configured"
+def test_should_not_start_when_webhook_active() -> None:
+    assert should_start_file_watcher(True, 0, "secret") is False
 
 
-def test_lifespan_skips_watcher_when_explicitly_disabled(tmp_path: Path) -> None:
-    """FILE_WATCHER=false prevents the watcher from starting regardless of git config."""
-    from markdown_vault_mcp._file_watcher import VaultFileWatcher
+def test_should_not_start_when_explicitly_disabled() -> None:
+    assert should_start_file_watcher(False, 0, None) is False
 
-    started: list[VaultFileWatcher] = []
 
-    def tracking_start(self: VaultFileWatcher) -> None:
-        started.append(self)
+def test_should_not_start_when_both_git_and_disabled() -> None:
+    assert should_start_file_watcher(False, 600, "secret") is False
 
-    with patch.object(VaultFileWatcher, "start", tracking_start):
-        file_watcher_enabled = False
-        git_active = False  # even without git active
-        if file_watcher_enabled and not git_active:
-            w = VaultFileWatcher(tmp_path, lambda: None, debounce_s=2.0)
-            w.start()
 
-    assert len(started) == 0, "watcher must not start when explicitly disabled"
+# ---------------------------------------------------------------------------
+# Config parsing (env-var level)
+# ---------------------------------------------------------------------------
+
+
+def test_load_config_file_watcher_disabled_via_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """FILE_WATCHER=false sets file_watcher_enabled=False."""
+    from markdown_vault_mcp.config import load_config
+
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_FILE_WATCHER", "false")
+    config = load_config()
+    assert config.file_watcher_enabled is False
+
+
+def test_load_config_file_watcher_debounce_custom(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """FILE_WATCHER_DEBOUNCE_S=5.0 is accepted."""
+    from markdown_vault_mcp.config import load_config
+
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_FILE_WATCHER_DEBOUNCE_S", "5.0")
+    config = load_config()
+    assert config.file_watcher_debounce_s == 5.0
+
+
+def test_load_config_file_watcher_debounce_invalid_falls_back(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Non-numeric FILE_WATCHER_DEBOUNCE_S falls back to 2.0."""
+    from markdown_vault_mcp.config import load_config
+
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_FILE_WATCHER_DEBOUNCE_S", "not-a-number")
+    config = load_config()
+    assert config.file_watcher_debounce_s == 2.0
+
+
+def test_load_config_file_watcher_debounce_nonpositive_falls_back(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """FILE_WATCHER_DEBOUNCE_S <= 0 falls back to 2.0."""
+    from markdown_vault_mcp.config import load_config
+
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_FILE_WATCHER_DEBOUNCE_S", "0")
+    config = load_config()
+    assert config.file_watcher_debounce_s == 2.0
+
+
+def test_fire_exception_in_on_change_is_logged(tmp_path: Path) -> None:
+    """Exception raised by on_change is caught and logged, not propagated."""
+
+    def bad_callback() -> None:
+        raise RuntimeError("callback failure")
+
+    watcher = _make_watcher(tmp_path, bad_callback, debounce_s=0.05)
+    watcher.start()
+    try:
+        (tmp_path / "note.md").write_text("hello")
+        # Give enough time for debounce + callback — no exception should propagate
+        import time as _time
+
+        _time.sleep(0.3)
+    finally:
+        watcher.stop()

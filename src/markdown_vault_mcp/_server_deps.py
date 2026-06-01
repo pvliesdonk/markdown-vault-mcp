@@ -120,13 +120,18 @@ def make_collection_lifespan(config: CollectionConfig) -> Any:
 
         # File watcher — only when git pull and webhook are both inactive so the
         # watcher and git checkout don't race to trigger reindex (#558).
-        git_active = config.git_pull_interval_s > 0 or bool(
-            config.github_webhook_secret
+        from markdown_vault_mcp._file_watcher import (
+            VaultFileWatcher,
+            should_start_file_watcher,
         )
+        from markdown_vault_mcp.exceptions import IndexUnavailableError
+
         file_watcher = None
-        if config.file_watcher_enabled and not git_active:
-            from markdown_vault_mcp._file_watcher import VaultFileWatcher
-            from markdown_vault_mcp.exceptions import IndexUnavailableError
+        if should_start_file_watcher(
+            config.file_watcher_enabled,
+            config.git_pull_interval_s,
+            config.github_webhook_secret,
+        ):
 
             def _on_file_change() -> None:
                 try:
@@ -145,7 +150,9 @@ def make_collection_lifespan(config: CollectionConfig) -> Any:
                 debounce_s=config.file_watcher_debounce_s,
             )
             file_watcher.start()
-        elif config.file_watcher_enabled and git_active:
+        elif not config.file_watcher_enabled:
+            logger.debug("file_watcher: disabled via FILE_WATCHER=false")
+        else:
             logger.info(
                 "file_watcher: disabled — git pull loop / webhook handles reindex cadence"
             )

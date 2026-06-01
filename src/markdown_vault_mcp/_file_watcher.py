@@ -15,11 +15,11 @@ from __future__ import annotations
 
 import logging
 import threading
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-    from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -32,22 +32,49 @@ except ImportError:
     _WATCHDOG_AVAILABLE = False
 
 
-def _has_hidden_component(path: str) -> bool:
-    """Return True when *path* should be ignored.
+def _has_hidden_component(parts: tuple[str, ...]) -> bool:
+    """Return True when *parts* should be ignored.
 
     Two cases:
-    - Any path component starts with a dot (hidden dirs like ``.git/``).
-    - Empty parts (``'.'``) meaning the watched root itself — ``DirModifiedEvent``
-      on source_dir fires for every file addition/deletion inside it, hidden or
-      not.  Filtering it out is safe because the concrete file events always
-      accompany it and carry the actual path information.
-    """
-    from pathlib import PurePosixPath
 
-    parts = PurePosixPath(path).parts
+    - Empty tuple: the ``DirModifiedEvent`` watchdog fires on ``source_dir``
+      itself whenever any child is added or deleted.  Filtering it here is
+      safe because the concrete file events (``FileCreatedEvent``, etc.) that
+      accompany it carry the actual path and will be evaluated separately.
+    - Any component starts with a dot: hidden directories such as ``.git/``
+      or ``.markdown_vault_mcp/``.
+
+    The argument is ``rel.parts`` from a platform-native ``Path`` object so
+    that both POSIX (``/``) and Windows (``\\``) separators are handled
+    correctly without an extra string-to-``PurePosixPath`` round-trip.
+    """
     if not parts:
         return True
     return any(part.startswith(".") for part in parts)
+
+
+def should_start_file_watcher(
+    file_watcher_enabled: bool,
+    git_pull_interval_s: int,
+    github_webhook_secret: str | None,
+) -> bool:
+    """Return True when the file watcher should be started.
+
+    The watcher is mutually exclusive with the git pull loop and GitHub
+    webhook: those mechanisms trigger reindex on their own cadence, and
+    running the file watcher alongside them would cause mid-checkout partial
+    scans when git modifies the working tree.
+
+    Args:
+        file_watcher_enabled: Value of ``FILE_WATCHER`` config field.
+        git_pull_interval_s: Value of ``GIT_PULL_INTERVAL_S`` config field.
+        github_webhook_secret: Value of ``GITHUB_WEBHOOK_SECRET`` config field.
+
+    Returns:
+        ``True`` when the watcher should be started.
+    """
+    git_active = git_pull_interval_s > 0 or bool(github_webhook_secret)
+    return file_watcher_enabled and not git_active
 
 
 class VaultFileWatcher:
@@ -57,6 +84,10 @@ class VaultFileWatcher:
     Changes inside hidden directories (e.g. ``.git/``, ``.markdown_vault_mcp/``)
     are silently ignored so git operations and state-file writes do not
     trigger spurious reindexes.
+
+    A ``_stopped`` flag prevents watchdog events delivered *during* ``stop()``
+    from resurrecting the debounce timer or invoking ``on_change`` after the
+    watcher has been stopped.
 
     Args:
         source_dir: Root directory to watch recursively.
@@ -77,10 +108,13 @@ class VaultFileWatcher:
         self._observer: Any = None
         self._timer: threading.Timer | None = None
         self._lock = threading.Lock()
+        self._stopped = False
 
     def _schedule(self) -> None:
-        """Reset the debounce timer."""
+        """Reset the debounce timer — no-op after stop()."""
         with self._lock:
+            if self._stopped:
+                return
             if self._timer is not None:
                 self._timer.cancel()
             self._timer = threading.Timer(self._debounce_s, self._fire)
@@ -89,6 +123,8 @@ class VaultFileWatcher:
 
     def _fire(self) -> None:
         with self._lock:
+            if self._stopped:
+                return
             self._timer = None
         try:
             self._on_change()
@@ -96,7 +132,12 @@ class VaultFileWatcher:
             logger.error("file_watcher: on_change callback raised", exc_info=True)
 
     def start(self) -> None:
-        """Start watching *source_dir*.  No-op when watchdog is not installed."""
+        """Start watching *source_dir*.
+
+        No-op when watchdog is not installed.  Safe to call on a stopped
+        watcher — resets the stopped flag and starts a fresh observer.
+        A no-op if the observer is already running (double-call guard).
+        """
         if not _WATCHDOG_AVAILABLE:
             logger.warning(
                 "file_watcher: watchdog not installed; external file changes "
@@ -105,11 +146,19 @@ class VaultFileWatcher:
             )
             return
 
+        with self._lock:
+            if self._observer is not None:
+                return  # already running
+            self._stopped = False
+
         handler = _VaultEventHandler(self._schedule, self._source_dir)
         observer = Observer()
         observer.schedule(handler, str(self._source_dir), recursive=True)
         observer.start()
-        self._observer = observer
+
+        with self._lock:
+            self._observer = observer
+
         logger.info(
             "file_watcher: watching source_dir=%s debounce_s=%s",
             self._source_dir,
@@ -119,18 +168,18 @@ class VaultFileWatcher:
     def stop(self) -> None:
         """Stop watching and cancel any pending debounce timer."""
         with self._lock:
+            self._stopped = True
             if self._timer is not None:
                 self._timer.cancel()
                 self._timer = None
+            observer, self._observer = self._observer, None
 
-        if self._observer is not None:
+        if observer is not None:
             try:
-                self._observer.stop()
-                self._observer.join(timeout=5.0)
+                observer.stop()
+                observer.join(timeout=5.0)
             except Exception:
                 logger.warning("file_watcher: error stopping observer", exc_info=True)
-            finally:
-                self._observer = None
 
 
 if _WATCHDOG_AVAILABLE:
@@ -146,10 +195,8 @@ if _WATCHDOG_AVAILABLE:
         def on_any_event(self, event: FileSystemEvent) -> None:
             path = getattr(event, "src_path", "") or ""
             try:
-                from pathlib import Path as _Path
-
-                rel = _Path(path).relative_to(self._source_dir)
-                if _has_hidden_component(str(rel)):
+                rel = Path(path).relative_to(self._source_dir)
+                if _has_hidden_component(rel.parts):
                     return
             except ValueError:
                 return

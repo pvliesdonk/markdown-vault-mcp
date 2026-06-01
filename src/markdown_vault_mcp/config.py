@@ -629,6 +629,12 @@ def load_config() -> CollectionConfig:
             file_watcher_debounce_s = 2.0
     else:
         file_watcher_debounce_s = 2.0
+    if file_watcher_debounce_s <= 0:
+        logger.warning(
+            "load_config: FILE_WATCHER_DEBOUNCE_S=%r must be > 0, using default 2.0",
+            file_watcher_debounce_s,
+        )
+        file_watcher_debounce_s = 2.0
     logger.debug("load_config: file_watcher_debounce_s=%s", file_watcher_debounce_s)
 
     raw_attachment_extensions = (_env("ATTACHMENT_EXTENSIONS") or "").strip()
