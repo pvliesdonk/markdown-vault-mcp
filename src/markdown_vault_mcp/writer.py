@@ -5,12 +5,11 @@ See `docs/superpowers/specs/2026-05-31-issue-559-single-writer-for-indexes-desig
 
 from __future__ import annotations
 
-import contextlib
 import logging
 import queue
 import threading
 from collections.abc import Callable, Iterable
-from concurrent.futures import CancelledError, Future
+from concurrent.futures import Future
 from dataclasses import dataclass
 from typing import Any, ClassVar, cast
 
@@ -106,11 +105,18 @@ class IndexWriter:
     def submit(self, job: Any) -> Future[Any]:
         """Submit a job for execution.
 
+        Follow-up submissions issued from inside the writer thread
+        itself (e.g. ``ProcessDirtyPaths`` submitting
+        ``FlushDirtyEmbeddings``) are accepted during shutdown drain so
+        the dirty sets can flush before the sentinel pops.  External
+        submissions after :meth:`close` raise.
+
         Raises:
-            RuntimeError: If :meth:`close` has been called.
+            RuntimeError: If :meth:`close` has been called from a thread
+                other than the writer's own worker thread.
         """
         with self._submit_lock:
-            if self._closed.is_set():
+            if self._closed.is_set() and threading.current_thread() is not self._thread:
                 msg = "IndexWriter is closed; cannot submit new jobs"
                 raise RuntimeError(msg)
             future: Future[Any] = Future()
@@ -118,35 +124,23 @@ class IndexWriter:
         return future
 
     def close(self, timeout: float = 30.0) -> None:
-        """Signal shutdown, cancel pending jobs, join the worker.
+        """Signal shutdown and drain the queue before joining the worker.
 
-        Pending queued jobs (those that haven't started running yet)
-        have their Futures resolved with
-        :class:`concurrent.futures.CancelledError`. The in-flight job
-        (if any) is allowed to complete normally. The worker thread is
-        daemon; if the in-flight job exceeds *timeout*, process exit
-        kills it.
+        Marks the writer closed so no new external submissions are
+        accepted, then posts the shutdown sentinel.  Jobs already in
+        the queue, and any follow-up jobs they submit from inside the
+        writer thread (e.g. ``ProcessDirtyPaths`` submitting
+        ``FlushDirtyEmbeddings``), drain through the worker's FIFO
+        before the sentinel terminates the loop.
+
+        The worker thread is daemon; if the drain exceeds *timeout*,
+        process exit kills the remainder.
         """
         with self._submit_lock:
             if self._closed.is_set():
                 return
             self._closed.set()
-            # Drain pending items under the lock so no new submission can
-            # race with the cancellation pass. The worker may still be
-            # processing the in-flight item; FIFO ordering means anything
-            # already in the queue has not yet been pulled by the worker.
-            while True:
-                try:
-                    item = self._queue.get_nowait()
-                except queue.Empty:
-                    break
-                if item is _SHUTDOWN_SENTINEL:
-                    continue
-                _, future = cast("tuple[Any, Future[Any]]", item)
-                if not future.cancel() and not future.done():
-                    future.set_exception(CancelledError())
-            self._queue.put(_SHUTDOWN_SENTINEL)
-        # Sentinel posted; join outside the lock.
+        self._queue.put(_SHUTDOWN_SENTINEL)
         if self._thread is not None:
             self._thread.join(timeout=timeout)
 
@@ -203,11 +197,25 @@ class IndexWriter:
         }
 
     def _run(self) -> None:
-        """Worker loop."""
+        """Worker loop.
+
+        Processes jobs FIFO until the shutdown sentinel pops AND the
+        queue is empty.  This lets runners (e.g. ``ProcessDirtyPaths``)
+        submit follow-up jobs even after :meth:`close` so the dirty
+        sets can flush before the worker exits.
+        """
+        sentinel_seen = False
         while True:
-            item = self._queue.get()
+            if sentinel_seen:
+                try:
+                    item = self._queue.get_nowait()
+                except queue.Empty:
+                    return
+            else:
+                item = self._queue.get()
             if item is _SHUTDOWN_SENTINEL:
-                return
+                sentinel_seen = True
+                continue
             job, future = cast("tuple[Any, Future[Any]]", item)
             if not future.set_running_or_notify_cancel():
                 continue
@@ -265,15 +273,12 @@ def run_process_dirty_paths(
     ctx.index_manager.process_dirty_paths(snapshot)
     # After FTS is up-to-date, queue the same paths for vector re-embedding.
     # This is what makes the inline `_flush_embeddings()` in semantic search
-    # (removed in this same task) unnecessary.
+    # (removed in this same task) unnecessary.  Follow-up submissions from
+    # inside the writer thread succeed even during shutdown drain so the
+    # vector-dirty set flushes before the worker exits.
     if snapshot:
         ctx.writer.mark_embedding_dirty(snapshot)
-    # If close() is racing this job, the follow-up submit will raise; the
-    # marked paths are picked up by Collection.close()'s post-writer-close
-    # drain via flush_dirty_embeddings(snapshot).
-    if not ctx.writer.is_closed():
-        with contextlib.suppress(RuntimeError):
-            ctx.writer.submit(FlushDirtyEmbeddings())
+        ctx.writer.submit(FlushDirtyEmbeddings())
 
 
 def run_flush_dirty_embeddings(

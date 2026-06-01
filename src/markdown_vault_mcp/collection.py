@@ -134,8 +134,11 @@ class Collection:
 
     **Thread safety (issue #519):** every public method on this class is safe
     to call from any thread, concurrently with other reads and writes from
-    any other thread. Writes serialise against each other via the internal
-    ``_write_lock`` (RLock). ``close()`` is safe from any thread; after
+    any other thread. Index mutations (FTS + vector index) are serialised
+    by the single-owner :class:`~markdown_vault_mcp.writer.IndexWriter`
+    thread (#559); file-mutation operations on disk are serialised via
+    ``_file_write_lock`` (RLock) so two MCP write tools racing on the
+    same path do not tear. ``close()`` is safe from any thread; after
     ``close()`` the collection must not be used. Cross-method atomicity
     (e.g. read-then-write without intervening concurrent write) is the
     caller's responsibility — pass ``if_match=`` to write methods for
@@ -266,10 +269,11 @@ class Collection:
         self._background_build_error: BaseException | None = None
         self._background_started: bool = False
 
-        # Serialise concurrent write operations on this instance.
-        # Re-entrant: periodic pull tick blocks writes, then reindex() acquires
-        # this lock again for its mutation phase.
-        self._write_lock = threading.RLock()
+        # Lock for file-mutation atomicity only (#559). The IndexWriter
+        # thread is the serialization point for index mutations; this lock
+        # serialises ONLY the read-modify-write of files in DocumentManager
+        # so two MCP write tools racing on the same path don't tear.
+        self._file_write_lock = threading.RLock()
 
         # Manager modules (dependency-injected, no back-reference).
         from markdown_vault_mcp.managers.document import DocumentManager
@@ -279,17 +283,17 @@ class Collection:
 
         # 1. LinkManager (no deps)
         self._link_mgr = LinkManager(fts=self._fts, source_dir=self._source_dir)
-        # 2. IndexManager (needs fts, tracker, write_lock — NOT search_mgr)
+        # 2. IndexManager (needs fts, tracker — NOT search_mgr)
         #    get_vectors/set_vectors use late-binding lambdas that capture
         #    self._search_mgr; they are only called at runtime after all
-        #    managers are constructed.
+        #    managers are constructed.  No write_lock — the IndexWriter
+        #    thread is the sole mutator of indices (#559).
         self._index_mgr = IndexManager(
             fts=self._fts,
             tracker=self._tracker,
             source_dir=self._source_dir,
             embeddings_path=self._embeddings_path,
             embedding_provider=self._embedding_provider,
-            write_lock=self._write_lock,
             chunk_strategy=self._chunk_strategy,
             exclude_patterns=self._exclude_patterns,
             required_frontmatter=self._required_frontmatter,
@@ -323,17 +327,16 @@ class Collection:
             exclude_patterns=self._exclude_patterns,
             attachment_extensions=self._attachment_extensions,
             link_manager=self._link_mgr,
-            flush_embeddings=self._index_mgr.flush_dirty_embeddings,
             rebuild_embeddings=lambda: self._index_mgr.build_embeddings(force=True),
             chunks_per_file=chunks_per_file,
             snippet_words=snippet_words,
             length_downweight_alpha=length_downweight_alpha,
         )
-        # 4. DocumentManager (needs index_mgr callbacks)
+        # 4. DocumentManager (mark_paths_dirty routes through the writer)
         self._doc_mgr = DocumentManager(
             fts=self._fts,
             source_dir=self._source_dir,
-            write_lock=self._write_lock,
+            write_lock=self._file_write_lock,
             chunk_strategy=self._chunk_strategy,
             read_only=self._read_only,
             exclude_patterns=self._exclude_patterns,
@@ -341,8 +344,6 @@ class Collection:
             max_attachment_size_mb=self._max_attachment_size_mb,
             max_note_read_bytes=self._max_note_read_bytes,
             on_write_callback=self._fire_write_callback,
-            on_vector_update=self._index_mgr.update_vector_index,
-            on_vector_dirty=self._index_mgr.mark_dirty,
             mark_paths_dirty=self._mark_paths_dirty_for_writer,
         )
 
@@ -359,12 +360,16 @@ class Collection:
 
     @contextlib.contextmanager
     def pause_writes(self) -> Iterator[None]:
-        """Block all write operations until the context exits.
+        """Block file-mutation write operations until the context exits.
 
-        Write operations are queued (blocked on the lock) rather than being
-        rejected. Reads and search remain unblocked at the Python level.
+        Holds the :attr:`_file_write_lock` so concurrent
+        :class:`DocumentManager` write/edit/delete/rename calls block on
+        the lock until the context exits. Index mutations on the
+        :class:`IndexWriter` thread continue unaffected — the writer
+        thread does not contend on this lock.  Reads and search remain
+        unblocked at the Python level.
         """
-        with self._write_lock:
+        with self._file_write_lock:
             yield
 
     def sync_from_remote_before_index(self) -> None:
@@ -415,23 +420,18 @@ class Collection:
         # 0a. Close the IndexWriter first so no further index mutations
         # can be submitted while we tear down downstream resources. The
         # hasattr guard handles the case where __init__ failed mid-way
-        # and _writer was never assigned (#559).  After close(), any
-        # paths marked vector-dirty by an in-flight ProcessDirtyPaths
-        # job were unable to submit a follow-up FlushDirtyEmbeddings;
-        # drain them here so the vectors are flushed before teardown.
+        # and _writer was never assigned (#559). The writer drains its
+        # own pending jobs cleanly before returning.
         if hasattr(self, "_writer") and self._writer is not None:
             self._writer.close(timeout=30.0)
-            leftover = self._writer.drain_dirty_embeddings()
-            if leftover:
-                self._index_mgr.flush_dirty_embeddings(leftover)
         # 0. Join background-build thread before any resource teardown.
-        # Read the thread reference under _write_lock (matches the lock
-        # held when start_background_build_index assigns it).
+        # Read the thread reference under _file_write_lock (matches the
+        # lock held when start_background_build_index assigns it).
         # join() must complete before _fts.close() (step 4) so the
         # worker isn't writing to a closed FTS. daemon=True keeps a
         # stuck thread from holding the process; cooperative
         # cancellation inside _index_mgr.build_index is a follow-up.
-        with self._write_lock:
+        with self._file_write_lock:
             thread = self._background_build_thread
         if thread is not None and thread.is_alive():
             thread.join(timeout=30.0)
@@ -441,8 +441,8 @@ class Collection:
                     "30s; abandoning (daemon thread does not block process)"
                 )
 
-        # 1. Flush any deferred embedding updates.
-        self._index_mgr.flush_dirty_embeddings()
+        # 1. Deferred embedding updates are flushed by the IndexWriter
+        # before its close() returns; no further flush needed here (#559).
 
         # 2. Drain the write-callback queue (git commits).
         if self._callback_worker is not None and self._callback_worker.is_alive():
@@ -529,7 +529,7 @@ class Collection:
             finally:
                 self._background_build_done.set()
 
-        with self._write_lock:
+        with self._file_write_lock:
             if self._background_started:
                 return
             self._background_started = True

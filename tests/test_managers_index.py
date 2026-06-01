@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import threading
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
 
@@ -65,17 +64,22 @@ def _make_index_mgr(
     """Build an IndexManager with default wiring.
 
     Returns (index_mgr, fts, vectors_holder) so tests can inspect state.
+
+    Note: ``write_lock`` kwarg is silently dropped if provided — the
+    IndexManager no longer takes a lock (the IndexWriter thread is the
+    sole mutator post #559).
     """
     fts = overrides.pop("fts", None) or FTSIndex(db_path=":memory:")
     tracker = overrides.pop("tracker", None) or ChangeTracker(
         state_dir / ".state" / "state.json"
     )
+    # Accept-and-discard write_lock for callers that still pass it.
+    overrides.pop("write_lock", None)
     vectors_holder: dict = {"vectors": None}
     defaults = {
         "fts": fts,
         "tracker": tracker,
         "source_dir": vault,
-        "write_lock": threading.RLock(),
         "chunk_strategy": HeadingChunker(),
         "get_vectors": lambda: vectors_holder["vectors"],
         "set_vectors": lambda v: vectors_holder.__setitem__("vectors", v),
@@ -303,8 +307,16 @@ class TestEmbeddingsStatus:
 
 
 class TestDeferredEmbeddings:
-    """Tests for deferred embedding methods."""
+    """Tests for deferred embedding methods.
 
+    All tests in this class exercise APIs removed in #559 Task 12 (the
+    IndexWriter now owns the dirty-set machinery).  They are kept as a
+    record of the removal and will be deleted in a follow-up PR.
+    """
+
+    @pytest.mark.skip(
+        reason="IndexManager dirty-set machinery removed in #559 (writer owns it)"
+    )
     def test_update_vector_index_noop_without_embeddings(self, index_mgr):
         """update_vector_index is a no-op when embeddings are not configured."""
         mgr, _, _ = index_mgr
@@ -319,6 +331,9 @@ class TestDeferredEmbeddings:
         mgr.update_vector_index(note)
         assert len(mgr._dirty_embeddings) == 0
 
+    @pytest.mark.skip(
+        reason="IndexManager dirty-set machinery removed in #559 (writer owns it)"
+    )
     def test_update_vector_index_adds_to_dirty(self, index_vault: Path, tmp_path: Path):
         """update_vector_index adds path to dirty set when embeddings configured."""
         from tests.conftest import MockEmbeddingProvider
@@ -343,6 +358,9 @@ class TestDeferredEmbeddings:
         mgr.cancel_flush_timer()
         assert "test.md" in mgr._dirty_embeddings
 
+    @pytest.mark.skip(
+        reason="IndexManager dirty-set machinery removed in #559 (writer owns it)"
+    )
     def test_mark_dirty(self, index_vault: Path, tmp_path: Path):
         """mark_dirty adds path to dirty set."""
         from tests.conftest import MockEmbeddingProvider
@@ -358,6 +376,9 @@ class TestDeferredEmbeddings:
         mgr.cancel_flush_timer()
         assert "some/path.md" in mgr._dirty_embeddings
 
+    @pytest.mark.skip(
+        reason="IndexManager dirty-set machinery removed in #559 (writer owns it)"
+    )
     def test_remove_from_dirty(self, index_vault: Path, tmp_path: Path):
         """remove_from_dirty removes path from dirty set."""
         from tests.conftest import MockEmbeddingProvider
@@ -373,17 +394,26 @@ class TestDeferredEmbeddings:
         mgr.remove_from_dirty("target.md")
         assert "target.md" not in mgr._dirty_embeddings
 
+    @pytest.mark.skip(
+        reason="IndexManager dirty-set machinery removed in #559 (writer owns it)"
+    )
     def test_remove_from_dirty_nonexistent(self, index_mgr):
         """remove_from_dirty is safe when path is not in set."""
         mgr, _, _ = index_mgr
         mgr.remove_from_dirty("nonexistent.md")
 
+    @pytest.mark.skip(
+        reason="IndexManager dirty-set machinery removed in #559 (writer owns it)"
+    )
     def test_flush_noop_when_nothing_dirty(self, index_mgr):
         """flush_dirty_embeddings is a no-op when nothing is dirty."""
         mgr, _, _ = index_mgr
         # Should not raise.
         mgr.flush_dirty_embeddings()
 
+    @pytest.mark.skip(
+        reason="IndexManager dirty-set machinery removed in #559 (writer owns it)"
+    )
     def test_flush_noop_without_provider(self, index_mgr):
         """flush_dirty_embeddings is a no-op without embedding provider."""
         mgr, _, _ = index_mgr
@@ -392,6 +422,9 @@ class TestDeferredEmbeddings:
         # Still in dirty set because provider check skips the flush.
         assert "something.md" in mgr._dirty_embeddings
 
+    @pytest.mark.skip(
+        reason="IndexManager dirty-set machinery removed in #559 (writer owns it)"
+    )
     def test_cancel_flush_timer(self, index_vault: Path, tmp_path: Path):
         """cancel_flush_timer cancels without flushing."""
         from tests.conftest import MockEmbeddingProvider
@@ -494,8 +527,7 @@ class TestFlushDirtyEmbeddingsWithSnapshot:
             embedding_provider=provider,
         )
         mgr.build_index()
-        mgr.cancel_flush_timer()  # avoid background timer
-        # Internal dirty set is empty; passing explicit snapshot works.
+        # Explicit snapshot drives the embedding.
         mgr.flush_dirty_embeddings({"alpha.md"})
         vectors = vectors_holder["vectors"]
         assert vectors is not None
@@ -513,11 +545,13 @@ class TestFlushDirtyEmbeddingsWithSnapshot:
             embedding_provider=provider,
         )
         mgr.build_index()
-        mgr.cancel_flush_timer()
         mgr.flush_dirty_embeddings(set())
         # No-op: nothing should change
         assert vectors_holder["vectors"] is None  # _load_vectors was not called
 
+    @pytest.mark.skip(
+        reason="IndexManager dirty-set machinery removed in #559 (writer owns it)"
+    )
     def test_legacy_none_path_still_works(self, index_vault, tmp_path):
         """Legacy callers passing no argument drain the internal dirty set."""
         from tests.conftest import MockEmbeddingProvider
@@ -580,3 +614,18 @@ def test_start_line_propagated_to_vector_metadata(tmp_path):
         f"fixture should produce multiple chunks; got starts={starts}.  "
         "If HeadingChunker.short_doc_lines changed, pad the fixture."
     )
+
+
+def test_index_manager_no_longer_schedules_timer():
+    """IndexManager no longer creates a threading.Timer on dirty mark (#559)."""
+    import inspect
+
+    from markdown_vault_mcp.managers.index import IndexManager
+
+    source = inspect.getsource(IndexManager)
+    assert "_schedule_embedding_flush" not in source
+    assert "_embedding_flush_timer" not in source
+    assert "update_vector_index" not in source
+    # mark_dirty / remove_from_dirty also gone
+    assert "def mark_dirty" not in source
+    assert "def remove_from_dirty" not in source

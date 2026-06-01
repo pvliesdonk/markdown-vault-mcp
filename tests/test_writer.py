@@ -119,16 +119,20 @@ def test_worker_survives_job_exception():
         writer.close(timeout=5)
 
 
-def test_close_cancels_pending_jobs():
+def test_close_drains_pending_jobs():
+    """Pending queued jobs run to completion before close() returns (#559)."""
     started = threading.Event()
     can_finish = threading.Event()
+    runs: list[str] = []
 
     def slow_runner(job, ctx):  # noqa: ARG001
         started.set()
         can_finish.wait(timeout=5)
+        runs.append("build_index")
         return None
 
     def fast_runner(job, ctx):  # noqa: ARG001
+        runs.append("reindex_all")
         return None
 
     writer = IndexWriter(
@@ -145,23 +149,19 @@ def test_close_cancels_pending_jobs():
     started.wait(timeout=5)
     # Slow job is in-flight; pending_future is queued.
 
-    from concurrent.futures import CancelledError
-
-    # Calling close() while slow is in-flight drains pending under
-    # _submit_lock. The drain cancels pending_future before the worker
-    # finishes the slow job, so pending_future resolves with
-    # CancelledError. Setting can_finish lets slow_runner return so
-    # close() can join.
+    # Calling close() while slow is in-flight enqueues the shutdown
+    # sentinel.  The worker drains FIFO: finishes slow, runs pending,
+    # then pops the sentinel and exits.  Setting can_finish lets
+    # slow_runner return so close() can join.
     close_thread = threading.Thread(target=writer.close, kwargs={"timeout": 5})
     close_thread.start()
-    # Give close() a brief moment to acquire the lock and drain.
     threading.Event().wait(0.05)
     can_finish.set()
     close_thread.join(timeout=5)
 
     slow_future.result(timeout=5)  # completes normally
-    with pytest.raises(CancelledError):
-        pending_future.result(timeout=5)
+    pending_future.result(timeout=5)  # also completes normally
+    assert runs == ["build_index", "reindex_all"]
 
 
 def test_mark_dirty_adds_paths():

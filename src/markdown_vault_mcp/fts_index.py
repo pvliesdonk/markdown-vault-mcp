@@ -198,8 +198,9 @@ class FTSIndex:
     ``sqlite3.Connection`` on first use via :meth:`_conn`; a side registry
     (``_all_conns``, guarded by ``_reg_lock``) holds strong refs so
     :meth:`close` can close every connection — including those opened by
-    threads that have since exited. Concurrent writers are serialised by
-    ``Collection._write_lock``, not by this class. After :meth:`close`,
+    threads that have since exited. Concurrent index mutations are
+    serialised by the single-owner :class:`IndexWriter` thread (#559),
+    not by this class. After :meth:`close`,
     every public method raises ``sqlite3.ProgrammingError``. See
     ``docs/design.md`` "Collection thread-safety contract" for the full
     contract.

@@ -434,12 +434,14 @@ class TestCallbacks:
     """Tests that callbacks are invoked during write operations."""
 
     def test_write_fires_callbacks(self, doc_vault: Path) -> None:
+        """write() fires on_write_callback and routes the path through
+        mark_paths_dirty so the IndexWriter can re-index it (#559)."""
         fts = FTSIndex(db_path=":memory:")
         for note in scan_directory(doc_vault):
             fts.upsert_note(note)
 
         write_calls: list[tuple] = []
-        vector_calls: list[str] = []
+        dirty_paths: list[str] = []
 
         mgr = DocumentManager(
             fts=fts,
@@ -448,19 +450,21 @@ class TestCallbacks:
             chunk_strategy=HeadingChunker(),
             read_only=False,
             on_write_callback=lambda p, _c, op: write_calls.append((p, op)),
-            on_vector_update=lambda note: vector_calls.append(note.path),
+            mark_paths_dirty=lambda paths: dirty_paths.extend(paths),
         )
         mgr.write("cb_test.md", "# Callback test\n")
         assert len(write_calls) == 1
         assert write_calls[0][1] == "write"
-        assert "cb_test.md" in vector_calls
+        assert "cb_test.md" in dirty_paths
 
     def test_delete_fires_dirty_callback(self, doc_vault: Path) -> None:
+        """delete() routes the removed path through mark_paths_dirty so the
+        IndexWriter can purge it (#559)."""
         fts = FTSIndex(db_path=":memory:")
         for note in scan_directory(doc_vault):
             fts.upsert_note(note)
 
-        dirty_calls: list[str] = []
+        dirty_paths: list[str] = []
         write_calls: list[str] = []
 
         mgr = DocumentManager(
@@ -470,10 +474,10 @@ class TestCallbacks:
             chunk_strategy=HeadingChunker(),
             read_only=False,
             on_write_callback=lambda _p, _c, op: write_calls.append(op),
-            on_vector_dirty=lambda path: dirty_calls.append(path),
+            mark_paths_dirty=lambda paths: dirty_paths.extend(paths),
         )
         mgr.delete("alpha.md")
-        assert "alpha.md" in dirty_calls
+        assert "alpha.md" in dirty_paths
         assert "delete" in write_calls
 
 
