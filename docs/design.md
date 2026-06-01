@@ -491,37 +491,77 @@ treats as complete on the next startup.
 
 ### Thread Safety
 
-`Collection` serialises all write operations with a `threading.Lock`. The lock
-is held for the duration of each write (disk write + FTS index update), then
-released **before** deferred operations are submitted.
+**Single-writer architecture (issue #559).** `Collection` owns exactly one
+worker thread — an :class:`~markdown_vault_mcp.writer.IndexWriter` — that
+serves every FTS and vector-index mutation through a FIFO job queue. The
+writer is constructed and `start()`ed in `Collection.__init__` and closed
+first inside `Collection.close()`, before any downstream resource teardown.
+No other thread mutates the FTS or vector index directly; submission is the
+only entry point. This replaces the legacy `_write_lock` + `threading.Timer`
+embedding flush from issue #175, which interleaved fine-grained locking and
+periodic timer callbacks in a way that proved hard to reason about under
+the #513 background-build and #519 per-thread-SQLite work.
 
-**Deferred operations** (issue #175): both embedding re-computation and the
-`on_write` callback (git commit) are deferred to background threads so write
-methods return immediately after the file write + FTS update (~5ms total
-instead of seconds). Specifically:
+The writer accepts five job kinds, each a frozen dataclass:
 
-- **Embedding updates**: modified document paths are added to a dirty set.
-  A background timer flushes the set every 30 seconds. The flush runs in
-  two phases to minimise lock hold time: (1) **outside** `_write_lock` —
-  parse each dirty document and call the embedding provider (slow, seconds
-  on CPU); (2) **inside** `_write_lock` — apply fast numpy mutations only
-  (`delete_by_path`, `VectorIndex.add_vectors` with pre-computed vectors,
-  `save`). The flush also runs synchronously before semantic/hybrid search
-  (to ensure consistent results) and on `close()` (to prevent data loss).
-- **`on_write` callback** (git commit): submitted to a background worker
-  thread via a queue. The `GitWriteStrategy._lock` preserves commit ordering.
-  The queue is drained on `close()`.
+| Job | Purpose |
+|-----|---------|
+| `BuildIndex(force)` | Full FTS index build (sync or background-spawned). |
+| `ReindexAll` | Incremental FTS reindex via the change tracker. |
+| `BuildEmbeddings(force)` | Full vector index build. |
+| `ProcessDirtyPaths` | Drain the FTS-dirty set, upsert FTS rows, then queue a `FlushDirtyEmbeddings` follow-up for the same paths. |
+| `FlushDirtyEmbeddings` | Drain the vector-dirty set, re-embed, and save. |
+
+Submission returns a `concurrent.futures.Future`; callers wait via
+`.result()` for synchronous semantics (e.g. library-level `build_index()`,
+`reindex()`, `build_embeddings()`) or fire-and-forget via the `*_async`
+counterparts (e.g. MCP-tool-level `reindex` and `build_embeddings`, both of
+which return `{"status": "queued"}` immediately and let the writer thread
+do the work). Follow-up submissions issued from inside the writer thread
+itself succeed even during shutdown drain, so `ProcessDirtyPaths` can
+chain into `FlushDirtyEmbeddings` and both flush before the sentinel
+terminates the worker loop.
+
+**Per-document write semantics.** `write()`, `edit()`, `delete()`,
+`rename()`, and `write_attachment()` perform the file mutation under a
+narrow `_file_write_lock` (a `threading.RLock` that serialises only the
+read-modify-write of disk content), then call
+`writer.mark_dirty([path])` and submit a `ProcessDirtyPaths` job before
+returning. The user-visible call returns as soon as the file is on disk;
+the FTS upsert and any vector re-embedding run asynchronously on the
+writer. The `on_write` callback (git commit) is submitted to a separate
+background worker queue as before — that queue is unrelated to the
+IndexWriter and is drained in `close()` step 2.
+
+**Embedding flush.** The legacy 30-second `threading.Timer` is gone.
+The writer's `FlushDirtyEmbeddings` job is the sole flush mechanism; it
+fires either as a `ProcessDirtyPaths` follow-up (covering all path-level
+write tools) or on direct submission. `IndexManager.flush_dirty_embeddings`
+takes a snapshot set as an argument (no lock contention with the writer's
+dirty-set ownership) and performs the slow embed step outside any
+file-mutation lock.
+
+**Status surface.** `Collection.get_index_status()` merges the writer's
+non-blocking snapshot (`queue_depth`, `in_flight`, `dirty_paths`,
+`dirty_embeddings`) into its response shape, so operators can observe
+exactly what the writer is doing without taking any lock.
 
 The contract is:
 
 - Concurrent reads are safe without locking.
-- Concurrent writes are serialised.
-- `reindex()` acquires the write lock for its mutation phase (FTS upserts,
-  vector updates, tracker save). The filesystem scan phase runs outside the
-  lock to minimise lock hold time.
+- Concurrent file-write tools on the same path are serialised by
+  `_file_write_lock`; the IndexWriter's FIFO queue serialises everything
+  else.
 - The `on_write` callback fires in a **background thread** — it must not
   itself call write methods on the same Collection instance (deadlock).
 - Callbacks must not raise; exceptions are logged and swallowed.
+- `close()` shuts the writer down first (with a 30 s drain timeout), then
+  joins the background-build thread, drains the write-callback queue,
+  closes the git strategy, and closes SQLite.
+
+See `docs/superpowers/specs/2026-05-31-issue-559-single-writer-for-indexes-design.md`
+for the full design rationale, including the cascade of #513 / #519
+prerequisites that motivated centralising mutations on a single writer.
 
 #### Collection thread-safety contract (issue #519)
 
@@ -577,8 +617,9 @@ Acceptance evidence: `tests/test_thread_safety.py` exercises per-thread
 identity, pragma application, pragmas-before-schema ordering, single
 schema run, close-closes-all, idempotent close, post-close rejection,
 close/open race safety, strong-ref retention across thread+gc, shared-cache
-`:memory:`, concurrent writers via `_write_lock`, and the PR #518 failure
-pattern (background `build_index(force=True)` interleaved with main-thread
+`:memory:`, concurrent file writers via `_file_write_lock` (#559) routed
+through the single-owner IndexWriter, and the PR #518 failure pattern
+(background `build_index(force=True)` interleaved with main-thread
 `read/search/write/edit`).
 
 #### Optimistic Concurrency (`if_match`)
@@ -586,7 +627,7 @@ pattern (background `build_index(force=True)` interleaved with main-thread
 All five write methods (`write()`, `edit()`, `delete()`, `rename()`,
 `write_attachment()`) accept an optional `if_match: str | None = None`
 parameter.  When provided, the method computes the SHA-256 hex digest of the
-current file **inside the write lock** and compares it to `if_match`.  If
+current file **inside `_file_write_lock`** and compares it to `if_match`.  If
 the digests differ, `ConcurrentModificationError` is raised and no mutation
 occurs.  Passing `if_match=None` (the default) skips the check and preserves
 pre-existing unconditional-write behavior.
@@ -618,10 +659,16 @@ resolved path escapes `source_dir`, it returns `None` instead of raising.
 
 `Collection.close()` must be called on shutdown to release resources:
 
-1. Flushes any deferred embedding updates (re-embeds dirty documents, saves `.npy`).
-2. Drains the background write-callback queue (waits for pending git commits).
-3. Closes the `GitWriteStrategy` (flushes and pushes pending commits).
-4. Closes the SQLite database connection.
+1. Closes the :class:`~markdown_vault_mcp.writer.IndexWriter` first (30 s
+   drain timeout). The writer drains any pending jobs — including the
+   final `ProcessDirtyPaths`/`FlushDirtyEmbeddings` chain — so deferred FTS
+   upserts and embedding flushes complete before downstream resources tear
+   down (#559).
+2. Joins the background-build thread (if `start_background_build_index()`
+   spawned one and it has not yet returned).
+3. Drains the background write-callback queue (waits for pending git commits).
+4. Closes the `GitWriteStrategy` (flushes and pushes pending commits).
+5. Closes the SQLite database connection.
 
 This ensures no work is lost on shutdown. The full lifecycle contract is:
 
@@ -1063,7 +1110,7 @@ operations to them. No manager holds a back-reference to Collection.
 |---------|---------------|-------------|
 | ``LinkManager`` | Backlinks, outlinks, broken links, orphans, hubs, connection paths | ``FTSIndex``, ``source_dir`` |
 | ``SearchManager`` | Keyword/semantic/hybrid search, list, folders, tags, recent, similar, context | ``FTSIndex``, ``source_dir``, embedding config, ``LinkManager`` |
-| ``IndexManager`` | build_index, reindex, build_embeddings, embedding flush | ``FTSIndex``, ``ChangeTracker``, ``source_dir``, write lock, chunk strategy |
+| ``IndexManager`` | build_index, reindex, build_embeddings, process_dirty_paths, flush_dirty_embeddings | ``FTSIndex``, ``ChangeTracker``, ``source_dir``, chunk strategy (no lock — driven by the single-owner :class:`~markdown_vault_mcp.writer.IndexWriter`, #559) |
 | ``DocumentManager`` | read, write, edit, delete, rename, attachments, TOC | ``FTSIndex``, ``source_dir``, write lock, callbacks |
 
 Each manager receives its dependencies as constructor arguments. This enables

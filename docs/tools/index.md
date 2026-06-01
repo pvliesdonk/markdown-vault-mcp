@@ -232,7 +232,7 @@ Incrementally update the full-text search index to reflect file changes made out
 
 If semantic search is already active (vector index loaded), this also re-embeds changed documents automatically.
 
-**Returns:** `{"added": 3, "modified": 1, "deleted": 0, "unchanged": 38}`
+**Returns:** `{"status": "queued"}`. The reindex runs asynchronously on the single-owner :class:`IndexWriter` thread (#559); poll `get_server_info` or `get_index_status` for completion. `get_index_status` exposes `queue_depth`, `in_flight`, `dirty_paths`, and `dirty_embeddings` so you can observe progress without blocking.
 
 ### `build_embeddings`
 
@@ -244,7 +244,7 @@ Build vector embeddings to enable semantic and hybrid search. This can be slow f
 |-----------|------|---------|-------------|
 | `force` | bool | `false` | When true, discards existing embeddings and rebuilds from scratch. Use only if the embedding model has changed |
 
-**Returns:** `{"chunks_embedded": 156}`
+**Returns:** `{"status": "queued"}`. The build runs asynchronously on the single-owner :class:`IndexWriter` thread (#559); poll `get_server_info` or `get_index_status` for completion.
 
 !!! note "When to use"
     Call `build_embeddings` once to enable semantic search for the first time. After that, `reindex` handles incremental re-embedding automatically.
