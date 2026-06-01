@@ -636,8 +636,31 @@ class IndexManager:
             self._embedding_flush_timer.daemon = True
             self._embedding_flush_timer.start()
 
-    def flush_dirty_embeddings(self) -> None:
-        """Re-embed all dirty documents and save the vector index once.
+    def process_dirty_paths(self, paths: set[str]) -> None:
+        """Re-parse each path and update FTS, skipping per-path failures (#559)."""
+        if not paths:
+            return
+        for path in paths:
+            abs_path = self._source_dir / path
+            try:
+                if abs_path.is_file() and path.endswith(".md"):
+                    note = parse_note(abs_path, self._source_dir, self._chunk_strategy)
+                    if self._required_frontmatter and not all(
+                        k in (note.frontmatter or {})
+                        for k in self._required_frontmatter
+                    ):
+                        self._fts.delete_by_path(path)
+                        continue
+                    self._fts.upsert_note(note)
+                    self._fts.resolve_vault_wikilinks()
+                else:
+                    self._fts.delete_by_path(path)
+            except (OSError, UnicodeDecodeError) as exc:
+                logger.warning("process_dirty_paths: skipping %s: %s", path, exc)
+                continue
+
+    def flush_dirty_embeddings(self, paths: set[str] | None = None) -> None:
+        """Re-embed dirty documents and save the vector index once.
 
         Called by the periodic timer, before semantic search, and on close.
         Thread-safe: the dirty-set swap is atomic under
@@ -650,19 +673,28 @@ class IndexManager:
            the (potentially slow) embedding provider.
         2. **Inside** ``_write_lock``: apply the fast numpy mutations
            (delete old rows, append pre-computed vectors, save).
+
+        Args:
+            paths: Explicit snapshot of paths to flush. When ``None``
+                (legacy form, removed in Task 12), drains the internal
+                ``_dirty_embeddings`` set instead.
         """
         if self._embeddings_path is None or self._embedding_provider is None:
             return
 
-        with self._embedding_flush_lock:
-            if self._embedding_flush_timer is not None:
-                self._embedding_flush_timer.cancel()
-                self._embedding_flush_timer = None
+        if paths is None:
+            # Legacy path: drain internal state (removed in Task 12).
+            with self._embedding_flush_lock:
+                if self._embedding_flush_timer is not None:
+                    self._embedding_flush_timer.cancel()
+                    self._embedding_flush_timer = None
+                if not self._dirty_embeddings:
+                    return
+                paths = self._dirty_embeddings.copy()
+                self._dirty_embeddings.clear()
 
-            if not self._dirty_embeddings:
-                return
-            paths = self._dirty_embeddings.copy()
-            self._dirty_embeddings.clear()
+        if not paths:
+            return
 
         # Phase 1: parse and embed OUTSIDE _write_lock.
         pre_embedded: list[

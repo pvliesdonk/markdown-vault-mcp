@@ -429,6 +429,114 @@ class TestIsPathExcluded:
 
 
 # ---------------------------------------------------------------------------
+# process_dirty_paths
+# ---------------------------------------------------------------------------
+
+
+class TestProcessDirtyPaths:
+    """Tests for IndexManager.process_dirty_paths() (#559)."""
+
+    def test_empty_set_is_noop(self, index_mgr):
+        mgr, fts, _ = index_mgr
+        mgr.build_index()
+        before = fts.list_notes()
+        mgr.process_dirty_paths(set())
+        assert fts.list_notes() == before
+
+    def test_upserts_modified_file(self, index_vault, tmp_path):
+        mgr, fts, _ = _make_index_mgr(index_vault, tmp_path)
+        mgr.build_index()
+        # Modify alpha.md on disk
+        (index_vault / "alpha.md").write_text(
+            "---\ntitle: AlphaModified\ntags:\n  - a\n  - b\n---\n# Alpha modified\n\nNew content.\n",
+            encoding="utf-8",
+        )
+        mgr.process_dirty_paths({"alpha.md"})
+        note = fts.get_note("alpha.md")
+        assert note is not None
+        # Title was changed via process_dirty_paths re-parse
+        assert note["title"] == "AlphaModified"
+
+    def test_deletes_missing_file(self, index_vault, tmp_path):
+        mgr, fts, _ = _make_index_mgr(index_vault, tmp_path)
+        mgr.build_index()
+        assert fts.get_note("beta.md") is not None
+        (index_vault / "beta.md").unlink()
+        mgr.process_dirty_paths({"beta.md"})
+        assert fts.get_note("beta.md") is None
+
+    def test_continues_after_per_path_failure(self, index_vault, tmp_path):
+        mgr, fts, _ = _make_index_mgr(index_vault, tmp_path)
+        mgr.build_index()
+        # alpha.md still exists; bogus.md doesn't — should not raise
+        mgr.process_dirty_paths({"alpha.md", "bogus.md"})
+        # alpha.md still indexed; bogus.md correctly absent
+        assert fts.get_note("alpha.md") is not None
+        assert fts.get_note("bogus.md") is None
+
+
+# ---------------------------------------------------------------------------
+# flush_dirty_embeddings with explicit snapshot
+# ---------------------------------------------------------------------------
+
+
+class TestFlushDirtyEmbeddingsWithSnapshot:
+    """Tests for the new explicit-snapshot path on flush_dirty_embeddings (#559)."""
+
+    def test_explicit_snapshot_embeds_paths(self, index_vault, tmp_path):
+        from tests.conftest import MockEmbeddingProvider
+
+        provider = MockEmbeddingProvider()
+        mgr, _, vectors_holder = _make_index_mgr(
+            index_vault,
+            tmp_path,
+            embeddings_path=tmp_path / "embeddings",
+            embedding_provider=provider,
+        )
+        mgr.build_index()
+        mgr.cancel_flush_timer()  # avoid background timer
+        # Internal dirty set is empty; passing explicit snapshot works.
+        mgr.flush_dirty_embeddings({"alpha.md"})
+        vectors = vectors_holder["vectors"]
+        assert vectors is not None
+        # Alpha's chunks now have vectors associated with them.
+        # (Not asserting count — depends on chunker config — but presence.)
+
+    def test_explicit_empty_set_is_noop(self, index_vault, tmp_path):
+        from tests.conftest import MockEmbeddingProvider
+
+        provider = MockEmbeddingProvider()
+        mgr, _, vectors_holder = _make_index_mgr(
+            index_vault,
+            tmp_path,
+            embeddings_path=tmp_path / "embeddings",
+            embedding_provider=provider,
+        )
+        mgr.build_index()
+        mgr.cancel_flush_timer()
+        mgr.flush_dirty_embeddings(set())
+        # No-op: nothing should change
+        assert vectors_holder["vectors"] is None  # _load_vectors was not called
+
+    def test_legacy_none_path_still_works(self, index_vault, tmp_path):
+        """Legacy callers passing no argument drain the internal dirty set."""
+        from tests.conftest import MockEmbeddingProvider
+
+        provider = MockEmbeddingProvider()
+        mgr, _, _ = _make_index_mgr(
+            index_vault,
+            tmp_path,
+            embeddings_path=tmp_path / "embeddings",
+            embedding_provider=provider,
+        )
+        mgr.build_index()
+        mgr.mark_dirty("alpha.md")
+        mgr.cancel_flush_timer()
+        mgr.flush_dirty_embeddings()  # legacy form
+        assert "alpha.md" not in mgr._dirty_embeddings
+
+
+# ---------------------------------------------------------------------------
 # start_line propagation into vector metadata (#469)
 # ---------------------------------------------------------------------------
 
