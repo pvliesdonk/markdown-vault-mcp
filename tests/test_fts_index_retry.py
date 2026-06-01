@@ -71,6 +71,38 @@ class TestRetryOnSqliteLocked:
         # Some retries happened (10ms initial sleep doubles to 20, 40, 80...).
         assert calls[0] >= 2
 
+    def test_does_not_overshoot_timeout(self) -> None:
+        """The retry loop must not sleep past the declared timeout.
+
+        With max_sleep=500ms, an earlier implementation could check the
+        deadline at e.g. 4.999s, then sleep the full 500ms, waking at
+        5.5s — busting a 5s timeout by half a second. Cap the sleep to
+        the remaining budget so the deadline is honoured.
+        """
+        calls = [0]
+
+        def op() -> None:
+            calls[0] += 1
+            raise sqlite3.OperationalError("database table is locked: documents")
+
+        # Use a tiny timeout so the test is fast but the overshoot
+        # window matters relative to it. With exponential backoff
+        # starting at 10ms, by the 5th retry sleep would be 160ms —
+        # well past a 50ms timeout if not capped.
+        start = time.monotonic()
+        with pytest.raises(sqlite3.OperationalError, match="locked"):
+            _retry_on_sqlite_locked(op, timeout=0.05)
+        elapsed = time.monotonic() - start
+        # Allow a small fudge for scheduler latency, but the overshoot
+        # without the cap was ~MAX_SLEEP_S (500ms). With the cap, the
+        # last sleep is at most `remaining`, so total elapsed should
+        # be within roughly 2x the timeout (the timeout itself plus
+        # the post-deadline check overhead).
+        assert elapsed < 0.15, (
+            f"retry overshot timeout: elapsed={elapsed:.3f}s, "
+            f"timeout=0.05s, calls={calls[0]}"
+        )
+
 
 class _FailingCursor:
     """Wrap a real sqlite3.Cursor, raising SQLITE_LOCKED once per matched SQL."""

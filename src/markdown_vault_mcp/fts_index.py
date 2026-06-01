@@ -74,9 +74,14 @@ def _retry_on_sqlite_locked(
         except sqlite3.OperationalError as exc:
             if "locked" not in str(exc).lower():
                 raise
-            if time.monotonic() >= deadline:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
                 raise
-            time.sleep(min(sleep, _SQLITE_LOCKED_MAX_SLEEP_S))
+            # Cap the sleep to the remaining budget so the contract
+            # "retry for at most *timeout* seconds" is honoured even
+            # near the deadline — without this, the final sleep could
+            # push us up to _SQLITE_LOCKED_MAX_SLEEP_S past *timeout*.
+            time.sleep(min(sleep, _SQLITE_LOCKED_MAX_SLEEP_S, remaining))
             sleep *= 2
 
 
