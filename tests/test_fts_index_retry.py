@@ -272,3 +272,46 @@ class TestFTSIndexMethodRetry:
             assert fts.get_note("b.md") is not None
         finally:
             fts.close()
+
+    def test_get_chunk_counts_retries_with_generator_input(self, tmp_path) -> None:
+        """get_chunk_counts must materialise the iterable before the retry
+        window so a one-shot generator survives a SQLITE_LOCKED retry (#560).
+
+        Same class of bug as build_from_notes: the @_retry_on_locked
+        decorator captures the original argument tuple and re-invokes
+        with the now-exhausted generator. The inner-function pattern
+        materialises the list once and closes over it.
+        """
+        from markdown_vault_mcp.scanner import HeadingChunker
+        from markdown_vault_mcp.scanner import parse_note as _parse
+
+        for path in ("a.md", "b.md"):
+            (tmp_path / path).write_text(
+                f"---\ntitle: {path}\n---\n# {path}\n\nbody\n", encoding="utf-8"
+            )
+
+        fts = FTSIndex(db_path=tmp_path / "fts.db")
+        try:
+            chunker = HeadingChunker()
+            fts.upsert_note(_parse(tmp_path / "a.md", tmp_path, chunker))
+            fts.upsert_note(_parse(tmp_path / "b.md", tmp_path, chunker))
+
+            def _gen():
+                yield "a.md"
+                yield "b.md"
+
+            call_state = {"failed": False}
+            real_conn_method = fts._conn
+
+            def wrapped_conn():  # type: ignore[no-untyped-def]
+                return _WrappedConnection(real_conn_method(), call_state, "SELECT")
+
+            with patch.object(fts, "_conn", wrapped_conn):
+                result = fts.get_chunk_counts(_gen())
+
+            assert call_state["failed"], "patched SELECT should have fired"
+            # If the generator had been exhausted on retry, result would
+            # be {} (paths_list==[] in inner method → early return).
+            assert set(result.keys()) == {"a.md", "b.md"}
+        finally:
+            fts.close()

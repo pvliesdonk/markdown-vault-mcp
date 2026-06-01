@@ -289,9 +289,18 @@ class TestUploadEndToEnd:
             assert read_data["path"] == "uploaded.md"
             assert read_data["content"] == payload.decode("utf-8")
 
-            # 6. Verify the upload is searchable — proves Collection.write
-            #    upserted the FTS index synchronously.  A regression that
-            #    drops ``self._fts.upsert_note(note)`` would fail this.
+            # 6. Verify the upload is searchable.  Collection.write is
+            #    async with respect to the FTS index (#559): the write
+            #    submits a ProcessDirtyPaths job to the IndexWriter and
+            #    returns before the FTS row lands.  Wait for the writer
+            #    to drain before asserting search visibility — otherwise
+            #    the test races the writer thread.  The SQLITE_LOCKED
+            #    retry (#560) does NOT cover this race: search succeeds
+            #    immediately with an empty result set when the row has
+            #    not yet been upserted, not with a lock error.
+            from tests.conftest import wait_for_mcp_writer_drain
+
+            await wait_for_mcp_writer_drain(client)
             search_result = await client.call_tool("search", {"query": "Uploaded"})
             search_data = json.loads(search_result.content[0].text)
             assert isinstance(search_data, list)

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import sqlite3
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -198,6 +199,13 @@ class IndexManager:
         for note in notes:
             try:
                 total_chunks += self._fts.upsert_note(note)
+            except sqlite3.OperationalError:
+                # Database-level failure (e.g. SQLITE_LOCKED retry budget
+                # exhausted via FTSIndex._retry_on_locked, #560). Don't
+                # silently demote to a per-note warning — propagate so
+                # the caller sees the build failed rather than getting a
+                # successful-looking IndexStats with everything missing.
+                raise
             except Exception:
                 errored += 1
                 logger.warning(

@@ -1689,11 +1689,17 @@ class FTSIndex:
         )
         return int(row["chunk_count"]) if row else 1
 
-    @_retry_on_locked
     def get_chunk_counts(self, paths: Iterable[str]) -> dict[str, int]:
         """Return a ``{path: chunk_count}`` map for the given paths.
 
         Missing paths are omitted; callers should default to ``1``.
+
+        Materialises *paths* into a list BEFORE the retry window opens.
+        ``@_retry_on_locked`` cannot be used directly here because the
+        decorator captures the original argument tuple — a one-shot
+        generator would be exhausted by the first attempt before the
+        inner ``list()`` call runs, causing the retry to silently return
+        ``{}`` instead of the correct map. Mirrors :meth:`build_from_notes`.
 
         Args:
             paths: Iterable of relative document paths to look up.
@@ -1702,14 +1708,22 @@ class FTSIndex:
             Dict mapping each found path to its ``chunk_count`` value.
         """
         paths_list = list(paths)
-        if not paths_list:
+
+        def _do() -> dict[str, int]:
+            return self._get_chunk_counts_inner(paths_list)
+
+        return _retry_on_sqlite_locked(_do)
+
+    def _get_chunk_counts_inner(self, paths: list[str]) -> dict[str, int]:
+        """Inner body of :meth:`get_chunk_counts`, safe to re-invoke on retry."""
+        if not paths:
             return {}
-        placeholders = ",".join("?" * len(paths_list))
+        placeholders = ",".join("?" * len(paths))
         rows = (
             self._conn()
             .execute(
                 f"SELECT path, chunk_count FROM documents WHERE path IN ({placeholders})",
-                paths_list,
+                paths,
             )
             .fetchall()
         )
