@@ -3991,3 +3991,53 @@ def test_collection_writer_is_started_after_construction(tmp_path):
         assert col._writer._thread.is_alive()
     finally:
         col.close()
+
+
+def test_collection_build_index_async_returns_future(tmp_path):
+    from concurrent.futures import Future
+
+    from markdown_vault_mcp.collection import Collection
+
+    col = Collection(source_dir=tmp_path, read_only=False)
+    try:
+        future = col.build_index_async()
+        assert isinstance(future, Future)
+        future.result(timeout=10)
+    finally:
+        col.close()
+
+
+def test_collection_reindex_async_returns_future(tmp_path):
+    from concurrent.futures import Future
+
+    from markdown_vault_mcp.collection import Collection
+
+    col = Collection(source_dir=tmp_path, read_only=False)
+    try:
+        col.build_index()  # required precondition
+        future = col.reindex_async()
+        assert isinstance(future, Future)
+        future.result(timeout=10)
+    finally:
+        col.close()
+
+
+def test_collection_build_embeddings_async_returns_future(tmp_path):
+    from concurrent.futures import Future
+
+    from markdown_vault_mcp.collection import Collection
+    from tests.conftest import MockEmbeddingProvider
+
+    col = Collection(
+        source_dir=tmp_path,
+        read_only=False,
+        embeddings_path=tmp_path / "vec",
+        embedding_provider=MockEmbeddingProvider(),
+    )
+    try:
+        col.build_index()
+        future = col.build_embeddings_async()
+        assert isinstance(future, Future)
+        future.result(timeout=10)
+    finally:
+        col.close()

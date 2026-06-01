@@ -59,6 +59,7 @@ from markdown_vault_mcp.writer import (
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+    from concurrent.futures import Future
     from pathlib import Path
 
     from markdown_vault_mcp.git import GitWriteStrategy
@@ -862,6 +863,43 @@ class Collection:
         """
         self._require_built()
         return self._writer.submit(BuildEmbeddings(force=force)).result()
+
+    def build_index_async(self, *, force: bool = False) -> Future[IndexStats]:
+        """Submit a full FTS index build and return the Future.
+
+        Caller may either ``.result()`` to wait or fire-and-forget.
+        Unlike :meth:`build_index`, this method does NOT preserve the
+        warm-restart short-circuit or state-management semantics —
+        it always submits a real job to the writer. The runner inside
+        the writer applies the same short-circuit logic via
+        :meth:`IndexManager.build_index`'s no-op fast path.
+
+        Args:
+            force: When ``True``, drop and rebuild the index unconditionally.
+
+        Returns:
+            ``concurrent.futures.Future`` carrying the
+            :class:`IndexStats` once the worker completes the job.
+        """
+        return self._writer.submit(BuildIndex(force=force))
+
+    def reindex_async(self) -> Future[ReindexResult]:
+        """Submit an incremental FTS reindex and return the Future.
+
+        Raises:
+            IndexUnavailableError: If :meth:`build_index` has not been called.
+        """
+        self._require_built()
+        return self._writer.submit(ReindexAll())
+
+    def build_embeddings_async(self, *, force: bool = False) -> Future[int]:
+        """Submit a vector index build and return the Future.
+
+        Raises:
+            IndexUnavailableError: If :meth:`build_index` has not been called.
+        """
+        self._require_built()
+        return self._writer.submit(BuildEmbeddings(force=force))
 
     def embeddings_status(self) -> dict:
         """Return status information about the vector index.
