@@ -1668,8 +1668,11 @@ class TestSimilarTool:
         """get_similar returns empty list when embeddings not configured."""
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool("get_similar", {"path": "simple.md"})
-        data = _parse_tool_data(result)
+        envelope = _parse_tool_data(result)
+        assert envelope["stale"] is False
+        data = envelope["data"]
         assert data == []
 
     @pytest.mark.usefixtures("_mcp_env")
@@ -1684,14 +1687,30 @@ class TestSimilarTool:
         """The `get_similar` MCP tool surfaces the chunks_per_file kwarg."""
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             # Without embeddings this returns []; the assertion is that the
             # call_tool schema accepts the chunks_per_file kwarg without raising.
             result = await client.call_tool(
                 "get_similar",
                 {"path": "simple.md", "limit": 5, "chunks_per_file": 1},
             )
-        data = _parse_tool_data(result)
+        envelope = _parse_tool_data(result)
+        assert envelope["stale"] is False
+        data = envelope["data"]
         assert isinstance(data, list)
+
+    @pytest.mark.usefixtures("_mcp_env")
+    async def test_get_similar_with_wait_for_drain(self) -> None:
+        server = make_server()
+        async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
+            result = await client.call_tool(
+                "get_similar",
+                {"path": "simple.md", "wait_for_drain": True},
+            )
+        envelope = _parse_tool_data(result)
+        assert envelope["stale"] is False
+        assert isinstance(envelope["data"], list)
 
 
 class TestRecentTool:

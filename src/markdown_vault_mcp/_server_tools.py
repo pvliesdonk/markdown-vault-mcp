@@ -813,8 +813,9 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
         path: str,
         limit: int = 10,
         chunks_per_file: int | None = None,
+        wait_for_drain: bool = False,
         collection: Collection = Depends(get_collection),
-    ) -> list[dict[str, Any]]:
+    ) -> dict[str, Any]:
         """Find notes most semantically similar to the given document.
 
         Uses stored embedding vectors — no re-embedding needed. The
@@ -830,9 +831,21 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
             limit: Maximum number of similar notes to return (default 10).
             chunks_per_file: Maximum sections returned per file (default 2).
                 Set to 1 for one best section per file.  Must be >= 1.
+            wait_for_drain: When True, block until the IndexWriter has
+                no pending or in-flight work before answering. Bounded
+                by MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S (default 60s).
+                On timeout, returns the result with `stale=True` rather
+                than raising — best-effort fresh read. Default False
+                returns immediately and reports staleness via the
+                envelope's `stale` field.
 
         Returns:
-            List of result dicts ranked by file similarity. Each contains:
+            Dict envelope with two keys:
+
+            - stale (bool): True when the IndexWriter had pending work
+              at response time.
+            - data (list[dict]): Result dicts ranked by file similarity.
+              Each entry contains:
 
             - path (str): Relative path of the similar document.
             - title (str): Document title.
@@ -855,13 +868,18 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
         Raises:
             ValueError: If no document exists at the given path.
         """
+        if wait_for_drain:
+            await asyncio.to_thread(collection.wait_for_drain, timeout=_DRAIN_TIMEOUT_S)
         results = await asyncio.to_thread(
             collection.get_similar,
             path,
             limit=limit,
             chunks_per_file=chunks_per_file,
         )
-        return [asdict(r) for r in results]
+        return {
+            "stale": not collection.is_drained(),
+            "data": [asdict(r) for r in results],
+        }
 
     # --- Recently modified ---
 
