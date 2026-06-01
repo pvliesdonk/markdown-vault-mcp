@@ -44,6 +44,18 @@ from markdown_vault_mcp.types import (
     WriteResult,
 )
 from markdown_vault_mcp.utils import effective_attachment_extensions
+from markdown_vault_mcp.writer import (
+    BuildEmbeddings,
+    BuildIndex,
+    IndexWriter,
+    ReindexAll,
+    WriterContext,
+    run_build_embeddings,
+    run_build_index,
+    run_flush_dirty_embeddings,
+    run_process_dirty_paths,
+    run_reindex_all,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -285,6 +297,20 @@ class Collection:
             get_vectors=lambda: self._search_mgr.vectors,
             set_vectors=lambda v: setattr(self._search_mgr, "vectors", v),
         )
+        # Single-owner writer thread for all index mutations (#559).
+        self._writer_ctx = WriterContext(index_manager=self._index_mgr)
+        self._writer = IndexWriter(
+            runners={
+                "build_index": run_build_index,
+                "reindex_all": run_reindex_all,
+                "build_embeddings": run_build_embeddings,
+                "process_dirty_paths": run_process_dirty_paths,
+                "flush_dirty_embeddings": run_flush_dirty_embeddings,
+            },
+            ctx=self._writer_ctx,
+        )
+        self._writer_ctx.writer = self._writer
+        self._writer.start()
         # 3. SearchManager (receives IndexManager callbacks via constructor)
         self._search_mgr = SearchManager(
             fts=self._fts,
@@ -383,6 +409,12 @@ class Collection:
         Flushes deferred embeddings and pending write callbacks, then
         closes the SQLite connection and git strategy.
         """
+        # 0a. Close the IndexWriter first so no further index mutations
+        # can be submitted while we tear down downstream resources. The
+        # hasattr guard handles the case where __init__ failed mid-way
+        # and _writer was never assigned (#559).
+        if hasattr(self, "_writer") and self._writer is not None:
+            self._writer.close(timeout=30.0)
         # 0. Join background-build thread before any resource teardown.
         # Read the thread reference under _write_lock (matches the lock
         # held when start_background_build_index assigns it).
@@ -790,7 +822,9 @@ class Collection:
         # process (rows without sentinel = partial — see issue #525).
         self._index_built = False
         self._fts.clear_build_completed()
-        result = self._index_mgr.build_index(force=force)
+        # Route the actual scan through the IndexWriter so all index
+        # mutations are serialised on the single writer thread (#559).
+        result = self._writer.submit(BuildIndex(force=force)).result()
         self._fts.set_build_completed()
         self._index_built = True
         # Recovery: clear any captured background error + signal queryable.
@@ -809,7 +843,7 @@ class Collection:
             IndexUnavailableError: If :meth:`build_index` has not been called.
         """
         self._require_built()
-        return self._index_mgr.reindex()
+        return self._writer.submit(ReindexAll()).result()
 
     def build_embeddings(self, *, force: bool = False) -> int:
         """Build the vector index from all chunks currently in the FTS index.
@@ -827,7 +861,7 @@ class Collection:
                 not configured.
         """
         self._require_built()
-        return self._index_mgr.build_embeddings(force=force)
+        return self._writer.submit(BuildEmbeddings(force=force)).result()
 
     def embeddings_status(self) -> dict:
         """Return status information about the vector index.

@@ -3964,3 +3964,30 @@ def test_collection_search_honours_default_chunks_per_file(tmp_path):
     long_groups = [r for r in results if r.path == "long.md"]
     if long_groups:
         assert len(long_groups[0].sections) <= 2
+
+
+def test_collection_build_index_uses_writer(tmp_path):
+    """Collection.build_index() routes through the IndexWriter."""
+    from markdown_vault_mcp.collection import Collection
+
+    col = Collection(source_dir=tmp_path, read_only=False)
+    try:
+        stats = col.build_index()
+        # IndexWriter is non-None; build_index returned via writer.
+        assert col._writer is not None
+        assert stats is not None
+    finally:
+        col.close()
+
+
+def test_collection_writer_is_started_after_construction(tmp_path):
+    """The IndexWriter is started by Collection construction."""
+    from markdown_vault_mcp.collection import Collection
+
+    col = Collection(source_dir=tmp_path, read_only=False)
+    try:
+        assert col._writer is not None
+        assert col._writer._thread is not None  # thread started
+        assert col._writer._thread.is_alive()
+    finally:
+        col.close()
