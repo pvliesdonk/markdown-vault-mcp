@@ -30,6 +30,18 @@ a cold-start background FTS build. Increase for very large vaults
 where the initial scan takes longer; decrease for tighter feedback
 on stuck builds.
 
+### `MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S`
+
+Default: `60` (seconds).
+
+Maximum time the B3 MCP tools (`get_backlinks`, `get_outlinks`,
+`get_similar`, `get_context`, `get_connection_path`) wait for the
+IndexWriter to drain when called with `wait_for_drain=true`. On
+timeout the tool returns the result with `stale=true` rather than
+raising — best-effort fresh read. Increase for very large vaults
+where reindex / build_embeddings jobs take longer; decrease for
+faster client feedback when the index has chronic backlog.
+
 <!-- DOMAIN-CONFIG-VARS-START -->
 ## Server Identity
 

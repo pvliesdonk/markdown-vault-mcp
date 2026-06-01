@@ -619,11 +619,15 @@ Find all documents that link to a given document.
 
 **Parameters:**
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `path` | string | Relative path to the target document |
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `path` | string | required | Relative path to the target document |
+| `wait_for_drain` | bool | `false` | When `true`, blocks until the IndexWriter has no pending or in-flight work before answering. Bounded by `MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S` (default 60s). On timeout, the tool returns the result with `stale=true` rather than raising. Default `false` returns immediately and reports staleness via the envelope's `stale` field. |
 
-**Returns:** List of documents containing links to the given path.
+**Returns:** Dict envelope with two keys:
+
+- `stale` (bool): True when the IndexWriter had pending or in-flight work at response time; the `data` payload may not reflect the latest committed state.
+- `data` (list[dict]): List of documents containing links to the given path. Each entry has `source_path`, `source_title`, `link_text`, `link_type`, `fragment`, and `raw_target` fields.
 
 ### `get_outlinks`
 
@@ -631,11 +635,15 @@ Find all links from a document, with existence check.
 
 **Parameters:**
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `path` | string | Relative path to the source document |
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `path` | string | required | Relative path to the source document |
+| `wait_for_drain` | bool | `false` | When `true`, blocks until the IndexWriter has no pending or in-flight work before answering. Bounded by `MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S` (default 60s). On timeout, the tool returns the result with `stale=true` rather than raising. Default `false` returns immediately and reports staleness via the envelope's `stale` field. |
 
-**Returns:** List of link targets with an `exists` field indicating whether the target document is in the vault.
+**Returns:** Dict envelope with two keys:
+
+- `stale` (bool): True when the IndexWriter had pending or in-flight work at response time; the `data` payload may not reflect the latest committed state.
+- `data` (list[dict]): List of link targets with an `exists` field indicating whether the target document is in the vault. Each entry has `target_path`, `link_text`, `link_type`, `fragment`, `raw_target`, and `exists` fields.
 
 ### `get_broken_links`
 
@@ -660,8 +668,12 @@ Find semantically similar notes by document path. Requires embeddings to be buil
 | `path` | string | required | Relative path to the document |
 | `limit` | int | `10` | Maximum files to return |
 | `chunks_per_file` | int | server default (`2`) | Maximum number of matching sections returned per file. Overrides `MARKDOWN_VAULT_MCP_CHUNKS_PER_FILE` for this call. `0` is rejected. |
+| `wait_for_drain` | bool | `false` | When `true`, blocks until the IndexWriter has no pending or in-flight work before answering. Bounded by `MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S` (default 60s). On timeout, the tool returns the result with `stale=true` rather than raising. Default `false` returns immediately and reports staleness via the envelope's `stale` field. |
 
-**Returns:** List of grouped similar-document dicts ranked by cosine similarity, one entry per file with up to `chunks_per_file` best-matching sections. Each entry contains: `path`, `title`, `folder`, `score` (max section score), `search_type` (`"semantic"`), `frontmatter`, and `sections` — a list of `{heading, content, score}` dicts sorted by score then document order.
+**Returns:** Dict envelope with two keys:
+
+- `stale` (bool): True when the IndexWriter had pending or in-flight work at response time; the `data` payload may not reflect the latest committed state.
+- `data` (list[dict]): List of grouped similar-document dicts ranked by cosine similarity, one entry per file with up to `chunks_per_file` best-matching sections. Each entry contains: `path`, `title`, `folder`, `score` (max section score), `search_type` (`"semantic"`), `frontmatter`, and `sections` — a list of `{heading, content, score}` dicts sorted by score then document order.
 
 !!! note "Grouped result shape"
     Returns one entry per file with up to `chunks_per_file` best-matching sections. Default is 2 sections per file; pass `chunks_per_file=1` for compact dossiers.
@@ -690,8 +702,12 @@ Get a consolidated context dossier for a note. Combines backlinks, outlinks, sim
 | `path` | string | required | Relative path to the document |
 | `similar_limit` | int | `5` | Max similar files to include. Pass `0` to skip the similarity lookup (e.g. when `stats` shows `semantic_search_available=false`) |
 | `link_limit` | int | `10` | Max backlinks and outlinks to include each |
+| `wait_for_drain` | bool | `false` | When `true`, blocks until the IndexWriter has no pending or in-flight work before answering. Bounded by `MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S` (default 60s). On timeout, the tool returns the result with `stale=true` rather than raising. Default `false` returns immediately and reports staleness via the envelope's `stale` field. |
 
-**Returns:** Object with `path`, `title`, `folder`, `frontmatter`, `modified_at`, `backlinks`, `outlinks`, `similar`, `folder_notes`, and `tags` fields. The `similar` list contains grouped result dicts — one entry per file with up to `chunks_per_file` best-matching sections (default 1 for `get_context` to keep dossiers compact).
+**Returns:** Dict envelope with two keys:
+
+- `stale` (bool): True when the IndexWriter had pending or in-flight work at response time; the `data` payload may not reflect the latest committed state.
+- `data` (dict): Object with `path`, `title`, `folder`, `frontmatter`, `modified_at`, `backlinks`, `outlinks`, `similar`, `folder_notes`, and `tags` fields. The `similar` list contains grouped result dicts — one entry per file with up to `chunks_per_file` best-matching sections (default 1 for `get_context` to keep dossiers compact).
 
 !!! note "Grouped similar shape"
     Each `similar` entry contains `path`, `title`, `folder`, `score`, `search_type`, `frontmatter`, and `sections` — a list of `{heading, content, score}` dicts. `get_context` defaults to one section per file for compact dossiers; `search` and `get_similar` default to 2.
@@ -725,8 +741,12 @@ Find the shortest path between two notes via BFS on the undirected link graph (m
 | `source` | string | required | Relative path to the starting document |
 | `target` | string | required | Relative path to the target document |
 | `max_depth` | int | `10` | Maximum hops to search (clamped to [1, 10]) |
+| `wait_for_drain` | bool | `false` | When `true`, blocks until the IndexWriter has no pending or in-flight work before answering. Bounded by `MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S` (default 60s). On timeout, the tool returns the result with `stale=true` rather than raising. Default `false` returns immediately and reports staleness via the envelope's `stale` field. |
 
-**Returns:** Object with `found` (bool), `path` (ordered list of note paths from source to target), and `hops` (number of edges, or `-1` if not found).
+**Returns:** Dict envelope with two keys:
+
+- `stale` (bool): True when the IndexWriter had pending or in-flight work at response time; the `data` payload may not reflect the latest committed state.
+- `data` (dict): Object with `found` (bool), `path` (ordered list of note paths from source to target), and `hops` (number of edges, or `-1` if not found).
 
 ### `get_history`
 

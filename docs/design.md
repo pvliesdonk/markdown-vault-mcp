@@ -563,6 +563,30 @@ See `docs/superpowers/specs/2026-05-31-issue-559-single-writer-for-indexes-desig
 for the full design rationale, including the cascade of #513 / #519
 prerequisites that motivated centralising mutations on a single writer.
 
+#### Drift signals on B3 readers (#534)
+
+B3 MCP tools (`get_backlinks`, `get_outlinks`, `get_similar`,
+`get_context`, `get_connection_path`) wrap their response in a
+`{"stale": bool, "data": ...}` envelope. `stale` is `true` when
+`Collection.is_drained()` returns `false` at the moment the
+response is constructed — i.e. the IndexWriter has pending or
+in-flight work and the `data` payload may not reflect the latest
+committed state.
+
+Each B3 tool accepts an optional `wait_for_drain: bool = false`
+parameter. When `true`, the tool blocks on `Collection.wait_for_drain()`
+(bounded by `MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S`, default 60s)
+before executing the query. On timeout, the tool returns the
+result with `stale=true` rather than raising — best-effort
+fresh-read semantics.
+
+The drift signal reflects writer-internal state only: paths in
+`dirty_paths`, paths in `dirty_embeddings`, the in-flight job
+kind, and the queue depth. **External file changes on disk** —
+files modified outside the MCP server with no `write` tool call
+and no git pull — are not covered by this signal; that drift mode
+is tracked separately in #558.
+
 #### Collection thread-safety contract (issue #519)
 
 Every public method on `Collection`, `FTSIndex`, and the managers is safe
