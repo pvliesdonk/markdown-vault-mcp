@@ -98,13 +98,13 @@ def make_webhook_handler(secret: str) -> Callable[[Request], Any]:
 
     - Verifies the ``X-Hub-Signature-256`` header (HMAC-SHA256, constant-time).
     - Returns 401 on invalid or absent signatures.
-    - Returns 200 + ``{"ok": true}`` for ``ping`` events (GitHub handshake).
-    - Returns 200 + ``{"ok": true}`` for non-``push`` events (ignored).
-    - On ``push`` events: calls ``Collection.force_pull()``, then
-      ``reindex()`` when HEAD actually moved.
-    - Returns 503 when the collection is not yet queryable (cold start)
-      so GitHub retries the delivery (~5 s, ~25 s, ~90 s delays) rather
-      than losing the push event until the next periodic pull tick.
+    - Returns 200 for ``ping`` events (GitHub handshake) and ignored events.
+    - On ``push`` events: calls ``Collection.force_pull()`` unconditionally
+      (it is a pure git operation with no FTS dependency), then reindexes when
+      HEAD moved and the collection is queryable.
+    - Returns 503 when the server has not yet initialised (singleton not set),
+      or when ``force_pull`` fails (``applied=False``), so GitHub retries the
+      delivery rather than permanently marking it as delivered.
 
     Args:
         secret: HMAC secret configured via
@@ -117,53 +117,87 @@ def make_webhook_handler(secret: str) -> Callable[[Request], Any]:
     async def handle(request: Request) -> JSONResponse:
         body = await request.body()
         sig = request.headers.get("X-Hub-Signature-256")
+        delivery_id = request.headers.get("X-GitHub-Delivery", "unknown")
 
         if not _verify_signature(body, secret, sig):
-            logger.warning("github_webhook: invalid or missing HMAC signature")
+            logger.warning(
+                "github_webhook: invalid or missing HMAC signature delivery_id=%s",
+                delivery_id,
+            )
             return JSONResponse({"error": "invalid signature"}, status_code=401)
 
         event = request.headers.get("X-GitHub-Event", "")
 
         if event == "ping":
-            logger.info("github_webhook: ping received")
+            logger.info("github_webhook: ping received delivery_id=%s", delivery_id)
             return JSONResponse({"ok": True, "message": "pong"})
 
         if event != "push":
-            logger.debug("github_webhook: event=%s ignored", event)
+            logger.debug(
+                "github_webhook: event=%s ignored delivery_id=%s", event, delivery_id
+            )
             return JSONResponse({"ok": True, "message": "event ignored"})
 
-        # push event — pull + conditional reindex
+        # push event — pull then conditional reindex.
         #
-        # Return 503 (not 200) when the collection isn't ready so GitHub
-        # retries the delivery.  GitHub's retry delays are ~5 s, ~25 s, ~90 s —
-        # well within any realistic cold-start window.  A 200 "deferred" would
-        # mark the delivery as acknowledged, meaning the commits would only be
-        # picked up by the next periodic pull tick (up to GIT_PULL_INTERVAL_S).
+        # force_pull() is a pure git operation (fetch + merge/rebase) with no
+        # FTS or vector-index dependency.  Run it regardless of is_queryable()
+        # so that cold-start deliveries are not permanently lost — blocking here
+        # would exhaust GitHub's retry budget (~5 s + ~25 s + ~90 s ≈ 2 min)
+        # before a large vault finishes its initial index build.
+        #
+        # Return 503 only when the Collection singleton itself hasn't been set
+        # yet (server lifespan not complete) or when the pull fails, so GitHub
+        # retries rather than treating the delivery as successfully handled.
         try:
             collection = get_collection_singleton()
         except RuntimeError:
-            logger.info("github_webhook: collection not initialised, returning 503")
+            logger.info(
+                "github_webhook: collection not initialised, returning 503 "
+                "delivery_id=%s",
+                delivery_id,
+            )
             return JSONResponse(
                 {"error": "collection not initialised"}, status_code=503
             )
 
-        if not collection.is_queryable():
-            logger.info("github_webhook: collection not queryable, returning 503")
-            return JSONResponse({"error": "collection not queryable"}, status_code=503)
-
         pull_result = await asyncio.to_thread(collection.force_pull)
 
         if pull_result is None:
-            logger.info("github_webhook: no git strategy configured")
+            logger.info(
+                "github_webhook: no git strategy configured delivery_id=%s",
+                delivery_id,
+            )
             return JSONResponse({"ok": True, "message": "no git strategy"})
 
-        if pull_result.applied and pull_result.from_sha != pull_result.to_sha:
-            await asyncio.to_thread(_reindex_after_pull, collection)
+        if not pull_result.applied:
+            # Transient failures (network, expired token) benefit from retry.
+            # Permanent failures (no_remote, conflict) exhaust the 3-attempt
+            # budget and fall back to the next periodic pull tick.
+            logger.warning(
+                "github_webhook: force_pull not applied reason=%s delivery_id=%s",
+                pull_result.reason,
+                delivery_id,
+            )
+            return JSONResponse(
+                {"error": "pull not applied", "reason": pull_result.reason},
+                status_code=503,
+            )
+
+        if pull_result.from_sha != pull_result.to_sha:
+            if collection.is_queryable():
+                await asyncio.to_thread(_reindex_after_pull, collection)
+            else:
+                logger.info(
+                    "github_webhook: pull applied but collection not queryable, "
+                    "skipping reindex delivery_id=%s",
+                    delivery_id,
+                )
 
         logger.info(
-            "github_webhook: push processed applied=%s commits_pulled=%s",
-            pull_result.applied,
+            "github_webhook: push processed commits_pulled=%s delivery_id=%s",
             pull_result.commits_pulled,
+            delivery_id,
         )
         return JSONResponse(
             {

@@ -6,10 +6,10 @@ Failure modes covered:
 - Non-push events → 200 no-op
 - push + HEAD advances → force_pull + reindex
 - push + already up-to-date → no reindex
-- push + force_pull applied=False → no reindex
-- push + collection not queryable → 200 deferred
-- push + collection singleton not initialized → 200 deferred
-- push + reindex raises → 200 (GitHub must not see 5xx or it retries)
+- push + force_pull applied=False → 503 retry (GitHub retries transient failures)
+- push + collection not queryable → 200, pull runs, reindex skipped
+- push + collection singleton not initialized → 503 retry
+- push + reindex raises → 200 (reindex failure is logged, not surfaced to GitHub)
 - push + no git strategy → 200 graceful no-op
 """
 
@@ -263,8 +263,8 @@ def test_webhook_push_skips_reindex_when_already_up_to_date():
     col.reindex.assert_not_called()
 
 
-def test_webhook_push_skips_reindex_when_pull_fails():
-    """force_pull applied=False means HEAD did not move — no reindex."""
+def test_webhook_push_returns_503_when_pull_fails():
+    """force_pull applied=False → 503 so GitHub retries transient failures."""
     col = _mock_collection(
         pull_result=_pull_result(from_sha="aaa", to_sha="aaa", applied=False)
     )
@@ -282,13 +282,17 @@ def test_webhook_push_skips_reindex_when_pull_fails():
                 "Content-Type": "application/json",
             },
         )
-    assert resp.status_code == 200
+    assert resp.status_code == 503
+    assert "error" in resp.json()
     col.reindex.assert_not_called()
 
 
-def test_webhook_push_returns_503_when_collection_not_queryable():
-    """Cold start — index still building; 503 so GitHub retries rather than losing the event."""
-    col = _mock_collection(queryable=False)
+def test_webhook_push_runs_pull_but_skips_reindex_when_not_queryable():
+    """Cold start — force_pull runs (pure git, no FTS dependency) but reindex is skipped."""
+    col = _mock_collection(
+        queryable=False,
+        pull_result=_pull_result(from_sha="aaa", to_sha="bbb"),
+    )
     client = _make_client()
     body = _push_body()
     with patch(
@@ -303,9 +307,10 @@ def test_webhook_push_returns_503_when_collection_not_queryable():
                 "Content-Type": "application/json",
             },
         )
-    assert resp.status_code == 503
-    assert "error" in resp.json()
-    col.force_pull.assert_not_called()
+    assert resp.status_code == 200
+    assert resp.json()["ok"] is True
+    col.force_pull.assert_called_once()
+    col.reindex.assert_not_called()
 
 
 def test_webhook_push_returns_503_when_singleton_not_initialized():
