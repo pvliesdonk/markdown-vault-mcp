@@ -44,6 +44,11 @@ async def _maybe_wait_for_drain(
 ) -> bool:
     """Wait for the writer to drain when requested. Log on timeout.
 
+    Polls :meth:`Collection.is_drained` directly with ``asyncio.sleep``
+    so concurrent waiters yield to the event loop instead of occupying
+    ``asyncio.to_thread`` slots for the full timeout (would starve the
+    default thread pool at moderate concurrency).
+
     Returns True when the writer was drained at the point of asking
     (or when no wait was requested), False when the bounded wait
     timed out. Callers OR the negation into the response envelope's
@@ -52,12 +57,20 @@ async def _maybe_wait_for_drain(
     if not wait_for_drain:
         return True
     timeout = _resolve_drain_timeout()
-    drained = await asyncio.to_thread(collection.wait_for_drain, timeout=timeout)
-    if not drained:
-        logger.warning(
-            "wait_for_drain_timeout tool=%s timeout_s=%s", tool_name, timeout
-        )
-    return drained
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    poll_interval = 0.05
+    while True:
+        if collection.is_drained():
+            return True
+        if loop.time() >= deadline:
+            logger.warning(
+                "wait_for_drain_timeout tool=%s timeout_s=%s",
+                tool_name,
+                timeout,
+            )
+            return False
+        await asyncio.sleep(poll_interval)
 
 
 _ALLOWED_FETCH_SCHEMES = frozenset({"http", "https"})

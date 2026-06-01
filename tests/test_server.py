@@ -3687,3 +3687,36 @@ class TestB3StaleSignal:
         envelope = _parse_tool_data(result)
         assert envelope["stale"] is True
         assert isinstance(envelope["data"], list)
+
+    @pytest.mark.usefixtures("_mcp_env_linked")
+    @pytest.mark.parametrize(
+        ("tool_name", "tool_args"),
+        [
+            ("get_backlinks", {"path": "notes/topic.md"}),
+            ("get_outlinks", {"path": "notes/topic.md"}),
+            ("get_similar", {"path": "notes/topic.md"}),
+            ("get_context", {"path": "notes/topic.md"}),
+            (
+                "get_connection_path",
+                {"source": "notes/topic.md", "target": "index.md"},
+            ),
+        ],
+    )
+    async def test_stale_true_uniform_across_b3_tools(
+        self, tool_name: str, tool_args: dict[str, str]
+    ) -> None:
+        """Each B3 tool independently ORs stale; catch copy-paste regressions."""
+        from markdown_vault_mcp._server_deps import get_collection_singleton
+
+        server = make_server()
+        async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
+            col = get_collection_singleton()
+            col._writer.mark_dirty(["sentinel.md"])
+            try:
+                result = await client.call_tool(tool_name, tool_args)
+            finally:
+                col._writer.drain_dirty_paths()
+        envelope = _parse_tool_data(result)
+        assert envelope["stale"] is True
+        assert "data" in envelope

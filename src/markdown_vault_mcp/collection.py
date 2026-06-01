@@ -11,6 +11,7 @@ import logging
 import queue
 import re
 import threading
+import time
 from concurrent.futures import Future
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -643,9 +644,10 @@ class Collection:
     def wait_for_drain(self, timeout: float | None = None) -> bool:
         """Block until :meth:`is_drained` returns True, or until *timeout*.
 
-        Polls writer state with a 50ms interval. Does not hold any lock
-        during the wait; the writer is free to process jobs while a
-        caller waits.
+        Polls writer state every 50ms. Does not hold any lock during the
+        wait; the writer is free to process jobs while a caller waits.
+        Because the deadline is only re-checked after each sleep, the
+        actual maximum wait is ``timeout + 0.05`` seconds.
 
         Args:
             timeout: Maximum seconds to wait. ``None`` blocks indefinitely;
@@ -656,8 +658,6 @@ class Collection:
             timeout. Does not raise on timeout — best-effort semantics
             so callers can fall through to a stale read.
         """
-        import time
-
         deadline = None if timeout is None else time.monotonic() + timeout
         poll_interval = 0.05
         while True:
