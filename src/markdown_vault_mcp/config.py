@@ -92,6 +92,14 @@ class CollectionConfig:
             ``"markdown-vault-mcp"``).
         git_commit_email: Git committer e-mail for auto-commits (default
             ``"noreply@markdown-vault-mcp"``).
+        git_commit_name_claim: OIDC claim key to use as the commit author name
+            (e.g. ``"name"``).  When set and the current request carries an
+            OIDC access token with this claim, the claim value overrides
+            *git_commit_name* for that commit.  ``None`` (default) disables
+            the override.
+        git_commit_email_claim: OIDC claim key to use as the commit author
+            e-mail (e.g. ``"email"``).  Same override semantics as
+            *git_commit_name_claim*.  ``None`` (default) disables the override.
         git_lfs: When ``True`` (default), run ``git lfs pull`` during git
             strategy initialisation so LFS pointers are resolved before reads.
         git_pull_interval_s: Interval in seconds for periodic git fetch +
@@ -180,6 +188,8 @@ class CollectionConfig:
     git_push_delay_s: float = 30.0
     git_commit_name: str = "markdown-vault-mcp"
     git_commit_email: str = "noreply@markdown-vault-mcp"
+    git_commit_name_claim: str | None = None
+    git_commit_email_claim: str | None = None
     git_lfs: bool = True
     git_pull_interval_s: int = 600
     attachment_extensions: list[str] | None = None
@@ -296,6 +306,8 @@ class CollectionConfig:
                 push_delay_s=self.git_push_delay_s,
                 commit_name=self.git_commit_name,
                 commit_email=self.git_commit_email,
+                commit_name_claim=self.git_commit_name_claim,
+                commit_email_claim=self.git_commit_email_claim,
                 git_lfs=self.git_lfs,
                 repo_path=self.source_dir,
             )
@@ -316,6 +328,8 @@ class CollectionConfig:
                 push_delay_s=self.git_push_delay_s,
                 commit_name=self.git_commit_name,
                 commit_email=self.git_commit_email,
+                commit_name_claim=self.git_commit_name_claim,
+                commit_email_claim=self.git_commit_email_claim,
                 git_lfs=self.git_lfs,
                 repo_path=self.source_dir,
             )
@@ -334,6 +348,8 @@ class CollectionConfig:
             push_delay_s=self.git_push_delay_s,
             commit_name=self.git_commit_name,
             commit_email=self.git_commit_email,
+            commit_name_claim=self.git_commit_name_claim,
+            commit_email_claim=self.git_commit_email_claim,
             git_lfs=self.git_lfs,
             repo_path=self.source_dir,
         )
@@ -377,6 +393,12 @@ def load_config() -> CollectionConfig:
       auto-commits; default ``markdown-vault-mcp``.
     - ``MARKDOWN_VAULT_MCP_GIT_COMMIT_EMAIL``: git committer email for
       auto-commits; default ``noreply@markdown-vault-mcp``.
+    - ``MARKDOWN_VAULT_MCP_GIT_COMMIT_NAME_CLAIM``: OIDC claim key whose value
+      overrides the commit author name when an OIDC access token is present
+      (e.g. ``name``).  Unset by default (static name used for all commits).
+    - ``MARKDOWN_VAULT_MCP_GIT_COMMIT_EMAIL_CLAIM``: OIDC claim key whose value
+      overrides the commit author e-mail when an OIDC access token is present
+      (e.g. ``email``).  Unset by default.
     - ``MARKDOWN_VAULT_MCP_GIT_LFS``: run ``git lfs pull`` during git strategy
       init to resolve LFS pointers; default ``true``.
     - ``MARKDOWN_VAULT_MCP_GIT_PULL_INTERVAL_S``: seconds between periodic
@@ -529,6 +551,14 @@ def load_config() -> CollectionConfig:
     raw_commit_email = (_env("GIT_COMMIT_EMAIL") or "").strip()
     git_commit_email: str = raw_commit_email or "noreply@markdown-vault-mcp"
     logger.debug("load_config: git_commit_email=%s", git_commit_email)
+
+    raw_commit_name_claim = (_env("GIT_COMMIT_NAME_CLAIM") or "").strip()
+    git_commit_name_claim: str | None = raw_commit_name_claim or None
+    logger.debug("load_config: git_commit_name_claim=%s", git_commit_name_claim)
+
+    raw_commit_email_claim = (_env("GIT_COMMIT_EMAIL_CLAIM") or "").strip()
+    git_commit_email_claim: str | None = raw_commit_email_claim or None
+    logger.debug("load_config: git_commit_email_claim=%s", git_commit_email_claim)
 
     raw_push_delay = (_env("GIT_PUSH_DELAY_S") or "").strip()
     if raw_push_delay:
@@ -836,6 +866,8 @@ def load_config() -> CollectionConfig:
         git_push_delay_s=git_push_delay_s,
         git_commit_name=git_commit_name,
         git_commit_email=git_commit_email,
+        git_commit_name_claim=git_commit_name_claim,
+        git_commit_email_claim=git_commit_email_claim,
         git_lfs=git_lfs,
         git_pull_interval_s=git_pull_interval_s,
         attachment_extensions=attachment_extensions,

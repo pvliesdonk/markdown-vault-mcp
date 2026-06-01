@@ -3222,3 +3222,275 @@ class TestCollectionGitHistoryMethods:
         out = col.get_diff("note.md", since_sha=oldest, per_commit=True, limit=500)
         assert isinstance(out, list)
         assert len(out) == 2
+
+
+class TestExtractClaim:
+    """Unit tests for _extract_claim — reads a named claim from the current access token."""
+
+    def test_returns_claim_value_when_token_has_claim(self) -> None:
+        """Returns the string claim value when the token carries it."""
+        from unittest.mock import MagicMock, patch
+
+        from markdown_vault_mcp.git import _extract_claim
+
+        token = MagicMock()
+        token.claims = {"name": "Alice"}
+        with patch("markdown_vault_mcp.git._get_access_token", return_value=token):
+            assert _extract_claim("name") == "Alice"
+
+    def test_returns_none_when_no_token(self) -> None:
+        """Returns None when get_access_token() returns None (no-auth / local mode)."""
+        from unittest.mock import patch
+
+        from markdown_vault_mcp.git import _extract_claim
+
+        with patch("markdown_vault_mcp.git._get_access_token", return_value=None):
+            assert _extract_claim("name") is None
+
+    def test_returns_none_when_claim_absent(self) -> None:
+        """Returns None when the named claim is not in the token."""
+        from unittest.mock import MagicMock, patch
+
+        from markdown_vault_mcp.git import _extract_claim
+
+        token = MagicMock()
+        token.claims = {"sub": "user123"}
+        with patch("markdown_vault_mcp.git._get_access_token", return_value=token):
+            assert _extract_claim("name") is None
+
+    def test_returns_none_when_claim_is_empty_string(self) -> None:
+        """Returns None when the claim value is an empty string."""
+        from unittest.mock import MagicMock, patch
+
+        from markdown_vault_mcp.git import _extract_claim
+
+        token = MagicMock()
+        token.claims = {"name": ""}
+        with patch("markdown_vault_mcp.git._get_access_token", return_value=token):
+            assert _extract_claim("name") is None
+
+    def test_returns_none_when_claim_is_not_string(self) -> None:
+        """Returns None when the claim value is not a string (e.g. boolean, int)."""
+        from unittest.mock import MagicMock, patch
+
+        from markdown_vault_mcp.git import _extract_claim
+
+        token = MagicMock()
+        token.claims = {"email_verified": True}
+        with patch("markdown_vault_mcp.git._get_access_token", return_value=token):
+            assert _extract_claim("email_verified") is None
+
+    def test_returns_none_when_claims_is_not_dict(self) -> None:
+        """Returns None when token.claims is not a dict."""
+        from unittest.mock import MagicMock, patch
+
+        from markdown_vault_mcp.git import _extract_claim
+
+        token = MagicMock()
+        token.claims = None
+        with patch("markdown_vault_mcp.git._get_access_token", return_value=token):
+            assert _extract_claim("name") is None
+
+    def test_returns_none_when_claim_key_is_none(self) -> None:
+        """Returns None immediately when claim_key is None (claim not configured)."""
+        from unittest.mock import MagicMock, patch
+
+        from markdown_vault_mcp.git import _extract_claim
+
+        token = MagicMock()
+        token.claims = {"name": "Alice"}
+        with patch("markdown_vault_mcp.git._get_access_token", return_value=token):
+            assert _extract_claim(None) is None
+
+
+class TestOidcClaimGitIdentity:
+    """Integration tests for OIDC claim-based git author attribution in GitWriteStrategy."""
+
+    def _get_commit_identity(self, repo: Path) -> tuple[str, str]:
+        """Return (author_name, author_email) of the most recent commit."""
+        name = subprocess.run(
+            ["git", "-C", str(repo), "log", "-1", "--format=%aN"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        email = subprocess.run(
+            ["git", "-C", str(repo), "log", "-1", "--format=%aE"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        return name, email
+
+    def test_name_claim_used_when_token_has_claim(self, git_repo: Path) -> None:
+        """When commit_name_claim is set and token has the claim, commit uses claim value."""
+        from unittest.mock import MagicMock, patch
+
+        strategy = GitWriteStrategy(
+            commit_name="bot",
+            commit_email="bot@example.com",
+            commit_name_claim="name",
+        )
+        test_file = git_repo / "note.md"
+        test_file.write_text("# Note\n")
+
+        token = MagicMock()
+        token.claims = {"name": "Alice Human"}
+        with patch("markdown_vault_mcp.git._get_access_token", return_value=token):
+            strategy(test_file, "# Note\n", "write")
+
+        name, email = self._get_commit_identity(git_repo)
+        assert name == "Alice Human"
+        assert email == "bot@example.com"
+
+    def test_email_claim_used_when_token_has_claim(self, git_repo: Path) -> None:
+        """When commit_email_claim is set and token has the claim, commit uses claim value."""
+        from unittest.mock import MagicMock, patch
+
+        strategy = GitWriteStrategy(
+            commit_name="bot",
+            commit_email="bot@example.com",
+            commit_email_claim="email",
+        )
+        test_file = git_repo / "note.md"
+        test_file.write_text("# Note\n")
+
+        token = MagicMock()
+        token.claims = {"email": "alice@humans.org"}
+        with patch("markdown_vault_mcp.git._get_access_token", return_value=token):
+            strategy(test_file, "# Note\n", "write")
+
+        name, email = self._get_commit_identity(git_repo)
+        assert name == "bot"
+        assert email == "alice@humans.org"
+
+    def test_both_claims_used_when_token_has_both(self, git_repo: Path) -> None:
+        """Both name and email come from claims when both are configured and present."""
+        from unittest.mock import MagicMock, patch
+
+        strategy = GitWriteStrategy(
+            commit_name="bot",
+            commit_email="bot@example.com",
+            commit_name_claim="name",
+            commit_email_claim="email",
+        )
+        test_file = git_repo / "note.md"
+        test_file.write_text("# Note\n")
+
+        token = MagicMock()
+        token.claims = {"name": "Alice Human", "email": "alice@humans.org"}
+        with patch("markdown_vault_mcp.git._get_access_token", return_value=token):
+            strategy(test_file, "# Note\n", "write")
+
+        name, email = self._get_commit_identity(git_repo)
+        assert name == "Alice Human"
+        assert email == "alice@humans.org"
+
+    def test_falls_back_to_configured_when_no_token(self, git_repo: Path) -> None:
+        """When no access token, configured name and email are used."""
+        from unittest.mock import patch
+
+        strategy = GitWriteStrategy(
+            commit_name="bot",
+            commit_email="bot@example.com",
+            commit_name_claim="name",
+            commit_email_claim="email",
+        )
+        test_file = git_repo / "note.md"
+        test_file.write_text("# Note\n")
+
+        with patch("markdown_vault_mcp.git._get_access_token", return_value=None):
+            strategy(test_file, "# Note\n", "write")
+
+        name, email = self._get_commit_identity(git_repo)
+        assert name == "bot"
+        assert email == "bot@example.com"
+
+    def test_falls_back_when_claim_absent_from_token(self, git_repo: Path) -> None:
+        """When the named claim is not in the token, configured value is used."""
+        from unittest.mock import MagicMock, patch
+
+        strategy = GitWriteStrategy(
+            commit_name="bot",
+            commit_email="bot@example.com",
+            commit_name_claim="name",
+        )
+        test_file = git_repo / "note.md"
+        test_file.write_text("# Note\n")
+
+        token = MagicMock()
+        token.claims = {"sub": "user123"}  # has sub but not name
+        with patch("markdown_vault_mcp.git._get_access_token", return_value=token):
+            strategy(test_file, "# Note\n", "write")
+
+        name, _email = self._get_commit_identity(git_repo)
+        assert name == "bot"
+
+    def test_no_claim_config_is_backward_compatible(self, git_repo: Path) -> None:
+        """Without claim config, strategy uses static name/email as before."""
+        strategy = GitWriteStrategy(
+            commit_name="my-bot",
+            commit_email="mybot@example.com",
+        )
+        test_file = git_repo / "note.md"
+        test_file.write_text("# Note\n")
+        strategy(test_file, "# Note\n", "write")
+
+        name, email = self._get_commit_identity(git_repo)
+        assert name == "my-bot"
+        assert email == "mybot@example.com"
+
+
+class TestGitClaimConfig:
+    """Tests for GIT_COMMIT_NAME_CLAIM and GIT_COMMIT_EMAIL_CLAIM config loading."""
+
+    def test_load_config_reads_name_claim(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """load_config() reads GIT_COMMIT_NAME_CLAIM from the environment."""
+        from markdown_vault_mcp.config import load_config
+
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_COMMIT_NAME_CLAIM", "name")
+        config = load_config()
+        assert config.git_commit_name_claim == "name"
+
+    def test_load_config_reads_email_claim(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """load_config() reads GIT_COMMIT_EMAIL_CLAIM from the environment."""
+        from markdown_vault_mcp.config import load_config
+
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_COMMIT_EMAIL_CLAIM", "email")
+        config = load_config()
+        assert config.git_commit_email_claim == "email"
+
+    def test_load_config_claim_defaults_to_none(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Claim env vars default to None when not set."""
+        from markdown_vault_mcp.config import load_config
+
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+        monkeypatch.delenv("MARKDOWN_VAULT_MCP_GIT_COMMIT_NAME_CLAIM", raising=False)
+        monkeypatch.delenv("MARKDOWN_VAULT_MCP_GIT_COMMIT_EMAIL_CLAIM", raising=False)
+        config = load_config()
+        assert config.git_commit_name_claim is None
+        assert config.git_commit_email_claim is None
+
+    def test_claim_config_passed_to_strategy(self, tmp_path: Path) -> None:
+        """CollectionConfig.to_collection_kwargs() passes claim keys to GitWriteStrategy."""
+        from markdown_vault_mcp.config import CollectionConfig
+
+        config = CollectionConfig(
+            source_dir=tmp_path,
+            read_only=False,
+            git_commit_name_claim="name",
+            git_commit_email_claim="email",
+        )
+        kwargs = config.to_collection_kwargs()
+        strategy = kwargs["on_write"]
+        assert isinstance(strategy, GitWriteStrategy)
+        assert strategy._commit_name_claim == "name"
+        assert strategy._commit_email_claim == "email"

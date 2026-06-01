@@ -254,6 +254,8 @@ Backward compatibility: `MARKDOWN_VAULT_MCP_GIT_TOKEN` without `GIT_REPO_URL` st
 | `MARKDOWN_VAULT_MCP_GIT_PUSH_DELAY_S` | `30` | Seconds of write-idle time before pushing; `0` = push only on shutdown |
 | `MARKDOWN_VAULT_MCP_GIT_COMMIT_NAME` | `markdown-vault-mcp` | Git committer name for auto-commits; **set this in Docker** where `git config user.name` is empty |
 | `MARKDOWN_VAULT_MCP_GIT_COMMIT_EMAIL` | `noreply@markdown-vault-mcp` | Git committer email for auto-commits |
+| `MARKDOWN_VAULT_MCP_GIT_COMMIT_NAME_CLAIM` | — | OIDC claim key to use as the commit author name (e.g. `name`); overrides `GIT_COMMIT_NAME` per-request when an OIDC token is present |
+| `MARKDOWN_VAULT_MCP_GIT_COMMIT_EMAIL_CLAIM` | — | OIDC claim key to use as the commit author e-mail (e.g. `email`); overrides `GIT_COMMIT_EMAIL` per-request when an OIDC token is present |
 | `MARKDOWN_VAULT_MCP_GIT_LFS` | `true` | Enable Git LFS — runs `git lfs pull` on startup to fetch LFS-tracked attachments (PDFs, images). Set to `false` for repos without LFS. |
 
 ### Attachments

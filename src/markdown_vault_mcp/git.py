@@ -24,6 +24,8 @@ import frontmatter
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+from fastmcp.server.dependencies import get_access_token as _get_access_token
+
 from markdown_vault_mcp.exceptions import ConfigurationError
 from markdown_vault_mcp.types import CommitDiff, HistoryEntry
 
@@ -259,6 +261,25 @@ class PushResult:
     hint: str | None = None
 
 
+def _extract_claim(claim_key: str | None) -> str | None:
+    """Return the string value of an OIDC claim from the current request token.
+
+    Returns ``None`` when *claim_key* is ``None``, no access token is present,
+    the key is absent from the token's claims, or the value is not a non-empty
+    string.
+    """
+    if claim_key is None:
+        return None
+    token = _get_access_token()
+    if token is None:
+        return None
+    claims = getattr(token, "claims", None)
+    if not isinstance(claims, dict):
+        return None
+    value = claims.get(claim_key)
+    return value if isinstance(value, str) and value else None
+
+
 class GitWriteStrategy:
     """Stateful git strategy: commit per write, deferred push.
 
@@ -324,6 +345,8 @@ class GitWriteStrategy:
         push_delay_s: float = 30.0,
         commit_name: str | None = None,
         commit_email: str | None = None,
+        commit_name_claim: str | None = None,
+        commit_email_claim: str | None = None,
         git_lfs: bool = True,
         repo_path: Path | None = None,
     ) -> None:
@@ -338,6 +361,8 @@ class GitWriteStrategy:
         self._push_delay_s = push_delay_s
         self._commit_name = commit_name or self.DEFAULT_COMMIT_NAME
         self._commit_email = commit_email or self.DEFAULT_COMMIT_EMAIL
+        self._commit_name_claim = commit_name_claim
+        self._commit_email_claim = commit_email_claim
         self._git_lfs = git_lfs
         # Retain the configured repo_path so methods invoked after construction
         # (e.g. force_pull / force_push) can reach the working tree without
@@ -571,13 +596,19 @@ class GitWriteStrategy:
             return
 
         try:
+            effective_name = (
+                _extract_claim(self._commit_name_claim) or self._commit_name
+            )
+            effective_email = (
+                _extract_claim(self._commit_email_claim) or self._commit_email
+            )
             with self._lock:
                 _stage_and_commit(
                     self._git_root,
                     path,
                     operation,
-                    commit_name=self._commit_name,
-                    commit_email=self._commit_email,
+                    commit_name=effective_name,
+                    commit_email=effective_email,
                 )
             if self._enable_push:
                 self._schedule_push()

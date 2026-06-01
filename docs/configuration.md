@@ -128,6 +128,8 @@ Backward compatibility: `GIT_TOKEN` without `GIT_REPO_URL` still works (legacy b
 | `MARKDOWN_VAULT_MCP_GIT_PUSH_DELAY_S`` | float | `30` | Seconds of write-idle time before pushing; `0` = push only on shutdown |
 | `MARKDOWN_VAULT_MCP_GIT_COMMIT_NAME` | string | `markdown-vault-mcp` | Git committer name for auto-commits; **set this in Docker** where `git config user.name` is empty |
 | `MARKDOWN_VAULT_MCP_GIT_COMMIT_EMAIL` | string | `noreply@markdown-vault-mcp` | Git committer email for auto-commits |
+| `MARKDOWN_VAULT_MCP_GIT_COMMIT_NAME_CLAIM` | string | — | OIDC claim key to use as the commit author name when a token is present (e.g. `name`); falls back to `GIT_COMMIT_NAME` when absent |
+| `MARKDOWN_VAULT_MCP_GIT_COMMIT_EMAIL_CLAIM` | string | — | OIDC claim key to use as the commit author e-mail when a token is present (e.g. `email`); falls back to `GIT_COMMIT_EMAIL` when absent |
 | `MARKDOWN_VAULT_MCP_GIT_LFS` | bool | `true` | Run `git lfs pull` on startup to resolve LFS pointers; set to `false` if git-lfs is not installed |
 
 !!! tip "Push delay"
