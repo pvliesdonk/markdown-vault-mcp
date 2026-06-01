@@ -255,6 +255,15 @@ def make_server(transport: str = "stdio") -> FastMCP:
         artifact_store = ArtifactStore(ttl_seconds=ARTIFACT_TTL_SECONDS)
         set_artifact_store(artifact_store)
         ArtifactStore.register_route(mcp, artifact_store)
+
+    # GitHub webhook endpoint — only when secret is configured and transport
+    # is HTTP/SSE (stdio has no HTTP server to receive POST requests).
+    if config.github_webhook_secret and transport != "stdio":
+        from markdown_vault_mcp._github_webhook import make_webhook_handler
+
+        mcp.custom_route("/github-webhook", methods=["POST"])(
+            make_webhook_handler(config.github_webhook_secret)
+        )
     # DOMAIN-WIRING-END
 
     # DOMAIN-FILE-EXCHANGE-START — file-exchange wiring sentinel.  Kept

@@ -49,7 +49,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
 
-    from markdown_vault_mcp.git import GitWriteStrategy
+    from markdown_vault_mcp.git import GitWriteStrategy, PullResult
     from markdown_vault_mcp.providers import EmbeddingProvider
     from markdown_vault_mcp.vector_index import VectorIndex
 
@@ -366,6 +366,20 @@ class Collection:
             pause_writes=self.pause_writes,
             on_pull=self.reindex,
         )
+
+    def force_pull(self) -> PullResult | None:
+        """Pull from the git remote synchronously.
+
+        Thin public facade over :meth:`GitWriteStrategy.force_pull` used by
+        the GitHub webhook handler so the strategy stays an implementation detail.
+
+        Returns:
+            :class:`~markdown_vault_mcp.git.PullResult` from the strategy, or
+            ``None`` when no git strategy is configured.
+        """
+        if self._git_strategy is None:
+            return None
+        return self._git_strategy.force_pull()
 
     def stop(self) -> None:
         """Stop background tasks (e.g. git pull loop) without closing the collection.

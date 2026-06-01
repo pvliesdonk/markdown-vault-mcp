@@ -221,6 +221,9 @@ class CollectionConfig:
     snippet_words: int = 200
     length_downweight_alpha: float = 0.25
     max_chunk_words: int = 400
+
+    # GitHub webhook (issue #530)
+    github_webhook_secret: str | None = None
     # CONFIG-FIELDS-END
 
     # Universal server fields delegated to fastmcp_pvl_core.ServerConfig.
@@ -568,6 +571,12 @@ def load_config() -> CollectionConfig:
         git_pull_interval_s = 0
     logger.debug("load_config: git_pull_interval_s=%s", git_pull_interval_s)
 
+    github_webhook_secret: str | None = _env("GITHUB_WEBHOOK_SECRET") or None
+    logger.debug(
+        "load_config: github_webhook_secret=%s",
+        "set" if github_webhook_secret else "unset",
+    )
+
     raw_attachment_extensions = (_env("ATTACHMENT_EXTENSIONS") or "").strip()
     attachment_extensions: list[str] | None
     if not raw_attachment_extensions:
@@ -869,6 +878,7 @@ def load_config() -> CollectionConfig:
         snippet_words=snippet_words,
         length_downweight_alpha=length_downweight_alpha,
         max_chunk_words=max_chunk_words,
+        github_webhook_secret=github_webhook_secret,
         # CONFIG-FROM-ENV-END
         server=ServerConfig.from_env(_ENV_PREFIX),
     )

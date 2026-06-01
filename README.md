@@ -255,6 +255,7 @@ Backward compatibility: `MARKDOWN_VAULT_MCP_GIT_TOKEN` without `GIT_REPO_URL` st
 | `MARKDOWN_VAULT_MCP_GIT_COMMIT_NAME` | `markdown-vault-mcp` | Git committer name for auto-commits; **set this in Docker** where `git config user.name` is empty |
 | `MARKDOWN_VAULT_MCP_GIT_COMMIT_EMAIL` | `noreply@markdown-vault-mcp` | Git committer email for auto-commits |
 | `MARKDOWN_VAULT_MCP_GIT_LFS` | `true` | Enable Git LFS — runs `git lfs pull` on startup to fetch LFS-tracked attachments (PDFs, images). Set to `false` for repos without LFS. |
+| `MARKDOWN_VAULT_MCP_GITHUB_WEBHOOK_SECRET` | — | Shared secret for GitHub push-event webhook; when set, mounts `POST /github-webhook` on HTTP/SSE transports to trigger immediate pull + reindex on push events |
 
 ### Attachments
 

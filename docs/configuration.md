@@ -136,6 +136,25 @@ Backward compatibility: `GIT_TOKEN` without `GIT_REPO_URL` still works (legacy b
 !!! warning "HTTPS remotes only with token auth"
     When `GIT_TOKEN` is used, SSH remotes are rejected. Use an HTTPS URL for `origin` or `GIT_REPO_URL`.
 
+### GitHub Webhook (push-triggered pull)
+
+In multi-author deployments, the periodic pull loop introduces up to `GIT_PULL_INTERVAL_S` seconds of staleness. Setting a webhook secret enables a `POST /github-webhook` endpoint that triggers an immediate `force_pull` + reindex when GitHub delivers a `push` event, reducing the staleness window to webhook delivery latency (~2 s).
+
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `MARKDOWN_VAULT_MCP_GITHUB_WEBHOOK_SECRET` | string | — | Shared secret for GitHub HMAC-SHA256 signature verification; when unset the endpoint is not mounted |
+
+The endpoint is only available on HTTP/SSE transports. To set up:
+
+1. Set `MARKDOWN_VAULT_MCP_GITHUB_WEBHOOK_SECRET` to a random secret (e.g. `openssl rand -hex 32`).
+2. In your GitHub repository, add a webhook pointing at `https://<your-host>/github-webhook` with content type `application/json` and the same secret.
+3. Select the `push` event (other events are acknowledged with 200 and ignored).
+
+The periodic pull loop (`GIT_PULL_INTERVAL_S`) remains active as a belt-and-suspenders fallback for missed webhook deliveries.
+
+!!! note "File watcher interaction"
+    The GitHub webhook is mutually exclusive with the file watcher (`FILE_WATCHER`). When `GITHUB_WEBHOOK_SECRET` is set, the file watcher is automatically disabled to prevent double-reindex races during git checkout.
+
 ## Attachments
 
 Non-markdown file support for PDFs, images, spreadsheets, and more.
