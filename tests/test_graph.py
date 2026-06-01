@@ -16,6 +16,7 @@ from markdown_vault_mcp.types import (
     NoteInfo,
     ParsedNote,
 )
+from tests.conftest import wait_for_mcp_writer_drain
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -342,6 +343,7 @@ class TestMCPGraphTools:
 
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool("get_orphan_notes", {})
         items = _parse_tool_data(result)
         assert isinstance(items, list)
@@ -357,6 +359,7 @@ class TestMCPGraphTools:
 
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool("get_most_linked", {"limit": 5})
         items = _parse_tool_data(result)
         assert isinstance(items, list)
@@ -372,6 +375,7 @@ class TestMCPGraphTools:
 
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool("get_most_linked", {"limit": 1})
         items = _parse_tool_data(result)
         assert len(items) == 1

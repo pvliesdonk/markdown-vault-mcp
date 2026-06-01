@@ -20,7 +20,7 @@ from markdown_vault_mcp._server_apps import (
     _rewrite_spa_app_tool_calls,
 )
 from markdown_vault_mcp.server import make_server
-from tests.conftest import _CLEAR_VARS
+from tests.conftest import _CLEAR_VARS, wait_for_mcp_writer_drain
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -281,6 +281,7 @@ class TestBrowseVaultTool:
     async def test_no_args_returns_vault_summary(self) -> None:
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool("browse_vault", {})
             data = _parse_tool_data(result)
             assert data["view"] == "browse"
@@ -331,6 +332,7 @@ class TestShowContextTool:
     async def test_returns_context_summary(self) -> None:
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool("show_context", {"path": "simple.md"})
             data = _parse_tool_data(result)
             assert data["path"] == "simple.md"
@@ -351,6 +353,7 @@ class TestAppOnlyTools:
     async def test_vault_context_returns_note_context(self) -> None:
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool(
                 _hashed("vault_context"), {"path": "simple.md"}
             )
@@ -365,6 +368,7 @@ class TestAppOnlyTools:
     async def test_vault_graph_neighborhood(self) -> None:
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool(
                 _hashed("vault_graph_neighborhood"), {"path": "simple.md"}
             )
@@ -388,6 +392,7 @@ class TestAppOnlyTools:
     async def test_vault_list_root(self) -> None:
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool(_hashed("vault_list"), {})
             data = _parse_tool_data(result)
             assert "folders" in data
@@ -409,6 +414,7 @@ class TestAppOnlyTools:
         """Subfolder listing must only include direct children, not deeper nesting."""
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool(
                 _hashed("vault_list"), {"folder": "subfolder"}
             )
@@ -439,6 +445,7 @@ class TestAppOnlyTools:
             monkeypatch.delenv(var, raising=False)
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool(_hashed("vault_list"), {})
             data = _parse_tool_data(result)
             # 'ai' must appear even though list_folders() only returns 'ai/llm'
@@ -563,6 +570,7 @@ class TestAppToolData:
     async def test_show_context_tool(self) -> None:
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool("show_context", {"path": "simple.md"})
             data = _parse_tool_data(result)
             assert data["path"] == "simple.md"
@@ -619,6 +627,7 @@ class TestAppToolData:
     async def test_vault_context_missing_path(self) -> None:
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool(
                 _hashed("vault_context"), {"path": "does-not-exist.md"}
             )
@@ -629,6 +638,7 @@ class TestAppToolData:
     async def test_show_context_missing_path(self) -> None:
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool(
                 "show_context", {"path": "does-not-exist.md"}
             )
@@ -655,6 +665,7 @@ class TestAppToolLinkedData:
     async def test_vault_graph_neighborhood_with_links(self) -> None:
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool(
                 _hashed("vault_graph_neighborhood"), {"path": "linked_a.md", "depth": 2}
             )
@@ -668,6 +679,7 @@ class TestAppToolLinkedData:
     async def test_vault_graph_neighborhood_dedup(self) -> None:
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool(
                 _hashed("vault_graph_neighborhood"), {"path": "linked_a.md", "depth": 2}
             )
@@ -688,6 +700,7 @@ class TestAppToolLinkedData:
     async def test_vault_context_with_links(self) -> None:
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool(
                 _hashed("vault_context"), {"path": "linked_a.md"}
             )
@@ -707,6 +720,7 @@ class TestAppToolLinkedData:
                 monkeypatch.delenv(var, raising=False)
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool("show_context", {"path": "linked_b.md"})
             data = _parse_tool_data(result)
             assert "Tags:" in data["summary"]

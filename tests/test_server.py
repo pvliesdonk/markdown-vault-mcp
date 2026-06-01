@@ -24,6 +24,7 @@ from markdown_vault_mcp.config import (
     resolve_auth_mode,
 )
 from markdown_vault_mcp.server import make_server
+from tests.conftest import wait_for_mcp_writer_drain
 
 if TYPE_CHECKING:
     import mcp.types as mcp_types
@@ -265,6 +266,7 @@ class TestSearchTool:
     async def test_keyword_search(self) -> None:
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool(
                 "search", {"query": "simple document", "limit": 5}
             )
@@ -278,6 +280,7 @@ class TestSearchTool:
     async def test_search_with_folder_filter(self) -> None:
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool(
                 "search",
                 {"query": "subfolder nested", "folder": "subfolder"},
@@ -341,6 +344,7 @@ class TestListDocumentsTool:
     async def test_list_all(self) -> None:
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool("list_documents", {})
         data = _parse_tool_data(result)
         assert isinstance(data, list)
@@ -352,6 +356,7 @@ class TestListDocumentsTool:
     async def test_list_by_folder(self) -> None:
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool("list_documents", {"folder": "subfolder"})
         data = _parse_tool_data(result)
         assert isinstance(data, list)
@@ -369,6 +374,7 @@ class TestListDocumentsTool:
 
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool("list_documents", {"folder": "_templates"})
         data = _parse_tool_data(result)
         paths = {doc["path"] for doc in data}
@@ -382,6 +388,7 @@ class TestListFoldersTool:
     async def test_list_folders(self) -> None:
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool("list_folders", {})
         folders = result.data
         assert isinstance(folders, list)
@@ -395,6 +402,7 @@ class TestListTagsTool:
     async def test_list_tags(self) -> None:
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool("list_tags", {"field": "cluster"})
         tags = result.data
         assert isinstance(tags, list)
@@ -408,6 +416,7 @@ class TestStatsTool:
     async def test_stats(self) -> None:
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool("stats", {})
         data = result.data
         assert isinstance(data, dict)
@@ -714,6 +723,7 @@ class TestMCPExcludePatterns:
 
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool("list_documents", {})
 
         data = _parse_tool_data(result)
@@ -1462,6 +1472,7 @@ class TestMCPListDocumentsAttachments:
     ) -> None:
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool("list_documents", {})
         items = _parse_tool_data(result)
         paths = [item["path"] for item in items]
@@ -1472,6 +1483,7 @@ class TestMCPListDocumentsAttachments:
     ) -> None:
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool(
                 "list_documents", {"include_attachments": True}
             )
@@ -1490,6 +1502,7 @@ class TestMCPListDocumentsAttachments:
     ) -> None:
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool(
                 "list_documents", {"include_attachments": True}
             )
@@ -1508,6 +1521,7 @@ class TestMCPStatsAttachmentExtensions:
     ) -> None:
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool("stats", {})
         data = result.data
         assert "attachment_extensions" in data
@@ -1585,6 +1599,7 @@ class TestLinkTools:
     async def test_get_broken_links(self) -> None:
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool("get_broken_links", {})
         data = _parse_tool_data(result)
         assert len(data) == 1
@@ -1595,6 +1610,7 @@ class TestLinkTools:
     async def test_get_broken_links_with_folder_filter(self) -> None:
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool("get_broken_links", {"folder": "notes"})
         data = _parse_tool_data(result)
         # notes/topic.md links to ../index.md which exists — no broken links
@@ -1826,6 +1842,7 @@ class TestResources:
     async def test_config_resource(self) -> None:
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.read_resource("config://vault")
         data = json.loads(result[0].text)
         assert "source_dir" in data
@@ -1841,6 +1858,7 @@ class TestResources:
     async def test_stats_resource(self) -> None:
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             resource_result = await client.read_resource("stats://vault")
             tool_result = await client.call_tool("stats", {})
         resource_data = json.loads(resource_result[0].text)
@@ -1852,6 +1870,7 @@ class TestResources:
     async def test_tags_resource_grouped(self) -> None:
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.read_resource("tags://vault")
         data = json.loads(result[0].text)
         # With indexed fields "cluster,tags", both keys should be present.
@@ -1863,6 +1882,7 @@ class TestResources:
     async def test_tags_resource_by_field(self) -> None:
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.read_resource("tags://vault/cluster")
         data = json.loads(result[0].text)
         assert isinstance(data, list)
@@ -1873,6 +1893,7 @@ class TestResources:
     async def test_folders_resource(self) -> None:
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.read_resource("folders://vault")
         data = json.loads(result[0].text)
         assert isinstance(data, list)
@@ -3407,6 +3428,7 @@ async def test_search_tool_accepts_chunks_per_file_and_snippet_words(
 
     server = make_server()
     async with Client(server) as client:
+        await wait_for_mcp_writer_drain(client)
         result = await client.call_tool(
             "search",
             {

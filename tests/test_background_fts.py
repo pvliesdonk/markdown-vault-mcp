@@ -430,9 +430,10 @@ def test_lifespan_warm_start_skips_background(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Warm-start lifespan submits a BuildIndex job that short-circuits in
-    O(1) via the FTS sentinel; status is queryable when the server starts
-    handling requests (#559)."""
+    O(1) via the FTS sentinel; status reaches queryable shortly after the
+    server starts handling requests (#559)."""
     from markdown_vault_mcp.server import make_server
+    from tests.conftest import wait_for_mcp_writer_drain
 
     vault = tmp_path / "vault"
     vault.mkdir()
@@ -451,6 +452,7 @@ def test_lifespan_warm_start_skips_background(
 
     async def _run() -> dict[str, Any]:
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             res = await client.call_tool("get_index_status", {})
             return res.structured_content or {}
 

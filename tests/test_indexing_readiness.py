@@ -414,15 +414,16 @@ class TestReadinessFlagSemantics:
 
 
 def test_lifespan_yields_quickly_on_cold_start(tmp_path: Path) -> None:
-    """Cold-start lifespan completes BuildIndex (#559) within a bounded
-    budget on a small vault.
+    """Cold-start lifespan yields immediately after submitting BuildIndex (#559).
 
     The lifespan submits ``BuildIndex`` and (when configured)
-    ``BuildEmbeddings`` jobs to the :class:`IndexWriter`, waits for the
-    ``BuildIndex`` Future so the FTS index is queryable by the time the
-    server handles tool calls, and yields.  The warm-restart
-    short-circuit makes this near-instant on warm vaults; this test
-    bounds the cold-start scan on a 50-file vault.
+    ``BuildEmbeddings`` jobs to the :class:`IndexWriter` and yields
+    without waiting for completion (true fire-and-forget per spec).
+    This test bounds the handshake on a 50-file cold vault — the
+    yield must complete in well under a second regardless of vault
+    size.  The FTS index is *not* required to be queryable on yield;
+    bucket-3 tools block on ``@needs_queryable`` until the writer
+    drains.
     """
     import asyncio
     import time
@@ -441,12 +442,9 @@ def test_lifespan_yields_quickly_on_cold_start(tmp_path: Path) -> None:
         start = time.monotonic()
         async with lifespan_fn(None) as ctx:  # type: ignore[arg-type]
             elapsed = time.monotonic() - start
-            # Cold scan of 50 small files completes well under 2 seconds.
+            # Fire-and-forget yield must be sub-second even on a cold vault.
             assert elapsed < 2.0, f"Lifespan took {elapsed:.2f}s to yield"
             assert ctx["collection"] is not None
-            # FTS must be queryable when the lifespan yields, so the
-            # MCP server starts serving with a populated index.
-            assert ctx["collection"].is_queryable()
 
     asyncio.run(_run())
 

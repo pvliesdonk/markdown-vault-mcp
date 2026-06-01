@@ -182,6 +182,40 @@ def wait_for_writer_drain(col: object, timeout: float = 5.0) -> None:
     raise AssertionError(msg)
 
 
+async def wait_for_mcp_writer_drain(client: object, timeout: float = 5.0) -> None:
+    """Poll a FastMCP Client until the writer has drained.
+
+    Used by tests that drive the server via an in-process Client and
+    need bucket-2 tools (search/list/stats) to return populated state
+    after a cold-start lifespan (#559).
+
+    Args:
+        client: The FastMCP Client instance.
+        timeout: Maximum wait in seconds.
+
+    Raises:
+        AssertionError: If drain did not complete within the timeout.
+    """
+    import asyncio as _asyncio
+
+    deadline_iters = int(timeout / 0.05)
+    last_status: dict = {}
+    for _ in range(deadline_iters):
+        status_res = await client.call_tool("get_index_status", {})  # type: ignore[attr-defined]
+        status = status_res.structured_content or {}
+        last_status = status
+        if (
+            status.get("status") == "queryable"
+            and status.get("queue_depth", 0) == 0
+            and status.get("in_flight") is None
+            and status.get("dirty_paths", 0) == 0
+        ):
+            return
+        await _asyncio.sleep(0.05)
+    msg = f"Writer did not drain via MCP client in {timeout}s: {last_status}"
+    raise AssertionError(msg)
+
+
 @pytest.fixture
 def vault_path(tmp_path: Path, fixtures_path: Path) -> Path:
     """Copy fixtures into a temp directory.

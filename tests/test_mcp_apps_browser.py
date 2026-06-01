@@ -14,7 +14,7 @@ from fastmcp import Client
 
 from markdown_vault_mcp._server_apps import _hashed
 from markdown_vault_mcp.server import make_server
-from tests.conftest import get_app_html
+from tests.conftest import get_app_html, wait_for_mcp_writer_drain
 
 
 def _parse_tool_data(result: Any) -> Any:
@@ -114,6 +114,7 @@ class TestBrowserDataTools:
     async def test_vault_list_root(self) -> None:
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool(_hashed("vault_list"), {})
             data = _parse_tool_data(result)
             assert "folders" in data
@@ -126,6 +127,7 @@ class TestBrowserDataTools:
     async def test_vault_list_subfolder(self) -> None:
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool(
                 _hashed("vault_list"), {"folder": "subfolder"}
             )
@@ -160,6 +162,7 @@ class TestBrowserDataTools:
     async def test_vault_search_keyword(self) -> None:
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool(
                 _hashed("vault_search"), {"query": "simple", "mode": "keyword"}
             )
