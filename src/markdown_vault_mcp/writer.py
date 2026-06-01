@@ -88,6 +88,8 @@ class IndexWriter:
         self._dirty_lock = threading.Lock()
         self._dirty_paths: set[str] = set()
         self._dirty_embeddings: set[str] = set()
+        self._in_flight_lock = threading.Lock()
+        self._in_flight_kind: str | None = None
 
     def start(self) -> None:
         """Spawn the worker thread. Idempotent."""
@@ -185,6 +187,20 @@ class IndexWriter:
             self._dirty_embeddings.clear()
         return snapshot
 
+    def get_status(self) -> dict[str, Any]:
+        """Return non-blocking snapshot of writer state."""
+        with self._in_flight_lock:
+            in_flight = self._in_flight_kind
+        with self._dirty_lock:
+            dirty_paths = len(self._dirty_paths)
+            dirty_embeddings = len(self._dirty_embeddings)
+        return {
+            "queue_depth": self._queue.qsize(),
+            "in_flight": in_flight,
+            "dirty_paths": dirty_paths,
+            "dirty_embeddings": dirty_embeddings,
+        }
+
     def _run(self) -> None:
         """Worker loop."""
         while True:
@@ -194,6 +210,8 @@ class IndexWriter:
             job, future = cast("tuple[Any, Future[Any]]", item)
             if not future.set_running_or_notify_cancel():
                 continue
+            with self._in_flight_lock:
+                self._in_flight_kind = job.kind
             try:
                 runner = self._runners[job.kind]
                 result = runner(job, self._ctx)
@@ -201,3 +219,6 @@ class IndexWriter:
             except BaseException as exc:
                 future.set_exception(exc)
                 logger.exception("Writer job %s failed", job.kind)
+            finally:
+                with self._in_flight_lock:
+                    self._in_flight_kind = None

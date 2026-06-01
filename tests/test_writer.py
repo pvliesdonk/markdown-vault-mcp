@@ -191,3 +191,48 @@ def test_drain_dirty_embeddings_clears_and_returns():
     drained = writer.drain_dirty_embeddings()
     assert drained == {"a.md", "b.md"}
     assert writer.snapshot_dirty_embeddings() == set()
+
+
+def test_get_status_empty_writer():
+    writer = IndexWriter(runners={}, ctx=None)
+    status = writer.get_status()
+    assert status == {
+        "queue_depth": 0,
+        "in_flight": None,
+        "dirty_paths": 0,
+        "dirty_embeddings": 0,
+    }
+
+
+def test_get_status_reports_dirty_counts():
+    writer = IndexWriter(runners={}, ctx=None)
+    writer.mark_dirty(["a.md", "b.md", "c.md"])
+    writer.mark_embedding_dirty(["a.md"])
+    status = writer.get_status()
+    assert status["dirty_paths"] == 3
+    assert status["dirty_embeddings"] == 1
+
+
+def test_get_status_reports_in_flight():
+    started = threading.Event()
+    can_finish = threading.Event()
+
+    def slow_runner(job, ctx):  # noqa: ARG001
+        started.set()
+        can_finish.wait(timeout=5)
+        return None
+
+    writer = IndexWriter(
+        runners={"build_index": slow_runner},
+        ctx=None,
+    )
+    writer.start()
+    try:
+        future = writer.submit(BuildIndex())
+        started.wait(timeout=5)
+        status = writer.get_status()
+        assert status["in_flight"] == "build_index"
+        can_finish.set()
+        future.result(timeout=5)
+    finally:
+        writer.close(timeout=5)
