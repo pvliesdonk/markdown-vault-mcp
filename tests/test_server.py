@@ -1560,11 +1560,27 @@ class TestLinkTools:
     async def test_get_backlinks(self) -> None:
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool("get_backlinks", {"path": "notes/topic.md"})
-        data = _parse_tool_data(result)
+        envelope = _parse_tool_data(result)
+        assert envelope["stale"] is False
+        data = envelope["data"]
         assert len(data) == 1
         assert data[0]["source_path"] == "index.md"
         assert data[0]["link_text"] == "Topic"
+
+    @pytest.mark.usefixtures("_mcp_env_linked")
+    async def test_get_backlinks_with_wait_for_drain(self) -> None:
+        server = make_server()
+        async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
+            result = await client.call_tool(
+                "get_backlinks",
+                {"path": "notes/topic.md", "wait_for_drain": True},
+            )
+        envelope = _parse_tool_data(result)
+        assert envelope["stale"] is False
+        assert len(envelope["data"]) == 1
 
     @pytest.mark.usefixtures("_mcp_env_linked")
     async def test_get_backlinks_nonexistent_raises(self) -> None:

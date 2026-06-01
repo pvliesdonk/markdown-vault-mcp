@@ -10,6 +10,7 @@ import asyncio
 import base64
 import ipaddress
 import logging
+import os
 import subprocess
 from dataclasses import asdict
 from typing import TYPE_CHECKING, Any, Literal
@@ -31,6 +32,13 @@ from ._server_deps import get_collection
 from ._server_queryable import needs_queryable
 
 logger = logging.getLogger(__name__)
+
+
+# Drift-aware B3 reader timeout (#534). Bounds wait_for_drain=True calls
+# on the five B3 tools (get_backlinks, get_outlinks, get_similar,
+# get_context, get_connection_path). Default 60s matches the existing
+# BUILD_TIMEOUT_S precedent.
+_DRAIN_TIMEOUT_S = float(os.environ.get("MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S", "60"))
 
 _ALLOWED_FETCH_SCHEMES = frozenset({"http", "https"})
 
@@ -631,8 +639,9 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
     @needs_queryable()
     async def get_backlinks(
         path: str,
+        wait_for_drain: bool = False,
         collection: Collection = Depends(get_collection),
-    ) -> list[dict[str, Any]]:
+    ) -> dict[str, Any]:
         """Find all documents that link TO the given document (backlinks).
 
         Use this to discover which notes reference a particular document.
@@ -647,16 +656,29 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
         Args:
             path: Relative path of the target document (e.g.
                 "notes/topic.md"). Case-sensitive.
+            wait_for_drain: When True, block until the IndexWriter has
+                no pending or in-flight work before answering. Bounded
+                by MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S (default 60s).
+                On timeout, returns the result with `stale=True` rather
+                than raising — best-effort fresh read. Default False
+                returns immediately and reports staleness via the
+                envelope's `stale` field.
 
         Returns:
-            List of dicts, each with:
+            Dict envelope with two keys:
 
-            - source_path (str): Path of the document containing the link.
-            - source_title (str): Title of the source document.
-            - link_text (str): The clickable text of the link.
-            - link_type (str): One of "markdown", "wikilink", or "reference".
-            - fragment (str | None): Heading anchor (e.g. "#section"), or null.
-            - raw_target (str): Literal link target as written in the source.
+            - stale (bool): True when the IndexWriter had pending work
+              at the moment this response was constructed. The data
+              below may not reflect the latest committed state. False
+              when the writer was idle at response time.
+            - data (list[dict]): The backlinks list. Each entry has:
+
+              - source_path (str): Path of the document containing the link.
+              - source_title (str): Title of the source document.
+              - link_text (str): The clickable text of the link.
+              - link_type (str): One of "markdown", "wikilink", or "reference".
+              - fragment (str | None): Heading anchor (e.g. "#section"), or null.
+              - raw_target (str): Literal link target as written in the source.
 
         Combine with ``get_similar`` to find connection gaps — notes that are
         semantically close to the target but not yet linked.
@@ -664,8 +686,13 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
         Raises:
             ValueError: If no document exists at the given path.
         """
+        if wait_for_drain:
+            await asyncio.to_thread(collection.wait_for_drain, timeout=_DRAIN_TIMEOUT_S)
         results = await asyncio.to_thread(collection.get_backlinks, path)
-        return [asdict(r) for r in results]
+        return {
+            "stale": not collection.is_drained(),
+            "data": [asdict(r) for r in results],
+        }
 
     @mcp.tool(
         icons=_TOOL_ICONS["get_outlinks"],
