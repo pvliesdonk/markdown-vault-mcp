@@ -705,8 +705,9 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
     @needs_queryable()
     async def get_outlinks(
         path: str,
+        wait_for_drain: bool = False,
         collection: Collection = Depends(get_collection),
-    ) -> list[dict[str, Any]]:
+    ) -> dict[str, Any]:
         """Find all links FROM the given document to other documents (outlinks).
 
         Use this to see what a document references. For a full picture of
@@ -719,16 +720,29 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
         Args:
             path: Relative path of the source document (e.g.
                 "notes/topic.md"). Case-sensitive.
+            wait_for_drain: When True, block until the IndexWriter has
+                no pending or in-flight work before answering. Bounded
+                by MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S (default 60s).
+                On timeout, returns the result with `stale=True` rather
+                than raising — best-effort fresh read. Default False
+                returns immediately and reports staleness via the
+                envelope's `stale` field.
 
         Returns:
-            List of dicts, each with:
+            Dict envelope with two keys:
 
-            - target_path (str): Path of the linked document.
-            - link_text (str): The clickable text of the link.
-            - link_type (str): One of "markdown", "wikilink", or "reference".
-            - fragment (str | None): Heading anchor (e.g. "#section"), or null.
-            - raw_target (str): Literal link target as written in the source.
-            - exists (bool): True if the target document is indexed.
+            - stale (bool): True when the IndexWriter had pending work
+              at the moment this response was constructed. The data
+              below may not reflect the latest committed state. False
+              when the writer was idle at response time.
+            - data (list[dict]): The outlinks list. Each entry has:
+
+              - target_path (str): Path of the linked document.
+              - link_text (str): The clickable text of the link.
+              - link_type (str): One of "markdown", "wikilink", or "reference".
+              - fragment (str | None): Heading anchor (e.g. "#section"), or null.
+              - raw_target (str): Literal link target as written in the source.
+              - exists (bool): True if the target document is indexed.
 
         Combine with ``get_similar`` to find connection gaps — notes the
         source is semantically close to but hasn't linked yet.
@@ -736,8 +750,13 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
         Raises:
             ValueError: If no document exists at the given path.
         """
+        if wait_for_drain:
+            await asyncio.to_thread(collection.wait_for_drain, timeout=_DRAIN_TIMEOUT_S)
         results = await asyncio.to_thread(collection.get_outlinks, path)
-        return [asdict(r) for r in results]
+        return {
+            "stale": not collection.is_drained(),
+            "data": [asdict(r) for r in results],
+        }
 
     @mcp.tool(
         icons=_TOOL_ICONS["get_broken_links"],

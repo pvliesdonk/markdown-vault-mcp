@@ -1593,8 +1593,11 @@ class TestLinkTools:
     async def test_get_outlinks(self) -> None:
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool("get_outlinks", {"path": "index.md"})
-        data = _parse_tool_data(result)
+        envelope = _parse_tool_data(result)
+        assert envelope["stale"] is False
+        data = envelope["data"]
         assert len(data) == 2
         targets = {d["target_path"] for d in data}
         assert "notes/topic.md" in targets
@@ -1603,6 +1606,19 @@ class TestLinkTools:
         by_target = {d["target_path"]: d for d in data}
         assert by_target["notes/topic.md"]["exists"] is True
         assert by_target["ghost.md"]["exists"] is False
+
+    @pytest.mark.usefixtures("_mcp_env_linked")
+    async def test_get_outlinks_with_wait_for_drain(self) -> None:
+        server = make_server()
+        async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
+            result = await client.call_tool(
+                "get_outlinks",
+                {"path": "index.md", "wait_for_drain": True},
+            )
+        envelope = _parse_tool_data(result)
+        assert envelope["stale"] is False
+        assert len(envelope["data"]) == 2
 
     @pytest.mark.usefixtures("_mcp_env_linked")
     async def test_get_outlinks_nonexistent_path(self) -> None:
