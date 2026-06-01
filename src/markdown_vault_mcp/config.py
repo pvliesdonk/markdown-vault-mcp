@@ -234,6 +234,10 @@ class CollectionConfig:
 
     # GitHub webhook (issue #530)
     github_webhook_secret: str | None = None
+
+    # File watcher (issue #558) — auto-disabled when git pull or webhook is active
+    file_watcher_enabled: bool = True
+    file_watcher_debounce_s: float = 2.0
     # CONFIG-FIELDS-END
 
     # Universal server fields delegated to fastmcp_pvl_core.ServerConfig.
@@ -607,6 +611,26 @@ def load_config() -> CollectionConfig:
         "set" if github_webhook_secret else "unset",
     )
 
+    raw_file_watcher = _env("FILE_WATCHER")
+    file_watcher_enabled: bool = (
+        _parse_bool(raw_file_watcher) if raw_file_watcher is not None else True
+    )
+    logger.debug("load_config: file_watcher_enabled=%s", file_watcher_enabled)
+
+    raw_debounce = (_env("FILE_WATCHER_DEBOUNCE_S") or "").strip()
+    if raw_debounce:
+        try:
+            file_watcher_debounce_s = float(raw_debounce)
+        except ValueError:
+            logger.warning(
+                "load_config: invalid FILE_WATCHER_DEBOUNCE_S=%r, using default 2.0",
+                raw_debounce,
+            )
+            file_watcher_debounce_s = 2.0
+    else:
+        file_watcher_debounce_s = 2.0
+    logger.debug("load_config: file_watcher_debounce_s=%s", file_watcher_debounce_s)
+
     raw_attachment_extensions = (_env("ATTACHMENT_EXTENSIONS") or "").strip()
     attachment_extensions: list[str] | None
     if not raw_attachment_extensions:
@@ -911,6 +935,8 @@ def load_config() -> CollectionConfig:
         length_downweight_alpha=length_downweight_alpha,
         max_chunk_words=max_chunk_words,
         github_webhook_secret=github_webhook_secret,
+        file_watcher_enabled=file_watcher_enabled,
+        file_watcher_debounce_s=file_watcher_debounce_s,
         # CONFIG-FROM-ENV-END
         server=ServerConfig.from_env(_ENV_PREFIX),
     )

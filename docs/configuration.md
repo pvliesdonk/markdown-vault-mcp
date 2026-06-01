@@ -154,6 +154,20 @@ The endpoint is only available on HTTP/SSE transports. To set up:
 
 The periodic pull loop (`GIT_PULL_INTERVAL_S`) remains active as a belt-and-suspenders fallback for missed webhook deliveries.
 
+## File Watcher
+
+Detects external file changes (edits by a local editor, sync daemon, or `cp -r`) without requiring git integration. Enabled by default for vaults that are not managed by git pull; automatically disabled when the periodic git pull loop (`GIT_PULL_INTERVAL_S > 0`) or the GitHub webhook (`GITHUB_WEBHOOK_SECRET`) is active, since those mechanisms already trigger reindex on their own cadence.
+
+Requires the optional `watchdog` dependency: `pip install 'markdown-vault-mcp[file-watcher]'`.
+
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `MARKDOWN_VAULT_MCP_FILE_WATCHER` | bool | `true` | Enable filesystem-event watcher; auto-disabled when git pull or webhook is active |
+| `MARKDOWN_VAULT_MCP_FILE_WATCHER_DEBOUNCE_S` | float | `2.0` | Seconds of quiet after the last event before triggering reindex; tune down for faster response on small vaults |
+
+!!! note "Mutual exclusion with git"
+    When `GIT_PULL_INTERVAL_S > 0` or `GITHUB_WEBHOOK_SECRET` is set, the file watcher is automatically disabled even if `FILE_WATCHER=true`. This prevents mid-checkout partial scans where git is modifying the working tree.
+
 ## Attachments
 
 Non-markdown file support for PDFs, images, spreadsheets, and more.

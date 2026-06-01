@@ -259,6 +259,15 @@ Backward compatibility: `MARKDOWN_VAULT_MCP_GIT_TOKEN` without `GIT_REPO_URL` st
 | `MARKDOWN_VAULT_MCP_GIT_LFS` | `true` | Enable Git LFS — runs `git lfs pull` on startup to fetch LFS-tracked attachments (PDFs, images). Set to `false` for repos without LFS. |
 | `MARKDOWN_VAULT_MCP_GITHUB_WEBHOOK_SECRET` | — | Shared secret for GitHub push-event webhook; when set, mounts `POST /github-webhook` on HTTP/SSE transports to trigger immediate pull + reindex on push events |
 
+### File Watcher
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MARKDOWN_VAULT_MCP_FILE_WATCHER` | `true` | Enable filesystem-event watcher for external changes; auto-disabled when git pull or webhook is active |
+| `MARKDOWN_VAULT_MCP_FILE_WATCHER_DEBOUNCE_S` | `2.0` | Seconds of quiet after the last event before triggering reindex |
+
+Requires the `watchdog` optional extra: `pip install 'markdown-vault-mcp[file-watcher]'`. Automatically disabled when `GIT_PULL_INTERVAL_S > 0` or `GITHUB_WEBHOOK_SECRET` is set.
+
 ### Attachments
 
 Non-markdown file support. See [Attachments](#attachments) for details.

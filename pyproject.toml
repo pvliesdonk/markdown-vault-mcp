@@ -43,7 +43,8 @@ dependencies = [
 mcp = ["fastmcp>=3.0,<4"]
 embeddings-api = ["httpx>=0.25", "numpy>=1.20"]
 embeddings = ["fastembed>=0.3", "numpy>=1.20"]
-all = ["fastmcp>=3.0,<4", "httpx>=0.25", "fastembed>=0.3", "numpy>=1.20"]
+file-watcher = ["watchdog>=4.0"]
+all = ["fastmcp>=3.0,<4", "httpx>=0.25", "fastembed>=0.3", "numpy>=1.20", "watchdog>=4.0"]
 # Pulls debugpy transitively via fastmcp-pvl-core's [debug] extra.  The
 # version range is inherited from the [project] dependency on
 # fastmcp-pvl-core above; pip resolves a single, consistent version.
@@ -62,6 +63,7 @@ dev = [
     "mypy>=1.0",
     "pre-commit>=3.0",
     "pip-audit>=2.7",
+    "watchdog>=4.0",
 ]
 docs = [
     "mkdocs-material>=9.7.6",

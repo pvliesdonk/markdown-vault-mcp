@@ -118,6 +118,38 @@ def make_collection_lifespan(config: CollectionConfig) -> Any:
         # Start any other background tasks (e.g. git pull loop).
         collection.start()
 
+        # File watcher — only when git pull and webhook are both inactive so the
+        # watcher and git checkout don't race to trigger reindex (#558).
+        git_active = config.git_pull_interval_s > 0 or bool(
+            config.github_webhook_secret
+        )
+        file_watcher = None
+        if config.file_watcher_enabled and not git_active:
+            from markdown_vault_mcp._file_watcher import VaultFileWatcher
+            from markdown_vault_mcp.exceptions import IndexUnavailableError
+
+            def _on_file_change() -> None:
+                try:
+                    with collection.pause_writes():
+                        collection.reindex()
+                except IndexUnavailableError:
+                    logger.info(
+                        "file_watcher: index not yet queryable, skipping reindex"
+                    )
+                except Exception:
+                    logger.error("file_watcher: reindex failed", exc_info=True)
+
+            file_watcher = VaultFileWatcher(
+                config.source_dir,
+                _on_file_change,
+                debounce_s=config.file_watcher_debounce_s,
+            )
+            file_watcher.start()
+        elif config.file_watcher_enabled and git_active:
+            logger.info(
+                "file_watcher: disabled — git pull loop / webhook handles reindex cadence"
+            )
+
         # Artifact store singleton is wired in make_server(), not here —
         # the HTTP route captures the store at server-construction time and
         # tool handlers reach it via get_artifact_store().  Tokens carry
@@ -127,6 +159,8 @@ def make_collection_lifespan(config: CollectionConfig) -> Any:
         try:
             yield {"collection": collection, "config": config}
         finally:
+            if file_watcher is not None:
+                file_watcher.stop()
             # Clear the singleton before closing so any in-flight HTTP handler
             # gets a clean RuntimeError instead of touching a Collection
             # mid-close().
