@@ -898,6 +898,38 @@ def test_synchronous_build_index_clears_prior_background_error(
     col.close()
 
 
+def test_build_index_async_warm_restart_short_circuit(tmp_path: Path) -> None:
+    """build_index_async returns an already-resolved Future on warm restart (#559).
+
+    The async path must mirror the synchronous build_index() short-circuit: a
+    populated FTS + the persisted completeness sentinel must yield an
+    already-resolved Future carrying the existing document count without
+    submitting a job to the writer queue.
+    """
+    vault = _vault(tmp_path)
+    _seed(vault)
+    index_path = tmp_path / "fts.db"
+
+    # Phase 1: pre-build to set the sentinel and FTS rows.
+    pre = Collection(source_dir=vault, index_path=index_path)
+    pre.build_index()
+    pre.close()
+
+    # Phase 2: fresh Collection sees the warm sentinel; async submission
+    # must short-circuit.
+    col = Collection(source_dir=vault, index_path=index_path)
+    future = col.build_index_async()
+    assert future.done(), "warm-restart short-circuit must return resolved Future"
+    stats = future.result(timeout=0.1)
+    assert stats.documents_indexed >= 1
+    # Writer should NOT be processing a BuildIndex job.
+    assert col._writer.get_status()["in_flight"] is None
+    # Collection is queryable and the background-build event is set.
+    assert col.is_queryable() is True
+    assert col._background_build_done.is_set()
+    col.close()
+
+
 def test_synchronous_build_index_warm_path_clears_prior_background_error(
     tmp_path: Path,
 ) -> None:

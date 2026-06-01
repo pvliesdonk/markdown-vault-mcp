@@ -11,6 +11,7 @@ import logging
 import queue
 import re
 import threading
+from concurrent.futures import Future
 from typing import TYPE_CHECKING, Any, Literal
 
 from markdown_vault_mcp.exceptions import IndexUnavailableError
@@ -60,7 +61,6 @@ from markdown_vault_mcp.writer import (
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
-    from concurrent.futures import Future
     from pathlib import Path
 
     from markdown_vault_mcp.git import GitWriteStrategy
@@ -117,11 +117,16 @@ class Collection:
     returns whatever is currently in the index (empty on cold start).
     See issue #525.
 
-    **Background build (issue #513 PR1).** When the persisted FTS DB
-    is cold (sentinel absent), the MCP server lifespan calls
-    :meth:`start_background_build_index` to spawn a daemon thread
-    that runs :meth:`build_index` to completion. Bucket-3/4 MCP tool
-    *clients* block on the new
+    **Index lifecycle (issues #513, #526, #559).** The MCP server
+    lifespan submits a :class:`~markdown_vault_mcp.writer.BuildIndex`
+    job to the single-owner
+    :class:`~markdown_vault_mcp.writer.IndexWriter` via
+    :meth:`build_index_async` and yields immediately. On a warm
+    restart the persisted FTS completeness sentinel (PR #526) causes
+    :meth:`build_index_async` to return an already-resolved
+    ``Future`` in O(1) without touching the writer queue. On a cold
+    restart the writer thread runs the job asynchronously while the
+    lifespan yields; bucket-3/4 MCP tool *clients* block on the
     :class:`markdown_vault_mcp._server_queryable.needs_queryable`
     decorator, which calls :meth:`wait_until_queryable` with a
     bounded default timeout
@@ -533,9 +538,17 @@ class Collection:
         def _worker() -> None:
             try:
                 self.build_index()
-            except BaseException as exc:
+            except Exception as exc:
                 self._background_build_error = exc
                 logger.exception("Background index build failed")
+            except BaseException as exc:
+                # BaseException-family (KeyboardInterrupt / SystemExit /
+                # asyncio.CancelledError): capture so waiters observe the
+                # failure, set the done event in finally, then re-raise so
+                # the thread terminates.
+                self._background_build_error = exc
+                logger.exception("Background index build interrupted")
+                raise
             finally:
                 self._background_build_done.set()
 
@@ -691,7 +704,7 @@ class Collection:
                 "Index not built: background build was never scheduled "
                 "or did not complete successfully. "
                 "Check get_index_status() for diagnostic details, or call "
-                "build_index() / start_background_build_index() to retry.",
+                "build_index() or build_index_async() to retry.",
                 reason="never_built",
             )
 
@@ -907,6 +920,13 @@ class Collection:
         Collection-level state-management performed by the synchronous
         :meth:`build_index`.
 
+        Warm-restart short-circuit: if the persisted FTS sentinel
+        (PR #526) is set and the index already contains documents, this
+        method returns an already-resolved ``Future`` without submitting
+        a writer job.  This mirrors the synchronous
+        :meth:`build_index` O(1) fast path so async and sync callers
+        observe identical warm-restart behaviour.
+
         Args:
             force: When ``True``, drop and rebuild the index unconditionally.
 
@@ -914,10 +934,33 @@ class Collection:
             ``concurrent.futures.Future`` carrying the
             :class:`IndexStats` once the worker completes the job.
         """
-        # Reset state before submission so concurrent readers see the
-        # collection as "building" until the job completes.  The sentinel
-        # is also cleared so a crash mid-build is detectable by the next
-        # process.
+        # Warm-restart short-circuit: if FTS is already populated and the
+        # sentinel is set, return an already-resolved Future without
+        # touching the writer queue.  Mirrors :meth:`build_index`.
+        if not force and self._fts.is_build_completed():
+            existing = self._fts.list_notes()
+            if existing:
+                logger.debug(
+                    "build_index_async: index already populated (%d docs), skipping",
+                    len(existing),
+                )
+                self._index_built = True
+                self._background_build_error = None
+                self._background_build_done.set()
+                fut: Future[IndexStats] = Future()
+                fut.set_result(
+                    IndexStats(
+                        documents_indexed=len(existing),
+                        chunks_indexed=0,
+                        skipped=0,
+                    )
+                )
+                return fut
+
+        # Cold (or forced) build: reset state before submission so
+        # concurrent readers see the collection as "building" until the
+        # job completes.  The sentinel is also cleared so a crash
+        # mid-build is detectable by the next process.
         self._index_built = False
         self._fts.clear_build_completed()
         self._background_build_error = None

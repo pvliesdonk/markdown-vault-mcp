@@ -225,9 +225,22 @@ class IndexWriter:
                 runner = self._runners[job.kind]
                 result = runner(job, self._ctx)
                 future.set_result(result)
-            except BaseException as exc:
+            except Exception as exc:
                 future.set_exception(exc)
                 logger.exception("Writer job %s failed", job.kind)
+            except BaseException as exc:
+                # KeyboardInterrupt / SystemExit / asyncio.CancelledError —
+                # capture into the Future so waiters unblock, then re-raise
+                # so the worker thread terminates. The finally block clears
+                # _in_flight_kind before the re-raise so status reads on
+                # other threads are not stuck on a stale value.
+                future.set_exception(exc)
+                logger.error(
+                    "writer_job_basexception kind=%s",
+                    job.kind,
+                    exc_info=True,
+                )
+                raise
             finally:
                 with self._in_flight_lock:
                     self._in_flight_kind = None
@@ -272,8 +285,8 @@ def run_process_dirty_paths(
     snapshot = ctx.writer.drain_dirty_paths()
     ctx.index_manager.process_dirty_paths(snapshot)
     # After FTS is up-to-date, queue the same paths for vector re-embedding.
-    # This is what makes the inline `_flush_embeddings()` in semantic search
-    # (removed in this same task) unnecessary.  Follow-up submissions from
+    # The writer is now the sole owner of embedding flushes (no inline
+    # callback inside semantic search).  Follow-up submissions from
     # inside the writer thread succeed even during shutdown drain so the
     # vector-dirty set flushes before the worker exits.
     if snapshot:

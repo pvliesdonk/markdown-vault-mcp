@@ -459,36 +459,6 @@ class TestVectorsProperty:
 
 
 # ---------------------------------------------------------------------------
-# flush_embeddings callback
-# ---------------------------------------------------------------------------
-
-
-class TestFlushCallback:
-    def test_flush_callback_called_on_semantic(self, search_vault: Path) -> None:
-        """flush_embeddings callback is invoked when semantic search requested."""
-        fts = FTSIndex(db_path=":memory:")
-        for note in scan_directory(search_vault):
-            fts.upsert_note(note)
-        fts.resolve_vault_wikilinks()
-
-        called = []
-
-        def track_flush() -> None:
-            called.append(True)
-
-        mgr = SearchManager(
-            fts=fts,
-            source_dir=search_vault,
-            flush_embeddings=track_flush,
-        )
-        # Semantic search without provider should raise, but flush is
-        # not called because _require_vectors fires first.
-        with pytest.raises(ValueError):
-            mgr.search("test", mode="semantic")
-        assert called == []
-
-
-# ---------------------------------------------------------------------------
 # _is_path_excluded / _effective_attachment_extensions
 # ---------------------------------------------------------------------------
 
@@ -819,8 +789,13 @@ def test_fetch_snippet_map_widens_pool_to_match_caller(
     )
 
 
-def test_semantic_search_does_not_call_flush_embeddings(tmp_path, monkeypatch):
-    """_semantic_search must NOT call _flush_embeddings (writer owns flushes now)."""
+def test_semantic_search_does_not_have_flush_embeddings_attr(tmp_path):
+    """SearchManager no longer carries a _flush_embeddings attribute (#559).
+
+    The dead callback parameter was removed in this PR; the writer thread
+    is now the sole owner of embedding flushes. Structurally guarantee
+    that the attribute is gone so a regression would surface immediately.
+    """
     from markdown_vault_mcp.collection import Collection
     from tests.conftest import MockEmbeddingProvider
 
@@ -835,16 +810,10 @@ def test_semantic_search_does_not_call_flush_embeddings(tmp_path, monkeypatch):
         col.build_index()
         col.build_embeddings()
 
-        called: list[bool] = []
-        original = col._search_mgr._flush_embeddings
+        # The attribute must not exist any more.
+        assert not hasattr(col._search_mgr, "_flush_embeddings")
 
-        def _track(*a, **kw):
-            called.append(True)
-            return original(*a, **kw)
-
-        monkeypatch.setattr(col._search_mgr, "_flush_embeddings", _track)
-
+        # Semantic search still works without it.
         col.search(query="hello", mode="semantic")
-        assert called == []
     finally:
         col.close()

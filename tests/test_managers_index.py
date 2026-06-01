@@ -14,7 +14,7 @@ from markdown_vault_mcp.fts_index import FTSIndex
 from markdown_vault_mcp.managers.index import IndexManager
 from markdown_vault_mcp.scanner import HeadingChunker
 from markdown_vault_mcp.tracker import ChangeTracker
-from markdown_vault_mcp.types import IndexStats, ParsedNote, ReindexResult
+from markdown_vault_mcp.types import IndexStats, ReindexResult
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -302,148 +302,6 @@ class TestEmbeddingsStatus:
 
 
 # ---------------------------------------------------------------------------
-# update_vector_index / mark_dirty / remove_from_dirty
-# ---------------------------------------------------------------------------
-
-
-class TestDeferredEmbeddings:
-    """Tests for deferred embedding methods.
-
-    All tests in this class exercise APIs removed in #559 Task 12 (the
-    IndexWriter now owns the dirty-set machinery).  They are kept as a
-    record of the removal and will be deleted in a follow-up PR.
-    """
-
-    @pytest.mark.skip(
-        reason="IndexManager dirty-set machinery removed in #559 (writer owns it)"
-    )
-    def test_update_vector_index_noop_without_embeddings(self, index_mgr):
-        """update_vector_index is a no-op when embeddings are not configured."""
-        mgr, _, _ = index_mgr
-        note = ParsedNote(
-            path="test.md",
-            frontmatter={},
-            title="Test",
-            chunks=[],
-            content_hash="abc123",
-            modified_at=0.0,
-        )
-        mgr.update_vector_index(note)
-        assert len(mgr._dirty_embeddings) == 0
-
-    @pytest.mark.skip(
-        reason="IndexManager dirty-set machinery removed in #559 (writer owns it)"
-    )
-    def test_update_vector_index_adds_to_dirty(self, index_vault: Path, tmp_path: Path):
-        """update_vector_index adds path to dirty set when embeddings configured."""
-        from tests.conftest import MockEmbeddingProvider
-
-        provider = MockEmbeddingProvider()
-        mgr, _, _ = _make_index_mgr(
-            index_vault,
-            tmp_path,
-            embeddings_path=tmp_path / "embeddings",
-            embedding_provider=provider,
-        )
-        note = ParsedNote(
-            path="test.md",
-            frontmatter={},
-            title="Test",
-            chunks=[],
-            content_hash="abc123",
-            modified_at=0.0,
-        )
-        mgr.update_vector_index(note)
-        # Cancel the timer to avoid background flush.
-        mgr.cancel_flush_timer()
-        assert "test.md" in mgr._dirty_embeddings
-
-    @pytest.mark.skip(
-        reason="IndexManager dirty-set machinery removed in #559 (writer owns it)"
-    )
-    def test_mark_dirty(self, index_vault: Path, tmp_path: Path):
-        """mark_dirty adds path to dirty set."""
-        from tests.conftest import MockEmbeddingProvider
-
-        provider = MockEmbeddingProvider()
-        mgr, _, _ = _make_index_mgr(
-            index_vault,
-            tmp_path,
-            embeddings_path=tmp_path / "embeddings",
-            embedding_provider=provider,
-        )
-        mgr.mark_dirty("some/path.md")
-        mgr.cancel_flush_timer()
-        assert "some/path.md" in mgr._dirty_embeddings
-
-    @pytest.mark.skip(
-        reason="IndexManager dirty-set machinery removed in #559 (writer owns it)"
-    )
-    def test_remove_from_dirty(self, index_vault: Path, tmp_path: Path):
-        """remove_from_dirty removes path from dirty set."""
-        from tests.conftest import MockEmbeddingProvider
-
-        provider = MockEmbeddingProvider()
-        mgr, _, _ = _make_index_mgr(
-            index_vault,
-            tmp_path,
-            embeddings_path=tmp_path / "embeddings",
-            embedding_provider=provider,
-        )
-        mgr._dirty_embeddings.add("target.md")
-        mgr.remove_from_dirty("target.md")
-        assert "target.md" not in mgr._dirty_embeddings
-
-    @pytest.mark.skip(
-        reason="IndexManager dirty-set machinery removed in #559 (writer owns it)"
-    )
-    def test_remove_from_dirty_nonexistent(self, index_mgr):
-        """remove_from_dirty is safe when path is not in set."""
-        mgr, _, _ = index_mgr
-        mgr.remove_from_dirty("nonexistent.md")
-
-    @pytest.mark.skip(
-        reason="IndexManager dirty-set machinery removed in #559 (writer owns it)"
-    )
-    def test_flush_noop_when_nothing_dirty(self, index_mgr):
-        """flush_dirty_embeddings is a no-op when nothing is dirty."""
-        mgr, _, _ = index_mgr
-        # Should not raise.
-        mgr.flush_dirty_embeddings()
-
-    @pytest.mark.skip(
-        reason="IndexManager dirty-set machinery removed in #559 (writer owns it)"
-    )
-    def test_flush_noop_without_provider(self, index_mgr):
-        """flush_dirty_embeddings is a no-op without embedding provider."""
-        mgr, _, _ = index_mgr
-        mgr._dirty_embeddings.add("something.md")
-        mgr.flush_dirty_embeddings()
-        # Still in dirty set because provider check skips the flush.
-        assert "something.md" in mgr._dirty_embeddings
-
-    @pytest.mark.skip(
-        reason="IndexManager dirty-set machinery removed in #559 (writer owns it)"
-    )
-    def test_cancel_flush_timer(self, index_vault: Path, tmp_path: Path):
-        """cancel_flush_timer cancels without flushing."""
-        from tests.conftest import MockEmbeddingProvider
-
-        provider = MockEmbeddingProvider()
-        mgr, _, _ = _make_index_mgr(
-            index_vault,
-            tmp_path,
-            embeddings_path=tmp_path / "embeddings",
-            embedding_provider=provider,
-        )
-        mgr.mark_dirty("test.md")
-        mgr.cancel_flush_timer()
-        # Timer cancelled but dirty set still has the entry.
-        assert "test.md" in mgr._dirty_embeddings
-        assert mgr._embedding_flush_timer is None
-
-
-# ---------------------------------------------------------------------------
 # _is_path_excluded
 # ---------------------------------------------------------------------------
 
@@ -549,25 +407,44 @@ class TestFlushDirtyEmbeddingsWithSnapshot:
         # No-op: nothing should change
         assert vectors_holder["vectors"] is None  # _load_vectors was not called
 
-    @pytest.mark.skip(
-        reason="IndexManager dirty-set machinery removed in #559 (writer owns it)"
-    )
-    def test_legacy_none_path_still_works(self, index_vault, tmp_path):
-        """Legacy callers passing no argument drain the internal dirty set."""
+    def test_parse_failure_preserves_existing_vectors(
+        self, index_vault, tmp_path, monkeypatch
+    ):
+        """A parse failure for one path must NOT delete its existing vectors (#559)."""
         from tests.conftest import MockEmbeddingProvider
 
         provider = MockEmbeddingProvider()
-        mgr, _, _ = _make_index_mgr(
+        embeddings_path = tmp_path / "embeddings"
+        mgr, _, vectors_holder = _make_index_mgr(
             index_vault,
             tmp_path,
-            embeddings_path=tmp_path / "embeddings",
+            embeddings_path=embeddings_path,
             embedding_provider=provider,
         )
         mgr.build_index()
-        mgr.mark_dirty("alpha.md")
-        mgr.cancel_flush_timer()
-        mgr.flush_dirty_embeddings()  # legacy form
-        assert "alpha.md" not in mgr._dirty_embeddings
+        # Seed vectors for alpha.md via a successful flush first.
+        mgr.flush_dirty_embeddings({"alpha.md"})
+        vectors = vectors_holder["vectors"]
+        assert vectors is not None
+        alpha_before = [m for m in vectors._metadata if m["path"] == "alpha.md"]
+        assert alpha_before, "fixture should produce alpha.md vectors on first flush"
+
+        # Now monkeypatch parse_note to raise for any path so the next flush
+        # encounters a parse failure for alpha.md.
+        from markdown_vault_mcp.managers import index as _idx_mod
+
+        def _boom(*_a, **_kw):
+            msg = "synthetic parse failure"
+            raise OSError(msg)
+
+        monkeypatch.setattr(_idx_mod, "parse_note", _boom)
+        mgr.flush_dirty_embeddings({"alpha.md"})
+
+        # Vectors for alpha.md must still be present.
+        alpha_after = [m for m in vectors._metadata if m["path"] == "alpha.md"]
+        assert alpha_after == alpha_before, (
+            "parse failure must not delete existing vectors for the path"
+        )
 
 
 # ---------------------------------------------------------------------------

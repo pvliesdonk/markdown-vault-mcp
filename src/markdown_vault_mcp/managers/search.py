@@ -296,8 +296,6 @@ class SearchManager:
         attachment_extensions: Allowed non-.md extensions.  ``None`` uses
             the default set.
         link_manager: Optional :class:`LinkManager` for context queries.
-        flush_embeddings: Callback to flush deferred embedding updates
-            before semantic search.
         rebuild_embeddings: Callback to rebuild all embeddings from scratch
             (used when vector index compatibility fails).
     """
@@ -313,7 +311,6 @@ class SearchManager:
         exclude_patterns: list[str] | None = None,
         attachment_extensions: list[str] | None = None,
         link_manager: LinkManager | None = None,
-        flush_embeddings: Callable[[], None] | None = None,
         rebuild_embeddings: Callable[[], None] | None = None,
         chunks_per_file: int = 2,
         snippet_words: int = 200,
@@ -327,7 +324,6 @@ class SearchManager:
         self._exclude_patterns = exclude_patterns
         self._attachment_extensions = attachment_extensions
         self._link_manager = link_manager
-        self._flush_embeddings = flush_embeddings or (lambda: None)
         self._rebuild_embeddings = rebuild_embeddings or (lambda: None)
         self._chunks_per_file = chunks_per_file
         self._snippet_words = snippet_words

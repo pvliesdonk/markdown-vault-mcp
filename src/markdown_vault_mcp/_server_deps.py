@@ -101,12 +101,13 @@ def make_collection_lifespan(config: CollectionConfig) -> Any:
         await asyncio.to_thread(collection.sync_from_remote_before_index)
 
         # Submit the initial build jobs to the IndexWriter and yield
-        # immediately (#559). The warm-restart short-circuit (PR #526
-        # sentinel) inside :meth:`IndexManager.build_index` returns in
-        # O(1) so warm vaults complete near-instantly; cold vaults
-        # populate progressively as the writer drains, with bucket-3
-        # tools blocking on ``@needs_queryable`` until ready. Bucket-2
-        # tools return whatever is in the index right now per #526.
+        # immediately (#559). build_index_async() short-circuits in
+        # O(1) on warm restarts (existing FTS sentinel from PR #526);
+        # cold restarts submit a BuildIndex job that the writer
+        # processes asynchronously while the lifespan yields.
+        # Bucket-3 tools block on @needs_queryable until the build
+        # completes; bucket-2 tools return whatever is currently in
+        # the index per #526.
         collection.build_index_async()
         logger.info("Submitted BuildIndex job to writer")
 
