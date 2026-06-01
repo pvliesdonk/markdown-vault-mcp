@@ -621,6 +621,25 @@ class Collection:
             return False
         return not self._fts.is_build_completed()
 
+    def is_drained(self) -> bool:
+        """Return True iff the IndexWriter has no pending or in-flight work.
+
+        Cheap, non-blocking. A snapshot of the writer's current state.
+
+        Returns:
+            True when ``queue_depth == 0``, ``in_flight is None``, the
+            FTS-dirty set is empty, and the vector-dirty set is empty.
+            Reflects the moment of call only; the writer can transition
+            in or out of "drained" the moment this returns.
+        """
+        status = self._writer.get_status()
+        return (
+            status["queue_depth"] == 0
+            and status["in_flight"] is None
+            and status["dirty_paths"] == 0
+            and status["dirty_embeddings"] == 0
+        )
+
     def get_index_status(self) -> dict[str, Any]:
         """Return a non-blocking snapshot of background-build state.
 
