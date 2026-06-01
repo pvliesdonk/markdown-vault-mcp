@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 from typing import TYPE_CHECKING, Any
 
 from fastmcp import FastMCP
@@ -101,39 +100,15 @@ def make_collection_lifespan(config: CollectionConfig) -> Any:
         # initial index build so the scan sees the latest working tree.
         await asyncio.to_thread(collection.sync_from_remote_before_index)
 
-        # Submit the initial build jobs to the IndexWriter (#559).  The
-        # warm-restart short-circuit (PR #526 sentinel) inside
-        # :meth:`IndexManager.build_index` returns in O(1) so warm vaults
-        # complete near-instantly.  We run the synchronous
-        # :meth:`Collection.build_index` via :func:`asyncio.to_thread`
-        # so the FTS index is queryable by the time the lifespan yields
-        # and the MCP server starts handling tool calls — bucket-2
-        # tools (search/list/stats) would otherwise return empty until
-        # the writer drained.  Calling the synchronous wrapper (rather
-        # than the fire-and-forget :meth:`build_index_async`) gives us
-        # deterministic Collection-level state ordering:
-        # ``_index_built`` and the build-completion event flip on the
-        # calling thread the moment the writer's Future resolves.
-        # Embeddings are submitted to the same FIFO and left to drain
-        # in the background; semantic search returns empty until the
-        # BuildEmbeddings job completes.
-        build_timeout = float(
-            os.environ.get("MARKDOWN_VAULT_MCP_BUILD_TIMEOUT_S", "60")
-        )
-
-        async def _await_build_index() -> None:
-            await asyncio.to_thread(collection.build_index)
-
+        # Submit the initial build jobs to the IndexWriter and yield
+        # immediately (#559). The warm-restart short-circuit (PR #526
+        # sentinel) inside :meth:`IndexManager.build_index` returns in
+        # O(1) so warm vaults complete near-instantly; cold vaults
+        # populate progressively as the writer drains, with bucket-3
+        # tools blocking on ``@needs_queryable`` until ready. Bucket-2
+        # tools return whatever is in the index right now per #526.
+        collection.build_index_async()
         logger.info("Submitted BuildIndex job to writer")
-        try:
-            await asyncio.wait_for(_await_build_index(), timeout=build_timeout)
-            logger.info("BuildIndex job completed")
-        except TimeoutError:
-            logger.warning(
-                "BuildIndex job did not complete within %.1fs; yielding lifespan "
-                "with index still building (bucket-3/4 tools will wait)",
-                build_timeout,
-            )
 
         if kwargs.get("embedding_provider") is not None:
             collection.build_embeddings_async()
