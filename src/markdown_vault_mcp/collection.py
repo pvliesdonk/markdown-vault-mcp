@@ -624,7 +624,7 @@ class Collection:
     def get_index_status(self) -> dict[str, Any]:
         """Return a non-blocking snapshot of background-build state.
 
-        Returns a dict with ten keys:
+        Returns a dict with nine keys:
 
         - ``status`` (``"queryable"`` | ``"building"`` | ``"failed"``):
           overall state of the FTS index build.
@@ -660,9 +660,9 @@ class Collection:
         - ``queue_depth`` (int): number of jobs awaiting the writer.
         - ``in_flight`` (str | None): the currently running job's name,
           or ``None`` if idle.
-        - ``dirty_paths`` (list[str]): paths queued for reindex.
-        - ``dirty_embeddings`` (bool): True if an embedding build is
-          queued.
+        - ``dirty_paths`` (int): count of paths queued for FTS reindex.
+        - ``dirty_embeddings`` (int): count of paths queued for vector
+          re-embedding.
         """
         if self.is_queryable():
             status = "queryable"
