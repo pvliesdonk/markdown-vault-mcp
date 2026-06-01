@@ -222,3 +222,56 @@ class IndexWriter:
             finally:
                 with self._in_flight_lock:
                     self._in_flight_kind = None
+
+
+@dataclass
+class WriterContext:
+    """References passed to job runners.
+
+    Set ``writer`` after constructing the IndexWriter so runners can
+    submit follow-up jobs (e.g. ProcessDirtyPaths submitting
+    FlushDirtyEmbeddings).
+    """
+
+    index_manager: Any
+    writer: IndexWriter | None = None
+
+
+def run_build_index(job: BuildIndex, ctx: WriterContext) -> Any:
+    """Execute a full FTS index build."""
+    return ctx.index_manager.build_index(force=job.force)
+
+
+def run_reindex_all(job: ReindexAll, ctx: WriterContext) -> Any:  # noqa: ARG001
+    """Execute an incremental FTS reindex via the change tracker."""
+    return ctx.index_manager.reindex()
+
+
+def run_build_embeddings(job: BuildEmbeddings, ctx: WriterContext) -> Any:
+    """Execute a full vector index build."""
+    return ctx.index_manager.build_embeddings(force=job.force)
+
+
+def run_process_dirty_paths(
+    job: ProcessDirtyPaths,  # noqa: ARG001
+    ctx: WriterContext,
+) -> None:
+    """Drain the FTS-dirty set and route the snapshot to the index manager."""
+    if ctx.writer is None:
+        msg = "WriterContext.writer must be set before running jobs"
+        raise RuntimeError(msg)
+    snapshot = ctx.writer.drain_dirty_paths()
+    ctx.index_manager.process_dirty_paths(snapshot)
+    ctx.writer.submit(FlushDirtyEmbeddings())
+
+
+def run_flush_dirty_embeddings(
+    job: FlushDirtyEmbeddings,  # noqa: ARG001
+    ctx: WriterContext,
+) -> None:
+    """Drain the vector-dirty set and route the snapshot to the index manager."""
+    if ctx.writer is None:
+        msg = "WriterContext.writer must be set before running jobs"
+        raise RuntimeError(msg)
+    snapshot = ctx.writer.drain_dirty_embeddings()
+    ctx.index_manager.flush_dirty_embeddings(snapshot)
