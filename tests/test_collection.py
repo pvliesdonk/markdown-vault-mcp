@@ -4073,3 +4073,109 @@ def test_collection_build_embeddings_async_returns_future(tmp_path):
         future.result(timeout=10)
     finally:
         col.close()
+
+
+def test_reindex_async_failure_recorded_in_status(tmp_path, monkeypatch):
+    """If the writer-thread reindex job raises, the exception is captured
+    into get_index_status['last_reindex_error'] (#561)."""
+    import time
+
+    from markdown_vault_mcp.collection import Collection
+    from markdown_vault_mcp.managers import index as index_module
+
+    col = Collection(source_dir=tmp_path, read_only=False)
+    try:
+        col.build_index()
+
+        # Patch IndexManager.reindex to raise so we can verify capture.
+        def boom(self):  # noqa: ARG001
+            raise RuntimeError("simulated reindex failure")
+
+        monkeypatch.setattr(index_module.IndexManager, "reindex", boom)
+
+        fut = col.reindex_async()
+        # Future will resolve with the exception.
+        with pytest.raises(RuntimeError, match="simulated reindex failure"):
+            fut.result(timeout=5)
+
+        # Wait for the done-callback to run.  The callback ordering
+        # relative to .result() can race — give it a tick.
+        for _ in range(50):
+            if col._last_reindex_error is not None:
+                break
+            time.sleep(0.01)
+
+        assert col._last_reindex_error is not None
+        assert "simulated reindex failure" in str(col._last_reindex_error)
+
+        status = col.get_index_status()
+        assert "last_reindex_error" in status
+        assert status["last_reindex_error"] is not None
+        assert "simulated reindex failure" in status["last_reindex_error"]
+    finally:
+        col.close()
+
+
+def test_reindex_async_success_clears_prior_error(tmp_path):
+    """A successful async reindex clears any prior captured error (#561)."""
+    import time
+
+    from markdown_vault_mcp.collection import Collection
+
+    col = Collection(source_dir=tmp_path, read_only=False)
+    try:
+        col.build_index()
+        # Seed a prior error.
+        col._last_reindex_error = RuntimeError("prior")
+
+        fut = col.reindex_async()
+        fut.result(timeout=5)
+
+        for _ in range(50):
+            if col._last_reindex_error is None:
+                break
+            time.sleep(0.01)
+        assert col._last_reindex_error is None
+        assert col.get_index_status()["last_reindex_error"] is None
+    finally:
+        col.close()
+
+
+def test_build_embeddings_async_failure_recorded_in_status(tmp_path, monkeypatch):
+    """If the writer-thread build_embeddings job raises, the exception is
+    captured into get_index_status['last_build_embeddings_error'] (#561)."""
+    import time
+
+    from markdown_vault_mcp.collection import Collection
+    from markdown_vault_mcp.managers import index as index_module
+    from tests.conftest import MockEmbeddingProvider
+
+    col = Collection(
+        source_dir=tmp_path,
+        read_only=False,
+        embeddings_path=tmp_path / "vec",
+        embedding_provider=MockEmbeddingProvider(),
+    )
+    try:
+        col.build_index()
+
+        def boom(self, *, force=False):  # noqa: ARG001
+            raise RuntimeError("simulated embeddings failure")
+
+        monkeypatch.setattr(index_module.IndexManager, "build_embeddings", boom)
+
+        fut = col.build_embeddings_async()
+        with pytest.raises(RuntimeError, match="simulated embeddings failure"):
+            fut.result(timeout=5)
+
+        for _ in range(50):
+            if col._last_build_embeddings_error is not None:
+                break
+            time.sleep(0.01)
+
+        assert col._last_build_embeddings_error is not None
+        status = col.get_index_status()
+        assert status["last_build_embeddings_error"] is not None
+        assert "simulated embeddings failure" in status["last_build_embeddings_error"]
+    finally:
+        col.close()

@@ -1243,8 +1243,14 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
 
         Returns:
             Dict with ``status: "queued"``. The reindex runs asynchronously on
-            the writer thread; poll ``get_server_info`` or ``get_index_status``
-            for completion.
+            the writer thread. Poll ``get_index_status`` for completion:
+
+            - ``status == "queryable"`` AND ``queue_depth == 0`` AND
+              ``in_flight is None`` → reindex completed.
+            - ``last_reindex_error`` not ``None`` → the most recent async
+              reindex failed on the writer thread; the value is the
+              stringified exception.  Operators can re-run ``reindex`` to
+              retry; a subsequent successful run clears the field.
         """
         collection.reindex_async()
         return {"status": "queued"}
@@ -1276,8 +1282,15 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
 
         Returns:
             Dict with ``status: "queued"``. The build runs asynchronously on
-            the writer thread; poll ``get_server_info`` or
-            ``get_index_status`` for completion.
+            the writer thread. Poll ``get_index_status`` for completion:
+
+            - ``status == "queryable"`` AND ``queue_depth == 0`` AND
+              ``in_flight is None`` → build completed.
+            - ``last_build_embeddings_error`` not ``None`` → the most
+              recent async build failed on the writer thread; the value is
+              the stringified exception.  Operators can re-run
+              ``build_embeddings`` to retry; a subsequent successful run
+              clears the field.
         """
         collection.build_embeddings_async(force=force)
         return {"status": "queued"}

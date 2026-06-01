@@ -274,6 +274,14 @@ class Collection:
         self._background_build_error: BaseException | None = None
         self._background_started: bool = False
 
+        # Per-async-variant error capture (#561). Each async variant of a
+        # writer-routed operation attaches a done-callback that records the
+        # most recent failure. Surfaced via get_index_status() so MCP
+        # clients can detect that a "queued" reindex / build_embeddings
+        # actually failed on the writer thread.
+        self._last_reindex_error: BaseException | None = None
+        self._last_build_embeddings_error: BaseException | None = None
+
         # Lock for file-mutation atomicity only (#559). The IndexWriter
         # thread is the serialization point for index mutations; this lock
         # serialises ONLY the read-modify-write of files in DocumentManager
@@ -616,26 +624,45 @@ class Collection:
     def get_index_status(self) -> dict[str, Any]:
         """Return a non-blocking snapshot of background-build state.
 
-        Shape: ``{"status": "queryable" | "building" | "failed",
-        "documents_indexed": int, "error": str | None}`` merged with
-        :meth:`IndexWriter.get_status` (``queue_depth``, ``in_flight``,
-        ``dirty_paths``, ``dirty_embeddings``).
+        Returns a dict with ten keys:
 
-        - ``"queryable"``: ``_index_built`` is True and the build event is
-          set — a completed build exists; captures an error as diagnostic
-          context in ``error`` but does not demote the status.
-        - ``"failed"``: precondition does not hold AND the build event is
-          set AND ``_background_build_error`` is non-None; ``error`` carries
-          its message.
-        - ``"building"``: anything else — event cleared (writer in flight)
-          OR event set but ``_index_built`` is False (never scheduled).
+        - ``status`` (``"queryable"`` | ``"building"`` | ``"failed"``):
+          overall state of the FTS index build.
 
-        ``documents_indexed`` is taken from :meth:`FTSIndex.list_notes` and
-        so reflects whatever rows are currently committed — progress is
-        observable in the ``"building"`` state as the count rises.
+          - ``"queryable"``: ``_index_built`` is True and the build event is
+            set — a completed build exists; captures an error as diagnostic
+            context in ``error`` but does not demote the status.
+          - ``"failed"``: precondition does not hold AND the build event is
+            set AND ``_background_build_error`` is non-None; ``error``
+            carries its message.
+          - ``"building"``: anything else — event cleared (writer in flight)
+            OR event set but ``_index_built`` is False (never scheduled).
 
-        ``error`` carries the diagnostic message from the last background
-        build attempt that captured an exception, independent of ``status``.
+        - ``documents_indexed`` (int): row count from
+          :meth:`FTSIndex.list_notes`, reflecting whatever rows are
+          currently committed.  Progress is observable in the
+          ``"building"`` state as the count rises.
+        - ``error`` (str | None): diagnostic message from the last
+          background ``build_index`` attempt that captured an exception,
+          independent of ``status``.
+        - ``last_reindex_error`` (str | None): diagnostic message from the
+          most recent async :meth:`reindex_async` invocation that failed
+          on the writer thread, captured via :meth:`_on_reindex_done`
+          (#561).  Cleared by a subsequent successful async reindex.
+        - ``last_build_embeddings_error`` (str | None): diagnostic message
+          from the most recent async :meth:`build_embeddings_async`
+          invocation that failed on the writer thread, captured via
+          :meth:`_on_build_embeddings_done` (#561).  Cleared by a
+          subsequent successful async build_embeddings.
+
+        Merged with :meth:`IndexWriter.get_status`, which adds four keys:
+
+        - ``queue_depth`` (int): number of jobs awaiting the writer.
+        - ``in_flight`` (str | None): the currently running job's name,
+          or ``None`` if idle.
+        - ``dirty_paths`` (list[str]): paths queued for reindex.
+        - ``dirty_embeddings`` (bool): True if an embedding build is
+          queued.
         """
         if self.is_queryable():
             status = "queryable"
@@ -665,6 +692,16 @@ class Collection:
             "status": status,
             "documents_indexed": documents_indexed,
             "error": error,
+            "last_reindex_error": (
+                str(self._last_reindex_error)
+                if self._last_reindex_error is not None
+                else None
+            ),
+            "last_build_embeddings_error": (
+                str(self._last_build_embeddings_error)
+                if self._last_build_embeddings_error is not None
+                else None
+            ),
         }
         result.update(self._writer.get_status())
         return result
@@ -1014,6 +1051,36 @@ class Collection:
         future.add_done_callback(_on_done)
         return future
 
+    def _on_reindex_done(self, fut: Future[ReindexResult]) -> None:
+        """Capture async reindex job outcome for visibility via get_index_status.
+
+        Records the exception into ``_last_reindex_error`` on failure;
+        clears it on success.  Mirrors the done-callback pattern used by
+        :meth:`build_index_async` so writer-thread failures are
+        observable to MCP clients (#561).
+        """
+        try:
+            fut.result()
+            self._last_reindex_error = None
+        except BaseException as exc:
+            self._last_reindex_error = exc
+            logger.exception("Async reindex job failed")
+
+    def _on_build_embeddings_done(self, fut: Future[int]) -> None:
+        """Capture async build_embeddings job outcome for visibility via get_index_status.
+
+        Records the exception into ``_last_build_embeddings_error`` on
+        failure; clears it on success.  Mirrors the done-callback pattern
+        used by :meth:`build_index_async` so writer-thread failures are
+        observable to MCP clients (#561).
+        """
+        try:
+            fut.result()
+            self._last_build_embeddings_error = None
+        except BaseException as exc:
+            self._last_build_embeddings_error = exc
+            logger.exception("Async build_embeddings job failed")
+
     def reindex_async(self) -> Future[ReindexResult]:
         """Submit an incremental FTS reindex and return the Future.
 
@@ -1025,8 +1092,17 @@ class Collection:
         :meth:`build_index_async`) runs before this :class:`ReindexAll`,
         so the writer thread sees a built index when it dequeues the
         job.
+
+        Attaches :meth:`_on_reindex_done` as a done-callback so any
+        writer-thread failure is captured into
+        ``_last_reindex_error`` and surfaced through
+        :meth:`get_index_status` (#561).  This lets MCP clients that
+        fired-and-forgot the returned Future still detect async
+        failures.
         """
-        return self._writer.submit(ReindexAll())
+        fut = self._writer.submit(ReindexAll())
+        fut.add_done_callback(self._on_reindex_done)
+        return fut
 
     def build_embeddings_async(self, *, force: bool = False) -> Future[int]:
         """Submit a vector index build and return the Future.
@@ -1039,8 +1115,17 @@ class Collection:
         :meth:`build_index_async`) runs before this
         :class:`BuildEmbeddings`, so the writer thread sees a built
         index when it dequeues the job.
+
+        Attaches :meth:`_on_build_embeddings_done` as a done-callback
+        so any writer-thread failure is captured into
+        ``_last_build_embeddings_error`` and surfaced through
+        :meth:`get_index_status` (#561).  This lets MCP clients that
+        fired-and-forgot the returned Future still detect async
+        failures.
         """
-        return self._writer.submit(BuildEmbeddings(force=force))
+        fut = self._writer.submit(BuildEmbeddings(force=force))
+        fut.add_done_callback(self._on_build_embeddings_done)
+        return fut
 
     def embeddings_status(self) -> dict:
         """Return status information about the vector index.
