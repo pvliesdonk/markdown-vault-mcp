@@ -625,7 +625,11 @@ class Collection:
     def is_drained(self) -> bool:
         """Return True iff the IndexWriter has no pending or in-flight work.
 
-        Cheap, non-blocking. A snapshot of the writer's current state.
+        Cheap, non-blocking. A snapshot of the writer's current state —
+        the four indicators are sampled under the writer's per-field
+        locks (queue depth via ``Queue.qsize()`` is lock-free), not a
+        single cross-field lock, so the writer can transition briefly
+        between sample points.
 
         Returns:
             True when ``queue_depth == 0``, ``in_flight is None``, the
