@@ -114,6 +114,12 @@ class IndexWriter:
         self._dirty_embeddings: set[str] = set()
         self._in_flight_lock = threading.Lock()
         self._in_flight_kind: str | None = None
+        # Monotonically increments each time a job finishes. Read under
+        # _in_flight_lock alongside _in_flight_kind so callers can pair
+        # the snapshot with the state. Used by drift-aware B3 readers
+        # (#534) to detect write cycles that fit entirely inside a
+        # tool's read window.
+        self._write_generation: int = 0
 
     def start(self) -> None:
         """Spawn the worker thread. Idempotent and thread-safe.
@@ -226,6 +232,7 @@ class IndexWriter:
         """Return non-blocking snapshot of writer state."""
         with self._in_flight_lock:
             in_flight = self._in_flight_kind
+            write_generation = self._write_generation
         with self._dirty_lock:
             dirty_paths = len(self._dirty_paths)
             dirty_embeddings = len(self._dirty_embeddings)
@@ -234,6 +241,7 @@ class IndexWriter:
             "in_flight": in_flight,
             "dirty_paths": dirty_paths,
             "dirty_embeddings": dirty_embeddings,
+            "write_generation": write_generation,
         }
 
     def _run(self) -> None:
@@ -328,6 +336,7 @@ class IndexWriter:
             finally:
                 with self._in_flight_lock:
                     self._in_flight_kind = None
+                    self._write_generation += 1
 
 
 @dataclass

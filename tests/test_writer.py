@@ -245,7 +245,39 @@ def test_get_status_empty_writer():
         "in_flight": None,
         "dirty_paths": 0,
         "dirty_embeddings": 0,
+        "write_generation": 0,
     }
+
+
+def test_write_generation_advances_per_completed_job():
+    def runner(job, ctx):  # noqa: ARG001
+        return None
+
+    writer = IndexWriter(runners={"build_index": runner}, ctx=None)
+    writer.start()
+    try:
+        assert writer.get_status()["write_generation"] == 0
+        writer.submit(BuildIndex()).result(timeout=5)
+        assert writer.get_status()["write_generation"] == 1
+        writer.submit(BuildIndex()).result(timeout=5)
+        assert writer.get_status()["write_generation"] == 2
+    finally:
+        writer.close(timeout=5)
+
+
+def test_write_generation_advances_when_runner_raises():
+    def raising_runner(job, ctx):  # noqa: ARG001
+        raise RuntimeError("boom")
+
+    writer = IndexWriter(runners={"build_index": raising_runner}, ctx=None)
+    writer.start()
+    future = writer.submit(BuildIndex())
+    with pytest.raises(RuntimeError, match="boom"):
+        future.result(timeout=5)
+    # close() joins the worker, ensuring the finally block (which
+    # increments _write_generation) has completed before we observe it.
+    writer.close(timeout=5)
+    assert writer.get_status()["write_generation"] == 1
 
 
 def test_get_status_reports_dirty_counts():

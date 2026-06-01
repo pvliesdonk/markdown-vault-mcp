@@ -568,13 +568,15 @@ prerequisites that motivated centralising mutations on a single writer.
 B3 MCP tools (`get_backlinks`, `get_outlinks`, `get_similar`,
 `get_context`, `get_connection_path`) wrap their response in a
 `{"stale": bool, "data": ...}` envelope. `stale` is the OR of three
-snapshots: the writer was busy before the optional `wait_for_drain`
-returned (or the wait timed out), the writer was busy at the moment
-the read began, or the writer is busy at response-construction time.
-The writer can still slip a write entirely inside the read window
-between the pre-read and post-read snapshots — `stale` is conservative
-about writes arriving on either side of the read, not strictly
-linearizable.
+signals: the optional `wait_for_drain` timed out (writer never went
+idle within the budget), the writer's monotonic `write_generation`
+counter advanced during the read (a write cycle completed inside the
+read window), or `is_drained()` reports a non-idle writer at
+response-construction time (a write is in flight). The
+`write_generation` counter — incremented under `_in_flight_lock`
+once per completed job — closes the case the pre/post `is_drained()`
+pair could not detect: a write that started and finished entirely
+between two snapshots.
 
 Each B3 tool accepts an optional `wait_for_drain: bool = false`
 parameter. When `true`, the tool layer polls `Collection.is_drained()`

@@ -626,7 +626,7 @@ Find all documents that link to a given document.
 
 **Returns:** Dict envelope with two keys:
 
-- `stale` (bool): True when the IndexWriter had pending or in-flight work at response time; the `data` payload may not reflect the latest committed state.
+- `stale` (bool): True when the IndexWriter had pending or in-flight work at any of three observation points (wait timed out, a write cycle completed inside the read window, or non-idle at response time). False otherwise; the `data` payload reflects the index as of response time.
 - `data` (list[dict]): List of documents containing links to the given path. Each entry has `source_path`, `source_title`, `link_text`, `link_type`, `fragment`, and `raw_target` fields.
 
 ### `get_outlinks`
@@ -642,7 +642,7 @@ Find all links from a document, with existence check.
 
 **Returns:** Dict envelope with two keys:
 
-- `stale` (bool): True when the IndexWriter had pending or in-flight work at response time; the `data` payload may not reflect the latest committed state.
+- `stale` (bool): True when the IndexWriter had pending or in-flight work at any of three observation points (wait timed out, a write cycle completed inside the read window, or non-idle at response time). False otherwise; the `data` payload reflects the index as of response time.
 - `data` (list[dict]): List of link targets with an `exists` field indicating whether the target document is in the vault. Each entry has `target_path`, `link_text`, `link_type`, `fragment`, `raw_target`, and `exists` fields.
 
 ### `get_broken_links`
@@ -672,7 +672,7 @@ Find semantically similar notes by document path. Requires embeddings to be buil
 
 **Returns:** Dict envelope with two keys:
 
-- `stale` (bool): True when the IndexWriter had pending or in-flight work at response time; the `data` payload may not reflect the latest committed state.
+- `stale` (bool): True when the IndexWriter had pending or in-flight work at any of three observation points (wait timed out, a write cycle completed inside the read window, or non-idle at response time). False otherwise; the `data` payload reflects the index as of response time.
 - `data` (list[dict]): List of grouped similar-document dicts ranked by cosine similarity, one entry per file with up to `chunks_per_file` best-matching sections. Each entry contains: `path`, `title`, `folder`, `score` (max section score), `search_type` (`"semantic"`), `frontmatter`, and `sections` — a list of `{heading, content, score}` dicts sorted by score then document order.
 
 !!! note "Grouped result shape"
@@ -706,7 +706,7 @@ Get a consolidated context dossier for a note. Combines backlinks, outlinks, sim
 
 **Returns:** Dict envelope with two keys:
 
-- `stale` (bool): True when the IndexWriter had pending or in-flight work at response time; the `data` payload may not reflect the latest committed state.
+- `stale` (bool): True when the IndexWriter had pending or in-flight work at any of three observation points (wait timed out, a write cycle completed inside the read window, or non-idle at response time). False otherwise; the `data` payload reflects the index as of response time.
 - `data` (dict): Object with `path`, `title`, `folder`, `frontmatter`, `modified_at`, `backlinks`, `outlinks`, `similar`, `folder_notes`, and `tags` fields. The `similar` list contains grouped result dicts — one entry per file with up to `chunks_per_file` best-matching sections (default 1 for `get_context` to keep dossiers compact).
 
 !!! note "Grouped similar shape"
@@ -745,7 +745,7 @@ Find the shortest path between two notes via BFS on the undirected link graph (m
 
 **Returns:** Dict envelope with two keys:
 
-- `stale` (bool): True when the IndexWriter had pending or in-flight work at response time; the `data` payload may not reflect the latest committed state.
+- `stale` (bool): True when the IndexWriter had pending or in-flight work at any of three observation points (wait timed out, a write cycle completed inside the read window, or non-idle at response time). False otherwise; the `data` payload reflects the index as of response time.
 - `data` (dict): Object with `found` (bool), `path` (ordered list of note paths from source to target), and `hops` (number of edges, or `-1` if not found).
 
 ### `get_history`

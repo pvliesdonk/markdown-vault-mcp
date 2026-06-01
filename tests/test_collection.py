@@ -4246,6 +4246,46 @@ class TestIsDrained:
             col.close()
 
 
+class TestWriteGeneration:
+    """Tests for Collection.write_generation() (#534)."""
+
+    def test_increments_on_job_completion(self, tmp_path: Path) -> None:
+        from markdown_vault_mcp.collection import Collection
+
+        col = Collection(source_dir=tmp_path, read_only=False)
+        try:
+            col.build_index()
+            gen_before = col.write_generation()
+            # Submit a no-op write (mark + flush dirty paths) so a job
+            # cycle completes through the writer.
+            col._writer.mark_dirty(["sentinel.md"])
+            col._writer.drain_dirty_paths()
+            from markdown_vault_mcp.writer import BuildIndex
+
+            col._writer.submit(BuildIndex()).result(timeout=5)
+            assert col.write_generation() > gen_before
+        finally:
+            col.close()
+
+    def test_monotonic_across_multiple_jobs(self, tmp_path: Path) -> None:
+        from itertools import pairwise
+
+        from markdown_vault_mcp.collection import Collection
+        from markdown_vault_mcp.writer import BuildIndex
+
+        col = Collection(source_dir=tmp_path, read_only=False)
+        try:
+            col.build_index()
+            samples = [col.write_generation()]
+            for _ in range(3):
+                col._writer.submit(BuildIndex()).result(timeout=5)
+                samples.append(col.write_generation())
+            for prev, cur in pairwise(samples):
+                assert cur > prev
+        finally:
+            col.close()
+
+
 class TestWaitForDrain:
     """Tests for Collection.wait_for_drain() (#534)."""
 

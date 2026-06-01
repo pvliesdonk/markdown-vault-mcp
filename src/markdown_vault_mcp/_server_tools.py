@@ -700,10 +700,13 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
         Returns:
             Dict envelope with two keys:
 
-            - stale (bool): True when the IndexWriter had pending work
-              at the moment this response was constructed. The data
-              below may not reflect the latest committed state. False
-              when the writer was idle at response time.
+            - stale (bool): True when the IndexWriter had pending or
+              in-flight work at any of three observation points (the
+              optional ``wait_for_drain`` timing out, a completed
+              write cycle inside the read window, or non-idle at
+              response construction). False when none of those
+              conditions held — the data is current as of response
+              time.
             - data (list[dict]): The backlinks list. Each entry has:
 
               - source_path (str): Path of the document containing the link.
@@ -722,12 +725,12 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
         drained_on_request = await _maybe_wait_for_drain(
             collection, wait_for_drain, "get_backlinks"
         )
-        drained_before_read = collection.is_drained()
+        gen_before = collection.write_generation()
         results = await asyncio.to_thread(collection.get_backlinks, path)
         return {
             "stale": (
                 (not drained_on_request)
-                or (not drained_before_read)
+                or (collection.write_generation() != gen_before)
                 or (not collection.is_drained())
             ),
             "data": [asdict(r) for r in results],
@@ -770,10 +773,13 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
         Returns:
             Dict envelope with two keys:
 
-            - stale (bool): True when the IndexWriter had pending work
-              at the moment this response was constructed. The data
-              below may not reflect the latest committed state. False
-              when the writer was idle at response time.
+            - stale (bool): True when the IndexWriter had pending or
+              in-flight work at any of three observation points (the
+              optional ``wait_for_drain`` timing out, a completed
+              write cycle inside the read window, or non-idle at
+              response construction). False when none of those
+              conditions held — the data is current as of response
+              time.
             - data (list[dict]): The outlinks list. Each entry has:
 
               - target_path (str): Path of the linked document.
@@ -792,12 +798,12 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
         drained_on_request = await _maybe_wait_for_drain(
             collection, wait_for_drain, "get_outlinks"
         )
-        drained_before_read = collection.is_drained()
+        gen_before = collection.write_generation()
         results = await asyncio.to_thread(collection.get_outlinks, path)
         return {
             "stale": (
                 (not drained_on_request)
-                or (not drained_before_read)
+                or (collection.write_generation() != gen_before)
                 or (not collection.is_drained())
             ),
             "data": [asdict(r) for r in results],
@@ -888,8 +894,10 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
         Returns:
             Dict envelope with two keys:
 
-            - stale (bool): True when the IndexWriter had pending work
-              at response time.
+            - stale (bool): True when the IndexWriter had pending or
+              in-flight work at any of three observation points (wait
+              timed out, write completed inside the read window, or
+              non-idle at response time). False otherwise.
             - data (list[dict]): Result dicts ranked by file similarity.
               Each entry contains:
 
@@ -917,7 +925,7 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
         drained_on_request = await _maybe_wait_for_drain(
             collection, wait_for_drain, "get_similar"
         )
-        drained_before_read = collection.is_drained()
+        gen_before = collection.write_generation()
         results = await asyncio.to_thread(
             collection.get_similar,
             path,
@@ -927,7 +935,7 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
         return {
             "stale": (
                 (not drained_on_request)
-                or (not drained_before_read)
+                or (collection.write_generation() != gen_before)
                 or (not collection.is_drained())
             ),
             "data": [asdict(r) for r in results],
@@ -1019,8 +1027,10 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
         Returns:
             Dict envelope with two keys:
 
-            - stale (bool): True when the IndexWriter had pending work
-              at response time.
+            - stale (bool): True when the IndexWriter had pending or
+              in-flight work at any of three observation points (wait
+              timed out, write completed inside the read window, or
+              non-idle at response time). False otherwise.
             - data (dict): The note context. Inner fields:
 
               - path (str): Relative path of the document.
@@ -1077,7 +1087,7 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
         drained_on_request = await _maybe_wait_for_drain(
             collection, wait_for_drain, "get_context"
         )
-        drained_before_read = collection.is_drained()
+        gen_before = collection.write_generation()
         result = await asyncio.to_thread(
             collection.get_context,
             path,
@@ -1087,7 +1097,7 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
         return {
             "stale": (
                 (not drained_on_request)
-                or (not drained_before_read)
+                or (collection.write_generation() != gen_before)
                 or (not collection.is_drained())
             ),
             "data": asdict(result),
@@ -1196,8 +1206,10 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
         Returns:
             Dict envelope with two keys:
 
-            - stale (bool): True when the IndexWriter had pending work
-              at response time.
+            - stale (bool): True when the IndexWriter had pending or
+              in-flight work at any of three observation points (wait
+              timed out, write completed inside the read window, or
+              non-idle at response time). False otherwise.
             - data (dict): The connection-path result. Inner fields:
 
               - `found` (bool): Whether a path was found within `max_depth` hops.
@@ -1209,7 +1221,7 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
         drained_on_request = await _maybe_wait_for_drain(
             collection, wait_for_drain, "get_connection_path"
         )
-        drained_before_read = collection.is_drained()
+        gen_before = collection.write_generation()
         result: list[str] | None = await asyncio.to_thread(
             collection.get_connection_path, source, target, max_depth
         )
@@ -1221,7 +1233,7 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
         return {
             "stale": (
                 (not drained_on_request)
-                or (not drained_before_read)
+                or (collection.write_generation() != gen_before)
                 or (not collection.is_drained())
             ),
             "data": inner,
