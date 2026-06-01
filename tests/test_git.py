@@ -3653,6 +3653,50 @@ class TestStageAndCommitAuthorSplit:
         assert ">" not in author_name
         assert "Alice" in author_name
 
+    def test_commit_name_with_angle_brackets_no_spurious_author(
+        self, git_repo: Path
+    ) -> None:
+        """commit_name containing angle brackets does not trigger spurious --author."""
+        from markdown_vault_mcp.git import _stage_and_commit
+
+        f = git_repo / "note.md"
+        f.write_text("# hi\n")
+        # commit_name has angle brackets — same content as what _sanitize would produce
+        # when no author override is configured.  No --author flag should be added.
+        _stage_and_commit(
+            git_repo,
+            f,
+            "write",
+            commit_name="Vault Bot <bot@srv>",
+            commit_email="bot@srv.com",
+        )
+
+        # author == committer (no --author flag spuriously added)
+        assert self._get_log(git_repo, "%aN") == self._get_log(git_repo, "%cN")
+        assert self._get_log(git_repo, "%aE") == self._get_log(git_repo, "%cE")
+
+    def test_sanitized_claim_matching_committer_not_added_as_author(
+        self, git_repo: Path
+    ) -> None:
+        """OIDC claim that sanitizes to the committer value is not added as --author."""
+        from markdown_vault_mcp.git import _stage_and_commit
+
+        f = git_repo / "note.md"
+        f.write_text("# hi\n")
+        # claim "bot\n" sanitizes to "bot" == commit_name — no attribution split expected
+        _stage_and_commit(
+            git_repo,
+            f,
+            "write",
+            commit_name="bot",
+            commit_email="bot@srv.com",
+            author_name="bot\n",
+            author_email="bot@srv.com",
+        )
+
+        assert self._get_log(git_repo, "%aN") == self._get_log(git_repo, "%cN")
+        assert self._get_log(git_repo, "%aE") == self._get_log(git_repo, "%cE")
+
 
 class TestOidcClaimAuthorCommitterSplit:
     """GitWriteStrategy uses OIDC claims for author only; committer stays static."""

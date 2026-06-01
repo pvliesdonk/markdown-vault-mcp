@@ -2621,15 +2621,32 @@ def _stage_and_commit(
     commit_msg = f"{operation}: {rel_path}"
 
     # Build author string when per-request identity differs from committer.
-    # Sanitize OIDC claim values to prevent commit-object header injection.
+    # Sanitize both sides of the comparison so a commit_name that itself
+    # contains stripped chars (e.g. angle brackets) doesn't trigger a
+    # spurious --author when no OIDC author is configured, and so a claim
+    # that sanitizes to the same value as the committer is treated as equal.
     eff_author_name = _sanitize_git_identity(
         author_name if author_name is not None else commit_name
     )
     eff_author_email = _sanitize_git_identity(
         author_email if author_email is not None else commit_email
     )
+    san_commit_name = _sanitize_git_identity(commit_name)
+    san_commit_email = _sanitize_git_identity(commit_email)
+    if author_name is not None and eff_author_name != author_name:
+        logger.debug(
+            "git_identity_sanitized field=author_name original=%s sanitized=%s",
+            author_name,
+            eff_author_name,
+        )
+    if author_email is not None and eff_author_email != author_email:
+        logger.debug(
+            "git_identity_sanitized field=author_email original=%s sanitized=%s",
+            author_email,
+            eff_author_email,
+        )
     author_args: list[str] = []
-    if eff_author_name != commit_name or eff_author_email != commit_email:
+    if eff_author_name != san_commit_name or eff_author_email != san_commit_email:
         author_args = ["--author", f"{eff_author_name} <{eff_author_email}>"]
 
     subprocess.run(
