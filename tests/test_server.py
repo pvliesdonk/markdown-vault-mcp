@@ -3664,3 +3664,26 @@ class TestB3StaleSignal:
             )
         envelope = _parse_tool_data(result)
         assert envelope["stale"] is False
+
+    @pytest.mark.usefixtures("_mcp_env_linked")
+    async def test_wait_for_drain_timeout_reports_stale_true(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from markdown_vault_mcp._server_deps import get_collection_singleton
+
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S", "0.05")
+        server = make_server()
+        async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
+            col = get_collection_singleton()
+            col._writer.mark_dirty(["sentinel.md"])
+            try:
+                result = await client.call_tool(
+                    "get_backlinks",
+                    {"path": "notes/topic.md", "wait_for_drain": True},
+                )
+            finally:
+                col._writer.drain_dirty_paths()
+        envelope = _parse_tool_data(result)
+        assert envelope["stale"] is True
+        assert isinstance(envelope["data"], list)

@@ -39,6 +39,27 @@ def _resolve_drain_timeout() -> float:
     return float(os.environ.get("MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S", "60"))
 
 
+async def _maybe_wait_for_drain(
+    collection: Collection, wait_for_drain: bool, tool_name: str
+) -> bool:
+    """Wait for the writer to drain when requested. Log on timeout.
+
+    Returns True when the writer was drained at the point of asking
+    (or when no wait was requested), False when the bounded wait
+    timed out. Callers OR the negation into the response envelope's
+    ``stale`` field so a timed-out wait reliably reports ``stale=True``.
+    """
+    if not wait_for_drain:
+        return True
+    timeout = _resolve_drain_timeout()
+    drained = await asyncio.to_thread(collection.wait_for_drain, timeout=timeout)
+    if not drained:
+        logger.warning(
+            "wait_for_drain_timeout tool=%s timeout_s=%s", tool_name, timeout
+        )
+    return drained
+
+
 _ALLOWED_FETCH_SCHEMES = frozenset({"http", "https"})
 
 # SSRF protection: block private/reserved IP ranges.
@@ -685,13 +706,12 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
         Raises:
             ValueError: If no document exists at the given path.
         """
-        if wait_for_drain:
-            await asyncio.to_thread(
-                collection.wait_for_drain, timeout=_resolve_drain_timeout()
-            )
+        drained_on_request = await _maybe_wait_for_drain(
+            collection, wait_for_drain, "get_backlinks"
+        )
         results = await asyncio.to_thread(collection.get_backlinks, path)
         return {
-            "stale": not collection.is_drained(),
+            "stale": (not drained_on_request) or (not collection.is_drained()),
             "data": [asdict(r) for r in results],
         }
 
@@ -751,13 +771,12 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
         Raises:
             ValueError: If no document exists at the given path.
         """
-        if wait_for_drain:
-            await asyncio.to_thread(
-                collection.wait_for_drain, timeout=_resolve_drain_timeout()
-            )
+        drained_on_request = await _maybe_wait_for_drain(
+            collection, wait_for_drain, "get_outlinks"
+        )
         results = await asyncio.to_thread(collection.get_outlinks, path)
         return {
-            "stale": not collection.is_drained(),
+            "stale": (not drained_on_request) or (not collection.is_drained()),
             "data": [asdict(r) for r in results],
         }
 
@@ -872,10 +891,9 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
         Raises:
             ValueError: If no document exists at the given path.
         """
-        if wait_for_drain:
-            await asyncio.to_thread(
-                collection.wait_for_drain, timeout=_resolve_drain_timeout()
-            )
+        drained_on_request = await _maybe_wait_for_drain(
+            collection, wait_for_drain, "get_similar"
+        )
         results = await asyncio.to_thread(
             collection.get_similar,
             path,
@@ -883,7 +901,7 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
             chunks_per_file=chunks_per_file,
         )
         return {
-            "stale": not collection.is_drained(),
+            "stale": (not drained_on_request) or (not collection.is_drained()),
             "data": [asdict(r) for r in results],
         }
 
@@ -1028,10 +1046,9 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
         Raises:
             ValueError: If no document exists at the given path.
         """
-        if wait_for_drain:
-            await asyncio.to_thread(
-                collection.wait_for_drain, timeout=_resolve_drain_timeout()
-            )
+        drained_on_request = await _maybe_wait_for_drain(
+            collection, wait_for_drain, "get_context"
+        )
         result = await asyncio.to_thread(
             collection.get_context,
             path,
@@ -1039,7 +1056,7 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
             link_limit=link_limit,
         )
         return {
-            "stale": not collection.is_drained(),
+            "stale": (not drained_on_request) or (not collection.is_drained()),
             "data": asdict(result),
         }
 
@@ -1156,10 +1173,9 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
               - `hops` (int): Number of edges in the path (`len(path) - 1`), or -1 if
                 not found.
         """
-        if wait_for_drain:
-            await asyncio.to_thread(
-                collection.wait_for_drain, timeout=_resolve_drain_timeout()
-            )
+        drained_on_request = await _maybe_wait_for_drain(
+            collection, wait_for_drain, "get_connection_path"
+        )
         result: list[str] | None = await asyncio.to_thread(
             collection.get_connection_path, source, target, max_depth
         )
@@ -1169,7 +1185,7 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
         else:
             inner = {"found": True, "path": result, "hops": len(result) - 1}
         return {
-            "stale": not collection.is_drained(),
+            "stale": (not drained_on_request) or (not collection.is_drained()),
             "data": inner,
         }
 
