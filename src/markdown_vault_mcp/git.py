@@ -616,8 +616,14 @@ class GitWriteStrategy:
                     self._git_root,
                     path,
                     operation,
-                    commit_name=effective_name,
-                    commit_email=effective_email,
+                    commit_name=self._commit_name,
+                    commit_email=self._commit_email,
+                    author_name=effective_name
+                    if effective_name != self._commit_name
+                    else None,
+                    author_email=effective_email
+                    if effective_email != self._commit_email
+                    else None,
                 )
             if self._enable_push:
                 self._schedule_push()
@@ -2515,6 +2521,8 @@ def _stage_and_commit(
     operation: Literal["write", "edit", "delete", "rename"],
     commit_name: str = GitWriteStrategy.DEFAULT_COMMIT_NAME,
     commit_email: str = GitWriteStrategy.DEFAULT_COMMIT_EMAIL,
+    author_name: str | None = None,
+    author_email: str | None = None,
 ) -> None:
     """Stage and commit a single file change (no push).
 
@@ -2524,6 +2532,13 @@ def _stage_and_commit(
         operation: The write operation type.
         commit_name: Git committer name (overrides git config).
         commit_email: Git committer email (overrides git config).
+        author_name: Git author name.  When provided and different from
+            *commit_name* (or when *author_email* also differs), the commit
+            is recorded with a separate ``--author`` field so the author and
+            committer identities are distinct.  Falls back to *commit_name*
+            when ``None``.
+        author_email: Git author e-mail.  Same split semantics as
+            *author_name*.  Falls back to *commit_email* when ``None``.
     """
     root = str(git_root)
 
@@ -2588,6 +2603,13 @@ def _stage_and_commit(
 
     commit_msg = f"{operation}: {rel_path}"
 
+    # Build author string when per-request identity differs from committer.
+    eff_author_name = author_name or commit_name
+    eff_author_email = author_email or commit_email
+    author_args: list[str] = []
+    if eff_author_name != commit_name or eff_author_email != commit_email:
+        author_args = ["--author", f"{eff_author_name} <{eff_author_email}>"]
+
     subprocess.run(
         [
             "git",
@@ -2600,6 +2622,7 @@ def _stage_and_commit(
             "commit",
             "-m",
             commit_msg,
+            *author_args,
         ],
         capture_output=True,
         text=True,

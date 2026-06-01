@@ -1215,7 +1215,12 @@ class TestCommitterIdentityInCommit:
         recorded_calls: list[tuple] = []
 
         def recording_stage_and_commit(
-            git_root, path, operation, commit_name="default", commit_email="default"
+            git_root,
+            path,
+            operation,
+            commit_name="default",
+            commit_email="default",
+            **_kwargs,
         ):
             recorded_calls.append(
                 (git_root, path, operation, commit_name, commit_email)
@@ -3494,3 +3499,211 @@ class TestGitClaimConfig:
         assert isinstance(strategy, GitWriteStrategy)
         assert strategy._commit_name_claim == "name"
         assert strategy._commit_email_claim == "email"
+
+
+class TestStageAndCommitAuthorSplit:
+    """_stage_and_commit sets --author separately from the committer when provided."""
+
+    def _get_log(self, repo: Path, fmt: str) -> str:
+        return subprocess.run(
+            ["git", "-C", str(repo), "log", "-1", f"--format={fmt}"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+
+    def test_both_author_fields_differ_from_committer(self, git_repo: Path) -> None:
+        """When author_name/email differ, git records separate author and committer."""
+        from markdown_vault_mcp.git import _stage_and_commit
+
+        f = git_repo / "note.md"
+        f.write_text("# hi\n")
+        _stage_and_commit(
+            git_repo,
+            f,
+            "write",
+            commit_name="bot",
+            commit_email="bot@srv.com",
+            author_name="Alice",
+            author_email="alice@humans.org",
+        )
+
+        assert self._get_log(git_repo, "%aN") == "Alice"
+        assert self._get_log(git_repo, "%aE") == "alice@humans.org"
+        assert self._get_log(git_repo, "%cN") == "bot"
+        assert self._get_log(git_repo, "%cE") == "bot@srv.com"
+
+    def test_only_author_name_differs(self, git_repo: Path) -> None:
+        """When only author_name differs, author email falls back to committer email."""
+        from markdown_vault_mcp.git import _stage_and_commit
+
+        f = git_repo / "note.md"
+        f.write_text("# hi\n")
+        _stage_and_commit(
+            git_repo,
+            f,
+            "write",
+            commit_name="bot",
+            commit_email="bot@srv.com",
+            author_name="Alice",
+            author_email=None,
+        )
+
+        assert self._get_log(git_repo, "%aN") == "Alice"
+        assert self._get_log(git_repo, "%aE") == "bot@srv.com"  # email unchanged
+        assert self._get_log(git_repo, "%cN") == "bot"
+
+    def test_only_author_email_differs(self, git_repo: Path) -> None:
+        """When only author_email differs, author name falls back to committer name."""
+        from markdown_vault_mcp.git import _stage_and_commit
+
+        f = git_repo / "note.md"
+        f.write_text("# hi\n")
+        _stage_and_commit(
+            git_repo,
+            f,
+            "write",
+            commit_name="bot",
+            commit_email="bot@srv.com",
+            author_name=None,
+            author_email="alice@humans.org",
+        )
+
+        assert self._get_log(git_repo, "%aN") == "bot"  # name unchanged
+        assert self._get_log(git_repo, "%aE") == "alice@humans.org"
+        assert self._get_log(git_repo, "%cE") == "bot@srv.com"
+
+    def test_no_author_fields_author_equals_committer(self, git_repo: Path) -> None:
+        """Without author_name/email, author and committer are identical (backward compat)."""
+        from markdown_vault_mcp.git import _stage_and_commit
+
+        f = git_repo / "note.md"
+        f.write_text("# hi\n")
+        _stage_and_commit(
+            git_repo,
+            f,
+            "write",
+            commit_name="bot",
+            commit_email="bot@srv.com",
+        )
+
+        assert self._get_log(git_repo, "%aN") == self._get_log(git_repo, "%cN")
+        assert self._get_log(git_repo, "%aE") == self._get_log(git_repo, "%cE")
+
+    def test_author_same_as_committer_no_author_flag(self, git_repo: Path) -> None:
+        """When author_name/email match committer, no --author flag: author == committer."""
+        from markdown_vault_mcp.git import _stage_and_commit
+
+        f = git_repo / "note.md"
+        f.write_text("# hi\n")
+        _stage_and_commit(
+            git_repo,
+            f,
+            "write",
+            commit_name="bot",
+            commit_email="bot@srv.com",
+            author_name="bot",
+            author_email="bot@srv.com",
+        )
+
+        assert self._get_log(git_repo, "%aN") == "bot"
+        assert self._get_log(git_repo, "%cN") == "bot"
+        assert self._get_log(git_repo, "%aE") == self._get_log(git_repo, "%cE")
+
+
+class TestOidcClaimAuthorCommitterSplit:
+    """GitWriteStrategy uses OIDC claims for author only; committer stays static."""
+
+    def _get_identity(self, repo: Path) -> tuple[str, str, str, str]:
+        """Return (author_name, author_email, committer_name, committer_email)."""
+
+        def _log(fmt: str) -> str:
+            return subprocess.run(
+                ["git", "-C", str(repo), "log", "-1", f"--format={fmt}"],
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout.strip()
+
+        return _log("%aN"), _log("%aE"), _log("%cN"), _log("%cE")
+
+    def test_claim_sets_author_committer_stays_static(self, git_repo: Path) -> None:
+        """When claim is configured and token present, author = claim, committer = static."""
+        from unittest.mock import MagicMock, patch
+
+        strategy = GitWriteStrategy(
+            commit_name="bot",
+            commit_email="bot@srv.com",
+            commit_name_claim="name",
+            commit_email_claim="email",
+        )
+        f = git_repo / "note.md"
+        f.write_text("# hi\n")
+
+        token = MagicMock()
+        token.claims = {"name": "Alice Human", "email": "alice@humans.org"}
+        with patch("markdown_vault_mcp.git._get_access_token", return_value=token):
+            strategy(f, "# hi\n", "write")
+
+        a_name, a_email, c_name, c_email = self._get_identity(git_repo)
+        assert a_name == "Alice Human"
+        assert a_email == "alice@humans.org"
+        assert c_name == "bot"
+        assert c_email == "bot@srv.com"
+
+    def test_no_claim_config_author_equals_committer(self, git_repo: Path) -> None:
+        """Without claim config, author and committer are both the static identity."""
+        strategy = GitWriteStrategy(
+            commit_name="bot",
+            commit_email="bot@srv.com",
+        )
+        f = git_repo / "note.md"
+        f.write_text("# hi\n")
+        strategy(f, "# hi\n", "write")
+
+        a_name, a_email, c_name, c_email = self._get_identity(git_repo)
+        assert a_name == c_name == "bot"
+        assert a_email == c_email == "bot@srv.com"
+
+    def test_no_token_falls_back_author_equals_committer(self, git_repo: Path) -> None:
+        """When claim is configured but no token, author falls back to static identity."""
+        from unittest.mock import patch
+
+        strategy = GitWriteStrategy(
+            commit_name="bot",
+            commit_email="bot@srv.com",
+            commit_name_claim="name",
+            commit_email_claim="email",
+        )
+        f = git_repo / "note.md"
+        f.write_text("# hi\n")
+
+        with patch("markdown_vault_mcp.git._get_access_token", return_value=None):
+            strategy(f, "# hi\n", "write")
+
+        a_name, a_email, c_name, c_email = self._get_identity(git_repo)
+        assert a_name == c_name == "bot"
+        assert a_email == c_email == "bot@srv.com"
+
+    def test_only_name_claim_committer_email_unchanged(self, git_repo: Path) -> None:
+        """When only name_claim is configured, author name = claim, email = static for both."""
+        from unittest.mock import MagicMock, patch
+
+        strategy = GitWriteStrategy(
+            commit_name="bot",
+            commit_email="bot@srv.com",
+            commit_name_claim="name",
+        )
+        f = git_repo / "note.md"
+        f.write_text("# hi\n")
+
+        token = MagicMock()
+        token.claims = {"name": "Alice Human"}
+        with patch("markdown_vault_mcp.git._get_access_token", return_value=token):
+            strategy(f, "# hi\n", "write")
+
+        a_name, a_email, c_name, c_email = self._get_identity(git_repo)
+        assert a_name == "Alice Human"
+        assert a_email == "bot@srv.com"
+        assert c_name == "bot"
+        assert c_email == "bot@srv.com"
