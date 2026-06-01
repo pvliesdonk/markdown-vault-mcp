@@ -407,3 +407,37 @@ def test_collection_force_pull_delegates_to_strategy(tmp_path: Path) -> None:
     result = col.force_pull()
     assert result is expected
     mock_strategy.force_pull.assert_called_once_with()
+
+
+def test_collection_force_pull_acquires_pause_writes(tmp_path: Path) -> None:
+    """force_pull holds pause_writes for the duration of the git strategy call."""
+    from contextlib import contextmanager
+
+    vault = tmp_path / "vault"
+    vault.mkdir()
+
+    pull_result = PullResult(
+        applied=True, fast_forward=True, commits_pulled=1, from_sha="aaa", to_sha="bbb"
+    )
+    mock_strategy = MagicMock()
+    col = Collection(source_dir=vault, git_strategy=mock_strategy)
+
+    call_order: list[str] = []
+
+    @contextmanager
+    def tracking_pause_writes():
+        call_order.append("pause_enter")
+        yield
+        call_order.append("pause_exit")
+
+    def tracking_force_pull():
+        call_order.append("force_pull")
+        return pull_result
+
+    mock_strategy.force_pull.side_effect = tracking_force_pull
+
+    with patch.object(col, "pause_writes", tracking_pause_writes):
+        result = col.force_pull()
+
+    assert result is pull_result
+    assert call_order == ["pause_enter", "force_pull", "pause_exit"]
