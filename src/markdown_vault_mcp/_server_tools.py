@@ -1230,7 +1230,7 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
     async def reindex(
         collection: Collection = Depends(get_collection),
     ) -> dict[str, Any]:
-        """Sync the search index with files changed on disk by an external process.
+        """Submit an incremental reindex job to the writer.
 
         Only needed when files are modified outside this server — for example,
         by a text editor, a sync tool, or another process writing directly to
@@ -1238,15 +1238,16 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
         'delete', or 'rename' — those tools update the index immediately as
         part of the operation.
 
-        After reindexing, changed documents are automatically re-embedded. To
-        rebuild all embeddings from scratch (e.g. after changing the embedding
-        model), use 'build_embeddings' with force=True instead.
+        To rebuild all embeddings from scratch (e.g. after changing the
+        embedding model), use 'build_embeddings' with force=True.
 
         Returns:
-            Dict with counts: added, modified, deleted, unchanged.
+            Dict with ``status: "queued"``. The reindex runs asynchronously on
+            the writer thread; poll ``get_server_info`` or ``get_index_status``
+            for completion.
         """
-        result = await asyncio.to_thread(collection.reindex)
-        return asdict(result)
+        collection.reindex_async()
+        return {"status": "queued"}
 
     @mcp.tool(
         icons=_TOOL_ICONS["build_embeddings"],
@@ -1274,10 +1275,12 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
                 vector index (incremental — does not skip if any exist).
 
         Returns:
-            Dict with chunks_embedded: number of chunks newly embedded.
+            Dict with ``status: "queued"``. The build runs asynchronously on
+            the writer thread; poll ``get_server_info`` or
+            ``get_index_status`` for completion.
         """
-        count = await asyncio.to_thread(collection.build_embeddings, force=force)
-        return {"chunks_embedded": count}
+        collection.build_embeddings_async(force=force)
+        return {"status": "queued"}
 
     # --- Write tools (tag-based visibility) ---
 

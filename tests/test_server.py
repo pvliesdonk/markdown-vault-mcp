@@ -433,15 +433,26 @@ class TestReindexTool:
     """Test the reindex MCP tool."""
 
     @pytest.mark.usefixtures("_mcp_env")
-    async def test_reindex_no_changes(self) -> None:
+    async def test_reindex_returns_queued_immediately(self) -> None:
+        """reindex submits a job to the writer and returns {'status': 'queued'}."""
         server = make_server()
         async with Client(server) as client:
             result = await client.call_tool("reindex", {})
         data = result.data
-        assert isinstance(data, dict)
-        assert data["added"] == 0
-        assert data["modified"] == 0
-        assert data["deleted"] == 0
+        assert data == {"status": "queued"}
+
+
+class TestBuildEmbeddingsTool:
+    """Test the build_embeddings MCP tool."""
+
+    @pytest.mark.usefixtures("_mcp_env")
+    async def test_build_embeddings_returns_queued_immediately(self) -> None:
+        """build_embeddings submits a job and returns {'status': 'queued'}."""
+        server = make_server()
+        async with Client(server) as client:
+            result = await client.call_tool("build_embeddings", {})
+        data = result.data
+        assert data == {"status": "queued"}
 
 
 # ---------------------------------------------------------------------------
