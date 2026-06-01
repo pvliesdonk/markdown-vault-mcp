@@ -449,3 +449,23 @@ def test_lifespan_yields_quickly_on_cold_start(tmp_path: Path) -> None:
             assert ctx["collection"].is_queryable()
 
     asyncio.run(_run())
+
+
+def test_get_index_status_includes_writer_keys(tmp_path):
+    """get_index_status() returns writer state in addition to legacy keys (#559)."""
+    from markdown_vault_mcp.collection import Collection
+
+    col = Collection(source_dir=tmp_path, read_only=False)
+    try:
+        col.build_index()
+        status = col.get_index_status()
+        assert "status" in status
+        assert "documents_indexed" in status
+        assert "error" in status
+        # New writer keys:
+        assert "queue_depth" in status
+        assert "in_flight" in status
+        assert "dirty_paths" in status
+        assert "dirty_embeddings" in status
+    finally:
+        col.close()

@@ -588,7 +588,9 @@ class Collection:
         """Return a non-blocking snapshot of background-build state.
 
         Shape: ``{"status": "queryable" | "building" | "failed",
-        "documents_indexed": int, "error": str | None}``.
+        "documents_indexed": int, "error": str | None}`` merged with
+        :meth:`IndexWriter.get_status` (``queue_depth``, ``in_flight``,
+        ``dirty_paths``, ``dirty_embeddings``).
 
         - ``"queryable"``: ``_index_built`` is True and the build event is
           set — a completed build exists; captures an error as diagnostic
@@ -630,11 +632,13 @@ class Collection:
                 exc_info=True,
             )
             documents_indexed = 0
-        return {
+        result = {
             "status": status,
             "documents_indexed": documents_indexed,
             "error": error,
         }
+        result.update(self._writer.get_status())
+        return result
 
     def wait_until_queryable(self, timeout: float | None = None) -> None:
         """Block until the FTS index is queryable, or raise.
