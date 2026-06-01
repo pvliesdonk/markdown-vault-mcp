@@ -429,3 +429,90 @@ def test_flush_dirty_embeddings_drains():
         assert im.flush_paths_calls == [{"x.md"}]
     finally:
         writer.close(timeout=5)
+
+
+@dataclass
+class _FailingProcessIM:
+    """IndexManager whose process_dirty_paths always raises."""
+
+    process_paths_calls: list[set[str]] = field(default_factory=list)
+    flush_paths_calls: list[set[str]] = field(default_factory=list)
+
+    def process_dirty_paths(self, paths: set[str]) -> None:
+        self.process_paths_calls.append(paths)
+        raise RuntimeError("boom_process")
+
+    def flush_dirty_embeddings(self, paths: set[str]) -> None:
+        self.flush_paths_calls.append(paths)
+
+
+@dataclass
+class _FailingFlushIM:
+    """IndexManager whose flush_dirty_embeddings always raises."""
+
+    flush_paths_calls: list[set[str]] = field(default_factory=list)
+
+    def flush_dirty_embeddings(self, paths: set[str]) -> None:
+        self.flush_paths_calls.append(paths)
+        raise RuntimeError("boom_flush")
+
+
+def test_run_process_dirty_paths_recovers_snapshot_on_failure():
+    """If process_dirty_paths raises, the drained snapshot is re-added
+    to the dirty set so a future ProcessDirtyPaths job can retry the
+    paths (#559 review feedback).
+    """
+    from markdown_vault_mcp.writer import (
+        WriterContext,
+        run_process_dirty_paths,
+    )
+
+    im = _FailingProcessIM()
+    ctx = WriterContext(index_manager=im)
+    writer = IndexWriter(
+        runners={"process_dirty_paths": run_process_dirty_paths},
+        ctx=ctx,
+    )
+    ctx.writer = writer
+    writer.mark_dirty(["a.md", "b.md"])
+    writer.start()
+    try:
+        fut = writer.submit(ProcessDirtyPaths())
+        with pytest.raises(RuntimeError, match="boom_process"):
+            fut.result(timeout=5)
+        # Snapshot was re-added on failure.
+        assert writer.snapshot_dirty_paths() == {"a.md", "b.md"}
+        # And the index manager saw the failed call.
+        assert im.process_paths_calls == [{"a.md", "b.md"}]
+    finally:
+        writer.close(timeout=5)
+
+
+def test_run_flush_dirty_embeddings_recovers_snapshot_on_failure():
+    """If flush_dirty_embeddings raises, the drained snapshot is re-added
+    to the vector-dirty set so a future FlushDirtyEmbeddings job can
+    retry the paths (#559 review feedback).
+    """
+    from markdown_vault_mcp.writer import (
+        WriterContext,
+        run_flush_dirty_embeddings,
+    )
+
+    im = _FailingFlushIM()
+    ctx = WriterContext(index_manager=im)
+    writer = IndexWriter(
+        runners={"flush_dirty_embeddings": run_flush_dirty_embeddings},
+        ctx=ctx,
+    )
+    ctx.writer = writer
+    writer.mark_embedding_dirty(["x.md", "y.md"])
+    writer.start()
+    try:
+        fut = writer.submit(FlushDirtyEmbeddings())
+        with pytest.raises(RuntimeError, match="boom_flush"):
+            fut.result(timeout=5)
+        # Snapshot was re-added on failure.
+        assert writer.snapshot_dirty_embeddings() == {"x.md", "y.md"}
+        assert im.flush_paths_calls == [{"x.md", "y.md"}]
+    finally:
+        writer.close(timeout=5)

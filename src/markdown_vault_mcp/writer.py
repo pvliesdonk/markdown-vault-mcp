@@ -5,6 +5,7 @@ See `docs/superpowers/specs/2026-05-31-issue-559-single-writer-for-indexes-desig
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import queue
 import threading
@@ -266,7 +267,16 @@ class IndexWriter:
                 future.set_result(result)
             except Exception as exc:
                 future.set_exception(exc)
-                logger.exception("Writer job %s failed", job.kind)
+                # Logging-handler failure (e.g. SocketHandler with
+                # dropped connection, custom handler bug) must not
+                # kill the worker.  The original exception is already
+                # on the Future; the log line is for observability
+                # only.  Without this guard the handler's exception
+                # escapes _run() — the worker exits without setting
+                # _closed or draining pending Futures, so every
+                # submit().result() hangs.
+                with contextlib.suppress(Exception):
+                    logger.exception("Writer job %s failed", job.kind)
             except BaseException as exc:
                 # KeyboardInterrupt / SystemExit / asyncio.CancelledError —
                 # capture into the Future so waiters unblock, then re-raise
@@ -281,11 +291,15 @@ class IndexWriter:
                 # original BaseException.
                 if not future.done():
                     future.set_exception(exc)
-                logger.error(
-                    "writer_job_basexception kind=%s",
-                    job.kind,
-                    exc_info=True,
-                )
+                # Logging-handler failure must not shadow the
+                # BaseException nor skip the close-and-drain logic
+                # below.  Mirror the Exception branch's guard.
+                with contextlib.suppress(Exception):
+                    logger.error(
+                        "writer_job_basexception kind=%s",
+                        job.kind,
+                        exc_info=True,
+                    )
                 # Worker thread is terminating. Mark writer closed AND
                 # drain pending items atomically under _submit_lock so a
                 # concurrent submit() cannot pass the is_set() check and
@@ -348,7 +362,17 @@ def run_process_dirty_paths(
         msg = "WriterContext.writer must be set before running jobs"
         raise RuntimeError(msg)
     snapshot = ctx.writer.drain_dirty_paths()
-    ctx.index_manager.process_dirty_paths(snapshot)
+    try:
+        ctx.index_manager.process_dirty_paths(snapshot)
+    except Exception:
+        # Restore the snapshot so a future ProcessDirtyPaths job can
+        # retry these paths.  Without this, a non-per-path failure
+        # (sqlite3.OperationalError on disk-full, WAL lock, etc.)
+        # silently drops the entire snapshot — the dirty set was
+        # cleared by drain_dirty_paths().  The exception still
+        # propagates to the Future for caller observability.
+        ctx.writer.mark_dirty(snapshot)
+        raise
     # After FTS is up-to-date, queue the same paths for vector re-embedding.
     # The writer is now the sole owner of embedding flushes (no inline
     # callback inside semantic search).  Follow-up submissions from
@@ -368,4 +392,12 @@ def run_flush_dirty_embeddings(
         msg = "WriterContext.writer must be set before running jobs"
         raise RuntimeError(msg)
     snapshot = ctx.writer.drain_dirty_embeddings()
-    ctx.index_manager.flush_dirty_embeddings(snapshot)
+    try:
+        ctx.index_manager.flush_dirty_embeddings(snapshot)
+    except Exception:
+        # Restore the snapshot so a future FlushDirtyEmbeddings job
+        # can retry these paths.  Mirrors the recovery in
+        # run_process_dirty_paths — a non-per-path failure must not
+        # silently drop the drained set.
+        ctx.writer.mark_embedding_dirty(snapshot)
+        raise

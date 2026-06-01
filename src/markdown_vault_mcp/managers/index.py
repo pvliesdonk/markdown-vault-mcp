@@ -581,10 +581,16 @@ class IndexManager:
         callsites delivered (write/edit/delete/rename each ended with
         ``resolve_vault_wikilinks()``).
 
-        Per-path file-read failures (``OSError``, ``UnicodeDecodeError``)
-        and malformed-frontmatter errors (``yaml.YAMLError``) are caught,
-        logged at WARNING, and skipped so a single bad note does not
-        starve the rest. Other exceptions — notably ``sqlite3.OperationalError``
+        Per-path file-read failures (``OSError``, ``UnicodeDecodeError``),
+        malformed-frontmatter errors (``yaml.YAMLError``), and chunker
+        validation failures (``ValueError``) are caught, logged at
+        WARNING, and skipped so a single bad note does not starve the
+        rest — matching the coverage in :meth:`flush_dirty_embeddings`.
+        When the parse failure stems from the file disappearing between
+        the ``is_file()`` check and ``parse_note()``, the stale FTS row
+        is deleted so keyword/hybrid search results stay consistent with
+        what :meth:`flush_dirty_embeddings` will do to the vector index.
+        Other exceptions — notably ``sqlite3.OperationalError``
         (classified by PR #555's ``IndexUnavailableReason`` discriminator
         at the caller boundary), ``sqlite3.DatabaseError``, ``MemoryError``,
         and programming bugs — propagate to the writer's Future so the
@@ -612,12 +618,30 @@ class IndexManager:
                         self._fts.upsert_note(note)
                     else:
                         self._fts.delete_by_path(path)
-                except (OSError, UnicodeDecodeError) as exc:
+                except (OSError, UnicodeDecodeError, ValueError) as exc:
                     logger.warning(
                         "process_dirty_paths: skipping %s: %s",
                         path,
                         exc,
                     )
+                    # File-disappeared race: parse_note() opened the
+                    # file after is_file() succeeded but the file was
+                    # then removed (or replaced with something that
+                    # raises one of the caught exceptions on read).
+                    # Drop the stale FTS row so search results match
+                    # what flush_dirty_embeddings will do to the
+                    # vector index — otherwise the deleted document
+                    # lingers in keyword/hybrid search until a full
+                    # reindex.
+                    if not abs_path.is_file():
+                        try:
+                            self._fts.delete_by_path(path)
+                        except Exception:
+                            logger.exception(
+                                "process_dirty_paths: failed to delete "
+                                "stale FTS row for %s",
+                                path,
+                            )
                     continue
                 except yaml.YAMLError as exc:
                     logger.warning(
@@ -701,6 +725,13 @@ class IndexManager:
                 pre_embedded.append((path, None, None, False))
 
         # Phase 2: mutate vector index (writer is sole mutator; no lock needed).
+        # Short-circuit when every entry failed parse: there is nothing
+        # to mutate, and calling _load_vectors() in that case could
+        # trigger a full vector rebuild via its
+        # VectorIndexCompatibilityError handler — an expensive no-op
+        # for a flush that has no real work to do.
+        if not any(not entry[3] for entry in pre_embedded):
+            return
         vectors = self._load_vectors()
         for entry in pre_embedded:
             entry_path, entry_vecs, entry_meta, entry_failed = entry

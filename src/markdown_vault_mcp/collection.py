@@ -332,7 +332,14 @@ class Collection:
             exclude_patterns=self._exclude_patterns,
             attachment_extensions=self._attachment_extensions,
             link_manager=self._link_mgr,
-            rebuild_embeddings=lambda: self._index_mgr.build_embeddings(force=True),
+            # rebuild_embeddings is invoked from SearchManager._load_vectors when a
+            # VectorIndexCompatibilityError fires (embedding model upgrade); it runs
+            # on the search thread (asyncio thread pool), not the writer thread.
+            # Routing through self._writer.submit().result() preserves the
+            # single-owner invariant (#559): only the writer thread mutates indexes.
+            rebuild_embeddings=lambda: self._writer.submit(
+                BuildEmbeddings(force=True)
+            ).result(),
             chunks_per_file=chunks_per_file,
             snippet_words=snippet_words,
             length_downweight_alpha=length_downweight_alpha,
@@ -422,20 +429,20 @@ class Collection:
         Flushes deferred embeddings and pending write callbacks, then
         closes the SQLite connection and git strategy.
         """
-        # 0a. Close the IndexWriter first so no further index mutations
-        # can be submitted while we tear down downstream resources. The
-        # hasattr guard handles the case where __init__ failed mid-way
-        # and _writer was never assigned (#559). The writer drains its
-        # own pending jobs cleanly before returning.
-        if hasattr(self, "_writer") and self._writer is not None:
-            self._writer.close(timeout=30.0)
-        # 0. Join background-build thread before any resource teardown.
+        # 0. Join the legacy background-build thread FIRST.  Its worker
+        # body calls self.build_index() → self._writer.submit(...).result(),
+        # so the inner submit must complete against an OPEN writer.  If
+        # the writer were closed before this join, a still-running bg
+        # build would observe submit() raising RuntimeError, capture it
+        # into _background_build_error, and leave the collection
+        # non-queryable.  Only legacy tests exercise this path;
+        # production uses build_index_async via lifespan.
+        #
         # Read the thread reference under _file_write_lock (matches the
         # lock held when start_background_build_index assigns it).
-        # join() must complete before _fts.close() (step 4) so the
-        # worker isn't writing to a closed FTS. daemon=True keeps a
-        # stuck thread from holding the process; cooperative
-        # cancellation inside _index_mgr.build_index is a follow-up.
+        # daemon=True keeps a stuck thread from holding the process;
+        # cooperative cancellation inside _index_mgr.build_index is a
+        # follow-up.
         with self._file_write_lock:
             thread = self._background_build_thread
         if thread is not None and thread.is_alive():
@@ -445,6 +452,15 @@ class Collection:
                     "close: background build thread did not exit within "
                     "30s; abandoning (daemon thread does not block process)"
                 )
+
+        # 0a. THEN close the IndexWriter so no further index mutations
+        # can be submitted while we tear down downstream resources. The
+        # hasattr guard handles the case where __init__ failed mid-way
+        # and _writer was never assigned (#559). The writer drains its
+        # own pending jobs cleanly before returning, including any work
+        # the bg-build thread submitted before it terminated.
+        if hasattr(self, "_writer") and self._writer is not None:
+            self._writer.close(timeout=30.0)
 
         # 1. Deferred embedding updates are flushed by the IndexWriter
         # before its close() returns; no further flush needed here (#559).
