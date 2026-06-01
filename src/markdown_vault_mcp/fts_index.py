@@ -773,7 +773,6 @@ class FTSIndex:
     # Public API
     # ------------------------------------------------------------------
 
-    @_retry_on_locked
     def build_from_notes(self, notes: Iterable[ParsedNote]) -> int:
         """Bulk-insert all notes, replacing any existing data.
 
@@ -782,12 +781,29 @@ class FTSIndex:
         index.  All inserts are wrapped in a single transaction for
         performance and atomicity.
 
+        Materialises *notes* into a list BEFORE the retry window opens.
+        The :func:`_retry_on_sqlite_locked` helper re-invokes its
+        operation on a transient ``SQLITE_LOCKED``; a one-shot generator
+        would otherwise be empty on retry. Cannot use ``@_retry_on_locked``
+        directly here because the decorator captures the original
+        argument tuple — the generator would be exhausted by the first
+        attempt before the inner ``list()`` call runs.
+
         Args:
             notes: Iterable of parsed documents to index.
 
         Returns:
             Total number of chunks (sections) indexed.
         """
+        notes_list = list(notes)
+
+        def _do() -> int:
+            return self._build_from_notes_inner(notes_list)
+
+        return _retry_on_sqlite_locked(_do)
+
+    def _build_from_notes_inner(self, notes: list[ParsedNote]) -> int:
+        """Inner body of :meth:`build_from_notes`, safe to re-invoke on retry."""
         total_chunks = 0
         conn = self._conn()
         with conn:

@@ -200,3 +200,43 @@ class TestFTSIndexMethodRetry:
             assert row["title"] == "A"
         finally:
             fts.close()
+
+    def test_build_from_notes_retries_with_generator_input(self, tmp_path) -> None:
+        """build_from_notes must materialise the iterable so the
+        @_retry_on_locked decorator can re-invoke the method body on a
+        SQLITE_LOCKED without seeing an exhausted generator (#560)."""
+        from markdown_vault_mcp.scanner import HeadingChunker
+        from markdown_vault_mcp.scanner import parse_note as _parse
+
+        # Two notes; pass them as a single-use generator.
+        for path in ("a.md", "b.md"):
+            (tmp_path / path).write_text(
+                f"---\ntitle: {path}\n---\n# {path}\n\nbody\n", encoding="utf-8"
+            )
+
+        fts = FTSIndex(db_path=tmp_path / "fts.db")
+        try:
+            chunker = HeadingChunker()
+
+            def _gen():
+                yield _parse(tmp_path / "a.md", tmp_path, chunker)
+                yield _parse(tmp_path / "b.md", tmp_path, chunker)
+
+            call_state = {"failed": False}
+            real_conn_method = fts._conn
+
+            def wrapped_conn():  # type: ignore[no-untyped-def]
+                return _WrappedConnection(real_conn_method(), call_state, "DELETE")
+
+            with patch.object(fts, "_conn", wrapped_conn):
+                total = fts.build_from_notes(_gen())
+
+            assert call_state["failed"], "patched DELETE should have fired"
+            # Both notes must be present after retry; if the generator
+            # had been re-consumed empty on retry, build_from_notes
+            # would silently return 0 / 1 instead of indexing both.
+            assert total >= 2
+            assert fts.get_note("a.md") is not None
+            assert fts.get_note("b.md") is not None
+        finally:
+            fts.close()
