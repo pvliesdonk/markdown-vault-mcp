@@ -89,6 +89,43 @@ def test_submit_after_close_raises():
         writer.submit(BuildIndex())
 
 
+def test_start_failure_leaves_thread_unset(monkeypatch):
+    """If thread.start() raises, IndexWriter.start() re-raises and leaves
+    _thread None so a subsequent start() can retry (#559 / replays #528)."""
+    import threading as _threading
+
+    real_thread_cls = _threading.Thread
+    # Shared across all Thread() constructions so only the first start()
+    # call fails; the retry succeeds.
+    construction_count = [0]
+
+    def _broken_thread(*args, **kwargs):
+        thread = real_thread_cls(*args, **kwargs)
+        original_start = thread.start
+        my_index = construction_count[0]
+        construction_count[0] += 1
+
+        def _maybe_failing_start():
+            if my_index == 0:
+                raise RuntimeError("can't start new thread")
+            return original_start()
+
+        thread.start = _maybe_failing_start
+        return thread
+
+    monkeypatch.setattr("markdown_vault_mcp.writer.threading.Thread", _broken_thread)
+
+    writer = IndexWriter(runners={}, ctx=None)
+    with pytest.raises(RuntimeError, match="can't start"):
+        writer.start()
+    # Failed thread was NOT latched — retry must be possible.
+    assert writer._thread is None
+    # Second start succeeds (the second Thread construction's start works).
+    writer.start()
+    assert writer._thread is not None
+    writer.close(timeout=5)
+
+
 def test_worker_survives_job_exception():
     runs: list[str] = []
 

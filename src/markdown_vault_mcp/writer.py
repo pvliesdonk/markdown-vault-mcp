@@ -9,6 +9,7 @@ import logging
 import queue
 import threading
 from collections.abc import Callable, Iterable
+from concurrent.futures import CancelledError as _CancelledError
 from concurrent.futures import Future
 from dataclasses import dataclass
 from typing import Any, ClassVar, cast
@@ -92,15 +93,27 @@ class IndexWriter:
         self._in_flight_kind: str | None = None
 
     def start(self) -> None:
-        """Spawn the worker thread. Idempotent."""
+        """Spawn the worker thread. Idempotent.
+
+        Raises:
+            RuntimeError: If thread creation fails (e.g. system thread
+                limit exhausted). ``self._thread`` is left ``None`` so
+                a retry can attempt to start again — the failed thread
+                is never latched.
+        """
         if self._thread is not None:
             return
-        self._thread = threading.Thread(
+        thread = threading.Thread(
             target=self._run,
             name="markdown-vault-mcp.writer",
             daemon=True,
         )
-        self._thread.start()
+        # Assign self._thread only AFTER thread.start() succeeds so a
+        # thread-creation failure leaves the writer retry-able instead
+        # of latching the never-started thread (replay-guard for the
+        # PR #528 finding).
+        thread.start()
+        self._thread = thread
 
     def submit(self, job: Any) -> Future[Any]:
         """Submit a job for execution.
@@ -240,6 +253,22 @@ class IndexWriter:
                     job.kind,
                     exc_info=True,
                 )
+                # Worker thread is terminating. Mark writer closed so
+                # subsequent external submits fail fast with RuntimeError
+                # rather than enqueueing Futures nobody will ever dequeue.
+                # Then drain any already-queued items as CancelledError so
+                # callers waiting on .result() unblock instead of hanging.
+                self._closed.set()
+                while True:
+                    try:
+                        queued = self._queue.get_nowait()
+                    except queue.Empty:
+                        break
+                    if queued is _SHUTDOWN_SENTINEL:
+                        continue
+                    _, pending_future = cast("tuple[Any, Future[Any]]", queued)
+                    if not pending_future.cancel() and not pending_future.done():
+                        pending_future.set_exception(_CancelledError())
                 raise
             finally:
                 with self._in_flight_lock:

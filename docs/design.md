@@ -1111,7 +1111,7 @@ operations to them. No manager holds a back-reference to Collection.
 | ``LinkManager`` | Backlinks, outlinks, broken links, orphans, hubs, connection paths | ``FTSIndex``, ``source_dir`` |
 | ``SearchManager`` | Keyword/semantic/hybrid search, list, folders, tags, recent, similar, context | ``FTSIndex``, ``source_dir``, embedding config, ``LinkManager`` |
 | ``IndexManager`` | build_index, reindex, build_embeddings, process_dirty_paths, flush_dirty_embeddings | ``FTSIndex``, ``ChangeTracker``, ``source_dir``, chunk strategy (no lock — driven by the single-owner :class:`~markdown_vault_mcp.writer.IndexWriter`, #559) |
-| ``DocumentManager`` | read, write, edit, delete, rename, attachments, TOC | ``FTSIndex``, ``source_dir``, write lock, callbacks |
+| ``DocumentManager`` | read, write, edit, delete, rename, attachments, TOC | ``FTSIndex``, ``source_dir``, ``_file_write_lock`` (file-mutation atomicity only — see #559), ``mark_paths_dirty`` hook, callbacks |
 
 Each manager receives its dependencies as constructor arguments. This enables
 isolated unit testing and clear dependency boundaries. Pure utility functions

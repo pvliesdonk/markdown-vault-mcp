@@ -230,7 +230,7 @@ build attempt.
 
 Incrementally update the full-text search index to reflect file changes made outside this server. Only processes changed files — unchanged documents are skipped.
 
-If semantic search is already active (vector index loaded), this also re-embeds changed documents automatically.
+If semantic search is configured, the queued reindex job re-embeds the changed documents on the writer thread. Poll `get_index_status` and watch the `dirty_embeddings` counter to observe completion.
 
 **Returns:** `{"status": "queued"}`. The reindex runs asynchronously on the single-owner :class:`IndexWriter` thread (#559); poll `get_server_info` or `get_index_status` for completion. `get_index_status` exposes `queue_depth`, `in_flight`, `dirty_paths`, and `dirty_embeddings` so you can observe progress without blocking.
 

@@ -13,6 +13,8 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+import yaml
+
 from markdown_vault_mcp.fts_index import _derive_folder
 from markdown_vault_mcp.scanner import parse_note, scan_directory
 from markdown_vault_mcp.types import IndexStats, ParsedNote, ReindexResult
@@ -579,12 +581,17 @@ class IndexManager:
         callsites delivered (write/edit/delete/rename each ended with
         ``resolve_vault_wikilinks()``).
 
-        Per-path failures (OS errors, parse errors, SQLite errors,
-        YAML errors, ...) are caught broadly and logged at WARNING with
-        a traceback; the batch continues so a single bad note does not
-        starve the rest. The ``resolve_vault_wikilinks()`` call runs in
-        a ``finally`` so the link graph is always restored to a
-        consistent state, even on per-path failures.
+        Per-path file-read failures (``OSError``, ``UnicodeDecodeError``)
+        and malformed-frontmatter errors (``yaml.YAMLError``) are caught,
+        logged at WARNING, and skipped so a single bad note does not
+        starve the rest. Other exceptions — notably ``sqlite3.OperationalError``
+        (classified by PR #555's ``IndexUnavailableReason`` discriminator
+        at the caller boundary), ``sqlite3.DatabaseError``, ``MemoryError``,
+        and programming bugs — propagate to the writer's Future so the
+        caller learns instead of seeing a silent skip. The
+        ``resolve_vault_wikilinks()`` call runs in a ``finally`` so the
+        link graph is always restored to a consistent state, even on
+        per-path failures.
         """
         if not paths:
             return
@@ -605,14 +612,24 @@ class IndexManager:
                         self._fts.upsert_note(note)
                     else:
                         self._fts.delete_by_path(path)
-                except Exception as exc:
+                except (OSError, UnicodeDecodeError) as exc:
                     logger.warning(
                         "process_dirty_paths: skipping %s: %s",
                         path,
                         exc,
-                        exc_info=True,
                     )
                     continue
+                except yaml.YAMLError as exc:
+                    logger.warning(
+                        "process_dirty_paths: skipping %s (malformed frontmatter): %s",
+                        path,
+                        exc,
+                    )
+                    continue
+                # sqlite3 / programming-bug exceptions propagate: fail the
+                # job so the writer's Future surfaces them (PR #555's
+                # reason discriminator handles OperationalError
+                # classification at the caller boundary).
         finally:
             # Always restore link-graph consistency, even on per-path failures.
             try:
@@ -627,12 +644,15 @@ class IndexManager:
         The writer thread is the sole mutator of the vector index, so this
         method runs without any internal lock.
 
-        Per-path parse failures DO NOT delete existing vectors for that
-        path — the failed entry is skipped entirely in Phase 2, leaving
-        prior embeddings intact. Only successful re-parses with empty
-        chunk lists (note exists but contains no embeddable content),
-        or paths that have been removed/are no longer ``.md`` files,
-        result in vector deletion.
+        Per-path parse failures (``UnicodeDecodeError``, ``OSError``,
+        ``yaml.YAMLError``, ``ValueError`` from the chunk strategy) DO
+        NOT delete existing vectors for that path — the failed entry is
+        skipped entirely in Phase 2, leaving prior embeddings intact.
+        Only successful re-parses with empty chunk lists (note exists
+        but contains no embeddable content), or paths that have been
+        removed/are no longer ``.md`` files, result in vector deletion.
+        Other exceptions (sqlite3 errors, programming bugs,
+        embedding-provider errors) propagate to the writer's Future.
 
         Args:
             paths: Paths to re-embed (relative to source_dir).
@@ -672,7 +692,7 @@ class IndexManager:
                     else:
                         # Successful parse, no chunks → delete is correct.
                         pre_embedded.append((path, None, None, False))
-                except (UnicodeDecodeError, OSError) as exc:
+                except (UnicodeDecodeError, OSError, yaml.YAMLError, ValueError) as exc:
                     logger.warning("Deferred embedding failed for %s: %s", path, exc)
                     # Parse failed → leave existing vectors intact.
                     pre_embedded.append((path, None, None, True))
