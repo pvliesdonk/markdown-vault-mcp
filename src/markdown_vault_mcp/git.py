@@ -602,6 +602,15 @@ class GitWriteStrategy:
             effective_email = (
                 _extract_claim(self._commit_email_claim) or self._commit_email
             )
+            logger.debug(
+                "git_identity_resolved name=%s email=%s name_from_claim=%s email_from_claim=%s",
+                effective_name,
+                effective_email,
+                self._commit_name_claim is not None
+                and effective_name != self._commit_name,
+                self._commit_email_claim is not None
+                and effective_email != self._commit_email,
+            )
             with self._lock:
                 _stage_and_commit(
                     self._git_root,
@@ -1185,6 +1194,9 @@ class GitWriteStrategy:
 
         n = len(written)
         file_list = ", ".join(written)
+        # Conflict resolution runs on the pull background thread, not inside a
+        # request context, so _extract_claim would return None.  Use the static
+        # server identity directly — per-user attribution does not apply here.
         commit_result = subprocess.run(
             [
                 "git",
