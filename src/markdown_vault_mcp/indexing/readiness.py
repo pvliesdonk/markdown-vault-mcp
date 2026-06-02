@@ -64,7 +64,7 @@ class ReadinessState:
         self._error = exc
 
     def mark_done(self) -> None:
-        """Background worker finally clause: ensure waiters unblock."""
+        """Idempotently set the done-event so waiters unblock (any liveness finally)."""
         self._done.set()
 
     # -- queries --

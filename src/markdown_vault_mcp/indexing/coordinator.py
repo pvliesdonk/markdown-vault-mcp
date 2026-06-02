@@ -205,8 +205,12 @@ class IndexWriteCoordinator:
                 )
         self._readiness.begin_sync_build()
         self._fts.clear_build_completed()
-        result: IndexStats = self._writer.submit(BuildIndex(force=force)).result()
-        self._fts.set_build_completed()
+        try:
+            result: IndexStats = self._writer.submit(BuildIndex(force=force)).result()
+            self._fts.set_build_completed()
+        except Exception as exc:
+            self._readiness.fail_build(exc)
+            raise
         self._readiness.mark_built()
         return result
 
@@ -282,13 +286,26 @@ class IndexWriteCoordinator:
 
         def _on_done(fut: Future[IndexStats]) -> None:
             try:
-                fut.result()
-            except BaseException as exc:
-                logger.exception("Async index build failed")
-                self._readiness.fail_build(exc)
-                return
-            self._fts.set_build_completed()
-            self._readiness.mark_built()
+                try:
+                    fut.result()
+                except BaseException as exc:
+                    logger.exception("Async index build failed")
+                    self._readiness.fail_build(exc)
+                    return
+                try:
+                    self._fts.set_build_completed()
+                except Exception as exc:
+                    logger.exception(
+                        "Async index build: set_build_completed failed after build"
+                    )
+                    self._readiness.fail_build(exc)
+                    return
+                self._readiness.mark_built()
+            finally:
+                # Guarantee waiters unblock even if an unexpected BaseException
+                # escapes set_build_completed: it propagates (so the worker can
+                # respond to the signal), but the done-event must still be set.
+                self._readiness.mark_done()
 
         future.add_done_callback(_on_done)
         return future
