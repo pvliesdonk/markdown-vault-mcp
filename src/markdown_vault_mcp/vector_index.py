@@ -228,12 +228,10 @@ class VectorIndex:
         # L2-normalise each row.
         norms = np.linalg.norm(vectors, axis=1, keepdims=True)
         # Avoid division by zero for zero-magnitude vectors.
-        # In-place assignment auto-casts the scalar to norms's dtype so the
-        # float32 invariant survives; the np.where(..., 1.0, ...) form would
-        # widen to float64 under pre-NEP-50 numpy because the Python literal
-        # 1.0 promotes the array.
-        norms[norms == 0] = 1.0
-        vectors = vectors / norms
+        norms = np.where(norms == 0, 1.0, norms)
+        # np.linalg.norm + np.where(..., 1.0, ...) widen to float64; cast back
+        # to float32 so _embeddings keeps its declared dtype invariant.
+        vectors = (vectors / norms).astype(np.float32, copy=False)
 
         if self._embeddings.size == 0:
             self._embeddings = vectors

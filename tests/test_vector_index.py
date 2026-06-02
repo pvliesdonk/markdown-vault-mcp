@@ -170,9 +170,12 @@ class TestVectorIndexAddVectors:
     def test_add_vectors_preserves_float32_dtype(
         self, mock_provider: MockEmbeddingProvider
     ) -> None:
-        # Pins the cast at vector_index.add_vectors that prevents
-        # np.linalg.norm + np.where(..., 1.0, ...) from widening _embeddings
-        # to float64.  Without the cast, on-disk sidecar doubles in size.
+        # Pins the float32 invariant on _embeddings.  The primary regression
+        # guard is mypy (the numpy stub for np.where returns float64, so any
+        # revert that drops the trailing .astype(np.float32) fails type
+        # checking); this runtime assertion additionally protects pre-NEP-50
+        # numpy environments (numpy<2.0) where the widening would happen at
+        # runtime too.
         index = VectorIndex(mock_provider)
         raw = mock_provider.embed(["alpha", "beta"])
         index.add_vectors(raw, [_make_meta("a.md"), _make_meta("b.md")])
@@ -181,9 +184,9 @@ class TestVectorIndexAddVectors:
     def test_add_vectors_zero_magnitude_preserves_float32(
         self, mock_provider: MockEmbeddingProvider
     ) -> None:
-        # The np.where(norms == 0, 1.0, norms) branch in add_vectors is where
-        # float64 leaks in — a literal 1.0 widens norms even when the input
-        # is float32.  Exercise the zero-magnitude path explicitly.
+        # Exercises the zero-magnitude branch (np.where substituting 1.0 for
+        # zero norms) so the float32 invariant is checked on the path where
+        # pre-NEP-50 numpy would widen via the Python scalar 1.0.
         index = VectorIndex(mock_provider)
         dim = mock_provider.dimension
         raw = [[0.0] * dim, [1.0] + [0.0] * (dim - 1)]
