@@ -55,7 +55,7 @@ def _has_hidden_component(parts: tuple[str, ...]) -> bool:
 
 def should_start_file_watcher(
     file_watcher_enabled: bool,
-    git_pull_interval_s: int,
+    git_pull_active: bool,
     github_webhook_secret: str | None,
 ) -> bool:
     """Return True when the file watcher should be started.
@@ -67,13 +67,19 @@ def should_start_file_watcher(
 
     Args:
         file_watcher_enabled: Value of ``FILE_WATCHER`` config field.
-        git_pull_interval_s: Value of ``GIT_PULL_INTERVAL_S`` config field.
+        git_pull_active: Whether the periodic git pull loop will actually
+            run.  This is *not* ``GIT_PULL_INTERVAL_S > 0`` alone — the
+            interval defaults to 600 even on non-git vaults, but the pull
+            loop only runs when a git strategy is configured.  Pass the
+            resolved ``git_pull_interval_s`` from ``to_collection_kwargs()``
+            (which is 0 unless ``git_repo_url``/``git_token`` is set),
+            compared ``> 0``.
         github_webhook_secret: Value of ``GITHUB_WEBHOOK_SECRET`` config field.
 
     Returns:
         ``True`` when the watcher should be started.
     """
-    git_active = git_pull_interval_s > 0 or bool(github_webhook_secret)
+    git_active = git_pull_active or bool(github_webhook_secret)
     return file_watcher_enabled and not git_active
 
 

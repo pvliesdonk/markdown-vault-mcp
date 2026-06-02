@@ -126,10 +126,15 @@ def make_collection_lifespan(config: CollectionConfig) -> Any:
         )
         from markdown_vault_mcp.exceptions import IndexUnavailableError
 
+        # Use the *resolved* pull interval from kwargs, not config.git_pull_interval_s:
+        # the config default is 600 even on non-git vaults, but to_collection_kwargs()
+        # only passes a non-zero interval through when a git strategy is configured.
+        git_pull_active = kwargs.get("git_pull_interval_s", 0) > 0
+
         file_watcher = None
         if should_start_file_watcher(
             config.file_watcher_enabled,
-            config.git_pull_interval_s,
+            git_pull_active,
             config.github_webhook_secret,
         ):
 
