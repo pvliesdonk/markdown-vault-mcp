@@ -3637,7 +3637,7 @@ class TestB3StaleSignal:
             # on the writer (no submit, so no in-flight job, just a
             # non-empty dirty-paths set — that alone should set stale=True).
             col = get_collection_singleton()
-            col._writer.mark_dirty(["sentinel.md"])
+            col._coordinator.writer.mark_dirty(["sentinel.md"])
             try:
                 result = await client.call_tool(
                     "get_backlinks", {"path": "notes/topic.md"}
@@ -3645,7 +3645,7 @@ class TestB3StaleSignal:
             finally:
                 # Clear the sentinel so subsequent tests are not affected
                 # by leaked dirty-set state.
-                col._writer.drain_dirty_paths()
+                col._coordinator.writer.drain_dirty_paths()
         envelope = _parse_tool_data(result)
         assert envelope["stale"] is True
         # The data is still returned despite stale=True.
@@ -3676,14 +3676,14 @@ class TestB3StaleSignal:
         async with Client(server) as client:
             await wait_for_mcp_writer_drain(client)
             col = get_collection_singleton()
-            col._writer.mark_dirty(["sentinel.md"])
+            col._coordinator.writer.mark_dirty(["sentinel.md"])
             try:
                 result = await client.call_tool(
                     "get_backlinks",
                     {"path": "notes/topic.md", "wait_for_drain": True},
                 )
             finally:
-                col._writer.drain_dirty_paths()
+                col._coordinator.writer.drain_dirty_paths()
         envelope = _parse_tool_data(result)
         assert envelope["stale"] is True
         assert isinstance(envelope["data"], list)
@@ -3712,11 +3712,11 @@ class TestB3StaleSignal:
         async with Client(server) as client:
             await wait_for_mcp_writer_drain(client)
             col = get_collection_singleton()
-            col._writer.mark_dirty(["sentinel.md"])
+            col._coordinator.writer.mark_dirty(["sentinel.md"])
             try:
                 result = await client.call_tool(tool_name, tool_args)
             finally:
-                col._writer.drain_dirty_paths()
+                col._coordinator.writer.drain_dirty_paths()
         envelope = _parse_tool_data(result)
         assert envelope["stale"] is True
         assert "data" in envelope

@@ -169,7 +169,7 @@ def wait_for_writer_drain(col: object, timeout: float = 5.0) -> None:
     deadline = time.monotonic() + timeout
     status: dict[str, object] = {}
     while time.monotonic() < deadline:
-        status = col._writer.get_status()  # type: ignore[attr-defined]
+        status = col._coordinator.writer.get_status()  # type: ignore[attr-defined]
         if (
             status["queue_depth"] == 0
             and status["in_flight"] is None

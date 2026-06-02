@@ -3823,7 +3823,7 @@ class TestDeferredEmbeddings:
         paths = [r.path for r in results]
         assert "deferred_doc.md" in paths
         # Writer's vector-dirty set should be empty after the drain.
-        assert col._writer.get_status()["dirty_embeddings"] == 0
+        assert col._coordinator.writer.get_status()["dirty_embeddings"] == 0
 
     def test_dirty_docs_flushed_on_close(
         self,
@@ -3853,7 +3853,7 @@ class TestDeferredEmbeddings:
 
         col.close()
         # After close, the writer's queue and dirty sets must be empty.
-        status = col._writer.get_status()
+        status = col._coordinator.writer.get_status()
         assert status["dirty_paths"] == 0
         assert status["dirty_embeddings"] == 0
 
@@ -4006,7 +4006,7 @@ def test_collection_build_index_uses_writer(tmp_path):
     try:
         stats = col.build_index()
         # IndexWriter is non-None; build_index returned via writer.
-        assert col._writer is not None
+        assert col._coordinator.writer is not None
         assert stats is not None
     finally:
         col.close()
@@ -4018,9 +4018,9 @@ def test_collection_writer_is_started_after_construction(tmp_path):
 
     col = Collection(source_dir=tmp_path, read_only=False)
     try:
-        assert col._writer is not None
-        assert col._writer._thread is not None  # thread started
-        assert col._writer._thread.is_alive()
+        assert col._coordinator.writer is not None
+        assert col._coordinator.writer._thread is not None  # thread started
+        assert col._coordinator.writer._thread.is_alive()
     finally:
         col.close()
 
@@ -4101,12 +4101,12 @@ def test_reindex_async_failure_recorded_in_status(tmp_path, monkeypatch):
         # Wait for the done-callback to run.  The callback ordering
         # relative to .result() can race — give it a tick.
         for _ in range(50):
-            if col._last_reindex_error is not None:
+            if col._coordinator._last_reindex_error is not None:
                 break
             time.sleep(0.01)
 
-        assert col._last_reindex_error is not None
-        assert "simulated reindex failure" in str(col._last_reindex_error)
+        assert col._coordinator._last_reindex_error is not None
+        assert "simulated reindex failure" in str(col._coordinator._last_reindex_error)
 
         status = col.get_index_status()
         assert "last_reindex_error" in status
@@ -4126,16 +4126,16 @@ def test_reindex_async_success_clears_prior_error(tmp_path):
     try:
         col.build_index()
         # Seed a prior error.
-        col._last_reindex_error = RuntimeError("prior")
+        col._coordinator._last_reindex_error = RuntimeError("prior")
 
         fut = col.reindex_async()
         fut.result(timeout=5)
 
         for _ in range(50):
-            if col._last_reindex_error is None:
+            if col._coordinator._last_reindex_error is None:
                 break
             time.sleep(0.01)
-        assert col._last_reindex_error is None
+        assert col._coordinator._last_reindex_error is None
         assert col.get_index_status()["last_reindex_error"] is None
     finally:
         col.close()
@@ -4169,11 +4169,11 @@ def test_build_embeddings_async_failure_recorded_in_status(tmp_path, monkeypatch
             fut.result(timeout=5)
 
         for _ in range(50):
-            if col._last_build_embeddings_error is not None:
+            if col._coordinator._last_build_embeddings_error is not None:
                 break
             time.sleep(0.01)
 
-        assert col._last_build_embeddings_error is not None
+        assert col._coordinator._last_build_embeddings_error is not None
         status = col.get_index_status()
         assert status["last_build_embeddings_error"] is not None
         assert "simulated embeddings failure" in status["last_build_embeddings_error"]
@@ -4200,7 +4200,7 @@ class TestIsDrained:
         col = Collection(source_dir=tmp_path, read_only=False)
         try:
             col.build_index()
-            col._writer.mark_dirty(["fake.md"])
+            col._coordinator.writer.mark_dirty(["fake.md"])
             assert col.is_drained() is False
         finally:
             col.close()
@@ -4211,7 +4211,7 @@ class TestIsDrained:
         col = Collection(source_dir=tmp_path, read_only=False)
         try:
             col.build_index()
-            col._writer.mark_embedding_dirty(["fake.md"])
+            col._coordinator.writer.mark_embedding_dirty(["fake.md"])
             assert col.is_drained() is False
         finally:
             col.close()
@@ -4227,16 +4227,16 @@ class TestIsDrained:
             col.build_index()
             release = threading.Event()
             started = threading.Event()
-            original_runner = col._writer._runners["build_index"]
+            original_runner = col._coordinator.writer._runners["build_index"]
 
             def _blocking_runner(job, ctx):
                 started.set()
                 release.wait(timeout=5)
                 return original_runner(job, ctx)
 
-            col._writer._runners["build_index"] = _blocking_runner
+            col._coordinator.writer._runners["build_index"] = _blocking_runner
             try:
-                fut = col._writer.submit(BuildIndex())
+                fut = col._coordinator.writer.submit(BuildIndex())
                 started.wait(timeout=5)
                 assert col.is_drained() is False
             finally:
@@ -4258,11 +4258,11 @@ class TestWriteGeneration:
             gen_before = col.write_generation()
             # Submit a no-op write (mark + flush dirty paths) so a job
             # cycle completes through the writer.
-            col._writer.mark_dirty(["sentinel.md"])
-            col._writer.drain_dirty_paths()
+            col._coordinator.writer.mark_dirty(["sentinel.md"])
+            col._coordinator.writer.drain_dirty_paths()
             from markdown_vault_mcp.indexing import BuildIndex
 
-            col._writer.submit(BuildIndex()).result(timeout=5)
+            col._coordinator.writer.submit(BuildIndex()).result(timeout=5)
             assert col.write_generation() > gen_before
         finally:
             col.close()
@@ -4278,7 +4278,7 @@ class TestWriteGeneration:
             col.build_index()
             samples = [col.write_generation()]
             for _ in range(3):
-                col._writer.submit(BuildIndex()).result(timeout=5)
+                col._coordinator.writer.submit(BuildIndex()).result(timeout=5)
                 samples.append(col.write_generation())
             for prev, cur in pairwise(samples):
                 assert cur > prev
@@ -4318,15 +4318,15 @@ class TestWaitForDrain:
             col.build_index()
             release = threading.Event()
             started = threading.Event()
-            original_runner = col._writer._runners["build_index"]
+            original_runner = col._coordinator.writer._runners["build_index"]
 
             def _blocking_runner(job, ctx):
                 started.set()
                 release.wait(timeout=5)
                 return original_runner(job, ctx)
 
-            col._writer._runners["build_index"] = _blocking_runner
-            fut = col._writer.submit(BuildIndex())
+            col._coordinator.writer._runners["build_index"] = _blocking_runner
+            fut = col._coordinator.writer.submit(BuildIndex())
             started.wait(timeout=5)
             threading.Timer(0.1, release.set).start()
             assert col.wait_for_drain(timeout=5.0) is True
@@ -4345,15 +4345,15 @@ class TestWaitForDrain:
             col.build_index()
             release = threading.Event()
             started = threading.Event()
-            original_runner = col._writer._runners["build_index"]
+            original_runner = col._coordinator.writer._runners["build_index"]
 
             def _blocking_runner(job, ctx):
                 started.set()
                 release.wait(timeout=5)
                 return original_runner(job, ctx)
 
-            col._writer._runners["build_index"] = _blocking_runner
-            fut = col._writer.submit(BuildIndex())
+            col._coordinator.writer._runners["build_index"] = _blocking_runner
+            fut = col._coordinator.writer.submit(BuildIndex())
             started.wait(timeout=5)
             assert col.wait_for_drain(timeout=0.1) is False
             release.set()
