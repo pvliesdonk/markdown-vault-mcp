@@ -285,7 +285,7 @@ class IndexManager:
         documents that now match the patterns are purged.
 
         Thread-safety: this method runs on the single-owner
-        :class:`~markdown_vault_mcp.writer.IndexWriter` thread (#559), so
+        :class:`~markdown_vault_mcp.indexing.IndexWriter` thread (#559), so
         no internal lock is required.  Concurrent
         write/edit/delete/rename operations route through the writer's
         FIFO queue and serialise against this job.

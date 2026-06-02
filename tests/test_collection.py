@@ -4220,7 +4220,7 @@ class TestIsDrained:
         import threading
 
         from markdown_vault_mcp.collection import Collection
-        from markdown_vault_mcp.writer import BuildIndex
+        from markdown_vault_mcp.indexing import BuildIndex
 
         col = Collection(source_dir=tmp_path, read_only=False)
         try:
@@ -4260,7 +4260,7 @@ class TestWriteGeneration:
             # cycle completes through the writer.
             col._writer.mark_dirty(["sentinel.md"])
             col._writer.drain_dirty_paths()
-            from markdown_vault_mcp.writer import BuildIndex
+            from markdown_vault_mcp.indexing import BuildIndex
 
             col._writer.submit(BuildIndex()).result(timeout=5)
             assert col.write_generation() > gen_before
@@ -4271,7 +4271,7 @@ class TestWriteGeneration:
         from itertools import pairwise
 
         from markdown_vault_mcp.collection import Collection
-        from markdown_vault_mcp.writer import BuildIndex
+        from markdown_vault_mcp.indexing import BuildIndex
 
         col = Collection(source_dir=tmp_path, read_only=False)
         try:
@@ -4311,7 +4311,7 @@ class TestWaitForDrain:
         import threading
 
         from markdown_vault_mcp.collection import Collection
-        from markdown_vault_mcp.writer import BuildIndex
+        from markdown_vault_mcp.indexing import BuildIndex
 
         col = Collection(source_dir=tmp_path, read_only=False)
         try:
@@ -4338,7 +4338,7 @@ class TestWaitForDrain:
         import threading
 
         from markdown_vault_mcp.collection import Collection
-        from markdown_vault_mcp.writer import BuildIndex
+        from markdown_vault_mcp.indexing import BuildIndex
 
         col = Collection(source_dir=tmp_path, read_only=False)
         try:

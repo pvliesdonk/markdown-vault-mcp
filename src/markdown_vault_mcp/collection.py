@@ -17,6 +17,19 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from markdown_vault_mcp.exceptions import IndexUnavailableError
 from markdown_vault_mcp.fts_index import FTSIndex
+from markdown_vault_mcp.indexing import (
+    BuildEmbeddings,
+    BuildIndex,
+    IndexWriter,
+    ProcessDirtyPaths,
+    ReindexAll,
+    WriterContext,
+    run_build_embeddings,
+    run_build_index,
+    run_flush_dirty_embeddings,
+    run_process_dirty_paths,
+    run_reindex_all,
+)
 from markdown_vault_mcp.scanner import (
     ChunkStrategy,
     HeadingChunker,
@@ -46,19 +59,6 @@ from markdown_vault_mcp.types import (
     WriteResult,
 )
 from markdown_vault_mcp.utils import effective_attachment_extensions
-from markdown_vault_mcp.writer import (
-    BuildEmbeddings,
-    BuildIndex,
-    IndexWriter,
-    ProcessDirtyPaths,
-    ReindexAll,
-    WriterContext,
-    run_build_embeddings,
-    run_build_index,
-    run_flush_dirty_embeddings,
-    run_process_dirty_paths,
-    run_reindex_all,
-)
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
@@ -119,9 +119,9 @@ class Collection:
     See issue #525.
 
     **Index lifecycle (issues #513, #526, #559).** The MCP server
-    lifespan submits a :class:`~markdown_vault_mcp.writer.BuildIndex`
+    lifespan submits a :class:`~markdown_vault_mcp.indexing.BuildIndex`
     job to the single-owner
-    :class:`~markdown_vault_mcp.writer.IndexWriter` via
+    :class:`~markdown_vault_mcp.indexing.IndexWriter` via
     :meth:`build_index_async` and yields immediately. On a warm
     restart the persisted FTS completeness sentinel (PR #526) causes
     :meth:`build_index_async` to return an already-resolved
@@ -141,7 +141,7 @@ class Collection:
     **Thread safety (issue #519):** every public method on this class is safe
     to call from any thread, concurrently with other reads and writes from
     any other thread. Index mutations (FTS + vector index) are serialised
-    by the single-owner :class:`~markdown_vault_mcp.writer.IndexWriter`
+    by the single-owner :class:`~markdown_vault_mcp.indexing.IndexWriter`
     thread (#559); file-mutation operations on disk are serialised via
     ``_file_write_lock`` (RLock) so two MCP write tools racing on the
     same path do not tear. ``close()`` is safe from any thread; after
@@ -562,7 +562,7 @@ class Collection:
         .. deprecated:: 1.28
            Superseded by :meth:`build_index_async`, which submits a
            :class:`BuildIndex` job to the single-owner
-           :class:`~markdown_vault_mcp.writer.IndexWriter` thread (#559).
+           :class:`~markdown_vault_mcp.indexing.IndexWriter` thread (#559).
            The MCP server lifespan no longer calls this method; only
            legacy tests retain it. Prefer :meth:`build_index_async`
            for fire-and-forget initial builds and
@@ -629,7 +629,7 @@ class Collection:
         .. deprecated:: 1.28
            The MCP server lifespan no longer branches on this predicate
            — it always submits a :class:`BuildIndex` job to the
-           :class:`~markdown_vault_mcp.writer.IndexWriter` (#559). The
+           :class:`~markdown_vault_mcp.indexing.IndexWriter` (#559). The
            method survives only for legacy tests that still exercise
            :meth:`start_background_build_index`.
 
@@ -1177,7 +1177,7 @@ class Collection:
 
         Unlike the synchronous :meth:`reindex`, this method does NOT
         require :meth:`build_index` to have run first.  The
-        :class:`~markdown_vault_mcp.writer.IndexWriter`'s FIFO queue
+        :class:`~markdown_vault_mcp.indexing.IndexWriter`'s FIFO queue
         guarantees that any :class:`BuildIndex` job submitted earlier
         (e.g. from the server lifespan via
         :meth:`build_index_async`) runs before this :class:`ReindexAll`,
@@ -1200,7 +1200,7 @@ class Collection:
 
         Unlike the synchronous :meth:`build_embeddings`, this method
         does NOT require :meth:`build_index` to have run first.  The
-        :class:`~markdown_vault_mcp.writer.IndexWriter`'s FIFO queue
+        :class:`~markdown_vault_mcp.indexing.IndexWriter`'s FIFO queue
         guarantees that any :class:`BuildIndex` job submitted earlier
         (e.g. from the server lifespan via
         :meth:`build_index_async`) runs before this

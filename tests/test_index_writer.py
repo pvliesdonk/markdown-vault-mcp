@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 
 import pytest
 
-from markdown_vault_mcp.writer import (
+from markdown_vault_mcp.indexing import (
     BuildEmbeddings,
     BuildIndex,
     FlushDirtyEmbeddings,
@@ -119,7 +119,9 @@ def test_start_failure_leaves_thread_unset(monkeypatch):
         thread.start = _maybe_failing_start
         return thread
 
-    monkeypatch.setattr("markdown_vault_mcp.writer.threading.Thread", _broken_thread)
+    monkeypatch.setattr(
+        "markdown_vault_mcp.indexing.index_writer.threading.Thread", _broken_thread
+    )
 
     writer = IndexWriter(runners={}, ctx=None)
     with pytest.raises(RuntimeError, match="can't start"):
@@ -342,7 +344,7 @@ class _FakeIndexManager:
 
 
 def _make_real_writer(im: _FakeIndexManager) -> IndexWriter:
-    from markdown_vault_mcp.writer import (
+    from markdown_vault_mcp.indexing import (
         WriterContext,
         run_build_embeddings,
         run_build_index,
@@ -494,7 +496,7 @@ def test_run_process_dirty_paths_recovers_snapshot_on_failure():
     to the dirty set so a future ProcessDirtyPaths job can retry the
     paths (#559 review feedback).
     """
-    from markdown_vault_mcp.writer import (
+    from markdown_vault_mcp.indexing import (
         WriterContext,
         run_process_dirty_paths,
     )
@@ -525,7 +527,7 @@ def test_run_flush_dirty_embeddings_recovers_snapshot_on_failure():
     to the vector-dirty set so a future FlushDirtyEmbeddings job can
     retry the paths (#559 review feedback).
     """
-    from markdown_vault_mcp.writer import (
+    from markdown_vault_mcp.indexing import (
         WriterContext,
         run_flush_dirty_embeddings,
     )
