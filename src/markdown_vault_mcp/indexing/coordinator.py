@@ -127,7 +127,7 @@ class IndexWriteCoordinator:
             )
 
     def get_index_status(self) -> dict[str, Any]:
-        """Return a non-blocking snapshot of build + writer state (nine keys)."""
+        """Return a non-blocking snapshot of build + writer state (ten keys)."""
         fields = self._readiness.status_fields()
         try:
             documents_indexed = len(self._fts.list_notes())

@@ -289,7 +289,7 @@ def test_get_index_status_queryable_when_built_with_captured_error(
 def test_get_index_status_building_in_flight(tmp_path: Path) -> None:
     col = Collection(source_dir=_vault(tmp_path))
     col._coordinator._readiness._done.clear()
-    col._background_started = True
+    col._coordinator._background_started = True
     status = col.get_index_status()
     assert status["status"] == "building"
     assert status["error"] is None
@@ -886,7 +886,7 @@ def test_synchronous_build_index_clears_prior_background_error(
         "simulated prior background failure"
     )
     col._coordinator._readiness._done.set()
-    col._background_started = True
+    col._coordinator._background_started = True
     assert col.is_queryable() is False
 
     # Synchronous recovery build.
@@ -987,7 +987,7 @@ def test_synchronous_build_index_warm_path_clears_prior_background_error(
         "simulated prior background failure"
     )
     col._coordinator._readiness._done.set()
-    col._background_started = True
+    col._coordinator._background_started = True
     assert col.is_queryable() is False
 
     # Warm-restart short-circuit recovery.
