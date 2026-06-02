@@ -154,10 +154,16 @@ class VaultFileWatcher:
         handler = _VaultEventHandler(self._schedule, self._source_dir)
         observer = Observer()
         observer.schedule(handler, str(self._source_dir), recursive=True)
-        observer.start()
-
+        # Assign before start() so stop() can always see and stop it,
+        # even if it races into the narrow window between schedule() and start().
         with self._lock:
             self._observer = observer
+        try:
+            observer.start()
+        except Exception:
+            with self._lock:
+                self._observer = None
+            raise
 
         logger.info(
             "file_watcher: watching source_dir=%s debounce_s=%s",

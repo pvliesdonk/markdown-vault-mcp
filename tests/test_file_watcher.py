@@ -247,11 +247,19 @@ def test_stopped_flag_prevents_fire_after_stop(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_start_logs_warning_when_watchdog_unavailable(tmp_path: Path) -> None:
-    """When watchdog cannot be imported, start() logs a warning and returns without raising."""
+def test_start_logs_warning_when_watchdog_unavailable(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """When watchdog is not available start() logs a warning and returns without raising."""
+    import logging
+
     watcher = _make_watcher(tmp_path, lambda: None)
-    with patch("markdown_vault_mcp._file_watcher._WATCHDOG_AVAILABLE", False):
+    with (
+        patch("markdown_vault_mcp._file_watcher._WATCHDOG_AVAILABLE", False),
+        caplog.at_level(logging.WARNING, logger="markdown_vault_mcp._file_watcher"),
+    ):
         watcher.start()
+    assert "watchdog not installed" in caplog.text
     watcher.stop()
 
 
@@ -344,8 +352,6 @@ def test_fire_exception_in_on_change_is_logged(tmp_path: Path) -> None:
     try:
         (tmp_path / "note.md").write_text("hello")
         # Give enough time for debounce + callback — no exception should propagate
-        import time as _time
-
-        _time.sleep(0.3)
+        time.sleep(0.3)
     finally:
         watcher.stop()
