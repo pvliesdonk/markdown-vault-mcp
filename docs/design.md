@@ -1194,8 +1194,8 @@ class Collection:
     def rename(self, old_path: str, new_path: str,
                if_match: str | None = None, *,
                update_links: bool = False) -> RenameResult: ...
-    def list(self, *, folder: str | None = None,
-             pattern: str | None = None) -> list[NoteInfo]: ...
+    def list_documents(self, *, folder: str | None = None,
+                       pattern: str | None = None) -> list[NoteInfo]: ...
 
     # --- Index management ---
     def build_index(self, *, force: bool = False) -> IndexStats: ...
@@ -1224,9 +1224,9 @@ class Collection:
 - `embeddings_path=None`: semantic search is disabled.
 - `state_path=None`: defaults to `{source_dir}/.markdown_vault_mcp/state.json`.
 
-**Lazy initialization**: on first call to `search()`, `list()`, or `read()`,
-`Collection` lazily builds the FTS index from `source_dir` if no pre-built
-`index_path` was provided.
+**Lazy initialization**: on first call to `search()`, `list_documents()`, or
+`read()`, `Collection` lazily builds the FTS index from `source_dir` if no
+pre-built `index_path` was provided.
 
 **Write operations** (`write`, `edit`, `delete`, `rename`) raise
 `ReadOnlyError` when `read_only=True`.
@@ -1277,8 +1277,8 @@ source-directory-relative links (e.g. `../notes/target.md`) are rewritten
 with the correct new relative path from the source file's directory.
 `update_links` is silently ignored for attachments (non-`.md` files).
 
-**`list()` pattern parameter**: if provided, `pattern` is a Unix glob matched
-against the relative path using `fnmatch.fnmatch()`. Example:
+**`list_documents()` pattern parameter**: if provided, `pattern` is a Unix glob
+matched against the relative path using `fnmatch.fnmatch()`. Example:
 `pattern="Journal/*.md"` returns only documents in the Journal folder.
 
 **`list_tags(field)` behavior**: queries only the `document_tags` table. If

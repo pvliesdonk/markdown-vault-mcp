@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import numpy as np
 import pytest
 
 from markdown_vault_mcp.vector_index import VectorIndex, VectorIndexCompatibilityError
@@ -165,6 +166,29 @@ class TestVectorIndexAddVectors:
         results_add_vectors = index_via_add_vectors.search("hello world")
         assert len(results_add) == len(results_add_vectors) == 1
         assert results_add[0]["path"] == results_add_vectors[0]["path"]
+
+    def test_add_vectors_preserves_float32_dtype(
+        self, mock_provider: MockEmbeddingProvider
+    ) -> None:
+        # Pins the cast at vector_index.add_vectors that prevents
+        # np.linalg.norm + np.where(..., 1.0, ...) from widening _embeddings
+        # to float64.  Without the cast, on-disk sidecar doubles in size.
+        index = VectorIndex(mock_provider)
+        raw = mock_provider.embed(["alpha", "beta"])
+        index.add_vectors(raw, [_make_meta("a.md"), _make_meta("b.md")])
+        assert index._embeddings.dtype == np.float32
+
+    def test_add_vectors_zero_magnitude_preserves_float32(
+        self, mock_provider: MockEmbeddingProvider
+    ) -> None:
+        # The np.where(norms == 0, 1.0, norms) branch in add_vectors is where
+        # float64 leaks in — a literal 1.0 widens norms even when the input
+        # is float32.  Exercise the zero-magnitude path explicitly.
+        index = VectorIndex(mock_provider)
+        dim = mock_provider.dimension
+        raw = [[0.0] * dim, [1.0] + [0.0] * (dim - 1)]
+        index.add_vectors(raw, [_make_meta("zero.md"), _make_meta("unit.md")])
+        assert index._embeddings.dtype == np.float32
 
 
 class TestVectorIndexSearch:

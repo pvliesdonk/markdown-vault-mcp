@@ -205,7 +205,7 @@ class NoteContent:
 
 @dataclass
 class NoteInfo:
-    """Summary info for a document, returned by :meth:`~markdown_vault_mcp.collection.Collection.list`.
+    """Summary info for a document, returned by :meth:`~markdown_vault_mcp.collection.Collection.list_documents`.
 
     Attributes:
         path: Relative path from the vault root.
@@ -333,7 +333,7 @@ class AttachmentContent:
 
 @dataclass
 class AttachmentInfo:
-    """Summary info for an attachment, returned by :meth:`~markdown_vault_mcp.collection.Collection.list` when ``include_attachments=True``.
+    """Summary info for an attachment, returned by :meth:`~markdown_vault_mcp.collection.Collection.list_documents` when ``include_attachments=True``.
 
     Attributes:
         path: Relative path from the vault root.
