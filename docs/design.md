@@ -64,7 +64,7 @@ markdown-vault-mcp (new package)
 +-- vector_index.py   -- numpy embeddings, cosine similarity
 +-- providers.py      -- Ollama / OpenAI / SentenceTransformers
 +-- tracker.py        -- hash-based change detection
-+-- collection.py     -- thin facade: lifecycle, wiring, delegation
++-- collection.py     -- thin facade: lifecycle, wiring, delegation (index-write → indexing/coordinator.py)
 +-- config.py         -- configuration loading
 +-- server.py         -- generic FastMCP server
 +-- cli.py            -- CLI entry point
@@ -76,6 +76,10 @@ markdown-vault-mcp (new package)
 |   +-- search.py     -- SearchManager: keyword/semantic/hybrid search, list, context
 |   +-- index.py      -- IndexManager: build_index, reindex, embeddings, flush
 |   +-- document.py   -- DocumentManager: CRUD, attachments, path validation
++-- indexing/
+|   +-- index_writer.py -- IndexWriter: single-owner FIFO writer thread + jobs/runners
+|   +-- readiness.py  -- ReadinessState: build-readiness state machine (#576)
+|   +-- coordinator.py -- IndexWriteCoordinator: writer + build/async orchestration (#576)
 
 ifcraftcorpus (existing, refactored later)
 +-- depends on markdown-vault-mcp
@@ -492,7 +496,7 @@ treats as complete on the next startup.
 ### Thread Safety
 
 **Single-writer architecture (issue #559).** `Collection` owns exactly one
-worker thread — an :class:`~markdown_vault_mcp.writer.IndexWriter` — that
+worker thread — an :class:`~markdown_vault_mcp.indexing.IndexWriter` — that
 serves every FTS and vector-index mutation through a FIFO job queue. The
 writer is constructed and `start()`ed in `Collection.__init__` and closed
 first inside `Collection.close()`, before any downstream resource teardown.
@@ -690,7 +694,7 @@ resolved path escapes `source_dir`, it returns `None` instead of raising.
 
 `Collection.close()` must be called on shutdown to release resources:
 
-1. Closes the :class:`~markdown_vault_mcp.writer.IndexWriter` first (30 s
+1. Closes the :class:`~markdown_vault_mcp.indexing.IndexWriter` first (30 s
    drain timeout). The writer drains any pending jobs — including the
    final `ProcessDirtyPaths`/`FlushDirtyEmbeddings` chain — so deferred FTS
    upserts and embedding flushes complete before downstream resources tear
@@ -1141,7 +1145,7 @@ operations to them. No manager holds a back-reference to Collection.
 |---------|---------------|-------------|
 | ``LinkManager`` | Backlinks, outlinks, broken links, orphans, hubs, connection paths | ``FTSIndex``, ``source_dir`` |
 | ``SearchManager`` | Keyword/semantic/hybrid search, list, folders, tags, recent, similar, context | ``FTSIndex``, ``source_dir``, embedding config, ``LinkManager`` |
-| ``IndexManager`` | build_index, reindex, build_embeddings, process_dirty_paths, flush_dirty_embeddings | ``FTSIndex``, ``ChangeTracker``, ``source_dir``, chunk strategy (no lock — driven by the single-owner :class:`~markdown_vault_mcp.writer.IndexWriter`, #559) |
+| ``IndexManager`` | build_index, reindex, build_embeddings, process_dirty_paths, flush_dirty_embeddings | ``FTSIndex``, ``ChangeTracker``, ``source_dir``, chunk strategy (no lock — driven by the single-owner :class:`~markdown_vault_mcp.indexing.IndexWriter`, #559) |
 | ``DocumentManager`` | read, write, edit, delete, rename, attachments, TOC | ``FTSIndex``, ``source_dir``, ``_file_write_lock`` (file-mutation atomicity only — see #559), ``mark_paths_dirty`` hook, callbacks |
 
 Each manager receives its dependencies as constructor arguments. This enables

@@ -19,12 +19,16 @@ src/markdown_vault_mcp/
     search.py          -- SearchManager: keyword/semantic/hybrid search, list, context
     index.py           -- IndexManager: build_index, reindex, embeddings, flush
     document.py        -- DocumentManager: CRUD, attachments, path validation, backlinks
+  indexing/
+    index_writer.py    -- IndexWriter: single-owner FIFO writer thread + job dataclasses/runners
+    readiness.py       -- ReadinessState: build-readiness state machine (#576)
+    coordinator.py     -- IndexWriteCoordinator: owns the writer + build/async orchestration (#576)
   scanner.py           -- file discovery, frontmatter parsing, chunking
   fts_index.py         -- SQLite FTS5 schema, BM25 search
   vector_index.py      -- numpy embeddings, cosine similarity
   providers.py         -- embedding provider ABC + implementations
   tracker.py           -- hash-based change detection
-  collection.py        -- thin facade: lifecycle, wiring, delegation
+  collection.py        -- thin facade: lifecycle, wiring, delegation (index-write → indexing/coordinator.py)
   config.py            -- configuration loading
   server.py            -- generic FastMCP server factory (make_server) with tool annotations
   cli.py               -- CLI entry point
