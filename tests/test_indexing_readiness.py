@@ -135,7 +135,7 @@ class TestBucket2PartialReport:
         _seed(vault, "b.md")
         col = Collection(source_dir=vault)
 
-        notes = col.list()
+        notes = col.list_documents()
 
         assert notes == []
 

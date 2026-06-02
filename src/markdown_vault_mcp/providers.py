@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from markdown_vault_mcp.config import CollectionConfig
@@ -259,7 +259,7 @@ class OpenAIProvider(EmbeddingProvider):
 
         data = response.json()
         # Sort by index to guarantee input order is preserved.
-        items: list[dict] = sorted(data["data"], key=lambda d: d["index"])
+        items: list[dict[str, Any]] = sorted(data["data"], key=lambda d: d["index"])
         embeddings: list[list[float]] = [item["embedding"] for item in items]
 
         # Cache dimension from first successful call.
@@ -326,10 +326,12 @@ class FastEmbedProvider(EmbeddingProvider):
 
         self._model_name = model_name
         self._cache_dir = cache_dir
-        kwargs: dict[str, object] = {"model_name": self._model_name}
         if self._cache_dir:
-            kwargs["cache_dir"] = self._cache_dir
-        self._model = TextEmbedding(**kwargs)
+            self._model = TextEmbedding(
+                model_name=self._model_name, cache_dir=self._cache_dir
+            )
+        else:
+            self._model = TextEmbedding(model_name=self._model_name)
         self._dimension: int | None = None
         logger.debug(
             "FastEmbedProvider initialised: model=%s cache_dir=%s",

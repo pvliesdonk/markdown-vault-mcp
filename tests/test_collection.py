@@ -418,7 +418,7 @@ class TestLazyInitialisation:
         """list() on an unbuilt index returns [] (bucket 2 — no implicit build)."""
         col = _make_collection(vault_path)
 
-        notes = col.list()
+        notes = col.list_documents()
 
         assert notes == []
 
@@ -533,7 +533,7 @@ class TestSearch:
         col = _make_collection(vault)
         col.build_index()
 
-        notes = col.list()
+        notes = col.list_documents()
         paths = [n.path for n in notes]
         assert "alpha/note.md" in paths
         assert "beta/note.md" in paths
@@ -624,14 +624,14 @@ class TestRead:
 class TestList:
     def test_list_all(self, collection: Collection) -> None:
         """list() returns all indexed documents."""
-        notes = collection.list()
+        notes = collection.list_documents()
 
         assert len(notes) == 9
         assert all(isinstance(n, NoteInfo) for n in notes)
 
     def test_list_with_folder(self, collection: Collection) -> None:
         """list(folder=...) returns only documents in that folder."""
-        notes = collection.list(folder="subfolder")
+        notes = collection.list_documents(folder="subfolder")
 
         assert len(notes) >= 1
         assert all("subfolder" in n.folder for n in notes)
@@ -642,7 +642,7 @@ class TestList:
         ``fnmatch`` treats ``*`` as matching path separators, so
         ``subfolder/*.md`` also matches ``subfolder/deep/doc.md``.
         """
-        notes = collection.list(pattern="subfolder/*.md")
+        notes = collection.list_documents(pattern="subfolder/*.md")
 
         paths = [n.path for n in notes]
         assert "subfolder/nested.md" in paths
@@ -653,7 +653,7 @@ class TestList:
 
     def test_list_subfolder_deep_pattern(self, collection: Collection) -> None:
         """list() with a deep glob pattern returns deeply nested documents."""
-        notes = collection.list(pattern="subfolder/**/*.md")
+        notes = collection.list_documents(pattern="subfolder/**/*.md")
 
         paths = [n.path for n in notes]
         assert "subfolder/deep/doc.md" in paths
@@ -1590,7 +1590,7 @@ class TestRename:
         writable.rename("simple.md", "new_folder/simple.md")
         wait_for_writer_drain(writable)
 
-        notes = writable.list(folder="new_folder")
+        notes = writable.list_documents(folder="new_folder")
         paths = [n.path for n in notes]
         assert "new_folder/simple.md" in paths
 
@@ -2218,7 +2218,7 @@ class TestListWithAttachments:
         """list() without include_attachments does not return attachment files."""
         col = Collection(source_dir=vault_with_attachment)
         col.build_index()
-        results = col.list()
+        results = col.list_documents()
 
         paths = [r.path for r in results]
         assert not any(p.endswith(".pdf") or p.endswith(".png") for p in paths)
@@ -2229,7 +2229,7 @@ class TestListWithAttachments:
         """list(include_attachments=True) returns notes and attachments."""
         col = Collection(source_dir=vault_with_attachment)
         col.build_index()
-        results = col.list(include_attachments=True)
+        results = col.list_documents(include_attachments=True)
 
         kinds = {type(r).__name__ for r in results}
         assert "NoteInfo" in kinds
@@ -2239,7 +2239,7 @@ class TestListWithAttachments:
         """AttachmentInfo entries have the correct fields."""
         col = Collection(source_dir=vault_with_attachment)
         col.build_index()
-        results = col.list(include_attachments=True)
+        results = col.list_documents(include_attachments=True)
 
         attachments = [r for r in results if isinstance(r, AttachmentInfo)]
         assert len(attachments) >= 1
@@ -2257,7 +2257,7 @@ class TestListWithAttachments:
         (vault_with_attachment / "assets" / "data.xyz").write_bytes(b"unknown")
         col = Collection(source_dir=vault_with_attachment)
         col.build_index()
-        results = col.list(include_attachments=True)
+        results = col.list_documents(include_attachments=True)
 
         paths = [r.path for r in results]
         assert not any(p.endswith(".xyz") for p in paths)
@@ -2269,7 +2269,7 @@ class TestListWithAttachments:
         (vault_with_attachment / "assets" / "data.xyz").write_bytes(b"unknown")
         col = Collection(source_dir=vault_with_attachment, attachment_extensions=["*"])
         col.build_index()
-        results = col.list(include_attachments=True)
+        results = col.list_documents(include_attachments=True)
 
         paths = [r.path for r in results]
         assert any(p.endswith(".xyz") for p in paths)
@@ -2278,7 +2278,7 @@ class TestListWithAttachments:
         """list(include_attachments=True, folder=...) filters attachments by folder."""
         col = Collection(source_dir=vault_with_attachment)
         col.build_index()
-        results = col.list(include_attachments=True, folder="assets")
+        results = col.list_documents(include_attachments=True, folder="assets")
 
         for r in results:
             assert r.folder == "assets" or r.folder.startswith("assets/")
@@ -3285,7 +3285,7 @@ class TestListAttachmentEdgeCases:
         """Attachments at the vault root have folder='' (not '.' or '/')."""
         col = Collection(source_dir=vault_with_root_attachment)
         col.build_index()
-        results = col.list(include_attachments=True)
+        results = col.list_documents(include_attachments=True)
 
         attachments = [r for r in results if isinstance(r, AttachmentInfo)]
         root_json = next((a for a in attachments if a.path == "diagram.json"), None)
@@ -3298,7 +3298,7 @@ class TestListAttachmentEdgeCases:
         """list(include_attachments=True, pattern='*.json') returns only .json files."""
         col = Collection(source_dir=vault_with_root_attachment)
         col.build_index()
-        results = col.list(include_attachments=True, pattern="*.json")
+        results = col.list_documents(include_attachments=True, pattern="*.json")
 
         attachment_paths = [r.path for r in results if isinstance(r, AttachmentInfo)]
         assert all(p.endswith(".json") for p in attachment_paths)
@@ -3311,7 +3311,7 @@ class TestListAttachmentEdgeCases:
         """list(include_attachments=True, folder='notes') only returns notes/ attachments."""
         col = Collection(source_dir=vault_with_root_attachment)
         col.build_index()
-        results = col.list(include_attachments=True, folder="notes")
+        results = col.list_documents(include_attachments=True, folder="notes")
 
         for r in results:
             assert r.folder == "notes" or r.folder.startswith("notes/")
@@ -3381,7 +3381,7 @@ class TestListAttachmentHiddenDirFiltering:
 
         col = Collection(source_dir=vault, attachment_extensions=["pdf", "json"])
         col.build_index()
-        results = col.list(include_attachments=True)
+        results = col.list_documents(include_attachments=True)
 
         attachment_paths = {
             r.path
@@ -3402,7 +3402,7 @@ class TestListAttachmentHiddenDirFiltering:
 
         col = Collection(source_dir=vault, attachment_extensions=["json"])
         col.build_index()
-        results = col.list(include_attachments=True)
+        results = col.list_documents(include_attachments=True)
 
         attachment_paths = {r.path for r in results if hasattr(r, "mime_type")}
         assert ".hidden_config.json" not in attachment_paths
@@ -3428,7 +3428,7 @@ class TestListAttachmentHiddenDirFiltering:
             exclude_patterns=["archived/**", "trash/**"],
         )
         col.build_index()
-        results = col.list(include_attachments=True)
+        results = col.list_documents(include_attachments=True)
 
         attachment_paths = {r.path for r in results if hasattr(r, "mime_type")}
         assert "assets/chart.pdf" in attachment_paths
@@ -3932,7 +3932,7 @@ class TestLoggingAuditSilentPaths:
             patch.object(_Path, "stat", stat_that_fails),
             patch.object(_Path, "is_file", is_file_override),
         ):
-            results = col.list(include_attachments=True)
+            results = col.list_documents(include_attachments=True)
         attachment_paths = [r.path for r in results if isinstance(r, AttachmentInfo)]
         assert "data.csv" not in attachment_paths
         assert any("stat error" in rec.message for rec in caplog.records)

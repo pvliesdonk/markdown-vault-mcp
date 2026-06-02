@@ -495,7 +495,7 @@ class FTSIndex:
         """
         if self._closed:
             raise sqlite3.ProgrammingError("Cannot operate on a closed FTSIndex")
-        existing = getattr(self._local, "conn", None)
+        existing: sqlite3.Connection | None = getattr(self._local, "conn", None)
         if existing is not None:
             return existing
         new_conn = self._connect()
@@ -1075,7 +1075,7 @@ class FTSIndex:
         return results
 
     @_retry_on_locked
-    def get_note(self, path: str) -> dict | None:
+    def get_note(self, path: str) -> dict[str, Any] | None:
         """Return document metadata for a single note.
 
         Args:
@@ -1101,7 +1101,7 @@ class FTSIndex:
         return dict(row)
 
     @_retry_on_locked
-    def list_notes(self, *, folder: str | None = None) -> list[dict]:
+    def list_notes(self, *, folder: str | None = None) -> list[dict[str, Any]]:
         """List all indexed documents, optionally filtered by folder.
 
         Args:
@@ -1179,7 +1179,8 @@ class FTSIndex:
         Returns:
             Integer count of all indexed chunks across all documents.
         """
-        return self._conn().execute("SELECT COUNT(*) FROM sections").fetchone()[0]
+        row = self._conn().execute("SELECT COUNT(*) FROM sections").fetchone()
+        return int(row[0])
 
     @_retry_on_locked
     def get_toc(self, path: str) -> list[dict[str, str | int]]:
@@ -1213,7 +1214,9 @@ class FTSIndex:
         ]
 
     @_retry_on_locked
-    def get_backlinks(self, path: str, *, limit: int | None = None) -> list[dict]:
+    def get_backlinks(
+        self, path: str, *, limit: int | None = None
+    ) -> list[dict[str, Any]]:
         """Return all documents that link TO the given path.
 
         Args:
@@ -1226,7 +1229,7 @@ class FTSIndex:
             ``link_text``, ``link_type``, ``fragment``, ``raw_target``.
         """
         limit_clause = "" if limit is None else "LIMIT ?"
-        params: tuple = (path,) if limit is None else (path, limit)
+        params: tuple[str | int, ...] = (path,) if limit is None else (path, limit)
         cur = self._conn().execute(
             f"""
             SELECT d.path AS source_path,
@@ -1246,7 +1249,9 @@ class FTSIndex:
         return [dict(row) for row in cur.fetchall()]
 
     @_retry_on_locked
-    def get_outlinks(self, path: str, *, limit: int | None = None) -> list[dict]:
+    def get_outlinks(
+        self, path: str, *, limit: int | None = None
+    ) -> list[dict[str, Any]]:
         """Return all links FROM the given document.
 
         Uses a LEFT JOIN to check target existence in a single query,
@@ -1262,7 +1267,7 @@ class FTSIndex:
             ``link_type``, ``fragment``, ``raw_target``, ``exists`` (bool).
         """
         limit_clause = "" if limit is None else "LIMIT ?"
-        params: tuple = (path,) if limit is None else (path, limit)
+        params: tuple[str | int, ...] = (path,) if limit is None else (path, limit)
         cur = self._conn().execute(
             f"""
             SELECT l.target_path,
@@ -1396,7 +1401,7 @@ class FTSIndex:
         return updated
 
     @_retry_on_locked
-    def get_broken_links(self, *, folder: str | None = None) -> list[dict]:
+    def get_broken_links(self, *, folder: str | None = None) -> list[dict[str, Any]]:
         """Return all links whose target does not exist as an indexed document.
 
         Args:
@@ -1435,7 +1440,9 @@ class FTSIndex:
         return [dict(row) for row in cur.fetchall()]
 
     @_retry_on_locked
-    def get_recent(self, *, limit: int = 20, folder: str | None = None) -> list[dict]:
+    def get_recent(
+        self, *, limit: int = 20, folder: str | None = None
+    ) -> list[dict[str, Any]]:
         """Return the most recently modified documents.
 
         Args:
@@ -1474,7 +1481,7 @@ class FTSIndex:
         return [dict(row) for row in cur.fetchall()]
 
     @_retry_on_locked
-    def get_orphan_notes(self) -> list[dict]:
+    def get_orphan_notes(self) -> list[dict[str, Any]]:
         """Return all documents with no inbound or outbound links.
 
         A document is an orphan if it has zero rows in ``links`` as either
@@ -1497,7 +1504,7 @@ class FTSIndex:
         return [dict(row) for row in cur.fetchall()]
 
     @_retry_on_locked
-    def get_most_linked(self, limit: int = 10) -> list[dict]:
+    def get_most_linked(self, limit: int = 10) -> list[dict[str, Any]]:
         """Return the documents with the most distinct source documents linking to them.
 
         Args:
@@ -1581,13 +1588,13 @@ class FTSIndex:
         visited: set[str] = {source_path}
 
         while queue:
-            current, path = queue.popleft()
-            if len(path) - 1 >= max_depth:
+            current, current_path = queue.popleft()
+            if len(current_path) - 1 >= max_depth:
                 continue
             for neighbour in adj.get(current, set()):
                 if neighbour in visited:
                     continue
-                new_path = [*path, neighbour]
+                new_path = [*current_path, neighbour]
                 if neighbour == target_path:
                     logger.debug(
                         "get_connection_path: found path %s → %s in %d hops",

@@ -34,6 +34,7 @@ from markdown_vault_mcp.types import (
     EditResult,
     NoteContent,
     RenameResult,
+    WriteOperation,
     WriteResult,
 )
 from markdown_vault_mcp.utils import (
@@ -108,7 +109,7 @@ class DocumentManager:
         attachment_extensions: list[str] | None = None,
         max_attachment_size_mb: float = 1.0,
         max_note_read_bytes: int = 262144,
-        on_write_callback: Callable[[Path, str, str], None] | None = None,
+        on_write_callback: Callable[[Path, str, WriteOperation], None] | None = None,
         mark_paths_dirty: Callable[[Iterable[str]], None] | None = None,
     ) -> None:
         self._fts = fts

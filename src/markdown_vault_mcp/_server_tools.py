@@ -492,7 +492,7 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
             Body content is not included in either case.
         """
         results = await asyncio.to_thread(
-            collection.list,
+            collection.list_documents,
             folder=folder,
             pattern=pattern,
             include_attachments=include_attachments,

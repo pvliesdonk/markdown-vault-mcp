@@ -1436,8 +1436,10 @@ pattern). Each tool is annotated with MCP `ToolAnnotations`:
 | `create_download_link` | Generate a one-time download URL for a vault file (HTTP/SSE only) | `True` | `False` | `False` |
 
 **Tool name note**: the MCP tool is registered as `list_documents` (not `list`)
-to avoid shadowing Python's built-in `list`. The underlying `Collection.list()`
-method is unchanged.
+to avoid shadowing Python's built-in `list`. The underlying
+`Collection.list_documents()` method matches the MCP name; both deliberately
+avoid the bare name `list` so type annotations like `list[NoteInfo]` are not
+mis-resolved against the method in class scope.
 
 **Transport-conditional tools**: `create_download_link` is only registered when
 the server runs with `--transport http` or `--transport sse` (not `stdio`),

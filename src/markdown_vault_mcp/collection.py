@@ -43,6 +43,7 @@ from markdown_vault_mcp.types import (
     ReindexResult,
     RenameResult,
     WriteCallback,
+    WriteOperation,
     WriteResult,
 )
 from markdown_vault_mcp.utils import effective_attachment_extensions
@@ -371,7 +372,9 @@ class Collection:
         # Deferred write callback queue (issue #175).  Git commit (on_write
         # callback) runs in a background worker thread so write methods
         # return immediately after the FTS update.
-        self._callback_queue: queue.Queue[tuple[Path, str, str] | None] = queue.Queue()
+        self._callback_queue: queue.Queue[tuple[Path, str, WriteOperation] | None] = (
+            queue.Queue()
+        )
         self._callback_worker: threading.Thread | None = None
         self._callback_worker_lock = threading.Lock()
 
@@ -517,7 +520,7 @@ class Collection:
             and self._on_write is not self._git_strategy
             and hasattr(self._on_write, "close")
         ):
-            self._on_write.close()  # type: ignore[union-attr]
+            self._on_write.close()
 
         # 4. Close SQLite.
         self._fts.close()
@@ -932,7 +935,7 @@ class Collection:
         """
         return self._doc_mgr.read(path, section=section)
 
-    def list(
+    def list_documents(
         self,
         *,
         folder: str | None = None,
@@ -1011,7 +1014,7 @@ class Collection:
         self._fts.clear_build_completed()
         # Route the actual scan through the IndexWriter so all index
         # mutations are serialised on the single writer thread (#559).
-        result = self._writer.submit(BuildIndex(force=force)).result()
+        result: IndexStats = self._writer.submit(BuildIndex(force=force)).result()
         self._fts.set_build_completed()
         self._index_built = True
         # Recovery: clear any captured background error + signal queryable.
@@ -1030,7 +1033,8 @@ class Collection:
             IndexUnavailableError: If :meth:`build_index` has not been called.
         """
         self._require_built()
-        return self._writer.submit(ReindexAll()).result()
+        result: ReindexResult = self._writer.submit(ReindexAll()).result()
+        return result
 
     def build_embeddings(self, *, force: bool = False) -> int:
         """Build the vector index from all chunks currently in the FTS index.
@@ -1048,7 +1052,8 @@ class Collection:
                 not configured.
         """
         self._require_built()
-        return self._writer.submit(BuildEmbeddings(force=force)).result()
+        count: int = self._writer.submit(BuildEmbeddings(force=force)).result()
+        return count
 
     def build_index_async(self, *, force: bool = False) -> Future[IndexStats]:
         """Submit a full FTS index build and return the Future.
@@ -1218,7 +1223,7 @@ class Collection:
         fut.add_done_callback(self._on_build_embeddings_done)
         return fut
 
-    def embeddings_status(self) -> dict:
+    def embeddings_status(self) -> dict[str, Any]:
         """Return status information about the vector index.
 
         Returns:
@@ -1671,7 +1676,7 @@ class Collection:
             self._callback_worker.start()
 
     def _fire_write_callback(
-        self, abs_path: Path, content: str, operation: str
+        self, abs_path: Path, content: str, operation: WriteOperation
     ) -> None:
         """Submit a write callback to the background worker thread."""
         if self._on_write is None:
@@ -1746,7 +1751,7 @@ class Collection:
         self,
         path: str,
         content: str,
-        frontmatter: dict | None = None,
+        frontmatter: dict[str, Any] | None = None,
         if_match: str | None = None,
     ) -> WriteResult:
         """Create or overwrite a document.
