@@ -231,17 +231,17 @@ class IndexWriteCoordinator:
         result: int = self._writer.submit(BuildEmbeddings(force=force)).result()
         return result
 
-    def rebuild_embeddings(self) -> int:
+    def rebuild_embeddings(self) -> None:
         """Force-rebuild the vector index for the search-recovery path.
 
         Invoked by ``SearchManager._load_vectors`` on a
         ``VectorIndexCompatibilityError`` (embedding-model upgrade). Runs on
         the writer thread to preserve the single-owner invariant. Carries NO
         ``require_built`` gate: the index is necessarily built when vectors
-        are being loaded.
+        are being loaded. The rebuilt-chunk count is discarded — the caller
+        invokes this for its side-effect only.
         """
-        result: int = self._writer.submit(BuildEmbeddings(force=True)).result()
-        return result
+        self._writer.submit(BuildEmbeddings(force=True)).result()
 
     # ------------------------------------------------------------------
     # Asynchronous builds

@@ -711,7 +711,7 @@ def register_apps(mcp: FastMCP) -> None:
               - kind (str): "note" or "attachment".
         """
         docs = await asyncio.to_thread(
-            collection.list, folder=folder, include_attachments=True
+            collection.list_documents, folder=folder, include_attachments=True
         )
         folders = await asyncio.to_thread(collection.list_folders)
 

@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import numpy as np
 import pytest
 
 from markdown_vault_mcp.vector_index import VectorIndex, VectorIndexCompatibilityError
@@ -165,6 +166,32 @@ class TestVectorIndexAddVectors:
         results_add_vectors = index_via_add_vectors.search("hello world")
         assert len(results_add) == len(results_add_vectors) == 1
         assert results_add[0]["path"] == results_add_vectors[0]["path"]
+
+    def test_add_vectors_preserves_float32_dtype(
+        self, mock_provider: MockEmbeddingProvider
+    ) -> None:
+        # Pins the float32 invariant on _embeddings.  The primary regression
+        # guard is mypy (the numpy stub for np.where returns float64, so any
+        # revert that drops the trailing .astype(np.float32) fails type
+        # checking); this runtime assertion additionally protects pre-NEP-50
+        # numpy environments (numpy<2.0) where the widening would happen at
+        # runtime too.
+        index = VectorIndex(mock_provider)
+        raw = mock_provider.embed(["alpha", "beta"])
+        index.add_vectors(raw, [_make_meta("a.md"), _make_meta("b.md")])
+        assert index._embeddings.dtype == np.float32
+
+    def test_add_vectors_zero_magnitude_preserves_float32(
+        self, mock_provider: MockEmbeddingProvider
+    ) -> None:
+        # Exercises the zero-magnitude branch (np.where substituting 1.0 for
+        # zero norms) so the float32 invariant is checked on the path where
+        # pre-NEP-50 numpy would widen via the Python scalar 1.0.
+        index = VectorIndex(mock_provider)
+        dim = mock_provider.dimension
+        raw = [[0.0] * dim, [1.0] + [0.0] * (dim - 1)]
+        index.add_vectors(raw, [_make_meta("zero.md"), _make_meta("unit.md")])
+        assert index._embeddings.dtype == np.float32
 
 
 class TestVectorIndexSearch:

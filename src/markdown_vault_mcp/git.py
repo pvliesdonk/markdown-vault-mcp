@@ -384,7 +384,7 @@ class GitWriteStrategy:
         self._pause_writes: (
             Callable[[], contextlib.AbstractContextManager[None]] | None
         ) = None
-        self._on_pull: Callable[[], None] | None = None
+        self._on_pull: Callable[[], object] | None = None
         if repo_path is not None:
             if self._managed:
                 self._ensure_managed_repo(repo_path)
@@ -1965,7 +1965,7 @@ class GitWriteStrategy:
         pull_interval_s: int,
         pause_writes: Callable[[], contextlib.AbstractContextManager[None]]
         | None = None,
-        on_pull: Callable[[], None] | None = None,
+        on_pull: Callable[[], object] | None = None,
     ) -> None:
         """Start a periodic fetch + ff-only update loop in a daemon thread."""
         if self._closed or not self._enable_pull or pull_interval_s <= 0:

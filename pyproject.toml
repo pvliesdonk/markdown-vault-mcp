@@ -171,17 +171,6 @@ module = ["frontmatter", "frontmatter.*", "yaml", "yaml.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = [
-    "markdown_vault_mcp.fts_index",
-    "markdown_vault_mcp.vector_index",
-    "markdown_vault_mcp.providers",
-    "markdown_vault_mcp.collection",
-]
-# Phase 1 modules have structural type issues (FTSResult used as dict,
-# numpy dtype mismatches).  TODO: fix in a dedicated type-safety PR.
-ignore_errors = true
-
-[[tool.mypy.overrides]]
 # Tests pre-date the template's `mypy src/ tests/` requirement (added in
 # template v1.2.0).  Typing the full test suite is tracked separately.
 module = ["tests.*"]

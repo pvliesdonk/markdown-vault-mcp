@@ -370,7 +370,7 @@ def test_concurrent_writers_serialize_via_collection_write_lock(
     try:
         assert not errors, f"writer errors: {errors!r}"
         wait_for_writer_drain(coll)
-        docs = coll.list()
+        docs = coll.list_documents()
         assert len(docs) == 40
     finally:
         coll.close()
@@ -412,7 +412,7 @@ def test_concurrent_build_and_reads_pr518_pattern(tmp_path: Path) -> None:
     def foreground_mix() -> None:
         try:
             for i in range(50):
-                coll.list()
+                coll.list_documents()
                 coll.search("content", limit=5)
                 coll.write(f"new-{i}.md", f"# New {i}\n\nbody\n")
                 coll.read(f"new-{i}.md")

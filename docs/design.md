@@ -1198,8 +1198,8 @@ class Collection:
     def rename(self, old_path: str, new_path: str,
                if_match: str | None = None, *,
                update_links: bool = False) -> RenameResult: ...
-    def list(self, *, folder: str | None = None,
-             pattern: str | None = None) -> list[NoteInfo]: ...
+    def list_documents(self, *, folder: str | None = None,
+                       pattern: str | None = None) -> list[NoteInfo]: ...
 
     # --- Index management ---
     def build_index(self, *, force: bool = False) -> IndexStats: ...
@@ -1228,9 +1228,9 @@ class Collection:
 - `embeddings_path=None`: semantic search is disabled.
 - `state_path=None`: defaults to `{source_dir}/.markdown_vault_mcp/state.json`.
 
-**Lazy initialization**: on first call to `search()`, `list()`, or `read()`,
-`Collection` lazily builds the FTS index from `source_dir` if no pre-built
-`index_path` was provided.
+**Lazy initialization**: on first call to `search()`, `list_documents()`, or
+`read()`, `Collection` lazily builds the FTS index from `source_dir` if no
+pre-built `index_path` was provided.
 
 **Write operations** (`write`, `edit`, `delete`, `rename`) raise
 `ReadOnlyError` when `read_only=True`.
@@ -1281,8 +1281,8 @@ source-directory-relative links (e.g. `../notes/target.md`) are rewritten
 with the correct new relative path from the source file's directory.
 `update_links` is silently ignored for attachments (non-`.md` files).
 
-**`list()` pattern parameter**: if provided, `pattern` is a Unix glob matched
-against the relative path using `fnmatch.fnmatch()`. Example:
+**`list_documents()` pattern parameter**: if provided, `pattern` is a Unix glob
+matched against the relative path using `fnmatch.fnmatch()`. Example:
 `pattern="Journal/*.md"` returns only documents in the Journal folder.
 
 **`list_tags(field)` behavior**: queries only the `document_tags` table. If
@@ -1440,8 +1440,10 @@ pattern). Each tool is annotated with MCP `ToolAnnotations`:
 | `create_download_link` | Generate a one-time download URL for a vault file (HTTP/SSE only) | `True` | `False` | `False` |
 
 **Tool name note**: the MCP tool is registered as `list_documents` (not `list`)
-to avoid shadowing Python's built-in `list`. The underlying `Collection.list()`
-method is unchanged.
+to avoid shadowing Python's built-in `list`. The underlying
+`Collection.list_documents()` method matches the MCP name; both deliberately
+avoid the bare name `list` so type annotations like `list[NoteInfo]` are not
+mis-resolved against the method in class scope.
 
 **Transport-conditional tools**: `create_download_link` is only registered when
 the server runs with `--transport http` or `--transport sse` (not `stdio`),

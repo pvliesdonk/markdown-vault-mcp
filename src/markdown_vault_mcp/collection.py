@@ -41,6 +41,7 @@ from markdown_vault_mcp.types import (
     ReindexResult,
     RenameResult,
     WriteCallback,
+    WriteOperation,
     WriteResult,
 )
 from markdown_vault_mcp.utils import effective_attachment_extensions
@@ -329,7 +330,9 @@ class Collection:
         # Deferred write callback queue (issue #175).  Git commit (on_write
         # callback) runs in a background worker thread so write methods
         # return immediately after the FTS update.
-        self._callback_queue: queue.Queue[tuple[Path, str, str] | None] = queue.Queue()
+        self._callback_queue: queue.Queue[tuple[Path, str, WriteOperation] | None] = (
+            queue.Queue()
+        )
         self._callback_worker: threading.Thread | None = None
         self._callback_worker_lock = threading.Lock()
 
@@ -450,7 +453,7 @@ class Collection:
             and self._on_write is not self._git_strategy
             and hasattr(self._on_write, "close")
         ):
-            self._on_write.close()  # type: ignore[union-attr]
+            self._on_write.close()
 
         # 4. Close SQLite.
         self._fts.close()
@@ -613,7 +616,7 @@ class Collection:
         """
         return self._doc_mgr.read(path, section=section)
 
-    def list(
+    def list_documents(
         self,
         *,
         folder: str | None = None,
@@ -717,7 +720,7 @@ class Collection:
         """
         return self._coordinator.build_embeddings_async(force=force)
 
-    def embeddings_status(self) -> dict:
+    def embeddings_status(self) -> dict[str, Any]:
         """Return status information about the vector index.
 
         Returns:
@@ -1170,7 +1173,7 @@ class Collection:
             self._callback_worker.start()
 
     def _fire_write_callback(
-        self, abs_path: Path, content: str, operation: str
+        self, abs_path: Path, content: str, operation: WriteOperation
     ) -> None:
         """Submit a write callback to the background worker thread."""
         if self._on_write is None:
@@ -1209,7 +1212,7 @@ class Collection:
         self,
         path: str,
         content: str,
-        frontmatter: dict | None = None,
+        frontmatter: dict[str, Any] | None = None,
         if_match: str | None = None,
     ) -> WriteResult:
         """Create or overwrite a document.

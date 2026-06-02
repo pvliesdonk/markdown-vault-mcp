@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -30,7 +30,7 @@ class VectorIndex:
 
     Stores embedding vectors as a 2-D numpy array (shape ``[n, dim]``)
     with normalised rows so that similarity queries reduce to a dot-product.
-    A parallel ``list[dict]`` holds the per-row metadata.
+    A parallel ``list[dict[str, Any]]`` holds the per-row metadata.
 
     The index is serialised as two sidecar files:
 
@@ -62,7 +62,7 @@ class VectorIndex:
         self._provider = provider
         # Shape: (0, dim) — will grow with each add() call.
         self._embeddings: np.ndarray = np.empty((0, 0), dtype=np.float32)
-        self._metadata: list[dict] = []
+        self._metadata: list[dict[str, Any]] = []
 
     # ------------------------------------------------------------------
     # Class-method constructor
@@ -98,7 +98,7 @@ class VectorIndex:
         with json_path.open("r", encoding="utf-8") as fh:
             payload = json.load(fh)
 
-        metadata: list[dict]
+        metadata: list[dict[str, Any]]
         expected_provider = provider.provider_name
         expected_model = provider.model_name
         if isinstance(payload, list):
@@ -148,7 +148,7 @@ class VectorIndex:
         """
         return len(self._metadata)
 
-    def add(self, texts: list[str], metadata: list[dict]) -> int:
+    def add(self, texts: list[str], metadata: list[dict[str, Any]]) -> int:
         """Embed ``texts`` and append rows to the index.
 
         Vectors are L2-normalised before storage so that similarity
@@ -185,7 +185,9 @@ class VectorIndex:
         raw: list[list[float]] = self._provider.embed(texts)
         return self.add_vectors(raw, metadata)
 
-    def add_vectors(self, raw_vectors: list[list[float]], metadata: list[dict]) -> int:
+    def add_vectors(
+        self, raw_vectors: list[list[float]], metadata: list[dict[str, Any]]
+    ) -> int:
         """Append pre-computed embedding vectors to the index.
 
         Accepts raw (un-normalised) float vectors as returned by
@@ -227,7 +229,9 @@ class VectorIndex:
         norms = np.linalg.norm(vectors, axis=1, keepdims=True)
         # Avoid division by zero for zero-magnitude vectors.
         norms = np.where(norms == 0, 1.0, norms)
-        vectors = vectors / norms
+        # np.linalg.norm + np.where(..., 1.0, ...) widen to float64; cast back
+        # to float32 so _embeddings keeps its declared dtype invariant.
+        vectors = (vectors / norms).astype(np.float32, copy=False)
 
         if self._embeddings.size == 0:
             self._embeddings = vectors
@@ -251,7 +255,7 @@ class VectorIndex:
         )
         return len(raw_vectors)
 
-    def search(self, query: str, *, limit: int = 10) -> list[dict]:
+    def search(self, query: str, *, limit: int = 10) -> list[dict[str, Any]]:
         """Return the top-k most similar chunks for ``query``.
 
         Args:
@@ -291,7 +295,7 @@ class VectorIndex:
         # argsort descending, then take the top-k indices.
         top_indices = np.argsort(scores)[::-1][:k]
 
-        results: list[dict] = []
+        results: list[dict[str, Any]] = []
         for idx in top_indices:
             entry = dict(self._metadata[int(idx)])
             entry["score"] = float(scores[int(idx)])
@@ -300,7 +304,7 @@ class VectorIndex:
         logger.debug("VectorIndex.search: returning %d results", len(results))
         return results
 
-    def search_by_path(self, path: str, *, limit: int = 10) -> list[dict]:
+    def search_by_path(self, path: str, *, limit: int = 10) -> list[dict[str, Any]]:
         """Return the top-k most similar chunks from *other* documents.
 
         Looks up the stored embedding vectors for ``path``, averages them
@@ -345,7 +349,7 @@ class VectorIndex:
         candidates.sort(key=lambda x: x[0], reverse=True)
         top = candidates[: min(limit, len(candidates))]
 
-        results: list[dict] = []
+        results: list[dict[str, Any]] = []
         for score, idx in top:
             entry = dict(self._metadata[idx])
             entry["score"] = score
