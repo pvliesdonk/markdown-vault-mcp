@@ -398,12 +398,13 @@ whatever is currently in the index (empty on cold start).
 `wait_until_queryable(timeout=None)` is the readiness primitive: it
 blocks on the background-build completion event with a bounded
 timeout and raises `IndexUnavailableError(reason="timeout")` on
-timeout or `IndexUnavailableError(reason="never_built")` when no
-build was ever scheduled. The `never_built` branch also fires when
-a background build started and then raised — the worker resets
-`_index_built=False` before the destructive rebuild, so a failed
-build leaves `_index_built=False` and `wait_until_queryable`'s
-never-scheduled guard catches it.
+timeout, `IndexUnavailableError(reason="build_failed")` when a build
+ran and failed (the captured error is read via `get_index_status`),
+or `IndexUnavailableError(reason="never_built")` when no build was
+ever scheduled. The worker resets `_index_built=False` before the
+destructive rebuild, so a failed build leaves `_index_built=False`
+with a captured error — `wait_until_queryable` reports that as
+`build_failed`, distinct from a never-scheduled `never_built` (#586).
 
 **Cold-start background FTS (issue #513 PR1, tool-layer wait
 boundary)**: when the persisted FTS DB is cold (sentinel absent),
@@ -418,12 +419,12 @@ default (env `MARKDOWN_VAULT_MCP_BUILD_TIMEOUT_S`, default 60s).
 A failed background build surfaces to operators as
 `get_index_status` reporting
 `{"status": "failed", "error": "..."}`. MCP clients see
-`IndexUnavailableError` with `reason="never_built"` (or
+`IndexUnavailableError` with `reason="build_failed"` (or
 `reason="timeout"` if the decorator's bounded wait elapsed first)
-from the decorator's `wait_until_queryable` call. The
-never-scheduled guard fires because the worker resets
-`_index_built=False` before recording the error; the captured
-error message itself is read via `get_index_status`.
+from the decorator's `wait_until_queryable` call. The `build_failed`
+branch fires because the worker resets `_index_built=False` and
+records the captured error; the error message itself is read via
+`get_index_status` (#586).
 
 **Runtime corruption check (issue #541, MCP-layer):** the
 `needs_queryable` decorator also wraps the handler call in a narrow

@@ -527,14 +527,15 @@ class Collection:
     def wait_until_queryable(self, timeout: float | None = None) -> None:
         """Block until the FTS index is queryable, or raise.
 
-        A captured build error does NOT raise here (diagnostic only, read via
-        :meth:`get_index_status`). Library bucket-3/4 methods use
+        A captured build error does NOT block here; it surfaces as
+        ``IndexUnavailableError(reason="build_failed")`` and is also readable
+        via :meth:`get_index_status`. Library bucket-3/4 methods use
         :meth:`_require_built` instead, which raises immediately.
 
         Raises:
-            IndexUnavailableError: timeout expired (``reason="timeout"``) or
-                the build was never scheduled / did not complete
-                (``reason="never_built"``).
+            IndexUnavailableError: timeout expired (``reason="timeout"``), a
+                build ran and failed (``reason="build_failed"``), or no build
+                was ever scheduled (``reason="never_built"``).
         """
         self._coordinator.wait_until_queryable(timeout)
 

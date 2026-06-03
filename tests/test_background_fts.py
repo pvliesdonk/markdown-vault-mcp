@@ -108,14 +108,14 @@ def test_wait_until_queryable_raises_unavailable_when_error_set_and_not_built(
     tmp_path: Path,
 ) -> None:
     """Captured error + event set + _index_built=False (default) → raises
-    IndexUnavailableError via step 2 (never-scheduled guard). The captured
-    error is no longer surfaced as a separate exception class; callers
-    read get_index_status() for the diagnostic."""
+    IndexUnavailableError(reason="build_failed") — a build ran and failed,
+    distinct from a never-scheduled build (#586). The captured error is not a
+    separate exception class; callers read get_index_status() for the diagnostic."""
     col = Collection(source_dir=_vault(tmp_path))
     col._coordinator._readiness._error = RuntimeError("scan exploded")
     with pytest.raises(IndexUnavailableError) as excinfo:
         col.wait_until_queryable(timeout=0.1)
-    assert excinfo.value.reason == "never_built"
+    assert excinfo.value.reason == "build_failed"
     col.close()
 
 
@@ -170,7 +170,7 @@ def test_start_background_build_index_captures_error(
 
     with pytest.raises(IndexUnavailableError) as excinfo:
         col.wait_until_queryable(timeout=5.0)
-    assert excinfo.value.reason == "never_built"
+    assert excinfo.value.reason == "build_failed"
     assert col.is_queryable() is False
     col.close()
 
@@ -208,12 +208,12 @@ def test_start_background_build_index_one_shot_after_thread_start_failure(
     assert col._coordinator._readiness._done.is_set()
     assert isinstance(col._coordinator._readiness._error, RuntimeError)
 
-    # wait_until_queryable surfaces this state via the never-scheduled
-    # guard (step 2): event set + _index_built=False → IndexUnavailableError.
+    # wait_until_queryable surfaces this as build_failed (a build was scheduled
+    # and failed): event set + _index_built=False + error captured (#586).
     # The captured error is diagnostic only, readable via get_index_status().
     with pytest.raises(IndexUnavailableError) as excinfo:
         col.wait_until_queryable(timeout=0.1)
-    assert excinfo.value.reason == "never_built"
+    assert excinfo.value.reason == "build_failed"
 
     # Retry is a no-op (one-shot semantics).
     monkeypatch.undo()
@@ -955,9 +955,9 @@ def test_build_index_async_submit_failure_unblocks_waiters(tmp_path: Path) -> No
         # quickly with IndexUnavailableError rather than blocking.
         with pytest.raises(IndexUnavailableError) as excinfo:
             col.wait_until_queryable(timeout=2.0)
-        # never_built is the expected reason: event set, _index_built
-        # False, _background_build_error populated.
-        assert excinfo.value.reason == "never_built"
+        # build_failed is the expected reason: event set, _index_built
+        # False, and the submit error captured (#586).
+        assert excinfo.value.reason == "build_failed"
         assert isinstance(col._coordinator._readiness._error, RuntimeError)
     finally:
         col.close()

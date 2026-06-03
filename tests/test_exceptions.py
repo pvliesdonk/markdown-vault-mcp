@@ -46,12 +46,12 @@ class TestIndexUnavailableError:
 
 
 def test_index_unavailable_reason_literal_values() -> None:
-    """The Literal type carries the four expected discriminator values.
+    """The Literal type carries the five expected discriminator values.
 
     Validates by attempting to construct with each. Direct introspection of
     typing.Literal at runtime is implementation-dependent; the constructor
     round-trip is the contract that matters.
     """
-    for value in ("never_built", "timeout", "broken", "busy"):
+    for value in ("never_built", "build_failed", "timeout", "broken", "busy"):
         err = IndexUnavailableError("x", reason=value)  # type: ignore[arg-type]
         assert err.reason == value

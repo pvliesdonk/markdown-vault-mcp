@@ -112,6 +112,17 @@ def test_require_built_raises_never_built_when_unbuilt() -> None:
     assert ei.value.reason == "never_built"
 
 
+def test_require_built_raises_build_failed_when_error() -> None:
+    # #586: a build that ran and failed (error captured) is distinguishable
+    # from one never scheduled — reason="build_failed", not "never_built".
+    r = ReadinessState()
+    r.fail_build(RuntimeError("boom"))
+    with pytest.raises(IndexUnavailableError) as ei:
+        r.require_built()
+    assert ei.value.reason == "build_failed"
+    assert "boom" in str(ei.value)
+
+
 def test_require_built_passes_when_built() -> None:
     r = ReadinessState()
     r.mark_built()

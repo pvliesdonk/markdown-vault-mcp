@@ -3,9 +3,11 @@
 Encapsulates the (_index_built, done-event, error) triple that was
 formerly scattered across Collection. Sole owner: IndexWriteCoordinator.
 
-Invariant: a captured build error is *diagnostic state*, never a
-control-flow gate. ``is_queryable`` ignores it; ``wait`` does not raise
-on it; ``status_fields`` surfaces it. (See issue #531's lesson.)
+Invariant: a captured build error never gates queryability —
+``is_queryable`` ignores it, ``wait`` does not raise on it,
+``status_fields`` surfaces it as diagnostic state. ``require_built``
+reads it only to label its raise (``build_failed`` vs ``never_built``,
+#586), never to decide *whether* it raises. (See issue #531's lesson.)
 """
 
 from __future__ import annotations
@@ -88,11 +90,19 @@ class ReadinessState:
         return self._done.wait(timeout=timeout)
 
     def require_built(self) -> None:
-        if not self._index_built:
+        """Raise if not built, distinguishing build_failed from never_built (#586)."""
+        if self._index_built:
+            return
+        if self._error is not None:
             raise IndexUnavailableError(
-                "Index not built. Call build_index() before this method.",
-                reason="never_built",
+                f"Index build failed: {self._error}. "
+                "Inspect get_index_status() for the captured error.",
+                reason="build_failed",
             )
+        raise IndexUnavailableError(
+            "Index not built. Call build_index() or build_index_async() first.",
+            reason="never_built",
+        )
 
     def status_fields(self) -> dict[str, Any]:
         if self.is_queryable():

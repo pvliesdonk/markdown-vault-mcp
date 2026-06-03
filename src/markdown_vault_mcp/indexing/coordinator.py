@@ -105,27 +105,23 @@ class IndexWriteCoordinator:
     def wait_until_queryable(self, timeout: float | None = None) -> None:
         """Block until the FTS index is queryable, or raise.
 
-        A captured build error does NOT raise here; it is diagnostic state
-        surfaced via :meth:`get_index_status`. Raises only on timeout or
-        when the build was never scheduled / did not complete.
+        A captured build error does NOT block here; it is diagnostic state
+        surfaced via :meth:`get_index_status`. Raises only on timeout, a
+        failed build, or a never-scheduled build.
 
         Raises:
-            IndexUnavailableError: timeout expired (``reason="timeout"``) or
-                the index was never built (``reason="never_built"``).
+            IndexUnavailableError: timeout expired (``reason="timeout"``), a
+                build ran and failed (``reason="build_failed"``), or no build
+                was ever scheduled (``reason="never_built"``).
         """
         if not self._readiness.wait(timeout):
             raise IndexUnavailableError(
                 f"Index build still in progress; timed out after {timeout}s.",
                 reason="timeout",
             )
-        if not self._readiness.is_built:
-            raise IndexUnavailableError(
-                "Index not built: background build was never scheduled "
-                "or did not complete successfully. "
-                "Check get_index_status() for diagnostic details, or call "
-                "build_index() or build_index_async() to retry.",
-                reason="never_built",
-            )
+        # The done-event is set: distinguish a build that ran and failed
+        # (build_failed) from one never scheduled (never_built) (#586).
+        self._readiness.require_built()
 
     def get_index_status(self) -> dict[str, Any]:
         """Return a non-blocking snapshot of build + writer state (eleven keys)."""

@@ -68,11 +68,15 @@ class ConfigurationError(MarkdownMCPError):
     """Raised for invalid or unsupported configuration at startup."""
 
 
-IndexUnavailableReason = Literal["never_built", "timeout", "broken", "busy"]
+IndexUnavailableReason = Literal[
+    "never_built", "build_failed", "timeout", "broken", "busy"
+]
 """Discriminator for IndexUnavailableError's cause.
 
-- ``"never_built"`` — the index has not been built (cold collection, or
-  background build was scheduled but did not complete successfully).
+- ``"never_built"`` — no build has been scheduled (cold collection on a
+  fresh process; ``build_index()`` / ``build_index_async()`` never called).
+- ``"build_failed"`` — a build was scheduled, ran, and failed; the captured
+  error is available via ``get_index_status()``'s ``error`` field (#586).
 - ``"timeout"`` — caller waited via ``wait_until_queryable()`` and the
   bounded timeout elapsed before the build event was set.
 - ``"broken"`` — a SQLite ``OperationalError`` surfaced from a
@@ -94,20 +98,20 @@ class IndexUnavailableError(MarkdownMCPError):
     """Raised when the FTS index is not in a state to serve a query.
 
     Attributes:
-        reason: One of ``"never_built"``, ``"timeout"``, ``"broken"``,
-            ``"busy"`` — disambiguates which of the operational
-            situations below fired. See the
+        reason: One of ``"never_built"``, ``"build_failed"``,
+            ``"timeout"``, ``"broken"``, ``"busy"`` — disambiguates which
+            of the operational situations below fired. See the
             :data:`IndexUnavailableReason` Literal for definitions.
 
     Covers the following operational situations:
 
-    - **Never built** (``reason="never_built"``). The Collection has
-      never had ``build_index()`` complete (cold collection on a fresh
-      process).
-    - **Build did not complete successfully** (``reason="never_built"``).
-      A previous background build raised and was not retried
+    - **Never built** (``reason="never_built"``). No build has been
+      scheduled — the Collection has never had ``build_index()`` /
+      ``build_index_async()`` called (cold collection on a fresh process).
+    - **Build did not complete successfully** (``reason="build_failed"``).
+      A previous build was scheduled, ran, raised, and was not retried
       (``_index_built`` remained False; the captured error is available
-      via :meth:`Collection.get_index_status`'s ``error`` field).
+      via :meth:`Collection.get_index_status`'s ``error`` field) (#586).
     - **Timeout** (``reason="timeout"``). A caller waited via
       :meth:`Collection.wait_until_queryable` and the bounded timeout
       elapsed before the background build signaled completion.

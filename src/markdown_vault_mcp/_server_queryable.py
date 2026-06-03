@@ -90,8 +90,9 @@ def needs_queryable(
     Raises (propagated to MCP client via FastMCP error middleware):
         IndexUnavailableError: ``reason="timeout"`` when the bounded
             wait elapsed, ``reason="never_built"`` when no build was
-            ever scheduled or a background build did not complete
-            successfully, ``reason="broken"`` when a handler raised
+            ever scheduled, ``reason="build_failed"`` when a build ran
+            and failed (read ``get_index_status``'s ``error`` field),
+            ``reason="broken"`` when a handler raised
             ``sqlite3.OperationalError`` from a non-busy errorname
             (CORRUPT, NOTADB, IOERR, FULL, etc.) — inspect
             ``__cause__`` for the underlying exception, or

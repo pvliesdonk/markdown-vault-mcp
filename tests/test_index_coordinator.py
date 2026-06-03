@@ -85,6 +85,21 @@ def test_reindex_before_build_raises_never_built(tmp_path: Path) -> None:
         coord.close(timeout=5)
 
 
+def test_wait_until_queryable_build_failed_when_error(tmp_path: Path) -> None:
+    # #586: after a build ran and FAILED (error captured), wait_until_queryable
+    # must raise reason="build_failed" — distinct from never_built (a build was
+    # scheduled and failed, not never started). The error is surfaced.
+    coord = make_coordinator(tmp_path)
+    try:
+        coord._readiness.fail_build(RuntimeError("scan exploded"))
+        with pytest.raises(IndexUnavailableError) as ei:
+            coord.wait_until_queryable(timeout=0)
+        assert ei.value.reason == "build_failed"
+        assert "scan exploded" in str(ei.value)
+    finally:
+        coord.close(timeout=5)
+
+
 def test_build_index_async_warm_restart_short_circuits(tmp_path: Path) -> None:
     coord = make_coordinator(tmp_path)
     try:
@@ -552,11 +567,12 @@ def test_build_index_records_job_baseexception_as_failed(tmp_path: Path) -> None
         assert status["status"] == "failed"
         assert status["error"] is not None and "sync job base boom" in status["error"]
         assert coord.is_queryable() is False
-        # fail_build set the done-event, so a waiter unblocks immediately (to
-        # never_built, not hang). timeout=0 is a non-blocking state check.
+        # fail_build set the done-event, so a waiter unblocks immediately — and
+        # to build_failed (a build ran and failed), not never_built (#586).
+        # timeout=0 is a non-blocking state check.
         with pytest.raises(IndexUnavailableError) as ei:
             coord.wait_until_queryable(timeout=0)
-        assert ei.value.reason == "never_built"
+        assert ei.value.reason == "build_failed"
     finally:
         coord.close(timeout=5)
 

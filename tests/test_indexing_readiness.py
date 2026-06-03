@@ -386,7 +386,8 @@ class TestReadinessFlagSemantics:
 
         with pytest.raises(IndexUnavailableError) as excinfo:
             col.get_backlinks("note.md")
-        assert excinfo.value.reason == "never_built"
+        # the rebuild ran and failed -> build_failed, not never_built (#586)
+        assert excinfo.value.reason == "build_failed"
 
     def test_failed_build_index_leaves_unready(self, tmp_path: Path) -> None:
         """If build_index() raises, subsequent bucket-3 calls still raise."""
@@ -405,7 +406,8 @@ class TestReadinessFlagSemantics:
 
         with pytest.raises(IndexUnavailableError) as excinfo:
             col.get_backlinks("note.md")
-        assert excinfo.value.reason == "never_built"
+        # the build ran and failed -> build_failed, not never_built (#586)
+        assert excinfo.value.reason == "build_failed"
 
 
 # ---------------------------------------------------------------------------
