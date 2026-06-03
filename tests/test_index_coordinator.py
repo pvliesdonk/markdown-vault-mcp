@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+from concurrent.futures import Future
 from typing import TYPE_CHECKING
 
 import pytest
@@ -162,7 +163,7 @@ def test_async_build_set_completed_failure_records_failed_status(
         fut.result(timeout=5)  # the build job itself succeeds
         # The done-callback runs on the writer thread and fires AFTER the
         # Future wakes its waiters; wait for the writer to go idle so
-        # _on_done's fail_build() has completed before we read status.
+        # _on_build_index_done's fail_build() has completed before we read status.
         coord.wait_for_drain(timeout=5)
         status = coord.get_index_status()
         assert status["status"] == "failed"
@@ -197,7 +198,7 @@ def test_sync_build_set_completed_failure_records_failed_status(
 
 def test_async_build_job_failure_records_failed_status(tmp_path: Path) -> None:
     # #585: a cold async build-job failure (the runner raises) must be recorded
-    # via _on_done's fut.result() guard -> status "failed", not stuck "building".
+    # via _on_build_index_done's fut.result() guard -> status "failed", not "building".
     coord = make_coordinator(tmp_path)
     try:
         coord.writer._runners["build_index"] = _raising_runner
@@ -226,7 +227,7 @@ def test_async_set_completed_base_exception_does_not_strand(
 ) -> None:
     # #585: a BaseException from set_build_completed is NOT recorded as a build
     # failure (that conflation is #584's scope) and propagates so the worker can
-    # respond to a real signal — but _on_done's `finally` sets the done-event so
+    # respond to a real signal — but _on_build_index_done's `finally` sets done so
     # waiters never hang.
     coord = make_coordinator(tmp_path)
     try:
@@ -267,5 +268,166 @@ def test_build_index_recovers_after_failure(tmp_path: Path) -> None:
         assert status["status"] == "queryable"
         assert status["error"] is None
         assert coord.is_queryable() is True
+    finally:
+        coord.close(timeout=5)
+
+
+def test_on_reindex_done_ignores_cancellation(tmp_path: Path) -> None:
+    # #584: a cancelled reindex Future (e.g. writer-shutdown drain) must NOT be
+    # recorded as a reindex failure surfaced via get_index_status.
+    coord = make_coordinator(tmp_path)
+    try:
+        fut: Future[object] = Future()
+        assert fut.cancel()
+        coord._on_reindex_done(fut)
+        assert coord._last_reindex_error is None
+        assert coord.get_index_status()["last_reindex_error"] is None
+    finally:
+        coord.close(timeout=5)
+
+
+def test_on_build_embeddings_done_ignores_cancellation(tmp_path: Path) -> None:
+    # #584: a cancelled build_embeddings Future must NOT be recorded as a failure.
+    coord = make_coordinator(tmp_path)
+    try:
+        fut: Future[object] = Future()
+        assert fut.cancel()
+        coord._on_build_embeddings_done(fut)
+        assert coord._last_build_embeddings_error is None
+        assert coord.get_index_status()["last_build_embeddings_error"] is None
+    finally:
+        coord.close(timeout=5)
+
+
+def test_on_reindex_done_records_genuine_failure(tmp_path: Path) -> None:
+    # #584: a genuine (non-cancellation) reindex failure is still recorded.
+    coord = make_coordinator(tmp_path)
+    try:
+        fut: Future[object] = Future()
+        fut.set_exception(RuntimeError("real reindex boom"))
+        coord._on_reindex_done(fut)
+        assert coord._last_reindex_error is not None
+        assert "real reindex boom" in str(coord._last_reindex_error)
+    finally:
+        coord.close(timeout=5)
+
+
+class _CallbackBaseBoom(BaseException):
+    pass
+
+
+def test_on_reindex_done_records_baseexception_without_propagating(
+    tmp_path: Path,
+) -> None:
+    # #584: a non-cancellation BaseException (e.g. a runner raising SystemExit)
+    # must be recorded AND must not propagate out of the callback. The callback
+    # runs on the writer thread inside set_exception (index_writer.py:306, inside
+    # the writer's own `except BaseException`); a propagating exception there
+    # skips the writer's close-and-drain block, stranding pending futures.
+    coord = make_coordinator(tmp_path)
+    try:
+        fut: Future[object] = Future()
+        fut.set_exception(_CallbackBaseBoom("signal in runner"))
+        coord._on_reindex_done(fut)  # must NOT raise
+        assert isinstance(coord._last_reindex_error, _CallbackBaseBoom)
+    finally:
+        coord.close(timeout=5)
+
+
+def test_on_build_embeddings_done_records_baseexception_without_propagating(
+    tmp_path: Path,
+) -> None:
+    # #584: symmetric to the reindex callback — a non-cancellation BaseException
+    # must be recorded without propagating (writer-stranding) out of the callback.
+    coord = make_coordinator(tmp_path)
+    try:
+        fut: Future[object] = Future()
+        fut.set_exception(_CallbackBaseBoom("signal in runner"))
+        coord._on_build_embeddings_done(fut)  # must NOT raise
+        assert isinstance(coord._last_build_embeddings_error, _CallbackBaseBoom)
+    finally:
+        coord.close(timeout=5)
+
+
+def test_on_build_embeddings_done_records_genuine_failure(tmp_path: Path) -> None:
+    # #584: symmetric to test_on_reindex_done_records_genuine_failure — a genuine
+    # (non-cancellation) build_embeddings Exception is still recorded.
+    coord = make_coordinator(tmp_path)
+    try:
+        fut: Future[object] = Future()
+        fut.set_exception(RuntimeError("real build_embeddings boom"))
+        coord._on_build_embeddings_done(fut)
+        assert coord._last_build_embeddings_error is not None
+        assert "real build_embeddings boom" in str(coord._last_build_embeddings_error)
+    finally:
+        coord.close(timeout=5)
+
+
+def test_on_build_index_done_ignores_cancellation(tmp_path: Path) -> None:
+    # #590: a cancelled BuildIndex future (writer-shutdown drain) must NOT flip the
+    # readiness status to "failed" — unlike the diagnostic-only reindex/embeddings
+    # errors (separate last_*_error fields), fail_build() drives the top-level status.
+    coord = make_coordinator(tmp_path)
+    try:
+        fut: Future[object] = Future()
+        assert fut.cancel()
+        coord._on_build_index_done(fut)  # must NOT raise
+        status = coord.get_index_status()
+        assert status["status"] != "failed"
+        assert status["error"] is None
+    finally:
+        coord.close(timeout=5)
+
+
+def test_on_build_index_done_records_genuine_failure(tmp_path: Path) -> None:
+    # #590: a genuine (non-cancellation) build failure must still drive
+    # fail_build -> status "failed" (guards the carve-out from over-swallowing).
+    coord = make_coordinator(tmp_path)
+    try:
+        fut: Future[object] = Future()
+        fut.set_exception(RuntimeError("real build boom"))
+        coord._on_build_index_done(fut)
+        status = coord.get_index_status()
+        assert status["status"] == "failed"
+        assert status["error"] is not None and "real build boom" in status["error"]
+        assert coord.is_queryable() is False
+    finally:
+        coord.close(timeout=5)
+
+
+def test_on_build_index_done_records_baseexception(tmp_path: Path) -> None:
+    # #590/#585: a genuine non-cancellation BaseException from the build job must
+    # still drive fail_build -> status "failed". Pins the `except BaseException`
+    # breadth on the build callback (narrowing it to `except Exception` would let
+    # a BaseException escape fail_build and strand the index at "building").
+    coord = make_coordinator(tmp_path)
+    try:
+        fut: Future[object] = Future()
+        fut.set_exception(_CallbackBaseBoom("base build boom"))
+        coord._on_build_index_done(fut)  # must NOT raise
+        status = coord.get_index_status()
+        assert status["status"] == "failed"
+        assert status["error"] is not None and "base build boom" in status["error"]
+        assert coord.is_queryable() is False
+    finally:
+        coord.close(timeout=5)
+
+
+def test_on_build_index_done_cancellation_unblocks_waiters(tmp_path: Path) -> None:
+    # #590: when a BuildIndex is cancelled mid-drain (done-event cleared by
+    # begin_async_build, the realistic pre-drain state), the carve-out's
+    # `finally: mark_done()` must still fire so a waiter unblocks to never_built
+    # instead of hanging to its timeout. Pins the liveness invariant the
+    # ignores_cancellation test misses (it starts from the pre-set done-event).
+    coord = make_coordinator(tmp_path)
+    try:
+        coord._readiness.begin_async_build()  # clears _done
+        fut: Future[object] = Future()
+        assert fut.cancel()
+        coord._on_build_index_done(fut)
+        with pytest.raises(IndexUnavailableError) as ei:
+            coord.wait_until_queryable(timeout=2)
+        assert ei.value.reason == "never_built"
+        assert coord.get_index_status()["status"] != "failed"
     finally:
         coord.close(timeout=5)

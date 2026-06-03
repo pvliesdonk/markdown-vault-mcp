@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from concurrent.futures import Future
+from concurrent.futures import CancelledError, Future
 from typing import TYPE_CHECKING, Any
 
 from markdown_vault_mcp.exceptions import IndexUnavailableError
@@ -284,38 +284,47 @@ class IndexWriteCoordinator:
             self._readiness.fail_build(exc)
             raise
 
-        def _on_done(fut: Future[IndexStats]) -> None:
-            try:
-                try:
-                    fut.result()
-                except BaseException as exc:
-                    logger.exception("Async index build failed")
-                    self._readiness.fail_build(exc)
-                    return
-                try:
-                    self._fts.set_build_completed()
-                except Exception as exc:
-                    logger.exception(
-                        "Async index build: set_build_completed failed after build"
-                    )
-                    self._readiness.fail_build(exc)
-                    return
-                self._readiness.mark_built()
-            finally:
-                # Guarantee waiters unblock even if an unexpected BaseException
-                # escapes set_build_completed: it propagates (so the worker can
-                # respond to the signal), but the done-event must still be set.
-                self._readiness.mark_done()
-
-        future.add_done_callback(_on_done)
+        future.add_done_callback(self._on_build_index_done)
         return future
+
+    def _on_build_index_done(self, fut: Future[IndexStats]) -> None:
+        """Finalize the readiness state machine from the async build Future (#585)."""
+        try:
+            try:
+                fut.result()
+            except CancelledError:
+                # Drain cancellation is not a build failure — skip fail_build (#590).
+                logger.debug("async_build_index_cancelled")
+                return
+            except BaseException as exc:
+                logger.exception("Async index build failed")
+                self._readiness.fail_build(exc)
+                return
+            try:
+                self._fts.set_build_completed()
+            except Exception as exc:
+                logger.exception(
+                    "Async index build: set_build_completed failed after build"
+                )
+                self._readiness.fail_build(exc)
+                return
+            self._readiness.mark_built()
+        finally:
+            # Guarantee waiters unblock even if an unexpected BaseException
+            # escapes set_build_completed: it propagates (so the worker can
+            # respond to the signal), but the done-event must still be set.
+            self._readiness.mark_done()
 
     def _on_reindex_done(self, fut: Future[ReindexResult]) -> None:
         """Capture async reindex outcome for visibility via get_index_status (#561)."""
         try:
             fut.result()
             self._last_reindex_error = None
+        except CancelledError:
+            # Cancellation (writer-shutdown drain) is not a failure — don't record (#584).
+            logger.debug("async_reindex_cancelled")
         except BaseException as exc:
+            # Record, never propagate — escaping strands the writer (#584).
             self._last_reindex_error = exc
             logger.exception("Async reindex job failed")
 
@@ -324,7 +333,11 @@ class IndexWriteCoordinator:
         try:
             fut.result()
             self._last_build_embeddings_error = None
+        except CancelledError:
+            # Cancellation (writer-shutdown drain) is not a failure — don't record (#584).
+            logger.debug("async_build_embeddings_cancelled")
         except BaseException as exc:
+            # Record, never propagate — escaping strands the writer (#584).
             self._last_build_embeddings_error = exc
             logger.exception("Async build_embeddings job failed")
 
