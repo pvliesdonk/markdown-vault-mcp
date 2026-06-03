@@ -81,6 +81,11 @@ markdown-vault-mcp (new package)
 |   +-- index_writer.py -- IndexWriter: single-owner FIFO writer thread + jobs/runners
 |   +-- readiness.py  -- ReadinessState: build-readiness state machine (#576)
 |   +-- coordinator.py -- IndexWriteCoordinator: writer + build/async orchestration (#576)
++-- facets/
+|   +-- reader.py     -- ReaderFacet: search/read/list/toc/similar/context/stats/history (#604)
+|   +-- writer.py     -- WriterFacet: write/edit/delete/rename/attachments (#604)
+|   +-- graph.py      -- GraphFacet: backlinks/outlinks/broken/orphans/most-linked/paths (#604)
+|   +-- index.py      -- IndexFacet: thin wrapper over the coordinator (#604)
 
 ifcraftcorpus (existing, refactored later)
 +-- depends on markdown-vault-mcp
