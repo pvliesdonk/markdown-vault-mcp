@@ -511,14 +511,16 @@ class Collection:
         return self._coordinator.wait_for_drain(timeout)
 
     def get_index_status(self) -> dict[str, Any]:
-        """Return a non-blocking ten-key snapshot of build + writer state.
+        """Return a non-blocking eleven-key snapshot of build + writer state.
 
         Keys: ``status`` (``"queryable"`` | ``"building"`` | ``"failed"``),
-        ``documents_indexed``, ``error``, ``last_reindex_error``,
-        ``last_build_embeddings_error``, plus ``queue_depth``, ``in_flight``,
-        ``dirty_paths``, ``dirty_embeddings``, ``write_generation`` merged from
-        the writer. A captured build error appears in ``error`` as diagnostic
-        context without demoting a ``queryable`` status.
+        ``documents_indexed``, ``documents_indexed_error``, ``error``,
+        ``last_reindex_error``, ``last_build_embeddings_error``, plus
+        ``queue_depth``, ``in_flight``, ``dirty_paths``, ``dirty_embeddings``,
+        ``write_generation`` merged from the writer. A captured build error
+        appears in ``error`` as diagnostic context without demoting a
+        ``queryable`` status; ``documents_indexed_error`` carries a SQLite
+        read failure (``documents_indexed`` stays ``0``) (#583).
         """
         return self._coordinator.get_index_status()
 

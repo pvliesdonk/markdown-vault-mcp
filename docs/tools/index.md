@@ -213,7 +213,12 @@ build attempt.
 **Returns:**
 - `status`: `"queryable"`, `"building"`, or `"failed"`.
 - `documents_indexed`: count of documents committed to the FTS index
-  right now (rises during `"building"`).
+  right now (rises during `"building"`). `0` both for an empty index
+  and when the count could not be read — check `documents_indexed_error`
+  to tell them apart.
+- `documents_indexed_error`: `null` on a normal read; the SQLite error
+  message when the document count could not be read (e.g. a locked or
+  closed database), in which case `documents_indexed` is `0`.
 - `error`: `null` unless the background build raised; otherwise the
   exception message.
 

@@ -548,7 +548,12 @@ file-mutation lock.
 **Status surface.** `Collection.get_index_status()` merges the writer's
 non-blocking snapshot (`queue_depth`, `in_flight`, `dirty_paths`,
 `dirty_embeddings`) into its response shape, so operators can observe
-exactly what the writer is doing without taking any lock.
+exactly what the writer is doing without taking any lock. The document
+count is read from `FTSIndex.list_notes()`; a `sqlite3.Error` there
+(locked / corrupt / closed DB) is not an empty index, so `get_index_status`
+keeps `documents_indexed` at `0` and surfaces the reason in a separate
+`documents_indexed_error` field (logged at `WARNING`) rather than masking
+the failure as a clean zero (#583).
 
 The contract is:
 

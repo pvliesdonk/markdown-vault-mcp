@@ -12,6 +12,7 @@ coordinator constructs, starts, and closes the single-owner
 from __future__ import annotations
 
 import logging
+import sqlite3
 import threading
 import time
 from concurrent.futures import CancelledError, Future
@@ -127,19 +128,20 @@ class IndexWriteCoordinator:
             )
 
     def get_index_status(self) -> dict[str, Any]:
-        """Return a non-blocking snapshot of build + writer state (ten keys)."""
+        """Return a non-blocking snapshot of build + writer state (eleven keys)."""
         fields = self._readiness.status_fields()
+        documents_indexed_error: str | None = None
         try:
             documents_indexed = len(self._fts.list_notes())
-        except Exception:
-            logger.debug(
-                "get_index_status: list_notes failed; reporting 0",
-                exc_info=True,
-            )
+        except sqlite3.Error as exc:
+            # Failed FTS read (locked/corrupt/closed) != empty index — surface why (#583).
+            logger.warning("get_index_status_list_notes_failed", exc_info=True)
             documents_indexed = 0
+            documents_indexed_error = str(exc)
         result = {
             "status": fields["status"],
             "documents_indexed": documents_indexed,
+            "documents_indexed_error": documents_indexed_error,
             "error": fields["error"],
             "last_reindex_error": (
                 str(self._last_reindex_error)
@@ -206,13 +208,28 @@ class IndexWriteCoordinator:
         self._readiness.begin_sync_build()
         self._fts.clear_build_completed()
         try:
-            result: IndexStats = self._writer.submit(BuildIndex(force=force)).result()
-            self._fts.set_build_completed()
-        except Exception as exc:
-            self._readiness.fail_build(exc)
-            raise
-        self._readiness.mark_built()
-        return result
+            try:
+                result: IndexStats = self._writer.submit(
+                    BuildIndex(force=force)
+                ).result()
+            except CancelledError:
+                # Drain cancellation (writer shutdown) is not a build failure — skip fail_build (#590).
+                logger.debug("sync_build_index_cancelled")
+                raise
+            except BaseException as exc:
+                # Record a build-job failure (incl. BaseException) as "failed", re-raise (#591).
+                self._readiness.fail_build(exc)
+                raise
+            try:
+                self._fts.set_build_completed()
+            except Exception as exc:
+                self._readiness.fail_build(exc)
+                raise
+            self._readiness.mark_built()
+            return result
+        finally:
+            # Always re-set the done-event begin_sync_build cleared, so waiters never hang (#587).
+            self._readiness.mark_done()
 
     def reindex(self) -> ReindexResult:
         """Incrementally update the index based on file changes.

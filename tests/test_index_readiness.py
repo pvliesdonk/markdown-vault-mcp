@@ -25,16 +25,29 @@ def test_mark_built_makes_queryable_and_clears_error() -> None:
     assert r.error is None
 
 
-def test_begin_sync_build_only_clears_built() -> None:
+def test_begin_sync_build_clears_built_error_and_done() -> None:
+    # #587: sync begin clears the stale error (a fresh build supersedes a prior
+    # failure) AND clears the done-event so a concurrent reader blocks/waits for
+    # the active build instead of prematurely raising never_built.
     r = ReadinessState()
     r.mark_built()  # built=True, done set, error None
-    prior_error = RuntimeError("kept")
-    r._error = prior_error  # simulate a leftover error
+    r._error = RuntimeError("stale")  # leftover error from a prior failure
     r.begin_sync_build()
     assert r.is_built is False
-    # sync begin does NOT clear the error nor the done-event
-    assert r.error is prior_error
-    assert r.wait(timeout=0) is True
+    assert r.error is None  # stale error cleared
+    assert r.wait(timeout=0) is False  # done-event cleared so waiters block
+
+
+def test_status_building_after_begin_sync_build_with_stale_error() -> None:
+    # #587: a stale error from a prior failed async build must not make
+    # status report "failed" once a fresh sync build has begun.
+    r = ReadinessState()
+    r.fail_build(RuntimeError("old async failure"))  # error + done set
+    assert r.status_fields()["status"] == "failed"
+    r.begin_sync_build()
+    fields = r.status_fields()
+    assert fields["status"] == "building"
+    assert fields["error"] is None
 
 
 def test_begin_async_build_clears_built_error_and_done() -> None:

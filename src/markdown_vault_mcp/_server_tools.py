@@ -654,6 +654,12 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
               ``"failed"``.
             - documents_indexed (int): Count of documents committed to
               the FTS index right now (rises during ``"building"``).
+              ``0`` both for an empty index and when the count could not
+              be read — see ``documents_indexed_error`` to tell them apart.
+            - documents_indexed_error (str | None): ``None`` on a normal
+              read; the SQLite error message when the document count
+              could not be read (e.g. a locked or closed database), in
+              which case ``documents_indexed`` is ``0``.
             - error (str | None): ``None`` unless the background build
               raised.
         """

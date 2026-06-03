@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import logging
+import sqlite3
 import threading
-from concurrent.futures import Future
+from concurrent.futures import CancelledError, Future
 from typing import TYPE_CHECKING
 
 import pytest
@@ -59,6 +61,7 @@ def test_build_index_makes_queryable(tmp_path: Path) -> None:
         assert set(status) >= {
             "status",
             "documents_indexed",
+            "documents_indexed_error",
             "error",
             "last_reindex_error",
             "last_build_embeddings_error",
@@ -429,5 +432,177 @@ def test_on_build_index_done_cancellation_unblocks_waiters(tmp_path: Path) -> No
             coord.wait_until_queryable(timeout=2)
         assert ei.value.reason == "never_built"
         assert coord.get_index_status()["status"] != "failed"
+    finally:
+        coord.close(timeout=5)
+
+
+def _raise_locked(*args: object, **kwargs: object) -> list[dict[str, object]]:  # noqa: ARG001
+    raise sqlite3.OperationalError("database is locked")
+
+
+def test_get_index_status_list_notes_failure_surfaces_error(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    # #583: when list_notes() raises a sqlite3 error, the count stays 0 but
+    # documents_indexed_error carries the reason (distinguishing empty from a
+    # failing/locked DB), logged at WARNING (visible at the default level).
+    coord = make_coordinator(tmp_path)
+    try:
+        coord.build_index()
+        coord._fts.list_notes = _raise_locked  # type: ignore[method-assign]
+        with caplog.at_level(
+            logging.WARNING, logger="markdown_vault_mcp.indexing.coordinator"
+        ):
+            status = coord.get_index_status()
+        assert status["documents_indexed"] == 0
+        assert status["documents_indexed_error"] is not None
+        assert "database is locked" in status["documents_indexed_error"]
+        assert any(r.levelno >= logging.WARNING for r in caplog.records)
+    finally:
+        coord.close(timeout=5)
+
+
+def test_get_index_status_documents_indexed_error_none_on_success(
+    tmp_path: Path,
+) -> None:
+    # #583: a successful list_notes() read leaves documents_indexed_error None,
+    # so an empty/normal index is distinguishable from a failing query.
+    coord = make_coordinator(tmp_path)
+    try:
+        coord.build_index()
+        status = coord.get_index_status()
+        assert status["documents_indexed_error"] is None
+    finally:
+        coord.close(timeout=5)
+
+
+def _raise_value_error(*args: object, **kwargs: object) -> list[dict[str, object]]:  # noqa: ARG001
+    raise ValueError("unexpected bug")
+
+
+def test_get_index_status_non_sqlite_error_propagates(tmp_path: Path) -> None:
+    # #583: only sqlite3 errors are tolerated as "count unavailable". A
+    # non-sqlite exception signals a bug and must propagate, not be swallowed.
+    coord = make_coordinator(tmp_path)
+    try:
+        coord.build_index()
+        coord._fts.list_notes = _raise_value_error  # type: ignore[method-assign]
+        with pytest.raises(ValueError, match="unexpected bug"):
+            coord.get_index_status()
+    finally:
+        coord.close(timeout=5)
+
+
+def test_build_index_clears_stale_error_during_sync_rebuild(tmp_path: Path) -> None:
+    # #587: a prior failed build leaves a stale _error; a sync build_index()
+    # retry must report "building" (not the stale "failed") to a concurrent
+    # status reader mid-rebuild. Pins the fix through the public build_index
+    # entry point — the unit test exercises only ReadinessState directly.
+    coord = make_coordinator(tmp_path)
+    try:
+        coord._readiness.fail_build(RuntimeError("stale async failure"))
+        assert coord.get_index_status()["status"] == "failed"
+
+        started = threading.Event()
+        proceed = threading.Event()
+        original = coord.writer._runners["build_index"]
+
+        def _gated(job: object, ctx: object) -> object:
+            started.set()
+            proceed.wait(timeout=5)
+            return original(job, ctx)
+
+        coord.writer._runners["build_index"] = _gated
+        builder = threading.Thread(target=coord.build_index)
+        builder.start()
+        try:
+            assert started.wait(timeout=5)
+            # begin_sync_build has run: stale error cleared, done-event cleared.
+            assert coord.get_index_status()["status"] == "building"
+            # a concurrent waiter blocks for the active build (not a premature
+            # never_built) because _done is cleared (#587, Gemini HIGH finding).
+            with pytest.raises(IndexUnavailableError) as ei:
+                coord.wait_until_queryable(timeout=0.1)
+            assert ei.value.reason == "timeout"
+        finally:
+            proceed.set()
+            builder.join(timeout=5)
+        assert coord.get_index_status()["status"] == "queryable"
+    finally:
+        coord.close(timeout=5)
+
+
+@pytest.mark.filterwarnings(
+    # The propagating BaseException intentionally terminates the writer thread.
+    "ignore::pytest.PytestUnhandledThreadExceptionWarning"
+)
+def test_build_index_records_job_baseexception_as_failed(tmp_path: Path) -> None:
+    # #591: a BaseException from the build job is recorded as "failed" and
+    # re-raised; fail_build sets the done-event so a waiter unblocks (never hangs).
+    coord = make_coordinator(tmp_path)
+    try:
+
+        def _base_runner(job: object, ctx: object) -> object:  # noqa: ARG001
+            raise _BaseBoom("sync job base boom")
+
+        coord.writer._runners["build_index"] = _base_runner
+        with pytest.raises(_BaseBoom, match="sync job base boom"):
+            coord.build_index()
+        status = coord.get_index_status()
+        assert status["status"] == "failed"
+        assert status["error"] is not None and "sync job base boom" in status["error"]
+        assert coord.is_queryable() is False
+        # fail_build set the done-event, so a waiter unblocks immediately (to
+        # never_built, not hang). timeout=0 is a non-blocking state check.
+        with pytest.raises(IndexUnavailableError) as ei:
+            coord.wait_until_queryable(timeout=0)
+        assert ei.value.reason == "never_built"
+    finally:
+        coord.close(timeout=5)
+
+
+def test_build_index_set_completed_baseexception_does_not_strand(
+    tmp_path: Path,
+) -> None:
+    # #591: a BaseException from set_build_completed (the job already succeeded)
+    # is NOT recorded as failed and propagates, but the finally sets the
+    # done-event so waiters unblock to never_built (symmetric with async #585).
+    coord = make_coordinator(tmp_path)
+    try:
+
+        def _boom() -> None:
+            raise _BaseBoom("sync set_completed base boom")
+
+        coord._fts.set_build_completed = _boom  # type: ignore[method-assign]
+        with pytest.raises(_BaseBoom):
+            coord.build_index()
+        # not recorded as failed; the finally re-set the cleared done-event, so a
+        # waiter unblocks to never_built (the build never completed). timeout=0 is
+        # a non-blocking state check.
+        assert coord.get_index_status()["status"] == "building"
+        with pytest.raises(IndexUnavailableError) as ei:
+            coord.wait_until_queryable(timeout=0)
+        assert ei.value.reason == "never_built"
+    finally:
+        coord.close(timeout=5)
+
+
+def test_build_index_drain_cancellation_not_recorded_as_failed(tmp_path: Path) -> None:
+    # #590/#591: a drain CancelledError on the sync BuildIndex future (the writer
+    # cancelled a queued build during shutdown) is NOT a build failure — skip
+    # fail_build and re-raise, mirroring the async _on_build_index_done carve-out.
+    coord = make_coordinator(tmp_path)
+    try:
+        cancelled: Future[object] = Future()
+        cancelled.cancel()
+        coord.writer.submit = lambda job: cancelled  # type: ignore[method-assign]  # noqa: ARG005
+        with pytest.raises(CancelledError):
+            coord.build_index()
+        # not recorded as failed; the finally re-set the cleared done-event, so a
+        # waiter unblocks to never_built (timeout=0 is a non-blocking state check).
+        assert coord.get_index_status()["status"] == "building"
+        with pytest.raises(IndexUnavailableError) as ei:
+            coord.wait_until_queryable(timeout=0)
+        assert ei.value.reason == "never_built"
     finally:
         coord.close(timeout=5)

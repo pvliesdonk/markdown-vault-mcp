@@ -30,8 +30,10 @@ class ReadinessState:
     # -- transitions (each mirrors one former Collection mutation set) --
 
     def begin_sync_build(self) -> None:
-        """Sync build_index cold path: clears built only."""
+        """Sync build_index cold path: clears built + error + done (#587)."""
         self._index_built = False
+        self._error = None
+        self._done.clear()
 
     def begin_async_build(self) -> None:
         """Async build_index_async cold path: clears built + error + done."""
