@@ -82,6 +82,11 @@ markdown-vault-mcp (new package)
 |   +-- index_writer.py -- IndexWriter: single-owner FIFO writer thread + jobs/runners
 |   +-- readiness.py  -- ReadinessState: build-readiness state machine (#576)
 |   +-- coordinator.py -- IndexWriteCoordinator: writer + build/async orchestration (#576)
++-- facets/
+|   +-- reader.py     -- ReaderFacet: search/read/list/toc/similar/context/stats/history (#604)
+|   +-- writer.py     -- WriterFacet: write/edit/delete/rename/attachments (#604)
+|   +-- graph.py      -- GraphFacet: backlinks/outlinks/broken/orphans/most-linked/paths (#604)
+|   +-- index.py      -- IndexFacet: thin wrapper over the coordinator (#604)
 
 ifcraftcorpus (existing, refactored later)
 +-- depends on markdown-vault-mcp
@@ -1162,8 +1167,37 @@ isolated unit testing and clear dependency boundaries. Pure utility functions
 live in ``utils/text.py`` (normalization, position mapping, fuzzy matching) and
 ``utils/links.py`` (link target computation and replacement).
 
+#### Facets (`facets/`, #604)
+
+The ``facets/`` package groups the formerly-flat ``Collection`` surface into
+four cohesive views, each a thin delegator over the managers/coordinator the
+root already owns:
+
+| Facet | Surface | Collaborators |
+|-------|---------|--------------|
+| ``ReaderFacet`` | search, read, list, folders, tags, toc, recent, similar, context, stats, history, diff, read_attachment | ``SearchManager``, ``DocumentManager``, ``GitQueryManager``, ``require_built`` |
+| ``WriterFacet`` | write, edit, delete, rename, write_attachment | ``DocumentManager`` |
+| ``GraphFacet`` | backlinks, outlinks, broken_links, orphans, most_linked, connection_path | ``LinkManager``, ``require_built`` |
+| ``IndexFacet`` | build/reindex/embeddings (sync + async), readiness, writer status, embeddings_status | ``IndexWriteCoordinator`` (public subset only), ``IndexManager`` (embeddings_status) |
+
+``Collection`` constructs the facets once in ``__init__`` and exposes them via
+the ``reader`` / ``writer`` / ``graph`` / ``index`` properties. The bucket-3
+readiness gate (``require_built``) lives inside the facets — ``ReaderFacet``
+(``get_toc`` / ``get_similar`` / ``get_context``) and ``GraphFacet``
+(``get_backlinks`` / ``get_outlinks`` / ``get_connection_path``) call it before
+delegating, so the gate is expressed in exactly one place. ``IndexFacet`` is a
+deliberate wrapper: it surfaces the coordinator's public operations (plus
+``IndexManager.embeddings_status``) and hides the root-owned coordinator
+internals (``close``, ``writer``, ``require_built``, ``mark_paths_dirty``,
+``rebuild_embeddings``).
+
+The migration follows **addition before removal**: the flat ``Collection``
+methods now delegate to the facets (PR3a, #604); callers migrate to the facet
+accessors in follow-up PRs (#605, #606); the flat methods are removed and
+``Collection`` is renamed to ``Vault`` in the final PR.
+
 Collection's public API signatures remain unchanged — clients interact with
-Collection, never with managers directly.
+Collection (or, increasingly, its facets), never with managers directly.
 
 ```python
 class Collection:

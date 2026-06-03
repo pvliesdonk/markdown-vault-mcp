@@ -103,6 +103,19 @@ def populated_collection(tmp_path: Path):
     return col
 
 
+@pytest.fixture
+def built(vault_path: Path):
+    """A built Collection over the clean vault fixture (shared by facet tests)."""
+    from markdown_vault_mcp.collection import Collection
+
+    col = Collection(source_dir=vault_path)
+    col.build_index()
+    try:
+        yield col
+    finally:
+        col.close()
+
+
 async def get_app_html() -> str:
     """Spin up a fresh server and fetch the SPA HTML resource."""
     from fastmcp import Client

@@ -11,6 +11,12 @@ import logging
 import threading
 from typing import TYPE_CHECKING, Any, Literal
 
+from markdown_vault_mcp.facets import (
+    GraphFacet,
+    IndexFacet,
+    ReaderFacet,
+    WriterFacet,
+)
 from markdown_vault_mcp.fts_index import FTSIndex
 from markdown_vault_mcp.indexing import IndexWriteCoordinator
 from markdown_vault_mcp.scanner import (
@@ -261,7 +267,7 @@ class Collection:
 
         # 1. LinkManager (no deps)
         self._link_mgr = LinkManager(fts=self._fts, source_dir=self._source_dir)
-        # 1b. GitQueryManager (git history/diff reads; needs only git_strategy)
+        # 1b. GitQueryManager (git history/diff reads; needs git_strategy + source_dir)
         self._git_query_mgr = GitQueryManager(self._git_strategy, self._source_dir)
         # 2. IndexManager (needs fts, tracker — NOT search_mgr)
         #    get_vectors/set_vectors use late-binding lambdas that capture
@@ -332,6 +338,47 @@ class Collection:
             on_write_callback=self._write_callback.fire,
             mark_paths_dirty=self._coordinator.mark_paths_dirty,
         )
+
+        # Facets (#604): thin views grouping the formerly-flat surface,
+        # constructed once over the shared managers/coordinator. The flat
+        # methods below delegate to them (addition before removal).
+        self._reader_facet = ReaderFacet(
+            search_mgr=self._search_mgr,
+            doc_mgr=self._doc_mgr,
+            git_query_mgr=self._git_query_mgr,
+            require_built=self._require_built,
+        )
+        self._writer_facet = WriterFacet(self._doc_mgr)
+        self._graph_facet = GraphFacet(
+            link_mgr=self._link_mgr, require_built=self._require_built
+        )
+        self._index_facet = IndexFacet(
+            coordinator=self._coordinator, index_mgr=self._index_mgr
+        )
+
+    # ------------------------------------------------------------------
+    # Facets (#604)
+    # ------------------------------------------------------------------
+
+    @property
+    def reader(self) -> ReaderFacet:
+        """Read-only facet: search, read, list, toc, similar, stats, history."""
+        return self._reader_facet
+
+    @property
+    def writer(self) -> WriterFacet:
+        """Document-mutation facet: write, edit, delete, rename, attachments."""
+        return self._writer_facet
+
+    @property
+    def graph(self) -> GraphFacet:
+        """Link-graph facet: backlinks, outlinks, broken, orphans, paths."""
+        return self._graph_facet
+
+    @property
+    def index(self) -> IndexFacet:
+        """Index facet: build/reindex/embeddings, readiness, writer status."""
+        return self._index_facet
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -462,7 +509,7 @@ class Collection:
         A captured build error does NOT demote queryability: it is
         diagnostic state surfaced via :meth:`get_index_status`, not a gate.
         """
-        return self._coordinator.is_queryable()
+        return self._index_facet.is_queryable()
 
     def start_background_build_index(self) -> None:
         """Spawn a daemon thread that runs :meth:`build_index` to completion.
@@ -470,7 +517,7 @@ class Collection:
         .. deprecated:: 1.28
            Superseded by :meth:`build_index_async`. Retained for legacy tests.
         """
-        self._coordinator.start_background_build_index()
+        self._index_facet.start_background_build_index()
 
     def should_use_background_build(self) -> bool:
         """Return True iff the lifespan should route to the background build.
@@ -478,7 +525,7 @@ class Collection:
         .. deprecated:: 1.28
            Retained for legacy tests; the lifespan no longer branches on it.
         """
-        return self._coordinator.should_use_background_build()
+        return self._index_facet.should_use_background_build()
 
     def is_drained(self) -> bool:
         """Return True iff the IndexWriter has no pending or in-flight work.
@@ -486,7 +533,7 @@ class Collection:
         Reflects the moment of call only; pair with :meth:`write_generation`
         to detect a complete write cycle inside a read window.
         """
-        return self._coordinator.is_drained()
+        return self._index_facet.is_drained()
 
     def write_generation(self) -> int:
         """Return the writer's monotonic completion counter.
@@ -494,11 +541,11 @@ class Collection:
         Increments once per completed job. Pair with :meth:`is_drained` to
         detect a write cycle inside a read window.
         """
-        return self._coordinator.write_generation()
+        return self._index_facet.write_generation()
 
     def wait_for_drain(self, timeout: float | None = None) -> bool:
         """Block until :meth:`is_drained`, or until *timeout* (best-effort)."""
-        return self._coordinator.wait_for_drain(timeout)
+        return self._index_facet.wait_for_drain(timeout)
 
     def get_index_status(self) -> dict[str, Any]:
         """Return a non-blocking eleven-key snapshot of build + writer state.
@@ -512,7 +559,7 @@ class Collection:
         ``queryable`` status; ``documents_indexed_error`` carries a SQLite
         read failure (``documents_indexed`` stays ``0``) (#583).
         """
-        return self._coordinator.get_index_status()
+        return self._index_facet.get_index_status()
 
     def wait_until_queryable(self, timeout: float | None = None) -> None:
         """Block until the FTS index is queryable, or raise.
@@ -527,7 +574,7 @@ class Collection:
                 build ran and failed (``reason="build_failed"``), or no build
                 was ever scheduled (``reason="never_built"``).
         """
-        self._coordinator.wait_until_queryable(timeout)
+        self._index_facet.wait_until_queryable(timeout)
 
     @property
     def _vectors(self) -> VectorIndex | None:
@@ -578,7 +625,7 @@ class Collection:
             ValueError: If *mode* is ``"semantic"`` or ``"hybrid"`` but no
                 embedding provider or embeddings path is configured.
         """
-        return self._search_mgr.search(
+        return self._reader_facet.search(
             query,
             limit=limit,
             mode=mode,
@@ -607,7 +654,7 @@ class Collection:
             A :class:`~markdown_vault_mcp.types.NoteContent` instance, or ``None``
             if the file does not exist.
         """
-        return self._doc_mgr.read(path, section=section)
+        return self._reader_facet.read(path, section=section)
 
     def list_documents(
         self,
@@ -633,7 +680,7 @@ class Collection:
             optionally :class:`~markdown_vault_mcp.types.AttachmentInfo`)
             objects.
         """
-        return self._search_mgr.list(
+        return self._reader_facet.list_documents(
             folder=folder, pattern=pattern, include_attachments=include_attachments
         )
 
@@ -651,7 +698,7 @@ class Collection:
         Returns:
             :class:`~markdown_vault_mcp.types.IndexStats` describing what was indexed.
         """
-        return self._coordinator.build_index(force=force)
+        return self._index_facet.build_index(force=force)
 
     def reindex(self) -> ReindexResult:
         """Incrementally update the index based on file changes.
@@ -662,7 +709,7 @@ class Collection:
         Raises:
             IndexUnavailableError: If :meth:`build_index` has not been called.
         """
-        return self._coordinator.reindex()
+        return self._index_facet.reindex()
 
     def build_embeddings(self, *, force: bool = False) -> int:
         """Build the vector index from all chunks currently in the FTS index.
@@ -678,7 +725,7 @@ class Collection:
             IndexUnavailableError: If :meth:`build_index` has not been called.
             ValueError: If ``embedding_provider`` or ``embeddings_path`` is unset.
         """
-        return self._coordinator.build_embeddings(force=force)
+        return self._index_facet.build_embeddings(force=force)
 
     def build_index_async(self, *, force: bool = False) -> Future[IndexStats]:
         """Submit a full FTS index build and return the Future.
@@ -693,7 +740,7 @@ class Collection:
         Returns:
             ``concurrent.futures.Future`` carrying the :class:`IndexStats`.
         """
-        return self._coordinator.build_index_async(force=force)
+        return self._index_facet.build_index_async(force=force)
 
     def reindex_async(self) -> Future[ReindexResult]:
         """Submit an incremental FTS reindex and return the Future.
@@ -702,7 +749,7 @@ class Collection:
         orders any earlier :class:`BuildIndex` before this job. Writer-thread
         failures are surfaced via :meth:`get_index_status` (#561).
         """
-        return self._coordinator.reindex_async()
+        return self._index_facet.reindex_async()
 
     def build_embeddings_async(self, *, force: bool = False) -> Future[int]:
         """Submit a vector index build and return the Future.
@@ -711,7 +758,7 @@ class Collection:
         earlier :class:`BuildIndex` first. Writer-thread failures are surfaced
         via :meth:`get_index_status` (#561).
         """
-        return self._coordinator.build_embeddings_async(force=force)
+        return self._index_facet.build_embeddings_async(force=force)
 
     def embeddings_status(self) -> dict[str, Any]:
         """Return status information about the vector index.
@@ -720,7 +767,7 @@ class Collection:
             Dict with keys ``provider``, ``chunk_count``, ``path``,
             ``available``.
         """
-        return self._index_mgr.embeddings_status()
+        return self._index_facet.embeddings_status()
 
     # ------------------------------------------------------------------
     # Metadata
@@ -732,7 +779,7 @@ class Collection:
         Returns:
             Sorted list of folder strings (``""`` for the collection root).
         """
-        return self._search_mgr.list_folders()
+        return self._reader_facet.list_folders()
 
     def list_tags(self, field: str = "tags") -> list[str]:
         """Return all distinct values indexed for a given frontmatter field.
@@ -745,7 +792,7 @@ class Collection:
         Returns:
             Sorted list of distinct value strings.
         """
-        return self._search_mgr.list_tags(field)
+        return self._reader_facet.list_tags(field)
 
     def get_toc(self, path: str) -> list[dict[str, Any]]:
         """Return table of contents for a document.
@@ -765,8 +812,7 @@ class Collection:
             IndexUnavailableError: If :meth:`build_index` has not been called.
             ValueError: If no document exists at the given path.
         """
-        self._require_built()
-        return self._doc_mgr.get_toc(path)
+        return self._reader_facet.get_toc(path)
 
     def get_backlinks(self, path: str) -> list[BacklinkInfo]:
         """Return all documents that link to the given document.
@@ -783,8 +829,7 @@ class Collection:
             IndexUnavailableError: If :meth:`build_index` has not been called.
             ValueError: If no document exists at the given path.
         """
-        self._require_built()
-        return self._link_mgr.get_backlinks(path)
+        return self._graph_facet.get_backlinks(path)
 
     def get_outlinks(self, path: str) -> list[OutlinkInfo]:
         """Return all links from the given document to other documents.
@@ -804,8 +849,7 @@ class Collection:
             IndexUnavailableError: If :meth:`build_index` has not been called.
             ValueError: If no document exists at the given path.
         """
-        self._require_built()
-        return self._link_mgr.get_outlinks(path)
+        return self._graph_facet.get_outlinks(path)
 
     def get_broken_links(self, *, folder: str | None = None) -> list[BrokenLinkInfo]:
         """Return all links whose target does not exist in the collection.
@@ -817,7 +861,7 @@ class Collection:
         Returns:
             List of :class:`~markdown_vault_mcp.types.BrokenLinkInfo` objects.
         """
-        return self._link_mgr.get_broken_links(folder=folder)
+        return self._graph_facet.get_broken_links(folder=folder)
 
     def get_similar(
         self,
@@ -844,8 +888,7 @@ class Collection:
         Raises:
             IndexUnavailableError: If :meth:`build_index` has not been called.
         """
-        self._require_built()
-        return self._search_mgr.get_similar(
+        return self._reader_facet.get_similar(
             path, limit=limit, chunks_per_file=chunks_per_file
         )
 
@@ -863,7 +906,7 @@ class Collection:
             List of :class:`~markdown_vault_mcp.types.NoteInfo` objects
             ordered by modification time (most recent first).
         """
-        return self._search_mgr.get_recent(limit=limit, folder=folder)
+        return self._reader_facet.get_recent(limit=limit, folder=folder)
 
     def get_context(
         self,
@@ -894,8 +937,7 @@ class Collection:
             IndexUnavailableError: If :meth:`build_index` has not been called.
             ValueError: If no document exists at the given path.
         """
-        self._require_built()
-        return self._search_mgr.get_context(
+        return self._reader_facet.get_context(
             path, similar_limit=similar_limit, link_limit=link_limit
         )
 
@@ -909,7 +951,7 @@ class Collection:
             List of :class:`~markdown_vault_mcp.types.NoteInfo` objects,
             ordered by path.
         """
-        return self._link_mgr.get_orphan_notes()
+        return self._graph_facet.get_orphan_notes()
 
     def get_most_linked(self, *, limit: int = 10) -> list[MostLinkedNote]:
         """Return the documents with the most inbound links.
@@ -921,7 +963,7 @@ class Collection:
             List of :class:`~markdown_vault_mcp.types.MostLinkedNote` ordered
             by backlink_count descending.
         """
-        return self._link_mgr.get_most_linked(limit=limit)
+        return self._graph_facet.get_most_linked(limit=limit)
 
     def get_connection_path(
         self, source: str, target: str, max_depth: int = 10
@@ -945,8 +987,9 @@ class Collection:
             IndexUnavailableError: If :meth:`build_index` has not been called.
             ValueError: If *source* or *target* is not found in the index.
         """
-        self._require_built()
-        return self._link_mgr.get_connection_path(source, target, max_depth=max_depth)
+        return self._graph_facet.get_connection_path(
+            source, target, max_depth=max_depth
+        )
 
     # ------------------------------------------------------------------
     # Git history query methods
@@ -993,7 +1036,9 @@ class Collection:
         Raises:
             ValueError: If *path* is provided but fails path validation.
         """
-        return self._git_query_mgr.get_history(path, since, until, limit)
+        return self._reader_facet.get_history(
+            path, since=since, until=until, limit=limit
+        )
 
     def get_diff(
         self,
@@ -1040,7 +1085,7 @@ class Collection:
                 not supplied, *since_sha* contains invalid characters, or the
                 resolved ref is not found in history.
         """
-        return self._git_query_mgr.get_diff(
+        return self._reader_facet.get_diff(
             path,
             since_sha=since_sha,
             since_timestamp=since_timestamp,
@@ -1051,9 +1096,9 @@ class Collection:
     def stats(self) -> CollectionStats:
         """Return collection-wide statistics.
 
-        Delegates to :meth:`SearchManager.stats`.
+        Delegates to :meth:`SearchManager.stats` via the reader facet.
         """
-        return self._search_mgr.stats()
+        return self._reader_facet.stats()
 
     # ------------------------------------------------------------------
     # Write operations (delegated to DocumentManager)
@@ -1085,7 +1130,7 @@ class Collection:
 
         Delegates to :meth:`DocumentManager.read_attachment`.
         """
-        return self._doc_mgr.read_attachment(path)
+        return self._reader_facet.read_attachment(path)
 
     def write_attachment(
         self,
@@ -1103,7 +1148,7 @@ class Collection:
         already validated against ``MARKDOWN_VAULT_MCP_UPLOAD_MAX_BYTES``);
         leave ``False`` for base64 callers of the MCP ``write`` tool.
         """
-        return self._doc_mgr.write_attachment(
+        return self._writer_facet.write_attachment(
             path, content, if_match=if_match, skip_size_cap=skip_size_cap
         )
 
@@ -1137,7 +1182,7 @@ class Collection:
                 not match the current file hash.
             ValueError: If *path* escapes the source directory.
         """
-        return self._doc_mgr.write(
+        return self._writer_facet.write(
             path, content, frontmatter=frontmatter, if_match=if_match
         )
 
@@ -1177,7 +1222,7 @@ class Collection:
                 not match.
             ValueError: If *path* escapes the source directory.
         """
-        return self._doc_mgr.edit(
+        return self._writer_facet.edit(
             path,
             old_text=old_text,
             new_text=new_text,
@@ -1206,7 +1251,7 @@ class Collection:
                 not match.
             DocumentNotFoundError: If *path* does not exist.
         """
-        return self._doc_mgr.delete(path, if_match=if_match)
+        return self._writer_facet.delete(path, if_match=if_match)
 
     def rename(
         self,
@@ -1241,6 +1286,6 @@ class Collection:
             ValueError: If *old_path* or *new_path* escapes the source
                 directory.
         """
-        return self._doc_mgr.rename(
+        return self._writer_facet.rename(
             old_path, new_path, if_match=if_match, update_links=update_links
         )
