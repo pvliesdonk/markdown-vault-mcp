@@ -2382,6 +2382,30 @@ class TestAuthModeSelection:
 
         assert isinstance(server.auth, StaticTokenVerifier)
 
+    def test_oidc_blank_required_scopes_defaults_to_openid(
+        self,
+        vault_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Blank OIDC_REQUIRED_SCOPES -> OIDCProxy enforces ["openid"].
+
+        Security default: leaving scopes unset must still enforce openid
+        (core maps the empty tuple to ["openid"]); the assembled server must
+        not silently accept any-scope tokens.
+        """
+        from unittest.mock import MagicMock, patch
+
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault_path))
+        for var, val in _OIDC_REQUIRED.items():
+            monkeypatch.setenv(var, val)
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OIDC_REQUIRED_SCOPES", "")
+
+        mock_cls = MagicMock()
+        with patch("fastmcp.server.auth.oidc_proxy.OIDCProxy", mock_cls):
+            make_server()
+
+        assert mock_cls.call_args.kwargs["required_scopes"] == ["openid"]
+
     def test_no_auth_when_nothing_configured(
         self,
         vault_path: Path,

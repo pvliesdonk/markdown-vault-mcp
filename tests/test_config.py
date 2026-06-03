@@ -925,6 +925,40 @@ class TestServerConfigComposition:
 
         assert config.server.oidc_verify_access_token is True
 
+    def test_load_config_populates_oidc_fields_from_prefixed_env(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """Every MARKDOWN_VAULT_MCP_OIDC_*/AUTH_MODE var reaches config.server.
+
+        Guards the env-prefix wiring for the full auth surface that the deleted
+        TestLoadConfigAuthFields covered against the old duplicate fields, now
+        asserted against the composed ServerConfig.
+        """
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_AUTH_MODE", "oidc-proxy")
+        monkeypatch.setenv(
+            "MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL",
+            "https://auth.example.com/.well-known/openid-configuration",
+        )
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OIDC_CLIENT_ID", "client-123")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OIDC_CLIENT_SECRET", "secret-456")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OIDC_AUDIENCE", "my-api")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OIDC_REQUIRED_SCOPES", "openid,profile")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY", "signing-key")
+
+        config = load_config()
+
+        assert config.server.auth_mode == "oidc-proxy"
+        assert (
+            config.server.oidc_config_url
+            == "https://auth.example.com/.well-known/openid-configuration"
+        )
+        assert config.server.oidc_client_id == "client-123"
+        assert config.server.oidc_client_secret == "secret-456"
+        assert config.server.oidc_audience == "my-api"
+        assert config.server.oidc_required_scopes == ("openid", "profile")
+        assert config.server.oidc_jwt_signing_key == "signing-key"
+
 
 def test_search_ranking_config_rejects_malformed_int(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path

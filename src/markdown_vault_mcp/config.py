@@ -400,6 +400,12 @@ def load_config() -> CollectionConfig:
     - ``MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR``: FastEmbed model cache
       directory; default ``None``.
 
+    Transport and auth variables (``TRANSPORT``, ``HOST``, ``PORT``,
+    ``BASE_URL``, ``AUTH_MODE``, ``OIDC_*``, ``BEARER_TOKEN``,
+    ``EVENT_STORE_URL``, ``APP_DOMAIN``) are read into ``config.server`` by
+    :meth:`fastmcp_pvl_core.ServerConfig.from_env`; see
+    ``docs/configuration.md`` for the full list.
+
     Returns:
         A fully populated :class:`CollectionConfig` instance.
 
