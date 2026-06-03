@@ -93,8 +93,8 @@ class CollectionConfig:
     def to_collection_kwargs(self) -> dict[str, Any]:
         """Return keyword arguments suitable for ``Collection(**kwargs)``.
 
-        Resolves the embedding provider (when ``embeddings_path`` is set)
-        and creates a :class:`~markdown_vault_mcp.git.GitWriteStrategy`.
+        Resolves the embedding provider (when ``indexing.embeddings_path``
+        is set) and creates a :class:`~markdown_vault_mcp.git.GitWriteStrategy`.
 
         Returns:
             Dict of keyword arguments accepted by
@@ -124,7 +124,8 @@ class CollectionConfig:
             "max_chunk_words": self.search.max_chunk_words,
         }
 
-        # Resolve embedding provider if embeddings_path is configured.
+        # Semantic search is gated by the storage path in config.indexing,
+        # while the provider lives in config.embeddings (cross-section coupling).
         # ValueError propagates — it means the user set an invalid provider
         # name, which is a config mistake that should not be silenced.
         if self.indexing.embeddings_path is not None:
