@@ -2367,6 +2367,21 @@ class TestAuthModeSelection:
         assert server.auth is not None
         assert server.auth is mock_cls.return_value
 
+    def test_bearer_only_when_no_oidc(
+        self,
+        vault_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Only BEARER_TOKEN set (no OIDC) -> server.auth is a StaticTokenVerifier."""
+        from fastmcp.server.auth import StaticTokenVerifier
+
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault_path))
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_BEARER_TOKEN", "secret")
+
+        server = make_server()
+
+        assert isinstance(server.auth, StaticTokenVerifier)
+
     def test_no_auth_when_nothing_configured(
         self,
         vault_path: Path,

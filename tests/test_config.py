@@ -914,6 +914,17 @@ class TestServerConfigComposition:
         assert config.server.bearer_token == "secret-token"
         assert config.server.base_url == "https://api.example.com"
 
+    def test_load_config_reads_oidc_verify_access_token_true(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """OIDC_VERIFY_ACCESS_TOKEN=true composes to config.server as True."""
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OIDC_VERIFY_ACCESS_TOKEN", "true")
+
+        config = load_config()
+
+        assert config.server.oidc_verify_access_token is True
+
 
 def test_search_ranking_config_rejects_malformed_int(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
