@@ -930,9 +930,10 @@ class TestServerConfigComposition:
     ) -> None:
         """Every MARKDOWN_VAULT_MCP_OIDC_*/AUTH_MODE var reaches config.server.
 
-        Guards the env-prefix wiring for the full auth surface that the deleted
-        TestLoadConfigAuthFields covered against the old duplicate fields, now
-        asserted against the composed ServerConfig.
+        Guards the env-prefix wiring for the OIDC/AUTH_MODE portion of the auth
+        surface the deleted TestLoadConfigAuthFields covered (bearer/base_url/
+        verify-token are covered by the sibling tests above), now asserted
+        against the composed ServerConfig.
         """
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_AUTH_MODE", "oidc-proxy")

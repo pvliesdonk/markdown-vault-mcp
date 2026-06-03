@@ -2406,6 +2406,34 @@ class TestAuthModeSelection:
 
         assert mock_cls.call_args.kwargs["required_scopes"] == ["openid"]
 
+    def test_oidc_verify_id_token_follows_verify_access_token(
+        self,
+        vault_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """OIDCProxy verifies the id_token by default; verify_access_token flips it.
+
+        Security default: unset OIDC_VERIFY_ACCESS_TOKEN must verify the
+        id_token (verify_id_token=True); setting it true switches verification
+        to the access token (verify_id_token=False).
+        """
+        from unittest.mock import MagicMock, patch
+
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault_path))
+        for var, val in _OIDC_REQUIRED.items():
+            monkeypatch.setenv(var, val)
+
+        mock_cls = MagicMock()
+        with patch("fastmcp.server.auth.oidc_proxy.OIDCProxy", mock_cls):
+            make_server()
+        assert mock_cls.call_args.kwargs["verify_id_token"] is True
+
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OIDC_VERIFY_ACCESS_TOKEN", "true")
+        mock_cls.reset_mock()
+        with patch("fastmcp.server.auth.oidc_proxy.OIDCProxy", mock_cls):
+            make_server()
+        assert mock_cls.call_args.kwargs["verify_id_token"] is False
+
     def test_no_auth_when_nothing_configured(
         self,
         vault_path: Path,
