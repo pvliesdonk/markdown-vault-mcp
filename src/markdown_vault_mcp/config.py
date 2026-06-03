@@ -8,14 +8,11 @@ from __future__ import annotations
 
 import logging
 import os
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from fastmcp_pvl_core import ServerConfig
-from fastmcp_pvl_core import build_bearer_auth as _core_build_bearer_auth
-from fastmcp_pvl_core import build_oidc_proxy_auth as _core_build_oidc_proxy_auth
-from fastmcp_pvl_core import build_remote_auth as _core_build_remote_auth
 from fastmcp_pvl_core import env as _core_env
 
 # Direct re-exports: parse_bool/parse_list match MV's old call shape (take a
@@ -23,8 +20,6 @@ from fastmcp_pvl_core import env as _core_env
 # ``if raw_xxx is not None`` so no shim wrapper is needed.
 from fastmcp_pvl_core import parse_bool as _parse_bool
 from fastmcp_pvl_core import parse_list as _parse_list
-from fastmcp_pvl_core import parse_scopes as _core_parse_scopes
-from fastmcp_pvl_core import resolve_auth_mode as _core_resolve_auth_mode
 
 logger = logging.getLogger(__name__)
 
@@ -40,18 +35,6 @@ def _env(name: str, default: str | None = None) -> str | None:
     value is treated as unset (returns *default*).
     """
     return _core_env(_ENV_PREFIX, name, default=default)
-
-
-def _parse_scopes(raw: str | None) -> list[str] | None:
-    """Parse a comma- or space-separated OIDC scopes string.
-
-    Routes through :func:`fastmcp_pvl_core.parse_scopes` but preserves MV's
-    historical "blank → ``None``" semantics so existing auth-builder
-    fallbacks (``required_scopes if raw is not None else ["openid"]``)
-    keep working.  Core returns ``[]`` for blank input; MV needs ``None``.
-    """
-    result = _core_parse_scopes(raw)
-    return result or None
 
 
 @dataclass
@@ -946,97 +929,3 @@ def load_config() -> CollectionConfig:
         # CONFIG-FROM-ENV-END
         server=ServerConfig.from_env(_ENV_PREFIX),
     )
-
-
-# ---------------------------------------------------------------------------
-# Auth builder functions — thin wrappers that delegate to fastmcp-pvl-core.
-#
-# Each wrapper accepts the legacy :class:`CollectionConfig` (which still
-# carries duplicated auth/OIDC fields), constructs a transient
-# :class:`ServerConfig` view via :func:`_server_from_collection`, and
-# delegates to the core implementation.  The duplicates on
-# :class:`CollectionConfig` will be removed in a later PR once consumers
-# (currently :mod:`markdown_vault_mcp.server`) read directly from
-# ``config.server`` instead.
-# ---------------------------------------------------------------------------
-
-
-def _server_from_collection(config: CollectionConfig) -> ServerConfig:
-    """Build a :class:`ServerConfig` view from CollectionConfig duplicates.
-
-    The duplicate auth fields on :class:`CollectionConfig` are still the
-    source of truth for the auth wrappers in this module — until consumers
-    migrate to :attr:`CollectionConfig.server`, we synthesize a transient
-    :class:`ServerConfig` from the same duplicates so ``fastmcp_pvl_core``
-    can do the actual work.
-    """
-    return ServerConfig(
-        base_url=config.base_url,
-        bearer_token=config.bearer_token,
-        oidc_config_url=config.oidc_config_url,
-        oidc_client_id=config.oidc_client_id,
-        oidc_client_secret=config.oidc_client_secret,
-        oidc_audience=config.oidc_audience,
-        oidc_required_scopes=tuple(_parse_scopes(config.oidc_required_scopes) or ()),
-        oidc_jwt_signing_key=config.oidc_jwt_signing_key,
-        oidc_verify_access_token=config.oidc_verify_access_token,
-        auth_mode=config.auth_mode,
-    )
-
-
-def resolve_auth_mode(config: CollectionConfig) -> str | None:
-    """Return the OIDC auth flavor for *config*, or ``None`` for no OIDC.
-
-    Preserved for the test surface that constructs :class:`CollectionConfig`
-    directly with auth fields populated — the wrapper bridges to core's
-    resolver via :func:`_server_from_collection` and hides the ``"multi"``
-    / ``"bearer"`` / ``"none"`` outcomes behind ``None`` so callers that
-    only branch on the OIDC flavor (``"remote"`` / ``"oidc-proxy"``) keep
-    working.  Production code in :mod:`markdown_vault_mcp.server` now calls core's
-    :func:`~fastmcp_pvl_core.resolve_auth_mode` directly on
-    ``config.server``.
-
-    Args:
-        config: Populated configuration object.
-
-    Returns:
-        ``"remote"``, ``"oidc-proxy"``, or ``None``.
-    """
-    server = _server_from_collection(config)
-    mode = _core_resolve_auth_mode(server)
-    if mode == "multi":
-        mode = _core_resolve_auth_mode(replace(server, bearer_token=None))
-    return None if mode in ("none", "bearer") else mode
-
-
-def build_remote_auth(config: CollectionConfig) -> Any:
-    """Build a :class:`RemoteAuthProvider` from OIDC discovery.
-
-    Delegates to :func:`fastmcp_pvl_core.build_remote_auth`.  Returns
-    ``None`` when ``base_url`` / ``oidc_config_url`` are missing.
-    Raises :class:`fastmcp_pvl_core.ConfigurationError` when ``httpx``
-    is not installed, when discovery fails, or when the discovery
-    document is missing required keys (fail-fast at startup, pvl-core
-    2.0 contract).
-    """
-    return _core_build_remote_auth(_server_from_collection(config))
-
-
-def build_bearer_auth(config: CollectionConfig) -> Any:
-    """Build a :class:`StaticTokenVerifier` from ``config.bearer_token``.
-
-    Delegates to :func:`fastmcp_pvl_core.build_bearer_auth`.  Returns
-    ``None`` when the bearer token is absent or blank.
-    """
-    return _core_build_bearer_auth(_server_from_collection(config))
-
-
-def build_oidc_auth(config: CollectionConfig) -> Any:
-    """Build an :class:`OIDCProxy` provider, or return ``None``.
-
-    Delegates to :func:`fastmcp_pvl_core.build_oidc_proxy_auth`.  Returns
-    ``None`` when any of the four required fields (``base_url``,
-    ``oidc_config_url``, ``oidc_client_id``, ``oidc_client_secret``) is
-    missing.
-    """
-    return _core_build_oidc_proxy_auth(_server_from_collection(config))
