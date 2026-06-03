@@ -127,6 +127,7 @@ ignore = ["E501"]
 # Test fixtures import collection/protocol types only used in annotations.
 "tests/conftest.py" = ["TC002", "TC003"]
 "tests/test_smoke.py" = ["TC002", "TC003"]
+"tests/test_server.py" = ["TC003"]
 # PROJECT-RUFF-IGNORES-END
 
 [tool.ruff.lint.isort]
