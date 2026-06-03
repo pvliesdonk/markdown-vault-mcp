@@ -8,14 +8,11 @@ from __future__ import annotations
 
 import logging
 import os
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from fastmcp_pvl_core import ServerConfig
-from fastmcp_pvl_core import build_bearer_auth as _core_build_bearer_auth
-from fastmcp_pvl_core import build_oidc_proxy_auth as _core_build_oidc_proxy_auth
-from fastmcp_pvl_core import build_remote_auth as _core_build_remote_auth
 from fastmcp_pvl_core import env as _core_env
 
 # Direct re-exports: parse_bool/parse_list match MV's old call shape (take a
@@ -23,8 +20,6 @@ from fastmcp_pvl_core import env as _core_env
 # ``if raw_xxx is not None`` so no shim wrapper is needed.
 from fastmcp_pvl_core import parse_bool as _parse_bool
 from fastmcp_pvl_core import parse_list as _parse_list
-from fastmcp_pvl_core import parse_scopes as _core_parse_scopes
-from fastmcp_pvl_core import resolve_auth_mode as _core_resolve_auth_mode
 
 logger = logging.getLogger(__name__)
 
@@ -40,18 +35,6 @@ def _env(name: str, default: str | None = None) -> str | None:
     value is treated as unset (returns *default*).
     """
     return _core_env(_ENV_PREFIX, name, default=default)
-
-
-def _parse_scopes(raw: str | None) -> list[str] | None:
-    """Parse a comma- or space-separated OIDC scopes string.
-
-    Routes through :func:`fastmcp_pvl_core.parse_scopes` but preserves MV's
-    historical "blank → ``None``" semantics so existing auth-builder
-    fallbacks (``required_scopes if raw is not None else ["openid"]``)
-    keep working.  Core returns ``[]`` for blank input; MV needs ``None``.
-    """
-    result = _core_parse_scopes(raw)
-    return result or None
 
 
 @dataclass
@@ -120,25 +103,6 @@ class CollectionConfig:
             (default ``"_templates"``).
         prompts_folder: Vault-relative folder from which user-defined MCP
             prompts are loaded at startup.  ``None`` disables user prompts.
-        event_store_url: URL for the FastMCP persistent event store used by
-            the HTTP transport (e.g. ``"file:///data/state/events"``).
-            ``None`` defaults to ``/data/state/events``.
-        auth_mode: Explicit OIDC mode override: ``"oidc-proxy"`` or
-            ``"remote"``.  ``None`` (default) means auto-detect from which
-            OIDC env vars are present.  Bearer and multi-auth are determined
-            automatically by the presence of ``bearer_token`` and OIDC fields.
-        base_url: Public base URL of the server, required for OIDC remote mode.
-        oidc_config_url: OIDC discovery endpoint URL.
-        oidc_client_id: OIDC client identifier.
-        oidc_client_secret: OIDC client secret (logged as set/not set).
-        oidc_audience: Expected ``aud`` claim in OIDC tokens.
-        oidc_required_scopes: Comma-separated OIDC scopes to require.
-        oidc_jwt_signing_key: Key for signing session JWTs (logged as
-            set/not set).
-        oidc_verify_access_token: When ``True``, verify the OIDC access
-            token instead of the id_token (default ``False``).
-        bearer_token: Static bearer token for simple auth (logged as
-            set/not set).
         embedding_provider: Name of the embedding provider to use (e.g.
             ``"ollama"``, ``"openai"``, ``"fastembed"``).  ``None`` disables
             semantic search.
@@ -163,9 +127,7 @@ class CollectionConfig:
         server: Shared server-level configuration (transport, host/port,
             auth, base URL, event store URL, MCP App domain) populated
             from ``MARKDOWN_VAULT_MCP_*`` env vars by
-            :meth:`fastmcp_pvl_core.ServerConfig.from_env`.  Domain-specific
-            duplicates above remain on :class:`CollectionConfig` until
-            MV-PR2/3 migrate consumers to read from ``self.server.*``.
+            :meth:`fastmcp_pvl_core.ServerConfig.from_env`.
 
     Example::
 
@@ -197,23 +159,10 @@ class CollectionConfig:
     max_note_read_bytes: int = 262144  # 256 KB; 0 = unlimited
     templates_folder: str = "_templates"
     prompts_folder: str | None = None
-    event_store_url: str | None = None
 
     # Server identity
     server_name: str = "markdown-vault-mcp"
     instructions: str | None = None
-
-    # Auth
-    auth_mode: str | None = None
-    base_url: str | None = None
-    oidc_config_url: str | None = None
-    oidc_client_id: str | None = None
-    oidc_client_secret: str | None = None
-    oidc_audience: str | None = None
-    oidc_required_scopes: str | None = None
-    oidc_jwt_signing_key: str | None = None
-    oidc_verify_access_token: bool = False
-    bearer_token: str | None = None
 
     # Embedding providers
     embedding_provider: str | None = None
@@ -241,9 +190,6 @@ class CollectionConfig:
     # CONFIG-FIELDS-END
 
     # Universal server fields delegated to fastmcp_pvl_core.ServerConfig.
-    # Domain-specific fields above remain on CollectionConfig; subsequent
-    # MV-PR2/3 will migrate consumers (auth builders, middleware) to read
-    # from ``self.server.*`` instead of the local duplicates.
     server: ServerConfig = field(default_factory=ServerConfig)
 
     def __post_init__(self) -> None:
@@ -425,9 +371,6 @@ def load_config() -> CollectionConfig:
       template markdown files are stored; default ``_templates``.
     - ``MARKDOWN_VAULT_MCP_PROMPTS_FOLDER``: relative folder path where
       user-defined prompt markdown files are stored; default ``None`` (disabled).
-    - ``MARKDOWN_VAULT_MCP_EVENT_STORE_URL``: event store backend for HTTP session
-      persistence; ``file:///path`` (default ``/data/state/events``) or
-      ``memory://`` (in-memory, lost on restart).
 
     **Server identity:**
 
@@ -435,25 +378,6 @@ def load_config() -> CollectionConfig:
       default ``"markdown-vault-mcp"``.
     - ``MARKDOWN_VAULT_MCP_INSTRUCTIONS``: server-level instructions surfaced
       to clients; default ``None``.
-
-    **Authentication:**
-
-    - ``MARKDOWN_VAULT_MCP_AUTH_MODE``: explicit OIDC mode override
-      (``"oidc-proxy"`` or ``"remote"``); default auto-detect.  Bearer and
-      multi-auth are determined by the presence of ``BEARER_TOKEN`` and OIDC
-      fields.
-    - ``MARKDOWN_VAULT_MCP_BASE_URL``: public base URL of the server.
-    - ``MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL``: OIDC discovery endpoint URL.
-    - ``MARKDOWN_VAULT_MCP_OIDC_CLIENT_ID``: OIDC client identifier.
-    - ``MARKDOWN_VAULT_MCP_OIDC_CLIENT_SECRET``: OIDC client secret.
-    - ``MARKDOWN_VAULT_MCP_OIDC_AUDIENCE``: expected ``aud`` claim in tokens.
-    - ``MARKDOWN_VAULT_MCP_OIDC_REQUIRED_SCOPES``: comma-separated required
-      OIDC scopes.
-    - ``MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY``: key for signing session
-      JWTs.
-    - ``MARKDOWN_VAULT_MCP_OIDC_VERIFY_ACCESS_TOKEN``: verify access token
-      instead of id_token; default ``false``.
-    - ``MARKDOWN_VAULT_MCP_BEARER_TOKEN``: static bearer token for simple auth.
 
     **Embedding providers:**
 
@@ -475,6 +399,12 @@ def load_config() -> CollectionConfig:
       ``"BAAI/bge-small-en-v1.5"``.
     - ``MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR``: FastEmbed model cache
       directory; default ``None``.
+
+    Transport and auth variables (``TRANSPORT``, ``HOST``, ``PORT``,
+    ``BASE_URL``, ``AUTH_MODE``, ``OIDC_*``, ``BEARER_TOKEN``,
+    ``EVENT_STORE_URL``, ``APP_DOMAIN``) are read into ``config.server`` by
+    :meth:`fastmcp_pvl_core.ServerConfig.from_env`; see
+    ``docs/configuration.md`` for the full list.
 
     Returns:
         A fully populated :class:`CollectionConfig` instance.
@@ -705,12 +635,6 @@ def load_config() -> CollectionConfig:
         prompts_folder = None
     logger.debug("load_config: prompts_folder=%s", prompts_folder)
 
-    raw_event_store_url = (_env("EVENT_STORE_URL") or "").strip()
-    event_store_url: str | None = raw_event_store_url or None
-    logger.debug(
-        "load_config: event_store_url=%s", event_store_url or "not set (file default)"
-    )
-
     # --- Server identity ---
     raw_server_name = (_env("SERVER_NAME") or "").strip()
     server_name: str = raw_server_name or "markdown-vault-mcp"
@@ -719,59 +643,6 @@ def load_config() -> CollectionConfig:
     raw_instructions = (_env("INSTRUCTIONS") or "").strip()
     instructions: str | None = raw_instructions or None
     logger.debug("load_config: instructions=%s", "set" if instructions else "not set")
-
-    # --- Auth ---
-    raw_auth_mode = (_env("AUTH_MODE") or "").strip()
-    auth_mode: str | None = raw_auth_mode or None
-    logger.debug("load_config: auth_mode=%s", auth_mode or "auto-detect")
-
-    raw_base_url = (_env("BASE_URL") or "").strip()
-    base_url: str | None = raw_base_url or None
-    logger.debug("load_config: base_url=%s", base_url or "not set")
-
-    raw_oidc_config_url = (_env("OIDC_CONFIG_URL") or "").strip()
-    oidc_config_url: str | None = raw_oidc_config_url or None
-    logger.debug("load_config: oidc_config_url=%s", oidc_config_url or "not set")
-
-    raw_oidc_client_id = (_env("OIDC_CLIENT_ID") or "").strip()
-    oidc_client_id: str | None = raw_oidc_client_id or None
-    logger.debug("load_config: oidc_client_id=%s", oidc_client_id or "not set")
-
-    raw_oidc_client_secret = (_env("OIDC_CLIENT_SECRET") or "").strip()
-    oidc_client_secret: str | None = raw_oidc_client_secret or None
-    logger.debug(
-        "load_config: oidc_client_secret=%s",
-        "set" if oidc_client_secret else "not set",
-    )
-
-    raw_oidc_audience = (_env("OIDC_AUDIENCE") or "").strip()
-    oidc_audience: str | None = raw_oidc_audience or None
-    logger.debug("load_config: oidc_audience=%s", oidc_audience or "not set")
-
-    raw_oidc_required_scopes = (_env("OIDC_REQUIRED_SCOPES") or "").strip()
-    oidc_required_scopes: str | None = raw_oidc_required_scopes or None
-    logger.debug(
-        "load_config: oidc_required_scopes=%s", oidc_required_scopes or "not set"
-    )
-
-    raw_oidc_jwt_signing_key = (_env("OIDC_JWT_SIGNING_KEY") or "").strip()
-    oidc_jwt_signing_key: str | None = raw_oidc_jwt_signing_key or None
-    logger.debug(
-        "load_config: oidc_jwt_signing_key=%s",
-        "set" if oidc_jwt_signing_key else "not set",
-    )
-
-    raw_oidc_verify_access_token = _env("OIDC_VERIFY_ACCESS_TOKEN")
-    oidc_verify_access_token: bool = (
-        _parse_bool(raw_oidc_verify_access_token)
-        if raw_oidc_verify_access_token is not None
-        else False
-    )
-    logger.debug("load_config: oidc_verify_access_token=%s", oidc_verify_access_token)
-
-    raw_bearer_token = (_env("BEARER_TOKEN") or "").strip()
-    bearer_token: str | None = raw_bearer_token or None
-    logger.debug("load_config: bearer_token=%s", "set" if bearer_token else "not set")
 
     # --- Embedding providers ---
     raw_embedding_provider = (_env("EMBEDDING_PROVIDER") or "").strip()
@@ -914,19 +785,8 @@ def load_config() -> CollectionConfig:
         max_note_read_bytes=max_note_read_bytes,
         templates_folder=templates_folder,
         prompts_folder=prompts_folder,
-        event_store_url=event_store_url,
         server_name=server_name,
         instructions=instructions,
-        auth_mode=auth_mode,
-        base_url=base_url,
-        oidc_config_url=oidc_config_url,
-        oidc_client_id=oidc_client_id,
-        oidc_client_secret=oidc_client_secret,
-        oidc_audience=oidc_audience,
-        oidc_required_scopes=oidc_required_scopes,
-        oidc_jwt_signing_key=oidc_jwt_signing_key,
-        oidc_verify_access_token=oidc_verify_access_token,
-        bearer_token=bearer_token,
         embedding_provider=embedding_provider,
         ollama_host=ollama_host,
         ollama_model=ollama_model,
@@ -946,97 +806,3 @@ def load_config() -> CollectionConfig:
         # CONFIG-FROM-ENV-END
         server=ServerConfig.from_env(_ENV_PREFIX),
     )
-
-
-# ---------------------------------------------------------------------------
-# Auth builder functions — thin wrappers that delegate to fastmcp-pvl-core.
-#
-# Each wrapper accepts the legacy :class:`CollectionConfig` (which still
-# carries duplicated auth/OIDC fields), constructs a transient
-# :class:`ServerConfig` view via :func:`_server_from_collection`, and
-# delegates to the core implementation.  The duplicates on
-# :class:`CollectionConfig` will be removed in a later PR once consumers
-# (currently :mod:`markdown_vault_mcp.server`) read directly from
-# ``config.server`` instead.
-# ---------------------------------------------------------------------------
-
-
-def _server_from_collection(config: CollectionConfig) -> ServerConfig:
-    """Build a :class:`ServerConfig` view from CollectionConfig duplicates.
-
-    The duplicate auth fields on :class:`CollectionConfig` are still the
-    source of truth for the auth wrappers in this module — until consumers
-    migrate to :attr:`CollectionConfig.server`, we synthesize a transient
-    :class:`ServerConfig` from the same duplicates so ``fastmcp_pvl_core``
-    can do the actual work.
-    """
-    return ServerConfig(
-        base_url=config.base_url,
-        bearer_token=config.bearer_token,
-        oidc_config_url=config.oidc_config_url,
-        oidc_client_id=config.oidc_client_id,
-        oidc_client_secret=config.oidc_client_secret,
-        oidc_audience=config.oidc_audience,
-        oidc_required_scopes=tuple(_parse_scopes(config.oidc_required_scopes) or ()),
-        oidc_jwt_signing_key=config.oidc_jwt_signing_key,
-        oidc_verify_access_token=config.oidc_verify_access_token,
-        auth_mode=config.auth_mode,
-    )
-
-
-def resolve_auth_mode(config: CollectionConfig) -> str | None:
-    """Return the OIDC auth flavor for *config*, or ``None`` for no OIDC.
-
-    Preserved for the test surface that constructs :class:`CollectionConfig`
-    directly with auth fields populated — the wrapper bridges to core's
-    resolver via :func:`_server_from_collection` and hides the ``"multi"``
-    / ``"bearer"`` / ``"none"`` outcomes behind ``None`` so callers that
-    only branch on the OIDC flavor (``"remote"`` / ``"oidc-proxy"``) keep
-    working.  Production code in :mod:`markdown_vault_mcp.server` now calls core's
-    :func:`~fastmcp_pvl_core.resolve_auth_mode` directly on
-    ``config.server``.
-
-    Args:
-        config: Populated configuration object.
-
-    Returns:
-        ``"remote"``, ``"oidc-proxy"``, or ``None``.
-    """
-    server = _server_from_collection(config)
-    mode = _core_resolve_auth_mode(server)
-    if mode == "multi":
-        mode = _core_resolve_auth_mode(replace(server, bearer_token=None))
-    return None if mode in ("none", "bearer") else mode
-
-
-def build_remote_auth(config: CollectionConfig) -> Any:
-    """Build a :class:`RemoteAuthProvider` from OIDC discovery.
-
-    Delegates to :func:`fastmcp_pvl_core.build_remote_auth`.  Returns
-    ``None`` when ``base_url`` / ``oidc_config_url`` are missing.
-    Raises :class:`fastmcp_pvl_core.ConfigurationError` when ``httpx``
-    is not installed, when discovery fails, or when the discovery
-    document is missing required keys (fail-fast at startup, pvl-core
-    2.0 contract).
-    """
-    return _core_build_remote_auth(_server_from_collection(config))
-
-
-def build_bearer_auth(config: CollectionConfig) -> Any:
-    """Build a :class:`StaticTokenVerifier` from ``config.bearer_token``.
-
-    Delegates to :func:`fastmcp_pvl_core.build_bearer_auth`.  Returns
-    ``None`` when the bearer token is absent or blank.
-    """
-    return _core_build_bearer_auth(_server_from_collection(config))
-
-
-def build_oidc_auth(config: CollectionConfig) -> Any:
-    """Build an :class:`OIDCProxy` provider, or return ``None``.
-
-    Delegates to :func:`fastmcp_pvl_core.build_oidc_proxy_auth`.  Returns
-    ``None`` when any of the four required fields (``base_url``,
-    ``oidc_config_url``, ``oidc_client_id``, ``oidc_client_secret``) is
-    missing.
-    """
-    return _core_build_oidc_proxy_auth(_server_from_collection(config))

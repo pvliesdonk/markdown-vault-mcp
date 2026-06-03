@@ -1,20 +1,15 @@
-"""Tests for config.py — env var loading and auth builders."""
+"""Tests for config.py — env var loading."""
 
 from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any
 
 import pytest
 
 from markdown_vault_mcp.config import (
     CollectionConfig,
-    build_bearer_auth,
-    build_oidc_auth,
-    build_remote_auth,
     load_config,
-    resolve_auth_mode,
 )
 
 
@@ -574,20 +569,6 @@ class TestCollectionConfigDefaults:
         assert config.server_name == "markdown-vault-mcp"
         assert config.instructions is None
 
-    def test_auth_defaults(self) -> None:
-        """All auth fields default to None/False."""
-        config = CollectionConfig(source_dir=Path("/tmp/vault"))
-        assert config.auth_mode is None
-        assert config.base_url is None
-        assert config.oidc_config_url is None
-        assert config.oidc_client_id is None
-        assert config.oidc_client_secret is None
-        assert config.oidc_audience is None
-        assert config.oidc_required_scopes is None
-        assert config.oidc_jwt_signing_key is None
-        assert config.oidc_verify_access_token is False
-        assert config.bearer_token is None
-
     def test_embedding_provider_defaults(self) -> None:
         """Embedding fields have correct defaults."""
         config = CollectionConfig(source_dir=Path("/tmp/vault"))
@@ -607,16 +588,6 @@ class TestCollectionConfigDefaults:
             source_dir=Path("/tmp/vault"),
             server_name="my-server",
             instructions="Be helpful",
-            auth_mode="bearer",
-            base_url="https://example.com",
-            oidc_config_url="https://auth.example.com/.well-known/openid-configuration",
-            oidc_client_id="client-123",
-            oidc_client_secret="secret-456",
-            oidc_audience="my-api",
-            oidc_required_scopes="openid,profile",
-            oidc_jwt_signing_key="signing-key-789",
-            oidc_verify_access_token=True,
-            bearer_token="tok_abc",
             embedding_provider="ollama",
             ollama_host="http://gpu-server:11434",
             ollama_model="mxbai-embed-large",
@@ -629,12 +600,6 @@ class TestCollectionConfigDefaults:
         )
         assert config.server_name == "my-server"
         assert config.instructions == "Be helpful"
-        assert config.auth_mode == "bearer"
-        assert config.base_url == "https://example.com"
-        assert config.oidc_client_id == "client-123"
-        assert config.oidc_client_secret == "secret-456"
-        assert config.oidc_verify_access_token is True
-        assert config.bearer_token == "tok_abc"
         assert config.embedding_provider == "ollama"
         assert config.ollama_host == "http://gpu-server:11434"
         assert config.ollama_model == "mxbai-embed-large"
@@ -684,82 +649,6 @@ class TestLoadConfigServerIdentityFields:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_INSTRUCTIONS", "Be concise")
         config = load_config()
         assert config.instructions == "Be concise"
-
-
-class TestLoadConfigAuthFields:
-    """Verify auth env vars are read correctly by load_config()."""
-
-    @pytest.fixture(autouse=True)
-    def _set_source_dir(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
-
-    def test_auth_mode_default_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """load_config() defaults auth_mode to None (auto-detect)."""
-        monkeypatch.delenv("MARKDOWN_VAULT_MCP_AUTH_MODE", raising=False)
-        config = load_config()
-        assert config.auth_mode is None
-
-    def test_auth_mode_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """load_config() reads MARKDOWN_VAULT_MCP_AUTH_MODE."""
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_AUTH_MODE", "bearer")
-        config = load_config()
-        assert config.auth_mode == "bearer"
-
-    def test_base_url_read(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """load_config() reads MARKDOWN_VAULT_MCP_BASE_URL."""
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_BASE_URL", "https://vault.example.com")
-        config = load_config()
-        assert config.base_url == "https://vault.example.com"
-
-    def test_oidc_fields_read(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """load_config() reads all OIDC env vars."""
-        monkeypatch.setenv(
-            "MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL",
-            "https://auth.example.com/.well-known/openid-configuration",
-        )
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OIDC_CLIENT_ID", "my-client")
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OIDC_CLIENT_SECRET", "s3cret")
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OIDC_AUDIENCE", "my-api")
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OIDC_REQUIRED_SCOPES", "openid,profile")
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY", "jwt-key-123")
-        config = load_config()
-        assert (
-            config.oidc_config_url
-            == "https://auth.example.com/.well-known/openid-configuration"
-        )
-        assert config.oidc_client_id == "my-client"
-        assert config.oidc_client_secret == "s3cret"
-        assert config.oidc_audience == "my-api"
-        assert config.oidc_required_scopes == "openid,profile"
-        assert config.oidc_jwt_signing_key == "jwt-key-123"
-
-    def test_oidc_verify_access_token_default_false(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """load_config() defaults oidc_verify_access_token to False."""
-        monkeypatch.delenv("MARKDOWN_VAULT_MCP_OIDC_VERIFY_ACCESS_TOKEN", raising=False)
-        config = load_config()
-        assert config.oidc_verify_access_token is False
-
-    def test_oidc_verify_access_token_true(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """load_config() parses OIDC_VERIFY_ACCESS_TOKEN=true."""
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OIDC_VERIFY_ACCESS_TOKEN", "true")
-        config = load_config()
-        assert config.oidc_verify_access_token is True
-
-    def test_bearer_token_read(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """load_config() reads MARKDOWN_VAULT_MCP_BEARER_TOKEN."""
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_BEARER_TOKEN", "tok_abc123")
-        config = load_config()
-        assert config.bearer_token == "tok_abc123"
-
-    def test_bearer_token_default_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """load_config() defaults bearer_token to None."""
-        monkeypatch.delenv("MARKDOWN_VAULT_MCP_BEARER_TOKEN", raising=False)
-        config = load_config()
-        assert config.bearer_token is None
 
 
 class TestLoadConfigEmbeddingFields:
@@ -957,231 +846,6 @@ class TestLoadConfigEmbeddingFields:
         assert config.fastembed_cache_dir is None
 
 
-# ---------------------------------------------------------------------------
-# Auth builder helpers
-# ---------------------------------------------------------------------------
-
-
-def _oidc_config(**overrides: Any) -> CollectionConfig:
-    """Build a CollectionConfig pre-filled with all required OIDC fields."""
-    defaults: dict[str, Any] = {
-        "source_dir": Path("/tmp"),
-        "base_url": "https://mcp.example.com",
-        "oidc_config_url": "https://auth.example.com/.well-known/openid-configuration",
-        "oidc_client_id": "test-client",
-        "oidc_client_secret": "test-secret",
-    }
-    defaults.update(overrides)
-    return CollectionConfig(**defaults)
-
-
-# ---------------------------------------------------------------------------
-# resolve_auth_mode()
-# ---------------------------------------------------------------------------
-
-
-class TestResolveAuthModeConfig:
-    """Tests for resolve_auth_mode() accepting CollectionConfig."""
-
-    def test_explicit_remote(self) -> None:
-        config = CollectionConfig(source_dir=Path("/tmp"), auth_mode="remote")
-        assert resolve_auth_mode(config) == "remote"
-
-    def test_explicit_oidc_proxy(self) -> None:
-        config = CollectionConfig(source_dir=Path("/tmp"), auth_mode="oidc-proxy")
-        assert resolve_auth_mode(config) == "oidc-proxy"
-
-    def test_auto_detect_oidc_proxy(self) -> None:
-        """All four OIDC fields set -> oidc-proxy."""
-        config = _oidc_config()
-        assert resolve_auth_mode(config) == "oidc-proxy"
-
-    def test_auto_detect_remote(self) -> None:
-        """Only base_url + oidc_config_url -> remote."""
-        config = CollectionConfig(
-            source_dir=Path("/tmp"),
-            base_url="https://mcp.example.com",
-            oidc_config_url="https://auth.example.com/.well-known/openid-configuration",
-        )
-        assert resolve_auth_mode(config) == "remote"
-
-    def test_no_auth_returns_none(self) -> None:
-        config = CollectionConfig(source_dir=Path("/tmp"))
-        assert resolve_auth_mode(config) is None
-
-    def test_invalid_mode_returns_none(self) -> None:
-        config = CollectionConfig(source_dir=Path("/tmp"), auth_mode="invalid")
-        assert resolve_auth_mode(config) is None
-
-
-# ---------------------------------------------------------------------------
-# build_bearer_auth()
-# ---------------------------------------------------------------------------
-
-
-class TestBuildBearerAuthConfig:
-    """Tests for build_bearer_auth() accepting CollectionConfig."""
-
-    def test_returns_none_when_no_token(self) -> None:
-        config = CollectionConfig(source_dir=Path("/tmp"))
-        assert build_bearer_auth(config) is None
-
-    def test_returns_verifier_when_token_set(self) -> None:
-        from fastmcp.server.auth import StaticTokenVerifier
-
-        config = CollectionConfig(source_dir=Path("/tmp"), bearer_token="tok123")
-        result = build_bearer_auth(config)
-        assert isinstance(result, StaticTokenVerifier)
-        assert "tok123" in result.tokens
-
-
-# ---------------------------------------------------------------------------
-# build_oidc_auth()
-# ---------------------------------------------------------------------------
-
-
-class TestBuildOidcAuthConfig:
-    """Tests for build_oidc_auth() accepting CollectionConfig."""
-
-    def test_returns_none_when_missing_fields(self) -> None:
-        config = CollectionConfig(source_dir=Path("/tmp"))
-        assert build_oidc_auth(config) is None
-
-    def test_returns_proxy_when_all_fields_present(self) -> None:
-        from unittest.mock import MagicMock, patch
-
-        config = _oidc_config()
-        mock_cls = MagicMock()
-        with patch("fastmcp.server.auth.oidc_proxy.OIDCProxy", mock_cls):
-            result = build_oidc_auth(config)
-        assert result is not None
-        mock_cls.assert_called_once()
-
-    def test_passes_correct_kwargs(self) -> None:
-        from unittest.mock import MagicMock, patch
-
-        config = _oidc_config()
-        mock_cls = MagicMock()
-        with patch("fastmcp.server.auth.oidc_proxy.OIDCProxy", mock_cls):
-            build_oidc_auth(config)
-
-        kw = mock_cls.call_args.kwargs
-        assert kw["base_url"] == "https://mcp.example.com"
-        assert kw["client_id"] == "test-client"
-        assert kw["client_secret"] == "test-secret"
-        assert kw["required_scopes"] == ["openid"]
-        assert kw["verify_id_token"] is True
-
-    def test_scopes_parsed_from_config(self) -> None:
-        from unittest.mock import MagicMock, patch
-
-        config = _oidc_config(oidc_required_scopes="openid, profile")
-        mock_cls = MagicMock()
-        with patch("fastmcp.server.auth.oidc_proxy.OIDCProxy", mock_cls):
-            build_oidc_auth(config)
-
-        assert mock_cls.call_args.kwargs["required_scopes"] == ["openid", "profile"]
-
-    def test_linux_warning_logged(self, caplog: pytest.LogCaptureFixture) -> None:
-        from unittest.mock import MagicMock, patch
-
-        config = _oidc_config()
-        mock_cls = MagicMock()
-        # The ephemeral-signing-key warning lives in fastmcp_pvl_core._auth
-        # since MV-PR2; patch sys there, not in markdown_vault_mcp.config.
-        with (
-            patch("fastmcp.server.auth.oidc_proxy.OIDCProxy", mock_cls),
-            patch("fastmcp_pvl_core._auth.sys") as mock_sys,
-        ):
-            mock_sys.platform = "linux"
-            build_oidc_auth(config)
-
-        assert any(
-            "JWT_SIGNING_KEY" in r.message and r.levelname == "WARNING"
-            for r in caplog.records
-        )
-
-
-# ---------------------------------------------------------------------------
-# build_remote_auth()
-# ---------------------------------------------------------------------------
-
-
-class TestBuildRemoteAuthConfig:
-    """Tests for build_remote_auth() accepting CollectionConfig."""
-
-    def test_returns_none_when_missing_fields(self) -> None:
-        config = CollectionConfig(source_dir=Path("/tmp"))
-        assert build_remote_auth(config) is None
-
-    def test_raises_on_discovery_failure(self) -> None:
-        from unittest.mock import patch
-
-        import httpx
-        from fastmcp_pvl_core import ConfigurationError
-
-        config = CollectionConfig(
-            source_dir=Path("/tmp"),
-            base_url="https://mcp.example.com",
-            oidc_config_url="https://auth.example.com/.well-known/openid-configuration",
-        )
-        # pvl-core 2.0 changed the contract: discovery failures now raise
-        # ConfigurationError instead of returning None — fail-fast at startup
-        # rather than silently disabling auth on a misconfigured deployment.
-        with (
-            patch("httpx.get", side_effect=httpx.ConnectError("fail")),
-            pytest.raises(ConfigurationError, match="OIDC discovery failed"),
-        ):
-            build_remote_auth(config)
-
-    def test_happy_path(self) -> None:
-        from unittest.mock import MagicMock, patch
-
-        config = CollectionConfig(
-            source_dir=Path("/tmp"),
-            base_url="https://mcp.example.com",
-            oidc_config_url="https://auth.example.com/.well-known/openid-configuration",
-        )
-        mock_resp = MagicMock()
-        mock_resp.json.return_value = {
-            "jwks_uri": "https://auth.example.com/.well-known/jwks.json",
-            "issuer": "https://auth.example.com",
-        }
-        mock_resp.raise_for_status = MagicMock()
-        with patch("httpx.get", return_value=mock_resp):
-            result = build_remote_auth(config)
-        assert result is not None
-
-    def test_scopes_parsed_from_config(self) -> None:
-        from unittest.mock import MagicMock, patch
-
-        config = CollectionConfig(
-            source_dir=Path("/tmp"),
-            base_url="https://mcp.example.com",
-            oidc_config_url="https://auth.example.com/.well-known/openid-configuration",
-            oidc_required_scopes="openid, profile",
-        )
-        mock_resp = MagicMock()
-        mock_resp.json.return_value = {
-            "jwks_uri": "https://auth.example.com/.well-known/jwks.json",
-            "issuer": "https://auth.example.com",
-        }
-        mock_resp.raise_for_status = MagicMock()
-
-        mock_verifier_cls = MagicMock()
-        mock_remote_cls = MagicMock()
-
-        with (
-            patch("httpx.get", return_value=mock_resp),
-            patch("fastmcp.server.auth.JWTVerifier", mock_verifier_cls),
-            patch("fastmcp.server.auth.RemoteAuthProvider", mock_remote_cls),
-        ):
-            build_remote_auth(config)
-
-        kw = mock_verifier_cls.call_args.kwargs
-        assert kw["required_scopes"] == ["openid", "profile"]
-
-
 class TestEmptyBoolEnvVarsFallToDefault:
     """Empty-string env vars on bool fields fall through to the configured default.
 
@@ -1214,7 +878,7 @@ class TestEmptyBoolEnvVarsFallToDefault:
     ) -> None:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_OIDC_VERIFY_ACCESS_TOKEN", "")
         config = load_config()
-        assert config.oidc_verify_access_token is False  # default
+        assert config.server.oidc_verify_access_token is False  # default
 
     def test_ollama_cpu_only_empty_falls_through_to_default(
         self, monkeypatch: pytest.MonkeyPatch
@@ -1249,6 +913,52 @@ class TestServerConfigComposition:
         assert config.server.transport == "http"
         assert config.server.bearer_token == "secret-token"
         assert config.server.base_url == "https://api.example.com"
+
+    def test_load_config_reads_oidc_verify_access_token_true(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """OIDC_VERIFY_ACCESS_TOKEN=true composes to config.server as True."""
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OIDC_VERIFY_ACCESS_TOKEN", "true")
+
+        config = load_config()
+
+        assert config.server.oidc_verify_access_token is True
+
+    def test_load_config_populates_oidc_fields_from_prefixed_env(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """Every MARKDOWN_VAULT_MCP_OIDC_*/AUTH_MODE var reaches config.server.
+
+        Guards the env-prefix wiring for the OIDC/AUTH_MODE portion of the auth
+        surface the deleted TestLoadConfigAuthFields covered (bearer/base_url/
+        verify-token are covered by the sibling tests above), now asserted
+        against the composed ServerConfig.
+        """
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_AUTH_MODE", "oidc-proxy")
+        monkeypatch.setenv(
+            "MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL",
+            "https://auth.example.com/.well-known/openid-configuration",
+        )
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OIDC_CLIENT_ID", "client-123")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OIDC_CLIENT_SECRET", "secret-456")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OIDC_AUDIENCE", "my-api")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OIDC_REQUIRED_SCOPES", "openid,profile")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY", "signing-key")
+
+        config = load_config()
+
+        assert config.server.auth_mode == "oidc-proxy"
+        assert (
+            config.server.oidc_config_url
+            == "https://auth.example.com/.well-known/openid-configuration"
+        )
+        assert config.server.oidc_client_id == "client-123"
+        assert config.server.oidc_client_secret == "secret-456"
+        assert config.server.oidc_audience == "my-api"
+        assert config.server.oidc_required_scopes == ("openid", "profile")
+        assert config.server.oidc_jwt_signing_key == "signing-key"
 
 
 def test_search_ranking_config_rejects_malformed_int(

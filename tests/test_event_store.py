@@ -77,21 +77,21 @@ class TestEventStoreConfig:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
         monkeypatch.delenv("MARKDOWN_VAULT_MCP_EVENT_STORE_URL", raising=False)
         config = load_config()
-        assert config.event_store_url is None
+        assert config.server.event_store_url is None
 
     def test_event_store_url_from_env(self, monkeypatch):
         """EVENT_STORE_URL is read from environment."""
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_EVENT_STORE_URL", "memory://")
         config = load_config()
-        assert config.event_store_url == "memory://"
+        assert config.server.event_store_url == "memory://"
 
     def test_event_store_url_empty_is_none(self, monkeypatch):
         """Empty EVENT_STORE_URL yields None (file default)."""
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_EVENT_STORE_URL", "  ")
         config = load_config()
-        assert config.event_store_url is None
+        assert config.server.event_store_url is None
 
     def test_event_store_url_file_path(self, monkeypatch):
         """file:// URL passed through verbatim."""
@@ -100,7 +100,7 @@ class TestEventStoreConfig:
             "MARKDOWN_VAULT_MCP_EVENT_STORE_URL", "file:///data/state/events"
         )
         config = load_config()
-        assert config.event_store_url == "file:///data/state/events"
+        assert config.server.event_store_url == "file:///data/state/events"
 
 
 class TestFileEventStorePersistence:
