@@ -283,7 +283,7 @@ class TestCmdServe:
         mock_server = MagicMock()
         mock_create.return_value = mock_server
         mock_config = MagicMock()
-        mock_config.event_store_url = None
+        mock_config.server.event_store_url = None
         mock_load_config.return_value = mock_config
         mock_event_store = MagicMock()
         mock_build_es.return_value = mock_event_store
@@ -323,7 +323,7 @@ class TestCmdServe:
         mock_server = MagicMock()
         mock_create.return_value = mock_server
         mock_config = MagicMock()
-        mock_config.event_store_url = None
+        mock_config.server.event_store_url = None
         mock_load_config.return_value = mock_config
         mock_build_es.return_value = MagicMock()
         mock_server.http_app.return_value = MagicMock()
@@ -352,7 +352,7 @@ class TestCmdServe:
         mock_server = MagicMock()
         mock_create.return_value = mock_server
         mock_config = MagicMock()
-        mock_config.event_store_url = None
+        mock_config.server.event_store_url = None
         mock_load_config.return_value = mock_config
         mock_build_es.return_value = MagicMock()
         mock_server.http_app.return_value = MagicMock()
@@ -381,7 +381,7 @@ class TestCmdServe:
         mock_server = MagicMock()
         mock_create.return_value = mock_server
         mock_config = MagicMock()
-        mock_config.event_store_url = None
+        mock_config.server.event_store_url = None
         mock_load_config.return_value = mock_config
         mock_build_es.return_value = MagicMock()
         mock_server.http_app.return_value = MagicMock()
@@ -409,7 +409,7 @@ class TestCmdServe:
         mock_server = MagicMock()
         mock_create.return_value = mock_server
         mock_config = MagicMock()
-        mock_config.event_store_url = None
+        mock_config.server.event_store_url = None
         mock_load_config.return_value = mock_config
         mock_build_es.return_value = MagicMock()
         mock_server.http_app.return_value = MagicMock()
