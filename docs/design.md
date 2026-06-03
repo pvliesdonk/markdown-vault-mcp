@@ -65,6 +65,7 @@ markdown-vault-mcp (new package)
 +-- providers.py      -- Ollama / OpenAI / SentenceTransformers
 +-- tracker.py        -- hash-based change detection
 +-- collection.py     -- thin facade: lifecycle, wiring, delegation (index-write → indexing/coordinator.py)
++-- write_callback.py -- WriteCallbackDispatcher: deferred git-commit callback worker (#599)
 +-- config.py         -- configuration loading
 +-- server.py         -- generic FastMCP server
 +-- cli.py            -- CLI entry point

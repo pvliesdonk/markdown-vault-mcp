@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import contextlib
 import logging
-import queue
 import re
 import threading
 from typing import TYPE_CHECKING, Any, Literal
@@ -41,10 +40,10 @@ from markdown_vault_mcp.types import (
     ReindexResult,
     RenameResult,
     WriteCallback,
-    WriteOperation,
     WriteResult,
 )
 from markdown_vault_mcp.utils import effective_attachment_extensions
+from markdown_vault_mcp.write_callback import WriteCallbackDispatcher
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -312,6 +311,12 @@ class Collection:
             snippet_words=snippet_words,
             length_downweight_alpha=length_downweight_alpha,
         )
+        # Deferred write callback (issue #175): the git-commit on_write
+        # callback runs on a background worker so write methods return after
+        # the FTS update.  Constructed before DocumentManager, whose
+        # ``on_write_callback`` is wired to ``fire`` (#599).
+        self._write_callback = WriteCallbackDispatcher(self._on_write)
+
         # 4. DocumentManager (mark_paths_dirty routes through the writer)
         self._doc_mgr = DocumentManager(
             fts=self._fts,
@@ -323,18 +328,9 @@ class Collection:
             attachment_extensions=self._attachment_extensions,
             max_attachment_size_mb=self._max_attachment_size_mb,
             max_note_read_bytes=self._max_note_read_bytes,
-            on_write_callback=self._fire_write_callback,
+            on_write_callback=self._write_callback.fire,
             mark_paths_dirty=self._coordinator.mark_paths_dirty,
         )
-
-        # Deferred write callback queue (issue #175).  Git commit (on_write
-        # callback) runs in a background worker thread so write methods
-        # return immediately after the FTS update.
-        self._callback_queue: queue.Queue[tuple[Path, str, WriteOperation] | None] = (
-            queue.Queue()
-        )
-        self._callback_worker: threading.Thread | None = None
-        self._callback_worker_lock = threading.Lock()
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -436,14 +432,7 @@ class Collection:
         # before its close() returns; no further flush needed here (#559).
 
         # 2. Drain the write-callback queue (git commits).
-        if self._callback_worker is not None and self._callback_worker.is_alive():
-            self._callback_queue.put(None)  # sentinel
-            self._callback_worker.join(timeout=30)
-            if self._callback_worker.is_alive():
-                logger.warning(
-                    "Write-callback worker did not finish within 30 s; "
-                    "pending git commits may be lost."
-                )
+        self._write_callback.close(timeout=30.0)
 
         # 3. Close git strategy (flush push, etc.).
         if self._git_strategy is not None:
@@ -1140,49 +1129,6 @@ class Collection:
     def _validate_attachment_path(self, path: str) -> Path:
         """Resolve and validate a non-.md attachment path."""
         return self._doc_mgr._validate_attachment_path(path)
-
-    def _ensure_callback_worker(self) -> None:
-        """Start the background write-callback worker if not running."""
-        with self._callback_worker_lock:
-            if self._callback_worker is not None and self._callback_worker.is_alive():
-                return
-
-            def _worker() -> None:
-                while True:
-                    item = self._callback_queue.get()
-                    if item is None:
-                        break
-                    abs_path, content, operation = item
-                    try:
-                        if self._on_write is None:
-                            logger.error(
-                                "Write callback is None in worker; dropping %s (%s)",
-                                abs_path,
-                                operation,
-                            )
-                            continue
-                        self._on_write(abs_path, content, operation)
-                    except Exception:
-                        logger.error(
-                            "Write callback failed for %s (%s)",
-                            abs_path,
-                            operation,
-                            exc_info=True,
-                        )
-
-            self._callback_worker = threading.Thread(
-                target=_worker, daemon=True, name="write-callback"
-            )
-            self._callback_worker.start()
-
-    def _fire_write_callback(
-        self, abs_path: Path, content: str, operation: WriteOperation
-    ) -> None:
-        """Submit a write callback to the background worker thread."""
-        if self._on_write is None:
-            return
-        self._ensure_callback_worker()
-        self._callback_queue.put((abs_path, content, operation))
 
     def read_attachment(self, path: str) -> AttachmentContent:
         """Read the binary content of a non-.md attachment.
