@@ -2410,7 +2410,7 @@ class TestAuthModeSelection:
         """If build_auth returns None despite OIDC config, log ``mode=none``.
 
         Guards against the log drifting from reality when e.g. OIDC
-        discovery fails: ``resolve_auth_mode`` would still report
+        discovery fails: core's ``resolve_auth_mode`` would still report
         ``oidc-proxy`` from field presence, but the actual auth object
         is ``None`` so the startup summary must say ``none``.
         """
@@ -2434,13 +2434,11 @@ class TestAuthModeSelection:
 
 
 class TestAuthDebugLogging:
-    """Tests for auth DEBUG logging (issue #181).
+    """Tests for the make_server() startup-summary log line.
 
-    The literal log strings asserted here were updated when MV-PR2
-    delegated auth builders to fastmcp_pvl_core, which uses structured
-    ``key=value`` logging instead of MV's old prose strings.  The
-    security-relevant property — secrets never appearing in logs — is
-    preserved verbatim.
+    The two remaining cases assert the INFO startup summary (which
+    reports auth mode, version, and read-only state) and the version
+    fallback when the package metadata is unavailable.
     """
 
     def test_startup_summary_logged(
