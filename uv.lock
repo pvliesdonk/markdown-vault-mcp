@@ -1266,7 +1266,7 @@ requires-dist = [
     { name = "fastembed", marker = "extra == 'embeddings'", specifier = ">=0.3" },
     { name = "fastmcp", marker = "extra == 'all'", specifier = ">=3.0,<4" },
     { name = "fastmcp", marker = "extra == 'mcp'", specifier = ">=3.0,<4" },
-    { name = "fastmcp-pvl-core", specifier = ">=2.1.0,<3" },
+    { name = "fastmcp-pvl-core", specifier = ">=2.1.0,<4" },
     { name = "fastmcp-pvl-core", extras = ["debug"], marker = "extra == 'debug'" },
     { name = "httpx", marker = "extra == 'all'", specifier = ">=0.25" },
     { name = "httpx", marker = "extra == 'embeddings-api'", specifier = ">=0.25" },
