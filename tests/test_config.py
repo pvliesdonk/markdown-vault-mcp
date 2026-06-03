@@ -248,6 +248,13 @@ class TestToCollectionKwargs:
         kwargs = config.to_collection_kwargs()
         assert "git_token" not in kwargs
 
+    @pytest.mark.xfail(
+        raises=ValueError,
+        reason="embeddings_path set without a provider resolves FastEmbedProvider, "
+        "which downloads BAAI/bge-small-en-v1.5 from HuggingFace — flaky/unavailable "
+        "in CI (#595)",
+        strict=False,
+    )
     def test_includes_all_collection_params(self) -> None:
         config = CollectionConfig(
             source_dir=Path("/tmp/vault"),
