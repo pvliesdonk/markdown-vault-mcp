@@ -386,11 +386,11 @@ class FastEmbedProvider(EmbeddingProvider):
 def get_embedding_provider(config: CollectionConfig) -> EmbeddingProvider:
     """Auto-detect and return an embedding provider from config.
 
-    Checks ``config.embedding_provider`` for an explicit selection. When
+    Checks ``config.embeddings.provider`` for an explicit selection. When
     that field is ``None``, probes for available providers in this order:
 
-    1. If ``config.openai_api_key`` is set → :class:`OpenAIProvider`.
-    2. If Ollama is reachable at ``config.ollama_host`` →
+    1. If ``config.embeddings.openai_api_key`` is set → :class:`OpenAIProvider`.
+    2. If Ollama is reachable at ``config.embeddings.ollama_host`` →
        :class:`OllamaProvider`.
     3. If ``fastembed`` can be imported →
        :class:`FastEmbedProvider`.
@@ -404,27 +404,27 @@ def get_embedding_provider(config: CollectionConfig) -> EmbeddingProvider:
 
     Raises:
         RuntimeError: If no provider is available and
-            ``config.embedding_provider`` is not set, or if the explicitly
+            ``config.embeddings.provider`` is not set, or if the explicitly
             requested provider cannot be initialised.
-        ValueError: If ``config.embedding_provider`` is set to an
+        ValueError: If ``config.embeddings.provider`` is set to an
             unrecognised value.
     """
-    explicit = (config.embedding_provider or "").strip().lower()
+    explicit = (config.embeddings.provider or "").strip().lower()
 
     if explicit == "openai":
         logger.info("Using OpenAIProvider (embedding_provider=openai)")
         return OpenAIProvider(
-            api_key=config.openai_api_key or "",
-            base_url=config.openai_base_url,
-            model=config.openai_embedding_model,
+            api_key=config.embeddings.openai_api_key or "",
+            base_url=config.embeddings.openai_base_url,
+            model=config.embeddings.openai_embedding_model,
         )
 
     if explicit == "ollama":
         logger.info("Using OllamaProvider (embedding_provider=ollama)")
         return OllamaProvider(
-            host=config.ollama_host,
-            model=config.ollama_model,
-            cpu_only=config.ollama_cpu_only,
+            host=config.embeddings.ollama_host,
+            model=config.embeddings.ollama_model,
+            cpu_only=config.embeddings.ollama_cpu_only,
         )
 
     if explicit == "fastembed":
@@ -433,8 +433,8 @@ def get_embedding_provider(config: CollectionConfig) -> EmbeddingProvider:
             explicit,
         )
         return FastEmbedProvider(
-            model_name=config.fastembed_model,
-            cache_dir=config.fastembed_cache_dir,
+            model_name=config.embeddings.fastembed_model,
+            cache_dir=config.embeddings.fastembed_cache_dir,
         )
 
     if explicit:
@@ -444,16 +444,16 @@ def get_embedding_provider(config: CollectionConfig) -> EmbeddingProvider:
         )
 
     # Auto-detect: OpenAI API key present?
-    if config.openai_api_key:
+    if config.embeddings.openai_api_key:
         logger.info("Auto-detected OpenAIProvider (openai_api_key is set)")
         return OpenAIProvider(
-            api_key=config.openai_api_key,
-            base_url=config.openai_base_url,
-            model=config.openai_embedding_model,
+            api_key=config.embeddings.openai_api_key,
+            base_url=config.embeddings.openai_base_url,
+            model=config.embeddings.openai_embedding_model,
         )
 
     # Auto-detect: Ollama reachable?
-    host = config.ollama_host.rstrip("/")
+    host = config.embeddings.ollama_host.rstrip("/")
     try:
         import httpx
 
@@ -462,9 +462,9 @@ def get_embedding_provider(config: CollectionConfig) -> EmbeddingProvider:
         if response.status_code == 200:
             logger.info("Auto-detected OllamaProvider (Ollama reachable at %s)", host)
             return OllamaProvider(
-                host=config.ollama_host,
-                model=config.ollama_model,
-                cpu_only=config.ollama_cpu_only,
+                host=config.embeddings.ollama_host,
+                model=config.embeddings.ollama_model,
+                cpu_only=config.embeddings.ollama_cpu_only,
             )
     except Exception:
         logger.debug("Ollama not reachable at %s, skipping", host)
@@ -475,8 +475,8 @@ def get_embedding_provider(config: CollectionConfig) -> EmbeddingProvider:
 
         logger.info("Auto-detected FastEmbedProvider")
         return FastEmbedProvider(
-            model_name=config.fastembed_model,
-            cache_dir=config.fastembed_cache_dir,
+            model_name=config.embeddings.fastembed_model,
+            cache_dir=config.embeddings.fastembed_cache_dir,
         )
     except ImportError:
         logger.debug("fastembed not available, skipping")

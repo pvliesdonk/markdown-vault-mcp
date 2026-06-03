@@ -606,11 +606,12 @@ class TestConfigIntegration:
     def test_git_token_wires_up_strategy(self, tmp_path: Path) -> None:
         """Legacy mode: token-only config still wires pull+push strategy."""
         from markdown_vault_mcp.config import CollectionConfig
+        from markdown_vault_mcp.config_sections import GitConfig
 
         config = CollectionConfig(
             source_dir=tmp_path,
             read_only=False,
-            git_token="ghp_test",
+            git=GitConfig(token="ghp_test"),
         )
         kwargs = config.to_collection_kwargs()
         assert "on_write" in kwargs
@@ -633,6 +634,7 @@ class TestConfigIntegration:
         """Managed mode uses configured pull interval and write callback."""
 
         from markdown_vault_mcp.config import CollectionConfig
+        from markdown_vault_mcp.config_sections import GitConfig
 
         bare = tmp_path / "remote.git"
         subprocess.run(
@@ -644,9 +646,7 @@ class TestConfigIntegration:
         config = CollectionConfig(
             source_dir=tmp_path / "vault",
             read_only=False,
-            git_repo_url=str(bare),
-            git_token="ghp_test",
-            git_pull_interval_s=321,
+            git=GitConfig(repo_url=str(bare), token="ghp_test", pull_interval_s=321),
         )
         kwargs = config.to_collection_kwargs()
         assert "on_write" in kwargs
@@ -655,12 +655,12 @@ class TestConfigIntegration:
     def test_push_delay_passed_to_strategy(self, tmp_path: Path) -> None:
         """to_collection_kwargs() passes git_push_delay_s to strategy."""
         from markdown_vault_mcp.config import CollectionConfig
+        from markdown_vault_mcp.config_sections import GitConfig
 
         config = CollectionConfig(
             source_dir=tmp_path,
             read_only=False,
-            git_token="ghp_test",
-            git_push_delay_s=60.0,
+            git=GitConfig(token="ghp_test", push_delay_s=60.0),
         )
         kwargs = config.to_collection_kwargs()
         strategy = kwargs["on_write"]
@@ -676,7 +676,7 @@ class TestConfigIntegration:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_PUSH_DELAY_S", "45")
         config = load_config()
-        assert config.git_push_delay_s == 45.0
+        assert config.git.push_delay_s == 45.0
 
     def test_load_config_invalid_push_delay_uses_default(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -687,7 +687,7 @@ class TestConfigIntegration:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_PUSH_DELAY_S", "not_a_number")
         config = load_config()
-        assert config.git_push_delay_s == 30.0
+        assert config.git.push_delay_s == 30.0
 
 
 class TestCollectionCloseWiresStrategy:
@@ -3458,7 +3458,7 @@ class TestGitClaimConfig:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_COMMIT_NAME_CLAIM", "name")
         config = load_config()
-        assert config.git_commit_name_claim == "name"
+        assert config.git.commit_name_claim == "name"
 
     def test_load_config_reads_email_claim(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -3469,7 +3469,7 @@ class TestGitClaimConfig:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_COMMIT_EMAIL_CLAIM", "email")
         config = load_config()
-        assert config.git_commit_email_claim == "email"
+        assert config.git.commit_email_claim == "email"
 
     def test_load_config_claim_defaults_to_none(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -3481,18 +3481,18 @@ class TestGitClaimConfig:
         monkeypatch.delenv("MARKDOWN_VAULT_MCP_GIT_COMMIT_NAME_CLAIM", raising=False)
         monkeypatch.delenv("MARKDOWN_VAULT_MCP_GIT_COMMIT_EMAIL_CLAIM", raising=False)
         config = load_config()
-        assert config.git_commit_name_claim is None
-        assert config.git_commit_email_claim is None
+        assert config.git.commit_name_claim is None
+        assert config.git.commit_email_claim is None
 
     def test_claim_config_passed_to_strategy(self, tmp_path: Path) -> None:
         """CollectionConfig.to_collection_kwargs() passes claim keys to GitWriteStrategy."""
         from markdown_vault_mcp.config import CollectionConfig
+        from markdown_vault_mcp.config_sections import GitConfig
 
         config = CollectionConfig(
             source_dir=tmp_path,
             read_only=False,
-            git_commit_name_claim="name",
-            git_commit_email_claim="email",
+            git=GitConfig(commit_name_claim="name", commit_email_claim="email"),
         )
         kwargs = config.to_collection_kwargs()
         strategy = kwargs["on_write"]

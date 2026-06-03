@@ -62,10 +62,10 @@ def register_resources(mcp: FastMCP) -> None:
             {
                 "source_dir": str(config.source_dir),
                 "read_only": config.read_only,
-                "indexed_fields": config.indexed_frontmatter_fields or [],
-                "required_fields": config.required_frontmatter or [],
-                "exclude_patterns": config.exclude_patterns or [],
-                "templates_folder": config.templates_folder,
+                "indexed_fields": config.indexing.indexed_frontmatter_fields or [],
+                "required_fields": config.indexing.required_frontmatter or [],
+                "exclude_patterns": config.indexing.exclude_patterns or [],
+                "templates_folder": config.content.templates_folder,
                 "semantic_search_available": stats.semantic_search_available,
                 "attachment_extensions": stats.attachment_extensions,
             }

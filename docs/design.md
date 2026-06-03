@@ -67,6 +67,7 @@ markdown-vault-mcp (new package)
 +-- collection.py     -- thin facade: lifecycle, wiring, delegation (index-write → indexing/coordinator.py)
 +-- write_callback.py -- WriteCallbackDispatcher: deferred git-commit callback worker (#599)
 +-- config.py         -- configuration loading
++-- config_sections/  -- domain-grouped sub-configs (git/indexing/embeddings/search/sync/content)
 +-- server.py         -- generic FastMCP server
 +-- cli.py            -- CLI entry point
 +-- utils/

@@ -179,7 +179,7 @@ def make_server(transport: str = "stdio") -> FastMCP:
         auth_mode,
         "read-only" if is_read_only else "read-write",
         config.source_dir,
-        "enabled" if config.embeddings_path else "disabled",
+        "enabled" if config.indexing.embeddings_path else "disabled",
     )
 
     mcp = FastMCP(
@@ -214,8 +214,8 @@ def make_server(transport: str = "stdio") -> FastMCP:
     register_apps(mcp)
     register_prompts(
         mcp,
-        templates_folder=config.templates_folder,
-        prompts_folder=config.prompts_folder,
+        templates_folder=config.content.templates_folder,
+        prompts_folder=config.content.prompts_folder,
     )
 
     # ``register_server_info_tool`` is intentionally read-only and stays
@@ -258,11 +258,11 @@ def make_server(transport: str = "stdio") -> FastMCP:
 
     # GitHub webhook endpoint — only when secret is configured and transport
     # is HTTP/SSE (stdio has no HTTP server to receive POST requests).
-    if config.github_webhook_secret and transport != "stdio":
+    if config.sync.github_webhook_secret and transport != "stdio":
         from markdown_vault_mcp._github_webhook import make_webhook_handler
 
         mcp.custom_route("/github-webhook", methods=["POST"])(
-            make_webhook_handler(config.github_webhook_secret)
+            make_webhook_handler(config.sync.github_webhook_secret)
         )
     # DOMAIN-WIRING-END
 
@@ -324,10 +324,10 @@ def make_server(transport: str = "stdio") -> FastMCP:
     # provider (slow, GBs of memory) and may run ``git clone`` as a side
     # effect.  The runtime check inside the ``git_sync`` tool body
     # (``isinstance(strategy, GitWriteStrategy) and strategy._managed``)
-    # stays aligned with this gate via the same ``git_repo_url`` config
+    # stays aligned with this gate via the same ``config.git.repo_url``
     # value: managed mode requires an explicit remote URL.  See #220 for
     # the broader cleanup of duplicate ``to_collection_kwargs`` calls.
-    if config.git_repo_url is None:
+    if config.git.repo_url is None:
         mcp.disable(tags={"git-managed"})
 
     return mcp

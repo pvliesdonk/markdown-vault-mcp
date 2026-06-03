@@ -21,6 +21,15 @@ from fastmcp_pvl_core import env as _core_env
 from fastmcp_pvl_core import parse_bool as _parse_bool
 from fastmcp_pvl_core import parse_list as _parse_list
 
+from markdown_vault_mcp.config_sections import (
+    ContentConfig,
+    EmbeddingsConfig,
+    GitConfig,
+    IndexingConfig,
+    SearchConfig,
+    SyncConfig,
+)
+
 logger = logging.getLogger(__name__)
 
 _ENV_PREFIX = "MARKDOWN_VAULT_MCP"
@@ -45,85 +54,15 @@ class CollectionConfig:
         source_dir: Root directory of the markdown collection.
         read_only: When ``True`` (default), write operations raise
             :exc:`~markdown_vault_mcp.exceptions.ReadOnlyError`.
-        index_path: Path to the persistent SQLite index file.  ``None``
-            (default) uses an in-memory database.
-        embeddings_path: Base path for vector index sidecar files.  ``None``
-            (default) means semantic search is disabled.
-        state_path: Path to the hash-state JSON file used by
-            :class:`~markdown_vault_mcp.tracker.ChangeTracker`.  ``None``
-            defaults to ``{source_dir}/.markdown_vault_mcp/state.json``.
-        indexed_frontmatter_fields: Frontmatter keys whose values are
-            promoted to the ``document_tags`` table for structured filtering.
-            ``None`` means no fields are indexed.
-        required_frontmatter: If set, documents missing any listed field are
-            excluded from the index entirely.  ``None`` means all documents
-            are indexed regardless of frontmatter.
-        exclude_patterns: Glob patterns matched against relative document
-            paths to exclude from scanning (e.g. ``[".obsidian/**"]``).
-            ``None`` means no files are excluded.
-        git_token: Personal access token (PAT) for HTTPS git push/pull
-            authentication.  When set together with *git_repo_url*, the
-            collection is managed in write-through git mode.
-        git_repo_url: Remote git repository URL.  Required when *git_token*
-            is set; the collection will clone or validate the repo on startup.
-        git_username: Username used with token auth (default
-            ``"x-access-token"``, GitHub-compatible).
-        git_push_delay_s: Seconds of write-idle time before flushing local
-            commits to the remote (default ``30.0``).  ``0`` means push only
-            on shutdown.
-        git_commit_name: Git committer name for auto-commits (default
-            ``"markdown-vault-mcp"``).
-        git_commit_email: Git committer e-mail for auto-commits (default
-            ``"noreply@markdown-vault-mcp"``).
-        git_commit_name_claim: OIDC claim key to use as the commit author name
-            (e.g. ``"name"``).  When set and the current request carries an
-            OIDC access token with this claim, the claim value overrides
-            *git_commit_name* for that commit.  ``None`` (default) disables
-            the override.
-        git_commit_email_claim: OIDC claim key to use as the commit author
-            e-mail (e.g. ``"email"``).  Same override semantics as
-            *git_commit_name_claim*.  ``None`` (default) disables the override.
-        git_lfs: When ``True`` (default), run ``git lfs pull`` during git
-            strategy initialisation so LFS pointers are resolved before reads.
-        git_pull_interval_s: Interval in seconds for periodic git fetch +
-            fast-forward-only updates (default ``600``). Set to ``0`` to disable.
         server_name: Display name for the MCP server (default
             ``"markdown-vault-mcp"``).
         instructions: Optional server-level instructions surfaced to clients.
-        attachment_extensions: Allowlist of file extensions (without the
-            leading dot, e.g. ``["pdf", "png"]``) that may be stored as
-            attachments.  ``["*"]`` accepts every extension.  ``None`` uses
-            the built-in default list from
-            :class:`~markdown_vault_mcp.collection.Collection`.
-        max_attachment_size_mb: Maximum attachment file size in megabytes
-            (default ``1.0``).  ``0`` means unlimited.
-        max_note_read_bytes: Maximum note content returned by a single read
-            in bytes (default ``262144``, i.e. 256 KB).  ``0`` means unlimited.
-        templates_folder: Vault-relative folder that holds note templates
-            (default ``"_templates"``).
-        prompts_folder: Vault-relative folder from which user-defined MCP
-            prompts are loaded at startup.  ``None`` disables user prompts.
-        embedding_provider: Name of the embedding provider to use (e.g.
-            ``"ollama"``, ``"openai"``, ``"fastembed"``).  ``None`` disables
-            semantic search.
-        ollama_host: Base URL for the Ollama API (default
-            ``"http://localhost:11434"``).
-        ollama_model: Ollama model name for embeddings (default
-            ``"nomic-embed-text"``).
-        ollama_cpu_only: When ``True``, request CPU-only inference from
-            Ollama (default ``False``).
-        openai_api_key: OpenAI API key for embeddings (logged as set/not
-            set).
-        openai_base_url: OpenAI-compatible API base URL for embeddings
-            (default ``"https://api.openai.com/v1"``).  This can point to
-            providers such as SiliconFlow that expose the OpenAI embeddings
-            API shape.
-        openai_embedding_model: OpenAI-compatible embedding model name
-            (default ``"text-embedding-3-small"``).
-        fastembed_model: FastEmbed model name (default
-            ``"BAAI/bge-small-en-v1.5"``).
-        fastembed_cache_dir: Directory for FastEmbed model cache.  ``None``
-            uses the library default.
+        git: Git auth, identity, and sync cadence settings.
+        indexing: SQLite/vector index paths and frontmatter/exclusion settings.
+        embeddings: Embedding provider selection and per-provider settings.
+        search: Search ranking and snippet-truncation knobs.
+        sync: File-watcher and GitHub-webhook settings.
+        content: Attachment/note-read limits and template/prompt folder paths.
         server: Shared server-level configuration (transport, host/port,
             auth, base URL, event store URL, MCP App domain) populated
             from ``MARKDOWN_VAULT_MCP_*`` env vars by
@@ -138,65 +77,18 @@ class CollectionConfig:
     # CONFIG-FIELDS-START — domain fields; kept across copier update
     source_dir: Path
     read_only: bool = True
-    index_path: Path | None = None
-    embeddings_path: Path | None = None
-    state_path: Path | None = None
-    indexed_frontmatter_fields: list[str] | None = None
-    required_frontmatter: list[str] | None = None
-    exclude_patterns: list[str] | None = None
-    git_token: str | None = None
-    git_repo_url: str | None = None
-    git_username: str = "x-access-token"
-    git_push_delay_s: float = 30.0
-    git_commit_name: str = "markdown-vault-mcp"
-    git_commit_email: str = "noreply@markdown-vault-mcp"
-    git_commit_name_claim: str | None = None
-    git_commit_email_claim: str | None = None
-    git_lfs: bool = True
-    git_pull_interval_s: int = 600
-    attachment_extensions: list[str] | None = None
-    max_attachment_size_mb: float = 1.0  # MB; 0 = unlimited
-    max_note_read_bytes: int = 262144  # 256 KB; 0 = unlimited
-    templates_folder: str = "_templates"
-    prompts_folder: str | None = None
-
-    # Server identity
     server_name: str = "markdown-vault-mcp"
     instructions: str | None = None
-
-    # Embedding providers
-    embedding_provider: str | None = None
-    ollama_host: str = "http://localhost:11434"
-    ollama_model: str = "nomic-embed-text"
-    ollama_cpu_only: bool = False
-    openai_api_key: str | None = None
-    openai_base_url: str = "https://api.openai.com/v1"
-    openai_embedding_model: str = "text-embedding-3-small"
-    fastembed_model: str = "BAAI/bge-small-en-v1.5"
-    fastembed_cache_dir: str | None = None
-
-    # Search ranking and snippet truncation
-    chunks_per_file: int = 2
-    snippet_words: int = 200
-    length_downweight_alpha: float = 0.25
-    max_chunk_words: int = 400
-
-    # GitHub webhook (issue #530)
-    github_webhook_secret: str | None = None
-
-    # File watcher (issue #558) — auto-disabled when git pull or webhook is active
-    file_watcher_enabled: bool = True
-    file_watcher_debounce_s: float = 2.0
+    git: GitConfig = field(default_factory=GitConfig)
+    indexing: IndexingConfig = field(default_factory=IndexingConfig)
+    embeddings: EmbeddingsConfig = field(default_factory=EmbeddingsConfig)
+    search: SearchConfig = field(default_factory=SearchConfig)
+    sync: SyncConfig = field(default_factory=SyncConfig)
+    content: ContentConfig = field(default_factory=ContentConfig)
     # CONFIG-FIELDS-END
 
     # Universal server fields delegated to fastmcp_pvl_core.ServerConfig.
     server: ServerConfig = field(default_factory=ServerConfig)
-
-    def __post_init__(self) -> None:
-        """Normalize fields that must not be empty strings."""
-        if not self.ollama_host:
-            self.ollama_host = "http://localhost:11434"
-        self.ollama_host = self.ollama_host.rstrip("/")
 
     def to_collection_kwargs(self) -> dict[str, Any]:
         """Return keyword arguments suitable for ``Collection(**kwargs)``.
@@ -216,26 +108,26 @@ class CollectionConfig:
         kwargs: dict[str, Any] = {
             "source_dir": self.source_dir,
             "read_only": self.read_only,
-            "index_path": self.index_path,
-            "embeddings_path": self.embeddings_path,
-            "state_path": self.state_path,
-            "indexed_frontmatter_fields": self.indexed_frontmatter_fields,
-            "required_frontmatter": self.required_frontmatter,
-            "exclude_patterns": self.exclude_patterns,
-            "attachment_extensions": self.attachment_extensions,
-            "max_attachment_size_mb": self.max_attachment_size_mb,
-            "max_note_read_bytes": self.max_note_read_bytes,
+            "index_path": self.indexing.index_path,
+            "embeddings_path": self.indexing.embeddings_path,
+            "state_path": self.indexing.state_path,
+            "indexed_frontmatter_fields": self.indexing.indexed_frontmatter_fields,
+            "required_frontmatter": self.indexing.required_frontmatter,
+            "exclude_patterns": self.indexing.exclude_patterns,
+            "attachment_extensions": self.content.attachment_extensions,
+            "max_attachment_size_mb": self.content.max_attachment_size_mb,
+            "max_note_read_bytes": self.content.max_note_read_bytes,
             "git_pull_interval_s": 0,
-            "chunks_per_file": self.chunks_per_file,
-            "snippet_words": self.snippet_words,
-            "length_downweight_alpha": self.length_downweight_alpha,
-            "max_chunk_words": self.max_chunk_words,
+            "chunks_per_file": self.search.chunks_per_file,
+            "snippet_words": self.search.snippet_words,
+            "length_downweight_alpha": self.search.length_downweight_alpha,
+            "max_chunk_words": self.search.max_chunk_words,
         }
 
         # Resolve embedding provider if embeddings_path is configured.
         # ValueError propagates — it means the user set an invalid provider
         # name, which is a config mistake that should not be silenced.
-        if self.embeddings_path is not None:
+        if self.indexing.embeddings_path is not None:
             try:
                 from markdown_vault_mcp.providers import get_embedding_provider
 
@@ -248,45 +140,45 @@ class CollectionConfig:
 
         from markdown_vault_mcp.git import GitWriteStrategy
 
-        if self.git_repo_url is not None:
+        if self.git.repo_url is not None:
             git_strategy = GitWriteStrategy(
-                token=self.git_token,
-                username=self.git_username,
-                repo_url=self.git_repo_url,
+                token=self.git.token,
+                username=self.git.username,
+                repo_url=self.git.repo_url,
                 managed=True,
                 enable_pull=True,
                 enable_push=True,
-                push_delay_s=self.git_push_delay_s,
-                commit_name=self.git_commit_name,
-                commit_email=self.git_commit_email,
-                commit_name_claim=self.git_commit_name_claim,
-                commit_email_claim=self.git_commit_email_claim,
-                git_lfs=self.git_lfs,
+                push_delay_s=self.git.push_delay_s,
+                commit_name=self.git.commit_name,
+                commit_email=self.git.commit_email,
+                commit_name_claim=self.git.commit_name_claim,
+                commit_email_claim=self.git.commit_email_claim,
+                git_lfs=self.git.lfs,
                 repo_path=self.source_dir,
             )
-            kwargs["git_pull_interval_s"] = self.git_pull_interval_s
+            kwargs["git_pull_interval_s"] = self.git.pull_interval_s
             kwargs["git_strategy"] = git_strategy
             kwargs["on_write"] = git_strategy
             return kwargs
 
         # Backward compatibility mode: token without explicit repo URL keeps
         # pull+push semantics, using the existing local checkout's origin.
-        if self.git_token is not None:
+        if self.git.token is not None:
             git_strategy = GitWriteStrategy(
-                token=self.git_token,
-                username=self.git_username,
+                token=self.git.token,
+                username=self.git.username,
                 managed=False,
                 enable_pull=True,
                 enable_push=True,
-                push_delay_s=self.git_push_delay_s,
-                commit_name=self.git_commit_name,
-                commit_email=self.git_commit_email,
-                commit_name_claim=self.git_commit_name_claim,
-                commit_email_claim=self.git_commit_email_claim,
-                git_lfs=self.git_lfs,
+                push_delay_s=self.git.push_delay_s,
+                commit_name=self.git.commit_name,
+                commit_email=self.git.commit_email,
+                commit_name_claim=self.git.commit_name_claim,
+                commit_email_claim=self.git.commit_email_claim,
+                git_lfs=self.git.lfs,
                 repo_path=self.source_dir,
             )
-            kwargs["git_pull_interval_s"] = self.git_pull_interval_s
+            kwargs["git_pull_interval_s"] = self.git.pull_interval_s
             kwargs["git_strategy"] = git_strategy
             kwargs["on_write"] = git_strategy
             return kwargs
@@ -294,16 +186,16 @@ class CollectionConfig:
         # Unmanaged / commit-only mode: commit locally if repo exists, never pull/push.
         git_strategy = GitWriteStrategy(
             token=None,
-            username=self.git_username,
+            username=self.git.username,
             managed=False,
             enable_pull=False,
             enable_push=False,
-            push_delay_s=self.git_push_delay_s,
-            commit_name=self.git_commit_name,
-            commit_email=self.git_commit_email,
-            commit_name_claim=self.git_commit_name_claim,
-            commit_email_claim=self.git_commit_email_claim,
-            git_lfs=self.git_lfs,
+            push_delay_s=self.git.push_delay_s,
+            commit_name=self.git.commit_name,
+            commit_email=self.git.commit_email,
+            commit_name_claim=self.git.commit_name_claim,
+            commit_email_claim=self.git.commit_email_claim,
+            git_lfs=self.git.lfs,
             repo_path=self.source_dir,
         )
         kwargs["git_strategy"] = git_strategy
@@ -764,45 +656,57 @@ def load_config() -> CollectionConfig:
         # CONFIG-FROM-ENV-START — domain fields populated from env; kept across copier update
         source_dir=source_dir,
         read_only=read_only,
-        index_path=index_path,
-        embeddings_path=embeddings_path,
-        state_path=state_path,
-        indexed_frontmatter_fields=indexed_frontmatter_fields,
-        required_frontmatter=required_frontmatter,
-        exclude_patterns=exclude_patterns,
-        git_token=git_token,
-        git_repo_url=git_repo_url,
-        git_username=git_username,
-        git_push_delay_s=git_push_delay_s,
-        git_commit_name=git_commit_name,
-        git_commit_email=git_commit_email,
-        git_commit_name_claim=git_commit_name_claim,
-        git_commit_email_claim=git_commit_email_claim,
-        git_lfs=git_lfs,
-        git_pull_interval_s=git_pull_interval_s,
-        attachment_extensions=attachment_extensions,
-        max_attachment_size_mb=max_attachment_size_mb,
-        max_note_read_bytes=max_note_read_bytes,
-        templates_folder=templates_folder,
-        prompts_folder=prompts_folder,
         server_name=server_name,
         instructions=instructions,
-        embedding_provider=embedding_provider,
-        ollama_host=ollama_host,
-        ollama_model=ollama_model,
-        ollama_cpu_only=ollama_cpu_only,
-        openai_api_key=openai_api_key,
-        openai_base_url=openai_base_url,
-        openai_embedding_model=openai_embedding_model,
-        fastembed_model=fastembed_model,
-        fastembed_cache_dir=fastembed_cache_dir,
-        chunks_per_file=chunks_per_file,
-        snippet_words=snippet_words,
-        length_downweight_alpha=length_downweight_alpha,
-        max_chunk_words=max_chunk_words,
-        github_webhook_secret=github_webhook_secret,
-        file_watcher_enabled=file_watcher_enabled,
-        file_watcher_debounce_s=file_watcher_debounce_s,
+        git=GitConfig(
+            token=git_token,
+            repo_url=git_repo_url,
+            username=git_username,
+            push_delay_s=git_push_delay_s,
+            commit_name=git_commit_name,
+            commit_email=git_commit_email,
+            commit_name_claim=git_commit_name_claim,
+            commit_email_claim=git_commit_email_claim,
+            lfs=git_lfs,
+            pull_interval_s=git_pull_interval_s,
+        ),
+        indexing=IndexingConfig(
+            index_path=index_path,
+            state_path=state_path,
+            embeddings_path=embeddings_path,
+            indexed_frontmatter_fields=indexed_frontmatter_fields,
+            required_frontmatter=required_frontmatter,
+            exclude_patterns=exclude_patterns,
+        ),
+        embeddings=EmbeddingsConfig(
+            provider=embedding_provider,
+            ollama_host=ollama_host,
+            ollama_model=ollama_model,
+            ollama_cpu_only=ollama_cpu_only,
+            openai_api_key=openai_api_key,
+            openai_base_url=openai_base_url,
+            openai_embedding_model=openai_embedding_model,
+            fastembed_model=fastembed_model,
+            fastembed_cache_dir=fastembed_cache_dir,
+        ),
+        search=SearchConfig(
+            chunks_per_file=chunks_per_file,
+            snippet_words=snippet_words,
+            length_downweight_alpha=length_downweight_alpha,
+            max_chunk_words=max_chunk_words,
+        ),
+        sync=SyncConfig(
+            file_watcher_enabled=file_watcher_enabled,
+            file_watcher_debounce_s=file_watcher_debounce_s,
+            github_webhook_secret=github_webhook_secret,
+        ),
+        content=ContentConfig(
+            attachment_extensions=attachment_extensions,
+            max_attachment_size_mb=max_attachment_size_mb,
+            max_note_read_bytes=max_note_read_bytes,
+            templates_folder=templates_folder,
+            prompts_folder=prompts_folder,
+        ),
         # CONFIG-FROM-ENV-END
         server=ServerConfig.from_env(_ENV_PREFIX),
     )

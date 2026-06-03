@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from markdown_vault_mcp.config import CollectionConfig
+from markdown_vault_mcp.config_sections import EmbeddingsConfig
 from markdown_vault_mcp.providers import (
     FastEmbedProvider,
     OllamaProvider,
@@ -36,11 +37,12 @@ def _make_httpx_mock(
     return mock_client, mock_response
 
 
-def _config(**overrides: object) -> CollectionConfig:
-    """Build a minimal CollectionConfig with optional overrides."""
-    defaults: dict[str, object] = {"source_dir": Path("/tmp/vault")}
-    defaults.update(overrides)
-    return CollectionConfig(**defaults)  # type: ignore[arg-type]
+def _config(**embedding_overrides: object) -> CollectionConfig:
+    """Build a minimal CollectionConfig with optional embedding overrides."""
+    return CollectionConfig(
+        source_dir=Path("/tmp/vault"),
+        embeddings=EmbeddingsConfig(**embedding_overrides),  # type: ignore[arg-type]
+    )
 
 
 class TestOllamaProvider:
@@ -344,7 +346,7 @@ class TestGetEmbeddingProvider:
 
     def test_explicit_openai_returns_openai_provider(self) -> None:
         cfg = _config(
-            embedding_provider="openai",
+            provider="openai",
             openai_api_key="sk-test",
             openai_base_url="https://api.siliconflow.cn/v1",
             openai_embedding_model="BAAI/bge-m3",
@@ -355,13 +357,13 @@ class TestGetEmbeddingProvider:
         assert provider.model_name == "BAAI/bge-m3"
 
     def test_explicit_ollama_returns_ollama_provider(self) -> None:
-        cfg = _config(embedding_provider="ollama")
+        cfg = _config(provider="ollama")
         with patch("httpx.Client"):
             provider = get_embedding_provider(cfg)
         assert isinstance(provider, OllamaProvider)
 
     def test_explicit_fastembed_returns_fastembed_provider(self) -> None:
-        cfg = _config(embedding_provider="fastembed")
+        cfg = _config(provider="fastembed")
         module = MagicMock()
         module.TextEmbedding.return_value = MagicMock(embed=lambda *_: [])
         with patch.dict("sys.modules", {"fastembed": module}):
@@ -369,7 +371,7 @@ class TestGetEmbeddingProvider:
         assert isinstance(provider, FastEmbedProvider)
 
     def test_explicit_unknown_raises_value_error(self) -> None:
-        cfg = _config(embedding_provider="unknown_value")
+        cfg = _config(provider="unknown_value")
         with pytest.raises(
             ValueError, match="Valid values: 'openai', 'ollama', 'fastembed'"
         ):

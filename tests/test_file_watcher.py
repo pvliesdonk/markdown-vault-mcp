@@ -303,7 +303,7 @@ def test_load_config_file_watcher_disabled_via_env(
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_FILE_WATCHER", "false")
     config = load_config()
-    assert config.file_watcher_enabled is False
+    assert config.sync.file_watcher_enabled is False
 
 
 def test_load_config_file_watcher_debounce_custom(
@@ -315,7 +315,7 @@ def test_load_config_file_watcher_debounce_custom(
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_FILE_WATCHER_DEBOUNCE_S", "5.0")
     config = load_config()
-    assert config.file_watcher_debounce_s == 5.0
+    assert config.sync.file_watcher_debounce_s == 5.0
 
 
 def test_load_config_file_watcher_debounce_invalid_falls_back(
@@ -327,7 +327,7 @@ def test_load_config_file_watcher_debounce_invalid_falls_back(
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_FILE_WATCHER_DEBOUNCE_S", "not-a-number")
     config = load_config()
-    assert config.file_watcher_debounce_s == 2.0
+    assert config.sync.file_watcher_debounce_s == 2.0
 
 
 def test_load_config_file_watcher_debounce_nonpositive_falls_back(
@@ -339,7 +339,7 @@ def test_load_config_file_watcher_debounce_nonpositive_falls_back(
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_FILE_WATCHER_DEBOUNCE_S", "0")
     config = load_config()
-    assert config.file_watcher_debounce_s == 2.0
+    assert config.sync.file_watcher_debounce_s == 2.0
 
 
 def test_fire_exception_in_on_change_is_logged(tmp_path: Path) -> None:
@@ -399,11 +399,12 @@ def test_lifespan_skips_watcher_when_git_pull_active(tmp_path: Path) -> None:
     from markdown_vault_mcp.config import CollectionConfig
 
     (tmp_path / "note.md").write_text("# note\n\nbody", encoding="utf-8")
+    from markdown_vault_mcp.config_sections import GitConfig
+
     config = CollectionConfig(
         source_dir=tmp_path,
         read_only=False,
-        git_token="fake-token",
-        git_pull_interval_s=600,
+        git=GitConfig(token="fake-token", pull_interval_s=600),
     )
     lifespan_fn = make_collection_lifespan(config)
 
@@ -423,8 +424,12 @@ def test_lifespan_skips_watcher_when_webhook_active(tmp_path: Path) -> None:
     from markdown_vault_mcp.config import CollectionConfig
 
     (tmp_path / "note.md").write_text("# note\n\nbody", encoding="utf-8")
+    from markdown_vault_mcp.config_sections import SyncConfig
+
     config = CollectionConfig(
-        source_dir=tmp_path, read_only=False, github_webhook_secret="shhh"
+        source_dir=tmp_path,
+        read_only=False,
+        sync=SyncConfig(github_webhook_secret="shhh"),
     )
     lifespan_fn = make_collection_lifespan(config)
 
