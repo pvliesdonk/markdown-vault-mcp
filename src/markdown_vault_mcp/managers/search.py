@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Any, Literal, Protocol, TypeVar
 from markdown_vault_mcp.types import (
     AttachmentInfo,
     BacklinkInfo,
+    CollectionStats,
     GroupedResult,
     NoteContext,
     NoteInfo,
@@ -1092,6 +1093,40 @@ class SearchManager:
             Sorted list of distinct value strings.
         """
         return self._fts.list_field_values(field)
+
+    def stats(self) -> CollectionStats:
+        """Return collection-wide statistics.
+
+        Returns:
+            :class:`~markdown_vault_mcp.types.CollectionStats` snapshot.
+        """
+        rows = self._fts.list_notes()
+        doc_count = len(rows)
+
+        # Chunk count via the public FTSIndex method.
+        chunk_count = self._fts.count_chunks()
+
+        folders = self._fts.list_folders()
+        folder_count = len(folders)
+
+        semantic_available = (
+            self._embedding_provider is not None and self._embeddings_path is not None
+        )
+
+        exts = self._effective_attachment_extensions()
+        attachment_extensions = ["*"] if "*" in exts else sorted(exts)
+
+        return CollectionStats(
+            document_count=doc_count,
+            chunk_count=chunk_count,
+            folder_count=folder_count,
+            semantic_search_available=semantic_available,
+            indexed_frontmatter_fields=list(self._indexed_frontmatter_fields),
+            attachment_extensions=attachment_extensions,
+            link_count=self._fts.count_links(),
+            broken_link_count=self._fts.count_broken_links(),
+            orphan_count=self._fts.count_orphans(),
+        )
 
     # ------------------------------------------------------------------
     # Recent / similar / context

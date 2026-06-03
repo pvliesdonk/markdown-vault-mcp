@@ -74,9 +74,10 @@ markdown-vault-mcp (new package)
 |   +-- links.py      -- link target computation and replacement
 +-- managers/
 |   +-- link.py       -- LinkManager: backlinks, outlinks, broken, orphans, hubs, paths
-|   +-- search.py     -- SearchManager: keyword/semantic/hybrid search, list, context
+|   +-- search.py     -- SearchManager: keyword/semantic/hybrid search, list, context, stats
 |   +-- index.py      -- IndexManager: build_index, reindex, embeddings, flush
 |   +-- document.py   -- DocumentManager: CRUD, attachments, path validation
+|   +-- git_query.py  -- GitQueryManager: git history/diff reads (#610)
 +-- indexing/
 |   +-- index_writer.py -- IndexWriter: single-owner FIFO writer thread + jobs/runners
 |   +-- readiness.py  -- ReadinessState: build-readiness state machine (#576)
@@ -1151,9 +1152,10 @@ operations to them. No manager holds a back-reference to Collection.
 | Manager | Responsibility | Dependencies |
 |---------|---------------|-------------|
 | ``LinkManager`` | Backlinks, outlinks, broken links, orphans, hubs, connection paths | ``FTSIndex``, ``source_dir`` |
-| ``SearchManager`` | Keyword/semantic/hybrid search, list, folders, tags, recent, similar, context | ``FTSIndex``, ``source_dir``, embedding config, ``LinkManager`` |
+| ``SearchManager`` | Keyword/semantic/hybrid search, list, folders, tags, recent, similar, context, stats | ``FTSIndex``, ``source_dir``, embedding config, ``LinkManager`` |
 | ``IndexManager`` | build_index, reindex, build_embeddings, process_dirty_paths, flush_dirty_embeddings | ``FTSIndex``, ``ChangeTracker``, ``source_dir``, chunk strategy (no lock — driven by the single-owner :class:`~markdown_vault_mcp.indexing.IndexWriter`, #559) |
 | ``DocumentManager`` | read, write, edit, delete, rename, attachments, TOC | ``FTSIndex``, ``source_dir``, ``_file_write_lock`` (file-mutation atomicity only — see #559), ``mark_paths_dirty`` hook, callbacks |
+| ``GitQueryManager`` | Git history / diff reads (read-only, #610) | ``GitWriteStrategy`` (or ``None`` when not a git repo), ``source_dir`` |
 
 Each manager receives its dependencies as constructor arguments. This enables
 isolated unit testing and clear dependency boundaries. Pure utility functions

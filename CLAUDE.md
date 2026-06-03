@@ -16,9 +16,10 @@ src/markdown_vault_mcp/
     links.py           -- link target computation and replacement
   managers/
     link.py            -- LinkManager: backlinks, outlinks, broken, orphans, hubs, paths
-    search.py          -- SearchManager: keyword/semantic/hybrid search, list, context
+    search.py          -- SearchManager: keyword/semantic/hybrid search, list, context, stats
     index.py           -- IndexManager: build_index, reindex, embeddings, flush
     document.py        -- DocumentManager: CRUD, attachments, path validation, backlinks
+    git_query.py       -- GitQueryManager: git history/diff reads (#610)
   indexing/
     index_writer.py    -- IndexWriter: single-owner FIFO writer thread + job dataclasses/runners
     readiness.py       -- ReadinessState: build-readiness state machine (#576)

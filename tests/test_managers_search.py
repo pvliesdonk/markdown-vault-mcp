@@ -83,6 +83,17 @@ def search_mgr(search_vault: Path) -> SearchManager:
     )
 
 
+class TestStats:
+    def test_stats_reports_collection_snapshot(self, search_mgr: SearchManager) -> None:
+        stats = search_mgr.stats()
+        assert stats.document_count == 4  # alpha, beta, notes/gamma, notes/delta
+        assert stats.indexed_frontmatter_fields == ["tags"]
+        assert "png" in stats.attachment_extensions
+        assert stats.semantic_search_available is False  # no provider configured
+        assert stats.link_count >= 2  # alpha <-> beta
+        assert stats.chunk_count >= 4
+
+
 # ---------------------------------------------------------------------------
 # keyword search
 # ---------------------------------------------------------------------------

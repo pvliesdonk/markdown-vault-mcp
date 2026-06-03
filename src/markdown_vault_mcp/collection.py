@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import contextlib
 import logging
-import re
 import threading
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -20,29 +19,6 @@ from markdown_vault_mcp.scanner import (
     WholeDocumentChunker,
 )
 from markdown_vault_mcp.tracker import ChangeTracker
-from markdown_vault_mcp.types import (
-    AttachmentContent,
-    AttachmentInfo,
-    BacklinkInfo,
-    BrokenLinkInfo,
-    CollectionStats,
-    CommitDiff,
-    DeleteResult,
-    EditResult,
-    GroupedResult,
-    HistoryEntry,
-    IndexStats,
-    MostLinkedNote,
-    NoteContent,
-    NoteContext,
-    NoteInfo,
-    OutlinkInfo,
-    ReindexResult,
-    RenameResult,
-    WriteCallback,
-    WriteResult,
-)
-from markdown_vault_mcp.utils import effective_attachment_extensions
 from markdown_vault_mcp.write_callback import WriteCallbackDispatcher
 
 if TYPE_CHECKING:
@@ -52,6 +28,28 @@ if TYPE_CHECKING:
 
     from markdown_vault_mcp.git import GitWriteStrategy, PullResult
     from markdown_vault_mcp.providers import EmbeddingProvider
+    from markdown_vault_mcp.types import (
+        AttachmentContent,
+        AttachmentInfo,
+        BacklinkInfo,
+        BrokenLinkInfo,
+        CollectionStats,
+        CommitDiff,
+        DeleteResult,
+        EditResult,
+        GroupedResult,
+        HistoryEntry,
+        IndexStats,
+        MostLinkedNote,
+        NoteContent,
+        NoteContext,
+        NoteInfo,
+        OutlinkInfo,
+        ReindexResult,
+        RenameResult,
+        WriteCallback,
+        WriteResult,
+    )
     from markdown_vault_mcp.vector_index import VectorIndex
 
 logger = logging.getLogger(__name__)
@@ -256,12 +254,15 @@ class Collection:
 
         # Manager modules (dependency-injected, no back-reference).
         from markdown_vault_mcp.managers.document import DocumentManager
+        from markdown_vault_mcp.managers.git_query import GitQueryManager
         from markdown_vault_mcp.managers.index import IndexManager
         from markdown_vault_mcp.managers.link import LinkManager
         from markdown_vault_mcp.managers.search import SearchManager
 
         # 1. LinkManager (no deps)
         self._link_mgr = LinkManager(fts=self._fts, source_dir=self._source_dir)
+        # 1b. GitQueryManager (git history/diff reads; needs only git_strategy)
+        self._git_query_mgr = GitQueryManager(self._git_strategy, self._source_dir)
         # 2. IndexManager (needs fts, tracker — NOT search_mgr)
         #    get_vectors/set_vectors use late-binding lambdas that capture
         #    self._search_mgr; they are only called at runtime after all
@@ -992,14 +993,7 @@ class Collection:
         Raises:
             ValueError: If *path* is provided but fails path validation.
         """
-        if self._git_strategy is None:
-            return []
-        abs_path: Path | None = None
-        if path is not None:
-            abs_path = self._validate_path(path)
-        return self._git_strategy.get_file_history(
-            self._source_dir, abs_path, since, limit, until=until
-        )
+        return self._git_query_mgr.get_history(path, since, until, limit)
 
     def get_diff(
         self,
@@ -1046,64 +1040,20 @@ class Collection:
                 not supplied, *since_sha* contains invalid characters, or the
                 resolved ref is not found in history.
         """
-        if self._git_strategy is None:
-            return [] if per_commit else ""
-
-        if (since_sha is None) == (since_timestamp is None):
-            raise ValueError(
-                "Exactly one of 'since_sha' or 'since_timestamp' must be provided"
-            )
-
-        abs_path = self._validate_path(path)
-
-        if since_sha is not None and not re.fullmatch(r"[0-9a-f]{4,40}", since_sha):
-            raise ValueError(
-                f"Invalid SHA {since_sha!r}: must be 4-40 lowercase hex digits"
-            )
-
-        return self._git_strategy.get_file_diff(
-            self._source_dir,
-            abs_path,
-            ref=since_sha,
-            per_commit=per_commit,
+        return self._git_query_mgr.get_diff(
+            path,
+            since_sha=since_sha,
             since_timestamp=since_timestamp,
-            limit=limit if per_commit else None,
+            per_commit=per_commit,
+            limit=limit,
         )
 
     def stats(self) -> CollectionStats:
         """Return collection-wide statistics.
 
-        Returns:
-            :class:`~markdown_vault_mcp.types.CollectionStats` snapshot.
+        Delegates to :meth:`SearchManager.stats`.
         """
-
-        rows = self._fts.list_notes()
-        doc_count = len(rows)
-
-        # Chunk count via the public FTSIndex method.
-        chunk_count = self._fts.count_chunks()
-
-        folders = self._fts.list_folders()
-        folder_count = len(folders)
-
-        semantic_available = (
-            self._embedding_provider is not None and self._embeddings_path is not None
-        )
-
-        exts = effective_attachment_extensions(self._attachment_extensions)
-        attachment_extensions = ["*"] if "*" in exts else sorted(exts)
-
-        return CollectionStats(
-            document_count=doc_count,
-            chunk_count=chunk_count,
-            folder_count=folder_count,
-            semantic_search_available=semantic_available,
-            indexed_frontmatter_fields=list(self._indexed_frontmatter_fields),
-            attachment_extensions=attachment_extensions,
-            link_count=self._fts.count_links(),
-            broken_link_count=self._fts.count_broken_links(),
-            orphan_count=self._fts.count_orphans(),
-        )
+        return self._search_mgr.stats()
 
     # ------------------------------------------------------------------
     # Write operations (delegated to DocumentManager)
