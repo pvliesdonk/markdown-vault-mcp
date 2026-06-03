@@ -452,8 +452,9 @@ def get_embedding_provider(config: CollectionConfig) -> EmbeddingProvider:
             model=config.embeddings.openai_embedding_model,
         )
 
-    # Auto-detect: Ollama reachable?
-    host = config.embeddings.ollama_host.rstrip("/")
+    # Auto-detect: Ollama reachable? (EmbeddingsConfig.__post_init__ already
+    # guarantees ollama_host is non-empty with no trailing slash.)
+    host = config.embeddings.ollama_host
     try:
         import httpx
 
@@ -462,7 +463,7 @@ def get_embedding_provider(config: CollectionConfig) -> EmbeddingProvider:
         if response.status_code == 200:
             logger.info("Auto-detected OllamaProvider (Ollama reachable at %s)", host)
             return OllamaProvider(
-                host=config.embeddings.ollama_host,
+                host=host,
                 model=config.embeddings.ollama_model,
                 cpu_only=config.embeddings.ollama_cpu_only,
             )

@@ -10,7 +10,7 @@ import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fastmcp_pvl_core import ServerConfig
 from fastmcp_pvl_core import env as _core_env
@@ -29,6 +29,9 @@ from markdown_vault_mcp.config_sections import (
     SearchConfig,
     SyncConfig,
 )
+
+if TYPE_CHECKING:
+    from markdown_vault_mcp.git import GitWriteStrategy
 
 logger = logging.getLogger(__name__)
 
@@ -139,23 +142,13 @@ class CollectionConfig:
                     exc_info=True,
                 )
 
-        from markdown_vault_mcp.git import GitWriteStrategy
-
         if self.git.repo_url is not None:
-            git_strategy = GitWriteStrategy(
+            git_strategy = self._build_git_strategy(
                 token=self.git.token,
-                username=self.git.username,
                 repo_url=self.git.repo_url,
                 managed=True,
                 enable_pull=True,
                 enable_push=True,
-                push_delay_s=self.git.push_delay_s,
-                commit_name=self.git.commit_name,
-                commit_email=self.git.commit_email,
-                commit_name_claim=self.git.commit_name_claim,
-                commit_email_claim=self.git.commit_email_claim,
-                git_lfs=self.git.lfs,
-                repo_path=self.source_dir,
             )
             kwargs["git_pull_interval_s"] = self.git.pull_interval_s
             kwargs["git_strategy"] = git_strategy
@@ -165,19 +158,11 @@ class CollectionConfig:
         # Backward compatibility mode: token without explicit repo URL keeps
         # pull+push semantics, using the existing local checkout's origin.
         if self.git.token is not None:
-            git_strategy = GitWriteStrategy(
+            git_strategy = self._build_git_strategy(
                 token=self.git.token,
-                username=self.git.username,
                 managed=False,
                 enable_pull=True,
                 enable_push=True,
-                push_delay_s=self.git.push_delay_s,
-                commit_name=self.git.commit_name,
-                commit_email=self.git.commit_email,
-                commit_name_claim=self.git.commit_name_claim,
-                commit_email_claim=self.git.commit_email_claim,
-                git_lfs=self.git.lfs,
-                repo_path=self.source_dir,
             )
             kwargs["git_pull_interval_s"] = self.git.pull_interval_s
             kwargs["git_strategy"] = git_strategy
@@ -185,12 +170,35 @@ class CollectionConfig:
             return kwargs
 
         # Unmanaged / commit-only mode: commit locally if repo exists, never pull/push.
-        git_strategy = GitWriteStrategy(
+        git_strategy = self._build_git_strategy(
             token=None,
-            username=self.git.username,
             managed=False,
             enable_pull=False,
             enable_push=False,
+        )
+        kwargs["git_strategy"] = git_strategy
+        kwargs["on_write"] = git_strategy
+        return kwargs
+
+    def _build_git_strategy(
+        self,
+        *,
+        token: str | None,
+        managed: bool,
+        enable_pull: bool,
+        enable_push: bool,
+        repo_url: str | None = None,
+    ) -> GitWriteStrategy:
+        """Build a GitWriteStrategy with the kwargs shared across all three git modes."""
+        from markdown_vault_mcp.git import GitWriteStrategy
+
+        return GitWriteStrategy(
+            token=token,
+            repo_url=repo_url,
+            managed=managed,
+            enable_pull=enable_pull,
+            enable_push=enable_push,
+            username=self.git.username,
             push_delay_s=self.git.push_delay_s,
             commit_name=self.git.commit_name,
             commit_email=self.git.commit_email,
@@ -199,9 +207,6 @@ class CollectionConfig:
             git_lfs=self.git.lfs,
             repo_path=self.source_dir,
         )
-        kwargs["git_strategy"] = git_strategy
-        kwargs["on_write"] = git_strategy
-        return kwargs
 
 
 def load_config() -> CollectionConfig:
