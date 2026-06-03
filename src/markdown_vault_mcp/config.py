@@ -10,7 +10,7 @@ import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from fastmcp_pvl_core import ServerConfig
 from fastmcp_pvl_core import env as _core_env
@@ -29,9 +29,7 @@ from markdown_vault_mcp.config_sections import (
     SearchConfig,
     SyncConfig,
 )
-
-if TYPE_CHECKING:
-    from markdown_vault_mcp.git import GitWriteStrategy
+from markdown_vault_mcp.git import GitWriteStrategy
 
 logger = logging.getLogger(__name__)
 
@@ -190,8 +188,6 @@ class CollectionConfig:
         repo_url: str | None = None,
     ) -> GitWriteStrategy:
         """Build a GitWriteStrategy with the kwargs shared across all three git modes."""
-        from markdown_vault_mcp.git import GitWriteStrategy
-
         return GitWriteStrategy(
             token=token,
             repo_url=repo_url,
