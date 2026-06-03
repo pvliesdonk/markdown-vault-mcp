@@ -878,7 +878,7 @@ class TestEmptyBoolEnvVarsFallToDefault:
     ) -> None:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_OIDC_VERIFY_ACCESS_TOKEN", "")
         config = load_config()
-        assert config.oidc_verify_access_token is False  # default
+        assert config.server.oidc_verify_access_token is False  # default
 
     def test_ollama_cpu_only_empty_falls_through_to_default(
         self, monkeypatch: pytest.MonkeyPatch
