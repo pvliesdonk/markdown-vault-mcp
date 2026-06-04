@@ -123,7 +123,9 @@ def test_get_similar_dedupes_multichunk_target(populated_collection):
     becomes a candidate.  Without grouping multi.md could appear 3 times in
     the top results; with grouping it appears at most once.
     """
-    results = populated_collection.get_similar("other.md", limit=10, chunks_per_file=2)
+    results = populated_collection.reader.get_similar(
+        "other.md", limit=10, chunks_per_file=2
+    )
     paths = [r.path for r in results]
     # multi.md should appear at most once even though it has 3 sections
     assert paths.count("multi.md") <= 1, (
@@ -143,7 +145,7 @@ def test_get_context_similar_returns_grouped_results(populated_collection):
     """get_context.similar is GroupedResult-shaped with one section per file."""
     from markdown_vault_mcp.types import GroupedResult
 
-    ctx = populated_collection.get_context("multi.md", similar_limit=5)
+    ctx = populated_collection.reader.get_context("multi.md", similar_limit=5)
     for entry in ctx.similar:
         assert isinstance(entry, GroupedResult)
         assert len(entry.sections) == 1, (
@@ -202,8 +204,8 @@ def test_sabsa_repro_one_reference_doc_dedups_target_chunks(tmp_path):
         embeddings_path=tmp_path / "vectors",
         max_chunk_words=20,  # force adaptive chunking to split long.md
     )
-    col.build_index()
-    col.build_embeddings()
+    col.index.build_index()
+    col.index.build_embeddings()
 
     # Sanity check: long.md must actually produce multiple chunks for the
     # regression test to be meaningful.  If it doesn't, fixture sizing or
@@ -215,7 +217,7 @@ def test_sabsa_repro_one_reference_doc_dedups_target_chunks(tmp_path):
         f"(headings={[m['heading'] for m in long_chunks]})"
     )
 
-    results = col.get_similar("ref.md", limit=5)
+    results = col.reader.get_similar("ref.md", limit=5)
     paths = [r.path for r in results]
     # long.md appears at most once even though it generated multiple chunks
     assert paths.count("long.md") <= 1, (
@@ -238,7 +240,7 @@ def test_get_similar_skips_length_downweight(monkeypatch, populated_collection):
 
     monkeypatch.setattr(search_mod, "_apply_length_downweight", spy)
 
-    populated_collection.get_similar("multi.md", limit=5)
+    populated_collection.reader.get_similar("multi.md", limit=5)
 
     assert captured_alphas, (
         "expected get_similar to call _apply_length_downweight at least once"
@@ -262,7 +264,7 @@ def test_get_context_similar_skips_length_downweight(monkeypatch, populated_coll
 
     monkeypatch.setattr(search_mod, "_apply_length_downweight", spy)
 
-    populated_collection.get_context("multi.md", similar_limit=3)
+    populated_collection.reader.get_context("multi.md", similar_limit=3)
 
     assert captured_alphas, (
         "expected get_context to trigger _apply_length_downweight via get_similar"

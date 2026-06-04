@@ -710,9 +710,9 @@ class TestCollectionBacklinks:
     def test_get_backlinks_returns_backlink_info(self, linked_vault: Path) -> None:
         """get_backlinks returns BacklinkInfo objects for documents linking to path."""
         col = Collection(source_dir=linked_vault)
-        col.build_index()
+        col.index.build_index()
 
-        backlinks = col.get_backlinks("notes/topic.md")
+        backlinks = col.graph.get_backlinks("notes/topic.md")
         assert len(backlinks) == 1
         assert isinstance(backlinks[0], BacklinkInfo)
         assert backlinks[0].source_path == "index.md"
@@ -722,9 +722,9 @@ class TestCollectionBacklinks:
     def test_get_backlinks_multiple_sources(self, linked_vault: Path) -> None:
         """Multiple documents linking to the same path all appear."""
         col = Collection(source_dir=linked_vault)
-        col.build_index()
+        col.index.build_index()
 
-        backlinks = col.get_backlinks("notes/other.md")
+        backlinks = col.graph.get_backlinks("notes/other.md")
         source_paths = {b.source_path for b in backlinks}
         assert "index.md" in source_paths
         assert "notes/topic.md" in source_paths
@@ -732,29 +732,29 @@ class TestCollectionBacklinks:
     def test_get_backlinks_limit_caps_results(self, linked_vault: Path) -> None:
         """limit caps the number of backlinks (forwarded to LinkManager)."""
         col = Collection(source_dir=linked_vault)
-        col.build_index()
+        col.index.build_index()
         try:
-            assert len(col.get_backlinks("notes/other.md")) == 2
-            assert len(col.get_backlinks("notes/other.md", limit=1)) == 1
+            assert len(col.graph.get_backlinks("notes/other.md")) == 2
+            assert len(col.graph.get_backlinks("notes/other.md", limit=1)) == 1
         finally:
             col.close()
 
     def test_get_backlinks_limit_boundary_values(self, linked_vault: Path) -> None:
         """limit forwards verbatim to SQL: 0 yields none, negative yields all."""
         col = Collection(source_dir=linked_vault)
-        col.build_index()
+        col.index.build_index()
         try:
-            assert col.get_backlinks("notes/other.md", limit=0) == []
-            assert len(col.get_backlinks("notes/other.md", limit=-1)) == 2
+            assert col.graph.get_backlinks("notes/other.md", limit=0) == []
+            assert len(col.graph.get_backlinks("notes/other.md", limit=-1)) == 2
         finally:
             col.close()
 
     def test_get_backlinks_empty_for_unlinked_doc(self, linked_vault: Path) -> None:
         """Document with no inbound links returns empty list."""
         col = Collection(source_dir=linked_vault)
-        col.build_index()
+        col.index.build_index()
 
-        backlinks = col.get_backlinks("index.md")
+        backlinks = col.graph.get_backlinks("index.md")
         # index.md is only linked from topic.md (../index.md)
         assert isinstance(backlinks, list)
         # topic.md links to ../index.md which resolves to index.md
@@ -763,19 +763,19 @@ class TestCollectionBacklinks:
     def test_get_backlinks_path_traversal_rejected(self, linked_vault: Path) -> None:
         """Path traversal in get_backlinks raises ValueError."""
         col = Collection(source_dir=linked_vault)
-        col.build_index()
+        col.index.build_index()
 
         with pytest.raises(ValueError):
-            col.get_backlinks("../etc/passwd")
+            col.graph.get_backlinks("../etc/passwd")
 
 
 class TestCollectionOutlinks:
     def test_get_outlinks_returns_outlink_info(self, linked_vault: Path) -> None:
         """get_outlinks returns OutlinkInfo objects for links from a document."""
         col = Collection(source_dir=linked_vault)
-        col.build_index()
+        col.index.build_index()
 
-        outlinks = col.get_outlinks("index.md")
+        outlinks = col.graph.get_outlinks("index.md")
         assert len(outlinks) == 2
         assert all(isinstance(o, OutlinkInfo) for o in outlinks)
         targets = {o.target_path for o in outlinks}
@@ -785,29 +785,29 @@ class TestCollectionOutlinks:
     def test_get_outlinks_limit_caps_results(self, linked_vault: Path) -> None:
         """limit caps the number of outlinks (forwarded to LinkManager)."""
         col = Collection(source_dir=linked_vault)
-        col.build_index()
+        col.index.build_index()
         try:
-            assert len(col.get_outlinks("index.md")) == 2
-            assert len(col.get_outlinks("index.md", limit=1)) == 1
+            assert len(col.graph.get_outlinks("index.md")) == 2
+            assert len(col.graph.get_outlinks("index.md", limit=1)) == 1
         finally:
             col.close()
 
     def test_get_outlinks_limit_boundary_values(self, linked_vault: Path) -> None:
         """limit forwards verbatim to SQL: 0 yields none, negative yields all."""
         col = Collection(source_dir=linked_vault)
-        col.build_index()
+        col.index.build_index()
         try:
-            assert col.get_outlinks("index.md", limit=0) == []
-            assert len(col.get_outlinks("index.md", limit=-1)) == 2
+            assert col.graph.get_outlinks("index.md", limit=0) == []
+            assert len(col.graph.get_outlinks("index.md", limit=-1)) == 2
         finally:
             col.close()
 
     def test_get_outlinks_exists_flag(self, linked_vault: Path) -> None:
         """OutlinkInfo.exists is True when target is indexed, False otherwise."""
         col = Collection(source_dir=linked_vault)
-        col.build_index()
+        col.index.build_index()
 
-        outlinks = col.get_outlinks("index.md")
+        outlinks = col.graph.get_outlinks("index.md")
         # Both targets exist in the vault.
         for outlink in outlinks:
             assert outlink.exists is True
@@ -821,9 +821,9 @@ class TestCollectionOutlinks:
             encoding="utf-8",
         )
         col = Collection(source_dir=vault)
-        col.build_index()
+        col.index.build_index()
 
-        outlinks = col.get_outlinks("source.md")
+        outlinks = col.graph.get_outlinks("source.md")
         assert len(outlinks) == 1
         assert outlinks[0].target_path == "ghost.md"
         assert outlinks[0].exists is False
@@ -831,18 +831,18 @@ class TestCollectionOutlinks:
     def test_get_outlinks_empty_for_no_links_doc(self, linked_vault: Path) -> None:
         """Document with no outbound links returns empty list."""
         col = Collection(source_dir=linked_vault)
-        col.build_index()
+        col.index.build_index()
 
-        outlinks = col.get_outlinks("notes/other.md")
+        outlinks = col.graph.get_outlinks("notes/other.md")
         assert outlinks == []
 
     def test_get_outlinks_path_traversal_rejected(self, linked_vault: Path) -> None:
         """Path traversal in get_outlinks raises ValueError."""
         col = Collection(source_dir=linked_vault)
-        col.build_index()
+        col.index.build_index()
 
         with pytest.raises(ValueError):
-            col.get_outlinks("../../secret.md")
+            col.graph.get_outlinks("../../secret.md")
 
 
 class TestLinkLimitSQL:
@@ -931,19 +931,19 @@ class TestCollectionReindex:
             encoding="utf-8",
         )
         col = Collection(source_dir=vault)
-        col.build_index()
+        col.index.build_index()
 
-        assert len(col.get_outlinks("source.md")) == 1
-        assert col.get_outlinks("source.md")[0].target_path == "old.md"
+        assert len(col.graph.get_outlinks("source.md")) == 1
+        assert col.graph.get_outlinks("source.md")[0].target_path == "old.md"
 
         # Modify source.md to point somewhere else.
         (vault / "source.md").write_text(
             "# Source\n\nSee [New](new.md).\n",
             encoding="utf-8",
         )
-        col.reindex()
+        col.index.reindex()
 
-        outlinks = col.get_outlinks("source.md")
+        outlinks = col.graph.get_outlinks("source.md")
         assert len(outlinks) == 1
         assert outlinks[0].target_path == "new.md"
 
@@ -957,15 +957,15 @@ class TestCollectionReindex:
         )
         (vault / "other.md").write_text("# Other\n", encoding="utf-8")
         col = Collection(source_dir=vault)
-        col.build_index()
+        col.index.build_index()
 
-        assert len(col.get_backlinks("other.md")) == 1
+        assert len(col.graph.get_backlinks("other.md")) == 1
 
         # Delete source.md and reindex.
         (vault / "source.md").unlink()
-        col.reindex()
+        col.index.reindex()
 
-        assert col.get_backlinks("other.md") == []
+        assert col.graph.get_backlinks("other.md") == []
 
 
 # ---------------------------------------------------------------------------
@@ -1045,15 +1045,15 @@ class TestCollectionGetContext:
     def test_get_context_returns_note_context(self, context_vault: Path) -> None:
         """get_context returns a NoteContext instance."""
         col = Collection(source_dir=context_vault)
-        col.build_index()
-        result = col.get_context("index.md")
+        col.index.build_index()
+        result = col.reader.get_context("index.md")
         assert isinstance(result, NoteContext)
 
     def test_get_context_basic_fields(self, context_vault: Path) -> None:
         """get_context populates path, title, folder, frontmatter, modified_at."""
         col = Collection(source_dir=context_vault)
-        col.build_index()
-        result = col.get_context("index.md")
+        col.index.build_index()
+        result = col.reader.get_context("index.md")
         assert result.path == "index.md"
         assert result.title == "Index"
         assert result.folder == ""
@@ -1064,32 +1064,32 @@ class TestCollectionGetContext:
     def test_get_context_backlinks(self, context_vault: Path) -> None:
         """get_context includes backlinks for a well-linked note."""
         col = Collection(source_dir=context_vault)
-        col.build_index()
-        result = col.get_context("notes/topic.md")
+        col.index.build_index()
+        result = col.reader.get_context("notes/topic.md")
         sources = [b.source_path for b in result.backlinks]
         assert "index.md" in sources
 
     def test_get_context_outlinks(self, context_vault: Path) -> None:
         """get_context includes outlinks from a note."""
         col = Collection(source_dir=context_vault)
-        col.build_index()
-        result = col.get_context("index.md")
+        col.index.build_index()
+        result = col.reader.get_context("index.md")
         targets = [o.target_path for o in result.outlinks]
         assert "notes/topic.md" in targets
 
     def test_get_context_folder_notes_excludes_self(self, context_vault: Path) -> None:
         """folder_notes does not include the document itself."""
         col = Collection(source_dir=context_vault)
-        col.build_index()
-        result = col.get_context("notes/topic.md")
+        col.index.build_index()
+        result = col.reader.get_context("notes/topic.md")
         assert "notes/topic.md" not in result.folder_notes
         assert "notes/peer.md" in result.folder_notes
 
     def test_get_context_root_folder_notes(self, context_vault: Path) -> None:
         """Root-level documents see other root-level docs as folder peers."""
         col = Collection(source_dir=context_vault)
-        col.build_index()
-        result = col.get_context("index.md")
+        col.index.build_index()
+        result = col.reader.get_context("index.md")
         assert "index.md" not in result.folder_notes
         assert "home.md" in result.folder_notes
 
@@ -1098,8 +1098,8 @@ class TestCollectionGetContext:
     ) -> None:
         """similar is empty when no embedding provider is configured."""
         col = Collection(source_dir=context_vault)
-        col.build_index()
-        result = col.get_context("index.md")
+        col.index.build_index()
+        result = col.reader.get_context("index.md")
         assert result.similar == []
 
     def test_get_context_backlinks_outlinks_empty_without_links_table(
@@ -1107,7 +1107,7 @@ class TestCollectionGetContext:
     ) -> None:
         """backlinks and outlinks are empty when the links table methods raise."""
         col = Collection(source_dir=context_vault)
-        col.build_index()
+        col.index.build_index()
 
         # Simulate missing links table by making FTS methods raise OperationalError.
         err = sqlite3.OperationalError("no such table: links")
@@ -1115,7 +1115,7 @@ class TestCollectionGetContext:
             patch.object(col._fts, "get_backlinks", side_effect=err),
             patch.object(col._fts, "get_outlinks", side_effect=err),
         ):
-            result = col.get_context("index.md")
+            result = col.reader.get_context("index.md")
 
         assert result.backlinks == []
         assert result.outlinks == []
@@ -1123,15 +1123,15 @@ class TestCollectionGetContext:
     def test_get_context_raises_for_nonexistent_path(self, context_vault: Path) -> None:
         """get_context raises ValueError when the path is not indexed."""
         col = Collection(source_dir=context_vault)
-        col.build_index()
+        col.index.build_index()
         with pytest.raises(ValueError, match="Document not found"):
-            col.get_context("nonexistent.md")
+            col.reader.get_context("nonexistent.md")
 
     def test_get_context_link_limit_caps_results(self, context_vault: Path) -> None:
         """link_limit caps backlinks and outlinks lists."""
         col = Collection(source_dir=context_vault)
-        col.build_index()
-        result = col.get_context("notes/topic.md", link_limit=0)
+        col.index.build_index()
+        result = col.reader.get_context("notes/topic.md", link_limit=0)
         assert result.backlinks == []
         assert result.outlinks == []
 
@@ -1192,9 +1192,9 @@ class TestRenameUpdateLinks:
     ) -> None:
         """update_links=False (default): source files are not modified."""
         col = Collection(source_dir=rename_vault, read_only=False)
-        col.build_index()
+        col.index.build_index()
 
-        result = col.rename("target.md", "renamed.md")
+        result = col.writer.rename("target.md", "renamed.md")
 
         assert result.updated_links == 0
         # linker_md.md still has the old link
@@ -1204,9 +1204,9 @@ class TestRenameUpdateLinks:
     def test_update_links_markdown_link(self, rename_vault: Path) -> None:
         """Markdown link [text](target.md) is updated to new_path."""
         col = Collection(source_dir=rename_vault, read_only=False)
-        col.build_index()
+        col.index.build_index()
 
-        result = col.rename("target.md", "renamed.md", update_links=True)
+        result = col.writer.rename("target.md", "renamed.md", update_links=True)
 
         assert result.old_path == "target.md"
         assert result.new_path == "renamed.md"
@@ -1217,9 +1217,9 @@ class TestRenameUpdateLinks:
     def test_update_links_wikilink(self, rename_vault: Path) -> None:
         """Wikilink [[target]] is updated to [[renamed]]."""
         col = Collection(source_dir=rename_vault, read_only=False)
-        col.build_index()
+        col.index.build_index()
 
-        col.rename("target.md", "renamed.md", update_links=True)
+        col.writer.rename("target.md", "renamed.md", update_links=True)
 
         content = (rename_vault / "linker_wiki.md").read_text()
         assert "[[renamed]]" in content
@@ -1228,9 +1228,9 @@ class TestRenameUpdateLinks:
     def test_update_links_wikilink_preserves_alias(self, rename_vault: Path) -> None:
         """Wikilink [[target|alias]] becomes [[renamed|alias]]."""
         col = Collection(source_dir=rename_vault, read_only=False)
-        col.build_index()
+        col.index.build_index()
 
-        col.rename("target.md", "renamed.md", update_links=True)
+        col.writer.rename("target.md", "renamed.md", update_links=True)
 
         content = (rename_vault / "linker_alias.md").read_text()
         assert "[[renamed|My Target]]" in content
@@ -1239,9 +1239,9 @@ class TestRenameUpdateLinks:
     def test_update_links_reference_link(self, rename_vault: Path) -> None:
         """Reference definition [ref]: target.md is updated."""
         col = Collection(source_dir=rename_vault, read_only=False)
-        col.build_index()
+        col.index.build_index()
 
-        col.rename("target.md", "renamed.md", update_links=True)
+        col.writer.rename("target.md", "renamed.md", update_links=True)
 
         content = (rename_vault / "linker_ref.md").read_text()
         assert "]: renamed.md" in content
@@ -1250,9 +1250,9 @@ class TestRenameUpdateLinks:
     def test_update_links_fragment_preserved(self, rename_vault: Path) -> None:
         """Fragment in markdown link is preserved after rename."""
         col = Collection(source_dir=rename_vault, read_only=False)
-        col.build_index()
+        col.index.build_index()
 
-        col.rename("target.md", "renamed.md", update_links=True)
+        col.writer.rename("target.md", "renamed.md", update_links=True)
 
         content = (rename_vault / "linker_frag.md").read_text()
         assert "(renamed.md#section)" in content
@@ -1261,19 +1261,19 @@ class TestRenameUpdateLinks:
     def test_update_links_unrelated_file_not_modified(self, rename_vault: Path) -> None:
         """Files with no links to the renamed note are not modified."""
         col = Collection(source_dir=rename_vault, read_only=False)
-        col.build_index()
+        col.index.build_index()
         original_mtime = (rename_vault / "no_links.md").stat().st_mtime
 
-        col.rename("target.md", "renamed.md", update_links=True)
+        col.writer.rename("target.md", "renamed.md", update_links=True)
 
         assert (rename_vault / "no_links.md").stat().st_mtime == original_mtime
 
     def test_update_links_updated_links_count(self, rename_vault: Path) -> None:
         """updated_links counts source documents successfully updated."""
         col = Collection(source_dir=rename_vault, read_only=False)
-        col.build_index()
+        col.index.build_index()
 
-        result = col.rename("target.md", "renamed.md", update_links=True)
+        result = col.writer.rename("target.md", "renamed.md", update_links=True)
 
         # linker_md, linker_wiki, linker_ref, linker_frag, linker_alias,
         # linker_wiki_frag, subdir/linker_rel = 7
@@ -1287,7 +1287,7 @@ class TestRenameUpdateLinks:
         from pathlib import Path as _Path
 
         col = Collection(source_dir=rename_vault, read_only=False)
-        col.build_index()
+        col.index.build_index()
 
         linker_abs = str(rename_vault / "linker_md.md")
         original_replace = _Path.replace
@@ -1301,7 +1301,7 @@ class TestRenameUpdateLinks:
             return original_replace(self, target)
 
         with patch.object(_Path, "replace", failing_replace):
-            result = col.rename("target.md", "renamed.md", update_links=True)
+            result = col.writer.rename("target.md", "renamed.md", update_links=True)
 
         # Rename succeeded even though one source update failed.
         assert (rename_vault / "renamed.md").is_file()
@@ -1312,9 +1312,9 @@ class TestRenameUpdateLinks:
     def test_update_links_wikilink_fragment_preserved(self, rename_vault: Path) -> None:
         """Wikilink with fragment [[target#heading]] becomes [[renamed#heading]]."""
         col = Collection(source_dir=rename_vault, read_only=False)
-        col.build_index()
+        col.index.build_index()
 
-        col.rename("target.md", "renamed.md", update_links=True)
+        col.writer.rename("target.md", "renamed.md", update_links=True)
 
         content = (rename_vault / "linker_wiki_frag.md").read_text()
         assert "[[renamed#heading]]" in content
@@ -1327,9 +1327,9 @@ class TestRenameUpdateLinks:
         become [Target](../renamed.md) — not the vault-absolute renamed.md.
         """
         col = Collection(source_dir=rename_vault, read_only=False)
-        col.build_index()
+        col.index.build_index()
 
-        col.rename("target.md", "renamed.md", update_links=True)
+        col.writer.rename("target.md", "renamed.md", update_links=True)
 
         content = (rename_vault / "subdir" / "linker_rel.md").read_text()
         assert "(../renamed.md)" in content
@@ -1338,9 +1338,9 @@ class TestRenameUpdateLinks:
     def test_update_links_fts_reindexed_after_update(self, rename_vault: Path) -> None:
         """Updated source documents are re-indexed in FTS."""
         col = Collection(source_dir=rename_vault, read_only=False)
-        col.build_index()
+        col.index.build_index()
 
-        col.rename("target.md", "renamed.md", update_links=True)
+        col.writer.rename("target.md", "renamed.md", update_links=True)
         wait_for_writer_drain(col)
 
         # linker_md now has a link to renamed.md, not target.md
@@ -1355,9 +1355,9 @@ class TestRenameUpdateLinks:
             "# Self\n\nSee [Self](self_link.md) for more.\n"
         )
         col = Collection(source_dir=rename_vault, read_only=False)
-        col.build_index()
+        col.index.build_index()
 
-        col.rename("self_link.md", "self_renamed.md", update_links=True)
+        col.writer.rename("self_link.md", "self_renamed.md", update_links=True)
 
         content = (rename_vault / "self_renamed.md").read_text()
         assert "(self_renamed.md)" in content
@@ -1369,9 +1369,9 @@ class TestRenameUpdateLinks:
         col = Collection(
             source_dir=rename_vault, read_only=False, attachment_extensions=["png"]
         )
-        col.build_index()
+        col.index.build_index()
 
-        result = col.rename("image.png", "photo.png", update_links=True)
+        result = col.writer.rename("image.png", "photo.png", update_links=True)
 
         assert result.updated_links == 0
         assert (rename_vault / "photo.png").is_file()
@@ -1388,16 +1388,16 @@ class TestStatsLinkCounts:
     def test_link_count_reflects_total_links(self, linked_vault: Path) -> None:
         """link_count equals total rows in the links table."""
         col = Collection(source_dir=linked_vault)
-        col.build_index()
-        s = col.stats()
+        col.index.build_index()
+        s = col.reader.stats()
         # index.md → 2 links, notes/topic.md → 2 links, notes/other.md → 0
         assert s.link_count == 4
 
     def test_broken_link_count_zero_when_all_resolve(self, linked_vault: Path) -> None:
         """broken_link_count is 0 when every link target exists."""
         col = Collection(source_dir=linked_vault)
-        col.build_index()
-        assert col.stats().broken_link_count == 0
+        col.index.build_index()
+        assert col.reader.stats().broken_link_count == 0
 
     def test_broken_link_count_nonzero_for_missing_targets(
         self, tmp_path: Path
@@ -1410,8 +1410,8 @@ class TestStatsLinkCounts:
             encoding="utf-8",
         )
         col = Collection(source_dir=vault)
-        col.build_index()
-        assert col.stats().broken_link_count == 2
+        col.index.build_index()
+        assert col.reader.stats().broken_link_count == 2
 
     def test_orphan_count_for_unlinked_notes(self, tmp_path: Path) -> None:
         """orphan_count counts notes with no inbound or outbound links."""
@@ -1423,9 +1423,9 @@ class TestStatsLinkCounts:
         (vault / "other.md").write_text("# Other\n", encoding="utf-8")
         (vault / "island.md").write_text("# Island\n\nNo links.\n", encoding="utf-8")
         col = Collection(source_dir=vault)
-        col.build_index()
+        col.index.build_index()
         # island.md has no links in or out; other.md has a backlink
-        assert col.stats().orphan_count == 1
+        assert col.reader.stats().orphan_count == 1
 
     def test_link_counts_zero_without_links_table(self) -> None:
         """count_* methods return 0 when the links table does not exist.
@@ -1462,17 +1462,17 @@ class TestResolveVaultWikilinks:
         (vault / "notes" / "MyNote.md").write_text("# My Note\n", encoding="utf-8")
 
         col = Collection(source_dir=vault)
-        col.build_index()
+        col.index.build_index()
 
         # The wikilink must resolve to notes/MyNote.md, not journal/MyNote.md.
-        outlinks = col.get_outlinks("journal/today.md")
+        outlinks = col.graph.get_outlinks("journal/today.md")
         assert len(outlinks) == 1
         assert outlinks[0].target_path == "notes/MyNote.md"
         assert outlinks[0].exists is True
 
         # Must not appear in broken links.
-        assert col.get_broken_links() == []
-        assert col.stats().broken_link_count == 0
+        assert col.graph.get_broken_links() == []
+        assert col.reader.stats().broken_link_count == 0
 
     def test_bare_wikilink_shortest_path_wins(self, tmp_path: Path) -> None:
         """When multiple vault documents match, shortest path is selected."""
@@ -1487,9 +1487,9 @@ class TestResolveVaultWikilinks:
         (vault / "a" / "b" / "Note.md").write_text("# Note B\n", encoding="utf-8")
 
         col = Collection(source_dir=vault)
-        col.build_index()
+        col.index.build_index()
 
-        outlinks = col.get_outlinks("source.md")
+        outlinks = col.graph.get_outlinks("source.md")
         assert len(outlinks) == 1
         # a/Note.md is shorter than a/b/Note.md.
         assert outlinks[0].target_path == "a/Note.md"
@@ -1504,12 +1504,12 @@ class TestResolveVaultWikilinks:
         )
 
         col = Collection(source_dir=vault)
-        col.build_index()
+        col.index.build_index()
 
-        broken = col.get_broken_links()
+        broken = col.graph.get_broken_links()
         assert len(broken) == 1
         assert broken[0].raw_target == "NonExistent"
-        assert col.stats().broken_link_count == 1
+        assert col.reader.stats().broken_link_count == 1
 
     def test_wikilink_with_path_separator_resolves_vault_wide(
         self, tmp_path: Path
@@ -1525,13 +1525,13 @@ class TestResolveVaultWikilinks:
         (vault / "sub" / "folder" / "Note.md").write_text("# Note\n", encoding="utf-8")
 
         col = Collection(source_dir=vault)
-        col.build_index()
+        col.index.build_index()
 
-        outlinks = col.get_outlinks("source.md")
+        outlinks = col.graph.get_outlinks("source.md")
         assert len(outlinks) == 1
         assert outlinks[0].target_path == "sub/folder/Note.md"
         assert outlinks[0].exists is True
-        assert col.get_broken_links() == []
+        assert col.graph.get_broken_links() == []
 
     def test_reindex_resolves_new_wikilinks(self, tmp_path: Path) -> None:
         """resolve_vault_wikilinks() runs after reindex(), fixing new documents."""
@@ -1542,19 +1542,19 @@ class TestResolveVaultWikilinks:
         )
 
         col = Collection(source_dir=vault)
-        col.build_index()
+        col.index.build_index()
 
         # Initially broken — Target.md does not exist.
-        assert col.stats().broken_link_count == 1
+        assert col.reader.stats().broken_link_count == 1
 
         # Add the target document and trigger reindex.
         (vault / "notes").mkdir()
         (vault / "notes" / "Target.md").write_text("# Target\n", encoding="utf-8")
-        col.reindex()
+        col.index.reindex()
 
         # Now the wikilink should resolve.
-        assert col.stats().broken_link_count == 0
-        outlinks = col.get_outlinks("source.md")
+        assert col.reader.stats().broken_link_count == 0
+        outlinks = col.graph.get_outlinks("source.md")
         assert outlinks[0].target_path == "notes/Target.md"
         assert outlinks[0].exists is True
 
@@ -1604,24 +1604,24 @@ class TestResolveVaultWikilinks:
         (vault / "notes" / "Target.md").write_text("# Target\n", encoding="utf-8")
 
         col = Collection(source_dir=vault)
-        col.build_index()
+        col.index.build_index()
 
         # Initial state: link resolves to notes/Target.md.
-        outlinks = col.get_outlinks("source.md")
+        outlinks = col.graph.get_outlinks("source.md")
         assert outlinks[0].target_path == "notes/Target.md"
-        assert col.stats().broken_link_count == 0
+        assert col.reader.stats().broken_link_count == 0
 
         # Simulate move: delete notes/Target.md, create other/Target.md.
         (vault / "notes" / "Target.md").unlink()
         (vault / "other").mkdir()
         (vault / "other" / "Target.md").write_text("# Target moved\n", encoding="utf-8")
-        col.reindex()
+        col.index.reindex()
 
         # Link must re-resolve to the new location.
-        outlinks = col.get_outlinks("source.md")
+        outlinks = col.graph.get_outlinks("source.md")
         assert outlinks[0].target_path == "other/Target.md"
         assert outlinks[0].exists is True
-        assert col.stats().broken_link_count == 0
+        assert col.reader.stats().broken_link_count == 0
 
     def test_root_level_exact_match_preferred_over_subdir(self, tmp_path: Path) -> None:
         """[[Note]] where Note.md exists at vault root resolves to root."""
@@ -1635,9 +1635,9 @@ class TestResolveVaultWikilinks:
         (vault / "sub" / "Note.md").write_text("# Note in sub\n", encoding="utf-8")
 
         col = Collection(source_dir=vault)
-        col.build_index()
+        col.index.build_index()
 
-        outlinks = col.get_outlinks("source.md")
+        outlinks = col.graph.get_outlinks("source.md")
         assert len(outlinks) == 1
         # Note.md (length 7) is shorter than sub/Note.md (length 11).
         assert outlinks[0].target_path == "Note.md"
@@ -1650,16 +1650,16 @@ class TestResolveVaultWikilinks:
         (vault / "notes" / "Target.md").write_text("# Target\n", encoding="utf-8")
 
         col = Collection(source_dir=vault, read_only=False)
-        col.build_index()
+        col.index.build_index()
 
-        col.write("source.md", "# Source\n\nSee [[Target]].\n")
+        col.writer.write("source.md", "# Source\n\nSee [[Target]].\n")
         wait_for_writer_drain(col)
 
-        outlinks = col.get_outlinks("source.md")
+        outlinks = col.graph.get_outlinks("source.md")
         assert len(outlinks) == 1
         assert outlinks[0].target_path == "notes/Target.md"
         assert outlinks[0].exists is True
-        assert col.get_broken_links() == []
+        assert col.graph.get_broken_links() == []
 
     def test_edit_resolves_new_wikilinks(self, tmp_path: Path) -> None:
         """edit() re-runs vault-wide resolution after the source content changes."""
@@ -1672,16 +1672,18 @@ class TestResolveVaultWikilinks:
         (vault / "notes" / "Target.md").write_text("# Target\n", encoding="utf-8")
 
         col = Collection(source_dir=vault, read_only=False)
-        col.build_index()
+        col.index.build_index()
 
-        col.edit("source.md", old_text="No links yet.", new_text="See [[Target]].")
+        col.writer.edit(
+            "source.md", old_text="No links yet.", new_text="See [[Target]]."
+        )
         wait_for_writer_drain(col)
 
-        outlinks = col.get_outlinks("source.md")
+        outlinks = col.graph.get_outlinks("source.md")
         assert len(outlinks) == 1
         assert outlinks[0].target_path == "notes/Target.md"
         assert outlinks[0].exists is True
-        assert col.get_broken_links() == []
+        assert col.graph.get_broken_links() == []
 
     def test_delete_target_falls_back_to_basename_twin(self, tmp_path: Path) -> None:
         """delete() re-resolves inlinks; if a basename twin exists, they pick it up."""
@@ -1701,19 +1703,19 @@ class TestResolveVaultWikilinks:
         )
 
         col = Collection(source_dir=vault, read_only=False)
-        col.build_index()
+        col.index.build_index()
 
-        outlinks = col.get_outlinks("source.md")
+        outlinks = col.graph.get_outlinks("source.md")
         assert outlinks[0].target_path == "a/Target.md"
         assert outlinks[0].exists is True
 
-        col.delete("a/Target.md")
+        col.writer.delete("a/Target.md")
         wait_for_writer_drain(col)
 
-        outlinks = col.get_outlinks("source.md")
+        outlinks = col.graph.get_outlinks("source.md")
         assert outlinks[0].target_path == "aa/bb/Target.md"
         assert outlinks[0].exists is True
-        assert col.get_broken_links() == []
+        assert col.graph.get_broken_links() == []
 
     def test_rename_target_keeps_inlinks_resolved(self, tmp_path: Path) -> None:
         """rename() re-resolves inlinks after the target moves to a new path."""
@@ -1725,22 +1727,22 @@ class TestResolveVaultWikilinks:
         (vault / "Target.md").write_text("# Target\n", encoding="utf-8")
 
         col = Collection(source_dir=vault, read_only=False)
-        col.build_index()
+        col.index.build_index()
 
         # Initial: bare [[Target]] resolves to root-level Target.md.
-        outlinks = col.get_outlinks("source.md")
+        outlinks = col.graph.get_outlinks("source.md")
         assert outlinks[0].target_path == "Target.md"
         assert outlinks[0].exists is True
 
-        col.rename("Target.md", "other/Target.md")
+        col.writer.rename("Target.md", "other/Target.md")
         wait_for_writer_drain(col)
 
         # After rename, the inlink must point at the new location.
-        outlinks = col.get_outlinks("source.md")
+        outlinks = col.graph.get_outlinks("source.md")
         assert len(outlinks) == 1
         assert outlinks[0].target_path == "other/Target.md"
         assert outlinks[0].exists is True
-        assert col.get_broken_links() == []
+        assert col.graph.get_broken_links() == []
 
 
 # ---------------------------------------------------------------------------
@@ -1873,11 +1875,11 @@ class TestAliasResolution:
         )
 
         col = Collection(source_dir=vault)
-        col.build_index()
+        col.index.build_index()
 
-        broken = col.get_broken_links()
+        broken = col.graph.get_broken_links()
         assert broken == []
-        assert col.stats().broken_link_count == 0
+        assert col.reader.stats().broken_link_count == 0
 
     def test_alias_resolution_shortest_path_wins(self) -> None:
         """When multiple documents share an alias, shortest path wins."""

@@ -70,7 +70,7 @@ class TestGraphFacetLimit:
         )
         (vault / "b.md").write_text("# B\n\nSee [t](target.md).\n", encoding="utf-8")
         col = Collection(source_dir=vault)
-        col.build_index()
+        col.index.build_index()
         try:
             # target.md has 2 backlinks (a.md, b.md); a.md has 2 outlinks.
             assert len(col.graph.get_backlinks("target.md")) == 2

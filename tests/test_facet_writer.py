@@ -24,7 +24,7 @@ def writable(vault_path: Path) -> Iterator[Collection]:
     col = Collection(
         source_dir=vault_path, read_only=False, attachment_extensions=["*"]
     )
-    col.build_index()
+    col.index.build_index()
     try:
         yield col
     finally:
@@ -57,13 +57,13 @@ class TestWriterFacetBehaviour:
     def test_delete_removes_document(self, writable: Collection) -> None:
         writable.writer.write("facet_del.md", "x\n")
         writable.writer.delete("facet_del.md")
-        assert writable.read("facet_del.md") is None
+        assert writable.reader.read("facet_del.md") is None
 
     def test_rename_moves_document(self, writable: Collection) -> None:
         writable.writer.write("facet_a.md", "x\n")
         writable.writer.rename("facet_a.md", "facet_b.md")
-        assert writable.read("facet_a.md") is None
-        assert writable.read("facet_b.md") is not None
+        assert writable.reader.read("facet_a.md") is None
+        assert writable.reader.read("facet_b.md") is not None
 
     def test_write_attachment_creates_file(
         self, writable: Collection, vault_path: Path

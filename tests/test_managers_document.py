@@ -757,10 +757,10 @@ def test_write_marks_path_dirty_via_collection(tmp_path: Path) -> None:
 
     col = Collection(source_dir=tmp_path, read_only=False)
     try:
-        col.build_index()
+        col.index.build_index()
         # Freeze the writer so we can observe the dirty-mark pre-drain.
         col._coordinator.writer.close(timeout=5)
-        col.write(path="new.md", content="# new\n\nhello")
+        col.writer.write(path="new.md", content="# new\n\nhello")
         assert (tmp_path / "new.md").exists()
         assert "new.md" in col._coordinator.writer.snapshot_dirty_paths()
     finally:

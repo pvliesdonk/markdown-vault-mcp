@@ -73,7 +73,7 @@ class TestVaultUploadReceiver:
     def test_md_path_dispatches_to_write(self, tmp_path: Path) -> None:
         """A ``.md`` target is decoded as utf-8 and committed via ``Collection.write``."""
         col = Collection(source_dir=tmp_path, read_only=False)
-        col.build_index()
+        col.index.build_index()
         saved = _server_deps._collection_singleton
         _server_deps.set_collection_singleton(col)
         try:
@@ -93,7 +93,7 @@ class TestVaultUploadReceiver:
             read_only=False,
             attachment_extensions=["pdf"],
         )
-        col.build_index()
+        col.index.build_index()
         saved = _server_deps._collection_singleton
         _server_deps.set_collection_singleton(col)
         try:
@@ -121,7 +121,7 @@ class TestVaultUploadReceiver:
             attachment_extensions=["pdf"],
             max_attachment_size_mb=0.000001,
         )
-        col.build_index()
+        col.index.build_index()
         saved = _server_deps._collection_singleton
         _server_deps.set_collection_singleton(col)
         try:
@@ -146,7 +146,7 @@ class TestValidateUploadTarget:
         pre-link validator ever runs against an unvalidated source.
         """
         col = Collection(source_dir=tmp_path, read_only=False)
-        col.build_index()
+        col.index.build_index()
         saved = _server_deps._collection_singleton
         _server_deps.set_collection_singleton(col)
         try:
@@ -163,7 +163,7 @@ class TestValidateUploadTarget:
             read_only=False,
             attachment_extensions=["pdf"],
         )
-        col.build_index()
+        col.index.build_index()
         saved = _server_deps._collection_singleton
         _server_deps.set_collection_singleton(col)
         try:
@@ -176,7 +176,7 @@ class TestValidateUploadTarget:
     def test_md_path_accepted(self, tmp_path: Path) -> None:
         """A bare ``.md`` filename passes validation without raising."""
         col = Collection(source_dir=tmp_path, read_only=False)
-        col.build_index()
+        col.index.build_index()
         saved = _server_deps._collection_singleton
         _server_deps.set_collection_singleton(col)
         try:
@@ -192,7 +192,7 @@ class TestValidateUploadTarget:
             read_only=False,
             attachment_extensions=["pdf"],
         )
-        col.build_index()
+        col.index.build_index()
         saved = _server_deps._collection_singleton
         _server_deps.set_collection_singleton(col)
         try:

@@ -80,7 +80,7 @@ class TestReaderFacetAttachments:
         col = Collection(
             source_dir=vault_path, read_only=False, attachment_extensions=["*"]
         )
-        col.build_index()
+        col.index.build_index()
         try:
             col.writer.write_attachment("facet_read.bin", b"\x01\x02\x03")
             att = col.reader.read_attachment("facet_read.bin")

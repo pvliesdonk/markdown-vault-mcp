@@ -103,7 +103,7 @@ def _make_collection(
 def collection(vault_path: Path) -> Collection:
     """Built Collection backed by the clean vault fixture."""
     col = _make_collection(vault_path)
-    col.build_index()
+    col.index.build_index()
     return col
 
 
@@ -116,7 +116,7 @@ class TestBuildIndex:
     def test_build_index_from_fixtures(self, vault_path: Path) -> None:
         """build_index() indexes all parseable documents and their chunks."""
         col = _make_collection(vault_path)
-        stats = col.build_index()
+        stats = col.index.build_index()
 
         # 9 valid .md files (excludes invalid_utf8.md; malformed_yaml.md skipped).
         assert stats.documents_indexed == 9
@@ -127,8 +127,8 @@ class TestBuildIndex:
     def test_build_index_force_rebuild(self, vault_path: Path) -> None:
         """build_index(force=True) rebuilds without crashing."""
         col = _make_collection(vault_path)
-        col.build_index()
-        stats = col.build_index(force=True)
+        col.index.build_index()
+        stats = col.index.build_index(force=True)
 
         assert stats.documents_indexed == 9
         assert stats.chunks_indexed == 9
@@ -136,22 +136,22 @@ class TestBuildIndex:
     def test_build_index_idempotent_without_force(self, vault_path: Path) -> None:
         """Calling build_index() twice (no force) does not double-index."""
         col = _make_collection(vault_path)
-        col.build_index()
+        col.index.build_index()
         # Second call is a no-op; documents_indexed reflects existing count.
-        stats2 = col.build_index()
+        stats2 = col.index.build_index()
         assert stats2.documents_indexed == 9
 
     def test_reindex_detects_new_file(self, tmp_path: Path, vault_path: Path) -> None:
         """reindex() detects and indexes a file added after build_index()."""
         state_path = tmp_path / "state.json"
         col = _make_collection(vault_path, state_path=state_path)
-        col.build_index()
+        col.index.build_index()
 
         # Add a new file to the vault.
         new_file = vault_path / "added_note.md"
         new_file.write_text("# Added Note\n\nThis was added after initial index.\n")
 
-        result = col.reindex()
+        result = col.index.reindex()
 
         assert result.added >= 1
 
@@ -169,7 +169,7 @@ class TestBuildIndex:
             return original_upsert(note)
 
         with patch.object(col._fts, "upsert_note", side_effect=upsert_that_fails_once):
-            stats = col.build_index()
+            stats = col.index.build_index()
 
         # One document errored, remaining 8 indexed successfully.
         assert stats.documents_indexed == 8
@@ -181,7 +181,7 @@ class TestBuildIndex:
         """reindex() skips documents that fail to upsert and continues."""
         state_path = tmp_path / "state.json"
         col = _make_collection(vault_path, state_path=state_path)
-        col.build_index()
+        col.index.build_index()
 
         # Add two new files.
         (vault_path / "new_a.md").write_text("# A\n\nContent A.\n")
@@ -198,7 +198,7 @@ class TestBuildIndex:
             return original_upsert(note)
 
         with patch.object(col._fts, "upsert_note", side_effect=upsert_that_fails_once):
-            result = col.reindex()
+            result = col.index.reindex()
 
         # One of the two added files failed, the other succeeded.
         assert result.added == 1
@@ -213,7 +213,7 @@ class TestBuildIndex:
             state_path=state_path,
             exclude_patterns=[".claude/**"],
         )
-        col.build_index()
+        col.index.build_index()
 
         # Add a file inside an excluded directory after the initial index.
         excluded_dir = vault_path / ".claude" / "agents"
@@ -222,7 +222,7 @@ class TestBuildIndex:
             "---\ntitle: knowledge-gaps\n---\n\n# Knowledge Gaps\n"
         )
 
-        result = col.reindex()
+        result = col.index.reindex()
 
         # The excluded file should NOT be indexed.
         paths = [row["path"] for row in col._fts.list_notes()]
@@ -232,7 +232,7 @@ class TestBuildIndex:
 
         # Second reindex: excluded file is still absent (tracker reports it as
         # "added" again since it's never saved to state, but the filter skips it).
-        result2 = col.reindex()
+        result2 = col.index.reindex()
         paths2 = [row["path"] for row in col._fts.list_notes()]
         assert ".claude/agents/knowledge-gaps.md" not in paths2
         assert result2.added == 0
@@ -252,7 +252,7 @@ class TestBuildIndex:
         col1 = _make_collection(
             vault_path, state_path=state_path, index_path=index_path
         )
-        col1.build_index()
+        col1.index.build_index()
 
         # The file is in the index because no exclude_patterns were set.
         paths1 = [row["path"] for row in col1._fts.list_notes()]
@@ -267,8 +267,8 @@ class TestBuildIndex:
         )
         # col2 shares the persistent DB; build_index() short-circuits on
         # populated FTS state alone (issue #525), so this is fast.
-        col2.build_index()
-        col2.reindex()
+        col2.index.build_index()
+        col2.index.reindex()
 
         # The stale excluded doc should be purged.
         paths2 = [row["path"] for row in col2._fts.list_notes()]
@@ -297,8 +297,8 @@ class TestBuildIndex:
             embeddings_path=embeddings_path,
             embedding_provider=mock_provider,
         )
-        col1.build_index()
-        col1.build_embeddings()
+        col1.index.build_index()
+        col1.index.build_embeddings()
         assert col1._vectors is not None
         vec_paths1 = [m["path"] for m in col1._vectors._metadata]
         assert ".claude/test.md" in vec_paths1
@@ -312,8 +312,8 @@ class TestBuildIndex:
             embedding_provider=mock_provider,
             exclude_patterns=[".claude/**"],
         )
-        col2.build_index()
-        col2.reindex()
+        col2.index.build_index()
+        col2.index.reindex()
 
         paths2 = [row["path"] for row in col2._fts.list_notes()]
         assert ".claude/test.md" not in paths2
@@ -334,7 +334,7 @@ class TestBuildIndex:
         (excluded_dir / "test.md").write_text("# Excluded\nSome content.\n")
 
         col1 = _make_collection(vault_path, index_path=index_path)
-        col1.build_index()
+        col1.index.build_index()
         paths1 = [row["path"] for row in col1._fts.list_notes()]
         assert ".claude/test.md" in paths1
 
@@ -347,7 +347,7 @@ class TestBuildIndex:
             index_path=index_path,
             exclude_patterns=[".claude/**"],
         )
-        col2.build_index(force=True)
+        col2.index.build_index(force=True)
         paths2 = [row["path"] for row in col2._fts.list_notes()]
         assert ".claude/test.md" not in paths2
 
@@ -372,8 +372,8 @@ class TestBuildIndex:
             embeddings_path=embeddings_path,
             embedding_provider=mock_provider,
         )
-        col1.build_index()
-        col1.build_embeddings()
+        col1.index.build_index()
+        col1.index.build_embeddings()
         assert col1._vectors is not None
         vec_paths1 = [m["path"] for m in col1._vectors._metadata]
         assert ".claude/test.md" in vec_paths1
@@ -389,8 +389,8 @@ class TestBuildIndex:
             embedding_provider=mock_provider,
             exclude_patterns=[".claude/**"],
         )
-        col2.build_index(force=True)
-        col2.build_embeddings(force=True)
+        col2.index.build_index(force=True)
+        col2.index.build_embeddings(force=True)
 
         paths2 = [row["path"] for row in col2._fts.list_notes()]
         assert ".claude/test.md" not in paths2
@@ -410,7 +410,7 @@ class TestLazyInitialisation:
         """search() on an unbuilt index returns [] without crashing (bucket 2)."""
         col = _make_collection(vault_path)
 
-        results = col.search("simple")
+        results = col.reader.search("simple")
 
         assert results == []
 
@@ -418,7 +418,7 @@ class TestLazyInitialisation:
         """list() on an unbuilt index returns [] (bucket 2 — no implicit build)."""
         col = _make_collection(vault_path)
 
-        notes = col.list_documents()
+        notes = col.reader.list_documents()
 
         assert notes == []
 
@@ -431,7 +431,7 @@ class TestLazyInitialisation:
 class TestSearch:
     def test_search_keyword_returns_results(self, collection: Collection) -> None:
         """Keyword search for a term present in fixtures returns results."""
-        results = collection.search("simple", mode="keyword")
+        results = collection.reader.search("simple", mode="keyword")
 
         assert len(results) > 0
         assert all(hasattr(r, "path") for r in results)
@@ -439,7 +439,7 @@ class TestSearch:
 
     def test_search_keyword_term_in_content(self, collection: Collection) -> None:
         """Keyword results reference documents that contain the query term."""
-        results = collection.search("unicode", mode="keyword")
+        results = collection.reader.search("unicode", mode="keyword")
 
         paths = [r.path for r in results]
         assert any("unicode" in p.lower() for p in paths)
@@ -447,10 +447,10 @@ class TestSearch:
     def test_search_semantic_no_embeddings_raises(self, vault_path: Path) -> None:
         """Semantic search without a provider configured raises ValueError."""
         col = _make_collection(vault_path)
-        col.build_index()
+        col.index.build_index()
 
         with pytest.raises(ValueError, match="embedding_provider"):
-            col.search("any query", mode="semantic")
+            col.reader.search("any query", mode="semantic")
 
     def test_search_hybrid_with_mock_embeddings(
         self,
@@ -465,10 +465,10 @@ class TestSearch:
             embeddings_path=embeddings_path,
             embedding_provider=mock_provider,
         )
-        col.build_index()
-        col.build_embeddings()
+        col.index.build_index()
+        col.index.build_embeddings()
 
-        results = col.search("document content", mode="hybrid")
+        results = col.reader.search("document content", mode="hybrid")
 
         assert isinstance(results, list)
         # At least some results should come back (9 docs indexed).
@@ -491,11 +491,11 @@ class TestSearch:
             embeddings_path=embeddings_path,
             embedding_provider=mock_provider,
         )
-        col.build_index()
-        col.build_embeddings()
+        col.index.build_index()
+        col.index.build_embeddings()
 
         # Use a broad query that FTS can handle and semantic can also rank.
-        results = col.search("note document", mode="hybrid", limit=9)
+        results = col.reader.search("note document", mode="hybrid", limit=9)
 
         # With 9 documents indexed we expect a meaningful set of results.
         assert len(results) >= 1
@@ -505,10 +505,10 @@ class TestSearch:
     def test_search_hybrid_no_embeddings_raises(self, vault_path: Path) -> None:
         """Hybrid search without a provider configured raises ValueError."""
         col = _make_collection(vault_path)
-        col.build_index()
+        col.index.build_index()
 
         with pytest.raises(ValueError, match="embedding_provider"):
-            col.search("query", mode="hybrid")
+            col.reader.search("query", mode="hybrid")
 
     def test_document_identity_different_folders(
         self,
@@ -531,16 +531,16 @@ class TestSearch:
         )
 
         col = _make_collection(vault)
-        col.build_index()
+        col.index.build_index()
 
-        notes = col.list_documents()
+        notes = col.reader.list_documents()
         paths = [n.path for n in notes]
         assert "alpha/note.md" in paths
         assert "beta/note.md" in paths
         assert len(paths) == 2
 
         # Keyword search should find both as separate results.
-        results = col.search("note", mode="keyword", limit=10)
+        results = col.reader.search("note", mode="keyword", limit=10)
         result_paths = [r.path for r in results]
         assert "alpha/note.md" in result_paths
         assert "beta/note.md" in result_paths
@@ -554,7 +554,7 @@ class TestSearch:
 class TestRead:
     def test_read_returns_content(self, collection: Collection) -> None:
         """read() returns a NoteContent with correct fields."""
-        result = collection.read("full_frontmatter.md")
+        result = collection.reader.read("full_frontmatter.md")
 
         assert isinstance(result, NoteContent)
         assert result.path == "full_frontmatter.md"
@@ -565,7 +565,7 @@ class TestRead:
 
     def test_read_subfolder_document(self, collection: Collection) -> None:
         """read() works for documents nested in subfolders."""
-        result = collection.read("subfolder/nested.md")
+        result = collection.reader.read("subfolder/nested.md")
 
         assert isinstance(result, NoteContent)
         assert result.path == "subfolder/nested.md"
@@ -573,7 +573,7 @@ class TestRead:
 
     def test_read_not_found_returns_none(self, collection: Collection) -> None:
         """read() returns None for a path that does not exist."""
-        result = collection.read("nonexistent/missing.md")
+        result = collection.reader.read("nonexistent/missing.md")
 
         assert result is None
 
@@ -581,7 +581,7 @@ class TestRead:
         """read() returns an etag field containing the SHA256 hex digest."""
         import hashlib
 
-        result = collection.read("full_frontmatter.md")
+        result = collection.reader.read("full_frontmatter.md")
 
         assert result is not None
         expected = hashlib.sha256(
@@ -591,8 +591,8 @@ class TestRead:
 
     def test_read_etag_is_stable(self, collection: Collection) -> None:
         """read() returns the same etag on repeated reads of unchanged content."""
-        result1 = collection.read("full_frontmatter.md")
-        result2 = collection.read("full_frontmatter.md")
+        result1 = collection.reader.read("full_frontmatter.md")
+        result2 = collection.reader.read("full_frontmatter.md")
 
         assert result1 is not None
         assert result2 is not None
@@ -603,15 +603,15 @@ class TestRead:
     def test_read_etag_changes_after_write(self, vault_path: Path) -> None:
         """read() etag changes when file content changes."""
         col = _make_collection(vault_path, read_only=False)
-        col.build_index()
+        col.index.build_index()
 
-        result_before = col.read("full_frontmatter.md")
+        result_before = col.reader.read("full_frontmatter.md")
         assert result_before is not None
         etag_before = result_before.etag
 
-        col.write("full_frontmatter.md", "# Updated\n\nNew content.\n")
+        col.writer.write("full_frontmatter.md", "# Updated\n\nNew content.\n")
 
-        result_after = col.read("full_frontmatter.md")
+        result_after = col.reader.read("full_frontmatter.md")
         assert result_after is not None
         assert result_after.etag != etag_before
 
@@ -624,14 +624,14 @@ class TestRead:
 class TestList:
     def test_list_all(self, collection: Collection) -> None:
         """list() returns all indexed documents."""
-        notes = collection.list_documents()
+        notes = collection.reader.list_documents()
 
         assert len(notes) == 9
         assert all(isinstance(n, NoteInfo) for n in notes)
 
     def test_list_with_folder(self, collection: Collection) -> None:
         """list(folder=...) returns only documents in that folder."""
-        notes = collection.list_documents(folder="subfolder")
+        notes = collection.reader.list_documents(folder="subfolder")
 
         assert len(notes) >= 1
         assert all("subfolder" in n.folder for n in notes)
@@ -642,7 +642,7 @@ class TestList:
         ``fnmatch`` treats ``*`` as matching path separators, so
         ``subfolder/*.md`` also matches ``subfolder/deep/doc.md``.
         """
-        notes = collection.list_documents(pattern="subfolder/*.md")
+        notes = collection.reader.list_documents(pattern="subfolder/*.md")
 
         paths = [n.path for n in notes]
         assert "subfolder/nested.md" in paths
@@ -653,7 +653,7 @@ class TestList:
 
     def test_list_subfolder_deep_pattern(self, collection: Collection) -> None:
         """list() with a deep glob pattern returns deeply nested documents."""
-        notes = collection.list_documents(pattern="subfolder/**/*.md")
+        notes = collection.reader.list_documents(pattern="subfolder/**/*.md")
 
         paths = [n.path for n in notes]
         assert "subfolder/deep/doc.md" in paths
@@ -667,7 +667,7 @@ class TestList:
 class TestStats:
     def test_stats_returns_collection_stats(self, collection: Collection) -> None:
         """stats() returns a CollectionStats with correct counts."""
-        s = collection.stats()
+        s = collection.reader.stats()
 
         assert isinstance(s, CollectionStats)
         assert s.document_count == 9
@@ -688,14 +688,14 @@ class TestStats:
             embeddings_path=tmp_path / "embeddings",
             embedding_provider=mock_provider,
         )
-        col.build_index()
+        col.index.build_index()
 
-        s = col.stats()
+        s = col.reader.stats()
         assert s.semantic_search_available is True
 
     def test_list_folders(self, collection: Collection) -> None:
         """list_folders() returns the distinct folder values across the index."""
-        folders = collection.list_folders()
+        folders = collection.reader.list_folders()
 
         assert isinstance(folders, list)
         assert "" in folders  # root documents
@@ -708,13 +708,13 @@ class TestStats:
             source_dir=vault_path,
             indexed_frontmatter_fields=["cluster", "topics"],
         )
-        col.build_index()
+        col.index.build_index()
 
-        clusters = col.list_tags("cluster")
+        clusters = col.reader.list_tags("cluster")
         # full_frontmatter.md has cluster: fiction
         assert "fiction" in clusters
 
-        topics = col.list_tags("topics")
+        topics = col.reader.list_tags("topics")
         # full_frontmatter.md has topics: [horror, gothic]
         assert "horror" in topics
         assert "gothic" in topics
@@ -723,7 +723,7 @@ class TestStats:
         self, collection: Collection
     ) -> None:
         """list_tags() on a field not in indexed_frontmatter_fields returns []."""
-        result = collection.list_tags("cluster")
+        result = collection.reader.list_tags("cluster")
         assert result == []
 
 
@@ -736,22 +736,22 @@ class TestWriteReadOnly:
     def test_write_raises_readonly(self, collection: Collection) -> None:
         """write() raises ReadOnlyError on a default (read-only) collection."""
         with pytest.raises(ReadOnlyError):
-            collection.write("new_note.md", "# New Note\n\nContent.")
+            collection.writer.write("new_note.md", "# New Note\n\nContent.")
 
     def test_edit_raises_readonly(self, collection: Collection) -> None:
         """edit() raises ReadOnlyError on a read-only collection."""
         with pytest.raises(ReadOnlyError):
-            collection.edit("simple.md", "old text", "new text")
+            collection.writer.edit("simple.md", "old text", "new text")
 
     def test_delete_raises_readonly(self, collection: Collection) -> None:
         """delete() raises ReadOnlyError on a read-only collection."""
         with pytest.raises(ReadOnlyError):
-            collection.delete("simple.md")
+            collection.writer.delete("simple.md")
 
     def test_rename_raises_readonly(self, collection: Collection) -> None:
         """rename() raises ReadOnlyError on a read-only collection."""
         with pytest.raises(ReadOnlyError):
-            collection.rename("simple.md", "renamed.md")
+            collection.writer.rename("simple.md", "renamed.md")
 
 
 # ---------------------------------------------------------------------------
@@ -763,7 +763,7 @@ class TestWriteReadOnly:
 def writable(vault_path: Path) -> Collection:
     """Writable Collection backed by the clean vault fixture."""
     col = _make_collection(vault_path, read_only=False)
-    col.build_index()
+    col.index.build_index()
     return col
 
 
@@ -780,8 +780,8 @@ def writable_with_embeddings(
         embedding_provider=mock_provider,
         read_only=False,
     )
-    col.build_index()
-    col.build_embeddings()
+    col.index.build_index()
+    col.index.build_embeddings()
     return col
 
 
@@ -790,7 +790,7 @@ class TestWrite:
         self, writable: Collection, vault_path: Path
     ) -> None:
         """write() creates a new file on disk and returns created=True."""
-        result = writable.write("new_note.md", "# New Note\n\nNew content.\n")
+        result = writable.writer.write("new_note.md", "# New Note\n\nNew content.\n")
 
         assert isinstance(result, WriteResult)
         assert result.path == "new_note.md"
@@ -802,7 +802,7 @@ class TestWrite:
         self, writable: Collection, vault_path: Path
     ) -> None:
         """write() creates intermediate dirs as needed."""
-        writable.write("deep/nested/note.md", "# Deep\n\nNested.\n")
+        writable.writer.write("deep/nested/note.md", "# Deep\n\nNested.\n")
 
         assert (vault_path / "deep" / "nested" / "note.md").is_file()
 
@@ -810,7 +810,7 @@ class TestWrite:
         self, writable: Collection, vault_path: Path
     ) -> None:
         """write() overwrites existing file and returns created=False."""
-        result = writable.write("simple.md", "# Replaced\n\nNew body.\n")
+        result = writable.writer.write("simple.md", "# Replaced\n\nNew body.\n")
 
         assert result.created is False
         assert "Replaced" in (vault_path / "simple.md").read_text()
@@ -819,7 +819,7 @@ class TestWrite:
         self, writable: Collection, vault_path: Path
     ) -> None:
         """write() serialises frontmatter as YAML header."""
-        writable.write(
+        writable.writer.write(
             "with_fm.md",
             "# Hello\n\nBody text.\n",
             frontmatter={"title": "Hello", "tags": ["a", "b"]},
@@ -831,12 +831,12 @@ class TestWrite:
 
     def test_write_immediately_searchable(self, writable: Collection) -> None:
         """Written content is immediately searchable."""
-        writable.write(
+        writable.writer.write(
             "searchable.md", "# Unique Xylophone\n\nRare content for testing.\n"
         )
         wait_for_writer_drain(writable)
 
-        results = writable.search("xylophone", mode="keyword")
+        results = writable.reader.search("xylophone", mode="keyword")
         paths = [r.path for r in results]
         assert "searchable.md" in paths
 
@@ -846,9 +846,9 @@ class TestWrite:
         col = _make_collection(
             vault_path, read_only=False, on_write=lambda *args: calls.append(args)
         )
-        col.build_index()
+        col.index.build_index()
 
-        col.write("cb_test.md", "# Callback\n\nTest.\n")
+        col.writer.write("cb_test.md", "# Callback\n\nTest.\n")
         col.close()  # drain deferred callback queue
 
         assert len(calls) == 1
@@ -860,24 +860,24 @@ class TestWrite:
     def test_write_path_traversal_rejected(self, writable: Collection) -> None:
         """write() rejects paths that escape the source directory."""
         with pytest.raises(ValueError, match="traversal"):
-            writable.write("../../etc/passwd.md", "malicious")
+            writable.writer.write("../../etc/passwd.md", "malicious")
 
     def test_write_non_md_extension_rejected(self, writable: Collection) -> None:
         """write() rejects paths that do not end with .md."""
         with pytest.raises(ValueError, match=r"\.md"):
-            writable.write("notes.yaml", "content")
+            writable.writer.write("notes.yaml", "content")
 
     def test_write_updates_vector_index(
         self, writable_with_embeddings: Collection
     ) -> None:
         """write() with embeddings configured makes the doc findable via semantic search."""
-        writable_with_embeddings.write(
+        writable_with_embeddings.writer.write(
             "new_semantic.md",
             "# Unique Quantum Entanglement\n\nContent about quantum physics.\n",
         )
         wait_for_writer_drain(writable_with_embeddings)
 
-        results = writable_with_embeddings.search(
+        results = writable_with_embeddings.reader.search(
             "quantum entanglement", mode="semantic"
         )
         paths = [r.path for r in results]
@@ -890,9 +890,11 @@ class TestWrite:
             "tags": ["alpha", "beta"],
             "meta": {"key": "value"},
         }
-        writable.write("roundtrip.md", "# Body\n\nContent.\n", frontmatter=frontmatter)
+        writable.writer.write(
+            "roundtrip.md", "# Body\n\nContent.\n", frontmatter=frontmatter
+        )
 
-        result = writable.read("roundtrip.md")
+        result = writable.reader.read("roundtrip.md")
 
         assert result is not None
         assert result.frontmatter["title"] == "Roundtrip Note"
@@ -901,22 +903,22 @@ class TestWrite:
 
     def test_write_empty_content(self, writable: Collection) -> None:
         """write() with empty body and frontmatter produces a readable document."""
-        writable.write("empty_body.md", "", frontmatter={"title": "Empty Body"})
+        writable.writer.write("empty_body.md", "", frontmatter={"title": "Empty Body"})
 
-        result = writable.read("empty_body.md")
+        result = writable.reader.read("empty_body.md")
 
         assert result is not None
         assert result.frontmatter["title"] == "Empty Body"
 
     def test_write_unicode_content(self, writable: Collection) -> None:
         """write() with Unicode and emoji content produces a searchable document."""
-        writable.write(
+        writable.writer.write(
             "unicode_note.md",
             "# Unicode Test\n\nCafé naïve résumé \U0001f600\n",
         )
         wait_for_writer_drain(writable)
 
-        results = writable.search("unicode test", mode="keyword")
+        results = writable.reader.search("unicode test", mode="keyword")
         paths = [r.path for r in results]
         assert "unicode_note.md" in paths
 
@@ -924,7 +926,9 @@ class TestWrite:
 class TestEdit:
     def test_edit_replaces_text(self, writable: Collection, vault_path: Path) -> None:
         """edit() replaces exactly one occurrence of old_text."""
-        result = writable.edit("simple.md", "Simple Document", "Updated Document")
+        result = writable.writer.edit(
+            "simple.md", "Simple Document", "Updated Document"
+        )
 
         assert isinstance(result, EditResult)
         assert result.path == "simple.md"
@@ -936,23 +940,25 @@ class TestEdit:
 
     def test_edit_match_type_exact_default(self, writable: Collection) -> None:
         """edit() returns match_type='exact' by default."""
-        result = writable.edit("simple.md", "Simple Document", "Updated Document")
+        result = writable.writer.edit(
+            "simple.md", "Simple Document", "Updated Document"
+        )
         assert result.match_type == "exact"
 
     def test_edit_empty_old_text_raises(self, writable: Collection) -> None:
         """edit() raises ValueError when old_text is empty."""
         with pytest.raises(ValueError, match="old_text must not be empty"):
-            writable.edit("simple.md", "", "new")
+            writable.writer.edit("simple.md", "", "new")
 
     def test_edit_not_found_raises(self, writable: Collection) -> None:
         """edit() raises DocumentNotFoundError for missing files."""
         with pytest.raises(DocumentNotFoundError):
-            writable.edit("nonexistent.md", "old", "new")
+            writable.writer.edit("nonexistent.md", "old", "new")
 
     def test_edit_old_text_missing_raises(self, writable: Collection) -> None:
         """edit() raises EditConflictError when old_text is not found."""
         with pytest.raises(EditConflictError, match="not found"):
-            writable.edit("simple.md", "text that does not exist", "new")
+            writable.writer.edit("simple.md", "text that does not exist", "new")
 
     def test_edit_old_text_multiple_raises(
         self,
@@ -960,18 +966,18 @@ class TestEdit:
     ) -> None:
         """edit() raises EditConflictError when old_text appears multiple times."""
         # Create a file with repeated content.
-        writable.write("repeated.md", "word word word\n")
+        writable.writer.write("repeated.md", "word word word\n")
 
         with pytest.raises(EditConflictError, match="3 times"):
-            writable.edit("repeated.md", "word", "replaced")
+            writable.writer.edit("repeated.md", "word", "replaced")
 
     def test_edit_updates_index(self, writable: Collection) -> None:
         """Edited content is immediately searchable."""
-        writable.write("editable.md", "# Old Title\n\nOld body text.\n")
-        writable.edit("editable.md", "Old Title", "New Unique Xylophone Title")
+        writable.writer.write("editable.md", "# Old Title\n\nOld body text.\n")
+        writable.writer.edit("editable.md", "Old Title", "New Unique Xylophone Title")
         wait_for_writer_drain(writable)
 
-        results = writable.search("xylophone", mode="keyword")
+        results = writable.reader.search("xylophone", mode="keyword")
         paths = [r.path for r in results]
         assert "editable.md" in paths
 
@@ -981,9 +987,9 @@ class TestEdit:
         col = _make_collection(
             vault_path, read_only=False, on_write=lambda *args: calls.append(args)
         )
-        col.build_index()
+        col.index.build_index()
 
-        col.edit("simple.md", "Simple Document", "Modified Document")
+        col.writer.edit("simple.md", "Simple Document", "Modified Document")
         col.close()  # drain deferred callback queue
 
         assert len(calls) == 1
@@ -992,36 +998,38 @@ class TestEdit:
 
     def test_edit_old_content_removed_from_fts(self, writable: Collection) -> None:
         """edit() removes the old content from FTS; old text is no longer searchable."""
-        writable.write("editable_fts.md", "# OldUniqueTitle\n\nOld body text.\n")
+        writable.writer.write("editable_fts.md", "# OldUniqueTitle\n\nOld body text.\n")
         wait_for_writer_drain(writable)
 
         # Confirm old text is searchable before edit.
-        before = writable.search("OldUniqueTitle", mode="keyword")
+        before = writable.reader.search("OldUniqueTitle", mode="keyword")
         assert any(r.path == "editable_fts.md" for r in before)
 
-        writable.edit("editable_fts.md", "OldUniqueTitle", "NewReplacedTitle")
+        writable.writer.edit("editable_fts.md", "OldUniqueTitle", "NewReplacedTitle")
         wait_for_writer_drain(writable)
 
         # Old text must no longer appear in results.
-        after_old = writable.search("OldUniqueTitle", mode="keyword")
+        after_old = writable.reader.search("OldUniqueTitle", mode="keyword")
         assert not any(r.path == "editable_fts.md" for r in after_old)
 
     def test_edit_updates_vector_index(
         self, writable_with_embeddings: Collection
     ) -> None:
         """edit() with embeddings configured reflects new content in semantic search."""
-        writable_with_embeddings.write(
+        writable_with_embeddings.writer.write(
             "vec_editable.md",
             "# Original Content\n\nThis is the original text.\n",
         )
-        writable_with_embeddings.edit(
+        writable_with_embeddings.writer.edit(
             "vec_editable.md",
             "original text",
             "quantum mechanics discussion",
         )
         wait_for_writer_drain(writable_with_embeddings)
 
-        results = writable_with_embeddings.search("quantum mechanics", mode="semantic")
+        results = writable_with_embeddings.reader.search(
+            "quantum mechanics", mode="semantic"
+        )
         paths = [r.path for r in results]
         assert "vec_editable.md" in paths
 
@@ -1029,8 +1037,8 @@ class TestEdit:
         self, writable: Collection, vault_path: Path
     ) -> None:
         """edit() with line_start/line_end replaces the specified lines."""
-        writable.write("lines.md", "line1\nline2\nline3\nline4\n")
-        result = writable.edit(
+        writable.writer.write("lines.md", "line1\nline2\nline3\nline4\n")
+        result = writable.writer.edit(
             "lines.md", new_text="replaced\n", line_start=2, line_end=3
         )
         assert result.replacements == 1
@@ -1041,55 +1049,55 @@ class TestEdit:
         self, writable: Collection, vault_path: Path
     ) -> None:
         """line_start == line_end replaces exactly one line."""
-        writable.write("lines.md", "line1\nline2\nline3\n")
-        writable.edit("lines.md", new_text="new2", line_start=2, line_end=2)
+        writable.writer.write("lines.md", "line1\nline2\nline3\n")
+        writable.writer.edit("lines.md", new_text="new2", line_start=2, line_end=2)
         content = (vault_path / "lines.md").read_text()
         assert content == "line1\nnew2\nline3\n"
 
     def test_edit_line_range_out_of_bounds(self, writable: Collection) -> None:
         """line_end beyond file length raises ValueError."""
-        writable.write("lines.md", "line1\nline2\n")
+        writable.writer.write("lines.md", "line1\nline2\n")
         with pytest.raises(ValueError, match="out of range"):
-            writable.edit("lines.md", new_text="x", line_start=1, line_end=5)
+            writable.writer.edit("lines.md", new_text="x", line_start=1, line_end=5)
 
     def test_edit_line_range_inverted(self, writable: Collection) -> None:
         """line_start > line_end raises ValueError."""
-        writable.write("lines.md", "line1\nline2\n")
+        writable.writer.write("lines.md", "line1\nline2\n")
         with pytest.raises(ValueError, match=r"line_start.*line_end"):
-            writable.edit("lines.md", new_text="x", line_start=3, line_end=1)
+            writable.writer.edit("lines.md", new_text="x", line_start=3, line_end=1)
 
     def test_edit_line_range_only_one_provided(self, writable: Collection) -> None:
         """Providing only line_start without line_end raises ValueError."""
         with pytest.raises(ValueError, match=r"both.*line_start.*line_end"):
-            writable.edit("simple.md", new_text="x", line_start=1)
+            writable.writer.edit("simple.md", new_text="x", line_start=1)
 
     def test_edit_no_old_text_no_lines(self, writable: Collection) -> None:
         """Neither old_text nor line range raises ValueError."""
         with pytest.raises(ValueError, match=r"old_text.*line_start"):
-            writable.edit("simple.md", new_text="x")
+            writable.writer.edit("simple.md", new_text="x")
 
     def test_edit_line_range_zero_raises(self, writable: Collection) -> None:
         """line_start < 1 raises ValueError (1-based)."""
         with pytest.raises(ValueError, match=r"line_start.*>= 1"):
-            writable.edit("simple.md", new_text="x", line_start=0, line_end=1)
+            writable.writer.edit("simple.md", new_text="x", line_start=0, line_end=1)
 
     def test_edit_line_range_updates_index(self, writable: Collection) -> None:
         """Line-range edit updates the FTS index."""
-        writable.write("lines.md", "# Old Title\n\nOld body.\n")
-        writable.edit(
+        writable.writer.write("lines.md", "# Old Title\n\nOld body.\n")
+        writable.writer.edit(
             "lines.md", new_text="# Xylophone Title\n", line_start=1, line_end=1
         )
         wait_for_writer_drain(writable)
-        results = writable.search("xylophone", mode="keyword")
+        results = writable.reader.search("xylophone", mode="keyword")
         assert any(r.path == "lines.md" for r in results)
 
     def test_edit_line_range_with_if_match(
         self, writable: Collection, vault_path: Path
     ) -> None:
         """Line-range edit respects if_match etag."""
-        writable.write("lines.md", "line1\nline2\n")
-        read_result = writable.read("lines.md")
-        writable.edit(
+        writable.writer.write("lines.md", "line1\nline2\n")
+        read_result = writable.reader.read("lines.md")
+        writable.writer.edit(
             "lines.md",
             new_text="new1\n",
             line_start=1,
@@ -1101,9 +1109,9 @@ class TestEdit:
 
     def test_edit_line_range_with_wrong_if_match(self, writable: Collection) -> None:
         """Line-range edit rejects stale etag."""
-        writable.write("lines.md", "line1\nline2\n")
+        writable.writer.write("lines.md", "line1\nline2\n")
         with pytest.raises(ConcurrentModificationError):
-            writable.edit(
+            writable.writer.edit(
                 "lines.md",
                 new_text="new",
                 line_start=1,
@@ -1117,9 +1125,9 @@ class TestEdit:
         col = _make_collection(
             vault_path, read_only=False, on_write=lambda *args: calls.append(args)
         )
-        col.build_index()
-        col.write("lines.md", "line1\nline2\n")
-        col.edit("lines.md", new_text="replaced\n", line_start=1, line_end=1)
+        col.index.build_index()
+        col.writer.write("lines.md", "line1\nline2\n")
+        col.writer.edit("lines.md", new_text="replaced\n", line_start=1, line_end=1)
         col.close()
         # write + edit = 2 callbacks
         assert len(calls) == 2
@@ -1132,9 +1140,9 @@ class TestEdit:
 
     def test_edit_scoped_match(self, writable: Collection, vault_path: Path) -> None:
         """old_text + line range disambiguates repeated text."""
-        writable.write("repeated.md", "hello\nworld\nhello\n")
+        writable.writer.write("repeated.md", "hello\nworld\nhello\n")
         # "hello" appears twice, but only once in lines 1-1.
-        result = writable.edit(
+        result = writable.writer.edit(
             "repeated.md",
             old_text="hello",
             new_text="goodbye",
@@ -1147,9 +1155,9 @@ class TestEdit:
 
     def test_edit_scoped_match_not_found(self, writable: Collection) -> None:
         """old_text not in the specified line range raises EditConflictError."""
-        writable.write("scoped.md", "aaa\nbbb\nccc\n")
+        writable.writer.write("scoped.md", "aaa\nbbb\nccc\n")
         with pytest.raises(EditConflictError, match="not found"):
-            writable.edit(
+            writable.writer.edit(
                 "scoped.md",
                 old_text="ccc",
                 new_text="ddd",
@@ -1165,8 +1173,8 @@ class TestEdit:
         self, writable: Collection, vault_path: Path
     ) -> None:
         """Normalized match handles em-dash vs hyphen."""
-        writable.write("dashes.md", "hello \u2014 world\n")
-        result = writable.edit(
+        writable.writer.write("dashes.md", "hello \u2014 world\n")
+        result = writable.writer.edit(
             "dashes.md", old_text="hello - world", new_text="goodbye"
         )
         assert result.match_type == "normalized"
@@ -1177,8 +1185,10 @@ class TestEdit:
         self, writable: Collection, vault_path: Path
     ) -> None:
         """Normalized match handles smart quotes vs straight."""
-        writable.write("quotes.md", "\u201chello\u201d\n")
-        result = writable.edit("quotes.md", old_text='"hello"', new_text="goodbye")
+        writable.writer.write("quotes.md", "\u201chello\u201d\n")
+        result = writable.writer.edit(
+            "quotes.md", old_text='"hello"', new_text="goodbye"
+        )
         assert result.match_type == "normalized"
         content = (vault_path / "quotes.md").read_text()
         assert content == "goodbye\n"
@@ -1187,8 +1197,10 @@ class TestEdit:
         self, writable: Collection, vault_path: Path
     ) -> None:
         """Normalized match handles collapsed whitespace."""
-        writable.write("ws.md", "hello   world\n")
-        result = writable.edit("ws.md", old_text="hello world", new_text="goodbye")
+        writable.writer.write("ws.md", "hello   world\n")
+        result = writable.writer.edit(
+            "ws.md", old_text="hello world", new_text="goodbye"
+        )
         assert result.match_type == "normalized"
         content = (vault_path / "ws.md").read_text()
         assert content == "goodbye\n"
@@ -1197,8 +1209,10 @@ class TestEdit:
         self, writable: Collection, vault_path: Path
     ) -> None:
         """Normalized match handles trailing whitespace difference."""
-        writable.write("trail.md", "hello   \nworld\n")
-        result = writable.edit("trail.md", old_text="hello\nworld", new_text="goodbye")
+        writable.writer.write("trail.md", "hello   \nworld\n")
+        result = writable.writer.edit(
+            "trail.md", old_text="hello\nworld", new_text="goodbye"
+        )
         assert result.match_type == "normalized"
         content = (vault_path / "trail.md").read_text()
         assert content == "goodbye\n"
@@ -1209,30 +1223,34 @@ class TestEdit:
         """Normalized match handles NFC decomposed vs composed."""
         # File content: decomposed é written as "café" (will normalize to composed on write)
         # We match it with composed é from old_text, confirming normalization works
-        writable.write("unicode.md", "caf\u00e9\n")  # Use composed form explicitly
+        writable.writer.write(
+            "unicode.md", "caf\u00e9\n"
+        )  # Use composed form explicitly
         # Try to match with a slight variation that requires normalization
         # (in practice, this tests that equivalence is handled)
-        result = writable.edit("unicode.md", old_text="caf\u00e9", new_text="tea")
+        result = writable.writer.edit(
+            "unicode.md", old_text="caf\u00e9", new_text="tea"
+        )
         assert result.match_type == "exact"  # Will be exact since they match exactly
         content = (vault_path / "unicode.md").read_text()
         assert content == "tea\n"
 
     def test_edit_normalized_returns_match_type(self, writable: Collection) -> None:
         """Normalized match returns match_type='normalized' in EditResult."""
-        writable.write("norm.md", "a\u2014b\n")
-        result = writable.edit("norm.md", old_text="a-b", new_text="c")
+        writable.writer.write("norm.md", "a\u2014b\n")
+        result = writable.writer.edit("norm.md", old_text="a-b", new_text="c")
         assert result.match_type == "normalized"
 
     def test_edit_normalized_multiple_raises(self, writable: Collection) -> None:
         """Normalized match with >1 occurrences raises EditConflictError."""
-        writable.write("multi.md", "a\u2014b and a\u2014b\n")
+        writable.writer.write("multi.md", "a\u2014b and a\u2014b\n")
         with pytest.raises(EditConflictError, match="after normalization"):
-            writable.edit("multi.md", old_text="a-b", new_text="c")
+            writable.writer.edit("multi.md", old_text="a-b", new_text="c")
 
     def test_edit_exact_preferred_over_normalized(self, writable: Collection) -> None:
         """Exact match is used even when normalized would also work."""
-        writable.write("exact.md", "a-b\n")
-        result = writable.edit("exact.md", old_text="a-b", new_text="c")
+        writable.writer.write("exact.md", "a-b\n")
+        result = writable.writer.edit("exact.md", old_text="a-b", new_text="c")
         assert result.match_type == "exact"
 
     def test_edit_normalized_preserves_original_bytes(
@@ -1240,11 +1258,11 @@ class TestEdit:
     ) -> None:
         """Normalized replacement preserves original bytes outside the match."""
         # File has smart quotes + em-dash in OTHER parts.
-        writable.write(
+        writable.writer.write(
             "preserve.md",
             "\u201cintro\u201d\nhello   world\n\u201coutro\u201d\n",
         )
-        writable.edit("preserve.md", old_text="hello world", new_text="goodbye")
+        writable.writer.edit("preserve.md", old_text="hello world", new_text="goodbye")
         content = (vault_path / "preserve.md").read_text()
         # Smart quotes in intro/outro must be preserved.
         assert content == "\u201cintro\u201d\ngoodbye\n\u201coutro\u201d\n"
@@ -1260,8 +1278,8 @@ class TestEdit:
         combining accent, not just the base character.
         """
         # File has decomposed 'é' (e + combining acute) at the end of a word.
-        writable.write("decomposed.md", "caf\u0065\u0301 au lait\n")
-        result = writable.edit(
+        writable.writer.write("decomposed.md", "caf\u0065\u0301 au lait\n")
+        result = writable.writer.edit(
             "decomposed.md",
             old_text="caf\u00e9",  # composed form
             new_text="tea",
@@ -1276,8 +1294,8 @@ class TestEdit:
         self, writable: Collection, vault_path: Path
     ) -> None:
         """Normalized match works within a scoped line range."""
-        writable.write("scoped_norm.md", "aaa\nhello\u2014world\nccc\n")
-        result = writable.edit(
+        writable.writer.write("scoped_norm.md", "aaa\nhello\u2014world\nccc\n")
+        result = writable.writer.edit(
             "scoped_norm.md",
             old_text="hello-world",
             new_text="goodbye",
@@ -1294,25 +1312,29 @@ class TestEdit:
 
     def test_edit_diagnostic_closest_line(self, writable: Collection) -> None:
         """Failed match includes closest_match_line in error."""
-        writable.write("diag.md", "line one\nthe quick brown fox\nline three\n")
+        writable.writer.write("diag.md", "line one\nthe quick brown fox\nline three\n")
         with pytest.raises(EditConflictError) as exc_info:
-            writable.edit("diag.md", old_text="the quick brown fax", new_text="x")
+            writable.writer.edit(
+                "diag.md", old_text="the quick brown fax", new_text="x"
+            )
         assert exc_info.value.closest_match_line == 2
 
     def test_edit_diagnostic_diff_snippet(self, writable: Collection) -> None:
         """Failed match includes expected/found snippets."""
-        writable.write("diag2.md", "the quick brown fox\n")
+        writable.writer.write("diag2.md", "the quick brown fox\n")
         with pytest.raises(EditConflictError) as exc_info:
-            writable.edit("diag2.md", old_text="the quick-brown fox", new_text="x")
+            writable.writer.edit(
+                "diag2.md", old_text="the quick-brown fox", new_text="x"
+            )
         err = exc_info.value
         assert err.expected_snippet is not None
         assert err.found_snippet is not None
 
     def test_edit_diagnostic_no_close_match(self, writable: Collection) -> None:
         """No diagnostics when nothing is remotely close."""
-        writable.write("diag3.md", "aaaa\nbbbb\ncccc\n")
+        writable.writer.write("diag3.md", "aaaa\nbbbb\ncccc\n")
         with pytest.raises(EditConflictError) as exc_info:
-            writable.edit(
+            writable.writer.edit(
                 "diag3.md",
                 old_text="xyz123 completely different",
                 new_text="x",
@@ -1474,7 +1496,7 @@ class TestFindClosestMatch:
 class TestDelete:
     def test_delete_removes_file(self, writable: Collection, vault_path: Path) -> None:
         """delete() removes the file from disk."""
-        result = writable.delete("simple.md")
+        result = writable.writer.delete("simple.md")
 
         assert isinstance(result, DeleteResult)
         assert result.path == "simple.md"
@@ -1483,18 +1505,18 @@ class TestDelete:
     def test_delete_not_found_raises(self, writable: Collection) -> None:
         """delete() raises DocumentNotFoundError for missing files."""
         with pytest.raises(DocumentNotFoundError):
-            writable.delete("nonexistent.md")
+            writable.writer.delete("nonexistent.md")
 
     def test_delete_removes_from_search(self, writable: Collection) -> None:
         """Deleted content no longer appears in search results."""
         # Verify it's searchable first.
-        results_before = writable.search("Simple Document", mode="keyword")
+        results_before = writable.reader.search("Simple Document", mode="keyword")
         assert any(r.path == "simple.md" for r in results_before)
 
-        writable.delete("simple.md")
+        writable.writer.delete("simple.md")
         wait_for_writer_drain(writable)
 
-        results_after = writable.search("Simple Document", mode="keyword")
+        results_after = writable.reader.search("Simple Document", mode="keyword")
         assert not any(r.path == "simple.md" for r in results_after)
 
     def test_delete_triggers_callback(self, vault_path: Path) -> None:
@@ -1503,9 +1525,9 @@ class TestDelete:
         col = _make_collection(
             vault_path, read_only=False, on_write=lambda *args: calls.append(args)
         )
-        col.build_index()
+        col.index.build_index()
 
-        col.delete("simple.md")
+        col.writer.delete("simple.md")
         col.close()  # drain deferred callback queue
 
         assert len(calls) == 1
@@ -1519,20 +1541,24 @@ class TestDelete:
     ) -> None:
         """delete() removes the document from semantic search results."""
         # Confirm the doc is reachable via semantic search first.
-        before = writable_with_embeddings.search("simple document", mode="semantic")
+        before = writable_with_embeddings.reader.search(
+            "simple document", mode="semantic"
+        )
         assert any(r.path == "simple.md" for r in before)
 
-        writable_with_embeddings.delete("simple.md")
+        writable_with_embeddings.writer.delete("simple.md")
         wait_for_writer_drain(writable_with_embeddings)
 
-        after = writable_with_embeddings.search("simple document", mode="semantic")
+        after = writable_with_embeddings.reader.search(
+            "simple document", mode="semantic"
+        )
         assert not any(r.path == "simple.md" for r in after)
 
 
 class TestRename:
     def test_rename_moves_file(self, writable: Collection, vault_path: Path) -> None:
         """rename() moves the file on disk."""
-        result = writable.rename("simple.md", "moved.md")
+        result = writable.writer.rename("simple.md", "moved.md")
 
         assert isinstance(result, RenameResult)
         assert result.old_path == "simple.md"
@@ -1542,10 +1568,10 @@ class TestRename:
 
     def test_rename_updates_search(self, writable: Collection) -> None:
         """After rename, search finds the document at the new path only."""
-        writable.rename("simple.md", "moved.md")
+        writable.writer.rename("simple.md", "moved.md")
         wait_for_writer_drain(writable)
 
-        results = writable.search("Simple Document", mode="keyword")
+        results = writable.reader.search("Simple Document", mode="keyword")
         paths = [r.path for r in results]
         assert "moved.md" in paths
         assert "simple.md" not in paths
@@ -1554,19 +1580,19 @@ class TestRename:
         self, writable: Collection, vault_path: Path
     ) -> None:
         """rename() creates intermediate directories for the new path."""
-        writable.rename("simple.md", "new_folder/moved.md")
+        writable.writer.rename("simple.md", "new_folder/moved.md")
 
         assert (vault_path / "new_folder" / "moved.md").is_file()
 
     def test_rename_not_found_raises(self, writable: Collection) -> None:
         """rename() raises DocumentNotFoundError when old_path missing."""
         with pytest.raises(DocumentNotFoundError):
-            writable.rename("nonexistent.md", "target.md")
+            writable.writer.rename("nonexistent.md", "target.md")
 
     def test_rename_target_exists_raises(self, writable: Collection) -> None:
         """rename() raises DocumentExistsError when new_path exists."""
         with pytest.raises(DocumentExistsError):
-            writable.rename("simple.md", "no_frontmatter.md")
+            writable.writer.rename("simple.md", "no_frontmatter.md")
 
     def test_rename_triggers_callback(self, vault_path: Path) -> None:
         """rename() invokes the on_write callback with new path."""
@@ -1574,9 +1600,9 @@ class TestRename:
         col = _make_collection(
             vault_path, read_only=False, on_write=lambda *args: calls.append(args)
         )
-        col.build_index()
+        col.index.build_index()
 
-        col.rename("simple.md", "moved.md")
+        col.writer.rename("simple.md", "moved.md")
         col.close()  # drain deferred callback queue
 
         assert len(calls) == 1
@@ -1587,10 +1613,10 @@ class TestRename:
 
     def test_rename_folder_updated(self, writable: Collection) -> None:
         """rename() updates the folder derivation after move."""
-        writable.rename("simple.md", "new_folder/simple.md")
+        writable.writer.rename("simple.md", "new_folder/simple.md")
         wait_for_writer_drain(writable)
 
-        notes = writable.list_documents(folder="new_folder")
+        notes = writable.reader.list_documents(folder="new_folder")
         paths = [n.path for n in notes]
         assert "new_folder/simple.md" in paths
 
@@ -1600,7 +1626,7 @@ class TestRename:
         """rename() produces a file whose content is byte-identical to the original."""
         original_bytes = (vault_path / "simple.md").read_bytes()
 
-        writable.rename("simple.md", "preserved.md")
+        writable.writer.rename("simple.md", "preserved.md")
 
         renamed_bytes = (vault_path / "preserved.md").read_bytes()
         assert renamed_bytes == original_bytes
@@ -1608,23 +1634,25 @@ class TestRename:
     def test_rename_old_path_removed_from_fts(self, writable: Collection) -> None:
         """rename() removes the old path from FTS; old path is no longer searchable."""
         # Confirm old path is searchable before rename.
-        before = writable.search("Simple Document", mode="keyword")
+        before = writable.reader.search("Simple Document", mode="keyword")
         assert any(r.path == "simple.md" for r in before)
 
-        writable.rename("simple.md", "after_rename.md")
+        writable.writer.rename("simple.md", "after_rename.md")
         wait_for_writer_drain(writable)
 
-        after = writable.search("Simple Document", mode="keyword")
+        after = writable.reader.search("Simple Document", mode="keyword")
         assert not any(r.path == "simple.md" for r in after)
 
     def test_rename_updates_vector_index(
         self, writable_with_embeddings: Collection
     ) -> None:
         """rename() with embeddings configured indexes the new path, drops the old."""
-        writable_with_embeddings.rename("simple.md", "renamed_semantic.md")
+        writable_with_embeddings.writer.rename("simple.md", "renamed_semantic.md")
         wait_for_writer_drain(writable_with_embeddings)
 
-        after = writable_with_embeddings.search("simple document", mode="semantic")
+        after = writable_with_embeddings.reader.search(
+            "simple document", mode="semantic"
+        )
         paths = [r.path for r in after]
         assert "renamed_semantic.md" in paths
         assert "simple.md" not in paths
@@ -1632,7 +1660,7 @@ class TestRename:
     def test_rename_to_same_path_raises(self, writable: Collection) -> None:
         """rename() to the same path raises DocumentExistsError."""
         with pytest.raises(DocumentExistsError):
-            writable.rename("simple.md", "simple.md")
+            writable.writer.rename("simple.md", "simple.md")
 
 
 # ---------------------------------------------------------------------------
@@ -1650,7 +1678,7 @@ class TestConcurrentWrites:
         paths = [f"concurrent_write_{i}.md" for i in range(10)]
 
         def do_write(p: str) -> None:
-            writable.write(p, f"# Note {p}\n\nContent for {p}.\n")
+            writable.writer.write(p, f"# Note {p}\n\nContent for {p}.\n")
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
             futures = [executor.submit(do_write, p) for p in paths]
@@ -1664,7 +1692,7 @@ class TestConcurrentWrites:
             assert (vault_path / p).is_file(), f"Expected {p} to exist on disk"
 
         # All 10 files must be discoverable via search.
-        results = writable.search("Content for", mode="keyword", limit=20)
+        results = writable.reader.search("Content for", mode="keyword", limit=20)
         result_paths = {r.path for r in results}
         for p in paths:
             assert p in result_paths, f"Expected {p} to be searchable"
@@ -1680,10 +1708,10 @@ class TestConcurrentWrites:
         """
         # Build a file where each line contains a unique token.
         lines = [f"Section-Token-{i}: original text\n" for i in range(10)]
-        writable.write("concurrent_edit.md", "".join(lines))
+        writable.writer.write("concurrent_edit.md", "".join(lines))
 
         def do_edit(i: int) -> None:
-            writable.edit(
+            writable.writer.edit(
                 "concurrent_edit.md",
                 f"Section-Token-{i}: original text",
                 f"Section-Token-{i}: replaced text",
@@ -1714,7 +1742,7 @@ class TestConcurrentWrites:
         finished = threading.Event()
 
         def do_write() -> None:
-            col.write("paused.md", "# Paused\n")
+            col.writer.write("paused.md", "# Paused\n")
             finished.set()
 
         with col.pause_writes():
@@ -1826,7 +1854,7 @@ class TestAtomicWrites:
             return original(self, target)
 
         monkeypatch.setattr(Path, "replace", tracking)
-        writable.write("atomic_write.md", "atomic content")
+        writable.writer.write("atomic_write.md", "atomic content")
 
         assert any(dst.endswith("atomic_write.md") for _, dst in replace_calls), (
             "write() did not use Path.replace — file was not written atomically"
@@ -1836,7 +1864,7 @@ class TestAtomicWrites:
         self, writable: Collection, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """edit() calls Path.replace to atomically land the patched file."""
-        writable.write("atomic_edit.md", "original content")
+        writable.writer.write("atomic_edit.md", "original content")
         replace_calls: list[tuple[str, str]] = []
         original = Path.replace
 
@@ -1845,7 +1873,7 @@ class TestAtomicWrites:
             return original(self, target)
 
         monkeypatch.setattr(Path, "replace", tracking)
-        writable.edit(
+        writable.writer.edit(
             "atomic_edit.md", old_text="original content", new_text="updated content"
         )
 
@@ -1865,7 +1893,7 @@ class TestAtomicWrites:
             return original(self, target)
 
         monkeypatch.setattr(Path, "replace", tracking)
-        writable.write_attachment("diagram.png", b"\x89PNG\r\n\x1a\n")
+        writable.writer.write_attachment("diagram.png", b"\x89PNG\r\n\x1a\n")
 
         assert any(dst.endswith("diagram.png") for _, dst in replace_calls), (
             "write_attachment() did not use Path.replace — file was not written atomically"
@@ -1875,13 +1903,13 @@ class TestAtomicWrites:
         self, writable: Collection, vault_path: Path
     ) -> None:
         """If the write fails, the original file is untouched (no silent truncation)."""
-        writable.write("safe.md", "original content")
+        writable.writer.write("safe.md", "original content")
 
         def failing_replace(_self: Path, _target: Path) -> Path:
             raise OSError("simulated disk full")
 
         with patch.object(Path, "replace", failing_replace), pytest.raises(OSError):
-            writable.write("safe.md", "replacement content")
+            writable.writer.write("safe.md", "replacement content")
 
         assert "original content" in (vault_path / "safe.md").read_text()
         # No leftover .tmp files should remain after the failed write.
@@ -1893,11 +1921,11 @@ class TestAtomicWrites:
         self, writable: Collection, vault_path: Path
     ) -> None:
         """Overwriting an existing file must not downgrade its permissions."""
-        writable.write("perms.md", "original content")
+        writable.writer.write("perms.md", "original content")
         target = vault_path / "perms.md"
         target.chmod(0o644)
 
-        writable.write("perms.md", "new content")
+        writable.writer.write("perms.md", "new content")
 
         mode = target.stat().st_mode & 0o777
         assert mode == 0o644, (
@@ -1908,11 +1936,11 @@ class TestAtomicWrites:
         self, writable: Collection, vault_path: Path
     ) -> None:
         """edit() on an existing file must not downgrade its permissions."""
-        writable.write("perms_edit.md", "original content")
+        writable.writer.write("perms_edit.md", "original content")
         target = vault_path / "perms_edit.md"
         target.chmod(0o644)
 
-        writable.edit(
+        writable.writer.edit(
             "perms_edit.md", old_text="original content", new_text="edited content"
         )
 
@@ -1925,11 +1953,11 @@ class TestAtomicWrites:
         self, writable: Collection, vault_path: Path
     ) -> None:
         """Overwriting an existing attachment must not downgrade its permissions."""
-        writable.write_attachment("diagram.png", b"\x89PNG\r\n\x1a\n")
+        writable.writer.write_attachment("diagram.png", b"\x89PNG\r\n\x1a\n")
         target = vault_path / "diagram.png"
         target.chmod(0o644)
 
-        writable.write_attachment("diagram.png", b"\x89PNG\r\n\x1a\nUpdated")
+        writable.writer.write_attachment("diagram.png", b"\x89PNG\r\n\x1a\nUpdated")
 
         mode = target.stat().st_mode & 0o777
         assert mode == 0o644, (
@@ -1940,13 +1968,13 @@ class TestAtomicWrites:
         self, writable: Collection, vault_path: Path
     ) -> None:
         """If write_attachment fails, the original is untouched and no .tmp files remain."""
-        writable.write_attachment("diagram.png", b"original bytes")
+        writable.writer.write_attachment("diagram.png", b"original bytes")
 
         def failing_replace(_self: Path, _target: Path) -> Path:
             raise OSError("simulated disk full")
 
         with patch.object(Path, "replace", failing_replace), pytest.raises(OSError):
-            writable.write_attachment("diagram.png", b"new bytes")
+            writable.writer.write_attachment("diagram.png", b"new bytes")
 
         assert (vault_path / "diagram.png").read_bytes() == b"original bytes"
         assert list(vault_path.glob("**/*.tmp")) == [], (
@@ -2026,7 +2054,7 @@ class TestReadAttachment:
         import base64
 
         col = Collection(source_dir=vault_with_attachment)
-        result = col.read_attachment("assets/report.pdf")
+        result = col.reader.read_attachment("assets/report.pdf")
 
         assert isinstance(result, AttachmentContent)
         assert result.path == "assets/report.pdf"
@@ -2041,7 +2069,7 @@ class TestReadAttachment:
         """read_attachment() raises ValueError for missing files."""
         col = Collection(source_dir=vault_with_attachment)
         with pytest.raises(ValueError, match="not found"):
-            col.read_attachment("assets/missing.pdf")
+            col.reader.read_attachment("assets/missing.pdf")
 
     def test_read_attachment_disallowed_extension_raises(
         self, vault_with_attachment: Path
@@ -2049,7 +2077,7 @@ class TestReadAttachment:
         """read_attachment() raises ValueError for disallowed extensions."""
         col = Collection(source_dir=vault_with_attachment)
         with pytest.raises(ValueError, match="allowlist"):
-            col.read_attachment("assets/report.xyz")
+            col.reader.read_attachment("assets/report.xyz")
 
     def test_read_attachment_size_limit_enforced(
         self, vault_with_attachment: Path
@@ -2060,20 +2088,20 @@ class TestReadAttachment:
             source_dir=vault_with_attachment, max_attachment_size_mb=0.000001
         )
         with pytest.raises(ValueError, match="exceeds"):
-            col.read_attachment("assets/report.pdf")
+            col.reader.read_attachment("assets/report.pdf")
 
     def test_read_attachment_zero_size_limit_disables(
         self, vault_with_attachment: Path
     ) -> None:
         """read_attachment() with max_attachment_size_mb=0 has no size limit."""
         col = Collection(source_dir=vault_with_attachment, max_attachment_size_mb=0)
-        result = col.read_attachment("assets/report.pdf")
+        result = col.reader.read_attachment("assets/report.pdf")
         assert result.size_bytes > 0
 
     def test_read_attachment_png_mime_type(self, vault_with_attachment: Path) -> None:
         """read_attachment() detects image/png MIME type."""
         col = Collection(source_dir=vault_with_attachment)
-        result = col.read_attachment("assets/image.png")
+        result = col.reader.read_attachment("assets/image.png")
         assert result.mime_type == "image/png"
 
     def test_read_attachment_returns_etag(self, vault_with_attachment: Path) -> None:
@@ -2081,7 +2109,7 @@ class TestReadAttachment:
         from markdown_vault_mcp.hashing import compute_file_hash
 
         col = Collection(source_dir=vault_with_attachment)
-        result = col.read_attachment("assets/report.pdf")
+        result = col.reader.read_attachment("assets/report.pdf")
 
         expected = compute_file_hash(vault_with_attachment / "assets" / "report.pdf")
         assert result.etag == expected
@@ -2089,8 +2117,8 @@ class TestReadAttachment:
     def test_read_attachment_etag_is_stable(self, vault_with_attachment: Path) -> None:
         """read_attachment() returns the same etag on repeated reads."""
         col = Collection(source_dir=vault_with_attachment)
-        result1 = col.read_attachment("assets/report.pdf")
-        result2 = col.read_attachment("assets/report.pdf")
+        result1 = col.reader.read_attachment("assets/report.pdf")
+        result2 = col.reader.read_attachment("assets/report.pdf")
 
         assert result1.etag is not None
         assert result1.etag == result2.etag
@@ -2101,12 +2129,12 @@ class TestReadAttachment:
     ) -> None:
         """read_attachment() etag changes when file content changes."""
         col = Collection(source_dir=vault_with_attachment, read_only=False)
-        result_before = col.read_attachment("assets/report.pdf")
+        result_before = col.reader.read_attachment("assets/report.pdf")
         etag_before = result_before.etag
 
-        col.write_attachment("assets/report.pdf", b"new content")
+        col.writer.write_attachment("assets/report.pdf", b"new content")
 
-        result_after = col.read_attachment("assets/report.pdf")
+        result_after = col.reader.read_attachment("assets/report.pdf")
         assert result_after.etag != etag_before
 
 
@@ -2115,7 +2143,7 @@ class TestWriteAttachment:
         """write_attachment() creates a new binary file on disk."""
         col = Collection(source_dir=vault_with_attachment, read_only=False)
         raw = b"\x89PNG\r\n\x1a\n" + b"\x00" * 8
-        result = col.write_attachment("assets/new.png", raw)
+        result = col.writer.write_attachment("assets/new.png", raw)
 
         assert isinstance(result, WriteResult)
         assert result.path == "assets/new.png"
@@ -2128,7 +2156,7 @@ class TestWriteAttachment:
         """write_attachment() overwrites an existing file, returns created=False."""
         col = Collection(source_dir=vault_with_attachment, read_only=False)
         new_content = b"new pdf content"
-        result = col.write_attachment("assets/report.pdf", new_content)
+        result = col.writer.write_attachment("assets/report.pdf", new_content)
 
         assert result.created is False
         assert (
@@ -2140,7 +2168,7 @@ class TestWriteAttachment:
     ) -> None:
         """write_attachment() creates parent directories as needed."""
         col = Collection(source_dir=vault_with_attachment, read_only=False)
-        col.write_attachment("deep/nested/file.pdf", b"content")
+        col.writer.write_attachment("deep/nested/file.pdf", b"content")
 
         assert (vault_with_attachment / "deep" / "nested" / "file.pdf").is_file()
 
@@ -2150,7 +2178,7 @@ class TestWriteAttachment:
         """write_attachment() raises ReadOnlyError on a read-only collection."""
         col = Collection(source_dir=vault_with_attachment, read_only=True)
         with pytest.raises(ReadOnlyError):
-            col.write_attachment("assets/new.pdf", b"content")
+            col.writer.write_attachment("assets/new.pdf", b"content")
 
     def test_write_attachment_size_limit_enforced(
         self, vault_with_attachment: Path
@@ -2162,7 +2190,7 @@ class TestWriteAttachment:
             max_attachment_size_mb=0.000001,
         )
         with pytest.raises(ValueError, match="exceeds"):
-            col.write_attachment("assets/big.pdf", b"a" * 100)
+            col.writer.write_attachment("assets/big.pdf", b"a" * 100)
 
     def test_write_attachment_skip_size_cap_bypasses_limit(
         self, vault_with_attachment: Path
@@ -2174,7 +2202,7 @@ class TestWriteAttachment:
             max_attachment_size_mb=0.000001,
         )
         raw = b"a" * 100
-        result = col.write_attachment("assets/big.pdf", raw, skip_size_cap=True)
+        result = col.writer.write_attachment("assets/big.pdf", raw, skip_size_cap=True)
         assert result.created is True
         assert (vault_with_attachment / "assets" / "big.pdf").read_bytes() == raw
 
@@ -2184,7 +2212,7 @@ class TestWriteAttachment:
         """write_attachment() raises ValueError for disallowed extensions."""
         col = Collection(source_dir=vault_with_attachment, read_only=False)
         with pytest.raises(ValueError, match="allowlist"):
-            col.write_attachment("file.xyz", b"content")
+            col.writer.write_attachment("file.xyz", b"content")
 
     def test_write_attachment_triggers_callback(
         self, vault_with_attachment: Path
@@ -2196,7 +2224,7 @@ class TestWriteAttachment:
             read_only=False,
             on_write=lambda *args: calls.append(args),
         )
-        col.write_attachment("assets/cb.pdf", b"callback test")
+        col.writer.write_attachment("assets/cb.pdf", b"callback test")
         col.close()  # drain deferred callback queue
 
         assert len(calls) == 1
@@ -2217,8 +2245,8 @@ class TestListWithAttachments:
     ) -> None:
         """list() without include_attachments does not return attachment files."""
         col = Collection(source_dir=vault_with_attachment)
-        col.build_index()
-        results = col.list_documents()
+        col.index.build_index()
+        results = col.reader.list_documents()
 
         paths = [r.path for r in results]
         assert not any(p.endswith(".pdf") or p.endswith(".png") for p in paths)
@@ -2228,8 +2256,8 @@ class TestListWithAttachments:
     ) -> None:
         """list(include_attachments=True) returns notes and attachments."""
         col = Collection(source_dir=vault_with_attachment)
-        col.build_index()
-        results = col.list_documents(include_attachments=True)
+        col.index.build_index()
+        results = col.reader.list_documents(include_attachments=True)
 
         kinds = {type(r).__name__ for r in results}
         assert "NoteInfo" in kinds
@@ -2238,8 +2266,8 @@ class TestListWithAttachments:
     def test_list_attachment_info_fields(self, vault_with_attachment: Path) -> None:
         """AttachmentInfo entries have the correct fields."""
         col = Collection(source_dir=vault_with_attachment)
-        col.build_index()
-        results = col.list_documents(include_attachments=True)
+        col.index.build_index()
+        results = col.reader.list_documents(include_attachments=True)
 
         attachments = [r for r in results if isinstance(r, AttachmentInfo)]
         assert len(attachments) >= 1
@@ -2256,8 +2284,8 @@ class TestListWithAttachments:
         """Attachments with disallowed extensions are not returned."""
         (vault_with_attachment / "assets" / "data.xyz").write_bytes(b"unknown")
         col = Collection(source_dir=vault_with_attachment)
-        col.build_index()
-        results = col.list_documents(include_attachments=True)
+        col.index.build_index()
+        results = col.reader.list_documents(include_attachments=True)
 
         paths = [r.path for r in results]
         assert not any(p.endswith(".xyz") for p in paths)
@@ -2268,8 +2296,8 @@ class TestListWithAttachments:
         """attachment_extensions=['*'] returns all non-.md files."""
         (vault_with_attachment / "assets" / "data.xyz").write_bytes(b"unknown")
         col = Collection(source_dir=vault_with_attachment, attachment_extensions=["*"])
-        col.build_index()
-        results = col.list_documents(include_attachments=True)
+        col.index.build_index()
+        results = col.reader.list_documents(include_attachments=True)
 
         paths = [r.path for r in results]
         assert any(p.endswith(".xyz") for p in paths)
@@ -2277,8 +2305,8 @@ class TestListWithAttachments:
     def test_list_attachments_folder_filter(self, vault_with_attachment: Path) -> None:
         """list(include_attachments=True, folder=...) filters attachments by folder."""
         col = Collection(source_dir=vault_with_attachment)
-        col.build_index()
-        results = col.list_documents(include_attachments=True, folder="assets")
+        col.index.build_index()
+        results = col.reader.list_documents(include_attachments=True, folder="assets")
 
         for r in results:
             assert r.folder == "assets" or r.folder.startswith("assets/")
@@ -2293,8 +2321,8 @@ class TestDeleteAttachment:
     def test_delete_attachment_removes_file(self, vault_with_attachment: Path) -> None:
         """delete() removes an attachment file from disk."""
         col = Collection(source_dir=vault_with_attachment, read_only=False)
-        col.build_index()
-        result = col.delete("assets/report.pdf")
+        col.index.build_index()
+        result = col.writer.delete("assets/report.pdf")
 
         assert isinstance(result, DeleteResult)
         assert result.path == "assets/report.pdf"
@@ -2305,9 +2333,9 @@ class TestDeleteAttachment:
     ) -> None:
         """delete() raises DocumentNotFoundError for missing attachment."""
         col = Collection(source_dir=vault_with_attachment, read_only=False)
-        col.build_index()
+        col.index.build_index()
         with pytest.raises(DocumentNotFoundError):
-            col.delete("assets/missing.pdf")
+            col.writer.delete("assets/missing.pdf")
 
     def test_delete_attachment_disallowed_ext_raises(
         self, vault_with_attachment: Path
@@ -2315,9 +2343,9 @@ class TestDeleteAttachment:
         """delete() on a disallowed extension raises ValueError."""
         (vault_with_attachment / "file.xyz").write_bytes(b"data")
         col = Collection(source_dir=vault_with_attachment, read_only=False)
-        col.build_index()
+        col.index.build_index()
         with pytest.raises(ValueError, match="allowlist"):
-            col.delete("file.xyz")
+            col.writer.delete("file.xyz")
 
     def test_delete_attachment_triggers_callback(
         self, vault_with_attachment: Path
@@ -2329,8 +2357,8 @@ class TestDeleteAttachment:
             read_only=False,
             on_write=lambda *args: calls.append(args),
         )
-        col.build_index()
-        col.delete("assets/report.pdf")
+        col.index.build_index()
+        col.writer.delete("assets/report.pdf")
         col.close()  # drain deferred callback queue
 
         assert len(calls) == 1
@@ -2342,8 +2370,8 @@ class TestRenameAttachment:
     def test_rename_attachment_moves_file(self, vault_with_attachment: Path) -> None:
         """rename() moves an attachment file on disk."""
         col = Collection(source_dir=vault_with_attachment, read_only=False)
-        col.build_index()
-        result = col.rename("assets/report.pdf", "docs/report.pdf")
+        col.index.build_index()
+        result = col.writer.rename("assets/report.pdf", "docs/report.pdf")
 
         assert isinstance(result, RenameResult)
         assert not (vault_with_attachment / "assets" / "report.pdf").is_file()
@@ -2354,26 +2382,26 @@ class TestRenameAttachment:
     ) -> None:
         """rename() raises DocumentNotFoundError for missing attachment."""
         col = Collection(source_dir=vault_with_attachment, read_only=False)
-        col.build_index()
+        col.index.build_index()
         with pytest.raises(DocumentNotFoundError):
-            col.rename("assets/missing.pdf", "docs/report.pdf")
+            col.writer.rename("assets/missing.pdf", "docs/report.pdf")
 
     def test_rename_attachment_target_exists_raises(
         self, vault_with_attachment: Path
     ) -> None:
         """rename() raises DocumentExistsError when the target already exists."""
         col = Collection(source_dir=vault_with_attachment, read_only=False)
-        col.build_index()
+        col.index.build_index()
         with pytest.raises(DocumentExistsError):
-            col.rename("assets/report.pdf", "assets/image.png")
+            col.writer.rename("assets/report.pdf", "assets/image.png")
 
     def test_rename_attachment_creates_intermediate_dirs(
         self, vault_with_attachment: Path
     ) -> None:
         """rename() creates parent directories for the attachment target."""
         col = Collection(source_dir=vault_with_attachment, read_only=False)
-        col.build_index()
-        col.rename("assets/report.pdf", "new_folder/sub/report.pdf")
+        col.index.build_index()
+        col.writer.rename("assets/report.pdf", "new_folder/sub/report.pdf")
 
         assert (vault_with_attachment / "new_folder" / "sub" / "report.pdf").is_file()
 
@@ -2383,8 +2411,8 @@ class TestRenameAttachment:
         """rename() produces a file byte-identical to the original."""
         original = (vault_with_attachment / "assets" / "report.pdf").read_bytes()
         col = Collection(source_dir=vault_with_attachment, read_only=False)
-        col.build_index()
-        col.rename("assets/report.pdf", "docs/report.pdf")
+        col.index.build_index()
+        col.writer.rename("assets/report.pdf", "docs/report.pdf")
 
         assert (vault_with_attachment / "docs" / "report.pdf").read_bytes() == original
 
@@ -2399,7 +2427,7 @@ class TestStatsAttachmentExtensions:
         self, collection: Collection
     ) -> None:
         """stats() includes attachment_extensions from the default allowlist."""
-        s = collection.stats()
+        s = collection.reader.stats()
         assert isinstance(s.attachment_extensions, list)
         assert "pdf" in s.attachment_extensions
         assert "png" in s.attachment_extensions
@@ -2409,8 +2437,8 @@ class TestStatsAttachmentExtensions:
     ) -> None:
         """stats() reflects a custom attachment_extensions list."""
         col = Collection(source_dir=vault_path, attachment_extensions=["pdf", "docx"])
-        col.build_index()
-        s = col.stats()
+        col.index.build_index()
+        s = col.reader.stats()
         assert sorted(s.attachment_extensions) == ["docx", "pdf"]
 
     def test_stats_includes_attachment_extensions_wildcard(
@@ -2418,8 +2446,8 @@ class TestStatsAttachmentExtensions:
     ) -> None:
         """stats() shows ['*'] when attachment_extensions is the wildcard."""
         col = Collection(source_dir=vault_path, attachment_extensions=["*"])
-        col.build_index()
-        s = col.stats()
+        col.index.build_index()
+        s = col.reader.stats()
         assert s.attachment_extensions == ["*"]
 
 
@@ -2440,8 +2468,8 @@ def semantic_collection(
         embeddings_path=tmp_path / "embeddings",
         embedding_provider=mock_provider,
     )
-    col.build_index()
-    col.build_embeddings()
+    col.index.build_index()
+    col.index.build_embeddings()
     return col
 
 
@@ -2450,7 +2478,7 @@ class TestSemanticSearch:
         self, semantic_collection: Collection
     ) -> None:
         """search(mode='semantic') returns results with search_type='semantic'."""
-        results = semantic_collection.search("document content", mode="semantic")
+        results = semantic_collection.reader.search("document content", mode="semantic")
 
         assert len(results) > 0
         assert all(r.search_type == "semantic" for r in results)
@@ -2459,7 +2487,7 @@ class TestSemanticSearch:
         self, semantic_collection: Collection
     ) -> None:
         """Semantic search results carry path, title, score, and frontmatter fields."""
-        results = semantic_collection.search("document content", mode="semantic")
+        results = semantic_collection.reader.search("document content", mode="semantic")
 
         assert len(results) > 0
         for r in results:
@@ -2472,7 +2500,7 @@ class TestSemanticSearch:
         self, semantic_collection: Collection
     ) -> None:
         """search(mode='semantic', limit=N) never returns more than N results."""
-        results = semantic_collection.search("content", mode="semantic", limit=2)
+        results = semantic_collection.reader.search("content", mode="semantic", limit=2)
 
         assert len(results) <= 2
 
@@ -2488,10 +2516,12 @@ class TestSemanticSearch:
             embeddings_path=tmp_path / "embeddings",
             embedding_provider=mock_provider,
         )
-        col.build_index()
-        col.build_embeddings()
+        col.index.build_index()
+        col.index.build_embeddings()
 
-        results = col.search("document content", mode="semantic", folder="subfolder")
+        results = col.reader.search(
+            "document content", mode="semantic", folder="subfolder"
+        )
 
         # All results must be in the requested folder or a sub-folder of it.
         assert len(results) > 0, "Expected at least one result in subfolder"
@@ -2511,11 +2541,11 @@ class TestSemanticSearch:
             embedding_provider=mock_provider,
             indexed_frontmatter_fields=["cluster"],
         )
-        col.build_index()
-        col.build_embeddings()
+        col.index.build_index()
+        col.index.build_embeddings()
 
         # full_frontmatter.md has cluster=fiction; all results must match.
-        results = col.search(
+        results = col.reader.search(
             "document", mode="semantic", filters={"cluster": "fiction"}, limit=10
         )
 
@@ -2526,10 +2556,10 @@ class TestSemanticSearch:
     def test_semantic_search_no_provider_raises(self, vault_path: Path) -> None:
         """search(mode='semantic') raises ValueError when provider is not configured."""
         col = _make_collection(vault_path)
-        col.build_index()
+        col.index.build_index()
 
         with pytest.raises(ValueError, match="embedding_provider"):
-            col.search("query", mode="semantic")
+            col.reader.search("query", mode="semantic")
 
     def test_load_vectors_creates_empty_when_no_npy(
         self,
@@ -2544,7 +2574,7 @@ class TestSemanticSearch:
             embeddings_path=embeddings_path,
             embedding_provider=mock_provider,
         )
-        col.build_index()
+        col.index.build_index()
 
         # Confirm no .npy file exists before loading.
         assert not (tmp_path / "embeddings.npy").exists()
@@ -2569,8 +2599,8 @@ class TestSemanticSearch:
             embeddings_path=embeddings_path,
             embedding_provider=mock_provider,
         )
-        col1.build_index()
-        chunk_count = col1.build_embeddings()
+        col1.index.build_index()
+        chunk_count = col1.index.build_embeddings()
         assert chunk_count > 0
 
         # Create a fresh collection pointing at the same paths — vectors not yet loaded.
@@ -2579,7 +2609,7 @@ class TestSemanticSearch:
             embeddings_path=embeddings_path,
             embedding_provider=mock_provider,
         )
-        col2.build_index()
+        col2.index.build_index()
         assert col2._vectors is None  # not yet loaded
 
         vectors = col2._search_mgr._load_vectors()
@@ -2600,8 +2630,8 @@ class TestSemanticSearch:
             embeddings_path=embeddings_path,
             embedding_provider=mock_provider,
         )
-        col1.build_index()
-        expected_count = col1.build_embeddings()
+        col1.index.build_index()
+        expected_count = col1.index.build_embeddings()
         assert expected_count > 0
 
         class AlternateProvider(type(mock_provider)):
@@ -2618,7 +2648,7 @@ class TestSemanticSearch:
             embeddings_path=embeddings_path,
             embedding_provider=AlternateProvider(),
         )
-        col2.build_index()
+        col2.index.build_index()
 
         vectors = col2._search_mgr._load_vectors()
         assert vectors.count == expected_count
@@ -2646,7 +2676,7 @@ class TestHybridSearch:
         self, semantic_collection: Collection
     ) -> None:
         """search(mode='hybrid') returns at least one result."""
-        results = semantic_collection.search("document content", mode="hybrid")
+        results = semantic_collection.reader.search("document content", mode="hybrid")
 
         assert len(results) > 0
 
@@ -2654,7 +2684,9 @@ class TestHybridSearch:
         self, semantic_collection: Collection
     ) -> None:
         """Hybrid results can carry 'keyword', 'semantic', or 'hybrid' search_type."""
-        results = semantic_collection.search("document content", mode="hybrid", limit=9)
+        results = semantic_collection.reader.search(
+            "document content", mode="hybrid", limit=9
+        )
 
         types = {r.search_type for r in results}
         # With 9 docs and a broad query, at least one type should appear.
@@ -2673,10 +2705,12 @@ class TestHybridSearch:
             embeddings_path=tmp_path / "embeddings",
             embedding_provider=mock_provider,
         )
-        col.build_index()
-        col.build_embeddings()
+        col.index.build_index()
+        col.index.build_embeddings()
 
-        results = col.search("nested document", mode="hybrid", folder="subfolder")
+        results = col.reader.search(
+            "nested document", mode="hybrid", folder="subfolder"
+        )
 
         assert len(results) > 0, "Expected at least one result in subfolder"
         for r in results:
@@ -2695,10 +2729,10 @@ class TestHybridSearch:
             embedding_provider=mock_provider,
             indexed_frontmatter_fields=["cluster"],
         )
-        col.build_index()
-        col.build_embeddings()
+        col.index.build_index()
+        col.index.build_embeddings()
 
-        results = col.search(
+        results = col.reader.search(
             "document", mode="hybrid", filters={"cluster": "fiction"}, limit=10
         )
 
@@ -2736,10 +2770,10 @@ class TestHybridSearch:
             embeddings_path=embeddings_path,
             embedding_provider=mock_provider,
         )
-        col.build_index()
-        col.build_embeddings()
+        col.index.build_index()
+        col.index.build_embeddings()
 
-        results = col.search("zymurgy", mode="hybrid", limit=10)
+        results = col.reader.search("zymurgy", mode="hybrid", limit=10)
 
         by_path = {r.path: r for r in results}
         # doc_a matched FTS (rank ~1) and semantic — should appear with a score.
@@ -2752,10 +2786,10 @@ class TestHybridSearch:
     def test_hybrid_search_no_embeddings_raises(self, vault_path: Path) -> None:
         """search(mode='hybrid') raises ValueError without a configured provider."""
         col = _make_collection(vault_path)
-        col.build_index()
+        col.index.build_index()
 
         with pytest.raises(ValueError, match="embedding_provider"):
-            col.search("query", mode="hybrid")
+            col.reader.search("query", mode="hybrid")
 
 
 # ---------------------------------------------------------------------------
@@ -2767,9 +2801,9 @@ class TestEmbeddingsStatus:
     def test_status_unavailable_when_no_provider(self, vault_path: Path) -> None:
         """embeddings_status() returns available=False when no provider is set."""
         col = _make_collection(vault_path)
-        col.build_index()
+        col.index.build_index()
 
-        status = col.embeddings_status()
+        status = col.index.embeddings_status()
 
         assert status["available"] is False
         assert status["provider"] is None
@@ -2788,9 +2822,9 @@ class TestEmbeddingsStatus:
             embeddings_path=tmp_path / "embeddings",
             embedding_provider=mock_provider,
         )
-        col.build_index()
+        col.index.build_index()
 
-        status = col.embeddings_status()
+        status = col.index.embeddings_status()
 
         assert status["available"] is True
         assert status["chunk_count"] == 0
@@ -2800,7 +2834,7 @@ class TestEmbeddingsStatus:
         self, semantic_collection: Collection
     ) -> None:
         """embeddings_status() returns correct chunk_count after build_embeddings()."""
-        status = semantic_collection.embeddings_status()
+        status = semantic_collection.index.embeddings_status()
 
         assert status["available"] is True
         # 9 documents, each one chunk — chunk_count must match.
@@ -2825,8 +2859,8 @@ class TestEmbeddingsStatus:
             embeddings_path=embeddings_path,
             embedding_provider=mock_provider,
         )
-        col1.build_index()
-        chunk_count = col1.build_embeddings()
+        col1.index.build_index()
+        chunk_count = col1.index.build_embeddings()
         assert chunk_count > 0
 
         col2 = Collection(
@@ -2834,11 +2868,11 @@ class TestEmbeddingsStatus:
             embeddings_path=embeddings_path,
             embedding_provider=mock_provider,
         )
-        col2.build_index()
+        col2.index.build_index()
         # Confirm vectors have NOT been loaded in-memory.
         assert col2._vectors is None
 
-        status = col2.embeddings_status()
+        status = col2.index.embeddings_status()
 
         assert status["available"] is True
         assert status["chunk_count"] == chunk_count
@@ -2867,8 +2901,8 @@ class TestBuildEmbeddings:
             embeddings_path=embeddings_path,
             embedding_provider=mock_provider,
         )
-        col.build_index()
-        count1 = col.build_embeddings()
+        col.index.build_index()
+        count1 = col.index.build_embeddings()
         assert count1 == 9
 
         # Track embed calls to prove no re-embedding happens.
@@ -2881,7 +2915,7 @@ class TestBuildEmbeddings:
 
         mock_provider.embed = tracking_embed  # type: ignore[method-assign]
 
-        count2 = col.build_embeddings(force=False)
+        count2 = col.index.build_embeddings(force=False)
 
         # No new embedding calls; same count returned.
         assert embed_calls == []
@@ -2900,8 +2934,8 @@ class TestBuildEmbeddings:
             embeddings_path=embeddings_path,
             embedding_provider=mock_provider,
         )
-        col.build_index()
-        col.build_embeddings()
+        col.index.build_index()
+        col.index.build_embeddings()
 
         original_embed = mock_provider.embed
         embed_calls: list = []
@@ -2912,7 +2946,7 @@ class TestBuildEmbeddings:
 
         mock_provider.embed = tracking_embed  # type: ignore[method-assign]
 
-        count = col.build_embeddings(force=True)
+        count = col.index.build_embeddings(force=True)
 
         # Re-embedding must have occurred.
         assert len(embed_calls) > 0
@@ -2933,7 +2967,7 @@ class TestBuildEmbeddings:
             embeddings_path=embeddings_path,
             embedding_provider=mock_provider,
         )
-        col.build_index()
+        col.index.build_index()
 
         original_embed = mock_provider.embed
         batch_sizes: list[int] = []
@@ -2944,7 +2978,7 @@ class TestBuildEmbeddings:
 
         mock_provider.embed = tracking_embed  # type: ignore[method-assign]
 
-        count = col.build_embeddings(force=True)
+        count = col.index.build_embeddings(force=True)
         assert count == 9
 
         # embed() must have been called, and every batch at most _EMBEDDING_BATCH_SIZE.
@@ -2974,7 +3008,7 @@ class TestBuildEmbeddings:
             embeddings_path=embeddings_path,
             embedding_provider=mock_provider,
         )
-        col.build_index()
+        col.index.build_index()
 
         original_embed = mock_provider.embed
         batch_sizes: list[int] = []
@@ -2985,7 +3019,7 @@ class TestBuildEmbeddings:
 
         mock_provider.embed = tracking_embed  # type: ignore[method-assign]
 
-        count = col.build_embeddings(force=True)
+        count = col.index.build_embeddings(force=True)
 
         # All chunks embedded despite spanning multiple batches.
         assert count > _EMBEDDING_BATCH_SIZE
@@ -3011,7 +3045,7 @@ class TestBuildIndexNoOp:
         document count (9) while chunks_indexed=0 (no new scanning performed).
         """
         col = _make_collection(vault_path)
-        col.build_index()
+        col.index.build_index()
 
         # Intercept scan_directory to confirm it is NOT called again.
         import markdown_vault_mcp.managers.index as idx_mod
@@ -3024,7 +3058,7 @@ class TestBuildIndexNoOp:
             return original_scan(*args, **kwargs)
 
         with patch.object(idx_mod, "scan_directory", side_effect=tracking_scan):
-            stats2 = col.build_index()
+            stats2 = col.index.build_index()
 
         # scan_directory must not have been invoked on the second call.
         assert scan_calls == []
@@ -3054,8 +3088,8 @@ class TestReindexWithVectors:
             state_path=tmp_path / "state.json",
             read_only=False,
         )
-        col.build_index()
-        col.build_embeddings()
+        col.index.build_index()
+        col.index.build_embeddings()
         # Trigger vector load so _vectors is not None.
         col._search_mgr._load_vectors()
         return col
@@ -3071,13 +3105,13 @@ class TestReindexWithVectors:
         (vault_path / "brand_new.md").write_text(
             "# Brand New Note\n\nFresh content for reindex test.\n"
         )
-        writable_semantic.reindex()
+        writable_semantic.index.reindex()
 
         after_count = writable_semantic._vectors.count  # type: ignore[union-attr]
         assert after_count == before_count + 1
 
         # The new file must be findable via semantic search.
-        results = writable_semantic.search("fresh content", mode="semantic")
+        results = writable_semantic.reader.search("fresh content", mode="semantic")
         paths = [r.path for r in results]
         assert "brand_new.md" in paths
 
@@ -3090,13 +3124,13 @@ class TestReindexWithVectors:
         before_count = writable_semantic._vectors.count  # type: ignore[union-attr]
 
         (vault_path / "simple.md").unlink()
-        writable_semantic.reindex()
+        writable_semantic.index.reindex()
 
         after_count = writable_semantic._vectors.count  # type: ignore[union-attr]
         assert after_count == before_count - 1
 
         # Deleted file must not appear in semantic search results.
-        results = writable_semantic.search("simple document", mode="semantic")
+        results = writable_semantic.reader.search("simple document", mode="semantic")
         paths = [r.path for r in results]
         assert "simple.md" not in paths
 
@@ -3110,10 +3144,12 @@ class TestReindexWithVectors:
         (vault_path / "simple.md").write_text(
             "# QuantumXyloscopeModified\n\nUnique modified content.\n"
         )
-        writable_semantic.reindex()
+        writable_semantic.index.reindex()
 
         # Updated content must be findable by the new unique term.
-        results = writable_semantic.search("QuantumXyloscopeModified", mode="semantic")
+        results = writable_semantic.reader.search(
+            "QuantumXyloscopeModified", mode="semantic"
+        )
         paths = [r.path for r in results]
         assert "simple.md" in paths
 
@@ -3225,7 +3261,7 @@ class TestFtsRowToNoteInfoMalformedJson:
 class TestReadErrorPaths:
     def test_read_returns_none_for_path_traversal(self, collection: Collection) -> None:
         """read() returns None for paths that escape the source directory."""
-        result = collection.read("../secret.md")
+        result = collection.reader.read("../secret.md")
         assert result is None
 
     def test_read_returns_none_when_file_deleted_from_disk(
@@ -3233,16 +3269,16 @@ class TestReadErrorPaths:
     ) -> None:
         """read() returns None when file exists in index but was deleted from disk."""
         col = _make_collection(vault_path)
-        col.build_index()
+        col.index.build_index()
 
         # Confirm the file is readable before deleting it.
-        assert col.read("simple.md") is not None
+        assert col.reader.read("simple.md") is not None
 
         # Delete the file directly from disk (bypassing the Collection API).
         (vault_path / "simple.md").unlink()
 
         # read() must return None — file no longer exists.
-        result = col.read("simple.md")
+        result = col.reader.read("simple.md")
         assert result is None
 
 
@@ -3257,7 +3293,7 @@ class TestSearchNoFrontmatter:
     ) -> None:
         """search() on a document with no frontmatter returns result.frontmatter == {}."""
         # no_frontmatter.md has no YAML header at all.
-        results = collection.search("plain markdown", mode="keyword")
+        results = collection.reader.search("plain markdown", mode="keyword")
         no_fm_results = [r for r in results if r.path == "no_frontmatter.md"]
 
         assert len(no_fm_results) >= 1
@@ -3284,8 +3320,8 @@ class TestListAttachmentEdgeCases:
     ) -> None:
         """Attachments at the vault root have folder='' (not '.' or '/')."""
         col = Collection(source_dir=vault_with_root_attachment)
-        col.build_index()
-        results = col.list_documents(include_attachments=True)
+        col.index.build_index()
+        results = col.reader.list_documents(include_attachments=True)
 
         attachments = [r for r in results if isinstance(r, AttachmentInfo)]
         root_json = next((a for a in attachments if a.path == "diagram.json"), None)
@@ -3297,8 +3333,8 @@ class TestListAttachmentEdgeCases:
     ) -> None:
         """list(include_attachments=True, pattern='*.json') returns only .json files."""
         col = Collection(source_dir=vault_with_root_attachment)
-        col.build_index()
-        results = col.list_documents(include_attachments=True, pattern="*.json")
+        col.index.build_index()
+        results = col.reader.list_documents(include_attachments=True, pattern="*.json")
 
         attachment_paths = [r.path for r in results if isinstance(r, AttachmentInfo)]
         assert all(p.endswith(".json") for p in attachment_paths)
@@ -3310,8 +3346,8 @@ class TestListAttachmentEdgeCases:
     ) -> None:
         """list(include_attachments=True, folder='notes') only returns notes/ attachments."""
         col = Collection(source_dir=vault_with_root_attachment)
-        col.build_index()
-        results = col.list_documents(include_attachments=True, folder="notes")
+        col.index.build_index()
+        results = col.reader.list_documents(include_attachments=True, folder="notes")
 
         for r in results:
             assert r.folder == "notes" or r.folder.startswith("notes/")
@@ -3337,7 +3373,7 @@ class TestWriteAttachmentSizeLimit:
             max_attachment_size_mb=0.000001,  # ~1 byte limit
         )
         with pytest.raises(ValueError, match="exceeds"):
-            col.write_attachment("assets/big.pdf", b"a" * 100)
+            col.writer.write_attachment("assets/big.pdf", b"a" * 100)
 
     def test_write_attachment_unlimited_when_max_is_zero(
         self, vault_path: Path
@@ -3349,7 +3385,7 @@ class TestWriteAttachmentSizeLimit:
             max_attachment_size_mb=0,
         )
         large_content = b"x" * (20 * 1024 * 1024)  # 20 MB
-        result = col.write_attachment("large_file.pdf", large_content)
+        result = col.writer.write_attachment("large_file.pdf", large_content)
 
         assert isinstance(result, WriteResult)
         assert result.path == "large_file.pdf"
@@ -3380,8 +3416,8 @@ class TestListAttachmentHiddenDirFiltering:
         )
 
         col = Collection(source_dir=vault, attachment_extensions=["pdf", "json"])
-        col.build_index()
-        results = col.list_documents(include_attachments=True)
+        col.index.build_index()
+        results = col.reader.list_documents(include_attachments=True)
 
         attachment_paths = {
             r.path
@@ -3401,8 +3437,8 @@ class TestListAttachmentHiddenDirFiltering:
         (vault / ".hidden_config.json").write_bytes(b"{}")
 
         col = Collection(source_dir=vault, attachment_extensions=["json"])
-        col.build_index()
-        results = col.list_documents(include_attachments=True)
+        col.index.build_index()
+        results = col.reader.list_documents(include_attachments=True)
 
         attachment_paths = {r.path for r in results if hasattr(r, "mime_type")}
         assert ".hidden_config.json" not in attachment_paths
@@ -3427,8 +3463,8 @@ class TestListAttachmentHiddenDirFiltering:
             attachment_extensions=["pdf", "json"],
             exclude_patterns=["archived/**", "trash/**"],
         )
-        col.build_index()
-        results = col.list_documents(include_attachments=True)
+        col.index.build_index()
+        results = col.reader.list_documents(include_attachments=True)
 
         attachment_paths = {r.path for r in results if hasattr(r, "mime_type")}
         assert "assets/chart.pdf" in attachment_paths
@@ -3485,7 +3521,7 @@ def collection_with_long_doc(vault_path: Path) -> Collection:
     """Collection with a long multi-section document added for ToC testing."""
     (vault_path / "long_doc.md").write_text(_LONG_DOC, encoding="utf-8")
     col = _make_collection(vault_path)
-    col.build_index()
+    col.index.build_index()
     return col
 
 
@@ -3494,7 +3530,7 @@ class TestCollectionGetToc:
         self, collection_with_long_doc: Collection
     ) -> None:
         """get_toc() returns headings for a document with multiple sections."""
-        toc = collection_with_long_doc.get_toc("long_doc.md")
+        toc = collection_with_long_doc.reader.get_toc("long_doc.md")
 
         assert isinstance(toc, list)
         assert len(toc) >= 2
@@ -3509,7 +3545,7 @@ class TestCollectionGetToc:
         self, collection_with_long_doc: Collection
     ) -> None:
         """The first entry in get_toc() is always the document title at level 1."""
-        toc = collection_with_long_doc.get_toc("long_doc.md")
+        toc = collection_with_long_doc.reader.get_toc("long_doc.md")
 
         assert toc[0]["level"] == 1
         assert toc[0]["heading"] == "Long Document Title"
@@ -3518,7 +3554,7 @@ class TestCollectionGetToc:
         self, collection_with_long_doc: Collection
     ) -> None:
         """Synthetic H1 title must not duplicate a real H1 heading."""
-        toc = collection_with_long_doc.get_toc("long_doc.md")
+        toc = collection_with_long_doc.reader.get_toc("long_doc.md")
 
         h1_entries = [e for e in toc if e["level"] == 1]
         assert len(h1_entries) == 1, (
@@ -3531,7 +3567,7 @@ class TestCollectionGetToc:
     ) -> None:
         """get_toc() raises ValueError for a path not in the index."""
         with pytest.raises(ValueError, match="Document not found"):
-            collection_with_long_doc.get_toc("does_not_exist.md")
+            collection_with_long_doc.reader.get_toc("does_not_exist.md")
 
 
 class TestReindexThreadSafety:
@@ -3543,7 +3579,7 @@ class TestReindexThreadSafety:
         """Concurrent reindex + write does not crash or corrupt the FTS index."""
         state_path = tmp_path / "state.json"
         col = _make_collection(vault_path, state_path=state_path, read_only=False)
-        col.build_index()
+        col.index.build_index()
 
         # Add a file that reindex will discover.
         (vault_path / "concurrent_new.md").write_text(
@@ -3551,10 +3587,10 @@ class TestReindexThreadSafety:
         )
 
         def do_reindex() -> None:
-            col.reindex()
+            col.index.reindex()
 
         def do_write() -> None:
-            col.write("written_during_reindex.md", "# Written\n\nBody.\n")
+            col.writer.write("written_during_reindex.md", "# Written\n\nBody.\n")
 
         # Run reindex and write concurrently — should not raise.
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
@@ -3563,9 +3599,9 @@ class TestReindexThreadSafety:
                 f.result()  # raises if the thread raised
 
         # Both documents must be readable — index is not corrupted.
-        concurrent_note = col.read("concurrent_new.md")
+        concurrent_note = col.reader.read("concurrent_new.md")
         assert concurrent_note is not None, "reindex should have indexed the new file"
-        written = col.read("written_during_reindex.md")
+        written = col.reader.read("written_during_reindex.md")
         assert written is not None, "write during reindex must persist"
 
 
@@ -3586,7 +3622,9 @@ class TestOptimisticConcurrency:
         path = "simple.md"
         current_etag = compute_file_hash(vault_path / path)
 
-        result = writable.write(path, "# Updated\n\nNew body.\n", if_match=current_etag)
+        result = writable.writer.write(
+            path, "# Updated\n\nNew body.\n", if_match=current_etag
+        )
 
         assert result.created is False
         assert "Updated" in (vault_path / path).read_text()
@@ -3594,7 +3632,7 @@ class TestOptimisticConcurrency:
     def test_write_with_wrong_if_match_raises(self, writable: Collection) -> None:
         """write() with a stale etag raises ConcurrentModificationError."""
         with pytest.raises(ConcurrentModificationError) as exc_info:
-            writable.write("simple.md", "# Body\n", if_match="stale-etag-value")
+            writable.writer.write("simple.md", "# Body\n", if_match="stale-etag-value")
 
         assert exc_info.value.path == "simple.md"
         assert exc_info.value.expected == "stale-etag-value"
@@ -3605,7 +3643,7 @@ class TestOptimisticConcurrency:
     ) -> None:
         """write() with if_match for a nonexistent file raises ConcurrentModificationError."""
         with pytest.raises(ConcurrentModificationError) as exc_info:
-            writable.write("does_not_exist.md", "# Body\n", if_match="any-etag")
+            writable.writer.write("does_not_exist.md", "# Body\n", if_match="any-etag")
 
         assert exc_info.value.path == "does_not_exist.md"
         assert exc_info.value.actual == "(file does not exist)"
@@ -3614,7 +3652,7 @@ class TestOptimisticConcurrency:
         self, writable: Collection, vault_path: Path
     ) -> None:
         """write() without if_match performs unconditional write (backwards compatible)."""
-        result = writable.write("simple.md", "# New Body\n\nContent.\n")
+        result = writable.writer.write("simple.md", "# New Body\n\nContent.\n")
 
         assert result.created is False
         assert "New Body" in (vault_path / "simple.md").read_text()
@@ -3631,14 +3669,14 @@ class TestOptimisticConcurrency:
         old_text = file_content[:20]
         new_text = "CHANGED_PREFIX_TEXT_"
 
-        result = writable.edit(path, old_text, new_text, if_match=current_etag)
+        result = writable.writer.edit(path, old_text, new_text, if_match=current_etag)
 
         assert result.replacements == 1
 
     def test_edit_with_wrong_if_match_raises(self, writable: Collection) -> None:
         """edit() with a stale etag raises ConcurrentModificationError."""
         with pytest.raises(ConcurrentModificationError) as exc_info:
-            writable.edit(
+            writable.writer.edit(
                 "simple.md",
                 "Simple Document",
                 "Updated Document",
@@ -3657,7 +3695,7 @@ class TestOptimisticConcurrency:
         path = "simple.md"
         current_etag = compute_file_hash(vault_path / path)
 
-        result = writable.delete(path, if_match=current_etag)
+        result = writable.writer.delete(path, if_match=current_etag)
 
         assert result.path == path
         assert not (vault_path / path).exists()
@@ -3667,7 +3705,7 @@ class TestOptimisticConcurrency:
     ) -> None:
         """delete() with a stale etag raises ConcurrentModificationError."""
         with pytest.raises(ConcurrentModificationError) as exc_info:
-            writable.delete("simple.md", if_match="stale-etag-value")
+            writable.writer.delete("simple.md", if_match="stale-etag-value")
 
         assert exc_info.value.path == "simple.md"
         # File must NOT have been deleted.
@@ -3683,7 +3721,7 @@ class TestOptimisticConcurrency:
         new_path = "renamed_simple.md"
         current_etag = compute_file_hash(vault_path / old_path)
 
-        result = writable.rename(old_path, new_path, if_match=current_etag)
+        result = writable.writer.rename(old_path, new_path, if_match=current_etag)
 
         assert result.old_path == old_path
         assert result.new_path == new_path
@@ -3695,7 +3733,9 @@ class TestOptimisticConcurrency:
     ) -> None:
         """rename() with a stale etag raises ConcurrentModificationError."""
         with pytest.raises(ConcurrentModificationError) as exc_info:
-            writable.rename("simple.md", "renamed.md", if_match="stale-etag-value")
+            writable.writer.rename(
+                "simple.md", "renamed.md", if_match="stale-etag-value"
+            )
 
         assert exc_info.value.path == "simple.md"
         # File must NOT have been renamed.
@@ -3713,7 +3753,7 @@ class TestOptimisticConcurrency:
         current_etag = compute_file_hash(att_path)
         new_content = b"updated PDF bytes"
 
-        result = col.write_attachment(
+        result = col.writer.write_attachment(
             "assets/report.pdf", new_content, if_match=current_etag
         )
 
@@ -3727,7 +3767,7 @@ class TestOptimisticConcurrency:
         col = Collection(source_dir=vault_with_attachment, read_only=False)
 
         with pytest.raises(ConcurrentModificationError) as exc_info:
-            col.write_attachment(
+            col.writer.write_attachment(
                 "assets/report.pdf", b"new content", if_match="stale-etag-value"
             )
 
@@ -3741,7 +3781,9 @@ class TestOptimisticConcurrency:
         col = Collection(source_dir=vault_with_attachment, read_only=False)
 
         with pytest.raises(ConcurrentModificationError) as exc_info:
-            col.write_attachment("assets/missing.pdf", b"data", if_match="any-etag")
+            col.writer.write_attachment(
+                "assets/missing.pdf", b"data", if_match="any-etag"
+            )
 
         assert exc_info.value.path == "assets/missing.pdf"
         assert exc_info.value.actual == "(file does not exist)"
@@ -3750,11 +3792,11 @@ class TestOptimisticConcurrency:
 
     def test_read_etag_roundtrip_with_write(self, writable: Collection) -> None:
         """read() etag can be passed directly to write() as if_match and succeeds."""
-        note = writable.read("simple.md")
+        note = writable.reader.read("simple.md")
         assert note is not None
         assert note.etag, "etag must be non-empty"
 
-        result = writable.write(
+        result = writable.writer.write(
             "simple.md", "# Round-trip\n\nBody.\n", if_match=note.etag
         )
 
@@ -3764,13 +3806,13 @@ class TestOptimisticConcurrency:
         self, writable: Collection, vault_path: Path
     ) -> None:
         """read() etag can be passed to edit() as if_match and succeeds."""
-        note = writable.read("simple.md")
+        note = writable.reader.read("simple.md")
         assert note is not None
         assert note.etag
         file_content = (vault_path / "simple.md").read_text()
         old_text = file_content[:15]
 
-        result = writable.edit(
+        result = writable.writer.edit(
             "simple.md", old_text, "REPLACED_TEXT_X_", if_match=note.etag
         )
 
@@ -3778,16 +3820,16 @@ class TestOptimisticConcurrency:
 
     def test_read_etag_stale_after_write(self, writable: Collection) -> None:
         """etag from read() is no longer valid after the file is modified."""
-        note = writable.read("simple.md")
+        note = writable.reader.read("simple.md")
         assert note is not None
         stale_etag = note.etag
 
         # Modify the file.
-        writable.write("simple.md", "# Modified\n\nNew content.\n")
+        writable.writer.write("simple.md", "# Modified\n\nNew content.\n")
 
         # Now the stale etag should fail.
         with pytest.raises(ConcurrentModificationError):
-            writable.write("simple.md", "# Another write\n", if_match=stale_etag)
+            writable.writer.write("simple.md", "# Another write\n", if_match=stale_etag)
 
 
 # ---------------------------------------------------------------------------
@@ -3818,10 +3860,10 @@ class TestDeferredEmbeddings:
             embedding_provider=mock_provider,
             read_only=False,
         )
-        col.build_index()
-        col.build_embeddings()
+        col.index.build_index()
+        col.index.build_embeddings()
 
-        col.write(
+        col.writer.write(
             "deferred_doc.md",
             "# Deferred Embedding\n\nUniqueContentForTest.\n",
         )
@@ -3831,7 +3873,7 @@ class TestDeferredEmbeddings:
 
         # Semantic search no longer triggers an inline flush; the writer
         # has already done the work by the time drain returns.
-        results = col.search("UniqueContentForTest", mode="semantic")
+        results = col.reader.search("UniqueContentForTest", mode="semantic")
         paths = [r.path for r in results]
         assert "deferred_doc.md" in paths
         # Writer's vector-dirty set should be empty after the drain.
@@ -3855,10 +3897,10 @@ class TestDeferredEmbeddings:
             embedding_provider=mock_provider,
             read_only=False,
         )
-        col.build_index()
-        col.build_embeddings()
+        col.index.build_index()
+        col.index.build_embeddings()
 
-        col.write(
+        col.writer.write(
             "close_flush.md",
             "# Close Flush\n\nContent to be flushed on close.\n",
         )
@@ -3881,9 +3923,9 @@ class TestDeferredEmbeddings:
             event.set()
 
         col = _make_collection(vault_path, read_only=False, on_write=slow_callback)
-        col.build_index()
+        col.index.build_index()
 
-        col.write("bg_callback.md", "# Background\n\nTest.\n")
+        col.writer.write("bg_callback.md", "# Background\n\nTest.\n")
 
         # Callback hasn't fired yet (it's in a background thread).
         # Wait for it to complete.
@@ -3913,7 +3955,7 @@ class TestLoggingAuditSilentPaths:
         att.write_text("a,b\n1,2\n", encoding="utf-8")
 
         col = Collection(source_dir=vault, attachment_extensions=["csv"])
-        col.build_index()
+        col.index.build_index()
 
         # Patch Path.stat to raise OSError for data.csv.
         # On Python 3.13, Path.is_file() calls Path.stat() internally; we also
@@ -3944,7 +3986,7 @@ class TestLoggingAuditSilentPaths:
             patch.object(_Path, "stat", stat_that_fails),
             patch.object(_Path, "is_file", is_file_override),
         ):
-            results = col.list_documents(include_attachments=True)
+            results = col.reader.list_documents(include_attachments=True)
         attachment_paths = [r.path for r in results if isinstance(r, AttachmentInfo)]
         assert "data.csv" not in attachment_paths
         assert any("stat error" in rec.message for rec in caplog.records)
@@ -3957,7 +3999,7 @@ class TestLoggingAuditSilentPaths:
         vault.mkdir()
         (vault / "note.md").write_text("# Note\n", encoding="utf-8")
         col = Collection(source_dir=vault)
-        col.build_index()
+        col.index.build_index()
 
         bad_row = {
             "path": "note.md",
@@ -3999,8 +4041,8 @@ def test_collection_search_honours_default_chunks_per_file(tmp_path):
     )
     (tmp_path / "short.md").write_text("# Short\nworld\n", encoding="utf-8")
     coll = Collection(source_dir=tmp_path)
-    coll.build_index()
-    results = coll.search("world", mode="keyword", limit=10)
+    coll.index.build_index()
+    results = coll.reader.search("world", mode="keyword", limit=10)
     # Each file appears at most once in the grouped output; the file score's
     # underlying section count is capped at the default chunks_per_file=2.
     paths = [r.path for r in results]
@@ -4016,7 +4058,7 @@ def test_collection_build_index_uses_writer(tmp_path):
 
     col = Collection(source_dir=tmp_path, read_only=False)
     try:
-        stats = col.build_index()
+        stats = col.index.build_index()
         # IndexWriter is non-None; build_index returned via writer.
         assert col._coordinator.writer is not None
         assert stats is not None
@@ -4044,7 +4086,7 @@ def test_collection_build_index_async_returns_future(tmp_path):
 
     col = Collection(source_dir=tmp_path, read_only=False)
     try:
-        future = col.build_index_async()
+        future = col.index.build_index_async()
         assert isinstance(future, Future)
         future.result(timeout=10)
     finally:
@@ -4058,8 +4100,8 @@ def test_collection_reindex_async_returns_future(tmp_path):
 
     col = Collection(source_dir=tmp_path, read_only=False)
     try:
-        col.build_index()  # required precondition
-        future = col.reindex_async()
+        col.index.build_index()  # required precondition
+        future = col.index.reindex_async()
         assert isinstance(future, Future)
         future.result(timeout=10)
     finally:
@@ -4079,8 +4121,8 @@ def test_collection_build_embeddings_async_returns_future(tmp_path):
         embedding_provider=MockEmbeddingProvider(),
     )
     try:
-        col.build_index()
-        future = col.build_embeddings_async()
+        col.index.build_index()
+        future = col.index.build_embeddings_async()
         assert isinstance(future, Future)
         future.result(timeout=10)
     finally:
@@ -4097,7 +4139,7 @@ def test_reindex_async_failure_recorded_in_status(tmp_path, monkeypatch):
 
     col = Collection(source_dir=tmp_path, read_only=False)
     try:
-        col.build_index()
+        col.index.build_index()
 
         # Patch IndexManager.reindex to raise so we can verify capture.
         def boom(self):  # noqa: ARG001
@@ -4105,7 +4147,7 @@ def test_reindex_async_failure_recorded_in_status(tmp_path, monkeypatch):
 
         monkeypatch.setattr(index_module.IndexManager, "reindex", boom)
 
-        fut = col.reindex_async()
+        fut = col.index.reindex_async()
         # Future will resolve with the exception.
         with pytest.raises(RuntimeError, match="simulated reindex failure"):
             fut.result(timeout=5)
@@ -4120,7 +4162,7 @@ def test_reindex_async_failure_recorded_in_status(tmp_path, monkeypatch):
         assert col._coordinator._last_reindex_error is not None
         assert "simulated reindex failure" in str(col._coordinator._last_reindex_error)
 
-        status = col.get_index_status()
+        status = col.index.get_index_status()
         assert "last_reindex_error" in status
         assert status["last_reindex_error"] is not None
         assert "simulated reindex failure" in status["last_reindex_error"]
@@ -4136,11 +4178,11 @@ def test_reindex_async_success_clears_prior_error(tmp_path):
 
     col = Collection(source_dir=tmp_path, read_only=False)
     try:
-        col.build_index()
+        col.index.build_index()
         # Seed a prior error.
         col._coordinator._last_reindex_error = RuntimeError("prior")
 
-        fut = col.reindex_async()
+        fut = col.index.reindex_async()
         fut.result(timeout=5)
 
         for _ in range(50):
@@ -4148,7 +4190,7 @@ def test_reindex_async_success_clears_prior_error(tmp_path):
                 break
             time.sleep(0.01)
         assert col._coordinator._last_reindex_error is None
-        assert col.get_index_status()["last_reindex_error"] is None
+        assert col.index.get_index_status()["last_reindex_error"] is None
     finally:
         col.close()
 
@@ -4169,14 +4211,14 @@ def test_build_embeddings_async_failure_recorded_in_status(tmp_path, monkeypatch
         embedding_provider=MockEmbeddingProvider(),
     )
     try:
-        col.build_index()
+        col.index.build_index()
 
         def boom(self, *, force=False):  # noqa: ARG001
             raise RuntimeError("simulated embeddings failure")
 
         monkeypatch.setattr(index_module.IndexManager, "build_embeddings", boom)
 
-        fut = col.build_embeddings_async()
+        fut = col.index.build_embeddings_async()
         with pytest.raises(RuntimeError, match="simulated embeddings failure"):
             fut.result(timeout=5)
 
@@ -4186,7 +4228,7 @@ def test_build_embeddings_async_failure_recorded_in_status(tmp_path, monkeypatch
             time.sleep(0.01)
 
         assert col._coordinator._last_build_embeddings_error is not None
-        status = col.get_index_status()
+        status = col.index.get_index_status()
         assert status["last_build_embeddings_error"] is not None
         assert "simulated embeddings failure" in status["last_build_embeddings_error"]
     finally:
@@ -4201,8 +4243,8 @@ class TestIsDrained:
 
         col = Collection(source_dir=tmp_path, read_only=False)
         try:
-            col.build_index()
-            assert col.is_drained() is True
+            col.index.build_index()
+            assert col.index.is_drained() is True
         finally:
             col.close()
 
@@ -4211,9 +4253,9 @@ class TestIsDrained:
 
         col = Collection(source_dir=tmp_path, read_only=False)
         try:
-            col.build_index()
+            col.index.build_index()
             col._coordinator.writer.mark_dirty(["fake.md"])
-            assert col.is_drained() is False
+            assert col.index.is_drained() is False
         finally:
             col.close()
 
@@ -4222,9 +4264,9 @@ class TestIsDrained:
 
         col = Collection(source_dir=tmp_path, read_only=False)
         try:
-            col.build_index()
+            col.index.build_index()
             col._coordinator.writer.mark_embedding_dirty(["fake.md"])
-            assert col.is_drained() is False
+            assert col.index.is_drained() is False
         finally:
             col.close()
 
@@ -4236,7 +4278,7 @@ class TestIsDrained:
 
         col = Collection(source_dir=tmp_path, read_only=False)
         try:
-            col.build_index()
+            col.index.build_index()
             release = threading.Event()
             started = threading.Event()
             original_runner = col._coordinator.writer._runners["build_index"]
@@ -4250,7 +4292,7 @@ class TestIsDrained:
             try:
                 fut = col._coordinator.writer.submit(BuildIndex())
                 started.wait(timeout=5)
-                assert col.is_drained() is False
+                assert col.index.is_drained() is False
             finally:
                 release.set()
                 fut.result(timeout=5)
@@ -4266,8 +4308,8 @@ class TestWriteGeneration:
 
         col = Collection(source_dir=tmp_path, read_only=False)
         try:
-            col.build_index()
-            gen_before = col.write_generation()
+            col.index.build_index()
+            gen_before = col.index.write_generation()
             # Submit a no-op write (mark + flush dirty paths) so a job
             # cycle completes through the writer.
             col._coordinator.writer.mark_dirty(["sentinel.md"])
@@ -4275,7 +4317,7 @@ class TestWriteGeneration:
             from markdown_vault_mcp.indexing import BuildIndex
 
             col._coordinator.writer.submit(BuildIndex()).result(timeout=5)
-            assert col.write_generation() > gen_before
+            assert col.index.write_generation() > gen_before
         finally:
             col.close()
 
@@ -4287,11 +4329,11 @@ class TestWriteGeneration:
 
         col = Collection(source_dir=tmp_path, read_only=False)
         try:
-            col.build_index()
-            samples = [col.write_generation()]
+            col.index.build_index()
+            samples = [col.index.write_generation()]
             for _ in range(3):
                 col._coordinator.writer.submit(BuildIndex()).result(timeout=5)
-                samples.append(col.write_generation())
+                samples.append(col.index.write_generation())
             for prev, cur in pairwise(samples):
                 assert cur > prev
         finally:
@@ -4310,9 +4352,9 @@ class TestWaitForDrain:
 
         col = Collection(source_dir=tmp_path, read_only=False)
         try:
-            col.build_index()
+            col.index.build_index()
             start = time.monotonic()
-            drained = col.wait_for_drain(timeout=1.0)
+            drained = col.index.wait_for_drain(timeout=1.0)
             elapsed = time.monotonic() - start
             assert drained is True
             assert elapsed < 0.2
@@ -4327,7 +4369,7 @@ class TestWaitForDrain:
 
         col = Collection(source_dir=tmp_path, read_only=False)
         try:
-            col.build_index()
+            col.index.build_index()
             release = threading.Event()
             started = threading.Event()
             original_runner = col._coordinator.writer._runners["build_index"]
@@ -4341,7 +4383,7 @@ class TestWaitForDrain:
             fut = col._coordinator.writer.submit(BuildIndex())
             started.wait(timeout=5)
             threading.Timer(0.1, release.set).start()
-            assert col.wait_for_drain(timeout=5.0) is True
+            assert col.index.wait_for_drain(timeout=5.0) is True
             fut.result(timeout=5)
         finally:
             col.close()
@@ -4354,7 +4396,7 @@ class TestWaitForDrain:
 
         col = Collection(source_dir=tmp_path, read_only=False)
         try:
-            col.build_index()
+            col.index.build_index()
             release = threading.Event()
             started = threading.Event()
             original_runner = col._coordinator.writer._runners["build_index"]
@@ -4367,7 +4409,7 @@ class TestWaitForDrain:
             col._coordinator.writer._runners["build_index"] = _blocking_runner
             fut = col._coordinator.writer.submit(BuildIndex())
             started.wait(timeout=5)
-            assert col.wait_for_drain(timeout=0.1) is False
+            assert col.index.wait_for_drain(timeout=0.1) is False
             release.set()
             fut.result(timeout=5)
         finally:

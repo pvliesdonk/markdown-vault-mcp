@@ -472,8 +472,8 @@ def test_start_line_propagated_to_vector_metadata(tmp_path):
         embedding_provider=MockEmbeddingProvider(),
         embeddings_path=tmp_path / "vectors",
     )
-    col.build_index()
-    col.build_embeddings()
+    col.index.build_index()
+    col.index.build_embeddings()
 
     # Inspect the underlying VectorIndex metadata directly.
     assert col._vectors is not None

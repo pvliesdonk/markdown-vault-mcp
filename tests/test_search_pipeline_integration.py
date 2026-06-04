@@ -83,9 +83,11 @@ def _make_collection(vault: Path, *, with_embeddings: bool = False) -> Collectio
 def test_essay_capped_in_top_ten_keyword(diagnostic_vault: Path) -> None:
     """The essay must not exceed chunks_per_file=2 sections in keyword mode."""
     coll = _make_collection(diagnostic_vault)
-    coll.build_index()
+    coll.index.build_index()
 
-    results = coll.search("etymology secura security care", mode="keyword", limit=10)
+    results = coll.reader.search(
+        "etymology secura security care", mode="keyword", limit=10
+    )
     essay_groups = [r for r in results if r.path == "essay.md"]
     # Grouped shape: essay appears at most once.
     assert len(essay_groups) <= 1
@@ -103,10 +105,12 @@ def test_essay_capped_in_top_ten_keyword(diagnostic_vault: Path) -> None:
 def test_essay_capped_in_top_ten_semantic(diagnostic_vault: Path) -> None:
     """The essay must not exceed chunks_per_file=2 sections in semantic mode."""
     coll = _make_collection(diagnostic_vault, with_embeddings=True)
-    coll.build_index()
-    coll.build_embeddings()
+    coll.index.build_index()
+    coll.index.build_embeddings()
 
-    results = coll.search("etymology secura security care", mode="semantic", limit=10)
+    results = coll.reader.search(
+        "etymology secura security care", mode="semantic", limit=10
+    )
     essay_groups = [r for r in results if r.path == "essay.md"]
     assert len(essay_groups) <= 1
     if essay_groups:
@@ -122,10 +126,12 @@ def test_essay_capped_in_top_ten_semantic(diagnostic_vault: Path) -> None:
 def test_essay_capped_in_top_ten_hybrid(diagnostic_vault: Path) -> None:
     """The essay must not exceed chunks_per_file=2 sections in hybrid mode."""
     coll = _make_collection(diagnostic_vault, with_embeddings=True)
-    coll.build_index()
-    coll.build_embeddings()
+    coll.index.build_index()
+    coll.index.build_embeddings()
 
-    results = coll.search("etymology secura security care", mode="hybrid", limit=10)
+    results = coll.reader.search(
+        "etymology secura security care", mode="hybrid", limit=10
+    )
     essay_groups = [r for r in results if r.path == "essay.md"]
     assert len(essay_groups) <= 1
     if essay_groups:
@@ -141,8 +147,8 @@ def test_essay_capped_in_top_ten_hybrid(diagnostic_vault: Path) -> None:
 def test_payloads_bounded_by_default(diagnostic_vault: Path) -> None:
     """Default snippet_words=200; per-section payloads stay below ~220 words."""
     coll = _make_collection(diagnostic_vault)
-    coll.build_index()
-    results = coll.search("etymology secura", mode="keyword", limit=10)
+    coll.index.build_index()
+    results = coll.reader.search("etymology secura", mode="keyword", limit=10)
     for r in results:
         for s in r.sections:
             assert len(s.content.split()) <= 220, (

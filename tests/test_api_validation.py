@@ -130,7 +130,7 @@ def corpus_collection(corpus_path: Path) -> tuple[Collection, IndexStats]:
         indexed_frontmatter_fields=["cluster", "topics"],
         read_only=True,
     )
-    stats = collection.build_index()
+    stats = collection.index.build_index()
     return collection, stats
 
 
@@ -145,7 +145,7 @@ class TestRequiredFrontmatter:
     ) -> None:
         """Only 3 documents are indexed; incomplete.md and no_frontmatter.md are skipped."""
         collection, _ = corpus_collection
-        s = collection.stats()
+        s = collection.reader.stats()
         assert s.document_count == 3
 
     def test_stats_skipped_count(
@@ -162,7 +162,7 @@ class TestSearchWithFilters:
     ) -> None:
         """search(filters={"cluster": "nonfiction"}) returns only exemplar2."""
         collection, _ = corpus_collection
-        results = collection.search("guide", filters={"cluster": "nonfiction"})
+        results = collection.reader.search("guide", filters={"cluster": "nonfiction"})
 
         assert len(results) == 1
         assert results[0].path == "exemplar2.md"
@@ -172,7 +172,7 @@ class TestSearchWithFilters:
     ) -> None:
         """search(filters={"cluster": "fiction"}) returns only fiction docs."""
         collection, _ = corpus_collection
-        results = collection.search("gothic", filters={"cluster": "fiction"})
+        results = collection.reader.search("gothic", filters={"cluster": "fiction"})
 
         paths = {r.path for r in results}
         # Keyword search for "gothic" only matches exemplar3.md (gothic in
@@ -185,7 +185,7 @@ class TestSearchWithFilters:
     ) -> None:
         """search with cluster=fiction AND topics=gothic returns only matching docs."""
         collection, _ = corpus_collection
-        results = collection.search(
+        results = collection.reader.search(
             "gothic",
             filters={"cluster": "fiction", "topics": "gothic"},
         )
@@ -203,7 +203,7 @@ class TestListTags:
     ) -> None:
         """list_tags("cluster") returns ["fiction", "nonfiction"] (sorted)."""
         collection, _ = corpus_collection
-        clusters = collection.list_tags("cluster")
+        clusters = collection.reader.list_tags("cluster")
         assert clusters == ["fiction", "nonfiction"]
 
     def test_list_tags_topics(
@@ -211,7 +211,7 @@ class TestListTags:
     ) -> None:
         """list_tags("topics") returns all distinct topic values from the 3 indexed docs."""
         collection, _ = corpus_collection
-        topics = collection.list_tags("topics")
+        topics = collection.reader.list_tags("topics")
 
         # Topics from the three indexed documents:
         #   exemplar1: horror, gothic, haunted-house
@@ -235,7 +235,7 @@ class TestListTags:
     ) -> None:
         """list_tags("author") returns [] — author is not in indexed_frontmatter_fields."""
         collection, _ = corpus_collection
-        result = collection.list_tags("author")
+        result = collection.reader.list_tags("author")
         assert result == []
 
 
@@ -245,7 +245,7 @@ class TestStats:
     ) -> None:
         """stats().indexed_frontmatter_fields reports ["cluster", "topics"]."""
         collection, _ = corpus_collection
-        s = collection.stats()
+        s = collection.reader.stats()
         assert sorted(s.indexed_frontmatter_fields) == ["cluster", "topics"]
 
 
@@ -255,7 +255,7 @@ class TestFrontmatterInResults:
     ) -> None:
         """Search results include the correct frontmatter dict for the matched document."""
         collection, _ = corpus_collection
-        results = collection.search("guide", filters={"cluster": "nonfiction"})
+        results = collection.reader.search("guide", filters={"cluster": "nonfiction"})
 
         assert len(results) == 1
         fm = results[0].frontmatter

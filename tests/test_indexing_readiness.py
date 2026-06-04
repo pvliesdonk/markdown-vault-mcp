@@ -60,7 +60,7 @@ class TestBucket1NeverBlock:
         _seed(vault, "a.md", "# A\n\nbody\n")
         col = Collection(source_dir=vault)
 
-        result = col.read("a.md")
+        result = col.reader.read("a.md")
 
         assert result is not None
         assert "body" in result.content
@@ -69,7 +69,7 @@ class TestBucket1NeverBlock:
         vault = _vault(tmp_path)
         col = Collection(source_dir=vault, read_only=False)
 
-        col.write("new.md", "# New\n\ncreated\n")
+        col.writer.write("new.md", "# New\n\ncreated\n")
 
         assert (vault / "new.md").read_text().endswith("created\n")
 
@@ -78,7 +78,7 @@ class TestBucket1NeverBlock:
         _seed(vault, "e.md", "# E\n\nfoo\n")
         col = Collection(source_dir=vault, read_only=False)
 
-        col.edit("e.md", old_text="foo", new_text="bar")
+        col.writer.edit("e.md", old_text="foo", new_text="bar")
 
         assert "bar" in (vault / "e.md").read_text()
 
@@ -87,7 +87,7 @@ class TestBucket1NeverBlock:
         _seed(vault, "d.md")
         col = Collection(source_dir=vault, read_only=False)
 
-        col.delete("d.md")
+        col.writer.delete("d.md")
 
         assert not (vault / "d.md").exists()
 
@@ -96,7 +96,7 @@ class TestBucket1NeverBlock:
         _seed(vault, "old.md")
         col = Collection(source_dir=vault, read_only=False)
 
-        col.rename("old.md", "new.md")
+        col.writer.rename("old.md", "new.md")
 
         assert not (vault / "old.md").exists()
         assert (vault / "new.md").exists()
@@ -109,7 +109,7 @@ class TestBucket1NeverBlock:
             attachment_extensions=["bin"],
         )
 
-        col.write_attachment("blob.bin", b"\x00\x01\x02")
+        col.writer.write_attachment("blob.bin", b"\x00\x01\x02")
 
         assert (vault / "blob.bin").read_bytes() == b"\x00\x01\x02"
 
@@ -125,7 +125,7 @@ class TestBucket2PartialReport:
         _seed(vault, "a.md", "# A\n\nhello world\n")
         col = Collection(source_dir=vault)
 
-        results = col.search("hello")
+        results = col.reader.search("hello")
 
         assert results == []
 
@@ -135,7 +135,7 @@ class TestBucket2PartialReport:
         _seed(vault, "b.md")
         col = Collection(source_dir=vault)
 
-        notes = col.list_documents()
+        notes = col.reader.list_documents()
 
         assert notes == []
 
@@ -144,7 +144,7 @@ class TestBucket2PartialReport:
         _seed(vault)
         col = Collection(source_dir=vault)
 
-        result = col.stats()
+        result = col.reader.stats()
 
         assert result.document_count == 0
 
@@ -161,7 +161,7 @@ class TestBucket3Block:
         col = Collection(source_dir=vault)
 
         with pytest.raises(IndexUnavailableError) as excinfo:
-            col.get_backlinks("note.md")
+            col.graph.get_backlinks("note.md")
         assert excinfo.value.reason == "never_built"
 
     def test_get_outlinks_on_unbuilt_raises(self, tmp_path: Path) -> None:
@@ -170,7 +170,7 @@ class TestBucket3Block:
         col = Collection(source_dir=vault)
 
         with pytest.raises(IndexUnavailableError) as excinfo:
-            col.get_outlinks("note.md")
+            col.graph.get_outlinks("note.md")
         assert excinfo.value.reason == "never_built"
 
     def test_get_similar_on_unbuilt_raises(self, tmp_path: Path) -> None:
@@ -183,7 +183,7 @@ class TestBucket3Block:
         )
 
         with pytest.raises(IndexUnavailableError) as excinfo:
-            col.get_similar("note.md")
+            col.reader.get_similar("note.md")
         assert excinfo.value.reason == "never_built"
 
     def test_get_context_on_unbuilt_raises(self, tmp_path: Path) -> None:
@@ -192,7 +192,7 @@ class TestBucket3Block:
         col = Collection(source_dir=vault)
 
         with pytest.raises(IndexUnavailableError) as excinfo:
-            col.get_context("note.md")
+            col.reader.get_context("note.md")
         assert excinfo.value.reason == "never_built"
 
     def test_get_connection_path_on_unbuilt_raises(self, tmp_path: Path) -> None:
@@ -202,7 +202,7 @@ class TestBucket3Block:
         col = Collection(source_dir=vault)
 
         with pytest.raises(IndexUnavailableError) as excinfo:
-            col.get_connection_path("a.md", "b.md")
+            col.graph.get_connection_path("a.md", "b.md")
         assert excinfo.value.reason == "never_built"
 
     def test_get_toc_on_unbuilt_raises(self, tmp_path: Path) -> None:
@@ -214,7 +214,7 @@ class TestBucket3Block:
         col = Collection(source_dir=vault)
 
         with pytest.raises(IndexUnavailableError) as excinfo:
-            col.get_toc("note.md")
+            col.reader.get_toc("note.md")
         assert excinfo.value.reason == "never_built"
 
 
@@ -231,7 +231,7 @@ class TestBucket4Coordinate:
         col = Collection(source_dir=vault)
 
         with pytest.raises(IndexUnavailableError) as excinfo:
-            col.reindex()
+            col.index.reindex()
         assert excinfo.value.reason == "never_built"
 
     def test_build_embeddings_on_unbuilt_raises(self, tmp_path: Path) -> None:
@@ -244,7 +244,7 @@ class TestBucket4Coordinate:
         )
 
         with pytest.raises(IndexUnavailableError) as excinfo:
-            col.build_embeddings()
+            col.index.build_embeddings()
         assert excinfo.value.reason == "never_built"
 
     def test_build_index_short_circuits_on_warm_restart(self, tmp_path: Path) -> None:
@@ -262,11 +262,11 @@ class TestBucket4Coordinate:
         index_path = tmp_path / "fts.db"
 
         col1 = Collection(source_dir=vault, index_path=index_path)
-        col1.build_index()
+        col1.index.build_index()
         col1.close()
 
         col2 = Collection(source_dir=vault, index_path=index_path)
-        stats = col2.build_index()
+        stats = col2.index.build_index()
 
         # Short-circuit returns the existing count, indexes zero new chunks.
         assert stats.documents_indexed == 5
@@ -285,17 +285,17 @@ class TestWaitUntilQueryable:
         col = Collection(source_dir=vault)
 
         with pytest.raises(IndexUnavailableError) as excinfo:
-            col.wait_until_queryable(timeout=0.1)
+            col.index.wait_until_queryable(timeout=0.1)
         assert excinfo.value.reason == "never_built"
 
     def test_after_build_returns(self, tmp_path: Path) -> None:
         vault = _vault(tmp_path)
         _seed(vault)
         col = Collection(source_dir=vault)
-        col.build_index()
+        col.index.build_index()
 
         # Must return without raising.
-        col.wait_until_queryable(timeout=0.1)
+        col.index.wait_until_queryable(timeout=0.1)
 
 
 # ---------------------------------------------------------------------------
@@ -333,7 +333,7 @@ class TestWarmRestartCompletenessSentinel:
 
         # Next process opens the same DB and calls build_index().
         col = Collection(source_dir=vault, index_path=index_path)
-        col.build_index()
+        col.index.build_index()
 
         # Must have rebuilt fully — not short-circuited on the 1 stale row.
         assert {row["path"] for row in col._fts.list_notes()} == {
@@ -353,11 +353,11 @@ class TestWarmRestartCompletenessSentinel:
         index_path = tmp_path / "fts.db"
 
         col1 = Collection(source_dir=vault, index_path=index_path)
-        col1.build_index()
+        col1.index.build_index()
         col1.close()
 
         col2 = Collection(source_dir=vault, index_path=index_path)
-        stats = col2.build_index()
+        stats = col2.index.build_index()
 
         # Short-circuit: zero chunks reindexed.
         assert stats.documents_indexed == 3
@@ -374,7 +374,7 @@ class TestReadinessFlagSemantics:
         vault = _vault(tmp_path)
         _seed(vault)
         col = Collection(source_dir=vault)
-        col.build_index()  # Sets _index_built = True.
+        col.index.build_index()  # Sets _index_built = True.
 
         def boom(*_a: object, **_kw: object) -> None:
             raise RuntimeError("simulated rebuild failure")
@@ -382,10 +382,10 @@ class TestReadinessFlagSemantics:
         col._index_mgr.build_index = boom  # type: ignore[method-assign]
 
         with pytest.raises(RuntimeError):
-            col.build_index(force=True)
+            col.index.build_index(force=True)
 
         with pytest.raises(IndexUnavailableError) as excinfo:
-            col.get_backlinks("note.md")
+            col.graph.get_backlinks("note.md")
         # the rebuild ran and failed -> build_failed, not never_built (#586)
         assert excinfo.value.reason == "build_failed"
 
@@ -402,10 +402,10 @@ class TestReadinessFlagSemantics:
         col._index_mgr.build_index = boom  # type: ignore[method-assign]
 
         with pytest.raises(RuntimeError):
-            col.build_index()
+            col.index.build_index()
 
         with pytest.raises(IndexUnavailableError) as excinfo:
-            col.get_backlinks("note.md")
+            col.graph.get_backlinks("note.md")
         # the build ran and failed -> build_failed, not never_built (#586)
         assert excinfo.value.reason == "build_failed"
 
@@ -457,8 +457,8 @@ def test_get_index_status_includes_writer_keys(tmp_path):
 
     col = Collection(source_dir=tmp_path, read_only=False)
     try:
-        col.build_index()
-        status = col.get_index_status()
+        col.index.build_index()
+        status = col.index.get_index_status()
         assert "status" in status
         assert "documents_indexed" in status
         assert "error" in status

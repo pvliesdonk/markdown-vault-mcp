@@ -98,8 +98,8 @@ def populated_collection(tmp_path: Path):
         embedding_provider=MockEmbeddingProvider(),
         embeddings_path=tmp_path / "vectors",
     )
-    col.build_index()
-    col.build_embeddings()
+    col.index.build_index()
+    col.index.build_embeddings()
     return col
 
 
@@ -109,7 +109,7 @@ def built(vault_path: Path):
     from markdown_vault_mcp.collection import Collection
 
     col = Collection(source_dir=vault_path)
-    col.build_index()
+    col.index.build_index()
     try:
         yield col
     finally:

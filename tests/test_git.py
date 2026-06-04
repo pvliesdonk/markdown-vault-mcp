@@ -2935,7 +2935,7 @@ class TestCollectionGitHistoryMethods:
         vault.mkdir()
         (vault / "note.md").write_text("# Note\n")
         col = Collection(source_dir=vault, git_strategy=None)
-        col.build_index()
+        col.index.build_index()
         return col
 
     def _make_collection_with_git(self, tmp_path: Path):  # type: ignore[no-untyped-def]
@@ -2977,20 +2977,20 @@ class TestCollectionGitHistoryMethods:
         )
         strategy = GitWriteStrategy()
         col = Collection(source_dir=vault, git_strategy=strategy)
-        col.build_index()
+        col.index.build_index()
         return col, vault
 
     def test_get_history_no_git_strategy_returns_empty(self, tmp_path: Path) -> None:
         """get_history returns [] when _git_strategy is None."""
         col = self._make_collection_no_git(tmp_path)
-        assert col.get_history() == []
+        assert col.reader.get_history() == []
 
     def test_get_diff_no_git_strategy_returns_empty_string(
         self, tmp_path: Path
     ) -> None:
         """get_diff returns '' when _git_strategy is None and per_commit=False."""
         col = self._make_collection_no_git(tmp_path)
-        result = col.get_diff("note.md", since_sha="abcd1234")
+        result = col.reader.get_diff("note.md", since_sha="abcd1234")
         assert result == ""
 
     def test_get_diff_no_git_strategy_per_commit_returns_empty_list(
@@ -2998,14 +2998,14 @@ class TestCollectionGitHistoryMethods:
     ) -> None:
         """get_diff returns [] when _git_strategy is None and per_commit=True."""
         col = self._make_collection_no_git(tmp_path)
-        result = col.get_diff("note.md", since_sha="abcd1234", per_commit=True)
+        result = col.reader.get_diff("note.md", since_sha="abcd1234", per_commit=True)
         assert result == []
 
     def test_get_history_with_since_filter(self, tmp_path: Path) -> None:
         """get_history passes the since filter through to git log."""
         col, _ = self._make_collection_with_git(tmp_path)
         # A far-future date should still return results (all commits are before it).
-        entries = col.get_history(since="2000-01-01")
+        entries = col.reader.get_history(since="2000-01-01")
         assert isinstance(entries, list)
 
     def test_get_file_diff_no_git_root_per_commit(self, tmp_path: Path) -> None:
@@ -3073,7 +3073,7 @@ class TestCollectionGitHistoryMethods:
             )
         strategy = GitWriteStrategy()
         col = Collection(source_dir=vault, git_strategy=strategy)
-        col.build_index()
+        col.index.build_index()
         return col
 
     def test_get_history_with_until_filter(self, tmp_path: Path) -> None:
@@ -3087,7 +3087,7 @@ class TestCollectionGitHistoryMethods:
             ],
         )
         # Cut off mid-February — should return Jan + (first) Feb but not Mar.
-        entries = col.get_history(until="2026-02-15T00:00:00+0000")
+        entries = col.reader.get_history(until="2026-02-15T00:00:00+0000")
         messages = [e.message for e in entries]
         assert messages == ["v1", "v0"], messages
 
@@ -3101,7 +3101,7 @@ class TestCollectionGitHistoryMethods:
                 "2026-03-01T12:00:00+0000",
             ],
         )
-        entries = col.get_history(
+        entries = col.reader.get_history(
             since="2026-01-15T00:00:00+0000",
             until="2026-02-15T00:00:00+0000",
         )
@@ -3114,7 +3114,7 @@ class TestCollectionGitHistoryMethods:
             tmp_path,
             dates=["2026-01-01T00:00:00+0000"],
         )
-        entries = col.get_history(until="2000-01-01T00:00:00+0000")
+        entries = col.reader.get_history(until="2000-01-01T00:00:00+0000")
         assert entries == []
 
     def test_get_history_until_boundary_inclusive(self, tmp_path: Path) -> None:
@@ -3130,7 +3130,7 @@ class TestCollectionGitHistoryMethods:
             tmp_path,
             dates=["2026-02-01T12:00:00+0000"],
         )
-        entries = col.get_history(until="2026-02-01T12:00:00+0000")
+        entries = col.reader.get_history(until="2026-02-01T12:00:00+0000")
         assert len(entries) == 1, entries
         assert entries[0].message == "v0"
 
@@ -3171,7 +3171,7 @@ class TestCollectionGitHistoryMethods:
             )
         strategy = GitWriteStrategy()
         col = Collection(source_dir=vault, git_strategy=strategy)
-        col.build_index()
+        col.index.build_index()
         return col, vault
 
     def _oldest_sha(self, vault: Path) -> str:
@@ -3187,7 +3187,7 @@ class TestCollectionGitHistoryMethods:
         """get_diff(per_commit=True, limit=N) returns the N newest commits."""
         col, vault = self._make_collection_with_n_commits(tmp_path, 5)
         oldest = self._oldest_sha(vault)
-        out = col.get_diff("note.md", since_sha=oldest, per_commit=True, limit=2)
+        out = col.reader.get_diff("note.md", since_sha=oldest, per_commit=True, limit=2)
         assert isinstance(out, list)
         assert len(out) == 2
         # Newest-first: the two most recent commit messages are v4 and v3.
@@ -3197,7 +3197,7 @@ class TestCollectionGitHistoryMethods:
         """limit=None (default) walks all intervening commits."""
         col, vault = self._make_collection_with_n_commits(tmp_path, 4)
         oldest = self._oldest_sha(vault)
-        out = col.get_diff("note.md", since_sha=oldest, per_commit=True)
+        out = col.reader.get_diff("note.md", since_sha=oldest, per_commit=True)
         assert isinstance(out, list)
         # oldest..HEAD spans 3 commits (the first is the `oldest` itself, excluded).
         assert len(out) == 3
@@ -3206,7 +3206,9 @@ class TestCollectionGitHistoryMethods:
         """`limit` has no effect when per_commit=False (single unified diff)."""
         col, vault = self._make_collection_with_n_commits(tmp_path, 4)
         oldest = self._oldest_sha(vault)
-        result = col.get_diff("note.md", since_sha=oldest, per_commit=False, limit=1)
+        result = col.reader.get_diff(
+            "note.md", since_sha=oldest, per_commit=False, limit=1
+        )
         # Still a single unified-diff string.
         assert isinstance(result, str)
         assert "v3" in result  # last version ended up in the diff
@@ -3215,7 +3217,7 @@ class TestCollectionGitHistoryMethods:
         """limit <= 0 is clamped to 1."""
         col, vault = self._make_collection_with_n_commits(tmp_path, 3)
         oldest = self._oldest_sha(vault)
-        out = col.get_diff("note.md", since_sha=oldest, per_commit=True, limit=0)
+        out = col.reader.get_diff("note.md", since_sha=oldest, per_commit=True, limit=0)
         assert isinstance(out, list)
         assert len(out) == 1
 
@@ -3224,7 +3226,9 @@ class TestCollectionGitHistoryMethods:
         col, vault = self._make_collection_with_n_commits(tmp_path, 3)
         oldest = self._oldest_sha(vault)
         # Only 2 intervening commits exist; clamp should not expand beyond reality.
-        out = col.get_diff("note.md", since_sha=oldest, per_commit=True, limit=500)
+        out = col.reader.get_diff(
+            "note.md", since_sha=oldest, per_commit=True, limit=500
+        )
         assert isinstance(out, list)
         assert len(out) == 2
 

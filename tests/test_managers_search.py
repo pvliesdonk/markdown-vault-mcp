@@ -818,13 +818,13 @@ def test_semantic_search_does_not_have_flush_embeddings_attr(tmp_path):
     )
     try:
         (tmp_path / "n.md").write_text("# n\n\nhello", encoding="utf-8")
-        col.build_index()
-        col.build_embeddings()
+        col.index.build_index()
+        col.index.build_embeddings()
 
         # The attribute must not exist any more.
         assert not hasattr(col._search_mgr, "_flush_embeddings")
 
         # Semantic search still works without it.
-        col.search(query="hello", mode="semantic")
+        col.reader.search(query="hello", mode="semantic")
     finally:
         col.close()

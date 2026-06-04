@@ -349,14 +349,14 @@ def test_concurrent_writers_serialize_via_collection_write_lock(
     """Two writer threads each writing 20 distinct paths through Collection
     produce 40 docs with no SQLITE_BUSY / lost writes."""
     coll = _make_collection(tmp_path)
-    coll.build_index()
+    coll.index.build_index()
 
     errors: list[BaseException] = []
 
     def writer(prefix: str) -> None:
         for i in range(20):
             try:
-                coll.write(f"{prefix}-{i}.md", f"# {prefix}{i}\n\nbody\n")
+                coll.writer.write(f"{prefix}-{i}.md", f"# {prefix}{i}\n\nbody\n")
             except BaseException as exc:
                 errors.append(exc)
 
@@ -370,7 +370,7 @@ def test_concurrent_writers_serialize_via_collection_write_lock(
     try:
         assert not errors, f"writer errors: {errors!r}"
         wait_for_writer_drain(coll)
-        docs = coll.list_documents()
+        docs = coll.reader.list_documents()
         assert len(docs) == 40
     finally:
         coll.close()
@@ -394,7 +394,7 @@ def test_concurrent_build_and_reads_pr518_pattern(tmp_path: Path) -> None:
         index_path=tmp_path / "fts.sqlite",
         read_only=False,
     )
-    coll.build_index()
+    coll.index.build_index()
 
     errors: list[BaseException] = []
     stop = threading.Event()
@@ -404,7 +404,7 @@ def test_concurrent_build_and_reads_pr518_pattern(tmp_path: Path) -> None:
             if stop.is_set():
                 return
             try:
-                coll.build_index(force=True)
+                coll.index.build_index(force=True)
             except BaseException as exc:
                 errors.append(exc)
                 return
@@ -412,12 +412,12 @@ def test_concurrent_build_and_reads_pr518_pattern(tmp_path: Path) -> None:
     def foreground_mix() -> None:
         try:
             for i in range(50):
-                coll.list_documents()
-                coll.search("content", limit=5)
-                coll.write(f"new-{i}.md", f"# New {i}\n\nbody\n")
-                coll.read(f"new-{i}.md")
+                coll.reader.list_documents()
+                coll.reader.search("content", limit=5)
+                coll.writer.write(f"new-{i}.md", f"# New {i}\n\nbody\n")
+                coll.reader.read(f"new-{i}.md")
                 if i % 5 == 0:
-                    coll.edit(
+                    coll.writer.edit(
                         f"new-{i}.md", f"# New {i}\n\nbody\n", f"# New {i}\n\nEDITED\n"
                     )
         except BaseException as exc:
