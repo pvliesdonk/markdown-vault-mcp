@@ -1145,16 +1145,10 @@ class Collection:
         path: str,
         content: bytes,
         if_match: str | None = None,
-        *,
-        skip_size_cap: bool = False,
     ) -> WriteResult:
         """Create or overwrite a non-.md attachment.
 
-        Delegates to :meth:`DocumentManager.write_attachment`.  Pass
-        ``skip_size_cap=True`` from callers that have their own size
-        gate (e.g. the ``create_upload_link`` receiver path, which has
-        already validated against ``MARKDOWN_VAULT_MCP_UPLOAD_MAX_BYTES``);
-        leave ``False`` for base64 callers of the MCP ``write`` tool.
+        Delegates to :meth:`DocumentManager.write_attachment`.
 
         Returns:
             :class:`~markdown_vault_mcp.types.WriteResult`.
@@ -1166,11 +1160,9 @@ class Collection:
                 for a file that does not yet exist.
             ValueError: If the path escapes the source directory, has an
                 extension not in the allowlist, or the content exceeds the
-                size limit (when *skip_size_cap* is ``False``).
+                size limit.
         """
-        return self._writer_facet.write_attachment(
-            path, content, if_match=if_match, skip_size_cap=skip_size_cap
-        )
+        return self._writer_facet.write_attachment(path, content, if_match=if_match)
 
     def write(
         self,

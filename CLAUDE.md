@@ -162,43 +162,11 @@ These sentinel blocks in `Dockerfile` are preserved across `copier update`. Add 
 
 For services that talk to a remote upstream (e.g. paperless, an HTTP API), wire the upstream version inside the `DOMAIN-UPSTREAM-START` / `DOMAIN-UPSTREAM-END` sentinel in `src/markdown_vault_mcp/server.py`. Pass `upstream_version=` (a zero-arg callable returning a dict / str / None) and optionally `upstream_label="<service>"` (default `"upstream"`). The simplest pattern is a module-level upstream client (typically constructed from env vars at import time) whose version method is referenced from the callable — `CurrentContext()` is a FastMCP DI marker that only resolves inside parameter defaults, so it cannot be called directly from a zero-arg provider. The block is preserved across `copier update`.
 
-## File Exchange (`register_file_exchange` + opt-in upload)
-
-`make_server()` reserves a `DOMAIN-FILE-EXCHANGE-START` /
-`DOMAIN-FILE-EXCHANGE-END` sentinel in `src/markdown_vault_mcp/server.py`
-for the `fastmcp-pvl-core` file-exchange helpers. The block is preserved
-across `copier update`, so opt-in customisations (`produces=`,
-`consumer_sink=`, the upload receiver, or — once #431 lands — the
-download-direction `register_file_exchange(...)` call itself) survive
-subsequent template updates.
-
-> **Project-specific override:** unlike the template default, the two
-> directions are wired asymmetrically.
->
-> - **Upload direction is wired** as of #443:
->   `register_file_exchange_upload(...)` is active in
->   `server.py`, with `_vault_upload_receiver` /
->   `_validate_upload_target` from `markdown_vault_mcp.uploads` as the
->   receiver and pre-link validator. The route auto-mounts only when
->   transport is HTTP/SSE *and* `MARKDOWN_VAULT_MCP_BASE_URL` is set.
-> - **Download direction is still deferred to #431** because the
->   spec-compliant `create_download_link(origin_id, ttl_seconds)` tool
->   collides on name with MV's existing
->   `create_download_link(path, ttl_seconds)` (registered via
->   `ArtifactStore` in the `DOMAIN-WIRING` block). Do not add
->   `register_file_exchange(mcp, ...)` to the sentinel block until #431
->   resolves the collision.
->
-> See [`docs/guides/file-exchange.md`](docs/guides/file-exchange.md)
-> for the wiring pattern, and the
-> [`create_upload_link` tool entry](docs/tools/index.md) for the
-> agent-facing contract.
-
 ## Shared Infrastructure
 
 Shared infrastructure (auth providers, middleware stack, logging bootstrap, event store factory, CLI scaffolding, release pipeline, Docker entrypoint, nfpm packaging, mcpb bundle) lives upstream in two places:
 
-- [`fastmcp-pvl-core`](https://github.com/pvliesdonk/fastmcp-pvl-core) — the Python library that provides `ServerConfig`, auth builders, middleware helpers, MCP File Exchange (`register_file_exchange` + `register_file_exchange_upload`), and the `make_serve_parser` / `configure_logging_from_env` / `normalise_http_path` CLI helpers.
+- [`fastmcp-pvl-core`](https://github.com/pvliesdonk/fastmcp-pvl-core) — the Python library that provides `ServerConfig`, auth builders, middleware helpers, and the `make_serve_parser` / `configure_logging_from_env` / `normalise_http_path` CLI helpers.
 - [`fastmcp-server-template`](https://github.com/pvliesdonk/fastmcp-server-template) — the copier template this project was generated from. Ships the CI/release workflows, `Dockerfile`, `packaging/nfpm.yaml`, `packaging/mcpb/*`, `scripts/bump_manifests.py`, server.py skeleton, and this very section of CLAUDE.md.
 
 Fixes and improvements to shared code land in those repos and propagate here via `copier update` against the template's latest tag — run manually or via the weekly `.github/workflows/copier-update.yml` cron. Starter files listed in `_skip_if_exists` (e.g. `scripts/bump_manifests.py`, `packaging/mcpb/*`, the `tools.py` / `resources.py` / `prompts.py` / `domain.py` scaffolds, `README.md`, `CHANGELOG.md`, `LICENSE`, `.env.example`) are written once and require manual reconciliation on template updates — review `_skip_if_exists` in the template's `copier.yml` if you need to force-sync a file. Domain-specific code (tools, resources, prompts, and the fields and logic inside the `CONFIG-FIELDS-START` / `CONFIG-FIELDS-END` and `CONFIG-FROM-ENV-START` / `CONFIG-FROM-ENV-END` sentinels) stays in this repo.

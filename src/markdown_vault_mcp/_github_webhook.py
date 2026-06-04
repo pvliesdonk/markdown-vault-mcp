@@ -13,7 +13,8 @@ Integration points
 - :func:`_verify_signature` — pure HMAC-SHA256 check; separate so tests
   can exercise it without a live HTTP server.
 - :func:`get_collection_singleton` — reaches the live Collection from the
-  module singleton (same pattern as the artifact download route).
+  module singleton set by the lifespan factory, since this handler runs
+  outside FastMCP's ``Depends(get_collection)`` injection.
 """
 
 from __future__ import annotations

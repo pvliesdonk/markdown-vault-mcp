@@ -34,8 +34,6 @@ markdown-vault-mcp exposes MCP tools across several categories. Write tools are 
 | [`delete`](#delete) | Write | Delete a document or attachment |
 | [`rename`](#rename) | Write | Rename/move a document or attachment |
 | [`fetch`](#fetch) | Write | Download from URL and save to vault |
-| [`create_download_link`](#create_download_link) | Write | Generate a one-time download URL for a vault file |
-| [`create_upload_link`](#create_upload_link) | Write | Mint a one-time HTTPS POST URL for pushing bytes into the vault |
 | [`git_sync`](#git_sync) | Write (git) | Force an immediate git pull / push / both, bypassing the periodic loops |
 | [`browse_vault`](#browse_vault) | Apps | Open the vault explorer SPA |
 | [`show_context`](#show_context) | Apps | Open the Context Card for a note |
@@ -105,9 +103,8 @@ Read the full content of a document or attachment by path. When combined with se
 **Context cost:** every byte returned counts against the LLM's context
 budget. Reads above `MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES` (default
 256 KB for `.md`) or `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB` (default
-1 MB for binaries) raise an error with the right alternative —
-`section=result["heading"]` for partial markdown reads (see the tip
-above), `create_download_link()` for binary transfer.
+1 MB for binaries) raise an error — use `section=result["heading"]` for
+partial markdown reads (see the tip above).
 
 **Returns:**
 
@@ -276,8 +273,7 @@ Create or overwrite a document or attachment.
 
 **Context cost:** the `content` parameter (text) is bounded only by the
 LLM's own output budget.  The `content_base64` parameter (binary) inflates
-by ~33%; for files >100 KB use [`create_upload_link`](#create_upload_link)
-instead — bytes flow over plain HTTP, not through MCP context.
+by ~33%.
 
 **Returns:** `{"path": "Journal/note.md", "created": true}`
 
@@ -366,98 +362,6 @@ back into context.
 
 !!! note "Dependency"
     Requires `httpx`. Install with `pip install 'markdown-vault-mcp[all]'`.
-
-### `create_download_link`
-
-Generate a one-time download URL for a vault file. The link expires after a single use. Useful for MCP-to-MCP file transfer where the receiving server can fetch the file directly.
-
-**Parameters:**
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `path` | string | required | Relative path to the vault file to share |
-| `ttl_seconds` | int | `300` | Link lifetime in seconds |
-
-**Returns:** `{"download_url": "https://mcp.example.com/artifacts/abc123", "expires_in_seconds": 300, "path": "notes/report.md", "content_type": "text/markdown"}`
-
-!!! note "Requirements"
-    Only available with HTTP or SSE transport. Requires `MARKDOWN_VAULT_MCP_BASE_URL` to be set.
-
-### `create_upload_link`
-
-Mint a one-time HTTPS POST URL for pushing bytes into the vault. The
-agent receives the URL and an expiry hint; the actual file content
-flows over plain HTTP, not through MCP context, avoiding the ~33% base64
-inflation that `write(content_base64=...)` incurs.
-
-!!! info "Effective size cap"
-    Uploads are bounded only by the network-tier cap
-    (`MARKDOWN_VAULT_MCP_UPLOAD_MAX_BYTES`, default 10 MiB).  The
-    in-Collection `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB` cap that
-    applies to `write(content_base64=...)` is bypassed on the upload
-    path — those bytes flow over HTTP and never touch LLM context, so
-    the context-budget cap is the wrong gate here.
-
-**Parameters:**
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `target_id` | string | required | Single safe filename to store the upload as in the vault. Must be one path segment per pvl-core's `ExchangeURI.validate_segment` rules — **no slashes, no `..`, no leading/trailing whitespace, no control bytes**. Use `target_id="screenshot.png"`, not `target_id="assets/screenshot.png"`. Extension determines handling: `.md` → note (UTF-8 decoded), anything else → attachment (raw bytes). |
-| `ttl_seconds` | int | server default (`300`) | Requested link lifetime. Clamped to `[1, MARKDOWN_VAULT_MCP_UPLOAD_TTL_MAX]` (default ceiling `3600`). |
-| `max_bytes` | int \| null | server default (`MARKDOWN_VAULT_MCP_UPLOAD_MAX_BYTES`, default 10 MiB) | Per-link body cap. Pass a smaller value to constrain a specific upload below the operator default; non-positive values fall back to the default. The HTTP route returns `413` when the actual POST body exceeds the cap. |
-| `extra` | dict \| null | `null` | Opaque caller-supplied dict passed verbatim to the receiver. MV's receiver ignores it; useful to record provenance (e.g. `{"source": "claude-desktop"}`) alongside the upload for future receivers. |
-
-**Returns:** `{"upload_url": "https://mcp.example.com/markdown-vault-mcp/uploads/<token>", "expires_in_seconds": 300, "target_id": "screenshot.png"}`
-
-**Usage:**
-
-1. Agent calls `create_upload_link(target_id="screenshot.png")` and receives an `upload_url`.
-2. The agent (or a local helper) POSTs the bytes to the URL:
-
-    ```bash
-    curl -X POST --data-binary @screenshot.png "https://mcp.example.com/markdown-vault-mcp/uploads/<token>"
-    ```
-
-3. The server responds `200 OK` with `{"path": "screenshot.png", "size_bytes": 12345}` once the bytes are committed to the vault.
-4. Subsequent calls (`read`, `search`, `get_context`, etc.) can reference the stored file by `path`.
-
-**Validation:** the pre-link validator enforces (a) `target_id` is a
-single safe filename per pvl-core's segment rules — slashes, `..`,
-leading/trailing whitespace, and control bytes are rejected at link
-creation time; (b) for `.md` filenames, the resolved path stays under
-`source_dir`; (c) for non-`.md` filenames, the extension is in the
-configured attachment allowlist
-(`MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS`). All three checks raise
-`ValueError` from the tool call so the agent learns about the
-mis-target before wasting a POST.  Note: rule (a) is enforced upstream
-by pvl-core's `ExchangeURI.validate_segment` *before* MV's pre-link
-validator runs, so the error message for slash/`..`/whitespace cases
-comes from pvl-core, not MV.
-
-**Errors:**
-
-- `ValueError` at link-creation time — invalid `target_id` (slash, `..`,
-  forbidden segment, disallowed extension, would escape `source_dir`).
-- HTTP `400` on POST — body cannot be read or decoded (e.g. `.md` upload
-  with non-UTF-8 bytes).
-- HTTP `404` on POST — token unknown (already consumed, expired, or
-  wrong server).
-- HTTP `410` on POST — token expired between mint and POST.
-- HTTP `413` on POST — body exceeds `MARKDOWN_VAULT_MCP_UPLOAD_MAX_BYTES`
-  (default 10 MiB).
-- HTTP `415` on POST — unsupported content/encoding combination per the
-  spec.
-- HTTP `500` on POST — receiver raised an unhandled exception.
-
-**Tag:** `write` — hidden when `MARKDOWN_VAULT_MCP_READ_ONLY=true`.
-
-!!! note "Requirements"
-    Only available with HTTP or SSE transport. Requires
-    `MARKDOWN_VAULT_MCP_BASE_URL` to be set so the URL the tool returns
-    is reachable from the caller. The route is auto-mounted by
-    `register_file_exchange_upload(...)` when both conditions are met.
-
----
 
 ### `git_sync`
 

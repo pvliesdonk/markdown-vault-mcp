@@ -1481,17 +1481,12 @@ pattern). Each tool is annotated with MCP `ToolAnnotations`:
 | `get_most_linked` | Find notes ranked by number of inbound links | `True` | `False` | `True` |
 | `get_connection_path` | Shortest undirected path between two notes (BFS, max 10 hops) | `True` | `False` | `True` |
 | `fetch` | Download from URL and save to vault (MCP-to-MCP transfer) | `False` | `False` | `True` |
-| `create_download_link` | Generate a one-time download URL for a vault file (HTTP/SSE only) | `True` | `False` | `False` |
 
 **Tool name note**: the MCP tool is registered as `list_documents` (not `list`)
 to avoid shadowing Python's built-in `list`. The underlying
 `Collection.list_documents()` method matches the MCP name; both deliberately
 avoid the bare name `list` so type annotations like `list[NoteInfo]` are not
 mis-resolved against the method in class scope.
-
-**Transport-conditional tools**: `create_download_link` is only registered when
-the server runs with `--transport http` or `--transport sse` (not `stdio`),
-because the download URL requires an HTTP server to serve the artifact.
 
 **Tag-based visibility**: `write`, `edit`, `delete`, `rename`, `fetch` are always
 registered but tagged with ``tags={"write"}``. When ``read_only=True``, the
@@ -1515,32 +1510,10 @@ This signals capability status to clients and reduces irrelevant prompting.
   from an HTTP/HTTPS URL and dispatches to `write()` (for `.md` paths) or
   `write_attachment()` (for other extensions). Requires `httpx` (included in
   `[all]` extra). Only `http` and `https` schemes are allowed (SSRF guard).
-- `create_download_link(path, ttl_seconds?)` generates a one-time download URL
-  for a vault file (note or attachment). Returns JSON with `download_url`,
-  `expires_in_seconds`, `path`, and `content_type`. The download URL points to
-  `GET /artifacts/{token}` on the same server. Requires `BASE_URL` to be set.
 
 These semantics are intentionally close to Claude Code's file tools for
 familiarity. LLMs that know how to read/write/edit files can use these tools
 without special prompting.
-
-#### Artifact Download Endpoint
-
-The `create_download_link` tool creates one-time-use download tokens backed by
-an in-memory `ArtifactStore`. The companion HTTP endpoint `GET /artifacts/{token}`
-serves the file bytes with the correct `Content-Type`, then deletes the token.
-
-- **Tokens**: UUID4 hex (32 chars, 122 bits entropy), configurable TTL (default 300s)
-- **One-time use**: each token is consumed on first successful download; subsequent
-  requests return HTTP 404
-- **Expiry**: lazy cleanup — expired tokens are pruned during `create_token()` and
-  `consume_token()` calls, not via a background timer
-- **Auth bypass**: the artifact endpoint is mounted via `mcp.custom_route()` and
-  is not wrapped by FastMCP's `RequireAuthMiddleware`. The OTP token is the sole
-  authentication gate — this allows unauthenticated HTTP clients (including other
-  MCP servers using `fetch`) to download files
-- **Transport-conditional**: both the tool and the `/artifacts/{token}` route are
-  only registered for HTTP/SSE transports. Stdio servers have no HTTP listener.
 
 **Dependency injection**: tools and resources use FastMCP's
 ``Depends(get_collection)`` to access the Collection instance from
@@ -1635,7 +1608,7 @@ For MCP server deployment:
 | `MARKDOWN_VAULT_MCP_GIT_COMMIT_EMAIL` | Committer email for auto-commits | `noreply@markdown-vault-mcp` |
 | `MARKDOWN_VAULT_MCP_GIT_LFS` | Run `git lfs pull` on startup to resolve LFS pointer files | `true` |
 | `MARKDOWN_VAULT_MCP_BEARER_TOKEN` | Static bearer token for simple auth — clients send `Authorization: Bearer <token>` | none |
-| `MARKDOWN_VAULT_MCP_BASE_URL` | Server's public URL — required for OIDC auth and `create_download_link` (e.g. `https://mcp.example.com`) | none |
+| `MARKDOWN_VAULT_MCP_BASE_URL` | Server's public URL — required for OIDC auth and MCP Apps domain computation (e.g. `https://mcp.example.com`) | none |
 | `MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL` | OIDC discovery URL (`/.well-known/openid-configuration`) | none |
 | `MARKDOWN_VAULT_MCP_OIDC_CLIENT_ID` | OIDC client ID registered with the provider | none |
 | `MARKDOWN_VAULT_MCP_OIDC_CLIENT_SECRET` | OIDC client secret | none |
@@ -1780,7 +1753,7 @@ The server supports reading and writing non-markdown binary files (PDFs, images,
 
 Attachments are **not indexed or searched** — only direct path-based read/write/delete/rename. MIME type is detected via Python's `mimetypes.guess_type()` (no extra dependencies).
 
-Size limit applies to both `read_attachment()` and `write_attachment()`. Set `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB=0` to disable the limit. The default was tightened from 10 MB to 1 MB in #442 to keep LLM context bounded — most contexts can't survive a 10 MB base64-encoded attachment, so the old default was a silent context-blow-up. The error message names `create_download_link(path)` as the right alternative for HTTP transfer.
+Size limit applies to both `read_attachment()` and `write_attachment()`. Set `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB=0` to disable the limit. The default was tightened from 10 MB to 1 MB in #442 to keep LLM context bounded — most contexts can't survive a 10 MB base64-encoded attachment, so the old default was a silent context-blow-up. The error message names `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB` as the knob to raise if the bytes are genuinely needed in context.
 
 A parallel cap on whole-document `read()` for `.md` files (`MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES`, default 256 KB) raises `ValueError` with a message pointing at `read(path, section=heading)` for partial reads. Section reads bypass the cap because they only load one chunk.
 

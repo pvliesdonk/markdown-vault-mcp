@@ -76,7 +76,6 @@ plugins:
           - guides/para.md: PARA workflow (Projects/Areas/Resources/Archive with triage, kickoff, and weekly review prompts)
           - guides/mcp-apps.md: MCP Apps — Context Card, Graph Explorer, Vault Browser, and Note Preview views
           - guides/claude-code-plugin.md: Claude Code plugin — install via /plugin marketplace
-          - guides/file-exchange.md: MCP File Exchange — out-of-band file transfer (status, fetch/write/create_download_link today, #431 migration)
         MCP Interface:
           - tools/index.md: MCP tools with parameters and examples (search, read, write, link graph, MCP Apps)
           - resources.md: MCP resources with URI patterns (config, stats, tags, folders, toc, similar, recent, ui)
@@ -148,7 +147,6 @@ nav:
       - PARA: guides/para.md
       - MCP Apps: guides/mcp-apps.md
       - Claude Code Plugin: guides/claude-code-plugin.md
-      - File Exchange: guides/file-exchange.md
   - MCP Interface:
       - Tools: tools/index.md
       - Resources: resources.md

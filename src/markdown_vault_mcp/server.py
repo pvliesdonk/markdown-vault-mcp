@@ -21,10 +21,8 @@ if TYPE_CHECKING:
 
 from fastmcp import FastMCP
 from fastmcp_pvl_core import (
-    ArtifactStore,
     ServerConfig,
     build_auth,
-    register_file_exchange_upload,
     register_server_info_tool,
     resolve_auth_mode,
     wire_middleware_stack,
@@ -39,10 +37,6 @@ from fastmcp_pvl_core import (
 from markdown_vault_mcp.config import (
     _ENV_PREFIX,
     load_config,
-)
-from markdown_vault_mcp.uploads import (
-    _validate_upload_target,
-    _vault_upload_receiver,
 )
 
 from ._icons import _SERVER_ICON
@@ -137,8 +131,8 @@ def make_server(transport: str = "stdio") -> FastMCP:
 
     Args:
         transport: ``"stdio"`` / ``"http"`` / ``"sse"`` / ``"streamable-http"``.
-            Used for the ``ArtifactStore`` route guard (HTTP-only) and as
-            ``transport=%s`` in the startup log.
+            Used to gate HTTP-only wiring (e.g. the GitHub webhook route) and
+            as ``transport=%s`` in the startup log.
 
     Returns:
         A fully configured :class:`~fastmcp.FastMCP` instance ready to run.
@@ -209,7 +203,7 @@ def make_server(transport: str = "stdio") -> FastMCP:
     #     authorizer = make_acl_authorizer(load_acl(config.acl_path))
     #     mcp.add_middleware(AuthorizationMiddleware(authorizer=authorizer))
 
-    register_tools(mcp, transport=transport)
+    register_tools(mcp)
     register_resources(mcp)
     register_apps(mcp)
     register_prompts(
@@ -240,22 +234,6 @@ def make_server(transport: str = "stdio") -> FastMCP:
     # DOMAIN-WIRING-START — project-specific wiring (custom HTTP routes,
     # transforms, mode toggles, alternative middleware, additional registrations);
     # kept across copier update.
-    # --- Artifact download endpoint (HTTP transports only) ---
-    # The store is constructed here (not in lifespan) so the HTTP route
-    # closure can bind to a concrete instance.  The tool handler reaches
-    # the same instance via get_artifact_store() in markdown_vault_mcp.artifacts.
-    # Skipped entirely on stdio where the create_download_link tool isn't
-    # registered — no need to hold bytes in memory for a feature we don't expose.
-    if transport != "stdio":
-        from markdown_vault_mcp.artifacts import (
-            ARTIFACT_TTL_SECONDS,
-            set_artifact_store,
-        )
-
-        artifact_store = ArtifactStore(ttl_seconds=ARTIFACT_TTL_SECONDS)
-        set_artifact_store(artifact_store)
-        ArtifactStore.register_route(mcp, artifact_store)
-
     # GitHub webhook endpoint — only when secret is configured and transport
     # is HTTP/SSE (stdio has no HTTP server to receive POST requests).
     if config.sync.github_webhook_secret and transport != "stdio":
@@ -266,48 +244,11 @@ def make_server(transport: str = "stdio") -> FastMCP:
         )
     # DOMAIN-WIRING-END
 
-    # DOMAIN-FILE-EXCHANGE-START — file-exchange wiring sentinel.  Kept
-    # across copier update so opt-in customisations (consumer_sink=,
-    # produces=, upload receiver) survive subsequent template updates.
-    #
-    # Upload direction IS wired (see register_file_exchange_upload below) —
-    # commits agent-pushed files into the vault via Collection.write /
-    # Collection.write_attachment.  The route mounts only when transport is
-    # HTTP/SSE AND MARKDOWN_VAULT_MCP_BASE_URL is set; sync receivers run in
-    # a thread.  See docs/guides/file-exchange.md for the full pattern and
-    # markdown_vault_mcp.uploads for the receiver / pre-link validator.
-    #
-    # Download direction is NOT wired — deferred per #431 (name collision;
-    # see NOTE below).
-    #
-    # NOTE: pvl-core 2.1's ``register_file_exchange`` registers a
-    # spec-compliant ``create_download_link(origin_id, ttl_seconds)`` tool
-    # that collides with MV's existing ``create_download_link(path,
-    # ttl_seconds)`` tool above (registered via ArtifactStore in the
-    # DOMAIN-WIRING block).  Wiring both silently shadows one or the other
-    # depending on registration order.  Migration tracked in #431; do NOT
-    # add ``register_file_exchange(mcp, ...)`` here without first resolving
-    # the name collision.
-
-    # We pass ``transport`` explicitly (NOT ``"auto"``) because ``"auto"``
-    # reads env vars (``MARKDOWN_VAULT_MCP_TRANSPORT`` /
-    # ``FASTMCP_TRANSPORT``) that the CLI does not set — leaving ``"auto"``
-    # would silently disable file-exchange-upload in production whenever
-    # the operator runs ``markdown-vault-mcp serve --transport http``
-    # without also exporting one of those env vars.  The CLI knows the
-    # transport from its own ``--transport`` flag and passes it to
-    # ``make_server``, so we have the authoritative value here.
-    fx_transport: str = (
-        "http" if transport in ("http", "sse", "streamable-http") else "stdio"
-    )
-    register_file_exchange_upload(
-        mcp,
-        namespace="markdown-vault-mcp",
-        env_prefix=_ENV_PREFIX,
-        transport=fx_transport,  # type: ignore[arg-type]
-        receiver=_vault_upload_receiver,
-        pre_link_validator=_validate_upload_target,
-    )
+    # DOMAIN-FILE-EXCHANGE-START — file-exchange wiring sentinel, kept across
+    # copier update.  Intentionally empty: this server does not use pvl-core's
+    # file-exchange helpers.  The one-time upload/download link tooling that
+    # previously lived here was removed (#620); a fresh MV-local
+    # implementation is tracked in #622.
     # DOMAIN-FILE-EXCHANGE-END
 
     # --- Visibility: hide write-tagged components in read-only mode ---

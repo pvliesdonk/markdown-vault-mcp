@@ -50,44 +50,11 @@ faster client feedback when the index has chronic backlog.
 | `MARKDOWN_VAULT_MCP_SERVER_NAME` | string | `markdown-vault-mcp` | MCP server name shown to clients; useful for multi-instance setups |
 | `MARKDOWN_VAULT_MCP_INSTRUCTIONS` | string | (auto) | System-level instructions injected into LLM context; defaults to a description that reflects read-only vs read-write state |
 | `MARKDOWN_VAULT_MCP_HTTP_PATH` | path | `/mcp` | HTTP endpoint path for streamable HTTP transport (`serve --transport http`) |
-| `MARKDOWN_VAULT_MCP_BASE_URL` | url | — | Public base URL of the server (e.g. `https://mcp.example.com`). Required for OIDC auth, `create_download_link` tool, and MCP Apps domain computation |
+| `MARKDOWN_VAULT_MCP_BASE_URL` | url | — | Public base URL of the server (e.g. `https://mcp.example.com`). Required for OIDC auth and MCP Apps domain computation |
 | `MARKDOWN_VAULT_MCP_EVENT_STORE_URL` | url | `file:///data/state/events` | Event store backend for HTTP session persistence. `file:///path` survives restarts; `memory://` for dev (lost on restart) |
 | `MARKDOWN_VAULT_MCP_APP_DOMAIN` | string | (auto) | Override the Claude app domain used for MCP Apps iframe sandboxing. Auto-computed from `BASE_URL` when not set |
 | `FASTMCP_LOG_LEVEL` | string | `INFO` | Log level for FastMCP internals (`DEBUG`, `INFO`, `WARNING`, `ERROR`). `-v` CLI flag overrides both app and FastMCP loggers to `DEBUG` |
 | `FASTMCP_ENABLE_RICH_LOGGING` | bool | `true` | Set to `false` for plain/structured JSON log output instead of Rich-formatted output |
-
-## MCP File Exchange
-
-!!! info "Upload wired (#443); download deferred to #431"
-    These env vars come from `fastmcp-pvl-core` 2.1.0+'s
-    `register_file_exchange` / `register_file_exchange_upload` helpers.
-    The **upload direction is wired** in `server.py` as of #443: the
-    `MARKDOWN_VAULT_MCP_UPLOAD_*` variables below take effect today and
-    govern the [`create_upload_link`](tools/index.md#create_upload_link)
-    tool plus the `POST /markdown-vault-mcp/uploads/{token}` route. The **download
-    direction is not wired** — `markdown-vault-mcp` has its own
-    `create_download_link(path, ttl_seconds)` tool whose name collides
-    with the pvl-core spec-compliant version, so
-    `register_file_exchange(...)` remains commented out pending the
-    migration in #431. The `MARKDOWN_VAULT_MCP_FILE_EXCHANGE_*`
-    variables are documented here for completeness; setting them has
-    no effect until #431 lands.
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `MARKDOWN_VAULT_MCP_FILE_EXCHANGE_ENABLED` | `true` on HTTP/SSE, `false` on stdio | Master switch for the download direction. |
-| `MARKDOWN_VAULT_MCP_FILE_EXCHANGE_PRODUCE` | `true` | Allow this server to mint `FileRef` objects via `handle.publish(...)`. |
-| `MARKDOWN_VAULT_MCP_FILE_EXCHANGE_CONSUME` | `true` | Master toggle for the consumer side. Only effective when `consumer_sink=` is wired in `server.py`. |
-| `MARKDOWN_VAULT_MCP_FILE_EXCHANGE_TTL` | `3600` | Lifetime in seconds for download links and exchange-volume records. |
-| `MARKDOWN_VAULT_MCP_UPLOAD_ENABLED` | `true` on HTTP/SSE, `false` on stdio | Master switch for the upload direction (wired since #443). Also requires `MARKDOWN_VAULT_MCP_BASE_URL`. Set to `false` to disable the `create_upload_link` tool and `POST /markdown-vault-mcp/uploads/{token}` route. |
-| `MARKDOWN_VAULT_MCP_UPLOAD_MAX_BYTES` | `10485760` (10 MiB) | Maximum POST body size for the upload route. Bodies exceeding this return HTTP 413. |
-| `MARKDOWN_VAULT_MCP_UPLOAD_TTL` | `300` | Default lifetime in seconds for upload links. Caller-requested TTL is clamped to `MARKDOWN_VAULT_MCP_UPLOAD_TTL_MAX`. |
-| `MARKDOWN_VAULT_MCP_UPLOAD_TTL_MAX` | `3600` | Operator ceiling for caller-requested upload-link TTL. |
-
-Upload-direction variables are namespaced under `_UPLOAD_*` (not
-`_FILE_EXCHANGE_UPLOAD_*`) per the upstream `fastmcp-pvl-core` 2.1.0
-contract. Download-direction variables keep the historical
-`_FILE_EXCHANGE_*` namespace.
 
 ## Search Ranking and Snippet Truncation
 

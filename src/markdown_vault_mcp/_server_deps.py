@@ -45,10 +45,9 @@ def set_collection_singleton(collection: Collection | None) -> None:
 def get_collection_singleton() -> Collection:
     """Return the module-level :class:`Collection` singleton.
 
-    Used by HTTP route handlers (e.g. the pvl-core file-exchange upload
-    receiver) that run outside FastMCP's ``Depends(get_collection)``
-    injection and therefore cannot resolve the Collection from the
-    lifespan context.
+    Used by HTTP route handlers (e.g. the GitHub webhook route handler)
+    that run outside FastMCP's ``Depends(get_collection)`` injection and
+    therefore cannot resolve the Collection from the lifespan context.
 
     Returns:
         The live :class:`Collection` set by the lifespan factory.
@@ -161,12 +160,6 @@ def make_collection_lifespan(config: CollectionConfig) -> Any:
             logger.info(
                 "file_watcher: disabled — git pull loop / webhook handles reindex cadence"
             )
-
-        # Artifact store singleton is wired in make_server(), not here —
-        # the HTTP route captures the store at server-construction time and
-        # tool handlers reach it via get_artifact_store().  Tokens carry
-        # eager bytes now, so the lifespan no longer needs to expose the
-        # Collection to the HTTP handler.
 
         try:
             yield {"collection": collection, "config": config}

@@ -2,7 +2,7 @@
 
 Covers the module-level Collection singleton accessors used by HTTP
 route handlers that run outside FastMCP's ``Depends(get_collection)``
-injection (e.g. the pvl-core file-exchange upload receiver).
+injection (e.g. the GitHub webhook route handler).
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 
 
 class TestCollectionSingleton:
-    """Module-level Collection accessor mirrors :mod:`artifacts`'s pattern."""
+    """Module-level Collection accessor for handlers outside FastMCP DI."""
 
     def test_get_raises_when_unset(self) -> None:
         """After clearing the singleton, the getter raises RuntimeError."""

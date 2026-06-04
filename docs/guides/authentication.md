@@ -127,7 +127,7 @@ Client → markdown-vault-mcp (OIDCProxy) → OIDC Provider
 
 | Variable | Description |
 |----------|-------------|
-| `MARKDOWN_VAULT_MCP_BASE_URL` | Public base URL (e.g. `https://mcp.example.com`). Also required for `create_download_link`. |
+| `MARKDOWN_VAULT_MCP_BASE_URL` | Public base URL (e.g. `https://mcp.example.com`). Also required for MCP Apps domain computation. |
 | `MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL` | OIDC discovery endpoint |
 | `MARKDOWN_VAULT_MCP_OIDC_CLIENT_ID` | Client ID registered with your provider (oidc-proxy mode only) |
 | `MARKDOWN_VAULT_MCP_OIDC_CLIENT_SECRET` | Client secret (oidc-proxy mode only) |

@@ -399,8 +399,7 @@ class DocumentManager:
                     f"({size_bytes / 1024 / 1024:.1f} MB), exceeds "
                     f"MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB "
                     f"({self._max_attachment_size_mb} MB). "
-                    f"Use create_download_link({path!r}) for HTTP transfer, "
-                    f"or increase MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB if "
+                    f"Increase MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB if "
                     f"you need the bytes in context."
                 )
 
@@ -540,8 +539,6 @@ class DocumentManager:
         path: str,
         content: bytes,
         if_match: str | None = None,
-        *,
-        skip_size_cap: bool = False,
     ) -> WriteResult:
         """Create or overwrite a non-.md attachment.
 
@@ -553,15 +550,6 @@ class DocumentManager:
                 current file hash matches this value, preventing overwrites
                 of concurrent modifications. Pass ``None`` (default) to skip
                 the check.
-            skip_size_cap: When ``False`` (default), enforces
-                ``MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB`` to protect LLM
-                context for base64 callers of the MCP ``write`` tool.  Pass
-                ``True`` from the ``create_upload_link`` receiver path —
-                bytes there flow over HTTP, never touch LLM context, and
-                the route already validated against
-                ``MARKDOWN_VAULT_MCP_UPLOAD_MAX_BYTES``.  Direct library
-                callers should leave it ``False`` unless they have their
-                own size gate.
 
         Returns:
             :class:`~markdown_vault_mcp.types.WriteResult`.
@@ -573,7 +561,7 @@ class DocumentManager:
                 for a file that does not yet exist.
             ValueError: If the path escapes the source directory, has an
                 extension not in the allowlist, or the content exceeds the
-                size limit (when *skip_size_cap* is ``False``).
+                size limit.
         """
         self._check_writable()
         with self._file_write_lock:
@@ -590,7 +578,7 @@ class DocumentManager:
                     raise ConcurrentModificationError(
                         path, expected=if_match, actual=current_hash
                     )
-            if not skip_size_cap and self._max_attachment_size_mb > 0:
+            if self._max_attachment_size_mb > 0:
                 limit_bytes = int(self._max_attachment_size_mb * 1024 * 1024)
                 if len(content) > limit_bytes:
                     size_bytes = len(content)
@@ -599,9 +587,7 @@ class DocumentManager:
                         f"({size_bytes / 1024 / 1024:.1f} MB), exceeds "
                         f"MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB "
                         f"({self._max_attachment_size_mb} MB). "
-                        f"Use create_upload_link({path!r}) to push the "
-                        f"bytes over HTTP without inflating LLM context, "
-                        f"or increase MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB "
+                        f"Increase MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB "
                         f"if you need the bytes in context."
                     )
             created = not abs_path.is_file()

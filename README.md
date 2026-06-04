@@ -27,7 +27,7 @@ Point it at a directory of Markdown files (an Obsidian vault, a docs folder, a Z
 - **Attachment support** — read, write, delete, and list non-markdown files (PDFs, images, etc.)
 - **Git integration** — optional auto-commit and push on every write via `GIT_ASKPASS`
 - **OIDC authentication** — optional token-based auth for HTTP deployments (Authelia, Keycloak, etc.)
-- **MCP tools** — 30 LLM-visible tools including search, read, write, edit, delete, rename, git history, manual git sync, file-exchange uploads, and admin operations; plus 6 app-only tools for MCP Apps clients
+- **MCP tools** — 29 LLM-visible tools including search, read, write, edit, delete, rename, git history, manual git sync, and admin operations; plus 6 app-only tools for MCP Apps clients
 - **MCP resources** — 9 resources exposing vault configuration, statistics, tags, folders, document outlines, similar notes, recent notes, and an interactive SPA
 - **MCP prompts** — 6 prompt templates including template-driven note creation
 <!-- DOMAIN-END -->
@@ -167,23 +167,6 @@ For reverse proxy (Traefik) and deployment setup, see [`docs/deployment.md`](doc
 
 The server registers a built-in `get_server_info` tool (via `fastmcp_pvl_core.register_server_info_tool`) so operators can confirm the deployed version with a single MCP call. The response carries `server_name`, `server_version`, and `core_version`. Wire upstream version reporting (when applicable) inside the `DOMAIN-UPSTREAM-START` / `DOMAIN-UPSTREAM-END` sentinel in `src/markdown_vault_mcp/server.py`.
 
-### File exchange
-
-A `DOMAIN-FILE-EXCHANGE-START` / `DOMAIN-FILE-EXCHANGE-END` sentinel
-block in `server.py` wires the
-[MCP File Exchange](docs/guides/file-exchange.md) helpers from
-`fastmcp-pvl-core`. The **upload direction is wired** (#443) — agents
-mint a one-time HTTPS POST URL via `create_upload_link(target_id,
-ttl_seconds)` and push bytes outside the MCP context, with the route
-mounted only on HTTP/SSE transports when `MARKDOWN_VAULT_MCP_BASE_URL`
-is set. The **download direction remains deferred to #431** because
-the spec-compliant `create_download_link(origin_id, ttl_seconds)` tool
-collides on name with MV's existing `create_download_link(path,
-ttl_seconds)` registered via `ArtifactStore`. See the guide for the
-upload-flow walkthrough and the producer / consumer patterns waiting on
-#431, or [`CLAUDE.md`](CLAUDE.md#file-exchange-register_file_exchange--opt-in-upload)
-for the wiring overview.
-
 ## Configuration
 
 All configuration is via environment variables with the `MARKDOWN_VAULT_MCP_` prefix (except embedding provider settings, which use their own conventions).
@@ -295,7 +278,7 @@ Full OAuth 2.1 authentication for HTTP deployments. OIDC activates when all four
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `MARKDOWN_VAULT_MCP_BASE_URL` | Yes | Public base URL of the server (e.g. `https://mcp.example.com`; include prefix if mounted under subpath, e.g. `https://mcp.example.com/vault`). Also required for `create_download_link` and used to auto-compute the MCP Apps domain. |
+| `MARKDOWN_VAULT_MCP_BASE_URL` | Yes | Public base URL of the server (e.g. `https://mcp.example.com`; include prefix if mounted under subpath, e.g. `https://mcp.example.com/vault`). Used for OIDC auth and to auto-compute the MCP Apps domain. |
 | `MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL` | Yes | OIDC discovery endpoint (e.g. `https://auth.example.com/.well-known/openid-configuration`) |
 | `MARKDOWN_VAULT_MCP_OIDC_CLIENT_ID` | Yes | OIDC client ID registered with your provider |
 | `MARKDOWN_VAULT_MCP_OIDC_CLIENT_SECRET` | Yes | OIDC client secret |
@@ -407,12 +390,10 @@ markdown-vault-mcp reindex [--source-dir PATH] [--index-path PATH]
 | `get_diff` | Return a unified diff of a note between a reference commit/timestamp and HEAD (git-backed vaults only) |
 | `git_sync` | Force an immediate git pull / push / both, bypassing the periodic loops. Returns structured state (SHAs, commit counts, Syncthing-style conflict file paths if any). Hidden when `MARKDOWN_VAULT_MCP_GIT_REPO_URL` isn't set or `READ_ONLY=true`. |
 | `fetch` | Download a file from a URL and save it to the vault as a note or attachment (MCP-to-MCP transfer) |
-| `create_download_link` | Generate a one-time download URL for a vault file — enables MCP-to-MCP file transfer (HTTP/SSE transport only; requires `BASE_URL`) |
-| `create_upload_link` | Mint a one-time HTTPS POST URL for pushing bytes into the vault. Bytes flow over HTTP, not through MCP context — use this for any file >100 KB. HTTP/SSE transport only; requires `MARKDOWN_VAULT_MCP_BASE_URL`. |
 | `browse_vault` | Open the vault explorer SPA in a supporting MCP Apps client |
 | `show_context` | Open the Context Card for a specific note in a supporting MCP Apps client |
 
-Write tools (`write`, `edit`, `delete`, `rename`, `fetch`, `create_upload_link`, `git_sync`) are only available when `MARKDOWN_VAULT_MCP_READ_ONLY=false`. `git_sync` additionally requires managed git mode (`MARKDOWN_VAULT_MCP_GIT_REPO_URL` set).
+Write tools (`write`, `edit`, `delete`, `rename`, `fetch`, `git_sync`) are only available when `MARKDOWN_VAULT_MCP_READ_ONLY=false`. `git_sync` additionally requires managed git mode (`MARKDOWN_VAULT_MCP_GIT_REPO_URL` set).
 
 `browse_vault` and `show_context` are LLM-visible in all clients; when called in an MCP Apps-capable client they open the interactive SPA. Six additional internal tools (`vault_context`, `vault_list`, `vault_read`, `vault_search`, `vault_graph_neighborhood`, `vault_graph_hubs`) use `visibility="app"` and are used by the SPA only — they are never visible to the LLM.
 

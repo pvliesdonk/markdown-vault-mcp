@@ -487,9 +487,9 @@ class TestCallbacks:
 
 
 class TestReadAttachmentErrorMessage:
-    """The size-cap ValueError must point at create_download_link, not just 'raise the limit'."""
+    """The size-cap ValueError must name the env var the caller can raise."""
 
-    def test_error_mentions_create_download_link(self, doc_vault: Path) -> None:
+    def test_error_mentions_size_cap_env_var(self, doc_vault: Path) -> None:
         big_file = doc_vault / "big.bin"
         big_file.write_bytes(b"x" * (2 * 1024 * 1024))  # 2 MB
 
@@ -502,14 +502,16 @@ class TestReadAttachmentErrorMessage:
             max_attachment_size_mb=1.0,
         )
 
-        with pytest.raises(ValueError, match="create_download_link"):
+        with pytest.raises(
+            ValueError, match="MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB"
+        ):
             mgr.read_attachment("big.bin")
 
 
 class TestWriteAttachmentErrorMessage:
-    """The size-cap ValueError must point at create_upload_link, not just 'raise the limit'."""
+    """The size-cap ValueError must name the env var the caller can raise."""
 
-    def test_error_mentions_create_upload_link(self, doc_vault: Path) -> None:
+    def test_error_mentions_size_cap_env_var(self, doc_vault: Path) -> None:
         big_content = b"x" * (2 * 1024 * 1024)  # 2 MB
 
         mgr = DocumentManager(
@@ -522,12 +524,14 @@ class TestWriteAttachmentErrorMessage:
             read_only=False,
         )
 
-        with pytest.raises(ValueError, match="create_upload_link"):
+        with pytest.raises(
+            ValueError, match="MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB"
+        ):
             mgr.write_attachment("big.bin", big_content)
 
 
-class TestWriteAttachmentSkipSizeCap:
-    """write_attachment(..., skip_size_cap=True) bypasses MAX_ATTACHMENT_SIZE_MB."""
+class TestWriteAttachmentSizeCap:
+    """write_attachment enforces MAX_ATTACHMENT_SIZE_MB on the content."""
 
     def _mgr(self, doc_vault: Path) -> DocumentManager:
         return DocumentManager(
@@ -540,28 +544,10 @@ class TestWriteAttachmentSkipSizeCap:
             read_only=False,
         )
 
-    def test_default_enforces_cap(self, doc_vault: Path) -> None:
+    def test_enforces_cap(self, doc_vault: Path) -> None:
         big = b"x" * (2 * 1024 * 1024)
         with pytest.raises(ValueError, match="exceeds"):
             self._mgr(doc_vault).write_attachment("big.bin", big)
-
-    def test_default_explicit_false_enforces_cap(self, doc_vault: Path) -> None:
-        big = b"x" * (2 * 1024 * 1024)
-        with pytest.raises(ValueError, match="exceeds"):
-            self._mgr(doc_vault).write_attachment("big.bin", big, skip_size_cap=False)
-
-    def test_skip_size_cap_true_allows_oversize_write(self, doc_vault: Path) -> None:
-        big = b"x" * (2 * 1024 * 1024)
-        result = self._mgr(doc_vault).write_attachment(
-            "big.bin", big, skip_size_cap=True
-        )
-        assert result.created is True
-        assert (doc_vault / "big.bin").read_bytes() == big
-
-    def test_skip_size_cap_keyword_only(self, doc_vault: Path) -> None:
-        big = b"x" * (2 * 1024 * 1024)
-        with pytest.raises(TypeError):
-            self._mgr(doc_vault).write_attachment("big.bin", big, None, True)  # type: ignore[misc]
 
 
 # ---------------------------------------------------------------------------
