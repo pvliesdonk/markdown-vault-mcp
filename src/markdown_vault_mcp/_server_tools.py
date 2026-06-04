@@ -424,8 +424,9 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
                 (e.g. "Journal/note.md" or "assets/diagram.pdf").
                 Case-sensitive.
             section: When provided, return only the section whose heading
-                matches *section* exactly (case-sensitive). Pass the ``heading``
-                value from a ``search`` result unchanged for guaranteed match.
+                matches *section* (case-sensitive; internal whitespace is
+                collapsed before comparison). Pass the ``heading`` value
+                from a ``search`` result unchanged for guaranteed match.
                 ``None`` (the default) returns the whole document.
                 Ignored for non-.md paths.
 
@@ -1545,7 +1546,8 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
             ValueError: If content_base64 is missing/invalid for
                 attachments, or the content exceeds the size limit.
             McpError: If if_match is provided and the file has been
-                modified (ConcurrentModificationError).
+                modified, or if_match is supplied for a file that does not
+                yet exist (ConcurrentModificationError).
         """
         if not path.endswith(".md"):
             if not content_base64:
@@ -1627,6 +1629,9 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
                 numbers are out of range.
             EditConflictError: If old_text is not found or appears more
                 than once.
+            DocumentNotFoundError: If no file exists at the given path.
+            McpError: If if_match is provided and the file has been modified
+                (ConcurrentModificationError).
         """
         try:
             result = await asyncio.to_thread(

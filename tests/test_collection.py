@@ -3734,6 +3734,18 @@ class TestOptimisticConcurrency:
         assert exc_info.value.path == "assets/report.pdf"
         assert exc_info.value.expected == "stale-etag-value"
 
+    def test_write_attachment_with_if_match_on_nonexistent_raises(
+        self, vault_with_attachment: Path
+    ) -> None:
+        """write_attachment() with if_match for a missing file raises CME."""
+        col = Collection(source_dir=vault_with_attachment, read_only=False)
+
+        with pytest.raises(ConcurrentModificationError) as exc_info:
+            col.write_attachment("assets/missing.pdf", b"data", if_match="any-etag")
+
+        assert exc_info.value.path == "assets/missing.pdf"
+        assert exc_info.value.actual == "(file does not exist)"
+
     # --- Round-trip test ---
 
     def test_read_etag_roundtrip_with_write(self, writable: Collection) -> None:

@@ -172,7 +172,7 @@ class IndexWriteCoordinator:
         return int(self._writer.get_status()["write_generation"])
 
     def wait_for_drain(self, timeout: float | None = None) -> bool:
-        """Block until :meth:`is_drained`, or until *timeout*. Polls every 50ms."""
+        """Block until :meth:`is_drained`; ``True`` if drained, ``False`` on timeout."""
         deadline = None if timeout is None else time.monotonic() + timeout
         poll_interval = 0.05
         while True:

@@ -233,7 +233,8 @@ class DocumentManager:
         Args:
             path: Relative document path (e.g. ``"Journal/note.md"``).
             section: When provided, return only the chunk whose heading
-                matches *section* exactly. ``None`` returns the whole
+                matches *section* (case-sensitive; internal whitespace is
+                collapsed before comparison). ``None`` returns the whole
                 document (today's behaviour).
 
         Returns:
@@ -568,7 +569,8 @@ class DocumentManager:
         Raises:
             ReadOnlyError: If the collection is read-only.
             ConcurrentModificationError: If *if_match* is provided and does
-                not match the current file hash.
+                not match the current file hash, or *if_match* is supplied
+                for a file that does not yet exist.
             ValueError: If the path escapes the source directory, has an
                 extension not in the allowlist, or the content exceeds the
                 size limit (when *skip_size_cap* is ``False``).

@@ -124,7 +124,8 @@ class GitQueryManager:
             A unified diff string when *per_commit* is ``False``, or a list of
             :class:`~markdown_vault_mcp.types.CommitDiff` when *per_commit* is
             ``True``.  Returns an empty string / empty list when the note has
-            no changes in the given range.
+            no changes in the given range, or when the vault's source
+            directory is not inside a git repository.
 
         Raises:
             ValueError: If exactly one of *since_sha* / *since_timestamp* is

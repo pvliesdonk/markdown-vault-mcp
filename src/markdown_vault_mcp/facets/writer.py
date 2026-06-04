@@ -61,7 +61,8 @@ class WriterFacet:
         Raises:
             ReadOnlyError: If the collection is read-only.
             ConcurrentModificationError: If *if_match* is provided and does
-                not match the current file hash.
+                not match the current file hash, or *if_match* is supplied
+                for a file that does not yet exist.
             ValueError: If *path* escapes the source directory.
         """
         return self._doc_mgr.write(
@@ -102,6 +103,7 @@ class WriterFacet:
             ReadOnlyError: If the collection is read-only.
             ConcurrentModificationError: If *if_match* is provided and does
                 not match.
+            DocumentNotFoundError: If the file does not exist.
             ValueError: If *path* escapes the source directory.
         """
         return self._doc_mgr.edit(
@@ -165,6 +167,7 @@ class WriterFacet:
             ConcurrentModificationError: If *if_match* is provided and does
                 not match.
             DocumentNotFoundError: If *old_path* does not exist.
+            DocumentExistsError: If *new_path* already exists.
             ValueError: If *old_path* or *new_path* escapes the source
                 directory.
         """
@@ -197,7 +200,8 @@ class WriterFacet:
         Raises:
             ReadOnlyError: If the collection is read-only.
             ConcurrentModificationError: If *if_match* is provided and does
-                not match the current file hash.
+                not match the current file hash, or *if_match* is supplied
+                for a file that does not yet exist.
             ValueError: If the path escapes the source directory, has an
                 extension not in the allowlist, or the content exceeds the
                 size limit (when *skip_size_cap* is ``False``).

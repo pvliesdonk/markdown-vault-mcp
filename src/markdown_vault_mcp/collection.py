@@ -544,7 +544,7 @@ class Collection:
         return self._index_facet.write_generation()
 
     def wait_for_drain(self, timeout: float | None = None) -> bool:
-        """Block until :meth:`is_drained`, or until *timeout* (best-effort)."""
+        """Block until :meth:`is_drained`; ``True`` if drained, ``False`` on timeout."""
         return self._index_facet.wait_for_drain(timeout)
 
     def get_index_status(self) -> dict[str, Any]:
@@ -645,10 +645,11 @@ class Collection:
         Args:
             path: Relative document path (e.g. ``"Journal/note.md"``).
             section: When provided, return only the section whose heading
-                matches *section* exactly (case-sensitive). Pass the
-                ``heading`` value from a ``search`` result unchanged for
-                guaranteed match. ``None`` (the default) returns the whole
-                document. Raises :exc:`ValueError` if the section is not found.
+                matches *section* (case-sensitive; internal whitespace is
+                collapsed before comparison). Pass the ``heading`` value from
+                a ``search`` result unchanged for guaranteed match. ``None``
+                (the default) returns the whole document. Raises
+                :exc:`ValueError` if the section is not found.
 
         Returns:
             A :class:`~markdown_vault_mcp.types.NoteContent` instance, or ``None``
@@ -1084,7 +1085,8 @@ class Collection:
             A unified diff string when *per_commit* is ``False``, or a list of
             :class:`~markdown_vault_mcp.types.CommitDiff` when *per_commit* is
             ``True``.  Returns an empty string / empty list when the note has
-            no changes in the given range.
+            no changes in the given range, or when the vault's source
+            directory is not inside a git repository.
 
         Raises:
             ValueError: If exactly one of *since_sha* / *since_timestamp* is
@@ -1153,6 +1155,18 @@ class Collection:
         gate (e.g. the ``create_upload_link`` receiver path, which has
         already validated against ``MARKDOWN_VAULT_MCP_UPLOAD_MAX_BYTES``);
         leave ``False`` for base64 callers of the MCP ``write`` tool.
+
+        Returns:
+            :class:`~markdown_vault_mcp.types.WriteResult`.
+
+        Raises:
+            ReadOnlyError: If the collection is read-only.
+            ConcurrentModificationError: If *if_match* is provided and does
+                not match the current file hash, or *if_match* is supplied
+                for a file that does not yet exist.
+            ValueError: If the path escapes the source directory, has an
+                extension not in the allowlist, or the content exceeds the
+                size limit (when *skip_size_cap* is ``False``).
         """
         return self._writer_facet.write_attachment(
             path, content, if_match=if_match, skip_size_cap=skip_size_cap
@@ -1185,7 +1199,8 @@ class Collection:
         Raises:
             ReadOnlyError: If the collection is read-only.
             ConcurrentModificationError: If *if_match* is provided and does
-                not match the current file hash.
+                not match the current file hash, or *if_match* is supplied
+                for a file that does not yet exist.
             ValueError: If *path* escapes the source directory.
         """
         return self._writer_facet.write(
@@ -1226,6 +1241,7 @@ class Collection:
             ReadOnlyError: If the collection is read-only.
             ConcurrentModificationError: If *if_match* is provided and does
                 not match.
+            DocumentNotFoundError: If the file does not exist.
             ValueError: If *path* escapes the source directory.
         """
         return self._writer_facet.edit(
@@ -1289,6 +1305,7 @@ class Collection:
             ConcurrentModificationError: If *if_match* is provided and does
                 not match.
             DocumentNotFoundError: If *old_path* does not exist.
+            DocumentExistsError: If *new_path* already exists.
             ValueError: If *old_path* or *new_path* escapes the source
                 directory.
         """

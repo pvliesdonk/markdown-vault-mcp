@@ -88,7 +88,7 @@ class IndexFacet:
         return self._coordinator.write_generation()
 
     def wait_for_drain(self, timeout: float | None = None) -> bool:
-        """Block until :meth:`is_drained`, or until *timeout* (best-effort)."""
+        """Block until :meth:`is_drained`; ``True`` if drained, ``False`` on timeout."""
         return self._coordinator.wait_for_drain(timeout)
 
     def get_index_status(self) -> dict[str, Any]:
