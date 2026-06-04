@@ -627,6 +627,7 @@ Find all documents that link to a given document.
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `path` | string | required | Relative path to the target document |
+| `limit` | int | `null` | Maximum number of backlinks to return. Omitted (the default) returns all. |
 | `wait_for_drain` | bool | `false` | When `true`, blocks until the IndexWriter has no pending or in-flight work before answering. Bounded by `MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S` (default 60s). On timeout, the tool returns the result with `stale=true` rather than raising. Default `false` returns immediately and reports staleness via the envelope's `stale` field. |
 
 **Returns:** Dict envelope with two keys:
@@ -643,6 +644,7 @@ Find all links from a document, with existence check.
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `path` | string | required | Relative path to the source document |
+| `limit` | int | `null` | Maximum number of outlinks to return. Omitted (the default) returns all. |
 | `wait_for_drain` | bool | `false` | When `true`, blocks until the IndexWriter has no pending or in-flight work before answering. Bounded by `MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S` (default 60s). On timeout, the tool returns the result with `stale=true` rather than raising. Default `false` returns immediately and reports staleness via the envelope's `stale` field. |
 
 **Returns:** Dict envelope with two keys:

@@ -55,3 +55,28 @@ class TestGraphFacetReadinessGate:
                 col.graph.get_connection_path("full_frontmatter.md", "simple.md")
         finally:
             col.close()
+
+
+class TestGraphFacetLimit:
+    """``limit`` caps backlinks/outlinks (forwarded to LinkManager); built
+    inline since the shared vault fixture has no multi-link document."""
+
+    def test_limit_caps_backlinks_and_outlinks(self, tmp_path: Path) -> None:
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        (vault / "target.md").write_text("# Target\n", encoding="utf-8")
+        (vault / "a.md").write_text(
+            "# A\n\nSee [t](target.md) and [b](b.md).\n", encoding="utf-8"
+        )
+        (vault / "b.md").write_text("# B\n\nSee [t](target.md).\n", encoding="utf-8")
+        col = Collection(source_dir=vault)
+        col.build_index()
+        try:
+            # target.md has 2 backlinks (a.md, b.md); a.md has 2 outlinks.
+            assert len(col.graph.get_backlinks("target.md")) == 2
+            assert len(col.graph.get_backlinks("target.md", limit=1)) == 1
+            assert len(col.graph.get_backlinks("target.md", limit=None)) == 2
+            assert len(col.graph.get_outlinks("a.md")) == 2
+            assert len(col.graph.get_outlinks("a.md", limit=1)) == 1
+        finally:
+            col.close()

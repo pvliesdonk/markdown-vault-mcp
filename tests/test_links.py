@@ -729,6 +729,26 @@ class TestCollectionBacklinks:
         assert "index.md" in source_paths
         assert "notes/topic.md" in source_paths
 
+    def test_get_backlinks_limit_caps_results(self, linked_vault: Path) -> None:
+        """limit caps the number of backlinks (forwarded to LinkManager)."""
+        col = Collection(source_dir=linked_vault)
+        col.build_index()
+        try:
+            assert len(col.get_backlinks("notes/other.md")) == 2
+            assert len(col.get_backlinks("notes/other.md", limit=1)) == 1
+        finally:
+            col.close()
+
+    def test_get_backlinks_limit_boundary_values(self, linked_vault: Path) -> None:
+        """limit forwards verbatim to SQL: 0 yields none, negative yields all."""
+        col = Collection(source_dir=linked_vault)
+        col.build_index()
+        try:
+            assert col.get_backlinks("notes/other.md", limit=0) == []
+            assert len(col.get_backlinks("notes/other.md", limit=-1)) == 2
+        finally:
+            col.close()
+
     def test_get_backlinks_empty_for_unlinked_doc(self, linked_vault: Path) -> None:
         """Document with no inbound links returns empty list."""
         col = Collection(source_dir=linked_vault)
@@ -761,6 +781,26 @@ class TestCollectionOutlinks:
         targets = {o.target_path for o in outlinks}
         assert "notes/topic.md" in targets
         assert "notes/other.md" in targets
+
+    def test_get_outlinks_limit_caps_results(self, linked_vault: Path) -> None:
+        """limit caps the number of outlinks (forwarded to LinkManager)."""
+        col = Collection(source_dir=linked_vault)
+        col.build_index()
+        try:
+            assert len(col.get_outlinks("index.md")) == 2
+            assert len(col.get_outlinks("index.md", limit=1)) == 1
+        finally:
+            col.close()
+
+    def test_get_outlinks_limit_boundary_values(self, linked_vault: Path) -> None:
+        """limit forwards verbatim to SQL: 0 yields none, negative yields all."""
+        col = Collection(source_dir=linked_vault)
+        col.build_index()
+        try:
+            assert col.get_outlinks("index.md", limit=0) == []
+            assert len(col.get_outlinks("index.md", limit=-1)) == 2
+        finally:
+            col.close()
 
     def test_get_outlinks_exists_flag(self, linked_vault: Path) -> None:
         """OutlinkInfo.exists is True when target is indexed, False otherwise."""

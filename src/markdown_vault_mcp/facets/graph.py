@@ -41,12 +41,16 @@ class GraphFacet:
         self._link_mgr = link_mgr
         self._require_built = require_built
 
-    def get_backlinks(self, path: str) -> list[BacklinkInfo]:
+    def get_backlinks(
+        self, path: str, *, limit: int | None = None
+    ) -> list[BacklinkInfo]:
         """Return all documents that link to the given document.
 
         Args:
             path: Relative path of the target document
                 (e.g. ``"notes/topic.md"``).
+            limit: Maximum number of results to return.  ``None`` (default)
+                means unlimited.
 
         Returns:
             List of :class:`~markdown_vault_mcp.types.BacklinkInfo` objects
@@ -57,9 +61,9 @@ class GraphFacet:
             ValueError: If no document exists at the given path.
         """
         self._require_built()
-        return self._link_mgr.get_backlinks(path)
+        return self._link_mgr.get_backlinks(path, limit=limit)
 
-    def get_outlinks(self, path: str) -> list[OutlinkInfo]:
+    def get_outlinks(self, path: str, *, limit: int | None = None) -> list[OutlinkInfo]:
         """Return all links from the given document to other documents.
 
         The ``exists`` field on each :class:`~markdown_vault_mcp.types.OutlinkInfo`
@@ -68,6 +72,8 @@ class GraphFacet:
         Args:
             path: Relative path of the source document
                 (e.g. ``"notes/topic.md"``).
+            limit: Maximum number of results to return.  ``None`` (default)
+                means unlimited.
 
         Returns:
             List of :class:`~markdown_vault_mcp.types.OutlinkInfo` objects for
@@ -78,7 +84,7 @@ class GraphFacet:
             ValueError: If no document exists at the given path.
         """
         self._require_built()
-        return self._link_mgr.get_outlinks(path)
+        return self._link_mgr.get_outlinks(path, limit=limit)
 
     def get_broken_links(self, *, folder: str | None = None) -> list[BrokenLinkInfo]:
         """Return all links whose target does not exist in the collection.

@@ -678,6 +678,7 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
     @needs_queryable()
     async def get_backlinks(
         path: str,
+        limit: int | None = None,
         wait_for_drain: bool = False,
         collection: Collection = Depends(get_collection),
     ) -> dict[str, Any]:
@@ -695,6 +696,8 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
         Args:
             path: Relative path of the target document (e.g.
                 "notes/topic.md"). Case-sensitive.
+            limit: Maximum number of backlinks to return. Omitted (the
+                default) returns all.
             wait_for_drain: When True, block until the IndexWriter has
                 no pending or in-flight work before answering. Bounded
                 by MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S (default 60s).
@@ -732,7 +735,7 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
             collection, wait_for_drain, "get_backlinks"
         )
         gen_before = collection.write_generation()
-        results = await asyncio.to_thread(collection.get_backlinks, path)
+        results = await asyncio.to_thread(collection.get_backlinks, path, limit=limit)
         return {
             "stale": (
                 (not drained_on_request)
@@ -753,6 +756,7 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
     @needs_queryable()
     async def get_outlinks(
         path: str,
+        limit: int | None = None,
         wait_for_drain: bool = False,
         collection: Collection = Depends(get_collection),
     ) -> dict[str, Any]:
@@ -768,6 +772,8 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
         Args:
             path: Relative path of the source document (e.g.
                 "notes/topic.md"). Case-sensitive.
+            limit: Maximum number of outlinks to return. Omitted (the
+                default) returns all.
             wait_for_drain: When True, block until the IndexWriter has
                 no pending or in-flight work before answering. Bounded
                 by MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S (default 60s).
@@ -805,7 +811,7 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
             collection, wait_for_drain, "get_outlinks"
         )
         gen_before = collection.write_generation()
-        results = await asyncio.to_thread(collection.get_outlinks, path)
+        results = await asyncio.to_thread(collection.get_outlinks, path, limit=limit)
         return {
             "stale": (
                 (not drained_on_request)

@@ -1366,6 +1366,22 @@ class TestLinkTools:
                 await client.call_tool("get_outlinks", {"path": "nope.md"})
 
     @pytest.mark.usefixtures("_mcp_env_linked")
+    async def test_link_tools_accept_limit(self) -> None:
+        server = make_server()
+        async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
+            # index.md has 2 outlinks; limit caps the returned list.
+            capped = await client.call_tool(
+                "get_outlinks", {"path": "index.md", "limit": 1}
+            )
+            assert len(_parse_tool_data(capped)["data"]) == 1
+            # get_backlinks also accepts limit and forwards it.
+            backlinks = await client.call_tool(
+                "get_backlinks", {"path": "notes/topic.md", "limit": 5}
+            )
+            assert len(_parse_tool_data(backlinks)["data"]) == 1
+
+    @pytest.mark.usefixtures("_mcp_env_linked")
     async def test_get_broken_links(self) -> None:
         server = make_server()
         async with Client(server) as client:

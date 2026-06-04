@@ -814,12 +814,16 @@ class Collection:
         """
         return self._reader_facet.get_toc(path)
 
-    def get_backlinks(self, path: str) -> list[BacklinkInfo]:
+    def get_backlinks(
+        self, path: str, *, limit: int | None = None
+    ) -> list[BacklinkInfo]:
         """Return all documents that link to the given document.
 
         Args:
             path: Relative path of the target document
                 (e.g. ``"notes/topic.md"``).
+            limit: Maximum number of results to return.  ``None`` (default)
+                means unlimited.
 
         Returns:
             List of :class:`~markdown_vault_mcp.types.BacklinkInfo` objects
@@ -829,9 +833,9 @@ class Collection:
             IndexUnavailableError: If :meth:`build_index` has not been called.
             ValueError: If no document exists at the given path.
         """
-        return self._graph_facet.get_backlinks(path)
+        return self._graph_facet.get_backlinks(path, limit=limit)
 
-    def get_outlinks(self, path: str) -> list[OutlinkInfo]:
+    def get_outlinks(self, path: str, *, limit: int | None = None) -> list[OutlinkInfo]:
         """Return all links from the given document to other documents.
 
         The ``exists`` field on each :class:`~markdown_vault_mcp.types.OutlinkInfo`
@@ -840,6 +844,8 @@ class Collection:
         Args:
             path: Relative path of the source document
                 (e.g. ``"notes/topic.md"``).
+            limit: Maximum number of results to return.  ``None`` (default)
+                means unlimited.
 
         Returns:
             List of :class:`~markdown_vault_mcp.types.OutlinkInfo` objects for
@@ -849,7 +855,7 @@ class Collection:
             IndexUnavailableError: If :meth:`build_index` has not been called.
             ValueError: If no document exists at the given path.
         """
-        return self._graph_facet.get_outlinks(path)
+        return self._graph_facet.get_outlinks(path, limit=limit)
 
     def get_broken_links(self, *, folder: str | None = None) -> list[BrokenLinkInfo]:
         """Return all links whose target does not exist in the collection.
