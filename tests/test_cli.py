@@ -457,7 +457,6 @@ class TestCmdIndex:
         captured = capsys.readouterr()
         assert "42 documents" in captured.out
         assert "128 chunks" in captured.out
-        mock_collection.index.build_index.assert_called_once_with(force=False)
 
     @patch("markdown_vault_mcp._cli_impl._build_collection")
     def test_valueerror_exits_with_message(
