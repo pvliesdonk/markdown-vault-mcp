@@ -354,7 +354,7 @@ class TestGitSync:
             def _failing_reindex() -> None:
                 raise RuntimeError("simulated reindex failure")
 
-            monkeypatch.setattr(collection, "reindex", _failing_reindex)
+            monkeypatch.setattr(collection.index, "reindex", _failing_reindex)
 
             result = await client.call_tool("git_sync", {"direction": "pull"})
 

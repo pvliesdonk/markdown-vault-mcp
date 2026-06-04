@@ -447,17 +447,17 @@ class TestCmdIndex:
         mock_stats = MagicMock()
         mock_stats.documents_indexed = 42
         mock_stats.chunks_indexed = 128
-        mock_collection.build_index.return_value = mock_stats
+        mock_collection.index.build_index.return_value = mock_stats
         mock_build.return_value = mock_collection
 
         with patch("sys.argv", ["markdown-vault-mcp", "index"]):
             main()
 
-        mock_collection.build_index.assert_called_once_with(force=False)
+        mock_collection.index.build_index.assert_called_once_with(force=False)
         captured = capsys.readouterr()
         assert "42 documents" in captured.out
         assert "128 chunks" in captured.out
-        mock_collection.build_index.assert_called_once_with(force=False)
+        mock_collection.index.build_index.assert_called_once_with(force=False)
 
     @patch("markdown_vault_mcp._cli_impl._build_collection")
     def test_valueerror_exits_with_message(
@@ -481,13 +481,13 @@ class TestCmdIndex:
         mock_stats = MagicMock()
         mock_stats.documents_indexed = 10
         mock_stats.chunks_indexed = 30
-        mock_collection.build_index.return_value = mock_stats
+        mock_collection.index.build_index.return_value = mock_stats
         mock_build.return_value = mock_collection
 
         with patch("sys.argv", ["markdown-vault-mcp", "index", "--force"]):
             main()
 
-        mock_collection.build_index.assert_called_once_with(force=True)
+        mock_collection.index.build_index.assert_called_once_with(force=True)
 
     @patch("markdown_vault_mcp._cli_impl._build_collection")
     def test_index_builds_embeddings_when_configured(
@@ -499,14 +499,14 @@ class TestCmdIndex:
         mock_stats = MagicMock()
         mock_stats.documents_indexed = 5
         mock_stats.chunks_indexed = 20
-        mock_collection.build_index.return_value = mock_stats
-        mock_collection.build_embeddings.return_value = 20
+        mock_collection.index.build_index.return_value = mock_stats
+        mock_collection.index.build_embeddings.return_value = 20
         mock_build.return_value = mock_collection
 
         with patch("sys.argv", ["markdown-vault-mcp", "index"]):
             main()
 
-        mock_collection.build_embeddings.assert_called_once_with(force=False)
+        mock_collection.index.build_embeddings.assert_called_once_with(force=False)
 
     @patch("markdown_vault_mcp._cli_impl._build_collection")
     def test_index_skips_embeddings_when_not_configured(
@@ -518,14 +518,16 @@ class TestCmdIndex:
         mock_stats = MagicMock()
         mock_stats.documents_indexed = 5
         mock_stats.chunks_indexed = 20
-        mock_collection.build_index.return_value = mock_stats
-        mock_collection.build_embeddings.side_effect = ValueError("not configured")
+        mock_collection.index.build_index.return_value = mock_stats
+        mock_collection.index.build_embeddings.side_effect = ValueError(
+            "not configured"
+        )
         mock_build.return_value = mock_collection
 
         with patch("sys.argv", ["markdown-vault-mcp", "index"]):
             main()  # must not raise
 
-        mock_collection.build_embeddings.assert_called_once()
+        mock_collection.index.build_embeddings.assert_called_once()
 
     @patch("markdown_vault_mcp._cli_impl._build_collection")
     def test_index_force_propagates_to_embeddings(
@@ -537,14 +539,14 @@ class TestCmdIndex:
         mock_stats = MagicMock()
         mock_stats.documents_indexed = 5
         mock_stats.chunks_indexed = 20
-        mock_collection.build_index.return_value = mock_stats
-        mock_collection.build_embeddings.return_value = 20
+        mock_collection.index.build_index.return_value = mock_stats
+        mock_collection.index.build_embeddings.return_value = 20
         mock_build.return_value = mock_collection
 
         with patch("sys.argv", ["markdown-vault-mcp", "index", "--force"]):
             main()
 
-        mock_collection.build_embeddings.assert_called_once_with(force=True)
+        mock_collection.index.build_embeddings.assert_called_once_with(force=True)
 
 
 class TestCmdSearch:
@@ -562,7 +564,7 @@ class TestCmdSearch:
         mock_result.score = 0.9876
 
         mock_collection = MagicMock()
-        mock_collection.search.return_value = [mock_result]
+        mock_collection.reader.search.return_value = [mock_result]
         mock_build.return_value = mock_collection
 
         with patch("sys.argv", ["markdown-vault-mcp", "search", "test"]):
@@ -592,7 +594,7 @@ class TestCmdSearch:
             frontmatter={},
         )
         mock_collection = MagicMock()
-        mock_collection.search.return_value = [result]
+        mock_collection.reader.search.return_value = [result]
         mock_build.return_value = mock_collection
 
         with patch("sys.argv", ["markdown-vault-mcp", "search", "test", "--json"]):
@@ -607,7 +609,7 @@ class TestCmdSearch:
     @patch("markdown_vault_mcp._cli_impl._build_collection")
     def test_search_passes_options(self, mock_build: MagicMock) -> None:
         mock_collection = MagicMock()
-        mock_collection.search.return_value = []
+        mock_collection.reader.search.return_value = []
         mock_build.return_value = mock_collection
 
         with patch(
@@ -626,7 +628,7 @@ class TestCmdSearch:
         ):
             main()
 
-        mock_collection.search.assert_called_once_with(
+        mock_collection.reader.search.assert_called_once_with(
             "query", limit=5, mode="semantic", folder="Journal"
         )
 
@@ -865,7 +867,7 @@ class TestCmdSearchJsonOutput:
             ),
         ]
         mock_collection = MagicMock()
-        mock_collection.search.return_value = results
+        mock_collection.reader.search.return_value = results
         mock_build.return_value = mock_collection
 
         with patch("sys.argv", ["markdown-vault-mcp", "search", "alpha", "--json"]):
@@ -887,7 +889,7 @@ class TestCmdSearchJsonOutput:
     ) -> None:
         """_cmd_search with --json and no results outputs an empty JSON array."""
         mock_collection = MagicMock()
-        mock_collection.search.return_value = []
+        mock_collection.reader.search.return_value = []
         mock_build.return_value = mock_collection
 
         with patch("sys.argv", ["markdown-vault-mcp", "search", "nothing", "--json"]):
@@ -914,7 +916,7 @@ class TestCmdReindex:
         mock_result.unchanged = 10
 
         mock_collection = MagicMock()
-        mock_collection.reindex.return_value = mock_result
+        mock_collection.index.reindex.return_value = mock_result
         mock_build.return_value = mock_collection
 
         with patch("sys.argv", ["markdown-vault-mcp", "reindex"]):
@@ -938,14 +940,14 @@ class TestCmdReindex:
         mock_result.modified = 0
         mock_result.deleted = 0
         mock_result.unchanged = 5
-        mock_collection.reindex.return_value = mock_result
-        mock_collection.build_embeddings.return_value = 10
+        mock_collection.index.reindex.return_value = mock_result
+        mock_collection.index.build_embeddings.return_value = 10
         mock_build.return_value = mock_collection
 
         with patch("sys.argv", ["markdown-vault-mcp", "reindex"]):
             main()
 
-        mock_collection.build_embeddings.assert_called_once_with(force=True)
+        mock_collection.index.build_embeddings.assert_called_once_with(force=True)
 
     @patch("markdown_vault_mcp._cli_impl._build_collection")
     def test_reindex_skips_embeddings_when_not_configured(
@@ -959,14 +961,16 @@ class TestCmdReindex:
         mock_result.modified = 0
         mock_result.deleted = 0
         mock_result.unchanged = 5
-        mock_collection.reindex.return_value = mock_result
-        mock_collection.build_embeddings.side_effect = ValueError("not configured")
+        mock_collection.index.reindex.return_value = mock_result
+        mock_collection.index.build_embeddings.side_effect = ValueError(
+            "not configured"
+        )
         mock_build.return_value = mock_collection
 
         with patch("sys.argv", ["markdown-vault-mcp", "reindex"]):
             main()  # must not raise
 
-        mock_collection.build_embeddings.assert_called_once()
+        mock_collection.index.build_embeddings.assert_called_once()
 
     @patch("markdown_vault_mcp._cli_impl._build_collection")
     def test_reindex_uses_force_false_when_no_changes(
@@ -980,14 +984,14 @@ class TestCmdReindex:
         mock_result.modified = 0
         mock_result.deleted = 0
         mock_result.unchanged = 10
-        mock_collection.reindex.return_value = mock_result
-        mock_collection.build_embeddings.return_value = 0
+        mock_collection.index.reindex.return_value = mock_result
+        mock_collection.index.build_embeddings.return_value = 0
         mock_build.return_value = mock_collection
 
         with patch("sys.argv", ["markdown-vault-mcp", "reindex"]):
             main()
 
-        mock_collection.build_embeddings.assert_called_once_with(force=False)
+        mock_collection.index.build_embeddings.assert_called_once_with(force=False)
 
     @patch("markdown_vault_mcp._cli_impl._build_collection")
     def test_reindex_uses_force_true_when_changes_exist(
@@ -1001,14 +1005,14 @@ class TestCmdReindex:
         mock_result.modified = 1
         mock_result.deleted = 0
         mock_result.unchanged = 10
-        mock_collection.reindex.return_value = mock_result
-        mock_collection.build_embeddings.return_value = 30
+        mock_collection.index.reindex.return_value = mock_result
+        mock_collection.index.build_embeddings.return_value = 30
         mock_build.return_value = mock_collection
 
         with patch("sys.argv", ["markdown-vault-mcp", "reindex"]):
             main()
 
-        mock_collection.build_embeddings.assert_called_once_with(force=True)
+        mock_collection.index.build_embeddings.assert_called_once_with(force=True)
 
     def test_reindex_against_real_collection(
         self,

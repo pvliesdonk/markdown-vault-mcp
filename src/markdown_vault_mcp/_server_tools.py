@@ -61,7 +61,7 @@ async def _maybe_wait_for_drain(
     deadline = loop.time() + timeout
     poll_interval = 0.05
     while True:
-        if collection.is_drained():
+        if collection.index.is_drained():
             return True
         if loop.time() >= deadline:
             logger.warning(
@@ -223,7 +223,7 @@ async def _reindex_after_pull(
 
     def _pause_and_reindex() -> None:
         with collection.pause_writes():
-            collection.reindex()
+            collection.index.reindex()
 
     try:
         await asyncio.to_thread(_pause_and_reindex)
@@ -373,7 +373,7 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
                 provider is configured.
         """
         results = await asyncio.to_thread(
-            collection.search,
+            collection.reader.search,
             query,
             limit=limit,
             mode=mode,
@@ -448,9 +448,11 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
                 limit, or the requested section heading is not found.
         """
         if not path.endswith(".md"):
-            attachment = await asyncio.to_thread(collection.read_attachment, path)
+            attachment = await asyncio.to_thread(
+                collection.reader.read_attachment, path
+            )
             return asdict(attachment)
-        note = await asyncio.to_thread(collection.read, path, section=section)
+        note = await asyncio.to_thread(collection.reader.read, path, section=section)
         if note is None:
             raise ValueError(f"Document not found: {path}")
         return asdict(note)
@@ -493,7 +495,7 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
             Body content is not included in either case.
         """
         results = await asyncio.to_thread(
-            collection.list_documents,
+            collection.reader.list_documents,
             folder=folder,
             pattern=pattern,
             include_attachments=include_attachments,
@@ -522,7 +524,7 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
             Pass any of these as the 'folder' argument to 'search' or
             'list_documents'.
         """
-        return await asyncio.to_thread(collection.list_folders)
+        return await asyncio.to_thread(collection.reader.list_folders)
 
     @mcp.tool(
         icons=_TOOL_ICONS["list_tags"],
@@ -553,7 +555,7 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
             ["craft", "pacing", "worldbuilding"]. Use these as values in the
             'filters' dict when calling 'search'.
         """
-        return await asyncio.to_thread(collection.list_tags, field)
+        return await asyncio.to_thread(collection.reader.list_tags, field)
 
     @mcp.tool(
         icons=_TOOL_ICONS["stats"],
@@ -591,7 +593,7 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
             - orphan_count (int): Notes with no inbound or outbound links.
               Call 'get_orphan_notes' if non-zero.
         """
-        result = await asyncio.to_thread(collection.stats)
+        result = await asyncio.to_thread(collection.reader.stats)
         return asdict(result)
 
     @mcp.tool(
@@ -623,7 +625,7 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
             - chunk_count (int): Number of chunks currently in the vector index.
             - path (str | None): Vector index file path when persisted, or null.
         """
-        return await asyncio.to_thread(collection.embeddings_status)
+        return await asyncio.to_thread(collection.index.embeddings_status)
 
     @mcp.tool(
         annotations={
@@ -664,7 +666,7 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
             - error (str | None): ``None`` unless the background build
               raised.
         """
-        return await asyncio.to_thread(collection.get_index_status)
+        return await asyncio.to_thread(collection.index.get_index_status)
 
     # --- Link tools (read-only) ---
 
@@ -735,13 +737,15 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
         drained_on_request = await _maybe_wait_for_drain(
             collection, wait_for_drain, "get_backlinks"
         )
-        gen_before = collection.write_generation()
-        results = await asyncio.to_thread(collection.get_backlinks, path, limit=limit)
+        gen_before = collection.index.write_generation()
+        results = await asyncio.to_thread(
+            collection.graph.get_backlinks, path, limit=limit
+        )
         return {
             "stale": (
                 (not drained_on_request)
-                or (collection.write_generation() != gen_before)
-                or (not collection.is_drained())
+                or (collection.index.write_generation() != gen_before)
+                or (not collection.index.is_drained())
             ),
             "data": [asdict(r) for r in results],
         }
@@ -811,13 +815,15 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
         drained_on_request = await _maybe_wait_for_drain(
             collection, wait_for_drain, "get_outlinks"
         )
-        gen_before = collection.write_generation()
-        results = await asyncio.to_thread(collection.get_outlinks, path, limit=limit)
+        gen_before = collection.index.write_generation()
+        results = await asyncio.to_thread(
+            collection.graph.get_outlinks, path, limit=limit
+        )
         return {
             "stale": (
                 (not drained_on_request)
-                or (collection.write_generation() != gen_before)
-                or (not collection.is_drained())
+                or (collection.index.write_generation() != gen_before)
+                or (not collection.index.is_drained())
             ),
             "data": [asdict(r) for r in results],
         }
@@ -859,7 +865,9 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
             - fragment (str | None): Heading anchor (e.g. "#section"), or null.
             - raw_target (str): Literal link target as written in the source.
         """
-        results = await asyncio.to_thread(collection.get_broken_links, folder=folder)
+        results = await asyncio.to_thread(
+            collection.graph.get_broken_links, folder=folder
+        )
         return [asdict(r) for r in results]
 
     # --- Similarity tools (read-only) ---
@@ -938,9 +946,9 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
         drained_on_request = await _maybe_wait_for_drain(
             collection, wait_for_drain, "get_similar"
         )
-        gen_before = collection.write_generation()
+        gen_before = collection.index.write_generation()
         results = await asyncio.to_thread(
-            collection.get_similar,
+            collection.reader.get_similar,
             path,
             limit=limit,
             chunks_per_file=chunks_per_file,
@@ -948,8 +956,8 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
         return {
             "stale": (
                 (not drained_on_request)
-                or (collection.write_generation() != gen_before)
-                or (not collection.is_drained())
+                or (collection.index.write_generation() != gen_before)
+                or (not collection.index.is_drained())
             ),
             "data": [asdict(r) for r in results],
         }
@@ -986,7 +994,7 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
             frontmatter, modified_at (Unix timestamp), kind ("note").
         """
         results = await asyncio.to_thread(
-            collection.get_recent, limit=limit, folder=folder
+            collection.reader.get_recent, limit=limit, folder=folder
         )
         return [asdict(r) for r in results]
 
@@ -1100,9 +1108,9 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
         drained_on_request = await _maybe_wait_for_drain(
             collection, wait_for_drain, "get_context"
         )
-        gen_before = collection.write_generation()
+        gen_before = collection.index.write_generation()
         result = await asyncio.to_thread(
-            collection.get_context,
+            collection.reader.get_context,
             path,
             similar_limit=similar_limit,
             link_limit=link_limit,
@@ -1110,8 +1118,8 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
         return {
             "stale": (
                 (not drained_on_request)
-                or (collection.write_generation() != gen_before)
-                or (not collection.is_drained())
+                or (collection.index.write_generation() != gen_before)
+                or (not collection.index.is_drained())
             ),
             "data": asdict(result),
         }
@@ -1147,7 +1155,7 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
             - modified_at (float): Unix timestamp of last modification.
             - kind (str): Always "note".
         """
-        results = await asyncio.to_thread(collection.get_orphan_notes)
+        results = await asyncio.to_thread(collection.graph.get_orphan_notes)
         return [asdict(r) for r in results]
 
     @mcp.tool(
@@ -1176,7 +1184,7 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
             — number of distinct source documents linking to this note), ordered
             by backlink_count descending.
         """
-        results = await asyncio.to_thread(collection.get_most_linked, limit=limit)
+        results = await asyncio.to_thread(collection.graph.get_most_linked, limit=limit)
         return [asdict(r) for r in results]
 
     @mcp.tool(
@@ -1234,9 +1242,9 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
         drained_on_request = await _maybe_wait_for_drain(
             collection, wait_for_drain, "get_connection_path"
         )
-        gen_before = collection.write_generation()
+        gen_before = collection.index.write_generation()
         result: list[str] | None = await asyncio.to_thread(
-            collection.get_connection_path, source, target, max_depth
+            collection.graph.get_connection_path, source, target, max_depth
         )
 
         if result is None:
@@ -1246,8 +1254,8 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
         return {
             "stale": (
                 (not drained_on_request)
-                or (collection.write_generation() != gen_before)
-                or (not collection.is_drained())
+                or (collection.index.write_generation() != gen_before)
+                or (not collection.index.is_drained())
             ),
             "data": inner,
         }
@@ -1312,7 +1320,7 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
         """
         try:
             results = await asyncio.to_thread(
-                collection.get_history,
+                collection.reader.get_history,
                 path,
                 since=since,
                 until=until,
@@ -1391,7 +1399,7 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
         """
         try:
             result = await asyncio.to_thread(
-                collection.get_diff,
+                collection.reader.get_diff,
                 path,
                 since_sha=since_sha,
                 since_timestamp=since_timestamp,
@@ -1441,7 +1449,7 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
               stringified exception.  Operators can re-run ``reindex`` to
               retry; a subsequent successful run clears the field.
         """
-        collection.reindex_async()
+        collection.index.reindex_async()
         return {"status": "queued"}
 
     @mcp.tool(
@@ -1481,7 +1489,7 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
               ``build_embeddings`` to retry; a subsequent successful run
               clears the field.
         """
-        collection.build_embeddings_async(force=force)
+        collection.index.build_embeddings_async(force=force)
         return {"status": "queued"}
 
     # --- Write tools (tag-based visibility) ---
@@ -1559,11 +1567,15 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
             except Exception as exc:
                 raise ValueError(f"Invalid base64 in content_base64: {exc}") from exc
             result = await asyncio.to_thread(
-                collection.write_attachment, path, raw_bytes, if_match=if_match
+                collection.writer.write_attachment, path, raw_bytes, if_match=if_match
             )
             return asdict(result)
         result = await asyncio.to_thread(
-            collection.write, path, content, frontmatter=frontmatter, if_match=if_match
+            collection.writer.write,
+            path,
+            content,
+            frontmatter=frontmatter,
+            if_match=if_match,
         )
         return asdict(result)
 
@@ -1635,7 +1647,7 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
         """
         try:
             result = await asyncio.to_thread(
-                collection.edit,
+                collection.writer.edit,
                 path,
                 old_text=old_text,
                 new_text=new_text,
@@ -1696,7 +1708,9 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
             McpError: If if_match is provided and the file has been modified
                 (ConcurrentModificationError).
         """
-        result = await asyncio.to_thread(collection.delete, path, if_match=if_match)
+        result = await asyncio.to_thread(
+            collection.writer.delete, path, if_match=if_match
+        )
         return asdict(result)
 
     @mcp.tool(
@@ -1751,7 +1765,7 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
                 (ConcurrentModificationError).
         """
         result = await asyncio.to_thread(
-            collection.rename,
+            collection.writer.rename,
             old_path,
             new_path,
             if_match=if_match,
@@ -2028,7 +2042,7 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
                     "Only UTF-8 encoded responses can be saved as .md notes."
                 ) from exc
             result = await asyncio.to_thread(
-                collection.write,
+                collection.writer.write,
                 path,
                 text,
                 frontmatter=frontmatter,
@@ -2036,7 +2050,7 @@ def register_tools(mcp: FastMCP, *, transport: str = "stdio") -> None:
             )
         else:
             result = await asyncio.to_thread(
-                collection.write_attachment,
+                collection.writer.write_attachment,
                 path,
                 raw_bytes,
                 if_match=if_match,

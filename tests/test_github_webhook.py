@@ -71,7 +71,7 @@ def _mock_collection(
     *, queryable: bool = True, pull_result: PullResult | None = None
 ) -> MagicMock:
     col = MagicMock()
-    col.is_queryable.return_value = queryable
+    col.index.is_queryable.return_value = queryable
     col.force_pull.return_value = pull_result or _pull_result(
         from_sha="aaa", to_sha="bbb"
     )
@@ -238,7 +238,7 @@ def test_webhook_push_triggers_pull_and_reindex():
     assert resp.status_code == 200
     assert resp.json()["ok"] is True
     col.force_pull.assert_called_once()
-    col.reindex.assert_called_once()
+    col.index.reindex.assert_called_once()
 
 
 def test_webhook_push_skips_reindex_when_already_up_to_date():
@@ -260,7 +260,7 @@ def test_webhook_push_skips_reindex_when_already_up_to_date():
         )
     assert resp.status_code == 200
     col.force_pull.assert_called_once()
-    col.reindex.assert_not_called()
+    col.index.reindex.assert_not_called()
 
 
 def test_webhook_push_returns_503_when_pull_fails():
@@ -284,7 +284,7 @@ def test_webhook_push_returns_503_when_pull_fails():
         )
     assert resp.status_code == 503
     assert "error" in resp.json()
-    col.reindex.assert_not_called()
+    col.index.reindex.assert_not_called()
 
 
 def test_webhook_push_runs_pull_but_skips_reindex_when_not_queryable():
@@ -310,7 +310,7 @@ def test_webhook_push_runs_pull_but_skips_reindex_when_not_queryable():
     assert resp.status_code == 200
     assert resp.json()["ok"] is True
     col.force_pull.assert_called_once()
-    col.reindex.assert_not_called()
+    col.index.reindex.assert_not_called()
 
 
 def test_webhook_push_returns_503_when_singleton_not_initialized():
@@ -353,13 +353,13 @@ def test_webhook_push_no_git_strategy_returns_200():
             },
         )
     assert resp.status_code == 200
-    col.reindex.assert_not_called()
+    col.index.reindex.assert_not_called()
 
 
 def test_webhook_push_reindex_failure_does_not_propagate_to_github():
     """Reindex error is logged but webhook returns 200 so GitHub doesn't retry."""
     col = _mock_collection(pull_result=_pull_result(from_sha="aaa", to_sha="bbb"))
-    col.reindex.side_effect = Exception("disk full")
+    col.index.reindex.side_effect = Exception("disk full")
     client = _make_client()
     body = _push_body()
     with patch(

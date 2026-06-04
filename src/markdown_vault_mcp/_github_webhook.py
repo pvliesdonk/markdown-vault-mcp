@@ -82,7 +82,7 @@ def _reindex_after_pull(collection: Any) -> None:
     """
     try:
         with collection.pause_writes():
-            collection.reindex()
+            collection.index.reindex()
     except Exception:
         logger.error(
             "github_webhook: reindex after pull failed — FTS index is "
@@ -185,7 +185,7 @@ def make_webhook_handler(secret: str) -> Callable[[Request], Any]:
             )
 
         if pull_result.from_sha != pull_result.to_sha:
-            if collection.is_queryable():
+            if collection.index.is_queryable():
                 await asyncio.to_thread(_reindex_after_pull, collection)
             else:
                 logger.info(

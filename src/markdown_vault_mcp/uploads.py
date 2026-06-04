@@ -49,9 +49,9 @@ def _vault_upload_receiver(record: UploadRecord, body: bytes) -> dict[str, Any]:
     """
     collection = get_collection_singleton()
     if record.target_id.endswith(".md"):
-        collection.write(record.target_id, content=body.decode("utf-8"))
+        collection.writer.write(record.target_id, content=body.decode("utf-8"))
     else:
-        collection.write_attachment(record.target_id, body, skip_size_cap=True)
+        collection.writer.write_attachment(record.target_id, body, skip_size_cap=True)
     return {"path": record.target_id, "size_bytes": len(body)}
 
 

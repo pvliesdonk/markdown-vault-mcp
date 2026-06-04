@@ -57,7 +57,7 @@ def register_resources(mcp: FastMCP) -> None:
     ) -> str:
         """Vault configuration: source path, read-only mode, indexed frontmatter fields, exclude patterns, allowed attachment extensions. For counts and search capabilities, use stats://vault."""
         config = _get_config(ctx)
-        stats = await asyncio.to_thread(collection.stats)
+        stats = await asyncio.to_thread(collection.reader.stats)
         return json.dumps(
             {
                 "source_dir": str(config.source_dir),
@@ -78,7 +78,7 @@ def register_resources(mcp: FastMCP) -> None:
         collection: Collection = Depends(get_collection),
     ) -> str:
         """Collection statistics — document count, chunk count, capabilities."""
-        result = await asyncio.to_thread(collection.stats)
+        result = await asyncio.to_thread(collection.reader.stats)
         return json.dumps(asdict(result))
 
     @mcp.resource(
@@ -88,11 +88,11 @@ def register_resources(mcp: FastMCP) -> None:
         collection: Collection = Depends(get_collection),
     ) -> str:
         """All tags grouped by indexed field."""
-        stats = await asyncio.to_thread(collection.stats)
+        stats = await asyncio.to_thread(collection.reader.stats)
         tag_lists: list[list[str]] = list(
             await asyncio.gather(
                 *[
-                    asyncio.to_thread(collection.list_tags, field)
+                    asyncio.to_thread(collection.reader.list_tags, field)
                     for field in stats.indexed_frontmatter_fields
                 ]
             )
@@ -112,7 +112,7 @@ def register_resources(mcp: FastMCP) -> None:
         collection: Collection = Depends(get_collection),
     ) -> str:
         """Tags for a specific indexed field."""
-        values = await asyncio.to_thread(collection.list_tags, field)
+        values = await asyncio.to_thread(collection.reader.list_tags, field)
         return json.dumps(values)
 
     @mcp.resource(
@@ -124,7 +124,7 @@ def register_resources(mcp: FastMCP) -> None:
         collection: Collection = Depends(get_collection),
     ) -> str:
         """All folder paths in the vault."""
-        folders = await asyncio.to_thread(collection.list_folders)
+        folders = await asyncio.to_thread(collection.reader.list_folders)
         return json.dumps(folders)
 
     @mcp.resource(
@@ -136,7 +136,7 @@ def register_resources(mcp: FastMCP) -> None:
         collection: Collection = Depends(get_collection),
     ) -> str:
         """Table of contents — ordered list of {level, text, anchor} headings. Useful for navigating long notes without reading full content."""
-        toc = await asyncio.to_thread(collection.get_toc, path)
+        toc = await asyncio.to_thread(collection.reader.get_toc, path)
         return json.dumps(toc)
 
     @mcp.resource(
@@ -150,7 +150,7 @@ def register_resources(mcp: FastMCP) -> None:
         collection: Collection = Depends(get_collection),
     ) -> str:
         """Top 10 semantically similar notes for a document."""
-        results = await asyncio.to_thread(collection.get_similar, path, limit=10)
+        results = await asyncio.to_thread(collection.reader.get_similar, path, limit=10)
         return json.dumps([asdict(r) for r in results])
 
     @mcp.resource(
@@ -162,7 +162,7 @@ def register_resources(mcp: FastMCP) -> None:
         collection: Collection = Depends(get_collection),
     ) -> str:
         """20 most recently modified notes."""
-        results = await asyncio.to_thread(collection.get_recent, limit=20)
+        results = await asyncio.to_thread(collection.reader.get_recent, limit=20)
         items: list[dict[str, Any]] = [
             {
                 **asdict(r),

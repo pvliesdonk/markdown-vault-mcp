@@ -278,7 +278,7 @@ def register_apps(mcp: FastMCP) -> None:
         summary_parts: list[str] = []
 
         if path:
-            note = await asyncio.to_thread(collection.read, path)
+            note = await asyncio.to_thread(collection.reader.read, path)
             if note:
                 summary_parts.append(f"Note: {note.title} ({path})")
                 summary_parts.append(f"Folder: {note.folder}")
@@ -288,7 +288,7 @@ def register_apps(mcp: FastMCP) -> None:
             else:
                 summary_parts.append(f"Note not found: {path}")
         else:
-            stats = await asyncio.to_thread(collection.stats)
+            stats = await asyncio.to_thread(collection.reader.stats)
             summary_parts.append(
                 f"Vault: {stats.document_count} notes, {stats.folder_count} folders"
             )
@@ -332,7 +332,7 @@ def register_apps(mcp: FastMCP) -> None:
             field details. Returns {"error": "..."} if the note is not found.
         """
         try:
-            ctx = await asyncio.to_thread(collection.get_context, path)
+            ctx = await asyncio.to_thread(collection.reader.get_context, path)
         except ValueError:
             return {"error": f"Note not found: {path}"}
         return asdict(ctx)
@@ -369,7 +369,7 @@ def register_apps(mcp: FastMCP) -> None:
             - summary (str): Text summary with backlink, outlink, and similarity counts.
         """
         try:
-            ctx = await asyncio.to_thread(collection.get_context, path)
+            ctx = await asyncio.to_thread(collection.reader.get_context, path)
         except ValueError:
             return {
                 "path": path,
@@ -463,7 +463,7 @@ def register_apps(mcp: FastMCP) -> None:
             visited.add(current)
 
             # Add node
-            note = await asyncio.to_thread(collection.read, current)
+            note = await asyncio.to_thread(collection.reader.read, current)
             label = (
                 note.title if note else current.rsplit("/", 1)[-1].replace(".md", "")
             )
@@ -482,11 +482,15 @@ def register_apps(mcp: FastMCP) -> None:
 
             # Fetch backlinks/outlinks for interior nodes (orphan detection + edges)
             try:
-                backlinks = await asyncio.to_thread(collection.get_backlinks, current)
+                backlinks = await asyncio.to_thread(
+                    collection.graph.get_backlinks, current
+                )
             except ValueError:
                 backlinks = []
             try:
-                outlinks = await asyncio.to_thread(collection.get_outlinks, current)
+                outlinks = await asyncio.to_thread(
+                    collection.graph.get_outlinks, current
+                )
             except ValueError:
                 outlinks = []
             is_orphan = len(backlinks) == 0 and len(outlinks) == 0
@@ -541,7 +545,7 @@ def register_apps(mcp: FastMCP) -> None:
                     break
                 try:
                     similar = await asyncio.to_thread(
-                        collection.get_similar, node_path, limit=5
+                        collection.reader.get_similar, node_path, limit=5
                     )
                 except ValueError:
                     # Expected when embeddings are not configured for this collection
@@ -564,7 +568,9 @@ def register_apps(mcp: FastMCP) -> None:
                         if len(nodes) >= max_nodes:
                             truncated = True
                             break
-                        sim_note = await asyncio.to_thread(collection.read, sr.path)
+                        sim_note = await asyncio.to_thread(
+                            collection.reader.read, sr.path
+                        )
                         sim_label = (
                             sim_note.title
                             if sim_note
@@ -628,7 +634,7 @@ def register_apps(mcp: FastMCP) -> None:
               - to (str): Target node ID.
               - type (str): "markdown", "wikilink", or "reference".
         """
-        hubs = await asyncio.to_thread(collection.get_most_linked, limit=limit)
+        hubs = await asyncio.to_thread(collection.graph.get_most_linked, limit=limit)
         nodes: dict[str, dict[str, Any]] = {}
         edges: list[dict[str, Any]] = []
         seen_edges: set[tuple[str, str]] = set()
@@ -644,12 +650,16 @@ def register_apps(mcp: FastMCP) -> None:
 
             # Get immediate connections for each hub
             try:
-                backlinks = await asyncio.to_thread(collection.get_backlinks, hub.path)
+                backlinks = await asyncio.to_thread(
+                    collection.graph.get_backlinks, hub.path
+                )
             except ValueError:
                 backlinks = []
             for bl in backlinks:
                 if bl.source_path not in nodes:
-                    note = await asyncio.to_thread(collection.read, bl.source_path)
+                    note = await asyncio.to_thread(
+                        collection.reader.read, bl.source_path
+                    )
                     label = (
                         note.title
                         if note
@@ -711,9 +721,9 @@ def register_apps(mcp: FastMCP) -> None:
               - kind (str): "note" or "attachment".
         """
         docs = await asyncio.to_thread(
-            collection.list_documents, folder=folder, include_attachments=True
+            collection.reader.list_documents, folder=folder, include_attachments=True
         )
-        folders = await asyncio.to_thread(collection.list_folders)
+        folders = await asyncio.to_thread(collection.reader.list_folders)
 
         # Build direct children: extract the first path component after the
         # prefix from every folder that lives under it.  This handles vaults
@@ -769,7 +779,7 @@ def register_apps(mcp: FastMCP) -> None:
             Dict with path, title, frontmatter, content (markdown body), and
             modified_at (Unix timestamp), or null if the note is not found.
         """
-        note = await asyncio.to_thread(collection.read, path)
+        note = await asyncio.to_thread(collection.reader.read, path)
         if note is None:
             return None
         return {
@@ -814,7 +824,7 @@ def register_apps(mcp: FastMCP) -> None:
         """
         try:
             results = await asyncio.to_thread(
-                collection.search, query, limit=limit, mode=mode
+                collection.reader.search, query, limit=limit, mode=mode
             )
         except ValueError as exc:
             return [{"error": str(exc)}]

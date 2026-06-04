@@ -119,7 +119,7 @@ def _cmd_serve(args: argparse.Namespace) -> None:
 def _cmd_index(args: argparse.Namespace) -> None:
     """Build the full-text search index."""
     collection = _build_collection(args)
-    stats = collection.build_index(force=args.force)
+    stats = collection.index.build_index(force=args.force)
     logger.info(
         "Indexed %d documents, %d chunks",
         stats.documents_indexed,
@@ -127,7 +127,7 @@ def _cmd_index(args: argparse.Namespace) -> None:
     )
     print(f"Indexed {stats.documents_indexed} documents, {stats.chunks_indexed} chunks")
     try:
-        n = collection.build_embeddings(force=args.force)
+        n = collection.index.build_embeddings(force=args.force)
         logger.info("Embedded %d chunks", n)
         print(f"Embedded {n} chunks")
     except ValueError:
@@ -138,7 +138,7 @@ def _cmd_search(args: argparse.Namespace) -> None:
     """Search the collection."""
     collection = _build_collection(args)
 
-    results = collection.search(
+    results = collection.reader.search(
         args.query,
         limit=args.limit,
         mode=args.mode,
@@ -167,8 +167,8 @@ def _cmd_reindex(args: argparse.Namespace) -> None:
     # reindex() requires a built index (bucket 4 readiness contract,
     # issue #525). build_index() short-circuits in O(1) on a coherent
     # persisted DB, so this is free on the warm path and correct on cold.
-    collection.build_index()
-    result = collection.reindex()
+    collection.index.build_index()
+    result = collection.index.reindex()
     logger.info(
         "Reindex complete: %d added, %d modified, %d deleted, %d unchanged",
         result.added,
@@ -182,7 +182,7 @@ def _cmd_reindex(args: argparse.Namespace) -> None:
     )
     try:
         should_force = result.added > 0 or result.modified > 0 or result.deleted > 0
-        n = collection.build_embeddings(force=should_force)
+        n = collection.index.build_embeddings(force=should_force)
         logger.info("Embedded %d chunks", n)
         print(f"Embedded {n} chunks")
     except ValueError:

@@ -171,16 +171,16 @@ class TestGraphDataTools:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """vault_graph_hubs uses MostLinkedNote.folder, not per-hub collection.read."""
-        from markdown_vault_mcp.collection import Collection
+        from markdown_vault_mcp.facets.reader import ReaderFacet
 
-        original_read = Collection.read
+        original_read = ReaderFacet.read
         read_paths: list[str] = []
 
-        def _spy(self: Collection, path: str) -> Any:
+        def _spy(self: ReaderFacet, path: str) -> Any:
             read_paths.append(path)
             return original_read(self, path)
 
-        monkeypatch.setattr(Collection, "read", _spy)
+        monkeypatch.setattr(ReaderFacet, "read", _spy)
         server = make_server()
         async with Client(server) as client:
             await wait_for_mcp_writer_drain(client)
@@ -432,7 +432,7 @@ class TestIncludeSemanticEdges:
                 return_value=mock_prov,
             ),
             patch(
-                "markdown_vault_mcp.collection.Collection.get_similar",
+                "markdown_vault_mcp.facets.reader.ReaderFacet.get_similar",
                 side_effect=ValueError("not found"),
             ),
         ):
@@ -468,7 +468,7 @@ class TestIncludeSemanticEdges:
                 return_value=mock_prov,
             ),
             patch(
-                "markdown_vault_mcp.collection.Collection.get_similar",
+                "markdown_vault_mcp.facets.reader.ReaderFacet.get_similar",
                 side_effect=RuntimeError("embedding backend unavailable"),
             ),
         ):

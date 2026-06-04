@@ -108,11 +108,11 @@ def make_collection_lifespan(config: CollectionConfig) -> Any:
         # Bucket-3 tools block on @needs_queryable until the build
         # completes; bucket-2 tools return whatever is currently in
         # the index per #526.
-        collection.build_index_async()
+        collection.index.build_index_async()
         logger.info("Submitted BuildIndex job to writer")
 
         if kwargs.get("embedding_provider") is not None:
-            collection.build_embeddings_async()
+            collection.index.build_embeddings_async()
             logger.info("Submitted BuildEmbeddings job to writer")
 
         # Start any other background tasks (e.g. git pull loop).
@@ -141,7 +141,7 @@ def make_collection_lifespan(config: CollectionConfig) -> Any:
             def _on_file_change() -> None:
                 try:
                     with collection.pause_writes():
-                        collection.reindex()
+                        collection.index.reindex()
                 except IndexUnavailableError:
                     logger.info(
                         "file_watcher: index not yet queryable, skipping reindex"
