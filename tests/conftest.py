@@ -62,6 +62,23 @@ class MockEmbeddingProvider(EmbeddingProvider):
         return f"mock-dim-{self._dim}"
 
 
+_VAULT_FIXTURE_EXCLUDED = {"invalid_utf8.md"}
+
+
+def _copy_md_fixtures(fixtures_dir: Path, dest: Path) -> Path:
+    """Copy ``*.md`` fixtures into ``dest``, excluding non-UTF-8 fixtures."""
+    import shutil
+
+    dest.mkdir(parents=True, exist_ok=True)
+    for src in fixtures_dir.rglob("*.md"):
+        if src.name in _VAULT_FIXTURE_EXCLUDED:
+            continue
+        target = dest / src.relative_to(fixtures_dir)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, target)
+    return dest
+
+
 @pytest.fixture
 def fixtures_path() -> Path:
     """Path to test fixtures directory."""
@@ -103,14 +120,21 @@ def populated_vault(tmp_path: Path):
     return col
 
 
-@pytest.fixture
-def built(vault_path: Path):
-    """A built Vault over the clean vault fixture (shared by facet tests)."""
+@pytest.fixture(scope="module")
+def _shared_vault_path(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Module-scoped copy of the markdown fixtures for read-only sharing (#618)."""
+    fixtures_dir = Path(__file__).parent / "fixtures"
+    return _copy_md_fixtures(fixtures_dir, tmp_path_factory.mktemp("shared_vault"))
+
+
+@pytest.fixture(scope="module")
+def built(_shared_vault_path: Path):
+    """A built Vault over the shared read-only vault fixture (module-scoped, #618)."""
     from markdown_vault_mcp.vault import Vault
 
-    col = Vault(source_dir=vault_path)
-    col.index.build_index()
+    col = Vault(source_dir=_shared_vault_path)
     try:
+        col.index.build_index()
         yield col
     finally:
         col.close()
@@ -241,19 +265,4 @@ def vault_path(tmp_path: Path, fixtures_path: Path) -> Path:
     Returns:
         Path to the vault root inside ``tmp_path``.
     """
-    import shutil
-
-    vault = tmp_path / "vault"
-    vault.mkdir()
-
-    _EXCLUDED = {"invalid_utf8.md"}
-
-    for src in fixtures_path.rglob("*.md"):
-        if src.name in _EXCLUDED:
-            continue
-        rel = src.relative_to(fixtures_path)
-        dest = vault / rel
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(src, dest)
-
-    return vault
+    return _copy_md_fixtures(fixtures_path, tmp_path / "vault")

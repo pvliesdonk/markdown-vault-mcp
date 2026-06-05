@@ -5,9 +5,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from markdown_vault_mcp.facets.index import IndexFacet
+from markdown_vault_mcp.vault import Vault
 
 if TYPE_CHECKING:
-    from markdown_vault_mcp.vault import Vault
+    from pathlib import Path
 
 
 class TestIndexFacetAccessor:
@@ -31,10 +32,15 @@ class TestIndexFacetBehaviour:
     def test_write_generation_is_int(self, built: Vault) -> None:
         assert isinstance(built.index.write_generation(), int)
 
-    def test_reindex_runs(self, built: Vault) -> None:
-        # ReindexResult; just exercise the delegation end to end.
-        result = built.index.reindex()
-        assert result is not None
+    def test_reindex_runs(self, vault_path: Path) -> None:
+        # Own vault: reindex() mutates index state -> must not share `built` (#618).
+        col = Vault(source_dir=vault_path)
+        try:
+            col.index.build_index()
+            result = col.index.reindex()
+            assert result is not None
+        finally:
+            col.close()
 
     def test_embeddings_status_returns_dict(self, built: Vault) -> None:
         assert isinstance(built.index.embeddings_status(), dict)
