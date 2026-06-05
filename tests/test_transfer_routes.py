@@ -82,7 +82,7 @@ def test_download_missing_file_404_and_not_consumed(vault):
     """A download whose file vanished 404s and does not burn the token."""
     store = TransferStore()
     rec = store.create("download", "note.md", False, 60)
-    (vault._source_dir / "note.md").unlink()
+    (vault.source_dir / "note.md").unlink()
     client = _client(store, vault)
     assert client.get(f"/transfer/{rec.token}").status_code == 404
     assert store.claim(rec.token, "download") is not None
@@ -92,7 +92,7 @@ def test_download_missing_attachment_404_and_not_consumed(vault):
     """A download whose attachment vanished 404s (ValueError) and isn't burned."""
     store = TransferStore()
     rec = store.create("download", "pic.png", True, 60)
-    (vault._source_dir / "pic.png").unlink()
+    (vault.source_dir / "pic.png").unlink()
     client = _client(store, vault)
     assert client.get(f"/transfer/{rec.token}").status_code == 404
     assert store.claim(rec.token, "download") is not None

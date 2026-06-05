@@ -7,9 +7,7 @@ route so all three close over one shared :class:`TransferStore`.
 
 from __future__ import annotations
 
-import asyncio
 import logging
-import os
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
@@ -36,9 +34,9 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _base_url() -> str:
-    """Return the configured public base URL (empty string if unset)."""
-    return os.environ.get(f"{_ENV_PREFIX}_BASE_URL", "").strip().rstrip("/")
+def _base_url(config: VaultConfig) -> str:
+    """Return the configured public base URL (no trailing slash; empty if unset)."""
+    return (config.server.base_url or "").rstrip("/")
 
 
 def _clamp_ttl(ttl_seconds: int | None, default_s: int, max_s: int) -> int:
@@ -100,6 +98,50 @@ def _validate_destination(
     return True
 
 
+def _validate_source(
+    path: str,
+    source_dir: Path,
+    attachment_extensions: list[str] | None,
+) -> bool:
+    """Validate a download source (stat-only) and return whether it is an attachment.
+
+    Verifies existence without reading the file, so minting a download link for
+    a large attachment never loads it into memory.
+
+    Args:
+        path: Vault-relative source path.
+        source_dir: Vault root.
+        attachment_extensions: Configured allowlist (``None`` = defaults).
+
+    Returns:
+        ``True`` if *path* is an attachment, ``False`` for a note.
+
+    Raises:
+        ValueError: On path traversal, a missing file, or a disallowed
+            attachment extension.
+    """
+    is_attachment = not path.endswith(".md")
+    if not is_attachment:
+        resolved = validate_path(path, source_dir)
+    else:
+        resolved = (source_dir / path).resolve()
+        if not resolved.is_relative_to(source_dir.resolve()):
+            raise ValueError(f"Path traversal detected: {path}")
+    try:
+        exists = resolved.is_file()
+    except OSError as exc:
+        raise ValueError(f"File not accessible: {path}") from exc
+    if not exists:
+        kind = "Attachment" if is_attachment else "Note"
+        raise ValueError(f"{kind} not found: {path}")
+    if is_attachment:
+        exts = effective_attachment_extensions(attachment_extensions)
+        ext = resolved.suffix.lstrip(".").lower()
+        if "*" not in exts and ext not in exts:
+            raise ValueError(f"Attachment extension not allowed: .{ext}")
+    return is_attachment
+
+
 def _link_response(base: str, record: Any, ttl: int) -> dict[str, Any]:
     """Build the common tool return payload for a minted token.
 
@@ -122,7 +164,7 @@ def _link_response(base: str, record: Any, ttl: int) -> dict[str, Any]:
 async def _create_download_link(
     store: TransferStore,
     config: VaultConfig,
-    vault: Vault,
+    _vault: Vault,
     path: str,
     ttl_seconds: int | None,
 ) -> dict[str, Any]:
@@ -131,7 +173,7 @@ async def _create_download_link(
     Args:
         store: The shared token store.
         config: Loaded vault configuration.
-        vault: The live vault instance.
+        _vault: The live vault instance (unused at mint time; kept for symmetry).
         path: Vault-relative path of an existing note or attachment.
         ttl_seconds: Requested lifetime; clamped to the server ceiling.
 
@@ -141,16 +183,12 @@ async def _create_download_link(
     Raises:
         ValueError: If ``BASE_URL`` is unset or the file does not exist.
     """
-    base = _base_url()
+    base = _base_url(config)
     if not base:
         raise ValueError(f"{_ENV_PREFIX}_BASE_URL must be set to create transfer links")
-    is_attachment = not path.endswith(".md")
-    if is_attachment:
-        await asyncio.to_thread(vault.reader.read_attachment, path)
-    else:
-        note = await asyncio.to_thread(vault.reader.read, path)
-        if note is None:
-            raise ValueError(f"Note not found: {path}")
+    is_attachment = _validate_source(
+        path, config.source_dir, config.content.attachment_extensions
+    )
     ttl = _clamp_ttl(
         ttl_seconds, config.transfer.ttl_default_s, config.transfer.ttl_max_s
     )
@@ -181,7 +219,7 @@ async def _create_upload_link(
         ValueError: If ``BASE_URL`` is unset, the destination escapes the vault,
             or its attachment extension is not allowed.
     """
-    base = _base_url()
+    base = _base_url(config)
     if not base:
         raise ValueError(f"{_ENV_PREFIX}_BASE_URL must be set to create transfer links")
     is_attachment = _validate_destination(

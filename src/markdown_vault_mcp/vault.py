@@ -367,6 +367,11 @@ class Vault:
         return self._index_facet
 
     @property
+    def source_dir(self) -> Path:
+        """The vault's root directory."""
+        return self._source_dir
+
+    @property
     def max_attachment_size_mb(self) -> float:
         """The attachment context-size cap in MB (``0`` = unlimited).
 

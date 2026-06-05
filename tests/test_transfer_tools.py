@@ -1,6 +1,7 @@
 """Unit tests for the transfer-link tool logic (#622)."""
 
 import pytest
+from fastmcp_pvl_core import ServerConfig
 
 from markdown_vault_mcp import _server_transfer as T
 from markdown_vault_mcp.config import VaultConfig
@@ -10,9 +11,8 @@ from markdown_vault_mcp.vault import Vault
 
 
 @pytest.fixture
-def env(tmp_path, monkeypatch):
+def env(tmp_path):
     """A writable vault + config + store with BASE_URL set."""
-    monkeypatch.setenv("MARKDOWN_VAULT_MCP_BASE_URL", "https://host")
     src = tmp_path / "vault"
     src.mkdir()
     (src / "note.md").write_text("# N\n\nx\n")
@@ -20,7 +20,9 @@ def env(tmp_path, monkeypatch):
     col = Vault(source_dir=src, read_only=False, attachment_extensions=["png"])
     col.index.build_index()
     config = VaultConfig(
-        source_dir=src, content=ContentConfig(attachment_extensions=["png"])
+        source_dir=src,
+        content=ContentConfig(attachment_extensions=["png"]),
+        server=ServerConfig(base_url="https://host"),
     )
     store = TransferStore()
     try:
@@ -45,12 +47,15 @@ async def test_ttl_is_clamped_to_max(env):
     assert out["expires_in_seconds"] == 86400
 
 
-async def test_base_url_unset_raises(env, monkeypatch):
+async def test_base_url_unset_raises(env):
     """Minting fails clearly when BASE_URL is unset."""
     store, config, vault = env
-    monkeypatch.delenv("MARKDOWN_VAULT_MCP_BASE_URL", raising=False)
+    config_no_url = VaultConfig(
+        source_dir=config.source_dir,
+        content=ContentConfig(attachment_extensions=["png"]),
+    )
     with pytest.raises(ValueError, match="BASE_URL"):
-        await T._create_download_link(store, config, vault, "note.md", None)
+        await T._create_download_link(store, config_no_url, vault, "note.md", None)
 
 
 async def test_download_missing_note_raises(env):

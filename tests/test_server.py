@@ -3297,3 +3297,15 @@ async def test_transfer_tools_absent_on_stdio() -> None:
         names = {t.name for t in await client.list_tools()}
     assert "create_download_link" not in names
     assert "create_upload_link" not in names
+
+
+@pytest.mark.usefixtures("_mcp_env")
+async def test_transfer_download_present_upload_hidden_in_readonly():
+    """In read-only mode the download link tool stays visible; upload is hidden."""
+    from markdown_vault_mcp.server import make_server
+
+    server = make_server(transport="http")
+    async with Client(server) as client:
+        names = {t.name for t in await client.list_tools()}
+    assert "create_download_link" in names
+    assert "create_upload_link" not in names

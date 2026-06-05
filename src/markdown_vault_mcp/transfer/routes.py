@@ -6,7 +6,9 @@ import asyncio
 import base64
 import logging
 import re
+from pathlib import Path
 from typing import TYPE_CHECKING
+from urllib.parse import quote
 
 from starlette.background import BackgroundTask
 from starlette.responses import JSONResponse, Response
@@ -28,9 +30,16 @@ _FILENAME_UNSAFE = re.compile(r'[\x00-\x1f"\\/]+')
 
 def _sanitize_filename(path: str) -> str:
     """Return a safe Content-Disposition filename from a vault path."""
-    base = path.rsplit("/", 1)[-1]
-    cleaned = _FILENAME_UNSAFE.sub("_", base).strip()
+    cleaned = _FILENAME_UNSAFE.sub("_", Path(path).name).strip()
     return cleaned or "download"
+
+
+def _content_disposition(path: str) -> str:
+    """Build an RFC 6266 Content-Disposition with ASCII + UTF-8 filenames."""
+    name = _sanitize_filename(path)
+    ascii_name = name.encode("ascii", "replace").decode("ascii")
+    quoted = quote(name, safe="")
+    return f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quoted}"
 
 
 def make_transfer_handler(
@@ -90,11 +99,10 @@ async def _handle_download(
         store.release(token)
         logger.warning("transfer_download_failed path=%s", record.path, exc_info=True)
         return Response(status_code=500)
-    filename = _sanitize_filename(record.path)
     return Response(
         content=body,
         media_type=media_type,
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={"Content-Disposition": _content_disposition(record.path)},
         background=BackgroundTask(store.complete, token),
     )
 
@@ -125,23 +133,30 @@ async def _handle_upload(
             pass
     chunks: list[bytes] = []
     size = 0
-    async for chunk in request.stream():
-        size += len(chunk)
-        if cap is not None and size > cap:
-            store.release(token)
-            return Response(status_code=413)
-        chunks.append(chunk)
+    try:
+        async for chunk in request.stream():
+            size += len(chunk)
+            if cap is not None and size > cap:
+                store.release(token)
+                return Response(status_code=413)
+            chunks.append(chunk)
+    except Exception:
+        store.release(token)
+        logger.warning(
+            "transfer_upload_stream_failed path=%s", record.path, exc_info=True
+        )
+        return Response(status_code=400)
     body = b"".join(chunks)
     try:
         if record.is_attachment:
             await asyncio.to_thread(vault.writer.write_attachment, record.path, body)
         else:
-            await asyncio.to_thread(
-                vault.writer.write, record.path, body.decode("utf-8")
-            )
-    except ValueError:
-        store.release(token)
-        return Response(status_code=415)
+            try:
+                text = body.decode("utf-8")
+            except UnicodeDecodeError:
+                store.release(token)
+                return Response(status_code=415)
+            await asyncio.to_thread(vault.writer.write, record.path, text)
     except Exception:
         store.release(token)
         logger.warning("transfer_upload_failed path=%s", record.path, exc_info=True)
