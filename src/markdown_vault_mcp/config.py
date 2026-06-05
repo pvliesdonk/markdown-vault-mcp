@@ -28,6 +28,7 @@ from markdown_vault_mcp.config_sections import (
     IndexingConfig,
     SearchConfig,
     SyncConfig,
+    TransferConfig,
 )
 from markdown_vault_mcp.git import GitWriteStrategy
 
@@ -45,6 +46,24 @@ def _env(name: str, default: str | None = None) -> str | None:
     value is treated as unset (returns *default*).
     """
     return _core_env(_ENV_PREFIX, name, default=default)
+
+
+def _parse_int_env(name: str, default: int) -> int:
+    """Read an integer env var, falling back to *default* on absence/parse error."""
+    raw = (_env(name) or "").strip()
+    if not raw:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        full_name = f"{_ENV_PREFIX}_{name}"
+        logger.warning(
+            "load_config: invalid %s=%r, using default %s",
+            full_name,
+            raw,
+            default,
+        )
+        return default
 
 
 @dataclass
@@ -86,6 +105,7 @@ class VaultConfig:
     search: SearchConfig = field(default_factory=SearchConfig)
     sync: SyncConfig = field(default_factory=SyncConfig)
     content: ContentConfig = field(default_factory=ContentConfig)
+    transfer: TransferConfig = field(default_factory=TransferConfig)
     # CONFIG-FIELDS-END
 
     # Universal server fields delegated to fastmcp_pvl_core.ServerConfig.
@@ -654,6 +674,15 @@ def load_config() -> VaultConfig:
         raise ValueError(f"max_chunk_words must be >= 1, got {max_chunk_words}")
     logger.debug("load_config: max_chunk_words=%s", max_chunk_words)
 
+    transfer_ttl_default_s = _parse_int_env("TRANSFER_TTL_DEFAULT_S", 3600)
+    transfer_ttl_max_s = _parse_int_env("TRANSFER_TTL_MAX_S", 86400)
+    transfer_max_upload_bytes = _parse_int_env("TRANSFER_MAX_UPLOAD_BYTES", 104857600)
+    transfer = TransferConfig(
+        ttl_default_s=transfer_ttl_default_s,
+        ttl_max_s=transfer_ttl_max_s,
+        max_upload_bytes=transfer_max_upload_bytes,
+    )
+
     return VaultConfig(
         # CONFIG-FROM-ENV-START — domain fields populated from env; kept across copier update
         source_dir=source_dir,
@@ -709,6 +738,7 @@ def load_config() -> VaultConfig:
             templates_folder=templates_folder,
             prompts_folder=prompts_folder,
         ),
+        transfer=transfer,
         # CONFIG-FROM-ENV-END
         server=ServerConfig.from_env(_ENV_PREFIX),
     )

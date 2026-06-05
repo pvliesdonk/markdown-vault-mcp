@@ -8,6 +8,7 @@ from markdown_vault_mcp.config_sections.git import GitConfig
 from markdown_vault_mcp.config_sections.indexing import IndexingConfig
 from markdown_vault_mcp.config_sections.search import SearchConfig
 from markdown_vault_mcp.config_sections.sync import SyncConfig
+from markdown_vault_mcp.config_sections.transfer import TransferConfig
 
 __all__ = [
     "ContentConfig",
@@ -16,4 +17,5 @@ __all__ = [
     "IndexingConfig",
     "SearchConfig",
     "SyncConfig",
+    "TransferConfig",
 ]

@@ -1070,3 +1070,24 @@ class TestMaxAttachmentSizeMbDefault:
         monkeypatch.delenv("MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB", raising=False)
         config = load_config()
         assert config.content.max_attachment_size_mb == 1.0
+
+
+def test_transfer_config_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    """TransferConfig defaults apply when no env vars are set."""
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
+    cfg = load_config()
+    assert cfg.transfer.ttl_default_s == 3600
+    assert cfg.transfer.ttl_max_s == 86400
+    assert cfg.transfer.max_upload_bytes == 104857600
+
+
+def test_transfer_config_env_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
+    """TransferConfig reads its three env vars as integers."""
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_TRANSFER_TTL_DEFAULT_S", "120")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_TRANSFER_TTL_MAX_S", "600")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_TRANSFER_MAX_UPLOAD_BYTES", "2048")
+    cfg = load_config()
+    assert cfg.transfer.ttl_default_s == 120
+    assert cfg.transfer.ttl_max_s == 600
+    assert cfg.transfer.max_upload_bytes == 2048
