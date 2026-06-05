@@ -124,6 +124,7 @@ ignore = ["E501"]
 "src/markdown_vault_mcp/_server_resources.py" = ["B008", "TC001", "TC002"]
 "src/markdown_vault_mcp/_server_prompts.py" = ["B008", "TC002"]
 "src/markdown_vault_mcp/_server_apps.py" = ["B008", "TC001", "TC002"]
+"src/markdown_vault_mcp/_server_transfer.py" = ["B008", "TC001", "TC002"]
 # IndexingConfig needs pathlib.Path at runtime so typing.get_type_hints() works
 # on the public dataclass; keep the import top-level, not behind TYPE_CHECKING.
 "src/markdown_vault_mcp/config_sections/indexing.py" = ["TC003"]
