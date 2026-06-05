@@ -50,7 +50,7 @@ faster client feedback when the index has chronic backlog.
 | `MARKDOWN_VAULT_MCP_SERVER_NAME` | string | `markdown-vault-mcp` | MCP server name shown to clients; useful for multi-instance setups |
 | `MARKDOWN_VAULT_MCP_INSTRUCTIONS` | string | (auto) | System-level instructions injected into LLM context; defaults to a description that reflects read-only vs read-write state |
 | `MARKDOWN_VAULT_MCP_HTTP_PATH` | path | `/mcp` | HTTP endpoint path for streamable HTTP transport (`serve --transport http`) |
-| `MARKDOWN_VAULT_MCP_BASE_URL` | url | — | Public base URL of the server (e.g. `https://mcp.example.com`). Required for OIDC auth and MCP Apps domain computation |
+| `MARKDOWN_VAULT_MCP_BASE_URL` | url | — | Public base URL of the server (e.g. `https://mcp.example.com`). Required for OIDC auth, MCP Apps domain computation, and the one-time transfer link tools |
 | `MARKDOWN_VAULT_MCP_EVENT_STORE_URL` | url | `file:///data/state/events` | Event store backend for HTTP session persistence. `file:///path` survives restarts; `memory://` for dev (lost on restart) |
 | `MARKDOWN_VAULT_MCP_APP_DOMAIN` | string | (auto) | Override the Claude app domain used for MCP Apps iframe sandboxing. Auto-computed from `BASE_URL` when not set |
 | `FASTMCP_LOG_LEVEL` | string | `INFO` | Log level for FastMCP internals (`DEBUG`, `INFO`, `WARNING`, `ERROR`). `-v` CLI flag overrides both app and FastMCP loggers to `DEBUG` |
@@ -177,6 +177,21 @@ Simple static token auth for HTTP deployments. Set a single env var — clients 
 
 !!! tip "Multi-auth"
     If both `BEARER_TOKEN` and all OIDC variables are set, the server accepts **either** credential. Useful when different clients use different auth flows (e.g. Claude web via OIDC + Claude Code via bearer token).
+
+## One-Time Transfer Links
+
+Short-lived capability URLs for transferring vault files out-of-band (browser download or third-party service upload) without inflating the LLM context window. The `GET /transfer/{token}` route is mounted outside the auth middleware — the unguessable token is the authorization.
+
+`MARKDOWN_VAULT_MCP_BASE_URL` is required for the transfer tools to function; it is used to construct the capability URL returned to the LLM. If `BASE_URL` is not set, calling `create_download_link` or `create_upload_link` raises an error.
+
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `MARKDOWN_VAULT_MCP_TRANSFER_TTL_DEFAULT_S` | int | `3600` | Default token lifetime in seconds when the caller omits `ttl_seconds`. Clamped to `MARKDOWN_VAULT_MCP_TRANSFER_TTL_MAX_S` |
+| `MARKDOWN_VAULT_MCP_TRANSFER_TTL_MAX_S` | int | `86400` | Maximum permitted TTL. Any `ttl_seconds` above this value is silently clamped to the ceiling |
+| `MARKDOWN_VAULT_MCP_TRANSFER_MAX_UPLOAD_BYTES` | int | `104857600` (100 MiB) | Per-upload size cap for the upload route. Requests whose body exceeds this limit are rejected with HTTP 413 |
+
+!!! note "HTTP/SSE transport only"
+    Transfer tools and the `/transfer/{token}` route are registered only when the server is running HTTP or SSE transport. They are not available on stdio transport.
 
 ## OIDC Authentication
 

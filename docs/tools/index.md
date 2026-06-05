@@ -35,6 +35,8 @@ markdown-vault-mcp exposes MCP tools across several categories. Write tools are 
 | [`rename`](#rename) | Write | Rename/move a document or attachment |
 | [`fetch`](#fetch) | Write | Download from URL and save to vault |
 | [`git_sync`](#git_sync) | Write (git) | Force an immediate git pull / push / both, bypassing the periodic loops |
+| [`create_download_link`](#create_download_link) | Transfer | Mint a one-time capability URL to download a vault file (HTTP/SSE only) |
+| [`create_upload_link`](#create_upload_link) | Transfer | Mint a one-time capability URL to upload bytes to a fixed vault path (HTTP/SSE only) |
 | [`browse_vault`](#browse_vault) | Apps | Open the vault explorer SPA |
 | [`show_context`](#show_context) | Apps | Open the Context Card for a note |
 
@@ -707,6 +709,96 @@ Exactly one of `since_sha` / `since_timestamp` must be supplied.
 - `per_commit=true`: object with `commits` (list of per-commit entries, newest-first — each containing `sha`, `short_sha`, `timestamp`, `message`, and `diff`) and `total` (count — always equals `len(commits)`; does NOT indicate how many commits exist beyond the `limit` cap). The envelope keeps the structured payload self-describing on the wire instead of relying on FastMCP's auto-wrapping `result` key.
 
 **Raises:** `ToolError` if parameters are invalid or the reference commit is not found.
+
+---
+
+## One-Time Transfer Links
+
+Transfer tools mint short-lived capability URLs so large files can move between the vault and a browser or another service without inflating the LLM context window. The unguessable token in the URL is the authorization — no separate `Authorization` header is needed.
+
+!!! note "HTTP/SSE transport only"
+    Transfer tools require a running HTTP or SSE server with `MARKDOWN_VAULT_MCP_BASE_URL` set. They are not available on stdio transport.
+
+!!! warning "Write tool visibility"
+    `create_download_link` is available in read-only mode. `create_upload_link` is a write tool and is hidden when `MARKDOWN_VAULT_MCP_READ_ONLY=true`.
+
+### `create_download_link`
+
+Mint a one-time capability URL to download a vault note or attachment. The file must exist at link-creation time. The URL can be fetched exactly once — after a successful download the token is consumed. A failed or interrupted download does not consume the token.
+
+**Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `path` | string | required | Relative path to the vault file (note or attachment). The file must exist; a missing path raises an error immediately |
+| `ttl_seconds` | int | server default (`MARKDOWN_VAULT_MCP_TRANSFER_TTL_DEFAULT_S`) | Token lifetime in seconds. Clamped to `MARKDOWN_VAULT_MCP_TRANSFER_TTL_MAX_S`. Omit to use the server default |
+
+**Returns:**
+
+```json
+{
+  "url": "https://mcp.example.com/transfer/...",
+  "path": "notes/report.md",
+  "expires_at": "2026-06-05T14:00:00+00:00",
+  "expires_in_seconds": 3600
+}
+```
+
+**Example usage:**
+
+```json
+{"path": "assets/diagram.pdf", "ttl_seconds": 600}
+```
+
+Then in a terminal:
+
+```bash
+curl "https://mcp.example.com/transfer/<token>" -o diagram.pdf
+```
+
+!!! note "Read-lazy"
+    The file is read from disk at fetch time, not at link-creation time. If the file is modified between link creation and download, the downloader receives the version current at fetch time.
+
+### `create_upload_link`
+
+Mint a one-time capability URL to upload bytes to a fixed, pre-validated destination path in the vault. The destination path is decided at link creation; the uploader sends raw bytes via `POST` (or `PUT` as an alias). The upload commits via the normal write path (traversal and extension validation, size cap, index update, and git-commit callback).
+
+**Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `path` | string | required | Destination path in the vault. Validated for path traversal and allowed extension at link-creation time. May name a new or existing path; an existing file is overwritten on upload |
+| `ttl_seconds` | int | server default (`MARKDOWN_VAULT_MCP_TRANSFER_TTL_DEFAULT_S`) | Token lifetime in seconds. Clamped to `MARKDOWN_VAULT_MCP_TRANSFER_TTL_MAX_S`. Omit to use the server default |
+
+**Returns:**
+
+```json
+{
+  "url": "https://mcp.example.com/transfer/...",
+  "path": "assets/upload.pdf",
+  "expires_at": "2026-06-05T14:00:00+00:00",
+  "expires_in_seconds": 3600
+}
+```
+
+**Example usage:**
+
+```json
+{"path": "assets/uploaded-diagram.pdf"}
+```
+
+Then in a terminal:
+
+```bash
+curl -X POST --data-binary @local-diagram.pdf \
+     "https://mcp.example.com/transfer/<token>"
+```
+
+!!! note "Raw body — not multipart"
+    The upload endpoint expects the raw file bytes as the request body. Do not use `multipart/form-data`; send the content directly (curl's `--data-binary` flag does this correctly).
+
+!!! note "One-time"
+    The token is consumed on the first successful upload. A transient failure (network error, size limit exceeded) does not consume the token — retry is permitted until the TTL expires.
 
 ---
 

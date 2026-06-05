@@ -52,7 +52,7 @@ plugins:
       markdown_description: >
         markdown-vault-mcp is a generic markdown vault MCP server with
         FTS5 full-text search, semantic search via embeddings, frontmatter-aware
-        indexing, and incremental reindexing. It exposes 28 LLM-visible tools
+        indexing, and incremental reindexing. It exposes 31 LLM-visible tools
         (plus 6 app-only tools), 9 resources, and 6 prompts over the Model
         Context Protocol.
       sections:
@@ -75,6 +75,7 @@ plugins:
           - guides/zettelkasten.md: Zettelkasten workflow (fleeting → literature → permanent notes, MOCs, graph navigation)
           - guides/para.md: PARA workflow (Projects/Areas/Resources/Archive with triage, kickoff, and weekly review prompts)
           - guides/mcp-apps.md: MCP Apps — Context Card, Graph Explorer, Vault Browser, and Note Preview views
+          - guides/transfer-links.md: One-time transfer links — capability-URL download and upload without inflating LLM context
           - guides/claude-code-plugin.md: Claude Code plugin — install via /plugin marketplace
         MCP Interface:
           - tools/index.md: MCP tools with parameters and examples (search, read, write, link graph, MCP Apps)
@@ -147,6 +148,7 @@ nav:
       - Zettelkasten: guides/zettelkasten.md
       - PARA: guides/para.md
       - MCP Apps: guides/mcp-apps.md
+      - Transfer Links: guides/transfer-links.md
       - Claude Code Plugin: guides/claude-code-plugin.md
   - MCP Interface:
       - Tools: tools/index.md

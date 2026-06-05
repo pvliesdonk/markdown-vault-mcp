@@ -739,6 +739,102 @@ In the MCP server, `close()` is called in the FastMCP lifespan `finally` block.
 Callers using `Vault` as a Python library must call `close()` explicitly
 (or use it as a context manager if one is added in future).
 
+### One-Time Transfer Links (`transfer/` subsystem)
+
+The transfer subsystem lets vault files move out-of-band — to a browser or
+another service — without passing bytes through the LLM context. It is an
+HTTP-layer feature: the route is registered only on HTTP/SSE transports and
+requires `MARKDOWN_VAULT_MCP_BASE_URL` to construct capability URLs.
+
+#### Trust model
+
+The `/transfer/{token}` route is mounted **outside** the auth middleware.
+The unguessable token (`secrets.token_urlsafe(32)`, 43 URL-safe characters,
+256 bits of entropy) is the authorization. No `Authorization` header is
+required or checked on the route. The security properties that follow from
+this design:
+
+- A valid token grants exactly one operation (download or upload) on one
+  fixed path.
+- Tokens expire after a configurable TTL (default 3600 s, ceiling 86400 s).
+- Upload size is capped per-upload (`MARKDOWN_VAULT_MCP_TRANSFER_MAX_UPLOAD_BYTES`,
+  default 100 MiB).
+- A successfully completed transfer burns the token; subsequent requests with
+  the same token return HTTP 404.
+- A transient failure (network drop, size limit exceeded) does **not** burn
+  the token — the transfer can be retried until expiry.
+
+#### `TransferStore` state machine
+
+`TransferStore` is an in-memory registry (a `dict` guarded by `threading.Lock`)
+that holds all live tokens. Each token record progresses through three states:
+
+```
+available → in-flight → consumed
+```
+
+- **`available`**: the token has been minted and has not been claimed by an
+  ongoing request. Attempts to use an expired token in this state return 404.
+- **`in-flight`**: a request has claimed the token (`claim()`) and is actively
+  performing the transfer. Concurrent claims on the same token are rejected
+  (idempotency guard). If the transfer fails, `release()` moves the token back
+  to `available` so a retry is possible.
+- **`consumed`**: `complete()` was called after a successful transfer. The
+  token is marked consumed and `claim()` rejects every further request
+  (returning 404).
+
+Expired and consumed tokens are always rejected by `claim()`. Stale entries are
+purged from memory the next time a token is minted — `create()` sweeps expired
+records before inserting the new one — so no background thread is needed.
+
+#### Download path (`GET /transfer/{token}`)
+
+1. `claim(token)` — verifies the token exists, is `available`, and is not
+   expired; atomically transitions it to `in-flight`.
+2. The path stored on the token is resolved via `vault.reader.read()` or
+   `vault.reader.read_attachment()` (lazy read from disk).
+3. The file bytes are streamed to the client with an appropriate
+   `Content-Type` and `Content-Disposition: attachment` header.
+4. On success: `complete(token)` burns the token.
+5. On failure: `release(token)` returns the token to `available`.
+
+Single full-fetch only — HTTP range requests (`Range:`) are not supported.
+The entire file is read into memory before streaming.
+
+#### Upload path (`POST /transfer/{token}` and `PUT /transfer/{token}`)
+
+`PUT` is accepted as an alias for `POST` to accommodate HTTP clients that
+prefer it for byte-range-like semantics, but both behave identically.
+
+1. `claim(token)` — same as download.
+2. The raw request body bytes are collected up to `TRANSFER_MAX_UPLOAD_BYTES`;
+   a body that exceeds the cap triggers `release(token)` and returns HTTP 413.
+3. The bytes are written to the fixed destination path via the normal write
+   path (`vault.writer.write()` for `.md`, `vault.writer.write_attachment()`
+   for other extensions). Path traversal and extension validation are
+   re-applied at write time (defense-in-depth against a bug in the link-creation
+   validation). The write updates the FTS index and fires the git-commit callback.
+4. On success: `complete(token)` burns the token.
+5. On failure: `release(token)` returns the token to `available`.
+
+The upload body is raw bytes — not `multipart/form-data`. The destination
+path is decided at link-creation time and cannot be overridden by the uploader.
+
+#### MCP tools
+
+Two MCP tools create tokens and return the capability URL:
+
+- **`create_download_link(path, ttl_seconds=None)`** — read tool (available in
+  read-only mode). Validates that `path` exists before minting the token (fail-fast).
+  Returns `{url, path, expires_at, expires_in_seconds}`.
+- **`create_upload_link(path, ttl_seconds=None)`** — write tool (hidden in
+  read-only mode). Validates the destination path (traversal + extension check)
+  at link-creation time. Returns the same shape.
+
+Both tools require `MARKDOWN_VAULT_MCP_BASE_URL` and raise `ValueError` when it
+is unset. Both tools are hidden when the transport is stdio (no HTTP server to
+receive the transfer request).
+
 ### HTTP Session Persistence
 
 For HTTP/streamable-HTTP transport, the server uses an `EventStore` so MCP
