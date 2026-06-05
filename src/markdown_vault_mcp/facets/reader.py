@@ -382,6 +382,13 @@ class ReaderFacet:
         """
         return self._search_mgr.stats()
 
+    def attachment_size(self, path: str) -> int:
+        """Return an attachment's on-disk byte size without reading it.
+
+        Delegates to :meth:`DocumentManager.attachment_size`.
+        """
+        return self._doc_mgr.attachment_size(path)
+
     def read_attachment(self, path: str) -> AttachmentContent:
         """Read the binary content of a non-.md attachment.
 

@@ -482,16 +482,66 @@ class TestCallbacks:
 
 
 # ---------------------------------------------------------------------------
-# Attachment size-cap error message tests
+# attachment_size tests
 # ---------------------------------------------------------------------------
 
 
-class TestReadAttachmentErrorMessage:
-    """The size-cap ValueError must name the env var the caller can raise."""
+class TestAttachmentSize:
+    """DocumentManager.attachment_size returns the on-disk byte size."""
 
-    def test_error_mentions_size_cap_env_var(self, doc_vault: Path) -> None:
+    def _mgr(self, source_dir: Path) -> DocumentManager:
+        return DocumentManager(
+            fts=FTSIndex(db_path=":memory:"),
+            source_dir=source_dir,
+            write_lock=threading.RLock(),
+            chunk_strategy=HeadingChunker(),
+            attachment_extensions=["bin", "png"],
+        )
+
+    def test_returns_correct_size(self, doc_vault: Path) -> None:
+        """attachment_size() returns the byte count matching the written file."""
+        content = b"x" * 12345
+        (doc_vault / "sized.bin").write_bytes(content)
+        mgr = self._mgr(doc_vault)
+        assert mgr.attachment_size("sized.bin") == 12345
+
+    def test_missing_raises(self, doc_vault: Path) -> None:
+        """attachment_size() raises ValueError for a missing file."""
+        mgr = self._mgr(doc_vault)
+        with pytest.raises(ValueError, match="not found"):
+            mgr.attachment_size("missing.bin")
+
+    def test_stat_oserror_becomes_valueerror(
+        self, doc_vault: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """An OSError during stat (a race) surfaces as the documented ValueError."""
+        mgr = self._mgr(doc_vault)
+
+        class _Racy:
+            def is_file(self) -> bool:
+                return True
+
+            def stat(self) -> object:
+                raise OSError("vanished mid-stat")
+
+        monkeypatch.setattr(mgr, "_validate_attachment_path", lambda _p: _Racy())
+        with pytest.raises(ValueError, match="Attachment not found"):
+            mgr.attachment_size("gone.bin")
+
+
+# ---------------------------------------------------------------------------
+# Attachment no-cap-at-manager-layer tests
+# ---------------------------------------------------------------------------
+
+
+class TestReadAttachmentNoCap:
+    """read_attachment() no longer enforces a size cap — that lives in the MCP tools."""
+
+    def test_large_attachment_succeeds(self, doc_vault: Path) -> None:
+        """read_attachment() returns >1 MB content without raising."""
         big_file = doc_vault / "big.bin"
-        big_file.write_bytes(b"x" * (2 * 1024 * 1024))  # 2 MB
+        big_content = b"x" * (2 * 1024 * 1024)  # 2 MB
+        big_file.write_bytes(big_content)
 
         mgr = DocumentManager(
             fts=FTSIndex(db_path=":memory:"),
@@ -499,19 +549,17 @@ class TestReadAttachmentErrorMessage:
             write_lock=threading.RLock(),
             chunk_strategy=HeadingChunker(),
             attachment_extensions=["bin"],
-            max_attachment_size_mb=1.0,
         )
 
-        with pytest.raises(
-            ValueError, match="MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB"
-        ):
-            mgr.read_attachment("big.bin")
+        result = mgr.read_attachment("big.bin")
+        assert result.size_bytes == len(big_content)
 
 
-class TestWriteAttachmentErrorMessage:
-    """The size-cap ValueError must name the env var the caller can raise."""
+class TestWriteAttachmentNoCap:
+    """write_attachment() no longer enforces a size cap — that lives in the MCP tools."""
 
-    def test_error_mentions_size_cap_env_var(self, doc_vault: Path) -> None:
+    def test_large_attachment_succeeds(self, doc_vault: Path) -> None:
+        """write_attachment() writes >1 MB content without raising."""
         big_content = b"x" * (2 * 1024 * 1024)  # 2 MB
 
         mgr = DocumentManager(
@@ -520,34 +568,11 @@ class TestWriteAttachmentErrorMessage:
             write_lock=threading.RLock(),
             chunk_strategy=HeadingChunker(),
             attachment_extensions=["bin"],
-            max_attachment_size_mb=1.0,
             read_only=False,
         )
 
-        with pytest.raises(
-            ValueError, match="MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB"
-        ):
-            mgr.write_attachment("big.bin", big_content)
-
-
-class TestWriteAttachmentSizeCap:
-    """write_attachment enforces MAX_ATTACHMENT_SIZE_MB on the content."""
-
-    def _mgr(self, doc_vault: Path) -> DocumentManager:
-        return DocumentManager(
-            fts=FTSIndex(db_path=":memory:"),
-            source_dir=doc_vault,
-            write_lock=threading.RLock(),
-            chunk_strategy=HeadingChunker(),
-            attachment_extensions=["bin"],
-            max_attachment_size_mb=1.0,
-            read_only=False,
-        )
-
-    def test_enforces_cap(self, doc_vault: Path) -> None:
-        big = b"x" * (2 * 1024 * 1024)
-        with pytest.raises(ValueError, match="exceeds"):
-            self._mgr(doc_vault).write_attachment("big.bin", big)
+        result = mgr.write_attachment("big.bin", big_content)
+        assert result.path == "big.bin"
 
 
 # ---------------------------------------------------------------------------

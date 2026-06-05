@@ -2066,22 +2066,29 @@ class TestReadAttachment:
         with pytest.raises(ValueError, match="allowlist"):
             col.reader.read_attachment("assets/report.xyz")
 
-    def test_read_attachment_size_limit_enforced(
+    def test_read_attachment_no_cap_at_vault_layer(
         self, vault_with_attachment: Path
     ) -> None:
-        """read_attachment() raises ValueError when file exceeds the size limit."""
-        # 1-byte limit
+        """read_attachment() succeeds regardless of max_attachment_size_mb (cap is in MCP tools)."""
         col = Vault(source_dir=vault_with_attachment, max_attachment_size_mb=0.000001)
-        with pytest.raises(ValueError, match="exceeds"):
-            col.reader.read_attachment("assets/report.pdf")
+        result = col.reader.read_attachment("assets/report.pdf")
+        assert result.size_bytes > 0
 
-    def test_read_attachment_zero_size_limit_disables(
+    def test_read_attachment_zero_size_limit_succeeds(
         self, vault_with_attachment: Path
     ) -> None:
-        """read_attachment() with max_attachment_size_mb=0 has no size limit."""
+        """read_attachment() with max_attachment_size_mb=0 succeeds (unlimited)."""
         col = Vault(source_dir=vault_with_attachment, max_attachment_size_mb=0)
         result = col.reader.read_attachment("assets/report.pdf")
         assert result.size_bytes > 0
+
+    def test_attachment_size_returns_byte_count(
+        self, vault_with_attachment: Path
+    ) -> None:
+        """attachment_size() returns the on-disk byte size without reading the file."""
+        col = Vault(source_dir=vault_with_attachment)
+        size = col.reader.attachment_size("assets/report.pdf")
+        assert size == len(b"%PDF-1.4 fake content")
 
     def test_read_attachment_png_mime_type(self, vault_with_attachment: Path) -> None:
         """read_attachment() detects image/png MIME type."""
@@ -2165,17 +2172,17 @@ class TestWriteAttachment:
         with pytest.raises(ReadOnlyError):
             col.writer.write_attachment("assets/new.pdf", b"content")
 
-    def test_write_attachment_size_limit_enforced(
+    def test_write_attachment_no_cap_at_vault_layer(
         self, vault_with_attachment: Path
     ) -> None:
-        """write_attachment() raises ValueError when content exceeds size limit."""
+        """write_attachment() succeeds regardless of max_attachment_size_mb (cap is in MCP tools)."""
         col = Vault(
             source_dir=vault_with_attachment,
             read_only=False,
             max_attachment_size_mb=0.000001,
         )
-        with pytest.raises(ValueError, match="exceeds"):
-            col.writer.write_attachment("assets/big.pdf", b"a" * 100)
+        result = col.writer.write_attachment("assets/big.pdf", b"a" * 100)
+        assert result.path == "assets/big.pdf"
 
     def test_write_attachment_disallowed_extension_raises(
         self, vault_with_attachment: Path
@@ -3321,26 +3328,22 @@ class TestListAttachmentEdgeCases:
 
 
 # ---------------------------------------------------------------------------
-# Gap coverage: write_attachment() size limit
+# Vault-layer write_attachment() has no size cap (cap lives in MCP tools)
 # ---------------------------------------------------------------------------
 
 
 class TestWriteAttachmentSizeLimit:
-    def test_write_attachment_raises_when_content_exceeds_limit(
-        self, vault_path: Path
-    ) -> None:
-        """write_attachment() raises ValueError when content size exceeds the limit."""
+    def test_write_attachment_no_cap_at_vault_layer(self, vault_path: Path) -> None:
+        """write_attachment() succeeds regardless of max_attachment_size_mb (cap is in MCP tools)."""
         col = Vault(
             source_dir=vault_path,
             read_only=False,
-            max_attachment_size_mb=0.000001,  # ~1 byte limit
+            max_attachment_size_mb=0.000001,  # ~1 byte limit — no longer enforced here
         )
-        with pytest.raises(ValueError, match="exceeds"):
-            col.writer.write_attachment("assets/big.pdf", b"a" * 100)
+        result = col.writer.write_attachment("assets/big.pdf", b"a" * 100)
+        assert result.path == "assets/big.pdf"
 
-    def test_write_attachment_unlimited_when_max_is_zero(
-        self, vault_path: Path
-    ) -> None:
+    def test_write_attachment_succeeds_when_max_is_zero(self, vault_path: Path) -> None:
         """write_attachment() with max_attachment_size_mb=0 accepts any size."""
         col = Vault(
             source_dir=vault_path,

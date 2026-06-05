@@ -195,8 +195,7 @@ class WriterFacet:
             ConcurrentModificationError: If *if_match* is provided and does
                 not match the current file hash, or *if_match* is supplied
                 for a file that does not yet exist.
-            ValueError: If the path escapes the source directory, has an
-                extension not in the allowlist, or the content exceeds the
-                size limit.
+            ValueError: If the path escapes the source directory or has an
+                extension not in the allowlist.
         """
         return self._doc_mgr.write_attachment(path, content, if_match=if_match)

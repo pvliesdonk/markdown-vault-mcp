@@ -162,8 +162,9 @@ class Vault:
             and directories to exclude from indexing.
         attachment_extensions: Allowlist of extensions (without leading dot)
             for binary attachments.  ``["*"]`` accepts all extensions.
-        max_attachment_size_mb: Maximum binary attachment size in megabytes.
-            ``0`` disables the limit (default ``1.0``).
+        max_attachment_size_mb: Attachment context-size cap in megabytes,
+            enforced by the ``read`` / ``write`` / ``fetch`` MCP tools (not by
+            the vault library). ``0`` disables the limit (default ``1.0``).
         max_note_read_bytes: Maximum bytes returned by full-document reads.
             ``0`` disables the limit (default ``262144``, i.e. 256 KB).
     """
@@ -321,7 +322,6 @@ class Vault:
             read_only=self._read_only,
             exclude_patterns=self._exclude_patterns,
             attachment_extensions=self._attachment_extensions,
-            max_attachment_size_mb=self._max_attachment_size_mb,
             max_note_read_bytes=self._max_note_read_bytes,
             on_write_callback=self._write_callback.fire,
             mark_paths_dirty=self._coordinator.mark_paths_dirty,
@@ -365,6 +365,15 @@ class Vault:
     def index(self) -> IndexFacet:
         """Index facet: build/reindex/embeddings, readiness, writer status."""
         return self._index_facet
+
+    @property
+    def max_attachment_size_mb(self) -> float:
+        """The attachment context-size cap in MB (``0`` = unlimited).
+
+        Enforced by the ``read`` / ``write`` / ``fetch`` MCP tools, not by the
+        vault library itself.
+        """
+        return self._max_attachment_size_mb
 
     # ------------------------------------------------------------------
     # Lifecycle

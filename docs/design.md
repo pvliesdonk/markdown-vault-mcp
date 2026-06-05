@@ -1596,7 +1596,7 @@ For MCP server deployment:
 | `MARKDOWN_VAULT_MCP_OIDC_REQUIRED_SCOPES` | Comma-separated OAuth scopes to request | `openid` |
 | `MARKDOWN_VAULT_MCP_OIDC_VERIFY_ACCESS_TOKEN` | Verify the upstream access token as JWT instead of the id token. Set `true` only when your provider issues JWT access tokens and you need audience-claim validation on that token | `false` (verify id token) |
 | `MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS` | Comma-separated allowlist of non-.md extensions (without dot), e.g. `pdf,png,docx`; use `*` to allow all non-.md files | common list (pdf, png, jpg, docx, …) |
-| `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB` | Maximum attachment size in MB enforced on both read and write; `0` disables the limit | `1.0` |
+| `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB` | Maximum attachment size in MB, enforced by the `read` / `write` / `fetch` MCP tools (not the vault library); `0` disables the limit | `1.0` |
 | `MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES` | Maximum bytes returned by full-document `read()` for `.md` files; raises `ValueError` if exceeded. `read(path, section=...)` for partial reads bypasses the cap. `0` disables the limit | `262144` (256 KB) |
 | `MARKDOWN_VAULT_MCP_APP_DOMAIN` | Claude app domain for MCP Apps iframe sandboxing; auto-computed from `BASE_URL` via `_compute_claude_app_domain()` | derived from `BASE_URL` |
 | `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` | `openai`, `ollama`, `fastembed` | auto-detect |
@@ -1732,7 +1732,7 @@ The server supports reading and writing non-markdown binary files (PDFs, images,
 
 Attachments are **not indexed or searched** — only direct path-based read/write/delete/rename. MIME type is detected via Python's `mimetypes.guess_type()` (no extra dependencies).
 
-Size limit applies to both `read_attachment()` and `write_attachment()`. Set `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB=0` to disable the limit. The default was tightened from 10 MB to 1 MB in #442 to keep LLM context bounded — most contexts can't survive a 10 MB base64-encoded attachment, so the old default was a silent context-blow-up. The error message names `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB` as the knob to raise if the bytes are genuinely needed in context.
+The cap is enforced by the `read`, `write`, and `fetch` MCP tools — the layer where attachment bytes flow through the LLM context as base64. The vault library's `read_attachment()` / `write_attachment()` accept any size, so out-of-band byte movement (e.g. an HTTP transfer route) is not gated by it. Set `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB=0` to disable the limit. The default was tightened from 10 MB to 1 MB in #442 to keep LLM context bounded — most contexts can't survive a 10 MB base64-encoded attachment, so the old default was a silent context-blow-up. The error message names `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB` as the knob to raise if the bytes are genuinely needed in context.
 
 A parallel cap on whole-document `read()` for `.md` files (`MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES`, default 256 KB) raises `ValueError` with a message pointing at `read(path, section=heading)` for partial reads. Section reads bypass the cap because they only load one chunk.
 

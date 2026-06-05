@@ -83,7 +83,6 @@ class DocumentManager:
             :exc:`~markdown_vault_mcp.exceptions.ReadOnlyError`.
         exclude_patterns: Glob patterns for paths to exclude.
         attachment_extensions: Allowlist of attachment file extensions.
-        max_attachment_size_mb: Maximum attachment size in megabytes.
         max_note_read_bytes: Maximum bytes returned by full-document reads.
             ``0`` disables the limit (default ``262144``, i.e. 256 KB).
         on_write_callback: Fires after a successful write to enqueue a
@@ -107,7 +106,6 @@ class DocumentManager:
         read_only: bool = True,
         exclude_patterns: list[str] | None = None,
         attachment_extensions: list[str] | None = None,
-        max_attachment_size_mb: float = 1.0,
         max_note_read_bytes: int = 262144,
         on_write_callback: Callable[[Path, str, WriteOperation], None] | None = None,
         mark_paths_dirty: Callable[[Iterable[str]], None] | None = None,
@@ -119,7 +117,6 @@ class DocumentManager:
         self._read_only = read_only
         self._exclude_patterns = exclude_patterns
         self._attachment_extensions = attachment_extensions
-        self._max_attachment_size_mb = max_attachment_size_mb
         self._max_note_read_bytes = max_note_read_bytes
         self._on_write_callback = on_write_callback or (lambda *_a: None)
         self._mark_paths_dirty = mark_paths_dirty
@@ -370,6 +367,27 @@ class DocumentManager:
             etag="",  # ETag is whole-file; not meaningful for a section
         )
 
+    def attachment_size(self, path: str) -> int:
+        """Return the on-disk byte size of an attachment without reading it.
+
+        Args:
+            path: Relative attachment path.
+
+        Returns:
+            The file size in bytes (from ``stat``).
+
+        Raises:
+            ValueError: If the path escapes the source directory, has an
+                extension not in the allowlist, or the file does not exist.
+        """
+        abs_path = self._validate_attachment_path(path)
+        try:
+            if not abs_path.is_file():
+                raise ValueError(f"Attachment not found: {path}")
+            return abs_path.stat().st_size
+        except OSError as exc:
+            raise ValueError(f"Attachment not found: {path}") from exc
+
     def read_attachment(self, path: str) -> AttachmentContent:
         """Read the binary content of a non-.md attachment.
 
@@ -383,7 +401,6 @@ class DocumentManager:
         Raises:
             ValueError: If the path escapes the source directory, has an
                 extension not in the allowlist, or the file does not exist.
-            ValueError: If the file exceeds the configured size limit.
         """
         abs_path = self._validate_attachment_path(path)
         if not abs_path.is_file():
@@ -391,17 +408,6 @@ class DocumentManager:
 
         stat = abs_path.stat()
         size_bytes = stat.st_size
-        if self._max_attachment_size_mb > 0:
-            limit_bytes = int(self._max_attachment_size_mb * 1024 * 1024)
-            if size_bytes > limit_bytes:
-                raise ValueError(
-                    f"Attachment {path!r} is {size_bytes} bytes "
-                    f"({size_bytes / 1024 / 1024:.1f} MB), exceeds "
-                    f"MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB "
-                    f"({self._max_attachment_size_mb} MB). "
-                    f"Increase MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB if "
-                    f"you need the bytes in context."
-                )
 
         mime_type, _ = mimetypes.guess_type(path)
         raw = abs_path.read_bytes()
@@ -559,9 +565,8 @@ class DocumentManager:
             ConcurrentModificationError: If *if_match* is provided and does
                 not match the current file hash, or *if_match* is supplied
                 for a file that does not yet exist.
-            ValueError: If the path escapes the source directory, has an
-                extension not in the allowlist, or the content exceeds the
-                size limit.
+            ValueError: If the path escapes the source directory or has an
+                extension not in the allowlist.
         """
         self._check_writable()
         with self._file_write_lock:
@@ -577,18 +582,6 @@ class DocumentManager:
                 if current_hash != if_match:
                     raise ConcurrentModificationError(
                         path, expected=if_match, actual=current_hash
-                    )
-            if self._max_attachment_size_mb > 0:
-                limit_bytes = int(self._max_attachment_size_mb * 1024 * 1024)
-                if len(content) > limit_bytes:
-                    size_bytes = len(content)
-                    raise ValueError(
-                        f"Attachment {path!r} is {size_bytes} bytes "
-                        f"({size_bytes / 1024 / 1024:.1f} MB), exceeds "
-                        f"MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB "
-                        f"({self._max_attachment_size_mb} MB). "
-                        f"Increase MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB "
-                        f"if you need the bytes in context."
                     )
             created = not abs_path.is_file()
             abs_path.parent.mkdir(parents=True, exist_ok=True)

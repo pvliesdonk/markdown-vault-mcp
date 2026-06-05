@@ -437,10 +437,23 @@ def register_tools(mcp: FastMCP) -> None:
 
         Raises:
             ValueError: If no file exists at the given path, the extension is
-                not in the attachment allowlist, the file exceeds the size
-                limit, or the requested section heading is not found.
+                not in the attachment allowlist, the file exceeds
+                ``MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB``, or the requested
+                section heading is not found.
         """
         if not path.endswith(".md"):
+            cap_mb = vault.max_attachment_size_mb
+            if cap_mb > 0:
+                size = await asyncio.to_thread(vault.reader.attachment_size, path)
+                limit = int(cap_mb * 1024 * 1024)
+                if size > limit:
+                    raise ValueError(
+                        f"Attachment {path!r} is {size} bytes "
+                        f"({size / 1024 / 1024:.1f} MB), exceeds "
+                        f"MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB ({cap_mb} MB). "
+                        f"Increase MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB if "
+                        f"you need the bytes in context."
+                    )
             attachment = await asyncio.to_thread(vault.reader.read_attachment, path)
             return asdict(attachment)
         note = await asyncio.to_thread(vault.reader.read, path, section=section)
@@ -1535,7 +1548,8 @@ def register_tools(mcp: FastMCP) -> None:
 
         Raises:
             ValueError: If content_base64 is missing/invalid for
-                attachments, or the content exceeds the size limit.
+                attachments, or the content exceeds
+                ``MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB``.
             McpError: If if_match is provided and the file has been
                 modified, or if_match is supplied for a file that does not
                 yet exist (ConcurrentModificationError).
@@ -1549,6 +1563,15 @@ def register_tools(mcp: FastMCP) -> None:
                 raw_bytes = base64.b64decode(content_base64)
             except Exception as exc:
                 raise ValueError(f"Invalid base64 in content_base64: {exc}") from exc
+            cap_mb = vault.max_attachment_size_mb
+            if cap_mb > 0 and len(raw_bytes) > int(cap_mb * 1024 * 1024):
+                raise ValueError(
+                    f"Attachment {path!r} is {len(raw_bytes)} bytes "
+                    f"({len(raw_bytes) / 1024 / 1024:.1f} MB), exceeds "
+                    f"MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB ({cap_mb} MB). "
+                    f"Increase MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB if "
+                    f"you need the bytes in context."
+                )
             result = await asyncio.to_thread(
                 vault.writer.write_attachment, path, raw_bytes, if_match=if_match
             )
@@ -1956,15 +1979,12 @@ def register_tools(mcp: FastMCP) -> None:
 
         # Determine size limit (attachments only). This pre-check enforces
         # the limit during streaming so we abort early without buffering the
-        # entire payload. write_attachment() has a redundant check that
-        # covers the non-fetch code path.
+        # entire payload.
         is_markdown = path.endswith(".md")
-        # pylint: disable=protected-access  # No public API for size limit;
-        # MCP layer is a trusted consumer of Vault internals.
         max_bytes = (
             0
-            if is_markdown or vault._max_attachment_size_mb <= 0
-            else int(vault._max_attachment_size_mb * 1024 * 1024)
+            if is_markdown or vault.max_attachment_size_mb <= 0
+            else int(vault.max_attachment_size_mb * 1024 * 1024)
         )
 
         # Stream download — enforce size limit as chunks arrive.
@@ -1981,7 +2001,7 @@ def register_tools(mcp: FastMCP) -> None:
                 if max_bytes > 0 and downloaded > max_bytes:
                     raise ValueError(
                         f"Download exceeded the attachment size limit "
-                        f"of {vault._max_attachment_size_mb} MB "
+                        f"of {vault.max_attachment_size_mb} MB "
                         f"({max_bytes} bytes). Raise "
                         "MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB or "
                         "set it to 0 to disable the limit."
