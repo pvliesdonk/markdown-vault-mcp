@@ -244,3 +244,20 @@ def test_upload_invalid_utf8_to_note_415(vault):
     resp = client.post(f"/transfer/{rec.token}", content=b"\xff\xfe\xfd")
     assert resp.status_code == 415
     assert store.claim(rec.token, "upload") is not None
+
+
+def test_large_attachment_round_trips_uncapped(vault):
+    """A >1 MB attachment (over the old context cap) transfers both ways.
+
+    Out-of-band transfer is gated only by the per-link size cap, never by the
+    vault's context-size cap (relocated to the read/write tools in #634).
+    """
+    big = b"\x89PNG\r\n" + b"x" * (2 * 1024 * 1024)
+    store = TransferStore()
+    up = store.create("upload", "big.png", True, 60, max_upload_bytes=10 * 1024 * 1024)
+    client = _client(store, vault)
+    assert client.post(f"/transfer/{up.token}", content=big).status_code == 201
+    down = store.create("download", "big.png", True, 60)
+    resp = client.get(f"/transfer/{down.token}")
+    assert resp.status_code == 200
+    assert resp.content == big
