@@ -2,7 +2,7 @@
 
 A thin view over :class:`~markdown_vault_mcp.managers.link.LinkManager`
 exposing backlinks / outlinks / broken-links / orphans / most-linked /
-connection-path queries. Part of the ``collection.py`` facade decomposition
+connection-path queries. Part of the ``vault.py`` facade decomposition
 (#576). The bucket-3 methods (:meth:`GraphFacet.get_backlinks`, :meth:`GraphFacet.get_outlinks`,
 :meth:`GraphFacet.get_connection_path`) gate on the index-readiness callback before
 delegating; the bucket-2 methods operate on a cold index.
@@ -87,7 +87,7 @@ class GraphFacet:
         return self._link_mgr.get_outlinks(path, limit=limit)
 
     def get_broken_links(self, *, folder: str | None = None) -> list[BrokenLinkInfo]:
-        """Return all links whose target does not exist in the collection.
+        """Return all links whose target does not exist in the vault.
 
         Args:
             folder: If provided, restrict to source documents in this folder

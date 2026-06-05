@@ -6,8 +6,8 @@ MCP resources expose vault metadata that clients can read directly without invok
 
 | URI | Description |
 |-----|-------------|
-| [`config://vault`](#configvault) | Current collection configuration |
-| [`stats://vault`](#statsvault) | Collection statistics |
+| [`config://vault`](#configvault) | Current vault configuration |
+| [`stats://vault`](#statsvault) | Vault statistics |
 | [`tags://vault`](#tagsvault) | All tags grouped by indexed field |
 | [`tags://vault/{field}`](#tagsvaultfield) | Tags for a specific field |
 | [`folders://vault`](#foldersvault) | All folder paths |
@@ -20,7 +20,7 @@ MCP resources expose vault metadata that clients can read directly without invok
 
 ## `config://vault`
 
-Current collection configuration and runtime state.
+Current vault configuration and runtime state.
 
 **Response:**
 
@@ -38,7 +38,7 @@ Current collection configuration and runtime state.
 
 ## `stats://vault`
 
-Collection statistics — document count, chunk count, and capabilities.
+Vault statistics — document count, chunk count, and capabilities.
 
 **Response:**
 

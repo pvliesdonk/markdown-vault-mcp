@@ -1,6 +1,6 @@
 """Thin facade tying all markdown-vault-mcp modules together.
 
-:class:`Collection` is the primary public API for the library.  MCP tools,
+:class:`Vault` is the primary public API for the library.  MCP tools,
 LangChain wrappers, and CLI commands all go through this class.
 """
 
@@ -69,13 +69,13 @@ def _resolve_chunk_strategy(strategy: str | ChunkStrategy) -> ChunkStrategy:
     return strategy
 
 
-class Collection:
+class Vault:
     """Facade over FTS5 index, vector index, and change tracker.
 
-    Instantiate once per collection root.  The read / write / graph / index
+    Instantiate once per vault root.  The read / write / graph / index
     operations live on the four facets, reached through the :attr:`reader` /
     :attr:`writer` / :attr:`graph` / :attr:`index` accessors (e.g.
-    ``collection.reader.search(...)``); this class itself exposes only
+    ``vault.reader.search(...)``); this class itself exposes only
     construction, those accessors, and lifecycle.
 
     Callers must invoke :meth:`IndexFacet.build_index` before bucket-3
@@ -123,15 +123,15 @@ class Collection:
     thread (#559); file-mutation operations on disk are serialised via
     ``_file_write_lock`` (RLock) so two MCP write tools racing on the
     same path do not tear. ``close()`` is safe from any thread; after
-    ``close()`` the collection must not be used. Cross-method atomicity
+    ``close()`` the vault must not be used. Cross-method atomicity
     (e.g. read-then-write without intervening concurrent write) is the
     caller's responsibility — pass ``if_match=`` to write methods for
     optimistic concurrency. ``fork()`` is not supported. See ``docs/design.md``
-    "Collection thread-safety contract" for the underlying per-thread
+    "Vault thread-safety contract" for the underlying per-thread
     SQLite-connection model.
 
     Args:
-        source_dir: Root directory of the markdown collection.
+        source_dir: Root directory of the markdown vault.
         index_path: Path to the SQLite index file.  ``None`` (default) uses
             an in-memory database that is discarded when the object is
             collected.
@@ -208,7 +208,7 @@ class Collection:
         else:
             # NOTE: When a caller passes an explicit chunk_strategy instance
             # (e.g. HeadingChunker(max_chunk_words=None) for legacy H1/H2-only
-            # behaviour), we honour their construction as-is. The Collection-level
+            # behaviour), we honour their construction as-is. The Vault-level
             # max_chunk_words only takes effect for the conventional default
             # ("heading" string), so explicit-instance callers retain full control.
             self._chunk_strategy = _resolve_chunk_strategy(chunk_strategy)
@@ -238,7 +238,7 @@ class Collection:
 
         # Build-readiness state, the IndexWriter thread, async build
         # orchestration, status/drain, and dirty routing are owned by the
-        # IndexWriteCoordinator (#576); Collection delegates to it.
+        # IndexWriteCoordinator (#576); Vault delegates to it.
 
         # Lock for file-mutation atomicity only (#559). The IndexWriter
         # thread is the serialization point for index mutations; this lock
@@ -396,7 +396,7 @@ class Collection:
         self._git_strategy.sync_once(self._source_dir)
 
     def start(self) -> None:
-        """Start background tasks for this Collection (e.g. git pull loop).
+        """Start background tasks for this Vault (e.g. git pull loop).
 
         Call :meth:`IndexFacet.build_index` **before** :meth:`start`. The git
         pull loop wires :meth:`IndexFacet.reindex` (bucket 4) as its
@@ -439,7 +439,7 @@ class Collection:
             return self._git_strategy.force_pull()
 
     def stop(self) -> None:
-        """Stop background tasks (e.g. git pull loop) without closing the collection.
+        """Stop background tasks (e.g. git pull loop) without closing the vault.
 
         Safe to call multiple times.  A no-op if no pull loop was started.
         The SQLite connection and write callback remain open; only the pull
@@ -449,7 +449,7 @@ class Collection:
             self._git_strategy.stop()
 
     def close(self) -> None:
-        """Release resources held by the collection.
+        """Release resources held by the vault.
 
         Flushes deferred embeddings and pending write callbacks, then
         closes the SQLite connection and git strategy.

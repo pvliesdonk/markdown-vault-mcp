@@ -1,6 +1,6 @@
 # markdown-vault-mcp: Design Specification v2
 
-> Generic markdown collection MCP server with FTS5 + semantic search,
+> Generic markdown vault MCP server with FTS5 + semantic search,
 > frontmatter-aware indexing, and incremental reindexing. Extracted from
 > and replacing the search layer in `pvliesdonk/if-craft-corpus`.
 
@@ -8,7 +8,7 @@
 
 This spec uses the following terms consistently:
 
-- **Document**: a single `.md` file in the collection. The primary term used
+- **Document**: a single `.md` file in the vault. The primary term used
   throughout this spec.
 - **Folder**: a subdirectory within `source_dir`, represented as a
   `/`-separated relative path (e.g., `Journal/2024`). The root of `source_dir`
@@ -35,11 +35,11 @@ vault becomes another.
 1. **Obsidian vault** (`pvliesdonk/obsidian.md`, private): personal knowledge
    base served over MCP with read/write support and optional git-backed sync.
 2. **IF Craft Corpus** (`pvliesdonk/if-craft-corpus`): read-only curated
-   collection with domain-specific tools, strict frontmatter requirements.
+   vault with domain-specific tools, strict frontmatter requirements.
 3. **Python library**: direct use as a search API (e.g., wrapped as a LangChain
-   tool by downstream projects like QuestFoundry). The `Collection` class is
+   tool by downstream projects like QuestFoundry). The `Vault` class is
    the primary interface; MCP is one consumer, not the only one. Other
-   frameworks (LangChain, LlamaIndex, etc.) may wrap `Collection` directly.
+   frameworks (LangChain, LlamaIndex, etc.) may wrap `Vault` directly.
 
 ## Shared Infrastructure
 
@@ -64,7 +64,7 @@ markdown-vault-mcp (new package)
 +-- vector_index.py   -- numpy embeddings, cosine similarity
 +-- providers.py      -- Ollama / OpenAI / SentenceTransformers
 +-- tracker.py        -- hash-based change detection
-+-- collection.py     -- thin composition root: lifecycle, wiring, facet accessors (index-write → indexing/coordinator.py)
++-- vault.py          -- thin composition root: lifecycle, wiring, facet accessors (index-write → indexing/coordinator.py)
 +-- write_callback.py -- WriteCallbackDispatcher: deferred git-commit callback worker (#599)
 +-- config.py         -- configuration loading
 +-- config_sections/  -- domain-grouped sub-configs (git/indexing/embeddings/search/sync/content)
@@ -94,7 +94,7 @@ ifcraftcorpus (existing, refactored later)
 +-- ships corpus/ content
 +-- adds domain-specific tools (search_exemplars, list_exemplar_tags)
 +-- adds subagent prompts
-+-- thin wrapper: configures Collection with required_frontmatter
++-- thin wrapper: configures Vault with required_frontmatter
 ```
 
 **ifcraftcorpus stays as-is** during markdown-vault-mcp development. No changes to
@@ -109,7 +109,7 @@ implementation patterns:
 |------|----------------|-------|
 | `providers.py` | **Copy + adapt** | Rename env var prefix `IFCRAFTCORPUS_` to `MARKDOWN_VAULT_MCP_`. Fix hardcoded imports. |
 | `embeddings.py` | **Copy + adapt** | Rename to `vector_index.py`. The `load()` classmethod contains a hardcoded `from ifcraftcorpus.providers import get_embedding_provider` -- this **must** be changed to `from markdown_vault_mcp.providers import get_embedding_provider` or it will raise `ImportError` at runtime. |
-| `search.py` | **Adapt** | Pattern for `Collection` facade. Replace domain methods with generic API. |
+| `search.py` | **Adapt** | Pattern for `Vault` facade. Replace domain methods with generic API. |
 | `index.py` | **Adapt** | Pattern for `fts_index.py`. Replace corpus-specific schema. Fix hybrid score bug (see RRF section). |
 | `parser.py` | **Replace** | Replace with generic frontmatter + heading-based chunking using `python-frontmatter`. |
 | `server.py` | **Adapt** | Replace domain tools with generic tools. Use lifespan hooks instead of lazy global singleton. |
@@ -125,7 +125,7 @@ implementation patterns:
 
 ### Document Identity
 
-Documents are identified by their **relative path from the collection root**,
+Documents are identified by their **relative path from the vault root**,
 including the `.md` extension. Example: `Journal/2024-01-15.md`.
 
 This avoids collisions between files with the same stem in different
@@ -140,7 +140,7 @@ relative path:
 - `Journal/2024-01-15.md` -> folder `"Journal"`
 - `Journal/2024/January/note.md` -> folder `"Journal/2024/January"`
 
-`list_folders()` returns all distinct folder values across the collection.
+`list_folders()` returns all distinct folder values across the vault.
 
 ### Frontmatter Handling
 
@@ -151,7 +151,7 @@ heading, then the filename (without extension).
 A `required_frontmatter` configuration option enforces specific fields:
 
 ```python
-Collection(
+Vault(
     source_dir=Path("corpus/"),
     required_frontmatter=["title", "cluster"],
 )
@@ -334,7 +334,7 @@ word-budget enforcement.
 - `SlidingWindowChunker`: fixed-size overlapping windows with configurable
   tokenizer.
 
-The `Collection` config accepts `chunk_strategy: str | ChunkStrategy` -- string
+The `Vault` config accepts `chunk_strategy: str | ChunkStrategy` -- string
 for built-in names, or pass a custom instance.
 
 ### Change Tracking
@@ -388,7 +388,7 @@ Two methods manage the index:
   adds/modifies/deletes since the last scan and applies only the delta.
   Applies `exclude_patterns` filtering and purges stale excluded documents.
 
-**Readiness contract (issue #525)**: `Collection.__init__` does not
+**Readiness contract (issue #525)**: `Vault.__init__` does not
 populate the index. Callers must invoke `build_index()` explicitly
 before bucket-3 relational/FTS-backed queries (`get_backlinks`,
 `get_outlinks`, `get_similar`, `get_context`, `get_connection_path`,
@@ -442,7 +442,7 @@ SQLite operation raises, the decorator classifies by errorname:
 `IndexUnavailableError(reason="busy")`; anything else (corruption,
 malformed schema, I/O failure, disk full, unknown codes) remaps to
 `reason="broken"`. The original exception is preserved as
-`__cause__`. Library callers (direct Collection method use) see
+`__cause__`. Library callers (direct Vault method use) see
 the raw `sqlite3.OperationalError` — the catch is MCP-layer only,
 to keep the library boundary thin and let internal callers
 classify on their own. Sibling SQLite exceptions
@@ -476,7 +476,7 @@ FTS contents alone and does not detect config drift.
 
 Two-layer model:
 
-- **Library layer** (`Collection`, `FTSIndex`, `VectorIndex`, etc.): raises
+- **Library layer** (`Vault`, `FTSIndex`, `VectorIndex`, etc.): raises
   specific exceptions. Callers catch and handle.
 - **MCP tool layer**: catches exceptions, returns structured error responses
   per FastMCP conventions.
@@ -504,11 +504,11 @@ treats as complete on the next startup.
 
 ### Thread Safety
 
-**Single-writer architecture (issue #559).** `Collection` owns exactly one
+**Single-writer architecture (issue #559).** `Vault` owns exactly one
 worker thread — an :class:`~markdown_vault_mcp.indexing.IndexWriter` — that
 serves every FTS and vector-index mutation through a FIFO job queue. The
-writer is constructed and `start()`ed in `Collection.__init__` and closed
-first inside `Collection.close()`, before any downstream resource teardown.
+writer is constructed and `start()`ed in `Vault.__init__` and closed
+first inside `Vault.close()`, before any downstream resource teardown.
 No other thread mutates the FTS or vector index directly; submission is the
 only entry point. This replaces the legacy `_write_lock` + `threading.Timer`
 embedding flush from issue #175, which interleaved fine-grained locking and
@@ -571,7 +571,7 @@ The contract is:
   `_file_write_lock`; the IndexWriter's FIFO queue serialises everything
   else.
 - The `on_write` callback fires in a **background thread** — it must not
-  itself call write methods on the same Collection instance (deadlock).
+  itself call write methods on the same Vault instance (deadlock).
 - Callbacks must not raise; exceptions are logged and swallowed.
 - `close()` shuts the writer down first (with a 30 s drain timeout), then
   joins the background-build thread, drains the write-callback queue,
@@ -612,9 +612,9 @@ files modified outside the MCP server with no `write` tool call
 and no git pull — are not covered by this signal; that drift mode
 is tracked separately in #558.
 
-#### Collection thread-safety contract (issue #519)
+#### Vault thread-safety contract (issue #519)
 
-Every public method on `Collection`, `FTSIndex`, and the managers is safe
+Every public method on `Vault`, `FTSIndex`, and the managers is safe
 to call from any thread, concurrently with calls on any other thread.
 This is the contract that issue #513 (non-blocking MCP initialize via
 background indexing) depends on; PRs #510, #515, #516, #518 all failed
@@ -685,14 +685,14 @@ The etag used for comparison is the same value returned in the `etag` field of
 `read()` and `read_attachment()` responses, so the round-trip pattern is:
 
 ```python
-note = collection.reader.read("doc.md")
-collection.writer.write("doc.md", new_content, if_match=note.etag)
+note = vault.reader.read("doc.md")
+vault.writer.write("doc.md", new_content, if_match=note.etag)
 ```
 
 ### Security: Path Traversal Protection
 
 All public **write** methods accepting a `path` parameter call
-`Collection._validate_path()` before any disk I/O. This method:
+`Vault._validate_path()` before any disk I/O. This method:
 
 1. Resolves the path to an absolute path via `Path.resolve()`.
 2. Checks the resolved path is within `source_dir` via `is_relative_to()`.
@@ -704,9 +704,9 @@ attachment write operations.
 `read()` validates the path inline rather than via `_validate_path()`: if the
 resolved path escapes `source_dir`, it returns `None` instead of raising.
 
-### Lifecycle: Collection.close()
+### Lifecycle: Vault.close()
 
-`Collection.close()` must be called on shutdown to release resources:
+`Vault.close()` must be called on shutdown to release resources:
 
 1. Closes the :class:`~markdown_vault_mcp.indexing.IndexWriter` first (30 s
    drain timeout). The writer drains any pending jobs — including the
@@ -722,7 +722,7 @@ resolved path escapes `source_dir`, it returns `None` instead of raising.
 This ensures no work is lost on shutdown. The full lifecycle contract is:
 
 ```
-Collection(...)
+Vault(...)
   → sync_from_remote_before_index()   # git fetch + ff-only before first index
   → build_index()                     # build FTS index
   → build_embeddings()                # build vector index (when configured)
@@ -732,11 +732,11 @@ Collection(...)
 ```
 
 `stop()` may also be called independently to pause the pull loop without closing
-the collection (e.g. during maintenance or test teardown). It is a no-op if the
+the vault (e.g. during maintenance or test teardown). It is a no-op if the
 loop was never started.
 
 In the MCP server, `close()` is called in the FastMCP lifespan `finally` block.
-Callers using `Collection` as a Python library must call `close()` explicitly
+Callers using `Vault` as a Python library must call `close()` explicitly
 (or use it as a context manager if one is added in future).
 
 ### HTTP Session Persistence
@@ -759,7 +759,7 @@ The library is **synchronous** internally. This is appropriate for the
 single-user vault use case and for Python library consumers (LangChain tools
 are typically sync).
 
-In the MCP server layer, use `asyncio.to_thread(collection.reader.search, ...)`
+In the MCP server layer, use `asyncio.to_thread(vault.reader.search, ...)`
 for tool handlers to avoid blocking the FastMCP event loop.
 
 **Future work**: async embedding provider path for non-blocking batch
@@ -925,8 +925,8 @@ class ReindexResult:
     unchanged: int
 
 @dataclass
-class CollectionStats:
-    """Collection-wide statistics."""
+class VaultStats:
+    """Vault-wide statistics."""
     document_count: int
     chunk_count: int
     folder_count: int
@@ -967,11 +967,11 @@ class OutlinkInfo:
     link_type: Literal["markdown", "wikilink", "reference"]
     fragment: str | None = None
     raw_target: str = ""              # literal link string as written in the source file
-    exists: bool = False              # True if target_path is indexed in the collection
+    exists: bool = False              # True if target_path is indexed in the vault
 
 @dataclass
 class BrokenLinkInfo:
-    """A link whose target does not exist in the collection."""
+    """A link whose target does not exist in the vault."""
     source_path: str
     source_title: str
     target_path: str
@@ -1147,11 +1147,11 @@ The MCP tool `get_connection_path` returns
 
 ## Module Design
 
-### `collection.py` -- Thin Facade
+### `vault.py` -- Thin Facade
 
 The main interface. Orchestrates specialized manager modules via dependency
-injection. Collection creates managers in ``__init__`` and delegates all
-operations to them. No manager holds a back-reference to Collection.
+injection. Vault creates managers in ``__init__`` and delegates all
+operations to them. No manager holds a back-reference to Vault.
 
 #### Internal Manager Architecture
 
@@ -1170,7 +1170,7 @@ live in ``utils/text.py`` (normalization, position mapping, fuzzy matching) and
 
 #### Facets (`facets/`, #604)
 
-The ``facets/`` package groups the formerly-flat ``Collection`` surface into
+The ``facets/`` package groups the formerly-flat ``Vault`` surface into
 four cohesive views, each a thin delegator over the managers/coordinator the
 root already owns:
 
@@ -1181,7 +1181,7 @@ root already owns:
 | ``GraphFacet`` | backlinks, outlinks, broken_links, orphans, most_linked, connection_path | ``LinkManager``, ``require_built`` |
 | ``IndexFacet`` | build/reindex/embeddings (sync + async), readiness, writer status, embeddings_status | ``IndexWriteCoordinator`` (public subset only), ``IndexManager`` (embeddings_status) |
 
-``Collection`` constructs the facets once in ``__init__`` and exposes them via
+``Vault`` constructs the facets once in ``__init__`` and exposes them via
 the ``reader`` / ``writer`` / ``graph`` / ``index`` properties. The bucket-3
 readiness gate (``require_built``) lives inside the facets — ``ReaderFacet``
 (``get_toc`` / ``get_similar`` / ``get_context``) and ``GraphFacet``
@@ -1192,20 +1192,20 @@ deliberate wrapper: it surfaces the coordinator's public operations (plus
 internals (``close``, ``writer``, ``require_built``, ``mark_paths_dirty``,
 ``rebuild_embeddings``).
 
-The migration followed **addition before removal**: the flat ``Collection``
+The migration followed **addition before removal**: the flat ``Vault``
 methods first delegated to the facets (PR3a, #604); production callers (PR3b,
 #605) and the test suite (PR3c, #606) then migrated to the facet accessors; the
-flat delegators were removed (PR4a, #627), leaving ``Collection`` a thin
-composition root. ``Collection`` is renamed to ``Vault`` in PR4b.
+flat delegators were removed (PR4a, #627), leaving the composition root thin;
+it was then renamed ``Collection`` → ``Vault`` (PR4b, #629), completing the epic.
 
 Clients reach the read / write / graph / index operations through the facet
-accessors (e.g. ``collection.reader.search(...)``), never through managers
-directly. ``Collection`` itself now exposes only construction, the four facet
+accessors (e.g. ``vault.reader.search(...)``), never through managers
+directly. ``Vault`` itself now exposes only construction, the four facet
 accessors, and lifecycle — the per-facet method surface is the Facets table
 above.
 
 ```python
-class Collection:
+class Vault:
     def __init__(
         self,
         *,
@@ -1225,8 +1225,8 @@ class Collection:
     # --- Facet accessors (the public operation surface) ---
     # search / read / write / edit / delete / rename / list / graph / index /
     # stats operations live on these facets; see the Facets table above for the
-    # per-facet method surface (e.g. collection.reader.search(...),
-    # collection.writer.write(...), collection.index.build_index(...)).
+    # per-facet method surface (e.g. vault.reader.search(...),
+    # vault.writer.write(...), vault.index.build_index(...)).
     @property
     def reader(self) -> ReaderFacet: ...
     @property
@@ -1430,14 +1430,14 @@ format: `{"Journal/note.md": "sha256hex", ...}` as JSON.
 
 ### `server.py` -- Generic MCP Server
 
-Uses **FastMCP 3.0+** with lifespan hooks for Collection init/teardown.
+Uses **FastMCP 3.0+** with lifespan hooks for Vault init/teardown.
 
 **Tool surface** mirrors LLM file tool semantics (Claude Code Read/Write/Edit
 pattern). Each tool is annotated with MCP `ToolAnnotations`:
 
 | Tool | Description | `readOnlyHint` | `destructiveHint` | `idempotentHint` |
 |------|-------------|:-:|:-:|:-:|
-| `search` | Search the collection by query | `True` | `False` | `True` |
+| `search` | Search the vault by query | `True` | `False` | `True` |
 | `read` | Read a document's full content | `True` | `False` | `True` |
 | `list_documents` | List documents, optionally filtered | `True` | `False` | `True` |
 | `write` | Create or overwrite a document | `False` | `False` | `True` |
@@ -1446,7 +1446,7 @@ pattern). Each tool is annotated with MCP `ToolAnnotations`:
 | `delete` | Delete a document | `False` | **`True`** | `True` |
 | `list_folders` | List all folders | `True` | `False` | `True` |
 | `list_tags` | List tag values for a field | `True` | `False` | `True` |
-| `stats` | Collection statistics | `True` | `False` | `True` |
+| `stats` | Vault statistics | `True` | `False` | `True` |
 | `reindex` | Incremental reindex | `False` | `False` | `True` |
 | `build_embeddings` | Build/rebuild vector embeddings | `False` | `False` | `True` |
 | `embeddings_status` | Check embedding provider status | `True` | `False` | `True` |
@@ -1471,7 +1471,7 @@ mis-resolved against the method in class scope.
 registered but tagged with ``tags={"write"}``. When ``read_only=True``, the
 server calls ``mcp.disable(tags={"write"})`` to hide them from clients.
 This also hides any prompts sharing the ``write`` tag (e.g. ``research``,
-``discuss``, ``create_from_template``). The Collection still raises ``ReadOnlyError`` as a defence-in-depth
+``discuss``, ``create_from_template``). The Vault still raises ``ReadOnlyError`` as a defence-in-depth
 guard if a write method is somehow called on a read-only instance.
 
 **Dynamic instructions**: the server's MCP `instructions` string varies with
@@ -1495,15 +1495,15 @@ familiarity. LLMs that know how to read/write/edit files can use these tools
 without special prompting.
 
 **Dependency injection**: tools and resources use FastMCP's
-``Depends(get_collection)`` to access the Collection instance from
+``Depends(get_vault)`` to access the Vault instance from
 lifespan context, eliminating module-level globals. Prompts are pure
-template functions with no collection dependency.
+template functions with no vault dependency.
 
 **Resources**: the server exposes 6 read-only MCP resources:
 
 | URI | Source | Description |
 |-----|--------|-------------|
-| ``config://vault`` | ``CollectionConfig`` | Source dir, read-only flag, indexed fields, extensions |
+| ``config://vault`` | ``VaultConfig`` | Source dir, read-only flag, indexed fields, extensions |
 | ``stats://vault`` | ``ReaderFacet.stats()`` | Document/chunk/folder counts, capabilities |
 | ``tags://vault`` | ``ReaderFacet.list_tags()`` | All tags grouped by indexed field |
 | ``tags://vault/{field}`` | ``ReaderFacet.list_tags(field)`` | Flat list for one field (template) |
@@ -1559,7 +1559,7 @@ at deployment time.
 
 ### Phase 1: Python API Only
 
-Configuration is the `Collection` constructor. No config files.
+Configuration is the `Vault` constructor. No config files.
 
 ### Phase 2: Environment Variables
 
@@ -1791,7 +1791,7 @@ MCP Apps are browser-based views that MCP clients supporting the protocol can re
 
 ### Phase 3: Evaluate YAML
 
-If multi-collection or complex per-collection settings are needed, add YAML
+If multi-vault or complex per-vault settings are needed, add YAML
 config using `pydantic-settings` for type validation and env var overlay.
 Evaluate at deploy time, not before.
 
@@ -1865,7 +1865,7 @@ In managed/legacy push-enabled modes, `GitWriteStrategy` commits per-write and
 defers push to a background timer (`MARKDOWN_VAULT_MCP_GIT_PUSH_DELAY_S`,
 default 30s). After the idle period elapses with no writes, all accumulated
 local commits are pushed in a single `git push`. On shutdown,
-`Collection.close()` flushes any pending push.
+`Vault.close()` flushes any pending push.
 
 Startup recovery: `GitWriteStrategy` checks for unpushed local commits
 (`git log @{upstream}..HEAD`) on first invocation and pushes them before
@@ -1914,7 +1914,7 @@ Set `MARKDOWN_VAULT_MCP_GIT_LFS=false` for repos that do not use LFS, or when
 - After a successful fast-forward that advanced `HEAD`, triggers
   `IndexFacet.reindex()` to incrementally update the index.
 - Blocks write operations during the **reindex phase** of each pull tick
-  (not during fetch/ff-only merge) by acquiring the Collection write lock.
+  (not during fetch/ff-only merge) by acquiring the Vault write lock.
   Read/search operations are not blocked at the Python level (SQLite WAL
   enables concurrent readers during index writes).
 - If `MARKDOWN_VAULT_MCP_GIT_LFS=true`, each successful pull tick ends with
@@ -1927,7 +1927,7 @@ Safety branch mode for push failures is tracked separately (see #119).
 - `get_file_history(repo_path, path, since, limit, until=None)` — runs `git log` with a sentinel-delimited format string to enumerate commits touching a note or the entire vault. Uses ASCII Record Separator (`\x1e`) as a block delimiter so commit records can be parsed reliably regardless of commit message content. Vault-wide queries append `--name-only` to include changed file paths per commit. Both `since` and `until` are passed through verbatim to `git log` and are inclusive at the boundary.
 - `get_file_diff(repo_path, path, ref, per_commit, since_timestamp=None, limit=None)` — runs `git diff` or `git show` to produce unified diffs. When `since_sha` is provided (validated as `[0-9a-f]{4,40}`), it is used directly as the ref. When `since_timestamp` is provided, `git rev-list --before=<ts> -1 HEAD` resolves it to a SHA (boundary **inclusive**: `--before` returns the most recent commit at or before that instant — a commit whose committer date equals the timestamp IS the resolved ref). When `per_commit=True` and `limit` is set, the inner `git log` adds `-n{clamped_limit}` (clamped to `[1, 100]`) to cap the number of commits walked — useful for keeping per-commit responses within LLM context budgets. Output exceeding 50 KB is truncated with a `[diff truncated: N bytes omitted]` note. `CalledProcessError` from an unknown ref is re-raised as `ValueError`.
 
-Both methods use the existing `_git_env()` / `_cleanup_git_env()` pattern for credential forwarding and cleanup. Path arguments are always validated via `Collection._validate_path()` before being passed to the git layer. No shell injection is possible because all subprocess calls use list arguments with `shell=False`.
+Both methods use the existing `_git_env()` / `_cleanup_git_env()` pattern for credential forwarding and cleanup. Path arguments are always validated via `Vault._validate_path()` before being passed to the git layer. No shell injection is possible because all subprocess calls use list arguments with `shell=False`.
 
 **MCP response envelope**: the MCP wrappers for `get_history` and `get_diff(per_commit=True)` return a `{"commits": [...], "total": N}` envelope rather than a bare list, so the structured payload is self-describing on the wire. FastMCP otherwise auto-wraps list-typed tool returns under a synthetic `"result"` key (`x-fastmcp-wrap-result: true` in the output schema), which forces clients re-reading persisted MCP content to know FastMCP's wrapping convention to find the data. The Python facade (`ReaderFacet.get_history`, `ReaderFacet.get_diff`) stays list-returning — only the MCP-tool wrapper transforms to the envelope. `get_diff(per_commit=False)` keeps its existing `{"diff": str}` shape since it is already self-describing.
 
@@ -1971,7 +1971,7 @@ for the bundle.
 
 ### Phase 1: Core Library + API Validation
 
-**API surface**: `Collection.__init__`, `search`, `read`, `list`,
+**API surface**: `Vault.__init__`, `search`, `read`, `list`,
 `build_index`, `reindex`, `build_embeddings`, `embeddings_status`,
 `list_folders`, `list_tags`, `stats`.
 
@@ -1981,11 +1981,11 @@ for the bundle.
    `ChunkStrategy` protocol
 4. Implement `fts_index.py` -- generic FTS5 with `document_tags`, RRF hybrid
 5. Implement `tracker.py` -- hash-based change detection
-6. Implement `collection.py` -- thin facade tying it all together
+6. Implement `vault.py` -- thin facade tying it all together
 7. Tests for all modules (fixtures with sample .md files covering: no
    frontmatter, partial frontmatter, malformed YAML, deep headings, unicode,
    invalid UTF-8)
-8. **Validate API**: configure `Collection` with ifcraftcorpus settings
+8. **Validate API**: configure `Vault` with ifcraftcorpus settings
    (`required_frontmatter=["title", "cluster"]`,
    `indexed_frontmatter_fields=["cluster", "topics"]`). Build index, run
    search, verify tag filtering works. If the API doesn't accommodate the
@@ -2001,7 +2001,7 @@ for the bundle.
 11. Configuration loading (env vars)
 12. Docker + GitHub Actions + PyPI (adapted from ifcraftcorpus)
 13. Validate against Obsidian vault (`pvliesdonk/obsidian.md`) as read-only
-    collection
+    vault
 14. MCP tool integration tests using FastMCP test client
 
 ### Phase 3: Deploy + Write Support
@@ -2030,14 +2030,14 @@ for the bundle.
   filtering, UTF-8 fault tolerance), FTS index (CRUD, search, tag filtering,
   RRF hybrid), change tracker (detect changes, update state), vector index
   (add, search, save/load, metadata consistency).
-- **Integration tests**: Collection end-to-end (scan -> index -> search ->
+- **Integration tests**: Vault end-to-end (scan -> index -> search ->
   reindex), write + reindex roundtrip (write makes content searchable),
   MCP server tool invocations via FastMCP test client.
 - **Regression tests**: hybrid score ordering (search for a query that matches
   in both FTS5 and semantic; verify RRF merges ranks so neither signal
   dominates), document identity (same filename in different folders produces
   distinct results), frontmatter-less documents indexed correctly.
-- **API validation**: Phase 1 includes a test that configures `Collection`
+- **API validation**: Phase 1 includes a test that configures `Vault`
   with ifcraftcorpus settings and verifies search + tag filtering work.
 - **Coverage**: enforce with `coverage.py` `fail_under` (same pattern as
   ifcraftcorpus).
@@ -2050,7 +2050,7 @@ for the bundle.
 | Vault scale (numpy in-memory) | Fine for thousands of documents. If tens of thousands, evaluate Qdrant. |
 | Concurrent writes (Obsidian + MCP) | Use git as sync layer. MCP server should not write directly to live Obsidian vault without git in between. |
 | FastMCP breaking changes | Pin `>=3.0,<4`. Monitor for 4.0 migration. |
-| `Collection` API doesn't fit ifcraftcorpus | Validate in Phase 1 before building MCP server. |
+| `Vault` API doesn't fit ifcraftcorpus | Validate in Phase 1 before building MCP server. |
 
 ## Appendix: Decision Log
 
@@ -2075,6 +2075,6 @@ Decisions made during design review (2026-03-07):
 | 13.3 | Concurrency | Library sync; `asyncio.to_thread()` in MCP layer | Appropriate for single-user; async provider as future work |
 | 13.4 | FTS5 schema | `path`, `title`, `folder`, `heading`, `content` | Generic; domain filtering via `document_tags` |
 | 13.5 | File extension | Include `.md` in document identifier | Unambiguous, matches filesystem |
-| 14 | Python library use | Document as use case; `Collection` is primary API | MCP is one consumer; LangChain wrapper is downstream |
+| 14 | Python library use | Document as use case; `Vault` is primary API | MCP is one consumer; LangChain wrapper is downstream |
 | 15 | Rename | Include in design, defer to Phase 2-3 | Touches every layer; not critical for initial release |
 | 16 | Tool semantics | Mirror Claude Code Read/Write/Edit; MCP `ToolAnnotations` | Familiar to LLMs; `delete` marked destructive |

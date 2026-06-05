@@ -325,7 +325,7 @@ class GitWriteStrategy:
     Example::
 
         strategy = GitWriteStrategy(token="ghp_...", push_delay_s=30)
-        collection = Collection(on_write=strategy, ...)
+        vault = Vault(on_write=strategy, ...)
         # ... writes happen, push deferred ...
         strategy.close()  # final flush
     """
@@ -1979,7 +1979,7 @@ class GitWriteStrategy:
         # This check is intentionally independent of the sync_once() call in
         # sync_from_remote_before_index() — start() may be called even when
         # the startup sync was skipped (pull_interval_s changed at runtime,
-        # or Collection.start() called directly by library users).  The double
+        # or Vault.start() called directly by library users).  The double
         # upstream check is harmless (costs one git subprocess) and avoids
         # noisy "no upstream" logs on every tick.
         env = None
@@ -2489,8 +2489,8 @@ def git_write_strategy(
     fires when :meth:`~GitWriteStrategy.close` or
     :meth:`~GitWriteStrategy.flush` is called.
 
-    When used via :class:`~markdown_vault_mcp.collection.Collection`,
-    ``Collection.close()`` automatically calls the strategy's
+    When used via :class:`~markdown_vault_mcp.vault.Vault`,
+    ``Vault.close()`` automatically calls the strategy's
     ``close()``, so pushes flush on shutdown.  Callers using this
     as a bare ``WriteCallback`` must retain a reference and call
     ``close()`` explicitly.

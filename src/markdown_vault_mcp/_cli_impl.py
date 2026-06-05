@@ -21,8 +21,8 @@ from fastmcp_pvl_core import (
     normalise_http_path,
 )
 
-from markdown_vault_mcp.collection import Collection
 from markdown_vault_mcp.config import _ENV_PREFIX, load_config
+from markdown_vault_mcp.vault import Vault
 
 if TYPE_CHECKING:
     import argparse
@@ -32,12 +32,12 @@ logger = logging.getLogger(__name__)
 _PROG = "markdown-vault-mcp"
 
 
-def _build_collection(args: argparse.Namespace) -> Collection:
-    """Build a Collection from environment variables and CLI overrides.
+def _build_vault(args: argparse.Namespace) -> Vault:
+    """Build a Vault from environment variables and CLI overrides.
 
-    Delegates to :meth:`~markdown_vault_mcp.config.CollectionConfig.to_collection_kwargs`
+    Delegates to :meth:`~markdown_vault_mcp.config.VaultConfig.to_vault_kwargs`
     so the CLI path stays in sync with the server path in
-    :func:`~markdown_vault_mcp._server_deps.make_collection_lifespan`. CLI
+    :func:`~markdown_vault_mcp._server_deps.make_vault_lifespan`. CLI
     arguments ``--source-dir`` and ``--index-path`` override the corresponding
     environment variables when provided.
 
@@ -46,7 +46,7 @@ def _build_collection(args: argparse.Namespace) -> Collection:
             ``index_path`` attributes).
 
     Returns:
-        A fully initialised :class:`Collection` (index not yet built).
+        A fully initialised :class:`Vault` (index not yet built).
     """
     # CLI --source-dir overrides env var.
     source_dir_override = getattr(args, "source_dir", None)
@@ -54,14 +54,14 @@ def _build_collection(args: argparse.Namespace) -> Collection:
         os.environ[f"{_ENV_PREFIX}_SOURCE_DIR"] = source_dir_override
 
     config = load_config()
-    kwargs = config.to_collection_kwargs()
+    kwargs = config.to_vault_kwargs()
 
     # CLI --index-path overrides env var / config default.
     index_path_override = getattr(args, "index_path", None)
     if index_path_override:
         kwargs["index_path"] = Path(index_path_override)
 
-    return Collection(**kwargs)
+    return Vault(**kwargs)
 
 
 def _cmd_serve(args: argparse.Namespace) -> None:
@@ -118,8 +118,8 @@ def _cmd_serve(args: argparse.Namespace) -> None:
 
 def _cmd_index(args: argparse.Namespace) -> None:
     """Build the full-text search index."""
-    collection = _build_collection(args)
-    stats = collection.index.build_index(force=args.force)
+    vault = _build_vault(args)
+    stats = vault.index.build_index(force=args.force)
     logger.info(
         "Indexed %d documents, %d chunks",
         stats.documents_indexed,
@@ -127,7 +127,7 @@ def _cmd_index(args: argparse.Namespace) -> None:
     )
     print(f"Indexed {stats.documents_indexed} documents, {stats.chunks_indexed} chunks")
     try:
-        n = collection.index.build_embeddings(force=args.force)
+        n = vault.index.build_embeddings(force=args.force)
         logger.info("Embedded %d chunks", n)
         print(f"Embedded {n} chunks")
     except ValueError:
@@ -135,10 +135,10 @@ def _cmd_index(args: argparse.Namespace) -> None:
 
 
 def _cmd_search(args: argparse.Namespace) -> None:
-    """Search the collection."""
-    collection = _build_collection(args)
+    """Search the vault."""
+    vault = _build_vault(args)
 
-    results = collection.reader.search(
+    results = vault.reader.search(
         args.query,
         limit=args.limit,
         mode=args.mode,
@@ -162,13 +162,13 @@ def _cmd_search(args: argparse.Namespace) -> None:
 
 
 def _cmd_reindex(args: argparse.Namespace) -> None:
-    """Incrementally reindex the collection."""
-    collection = _build_collection(args)
+    """Incrementally reindex the vault."""
+    vault = _build_vault(args)
     # reindex() requires a built index (bucket 4 readiness contract,
     # issue #525). build_index() short-circuits in O(1) on a coherent
     # persisted DB, so this is free on the warm path and correct on cold.
-    collection.index.build_index()
-    result = collection.index.reindex()
+    vault.index.build_index()
+    result = vault.index.reindex()
     logger.info(
         "Reindex complete: %d added, %d modified, %d deleted, %d unchanged",
         result.added,
@@ -182,7 +182,7 @@ def _cmd_reindex(args: argparse.Namespace) -> None:
     )
     try:
         should_force = result.added > 0 or result.modified > 0 or result.deleted > 0
-        n = collection.index.build_embeddings(force=should_force)
+        n = vault.index.build_embeddings(force=should_force)
         logger.info("Embedded %d chunks", n)
         print(f"Embedded {n} chunks")
     except ValueError:
@@ -199,7 +199,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     parser = argparse.ArgumentParser(
         prog=_PROG,
-        description="Generic markdown collection MCP server",
+        description="Generic markdown vault MCP server",
     )
     parser.add_argument(
         "-v",
@@ -246,7 +246,7 @@ def _build_parser() -> argparse.ArgumentParser:
     index_parser = sub.add_parser("index", help="build the full-text search index")
     index_parser.add_argument(
         "--source-dir",
-        help=f"path to markdown collection (overrides {_ENV_PREFIX}_SOURCE_DIR)",
+        help=f"path to markdown vault (overrides {_ENV_PREFIX}_SOURCE_DIR)",
     )
     index_parser.add_argument(
         "--index-path",
@@ -259,11 +259,11 @@ def _build_parser() -> argparse.ArgumentParser:
     )
 
     # search
-    search_parser = sub.add_parser("search", help="search the collection")
+    search_parser = sub.add_parser("search", help="search the vault")
     search_parser.add_argument("query", help="search query")
     search_parser.add_argument(
         "--source-dir",
-        help=f"path to markdown collection (overrides {_ENV_PREFIX}_SOURCE_DIR)",
+        help=f"path to markdown vault (overrides {_ENV_PREFIX}_SOURCE_DIR)",
     )
     search_parser.add_argument(
         "-n",
@@ -290,12 +290,10 @@ def _build_parser() -> argparse.ArgumentParser:
     )
 
     # reindex
-    reindex_parser = sub.add_parser(
-        "reindex", help="incrementally reindex the collection"
-    )
+    reindex_parser = sub.add_parser("reindex", help="incrementally reindex the vault")
     reindex_parser.add_argument(
         "--source-dir",
-        help=f"path to markdown collection (overrides {_ENV_PREFIX}_SOURCE_DIR)",
+        help=f"path to markdown vault (overrides {_ENV_PREFIX}_SOURCE_DIR)",
     )
     reindex_parser.add_argument(
         "--index-path",

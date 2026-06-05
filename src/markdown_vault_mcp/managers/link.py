@@ -3,7 +3,7 @@
 Handles all link-related queries (backlinks, outlinks, broken links,
 orphans, most-linked, connection paths) with dependency injection —
 receives only :class:`~markdown_vault_mcp.fts_index.FTSIndex` and a
-``source_dir`` path, no back-reference to :class:`Collection`.
+``source_dir`` path, no back-reference to :class:`Vault`.
 """
 
 from __future__ import annotations
@@ -140,7 +140,7 @@ class LinkManager:
         ]
 
     def get_broken_links(self, *, folder: str | None = None) -> list[BrokenLinkInfo]:
-        """Return all links whose target does not exist in the collection.
+        """Return all links whose target does not exist in the vault.
 
         Args:
             folder: If provided, restrict to source documents in this folder

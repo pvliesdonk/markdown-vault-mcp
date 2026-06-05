@@ -3,7 +3,7 @@
 Handles FTS index construction, incremental reindexing via
 :class:`~markdown_vault_mcp.tracker.ChangeTracker`, vector embedding
 lifecycle, and the two-phase deferred embedding flush — all with
-dependency injection and no back-reference to :class:`Collection`.
+dependency injection and no back-reference to :class:`Vault`.
 """
 
 from __future__ import annotations

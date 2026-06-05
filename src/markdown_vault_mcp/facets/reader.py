@@ -6,8 +6,8 @@ Each method delegates 1:1 to one collaborator (:class:`SearchManager`,
 :class:`DocumentManager`, or :class:`GitQueryManager`); the bucket-3 methods
 (:meth:`ReaderFacet.get_toc`,
 :meth:`ReaderFacet.get_similar`, :meth:`ReaderFacet.get_context`) gate on the index-readiness callback
-first. Part of the ``collection.py`` facade decomposition (#576); reached via
-the ``Collection.reader`` accessor.
+first. Part of the ``vault.py`` facade decomposition (#576); reached via
+the ``Vault.reader`` accessor.
 """
 
 from __future__ import annotations
@@ -24,13 +24,13 @@ if TYPE_CHECKING:
     from markdown_vault_mcp.types import (
         AttachmentContent,
         AttachmentInfo,
-        CollectionStats,
         CommitDiff,
         GroupedResult,
         HistoryEntry,
         NoteContent,
         NoteContext,
         NoteInfo,
+        VaultStats,
     )
 
 
@@ -70,7 +70,7 @@ class ReaderFacet:
         chunks_per_file: int | None = None,
         snippet_words: int | None = None,
     ) -> list[GroupedResult]:
-        """Search the collection.
+        """Search the vault.
 
         Args:
             query: Search string.
@@ -130,7 +130,7 @@ class ReaderFacet:
         pattern: str | None = None,
         include_attachments: bool = False,
     ) -> list[NoteInfo | AttachmentInfo]:
-        """List documents (and optionally attachments) in the collection.
+        """List documents (and optionally attachments) in the vault.
 
         Args:
             folder: If provided, only return documents in this folder (and
@@ -152,10 +152,10 @@ class ReaderFacet:
         )
 
     def list_folders(self) -> list[str]:
-        """Return all distinct folder values across the indexed collection.
+        """Return all distinct folder values across the indexed vault.
 
         Returns:
-            Sorted list of folder strings (``""`` for the collection root).
+            Sorted list of folder strings (``""`` for the vault root).
         """
         return self._search_mgr.list_folders()
 
@@ -372,13 +372,13 @@ class ReaderFacet:
             limit=limit,
         )
 
-    def stats(self) -> CollectionStats:
-        """Return collection-wide statistics.
+    def stats(self) -> VaultStats:
+        """Return vault-wide statistics.
 
         Delegates to :meth:`SearchManager.stats`.
 
         Returns:
-            :class:`~markdown_vault_mcp.types.CollectionStats` snapshot.
+            :class:`~markdown_vault_mcp.types.VaultStats` snapshot.
         """
         return self._search_mgr.stats()
 

@@ -12,7 +12,7 @@ class DocumentNotFoundError(MarkdownMCPError):
 
 
 class ReadOnlyError(MarkdownMCPError):
-    """Raised when a write operation is attempted on a read-only collection."""
+    """Raised when a write operation is attempted on a read-only vault."""
 
 
 class EditConflictError(MarkdownMCPError):
@@ -73,7 +73,7 @@ IndexUnavailableReason = Literal[
 ]
 """Discriminator for IndexUnavailableError's cause.
 
-- ``"never_built"`` — no build has been scheduled (cold collection on a
+- ``"never_built"`` — no build has been scheduled (cold vault on a
   fresh process; ``build_index()`` / ``build_index_async()`` never called).
 - ``"build_failed"`` — a build was scheduled, ran, and failed; the captured
   error is available via ``get_index_status()``'s ``error`` field (#586).
@@ -106,8 +106,8 @@ class IndexUnavailableError(MarkdownMCPError):
     Covers the following operational situations:
 
     - **Never built** (``reason="never_built"``). No build has been
-      scheduled — the Collection has never had ``build_index()`` /
-      ``build_index_async()`` called (cold collection on a fresh process).
+      scheduled — the Vault has never had ``build_index()`` /
+      ``build_index_async()`` called (cold vault on a fresh process).
     - **Build did not complete successfully** (``reason="build_failed"``).
       A previous build was scheduled, ran, raised, and was not retried
       (``_index_built`` remained False; the captured error is available

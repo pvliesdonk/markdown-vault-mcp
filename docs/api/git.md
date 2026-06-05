@@ -9,24 +9,24 @@ The `git` module provides:
 
 ```python
 from pathlib import Path
-from markdown_vault_mcp import Collection, GitWriteStrategy
+from markdown_vault_mcp import Vault, GitWriteStrategy
 
 strategy = GitWriteStrategy(
     token="ghp_your_token",
     push_delay_s=30,
 )
 
-collection = Collection(
+vault = Vault(
     source_dir=Path("/path/to/vault"),
     read_only=False,
     on_write=strategy,
 )
 
 # Writes are now auto-committed and pushed
-collection.writer.write("notes/new.md", "Hello world")
+vault.writer.write("notes/new.md", "Hello world")
 
 # Clean up on shutdown
-collection.close()
+vault.close()
 ```
 
 ## API Reference

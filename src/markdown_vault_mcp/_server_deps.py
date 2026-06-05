@@ -1,6 +1,6 @@
 """Shared dependency injection and lifespan for the MCP server.
 
-Provides :func:`get_collection` and :func:`make_collection_lifespan` which are
+Provides :func:`get_vault` and :func:`make_vault_lifespan` which are
 imported by the tool, resource, and prompt registration modules.
 """
 
@@ -15,89 +15,89 @@ from fastmcp.dependencies import CurrentContext
 from fastmcp.server.context import Context
 from fastmcp.server.lifespan import lifespan
 
-from markdown_vault_mcp.collection import Collection
+from markdown_vault_mcp.vault import Vault
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
-    from markdown_vault_mcp.config import CollectionConfig
+    from markdown_vault_mcp.config import VaultConfig
 
 logger = logging.getLogger(__name__)
 
 
-_collection_singleton: Collection | None = None
+_vault_singleton: Vault | None = None
 
 
-def set_collection_singleton(collection: Collection | None) -> None:
-    """Set the module-level :class:`Collection` singleton.
+def set_vault_singleton(vault: Vault | None) -> None:
+    """Set the module-level :class:`Vault` singleton.
 
-    Called by the lifespan factory on startup with the live Collection,
+    Called by the lifespan factory on startup with the live Vault,
     and again on shutdown with ``None`` so a subsequent server in the
     same process starts from a clean slate.
 
     Args:
-        collection: The live :class:`Collection`, or ``None`` to clear.
+        vault: The live :class:`Vault`, or ``None`` to clear.
     """
-    global _collection_singleton
-    _collection_singleton = collection
+    global _vault_singleton
+    _vault_singleton = vault
 
 
-def get_collection_singleton() -> Collection:
-    """Return the module-level :class:`Collection` singleton.
+def get_vault_singleton() -> Vault:
+    """Return the module-level :class:`Vault` singleton.
 
     Used by HTTP route handlers (e.g. the GitHub webhook route handler)
-    that run outside FastMCP's ``Depends(get_collection)`` injection and
-    therefore cannot resolve the Collection from the lifespan context.
+    that run outside FastMCP's ``Depends(get_vault)`` injection and
+    therefore cannot resolve the Vault from the lifespan context.
 
     Returns:
-        The live :class:`Collection` set by the lifespan factory.
+        The live :class:`Vault` set by the lifespan factory.
 
     Raises:
         RuntimeError: If the singleton has not been set yet.
     """
-    if _collection_singleton is None:
+    if _vault_singleton is None:
         msg = (
-            "Collection not initialised — set_collection_singleton was never "
+            "Vault not initialised — set_vault_singleton was never "
             "called.  In normal operation the lifespan factory sets it; in "
-            "tests, set explicitly via set_collection_singleton(col)."
+            "tests, set explicitly via set_vault_singleton(col)."
         )
         raise RuntimeError(msg)
-    return _collection_singleton
+    return _vault_singleton
 
 
-def make_collection_lifespan(config: CollectionConfig) -> Any:
+def make_vault_lifespan(config: VaultConfig) -> Any:
     """Create a lifespan function that closes over a pre-loaded config.
 
     Args:
-        config: A fully-loaded :class:`~markdown_vault_mcp.config.CollectionConfig`
+        config: A fully-loaded :class:`~markdown_vault_mcp.config.VaultConfig`
             instance, typically produced by a single :func:`load_config` call in
             :func:`~markdown_vault_mcp.server.make_server`.
 
     Returns:
         A FastMCP lifespan coroutine that initialises the
-        :class:`~markdown_vault_mcp.collection.Collection` and yields
-        ``{"collection": collection, "config": config}`` to the lifespan context.
+        :class:`~markdown_vault_mcp.vault.Vault` and yields
+        ``{"vault": vault, "config": config}`` to the lifespan context.
     """
 
     @lifespan
-    async def _collection_lifespan(
+    async def _vault_lifespan(
         server: FastMCP,  # noqa: ARG001
     ) -> AsyncIterator[dict[str, Any]]:
-        """Build the Collection at server startup, tear down on shutdown."""
-        logger.info("Initialising collection from %s", config.source_dir)
+        """Build the Vault at server startup, tear down on shutdown."""
+        logger.info("Initialising vault from %s", config.source_dir)
 
-        kwargs = config.to_collection_kwargs()
+        kwargs = config.to_vault_kwargs()
         if kwargs.get("embedding_provider") is not None:
             logger.info(
                 "Embedding provider: %s",
                 type(kwargs["embedding_provider"]).__name__,
             )
-        collection = Collection(**kwargs)
-        set_collection_singleton(collection)
+        vault = Vault(**kwargs)
+        set_vault_singleton(vault)
 
         # If periodic git pull is enabled, sync before submitting the
         # initial index build so the scan sees the latest working tree.
-        await asyncio.to_thread(collection.sync_from_remote_before_index)
+        await asyncio.to_thread(vault.sync_from_remote_before_index)
 
         # Submit the initial build jobs to the IndexWriter and yield
         # immediately (#559). build_index_async() short-circuits in
@@ -107,15 +107,15 @@ def make_collection_lifespan(config: CollectionConfig) -> Any:
         # Bucket-3 tools block on @needs_queryable until the build
         # completes; bucket-2 tools return whatever is currently in
         # the index per #526.
-        collection.index.build_index_async()
+        vault.index.build_index_async()
         logger.info("Submitted BuildIndex job to writer")
 
         if kwargs.get("embedding_provider") is not None:
-            collection.index.build_embeddings_async()
+            vault.index.build_embeddings_async()
             logger.info("Submitted BuildEmbeddings job to writer")
 
         # Start any other background tasks (e.g. git pull loop).
-        collection.start()
+        vault.start()
 
         # File watcher — only when git pull and webhook are both inactive so the
         # watcher and git checkout don't race to trigger reindex (#558).
@@ -126,7 +126,7 @@ def make_collection_lifespan(config: CollectionConfig) -> Any:
         from markdown_vault_mcp.exceptions import IndexUnavailableError
 
         # Use the *resolved* pull interval from kwargs, not config.git.pull_interval_s:
-        # the config default is 600 even on non-git vaults, but to_collection_kwargs()
+        # the config default is 600 even on non-git vaults, but to_vault_kwargs()
         # only passes a non-zero interval through when a git strategy is configured.
         git_pull_active = kwargs.get("git_pull_interval_s", 0) > 0
 
@@ -139,8 +139,8 @@ def make_collection_lifespan(config: CollectionConfig) -> Any:
 
             def _on_file_change() -> None:
                 try:
-                    with collection.pause_writes():
-                        collection.index.reindex()
+                    with vault.pause_writes():
+                        vault.index.reindex()
                 except IndexUnavailableError:
                     logger.info(
                         "file_watcher: index not yet queryable, skipping reindex"
@@ -162,30 +162,30 @@ def make_collection_lifespan(config: CollectionConfig) -> Any:
             )
 
         try:
-            yield {"collection": collection, "config": config}
+            yield {"vault": vault, "config": config}
         finally:
             if file_watcher is not None:
                 file_watcher.stop()
             # Clear the singleton before closing so any in-flight HTTP handler
-            # gets a clean RuntimeError instead of touching a Collection
+            # gets a clean RuntimeError instead of touching a Vault
             # mid-close().
-            set_collection_singleton(None)
-            collection.close()
-            logger.info("Collection shut down")
+            set_vault_singleton(None)
+            vault.close()
+            logger.info("Vault shut down")
 
-    return _collection_lifespan
+    return _vault_lifespan
 
 
-def get_collection(ctx: Context = CurrentContext()) -> Collection:
-    """Resolve the Collection from lifespan context.
+def get_vault(ctx: Context = CurrentContext()) -> Vault:
+    """Resolve the Vault from lifespan context.
 
     Used as a ``Depends()`` default in tool/resource/prompt signatures.
 
     Raises:
         RuntimeError: If the server lifespan has not run.
     """
-    collection: Collection | None = ctx.lifespan_context.get("collection")
-    if collection is None:
-        msg = "Collection not initialised — server lifespan has not run"
+    vault: Vault | None = ctx.lifespan_context.get("vault")
+    if vault is None:
+        msg = "Vault not initialised — server lifespan has not run"
         raise RuntimeError(msg)
-    return collection
+    return vault

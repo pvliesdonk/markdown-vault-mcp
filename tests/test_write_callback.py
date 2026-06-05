@@ -1,7 +1,7 @@
 """Unit tests for WriteCallbackDispatcher (issue #599).
 
 Pins the six behavioural invariants the dispatcher inherits from the former
-Collection callback worker (#175): on_write=None no-op, lazy+idempotent single
+Vault callback worker (#175): on_write=None no-op, lazy+idempotent single
 worker, FIFO order, callback-exception isolation, bounded draining close, and
 the daemon worker identity.
 """

@@ -116,14 +116,14 @@ def test_group_by_path_preserves_score_desc_file_order():
     assert [g[0].path for g in groups] == ["b.md", "c.md", "a.md"]
 
 
-def test_get_similar_dedupes_multichunk_target(populated_collection):
+def test_get_similar_dedupes_multichunk_target(populated_vault):
     """A multi-chunk target document appears only ONCE in get_similar.
 
     Uses other.md as reference so multi.md (with 3 chunks of "foo" content)
     becomes a candidate.  Without grouping multi.md could appear 3 times in
     the top results; with grouping it appears at most once.
     """
-    results = populated_collection.reader.get_similar(
+    results = populated_vault.reader.get_similar(
         "other.md", limit=10, chunks_per_file=2
     )
     paths = [r.path for r in results]
@@ -141,11 +141,11 @@ def test_get_similar_dedupes_multichunk_target(populated_collection):
             assert r.score == max(s.score for s in r.sections)
 
 
-def test_get_context_similar_returns_grouped_results(populated_collection):
+def test_get_context_similar_returns_grouped_results(populated_vault):
     """get_context.similar is GroupedResult-shaped with one section per file."""
     from markdown_vault_mcp.types import GroupedResult
 
-    ctx = populated_collection.reader.get_context("multi.md", similar_limit=5)
+    ctx = populated_vault.reader.get_context("multi.md", similar_limit=5)
     for entry in ctx.similar:
         assert isinstance(entry, GroupedResult)
         assert len(entry.sections) == 1, (
@@ -176,7 +176,7 @@ def test_sabsa_repro_one_reference_doc_dedups_target_chunks(tmp_path):
     appear at most once in the result list when its multiple chunks would
     otherwise occupy several slots.
     """
-    from markdown_vault_mcp.collection import Collection
+    from markdown_vault_mcp.vault import Vault
     from tests.conftest import MockEmbeddingProvider
 
     vault = tmp_path / "vault"
@@ -198,7 +198,7 @@ def test_sabsa_repro_one_reference_doc_dedups_target_chunks(tmp_path):
         "# Other\n\n" + ("Something different about reading lists.\n" * 12)
     )
 
-    col = Collection(
+    col = Vault(
         source_dir=vault,
         embedding_provider=MockEmbeddingProvider(),
         embeddings_path=tmp_path / "vectors",
@@ -227,7 +227,7 @@ def test_sabsa_repro_one_reference_doc_dedups_target_chunks(tmp_path):
     assert len(set(paths)) == len(paths), f"paths should be unique: {paths}"
 
 
-def test_get_similar_skips_length_downweight(monkeypatch, populated_collection):
+def test_get_similar_skips_length_downweight(monkeypatch, populated_vault):
     """#472: get_similar must call _apply_length_downweight with alpha=0.0."""
     from markdown_vault_mcp.managers import search as search_mod
 
@@ -240,7 +240,7 @@ def test_get_similar_skips_length_downweight(monkeypatch, populated_collection):
 
     monkeypatch.setattr(search_mod, "_apply_length_downweight", spy)
 
-    populated_collection.reader.get_similar("multi.md", limit=5)
+    populated_vault.reader.get_similar("multi.md", limit=5)
 
     assert captured_alphas, (
         "expected get_similar to call _apply_length_downweight at least once"
@@ -251,7 +251,7 @@ def test_get_similar_skips_length_downweight(monkeypatch, populated_collection):
     )
 
 
-def test_get_context_similar_skips_length_downweight(monkeypatch, populated_collection):
+def test_get_context_similar_skips_length_downweight(monkeypatch, populated_vault):
     """#472: get_context.similar inherits alpha=0.0 via get_similar delegation."""
     from markdown_vault_mcp.managers import search as search_mod
 
@@ -264,7 +264,7 @@ def test_get_context_similar_skips_length_downweight(monkeypatch, populated_coll
 
     monkeypatch.setattr(search_mod, "_apply_length_downweight", spy)
 
-    populated_collection.reader.get_context("multi.md", similar_limit=3)
+    populated_vault.reader.get_context("multi.md", similar_limit=3)
 
     assert captured_alphas, (
         "expected get_context to trigger _apply_length_downweight via get_similar"

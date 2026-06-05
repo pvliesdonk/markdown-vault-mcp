@@ -170,7 +170,7 @@ class TestGraphDataTools:
     async def test_hubs_does_not_read_hub_documents(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """vault_graph_hubs uses MostLinkedNote.folder, not per-hub collection.reader.read."""
+        """vault_graph_hubs uses MostLinkedNote.folder, not per-hub vault.reader.read."""
         from markdown_vault_mcp.facets.reader import ReaderFacet
 
         original_read = ReaderFacet.read

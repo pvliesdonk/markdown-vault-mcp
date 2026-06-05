@@ -6,46 +6,46 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from markdown_vault_mcp.collection import Collection
 from markdown_vault_mcp.exceptions import IndexUnavailableError
 from markdown_vault_mcp.facets.graph import GraphFacet
+from markdown_vault_mcp.vault import Vault
 
 if TYPE_CHECKING:
     from pathlib import Path
 
 
 class TestGraphFacetAccessor:
-    def test_accessor_returns_graph_facet(self, built: Collection) -> None:
+    def test_accessor_returns_graph_facet(self, built: Vault) -> None:
         assert isinstance(built.graph, GraphFacet)
 
-    def test_accessor_is_stable(self, built: Collection) -> None:
+    def test_accessor_is_stable(self, built: Vault) -> None:
         assert built.graph is built.graph
 
 
 class TestGraphFacetBehaviour:
-    def test_backlinks_returns_list(self, built: Collection) -> None:
+    def test_backlinks_returns_list(self, built: Vault) -> None:
         assert isinstance(built.graph.get_backlinks("full_frontmatter.md"), list)
 
-    def test_outlinks_returns_list(self, built: Collection) -> None:
+    def test_outlinks_returns_list(self, built: Vault) -> None:
         assert isinstance(built.graph.get_outlinks("full_frontmatter.md"), list)
 
-    def test_broken_links_returns_list(self, built: Collection) -> None:
+    def test_broken_links_returns_list(self, built: Vault) -> None:
         assert isinstance(built.graph.get_broken_links(), list)
 
-    def test_orphan_notes_returns_list(self, built: Collection) -> None:
+    def test_orphan_notes_returns_list(self, built: Vault) -> None:
         assert isinstance(built.graph.get_orphan_notes(), list)
 
-    def test_most_linked_returns_list(self, built: Collection) -> None:
+    def test_most_linked_returns_list(self, built: Vault) -> None:
         assert isinstance(built.graph.get_most_linked(), list)
 
-    def test_connection_path_returns_none_or_list(self, built: Collection) -> None:
+    def test_connection_path_returns_none_or_list(self, built: Vault) -> None:
         result = built.graph.get_connection_path("full_frontmatter.md", "simple.md")
         assert result is None or isinstance(result, list)
 
 
 class TestGraphFacetReadinessGate:
     def test_bucket3_methods_raise_on_cold_index(self, vault_path: Path) -> None:
-        col = Collection(source_dir=vault_path)  # never built
+        col = Vault(source_dir=vault_path)  # never built
         try:
             with pytest.raises(IndexUnavailableError):
                 col.graph.get_backlinks("full_frontmatter.md")
@@ -69,7 +69,7 @@ class TestGraphFacetLimit:
             "# A\n\nSee [t](target.md) and [b](b.md).\n", encoding="utf-8"
         )
         (vault / "b.md").write_text("# B\n\nSee [t](target.md).\n", encoding="utf-8")
-        col = Collection(source_dir=vault)
+        col = Vault(source_dir=vault)
         col.index.build_index()
         try:
             # target.md has 2 backlinks (a.md, b.md); a.md has 2 outlinks.

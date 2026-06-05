@@ -12,9 +12,9 @@ Integration points
   to produce the callable passed to ``mcp.custom_route()``.
 - :func:`_verify_signature` — pure HMAC-SHA256 check; separate so tests
   can exercise it without a live HTTP server.
-- :func:`get_collection_singleton` — reaches the live Collection from the
+- :func:`get_vault_singleton` — reaches the live Vault from the
   module singleton set by the lifespan factory, since this handler runs
-  outside FastMCP's ``Depends(get_collection)`` injection.
+  outside FastMCP's ``Depends(get_vault)`` injection.
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING, Any
 
 from starlette.responses import JSONResponse
 
-from markdown_vault_mcp._server_deps import get_collection_singleton
+from markdown_vault_mcp._server_deps import get_vault_singleton
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -67,7 +67,7 @@ def _verify_signature(
     return hmac.compare_digest(expected, provided)
 
 
-def _reindex_after_pull(collection: Any) -> None:
+def _reindex_after_pull(vault: Any) -> None:
     """Pause writes and reindex after a successful pull.
 
     Runs synchronously — intended to be called inside
@@ -79,11 +79,11 @@ def _reindex_after_pull(collection: Any) -> None:
     half-updated index).
 
     Args:
-        collection: Live :class:`~markdown_vault_mcp.collection.Collection`.
+        vault: Live :class:`~markdown_vault_mcp.vault.Vault`.
     """
     try:
-        with collection.pause_writes():
-            collection.index.reindex()
+        with vault.pause_writes():
+            vault.index.reindex()
     except Exception:
         logger.error(
             "github_webhook: reindex after pull failed — FTS index is "
@@ -100,9 +100,9 @@ def make_webhook_handler(secret: str) -> Callable[[Request], Any]:
     - Verifies the ``X-Hub-Signature-256`` header (HMAC-SHA256, constant-time).
     - Returns 401 on invalid or absent signatures.
     - Returns 200 for ``ping`` events (GitHub handshake) and ignored events.
-    - On ``push`` events: calls ``Collection.force_pull()`` unconditionally
+    - On ``push`` events: calls ``Vault.force_pull()`` unconditionally
       (it is a pure git operation with no FTS dependency), then reindexes when
-      HEAD moved and the collection is queryable.
+      HEAD moved and the vault is queryable.
     - Returns 503 when the server has not yet initialised (singleton not set),
       or when ``force_pull`` fails (``applied=False``), so GitHub retries the
       delivery rather than permanently marking it as delivered.
@@ -147,22 +147,19 @@ def make_webhook_handler(secret: str) -> Callable[[Request], Any]:
         # would exhaust GitHub's retry budget (~5 s + ~25 s + ~90 s ≈ 2 min)
         # before a large vault finishes its initial index build.
         #
-        # Return 503 only when the Collection singleton itself hasn't been set
+        # Return 503 only when the Vault singleton itself hasn't been set
         # yet (server lifespan not complete) or when the pull fails, so GitHub
         # retries rather than treating the delivery as successfully handled.
         try:
-            collection = get_collection_singleton()
+            vault = get_vault_singleton()
         except RuntimeError:
             logger.info(
-                "github_webhook: collection not initialised, returning 503 "
-                "delivery_id=%s",
+                "github_webhook: vault not initialised, returning 503 delivery_id=%s",
                 delivery_id,
             )
-            return JSONResponse(
-                {"error": "collection not initialised"}, status_code=503
-            )
+            return JSONResponse({"error": "vault not initialised"}, status_code=503)
 
-        pull_result = await asyncio.to_thread(collection.force_pull)
+        pull_result = await asyncio.to_thread(vault.force_pull)
 
         if pull_result is None:
             logger.info(
@@ -186,11 +183,11 @@ def make_webhook_handler(secret: str) -> Callable[[Request], Any]:
             )
 
         if pull_result.from_sha != pull_result.to_sha:
-            if collection.index.is_queryable():
-                await asyncio.to_thread(_reindex_after_pull, collection)
+            if vault.index.is_queryable():
+                await asyncio.to_thread(_reindex_after_pull, vault)
             else:
                 logger.info(
-                    "github_webhook: pull applied but collection not queryable, "
+                    "github_webhook: pull applied but vault not queryable, "
                     "skipping reindex delivery_id=%s",
                     delivery_id,
                 )

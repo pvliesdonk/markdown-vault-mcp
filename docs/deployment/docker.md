@@ -56,7 +56,7 @@ volumes:
 All `/data/*` directories are pre-created and owned by the runtime user in the image. For managed repo mode (where the server clones a git repo on first start), `/data/vault` must be writable — this works automatically with named volumes or when UID/GID match the bind-mount owner. The first startup triggers a full index build; subsequent starts only reindex changed files.
 
 !!! warning "Upgrading from v1.8.x"
-    Versions before v1.9.0 used three separate state volumes (`index-data`, `embeddings-data`, `fastembed-data`). These have been consolidated into a single `state-data` volume mounted at `/data/state`. Existing state is **not** migrated automatically — the index and embeddings will be rebuilt on first startup (the index rebuild is incremental; the embeddings rebuild may take several minutes for large collections). The FastEmbed model cache will be re-downloaded (~100 MB). To avoid the rebuild, copy data from the old volumes into `state-data` before starting the new container.
+    Versions before v1.9.0 used three separate state volumes (`index-data`, `embeddings-data`, `fastembed-data`). These have been consolidated into a single `state-data` volume mounted at `/data/state`. Existing state is **not** migrated automatically — the index and embeddings will be rebuilt on first startup (the index rebuild is incremental; the embeddings rebuild may take several minutes for large vaults). The FastEmbed model cache will be re-downloaded (~100 MB). To avoid the rebuild, copy data from the old volumes into `state-data` before starting the new container.
 
 ## Traefik Reverse Proxy
 

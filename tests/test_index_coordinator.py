@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 
 
 def make_coordinator(tmp_path: Path) -> IndexWriteCoordinator:
-    """Build a wired coordinator over a tmp vault (mirrors Collection wiring)."""
+    """Build a wired coordinator over a tmp vault (mirrors Vault wiring)."""
     (tmp_path / "a.md").write_text("# A\n\nbody\n", encoding="utf-8")
     db = tmp_path / "index.db"
     fts = FTSIndex(db_path=db)
@@ -150,7 +150,7 @@ def _raising_runner(job: object, ctx: object) -> object:  # noqa: ARG001
 
 def test_sync_build_failure_records_failed_status(tmp_path: Path) -> None:
     # #585: a build-job failure must be recorded via fail_build so the
-    # collection reports "failed" (not stay "building" with the error lost).
+    # vault reports "failed" (not stay "building" with the error lost).
     coord = make_coordinator(tmp_path)
     try:
         coord.writer._runners["build_index"] = _raising_runner
@@ -169,7 +169,7 @@ def test_async_build_set_completed_failure_records_failed_status(
 ) -> None:
     # #585: if set_build_completed() raises inside the async done-callback,
     # the failure must be recorded — not silently swallowed by the Future
-    # machinery, which would leave the collection stuck reporting "building".
+    # machinery, which would leave the vault stuck reporting "building".
     coord = make_coordinator(tmp_path)
     try:
 

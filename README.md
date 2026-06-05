@@ -4,7 +4,7 @@
 [![CI](https://github.com/pvliesdonk/markdown-vault-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/pvliesdonk/markdown-vault-mcp/actions/workflows/ci.yml) [![codecov](https://codecov.io/gh/pvliesdonk/markdown-vault-mcp/graph/badge.svg)](https://codecov.io/gh/pvliesdonk/markdown-vault-mcp) [![PyPI](https://img.shields.io/pypi/v/markdown-vault-mcp)](https://pypi.org/project/markdown-vault-mcp/) [![Python](https://img.shields.io/pypi/pyversions/markdown-vault-mcp)](https://pypi.org/project/markdown-vault-mcp/) [![License](https://img.shields.io/github/license/pvliesdonk/markdown-vault-mcp)](LICENSE) [![Docker](https://img.shields.io/github/v/release/pvliesdonk/markdown-vault-mcp?label=ghcr.io&logo=docker)](https://github.com/pvliesdonk/markdown-vault-mcp/pkgs/container/markdown-vault-mcp) [![Docs](https://img.shields.io/badge/docs-GitHub%20Pages-blue)](https://pvliesdonk.github.io/markdown-vault-mcp/) [![llms.txt](https://img.shields.io/badge/llms.txt-available-brightgreen)](https://pvliesdonk.github.io/markdown-vault-mcp/llms.txt) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/pvliesdonk/markdown-vault-mcp) [![Template](https://img.shields.io/badge/dynamic/yaml?url=https://raw.githubusercontent.com/pvliesdonk/markdown-vault-mcp/main/.copier-answers.yml&query=%24._commit&label=template)](https://github.com/pvliesdonk/fastmcp-server-template)
 
 <!-- DOMAIN-START -->
-A generic markdown collection [MCP](https://modelcontextprotocol.io/) server with FTS5 full-text search, semantic vector search, frontmatter-aware indexing, incremental reindexing, and non-markdown attachment support.
+A generic markdown vault [MCP](https://modelcontextprotocol.io/) server with FTS5 full-text search, semantic vector search, frontmatter-aware indexing, incremental reindexing, and non-markdown attachment support.
 
 **[Documentation](https://pvliesdonk.github.io/markdown-vault-mcp/)** | **[PyPI](https://pypi.org/project/markdown-vault-mcp/)** | **[Docker](https://github.com/pvliesdonk/markdown-vault-mcp/pkgs/container/markdown-vault-mcp)**
 
@@ -117,11 +117,11 @@ Installs the MCP server and the `vault-workflow` skill. See the [Claude Code plu
 
 ```python
 from pathlib import Path
-from markdown_vault_mcp import Collection
+from markdown_vault_mcp import Vault
 
-collection = Collection(source_dir=Path("/path/to/vault"))
-collection.index.build_index()
-results = collection.reader.search("query text", limit=10)
+vault = Vault(source_dir=Path("/path/to/vault"))
+vault.index.build_index()
+results = vault.reader.search("query text", limit=10)
 ```
 
 ### As an MCP server
@@ -346,7 +346,7 @@ markdown-vault-mcp index [--source-dir PATH] [--index-path PATH] [--force]
 
 ### `search`
 
-Search the collection from the CLI.
+Search the vault from the CLI.
 
 ```bash
 markdown-vault-mcp search <query> [-n LIMIT] [-m {keyword|semantic|hybrid}] [--folder PATH] [--json]
@@ -374,7 +374,7 @@ markdown-vault-mcp reindex [--source-dir PATH] [--index-path PATH]
 | `list_folders` | List all folder paths in the vault |
 | `list_tags` | List all unique frontmatter tag values |
 | `reindex` | Force a full reindex of the vault |
-| `stats` | Get collection statistics (document count, chunk count, link health metrics, etc.) |
+| `stats` | Get vault statistics (document count, chunk count, link health metrics, etc.) |
 | `build_embeddings` | Build or rebuild vector embeddings for semantic search |
 | `embeddings_status` | Check embedding provider and index status |
 | `get_index_status` | Check background FTS build state (`queryable` / `building` / `failed`) |
@@ -404,8 +404,8 @@ MCP resources expose vault metadata as structured JSON that clients can read dir
 
 | URI | Description |
 |-----|-------------|
-| `config://vault` | Current collection configuration (source dir, indexed fields, read-only state, etc.) |
-| `stats://vault` | Collection statistics (document count, chunk count, embedding count, etc.) |
+| `config://vault` | Current vault configuration (source dir, indexed fields, read-only state, etc.) |
+| `stats://vault` | Vault statistics (document count, chunk count, embedding count, etc.) |
 | `tags://vault` | All frontmatter tag values grouped by indexed field |
 | `tags://vault/{field}` | Tag values for a specific indexed frontmatter field (template) |
 | `folders://vault` | All folder paths in the vault |

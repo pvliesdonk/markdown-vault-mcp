@@ -1,7 +1,7 @@
 """Integration tests for server.py using FastMCP test client.
 
 Tests exercise all MCP tools via the in-memory Client transport,
-verifying end-to-end behaviour through the full Collection stack.
+verifying end-to-end behaviour through the full Vault stack.
 """
 
 from __future__ import annotations
@@ -1992,7 +1992,7 @@ class TestPromptAndResourceIcons:
 
 
 class TestIfMatchParameter:
-    """MCP tools accept if_match and propagate it to Collection."""
+    """MCP tools accept if_match and propagate it to Vault."""
 
     @pytest.mark.usefixtures("_mcp_env_writable")
     async def test_write_accepts_if_match_when_correct(self, vault_path: Path) -> None:
@@ -3056,7 +3056,7 @@ class TestB3StaleSignal:
     async def test_stale_true_when_writer_has_pending_dirty_paths(
         self,
     ) -> None:
-        from markdown_vault_mcp._server_deps import get_collection_singleton
+        from markdown_vault_mcp._server_deps import get_vault_singleton
 
         server = make_server()
         async with Client(server) as client:
@@ -3064,7 +3064,7 @@ class TestB3StaleSignal:
             # Make the writer non-idle by marking a path dirty directly
             # on the writer (no submit, so no in-flight job, just a
             # non-empty dirty-paths set — that alone should set stale=True).
-            col = get_collection_singleton()
+            col = get_vault_singleton()
             col._coordinator.writer.mark_dirty(["sentinel.md"])
             try:
                 result = await client.call_tool(
@@ -3097,13 +3097,13 @@ class TestB3StaleSignal:
     async def test_wait_for_drain_timeout_reports_stale_true(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from markdown_vault_mcp._server_deps import get_collection_singleton
+        from markdown_vault_mcp._server_deps import get_vault_singleton
 
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S", "0.05")
         server = make_server()
         async with Client(server) as client:
             await wait_for_mcp_writer_drain(client)
-            col = get_collection_singleton()
+            col = get_vault_singleton()
             col._coordinator.writer.mark_dirty(["sentinel.md"])
             try:
                 result = await client.call_tool(
@@ -3134,12 +3134,12 @@ class TestB3StaleSignal:
         self, tool_name: str, tool_args: dict[str, str]
     ) -> None:
         """Each B3 tool independently ORs stale; catch copy-paste regressions."""
-        from markdown_vault_mcp._server_deps import get_collection_singleton
+        from markdown_vault_mcp._server_deps import get_vault_singleton
 
         server = make_server()
         async with Client(server) as client:
             await wait_for_mcp_writer_drain(client)
-            col = get_collection_singleton()
+            col = get_vault_singleton()
             col._coordinator.writer.mark_dirty(["sentinel.md"])
             try:
                 result = await client.call_tool(tool_name, tool_args)

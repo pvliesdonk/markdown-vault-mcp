@@ -2,27 +2,27 @@
 
 The read / write / graph / index operations live on four cohesive facets,
 reached through the `reader` / `writer` / `graph` / `index` accessors on the
-[`Collection`](collection.md) composition root.
+[`Vault`](vault.md) composition root.
 
 ```python
 from pathlib import Path
-from markdown_vault_mcp import Collection
+from markdown_vault_mcp import Vault
 
-collection = Collection(source_dir=Path("/path/to/vault"))
-collection.index.build_index()
+vault = Vault(source_dir=Path("/path/to/vault"))
+vault.index.build_index()
 
 # Reader facet — search / read / list / metadata
-results = collection.reader.search("query text", limit=10)
-note = collection.reader.read("Journal/note.md")
+results = vault.reader.search("query text", limit=10)
+note = vault.reader.read("Journal/note.md")
 
 # Writer facet — write / edit / delete / rename / attachments
-collection.writer.write("Journal/new.md", "# New note")
+vault.writer.write("Journal/new.md", "# New note")
 
 # Graph facet — backlinks / outlinks / orphans / paths
-backlinks = collection.graph.get_backlinks("Journal/note.md")
+backlinks = vault.graph.get_backlinks("Journal/note.md")
 
 # Index facet — build / reindex / embeddings / readiness
-collection.index.reindex()
+vault.index.reindex()
 ```
 
 ## ReaderFacet

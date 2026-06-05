@@ -1,4 +1,4 @@
-"""Tests for link extraction, FTS storage, and Collection backlink/outlink API."""
+"""Tests for link extraction, FTS storage, and Vault backlink/outlink API."""
 
 from __future__ import annotations
 
@@ -8,7 +8,6 @@ from unittest.mock import patch
 
 import pytest
 
-from markdown_vault_mcp.collection import Collection
 from markdown_vault_mcp.fts_index import FTSIndex
 from markdown_vault_mcp.scanner import extract_links
 from markdown_vault_mcp.types import (
@@ -19,6 +18,7 @@ from markdown_vault_mcp.types import (
     OutlinkInfo,
     ParsedNote,
 )
+from markdown_vault_mcp.vault import Vault
 from tests.conftest import wait_for_writer_drain
 
 if TYPE_CHECKING:
@@ -674,13 +674,13 @@ class TestRawTargetInFTS:
 
 
 # ---------------------------------------------------------------------------
-# Collection: get_backlinks and get_outlinks
+# Vault: get_backlinks and get_outlinks
 # ---------------------------------------------------------------------------
 
 
 @pytest.fixture
 def linked_vault(tmp_path: Path) -> Path:
-    """Create a vault with interlinked notes for Collection integration tests.
+    """Create a vault with interlinked notes for Vault integration tests.
 
     Layout:
         index.md          links to notes/topic.md and notes/other.md
@@ -706,10 +706,10 @@ def linked_vault(tmp_path: Path) -> Path:
     return vault
 
 
-class TestCollectionBacklinks:
+class TestVaultBacklinks:
     def test_get_backlinks_returns_backlink_info(self, linked_vault: Path) -> None:
         """get_backlinks returns BacklinkInfo objects for documents linking to path."""
-        col = Collection(source_dir=linked_vault)
+        col = Vault(source_dir=linked_vault)
         col.index.build_index()
 
         backlinks = col.graph.get_backlinks("notes/topic.md")
@@ -721,7 +721,7 @@ class TestCollectionBacklinks:
 
     def test_get_backlinks_multiple_sources(self, linked_vault: Path) -> None:
         """Multiple documents linking to the same path all appear."""
-        col = Collection(source_dir=linked_vault)
+        col = Vault(source_dir=linked_vault)
         col.index.build_index()
 
         backlinks = col.graph.get_backlinks("notes/other.md")
@@ -731,7 +731,7 @@ class TestCollectionBacklinks:
 
     def test_get_backlinks_limit_caps_results(self, linked_vault: Path) -> None:
         """limit caps the number of backlinks (forwarded to LinkManager)."""
-        col = Collection(source_dir=linked_vault)
+        col = Vault(source_dir=linked_vault)
         col.index.build_index()
         try:
             assert len(col.graph.get_backlinks("notes/other.md")) == 2
@@ -741,7 +741,7 @@ class TestCollectionBacklinks:
 
     def test_get_backlinks_limit_boundary_values(self, linked_vault: Path) -> None:
         """limit forwards verbatim to SQL: 0 yields none, negative yields all."""
-        col = Collection(source_dir=linked_vault)
+        col = Vault(source_dir=linked_vault)
         col.index.build_index()
         try:
             assert col.graph.get_backlinks("notes/other.md", limit=0) == []
@@ -751,7 +751,7 @@ class TestCollectionBacklinks:
 
     def test_get_backlinks_empty_for_unlinked_doc(self, linked_vault: Path) -> None:
         """Document with no inbound links returns empty list."""
-        col = Collection(source_dir=linked_vault)
+        col = Vault(source_dir=linked_vault)
         col.index.build_index()
 
         backlinks = col.graph.get_backlinks("index.md")
@@ -762,17 +762,17 @@ class TestCollectionBacklinks:
 
     def test_get_backlinks_path_traversal_rejected(self, linked_vault: Path) -> None:
         """Path traversal in get_backlinks raises ValueError."""
-        col = Collection(source_dir=linked_vault)
+        col = Vault(source_dir=linked_vault)
         col.index.build_index()
 
         with pytest.raises(ValueError):
             col.graph.get_backlinks("../etc/passwd")
 
 
-class TestCollectionOutlinks:
+class TestVaultOutlinks:
     def test_get_outlinks_returns_outlink_info(self, linked_vault: Path) -> None:
         """get_outlinks returns OutlinkInfo objects for links from a document."""
-        col = Collection(source_dir=linked_vault)
+        col = Vault(source_dir=linked_vault)
         col.index.build_index()
 
         outlinks = col.graph.get_outlinks("index.md")
@@ -784,7 +784,7 @@ class TestCollectionOutlinks:
 
     def test_get_outlinks_limit_caps_results(self, linked_vault: Path) -> None:
         """limit caps the number of outlinks (forwarded to LinkManager)."""
-        col = Collection(source_dir=linked_vault)
+        col = Vault(source_dir=linked_vault)
         col.index.build_index()
         try:
             assert len(col.graph.get_outlinks("index.md")) == 2
@@ -794,7 +794,7 @@ class TestCollectionOutlinks:
 
     def test_get_outlinks_limit_boundary_values(self, linked_vault: Path) -> None:
         """limit forwards verbatim to SQL: 0 yields none, negative yields all."""
-        col = Collection(source_dir=linked_vault)
+        col = Vault(source_dir=linked_vault)
         col.index.build_index()
         try:
             assert col.graph.get_outlinks("index.md", limit=0) == []
@@ -804,7 +804,7 @@ class TestCollectionOutlinks:
 
     def test_get_outlinks_exists_flag(self, linked_vault: Path) -> None:
         """OutlinkInfo.exists is True when target is indexed, False otherwise."""
-        col = Collection(source_dir=linked_vault)
+        col = Vault(source_dir=linked_vault)
         col.index.build_index()
 
         outlinks = col.graph.get_outlinks("index.md")
@@ -820,7 +820,7 @@ class TestCollectionOutlinks:
             "# Source\n\nSee [Ghost](ghost.md).\n",
             encoding="utf-8",
         )
-        col = Collection(source_dir=vault)
+        col = Vault(source_dir=vault)
         col.index.build_index()
 
         outlinks = col.graph.get_outlinks("source.md")
@@ -830,7 +830,7 @@ class TestCollectionOutlinks:
 
     def test_get_outlinks_empty_for_no_links_doc(self, linked_vault: Path) -> None:
         """Document with no outbound links returns empty list."""
-        col = Collection(source_dir=linked_vault)
+        col = Vault(source_dir=linked_vault)
         col.index.build_index()
 
         outlinks = col.graph.get_outlinks("notes/other.md")
@@ -838,7 +838,7 @@ class TestCollectionOutlinks:
 
     def test_get_outlinks_path_traversal_rejected(self, linked_vault: Path) -> None:
         """Path traversal in get_outlinks raises ValueError."""
-        col = Collection(source_dir=linked_vault)
+        col = Vault(source_dir=linked_vault)
         col.index.build_index()
 
         with pytest.raises(ValueError):
@@ -921,7 +921,7 @@ class TestLinkLimitSQL:
         assert len(idx.get_outlinks("source.md")) == 5
 
 
-class TestCollectionReindex:
+class TestVaultReindex:
     def test_reindex_updates_links(self, tmp_path: Path) -> None:
         """reindex() refreshes link data for modified documents."""
         vault = tmp_path / "vault"
@@ -930,7 +930,7 @@ class TestCollectionReindex:
             "# Source\n\nSee [Old](old.md).\n",
             encoding="utf-8",
         )
-        col = Collection(source_dir=vault)
+        col = Vault(source_dir=vault)
         col.index.build_index()
 
         assert len(col.graph.get_outlinks("source.md")) == 1
@@ -956,7 +956,7 @@ class TestCollectionReindex:
             encoding="utf-8",
         )
         (vault / "other.md").write_text("# Other\n", encoding="utf-8")
-        col = Collection(source_dir=vault)
+        col = Vault(source_dir=vault)
         col.index.build_index()
 
         assert len(col.graph.get_backlinks("other.md")) == 1
@@ -1015,7 +1015,7 @@ class TestParsedNoteDefault:
 # ---------------------------------------------------------------------------
 
 
-class TestCollectionGetContext:
+class TestVaultGetContext:
     """Tests for ReaderFacet.get_context(), including graceful degradation."""
 
     @pytest.fixture
@@ -1044,14 +1044,14 @@ class TestCollectionGetContext:
 
     def test_get_context_returns_note_context(self, context_vault: Path) -> None:
         """get_context returns a NoteContext instance."""
-        col = Collection(source_dir=context_vault)
+        col = Vault(source_dir=context_vault)
         col.index.build_index()
         result = col.reader.get_context("index.md")
         assert isinstance(result, NoteContext)
 
     def test_get_context_basic_fields(self, context_vault: Path) -> None:
         """get_context populates path, title, folder, frontmatter, modified_at."""
-        col = Collection(source_dir=context_vault)
+        col = Vault(source_dir=context_vault)
         col.index.build_index()
         result = col.reader.get_context("index.md")
         assert result.path == "index.md"
@@ -1063,7 +1063,7 @@ class TestCollectionGetContext:
 
     def test_get_context_backlinks(self, context_vault: Path) -> None:
         """get_context includes backlinks for a well-linked note."""
-        col = Collection(source_dir=context_vault)
+        col = Vault(source_dir=context_vault)
         col.index.build_index()
         result = col.reader.get_context("notes/topic.md")
         sources = [b.source_path for b in result.backlinks]
@@ -1071,7 +1071,7 @@ class TestCollectionGetContext:
 
     def test_get_context_outlinks(self, context_vault: Path) -> None:
         """get_context includes outlinks from a note."""
-        col = Collection(source_dir=context_vault)
+        col = Vault(source_dir=context_vault)
         col.index.build_index()
         result = col.reader.get_context("index.md")
         targets = [o.target_path for o in result.outlinks]
@@ -1079,7 +1079,7 @@ class TestCollectionGetContext:
 
     def test_get_context_folder_notes_excludes_self(self, context_vault: Path) -> None:
         """folder_notes does not include the document itself."""
-        col = Collection(source_dir=context_vault)
+        col = Vault(source_dir=context_vault)
         col.index.build_index()
         result = col.reader.get_context("notes/topic.md")
         assert "notes/topic.md" not in result.folder_notes
@@ -1087,7 +1087,7 @@ class TestCollectionGetContext:
 
     def test_get_context_root_folder_notes(self, context_vault: Path) -> None:
         """Root-level documents see other root-level docs as folder peers."""
-        col = Collection(source_dir=context_vault)
+        col = Vault(source_dir=context_vault)
         col.index.build_index()
         result = col.reader.get_context("index.md")
         assert "index.md" not in result.folder_notes
@@ -1097,7 +1097,7 @@ class TestCollectionGetContext:
         self, context_vault: Path
     ) -> None:
         """similar is empty when no embedding provider is configured."""
-        col = Collection(source_dir=context_vault)
+        col = Vault(source_dir=context_vault)
         col.index.build_index()
         result = col.reader.get_context("index.md")
         assert result.similar == []
@@ -1106,7 +1106,7 @@ class TestCollectionGetContext:
         self, context_vault: Path
     ) -> None:
         """backlinks and outlinks are empty when the links table methods raise."""
-        col = Collection(source_dir=context_vault)
+        col = Vault(source_dir=context_vault)
         col.index.build_index()
 
         # Simulate missing links table by making FTS methods raise OperationalError.
@@ -1122,14 +1122,14 @@ class TestCollectionGetContext:
 
     def test_get_context_raises_for_nonexistent_path(self, context_vault: Path) -> None:
         """get_context raises ValueError when the path is not indexed."""
-        col = Collection(source_dir=context_vault)
+        col = Vault(source_dir=context_vault)
         col.index.build_index()
         with pytest.raises(ValueError, match="Document not found"):
             col.reader.get_context("nonexistent.md")
 
     def test_get_context_link_limit_caps_results(self, context_vault: Path) -> None:
         """link_limit caps backlinks and outlinks lists."""
-        col = Collection(source_dir=context_vault)
+        col = Vault(source_dir=context_vault)
         col.index.build_index()
         result = col.reader.get_context("notes/topic.md", link_limit=0)
         assert result.backlinks == []
@@ -1191,7 +1191,7 @@ class TestRenameUpdateLinks:
         self, rename_vault: Path
     ) -> None:
         """update_links=False (default): source files are not modified."""
-        col = Collection(source_dir=rename_vault, read_only=False)
+        col = Vault(source_dir=rename_vault, read_only=False)
         col.index.build_index()
 
         result = col.writer.rename("target.md", "renamed.md")
@@ -1203,7 +1203,7 @@ class TestRenameUpdateLinks:
 
     def test_update_links_markdown_link(self, rename_vault: Path) -> None:
         """Markdown link [text](target.md) is updated to new_path."""
-        col = Collection(source_dir=rename_vault, read_only=False)
+        col = Vault(source_dir=rename_vault, read_only=False)
         col.index.build_index()
 
         result = col.writer.rename("target.md", "renamed.md", update_links=True)
@@ -1216,7 +1216,7 @@ class TestRenameUpdateLinks:
 
     def test_update_links_wikilink(self, rename_vault: Path) -> None:
         """Wikilink [[target]] is updated to [[renamed]]."""
-        col = Collection(source_dir=rename_vault, read_only=False)
+        col = Vault(source_dir=rename_vault, read_only=False)
         col.index.build_index()
 
         col.writer.rename("target.md", "renamed.md", update_links=True)
@@ -1227,7 +1227,7 @@ class TestRenameUpdateLinks:
 
     def test_update_links_wikilink_preserves_alias(self, rename_vault: Path) -> None:
         """Wikilink [[target|alias]] becomes [[renamed|alias]]."""
-        col = Collection(source_dir=rename_vault, read_only=False)
+        col = Vault(source_dir=rename_vault, read_only=False)
         col.index.build_index()
 
         col.writer.rename("target.md", "renamed.md", update_links=True)
@@ -1238,7 +1238,7 @@ class TestRenameUpdateLinks:
 
     def test_update_links_reference_link(self, rename_vault: Path) -> None:
         """Reference definition [ref]: target.md is updated."""
-        col = Collection(source_dir=rename_vault, read_only=False)
+        col = Vault(source_dir=rename_vault, read_only=False)
         col.index.build_index()
 
         col.writer.rename("target.md", "renamed.md", update_links=True)
@@ -1249,7 +1249,7 @@ class TestRenameUpdateLinks:
 
     def test_update_links_fragment_preserved(self, rename_vault: Path) -> None:
         """Fragment in markdown link is preserved after rename."""
-        col = Collection(source_dir=rename_vault, read_only=False)
+        col = Vault(source_dir=rename_vault, read_only=False)
         col.index.build_index()
 
         col.writer.rename("target.md", "renamed.md", update_links=True)
@@ -1260,7 +1260,7 @@ class TestRenameUpdateLinks:
 
     def test_update_links_unrelated_file_not_modified(self, rename_vault: Path) -> None:
         """Files with no links to the renamed note are not modified."""
-        col = Collection(source_dir=rename_vault, read_only=False)
+        col = Vault(source_dir=rename_vault, read_only=False)
         col.index.build_index()
         original_mtime = (rename_vault / "no_links.md").stat().st_mtime
 
@@ -1270,7 +1270,7 @@ class TestRenameUpdateLinks:
 
     def test_update_links_updated_links_count(self, rename_vault: Path) -> None:
         """updated_links counts source documents successfully updated."""
-        col = Collection(source_dir=rename_vault, read_only=False)
+        col = Vault(source_dir=rename_vault, read_only=False)
         col.index.build_index()
 
         result = col.writer.rename("target.md", "renamed.md", update_links=True)
@@ -1286,7 +1286,7 @@ class TestRenameUpdateLinks:
         import contextlib
         from pathlib import Path as _Path
 
-        col = Collection(source_dir=rename_vault, read_only=False)
+        col = Vault(source_dir=rename_vault, read_only=False)
         col.index.build_index()
 
         linker_abs = str(rename_vault / "linker_md.md")
@@ -1311,7 +1311,7 @@ class TestRenameUpdateLinks:
 
     def test_update_links_wikilink_fragment_preserved(self, rename_vault: Path) -> None:
         """Wikilink with fragment [[target#heading]] becomes [[renamed#heading]]."""
-        col = Collection(source_dir=rename_vault, read_only=False)
+        col = Vault(source_dir=rename_vault, read_only=False)
         col.index.build_index()
 
         col.writer.rename("target.md", "renamed.md", update_links=True)
@@ -1326,7 +1326,7 @@ class TestRenameUpdateLinks:
         A file at subdir/linker_rel.md with [Target](../target.md) should
         become [Target](../renamed.md) — not the vault-absolute renamed.md.
         """
-        col = Collection(source_dir=rename_vault, read_only=False)
+        col = Vault(source_dir=rename_vault, read_only=False)
         col.index.build_index()
 
         col.writer.rename("target.md", "renamed.md", update_links=True)
@@ -1337,7 +1337,7 @@ class TestRenameUpdateLinks:
 
     def test_update_links_fts_reindexed_after_update(self, rename_vault: Path) -> None:
         """Updated source documents are re-indexed in FTS."""
-        col = Collection(source_dir=rename_vault, read_only=False)
+        col = Vault(source_dir=rename_vault, read_only=False)
         col.index.build_index()
 
         col.writer.rename("target.md", "renamed.md", update_links=True)
@@ -1354,7 +1354,7 @@ class TestRenameUpdateLinks:
         (rename_vault / "self_link.md").write_text(
             "# Self\n\nSee [Self](self_link.md) for more.\n"
         )
-        col = Collection(source_dir=rename_vault, read_only=False)
+        col = Vault(source_dir=rename_vault, read_only=False)
         col.index.build_index()
 
         col.writer.rename("self_link.md", "self_renamed.md", update_links=True)
@@ -1366,7 +1366,7 @@ class TestRenameUpdateLinks:
     def test_update_links_ignored_for_attachments(self, rename_vault: Path) -> None:
         """update_links=True is silently ignored when renaming a non-.md attachment."""
         (rename_vault / "image.png").write_bytes(b"\x89PNG\r\n")
-        col = Collection(
+        col = Vault(
             source_dir=rename_vault, read_only=False, attachment_extensions=["png"]
         )
         col.index.build_index()
@@ -1378,7 +1378,7 @@ class TestRenameUpdateLinks:
 
 
 # ---------------------------------------------------------------------------
-# CollectionStats: link counts
+# VaultStats: link counts
 # ---------------------------------------------------------------------------
 
 
@@ -1387,7 +1387,7 @@ class TestStatsLinkCounts:
 
     def test_link_count_reflects_total_links(self, linked_vault: Path) -> None:
         """link_count equals total rows in the links table."""
-        col = Collection(source_dir=linked_vault)
+        col = Vault(source_dir=linked_vault)
         col.index.build_index()
         s = col.reader.stats()
         # index.md → 2 links, notes/topic.md → 2 links, notes/other.md → 0
@@ -1395,7 +1395,7 @@ class TestStatsLinkCounts:
 
     def test_broken_link_count_zero_when_all_resolve(self, linked_vault: Path) -> None:
         """broken_link_count is 0 when every link target exists."""
-        col = Collection(source_dir=linked_vault)
+        col = Vault(source_dir=linked_vault)
         col.index.build_index()
         assert col.reader.stats().broken_link_count == 0
 
@@ -1409,7 +1409,7 @@ class TestStatsLinkCounts:
             "# Source\n\nSee [Ghost](ghost.md) and [Void](void.md).\n",
             encoding="utf-8",
         )
-        col = Collection(source_dir=vault)
+        col = Vault(source_dir=vault)
         col.index.build_index()
         assert col.reader.stats().broken_link_count == 2
 
@@ -1422,7 +1422,7 @@ class TestStatsLinkCounts:
         )
         (vault / "other.md").write_text("# Other\n", encoding="utf-8")
         (vault / "island.md").write_text("# Island\n\nNo links.\n", encoding="utf-8")
-        col = Collection(source_dir=vault)
+        col = Vault(source_dir=vault)
         col.index.build_index()
         # island.md has no links in or out; other.md has a backlink
         assert col.reader.stats().orphan_count == 1
@@ -1448,7 +1448,7 @@ class TestStatsLinkCounts:
 
 
 class TestResolveVaultWikilinks:
-    """FTSIndex.resolve_vault_wikilinks() and Collection integration tests."""
+    """FTSIndex.resolve_vault_wikilinks() and Vault integration tests."""
 
     def test_bare_wikilink_resolves_vault_wide(self, tmp_path: Path) -> None:
         """[[Note]] resolves to notes/Note.md anywhere in the vault."""
@@ -1461,7 +1461,7 @@ class TestResolveVaultWikilinks:
         (vault / "notes").mkdir()
         (vault / "notes" / "MyNote.md").write_text("# My Note\n", encoding="utf-8")
 
-        col = Collection(source_dir=vault)
+        col = Vault(source_dir=vault)
         col.index.build_index()
 
         # The wikilink must resolve to notes/MyNote.md, not journal/MyNote.md.
@@ -1486,7 +1486,7 @@ class TestResolveVaultWikilinks:
         (vault / "a" / "b").mkdir()
         (vault / "a" / "b" / "Note.md").write_text("# Note B\n", encoding="utf-8")
 
-        col = Collection(source_dir=vault)
+        col = Vault(source_dir=vault)
         col.index.build_index()
 
         outlinks = col.graph.get_outlinks("source.md")
@@ -1503,7 +1503,7 @@ class TestResolveVaultWikilinks:
             "# Source\n\nSee [[NonExistent]].\n", encoding="utf-8"
         )
 
-        col = Collection(source_dir=vault)
+        col = Vault(source_dir=vault)
         col.index.build_index()
 
         broken = col.graph.get_broken_links()
@@ -1524,7 +1524,7 @@ class TestResolveVaultWikilinks:
         (vault / "sub" / "folder").mkdir()
         (vault / "sub" / "folder" / "Note.md").write_text("# Note\n", encoding="utf-8")
 
-        col = Collection(source_dir=vault)
+        col = Vault(source_dir=vault)
         col.index.build_index()
 
         outlinks = col.graph.get_outlinks("source.md")
@@ -1541,7 +1541,7 @@ class TestResolveVaultWikilinks:
             "# Source\n\nSee [[Target]].\n", encoding="utf-8"
         )
 
-        col = Collection(source_dir=vault)
+        col = Vault(source_dir=vault)
         col.index.build_index()
 
         # Initially broken — Target.md does not exist.
@@ -1603,7 +1603,7 @@ class TestResolveVaultWikilinks:
         (vault / "notes").mkdir()
         (vault / "notes" / "Target.md").write_text("# Target\n", encoding="utf-8")
 
-        col = Collection(source_dir=vault)
+        col = Vault(source_dir=vault)
         col.index.build_index()
 
         # Initial state: link resolves to notes/Target.md.
@@ -1634,7 +1634,7 @@ class TestResolveVaultWikilinks:
         (vault / "sub").mkdir()
         (vault / "sub" / "Note.md").write_text("# Note in sub\n", encoding="utf-8")
 
-        col = Collection(source_dir=vault)
+        col = Vault(source_dir=vault)
         col.index.build_index()
 
         outlinks = col.graph.get_outlinks("source.md")
@@ -1649,7 +1649,7 @@ class TestResolveVaultWikilinks:
         (vault / "notes").mkdir()
         (vault / "notes" / "Target.md").write_text("# Target\n", encoding="utf-8")
 
-        col = Collection(source_dir=vault, read_only=False)
+        col = Vault(source_dir=vault, read_only=False)
         col.index.build_index()
 
         col.writer.write("source.md", "# Source\n\nSee [[Target]].\n")
@@ -1671,7 +1671,7 @@ class TestResolveVaultWikilinks:
         (vault / "notes").mkdir()
         (vault / "notes" / "Target.md").write_text("# Target\n", encoding="utf-8")
 
-        col = Collection(source_dir=vault, read_only=False)
+        col = Vault(source_dir=vault, read_only=False)
         col.index.build_index()
 
         col.writer.edit(
@@ -1702,7 +1702,7 @@ class TestResolveVaultWikilinks:
             "# Target deep\n", encoding="utf-8"
         )
 
-        col = Collection(source_dir=vault, read_only=False)
+        col = Vault(source_dir=vault, read_only=False)
         col.index.build_index()
 
         outlinks = col.graph.get_outlinks("source.md")
@@ -1726,7 +1726,7 @@ class TestResolveVaultWikilinks:
         )
         (vault / "Target.md").write_text("# Target\n", encoding="utf-8")
 
-        col = Collection(source_dir=vault, read_only=False)
+        col = Vault(source_dir=vault, read_only=False)
         col.index.build_index()
 
         # Initial: bare [[Target]] resolves to root-level Target.md.
@@ -1874,7 +1874,7 @@ class TestAliasResolution:
             encoding="utf-8",
         )
 
-        col = Collection(source_dir=vault)
+        col = Vault(source_dir=vault)
         col.index.build_index()
 
         broken = col.graph.get_broken_links()

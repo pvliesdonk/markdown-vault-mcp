@@ -234,7 +234,7 @@ Regardless of which provider you choose:
 !!! note "Large vaults"
     The initial embedding build uses two levels of batching to keep memory bounded:
 
-    1. **Collection level** — 64 chunks per provider call (`_EMBEDDING_BATCH_SIZE` in `collection.py`)
+    1. **Vault level** — 64 chunks per provider call (`_EMBEDDING_BATCH_SIZE` in `vault.py`)
     2. **ONNX level** (FastEmbed only) — 32 chunks per inference call (`_FASTEMBED_ONNX_BATCH_SIZE` in `providers.py`)
 
     The ONNX batch size is tuned for the default `BAAI/bge-small-en-v1.5` model (512-token context). ONNX self-attention scales as O(batch × seq_len²) in RAM; long-context models require a much smaller batch size to avoid OOM — see issue [#306](https://github.com/pvliesdonk/markdown-vault-mcp/issues/306).

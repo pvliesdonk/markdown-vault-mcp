@@ -1,6 +1,6 @@
 # markdown-vault-mcp
 
-A generic markdown collection [MCP](https://modelcontextprotocol.io/) server with FTS5 full-text search, semantic vector search, frontmatter-aware indexing, incremental reindexing, and non-markdown attachment support.
+A generic markdown vault [MCP](https://modelcontextprotocol.io/) server with FTS5 full-text search, semantic vector search, frontmatter-aware indexing, incremental reindexing, and non-markdown attachment support.
 
 Point it at a directory of Markdown files — an Obsidian vault, a docs folder, a Zettelkasten, a PARA vault — and it exposes search, read, write, and edit tools over the [Model Context Protocol](https://modelcontextprotocol.io/).
 
@@ -40,11 +40,11 @@ See [MCP Prompts](prompts.md) for the codified workflows and the ambient-pattern
 
 ```python
 from pathlib import Path
-from markdown_vault_mcp import Collection
+from markdown_vault_mcp import Vault
 
-collection = Collection(source_dir=Path("/path/to/vault"))
-collection.index.build_index()
-results = collection.reader.search("query text", limit=10)
+vault = Vault(source_dir=Path("/path/to/vault"))
+vault.index.build_index()
+results = vault.reader.search("query text", limit=10)
 ```
 
 ### As an MCP server
@@ -79,7 +79,7 @@ The library is fully synchronous — no asyncio in core modules. The MCP server 
 ┌──────────────┐
 │  MCP Server   │  ← FastMCP, asyncio.to_thread()
 ├──────────────┤
-│  Collection   │  ← Thin facade / public API
+│  Vault        │  ← Thin facade / public API
 ├──────────────┤
 │  Scanner      │  ← File discovery, frontmatter parsing, chunking
 │  FTS Index    │  ← SQLite FTS5, BM25 scoring

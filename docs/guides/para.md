@@ -3,7 +3,7 @@
 PARA (Projects, Areas, Resources, Archive) is Tiago Forte's framework for organizing digital information around action — what you are doing, responsible for, or referencing. Where a Zettelkasten is idea-centric and emergent, PARA is action-oriented and top-down: every note has a home determined by what you do with it. This guide shows how to use markdown-vault-mcp as a PARA backend, leveraging its frontmatter-aware search, linking, and templating to run the canonical Capture → Triage → Project Work → Weekly Review → Archive loop.
 
 !!! note
-    This is one of many ways to organize a vault with markdown-vault-mcp. The server is a generic markdown collection backend — PARA conventions are applied in this guide but not required or enforced by the server.
+    This is one of many ways to organize a vault with markdown-vault-mcp. The server is a generic markdown vault backend — PARA conventions are applied in this guide but not required or enforced by the server.
 
 This guide assumes you're working with a PARA vault through Claude (or another MCP client) as the primary interface. The four PARA prompts — capture-from-chats, triage, kickoff, and weekly review — are where most of the value lives; Claude handles surfacing, classification, and batch operations you'd otherwise skip or defer. The Python and CLI examples scattered throughout are the scripting escape hatch, not the day-to-day pattern.
 
@@ -110,14 +110,14 @@ Then you can run targeted queries via the Python API:
 
 ```python
 # All active projects
-results = collection.reader.search(
+results = vault.reader.search(
     "project",
     filters={"type": "project", "status": "active"},
     limit=50,
 )
 
 # All active projects in the Health area
-results = collection.reader.search(
+results = vault.reader.search(
     "project",
     filters={"type": "project", "status": "active", "area": "Health"},
     limit=50,
@@ -155,10 +155,10 @@ Use the create_from_template prompt with template_name="inbox"
 **Programmatically (scripting escape hatch):**
 
 ```python
-from markdown_vault_mcp import Collection
+from markdown_vault_mcp import Vault
 
-collection = Collection(source_dir="/path/to/vault")
-collection.writer.write(
+vault = Vault(source_dir="/path/to/vault")
+vault.writer.write(
     "0-Inbox/migrate-postgres.md",
     content="We should look into migrating to Postgres 16.",
     frontmatter={"tags": [], "created": "2026-04-19"},
@@ -261,21 +261,21 @@ For scripting outside the prompt:
 
 ```python
 from datetime import date
-from markdown_vault_mcp import Collection
+from markdown_vault_mcp import Vault
 
-collection = Collection(source_dir="/path/to/vault")
+vault = Vault(source_dir="/path/to/vault")
 
 today = date.today().isoformat()
 
 # Flip status and add archived_at. One targeted replacement each.
-collection.writer.edit(
+vault.writer.edit(
     "1-Projects/ship-v2.md",
     old_text="status: active",
     new_text=f"status: archived\narchived_at: {today}",
 )
 
 # Move to the archive folder, preserving backlinks.
-collection.writer.rename(
+vault.writer.rename(
     "1-Projects/ship-v2.md",
     "4-Archive/ship-v2.md",
     update_links=True,

@@ -705,7 +705,7 @@ def parse_note(
 
     Args:
         path: Absolute path to the markdown file.
-        source_dir: Root directory of the collection; used to derive the
+        source_dir: Root directory of the vault; used to derive the
             document's relative identity path.
         chunk_strategy: Chunking strategy to apply. Defaults to
             :class:`HeadingChunker`.

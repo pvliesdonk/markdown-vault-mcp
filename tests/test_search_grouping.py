@@ -7,9 +7,9 @@ import pytest
 from markdown_vault_mcp.types import GroupedResult
 
 
-def test_search_groups_same_file_chunks_under_one_result(populated_collection):
+def test_search_groups_same_file_chunks_under_one_result(populated_vault):
     """Two chunks of the same doc collapse into one GroupedResult."""
-    results = populated_collection.reader.search("foo", limit=10, chunks_per_file=3)
+    results = populated_vault.reader.search("foo", limit=10, chunks_per_file=3)
     paths = [r.path for r in results]
     assert len(paths) == len(set(paths)), f"duplicate paths in {paths}"
     assert all(isinstance(r, GroupedResult) for r in results)
@@ -18,6 +18,6 @@ def test_search_groups_same_file_chunks_under_one_result(populated_collection):
         assert r.score == max(s.score for s in r.sections)
 
 
-def test_search_chunks_per_file_rejects_zero(populated_collection):
+def test_search_chunks_per_file_rejects_zero(populated_vault):
     with pytest.raises(ValueError, match="chunks_per_file"):
-        populated_collection.reader.search("foo", limit=10, chunks_per_file=0)
+        populated_vault.reader.search("foo", limit=10, chunks_per_file=0)

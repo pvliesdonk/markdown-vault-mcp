@@ -1,4 +1,4 @@
-"""Tests for DocumentManager in isolation (no Collection dependency)."""
+"""Tests for DocumentManager in isolation (no Vault dependency)."""
 
 from __future__ import annotations
 
@@ -733,15 +733,15 @@ class TestReadNoteSizeGuard:
 
 
 # ---------------------------------------------------------------------------
-# Collection-level tests for the new mark_paths_dirty boundary (#559)
+# Vault-level tests for the new mark_paths_dirty boundary (#559)
 # ---------------------------------------------------------------------------
 
 
-def test_write_marks_path_dirty_via_collection(tmp_path: Path) -> None:
-    """Through Collection: write() routes FTS update via writer mark_dirty."""
-    from markdown_vault_mcp.collection import Collection
+def test_write_marks_path_dirty_via_vault(tmp_path: Path) -> None:
+    """Through Vault: write() routes FTS update via writer mark_dirty."""
+    from markdown_vault_mcp.vault import Vault
 
-    col = Collection(source_dir=tmp_path, read_only=False)
+    col = Vault(source_dir=tmp_path, read_only=False)
     try:
         col.index.build_index()
         # Freeze the writer so we can observe the dirty-mark pre-drain.

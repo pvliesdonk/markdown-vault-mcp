@@ -26,16 +26,16 @@ def test_all_exported_symbols_have_docstrings():
     assert not missing, f"Missing docstrings: {missing}"
 
 
-def test_collection_public_methods_have_docstrings():
-    """Every public Collection method must have a docstring."""
-    from markdown_vault_mcp.collection import Collection
+def test_vault_public_methods_have_docstrings():
+    """Every public Vault method must have a docstring."""
+    from markdown_vault_mcp.vault import Vault
 
     missing = [
         name
-        for name, member in _public_members(Collection)
+        for name, member in _public_members(Vault)
         if callable(member) and member.__doc__ is None
     ]
-    assert not missing, f"Collection methods missing docstrings: {missing}"
+    assert not missing, f"Vault methods missing docstrings: {missing}"
 
 
 def test_gitwritestrategy_public_methods_have_docstrings():

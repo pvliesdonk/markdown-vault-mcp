@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from markdown_vault_mcp.config import (
-    CollectionConfig,
+    VaultConfig,
     load_config,
 )
 from markdown_vault_mcp.config_sections import (
@@ -230,22 +230,22 @@ class TestLoadConfig:
         assert config.indexing.indexed_frontmatter_fields is None
 
 
-class TestToCollectionKwargs:
+class TestToVaultKwargs:
     def test_includes_exclude_patterns(self) -> None:
-        config = CollectionConfig(
+        config = VaultConfig(
             source_dir=Path("/tmp/vault"),
             indexing=IndexingConfig(exclude_patterns=[".obsidian/**"]),
         )
-        kwargs = config.to_collection_kwargs()
+        kwargs = config.to_vault_kwargs()
         assert kwargs["exclude_patterns"] == [".obsidian/**"]
         assert kwargs["source_dir"] == Path("/tmp/vault")
 
     def test_excludes_git_token(self) -> None:
-        config = CollectionConfig(
+        config = VaultConfig(
             source_dir=Path("/tmp/vault"),
             git=GitConfig(token="ghp_secret"),
         )
-        kwargs = config.to_collection_kwargs()
+        kwargs = config.to_vault_kwargs()
         assert "git_token" not in kwargs
 
     @pytest.mark.xfail(
@@ -255,8 +255,8 @@ class TestToCollectionKwargs:
         "in CI (#595)",
         strict=False,
     )
-    def test_includes_all_collection_params(self) -> None:
-        config = CollectionConfig(
+    def test_includes_all_vault_params(self) -> None:
+        config = VaultConfig(
             source_dir=Path("/tmp/vault"),
             read_only=False,
             indexing=IndexingConfig(
@@ -268,7 +268,7 @@ class TestToCollectionKwargs:
                 exclude_patterns=[".obsidian/**"],
             ),
         )
-        kwargs = config.to_collection_kwargs()
+        kwargs = config.to_vault_kwargs()
         assert kwargs["source_dir"] == Path("/tmp/vault")
         assert kwargs["read_only"] is False
         assert kwargs["index_path"] == Path("/tmp/index.db")
@@ -295,11 +295,11 @@ class TestToCollectionKwargs:
         source_dir = tmp_path / "vault"
         source_dir.mkdir()
 
-        config = CollectionConfig(
+        config = VaultConfig(
             source_dir=source_dir,
             git=GitConfig(repo_url=str(bare), token="ghp_secret", pull_interval_s=123),
         )
-        kwargs = config.to_collection_kwargs()
+        kwargs = config.to_vault_kwargs()
         assert kwargs["git_pull_interval_s"] == 123
         assert "git_strategy" in kwargs
         assert "on_write" in kwargs
@@ -366,31 +366,31 @@ class TestGitCommitterConfig:
         assert config.git.commit_email == "noreply@markdown-vault-mcp"
 
     def test_config_dataclass_defaults(self) -> None:
-        """CollectionConfig has correct default committer values."""
-        config = CollectionConfig(source_dir=Path("/tmp/vault"))
+        """VaultConfig has correct default committer values."""
+        config = VaultConfig(source_dir=Path("/tmp/vault"))
         assert config.git.commit_name == "markdown-vault-mcp"
         assert config.git.commit_email == "noreply@markdown-vault-mcp"
 
     def test_config_dataclass_custom_values(self) -> None:
-        """CollectionConfig accepts custom committer name and email."""
-        config = CollectionConfig(
+        """VaultConfig accepts custom committer name and email."""
+        config = VaultConfig(
             source_dir=Path("/tmp/vault"),
             git=GitConfig(commit_name="CI", commit_email="ci@example.com"),
         )
         assert config.git.commit_name == "CI"
         assert config.git.commit_email == "ci@example.com"
 
-    def test_to_collection_kwargs_includes_commit_identity(self) -> None:
-        """to_collection_kwargs() passes commit identity to GitWriteStrategy."""
+    def test_to_vault_kwargs_includes_commit_identity(self) -> None:
+        """to_vault_kwargs() passes commit identity to GitWriteStrategy."""
         from markdown_vault_mcp.git import GitWriteStrategy
 
-        config = CollectionConfig(
+        config = VaultConfig(
             source_dir=Path("/tmp/vault"),
             git=GitConfig(
                 token="ghp_test", commit_name="TestBot", commit_email="test@example.com"
             ),
         )
-        kwargs = config.to_collection_kwargs()
+        kwargs = config.to_vault_kwargs()
 
         assert "on_write" in kwargs
         strategy = kwargs["on_write"]
@@ -399,15 +399,15 @@ class TestGitCommitterConfig:
         assert strategy._commit_name == "TestBot"
         assert strategy._commit_email == "test@example.com"
 
-    def test_to_collection_kwargs_with_default_identity(self) -> None:
-        """to_collection_kwargs() uses defaults when no custom identity is set."""
+    def test_to_vault_kwargs_with_default_identity(self) -> None:
+        """to_vault_kwargs() uses defaults when no custom identity is set."""
         from markdown_vault_mcp.git import GitWriteStrategy
 
-        config = CollectionConfig(
+        config = VaultConfig(
             source_dir=Path("/tmp/vault"),
             git=GitConfig(token="ghp_test"),
         )
-        kwargs = config.to_collection_kwargs()
+        kwargs = config.to_vault_kwargs()
 
         strategy = kwargs["on_write"]
         assert isinstance(strategy, GitWriteStrategy)
@@ -499,15 +499,15 @@ class TestAttachmentConfig:
         config = load_config()
         assert config.content.max_attachment_size_mb == 1.0
 
-    def test_attachment_config_passed_through_to_collection_kwargs(
+    def test_attachment_config_passed_through_to_vault_kwargs(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """to_collection_kwargs() includes attachment_extensions and max_attachment_size_mb."""
+        """to_vault_kwargs() includes attachment_extensions and max_attachment_size_mb."""
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS", "pdf,png")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB", "5.0")
         config = load_config()
-        kwargs = config.to_collection_kwargs()
+        kwargs = config.to_vault_kwargs()
         assert kwargs["attachment_extensions"] == ["pdf", "png"]
         assert kwargs["max_attachment_size_mb"] == 5.0
 
@@ -537,44 +537,44 @@ class TestGitLfsConfig:
         assert config.git.lfs is True
 
     def test_git_lfs_passed_to_strategy(self, tmp_path: Path) -> None:
-        """to_collection_kwargs() passes git_lfs to GitWriteStrategy."""
+        """to_vault_kwargs() passes git_lfs to GitWriteStrategy."""
         from markdown_vault_mcp.git import GitWriteStrategy
 
-        config = CollectionConfig(
+        config = VaultConfig(
             source_dir=tmp_path,
             git=GitConfig(token="ghp_test", lfs=False),
         )
-        kwargs = config.to_collection_kwargs()
+        kwargs = config.to_vault_kwargs()
         strategy = kwargs["on_write"]
         assert isinstance(strategy, GitWriteStrategy)
         assert strategy._git_lfs is False
 
     def test_git_lfs_default_true_in_strategy(self, tmp_path: Path) -> None:
-        """to_collection_kwargs() passes git_lfs=True to strategy by default."""
+        """to_vault_kwargs() passes git_lfs=True to strategy by default."""
         from markdown_vault_mcp.git import GitWriteStrategy
 
-        config = CollectionConfig(
+        config = VaultConfig(
             source_dir=tmp_path,
             git=GitConfig(token="ghp_test"),
         )
-        kwargs = config.to_collection_kwargs()
+        kwargs = config.to_vault_kwargs()
         strategy = kwargs["on_write"]
         assert isinstance(strategy, GitWriteStrategy)
         assert strategy._git_lfs is True
 
 
-class TestCollectionConfigDefaults:
-    """Verify all new fields on CollectionConfig have correct defaults."""
+class TestVaultConfigDefaults:
+    """Verify all new fields on VaultConfig have correct defaults."""
 
     def test_server_identity_defaults(self) -> None:
         """Server name defaults to 'markdown-vault-mcp', instructions to None."""
-        config = CollectionConfig(source_dir=Path("/tmp/vault"))
+        config = VaultConfig(source_dir=Path("/tmp/vault"))
         assert config.server_name == "markdown-vault-mcp"
         assert config.instructions is None
 
     def test_embedding_provider_defaults(self) -> None:
         """Embedding fields have correct defaults."""
-        config = CollectionConfig(source_dir=Path("/tmp/vault"))
+        config = VaultConfig(source_dir=Path("/tmp/vault"))
         assert config.embeddings.provider is None
         assert config.embeddings.ollama_host == "http://localhost:11434"
         assert config.embeddings.ollama_model == "nomic-embed-text"
@@ -586,8 +586,8 @@ class TestCollectionConfigDefaults:
         assert config.embeddings.fastembed_cache_dir is None
 
     def test_custom_values_accepted(self) -> None:
-        """CollectionConfig accepts custom values for all new fields."""
-        config = CollectionConfig(
+        """VaultConfig accepts custom values for all new fields."""
+        config = VaultConfig(
             source_dir=Path("/tmp/vault"),
             server_name="my-server",
             instructions="Be helpful",
@@ -911,12 +911,12 @@ class TestEmptyBoolEnvVarsFallToDefault:
 
 
 class TestServerConfigComposition:
-    """The composed ServerConfig field on CollectionConfig."""
+    """The composed ServerConfig field on VaultConfig."""
 
     def test_server_field_default_is_empty_serverconfig(self) -> None:
         from fastmcp_pvl_core import ServerConfig
 
-        config = CollectionConfig(source_dir=Path("/tmp/v"))
+        config = VaultConfig(source_dir=Path("/tmp/v"))
         assert isinstance(config.server, ServerConfig)
         # Defaults match ServerConfig dataclass defaults
         assert config.server.transport == "stdio"

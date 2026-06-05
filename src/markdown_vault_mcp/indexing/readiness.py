@@ -1,7 +1,7 @@
 """Build-readiness state machine for the index coordinator.
 
 Encapsulates the (_index_built, done-event, error) triple that was
-formerly scattered across Collection. Sole owner: IndexWriteCoordinator.
+formerly scattered across Vault. Sole owner: IndexWriteCoordinator.
 
 Invariant: a captured build error never gates queryability —
 ``is_queryable`` ignores it, ``wait`` does not raise on it,
@@ -23,13 +23,13 @@ class ReadinessState:
 
     def __init__(self) -> None:
         self._index_built = False
-        # Pre-set: a freshly constructed collection that never called
+        # Pre-set: a freshly constructed vault that never called
         # build_index() must not look "building" forever to waiters.
         self._done = threading.Event()
         self._done.set()
         self._error: BaseException | None = None
 
-    # -- transitions (each mirrors one former Collection mutation set) --
+    # -- transitions (each mirrors one former Vault mutation set) --
 
     def begin_sync_build(self) -> None:
         """Sync build_index cold path: clears built + error + done (#587)."""

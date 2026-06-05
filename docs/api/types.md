@@ -1,6 +1,6 @@
 # Types
 
-All data types returned by the `Collection` API are importable from the top-level `markdown_vault_mcp` package.
+All data types returned by the `Vault` API are importable from the top-level `markdown_vault_mcp` package.
 
 ```python
 from markdown_vault_mcp import NoteContent, GroupedResult, SectionHit, NoteContext
@@ -52,7 +52,7 @@ from markdown_vault_mcp import NoteContent, GroupedResult, SectionHit, NoteConte
 
 ::: markdown_vault_mcp.types.ReindexResult
 
-::: markdown_vault_mcp.types.CollectionStats
+::: markdown_vault_mcp.types.VaultStats
 
 ::: markdown_vault_mcp.types.ChangeSet
 
@@ -72,7 +72,7 @@ from markdown_vault_mcp import NoteContent, GroupedResult, SectionHit, NoteConte
 
 **`WriteCallback`**
 
-Type alias for the `on_write` callback passed to `Collection`. Called after each successful write operation (write, edit, delete, rename).
+Type alias for the `on_write` callback passed to `Vault`. Called after each successful write operation (write, edit, delete, rename).
 
 ```python
 WriteCallback = Callable[[Path, str, Literal["write", "edit", "delete", "rename"]], None]

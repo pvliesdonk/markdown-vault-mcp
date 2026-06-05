@@ -65,7 +65,7 @@ class ChangeTracker:
         5. Return a :class:`~markdown_vault_mcp.types.ChangeSet`.
 
         Args:
-            source_dir: Root directory of the markdown collection.
+            source_dir: Root directory of the markdown vault.
             glob_pattern: Glob pattern used to discover files, relative to
                 *source_dir*. Defaults to ``"**/*.md"``.
 

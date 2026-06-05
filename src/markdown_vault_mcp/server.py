@@ -1,8 +1,8 @@
-"""Generic FastMCP server for markdown collections.
+"""Generic FastMCP server for markdown vaults.
 
-Exposes :class:`~markdown_vault_mcp.collection.Collection` methods as MCP tools
+Exposes :class:`~markdown_vault_mcp.vault.Vault` methods as MCP tools
 with proper ``ToolAnnotations``.  Uses a lifespan hook to build the
-``Collection`` once at startup and tear it down on shutdown.
+``Vault`` once at startup and tear it down on shutdown.
 
 The server is configured entirely via environment variables (see
 :mod:`markdown_vault_mcp.config`).  Call :func:`make_server` to build a
@@ -41,7 +41,7 @@ from markdown_vault_mcp.config import (
 
 from ._icons import _SERVER_ICON
 from ._server_apps import register_apps
-from ._server_deps import make_collection_lifespan
+from ._server_deps import make_vault_lifespan
 from ._server_prompts import register_prompts
 from ._server_resources import register_resources
 from ._server_tools import register_tools
@@ -83,7 +83,7 @@ def _build_default_instructions(*, read_only: bool) -> str:
     read-only/read-write line and operator override hint.
     """
     prelude = (
-        "A searchable markdown document collection. "
+        "A searchable markdown document vault. "
         "Paths are always relative (e.g. 'Journal/note.md')."
     )
     write_guidance = (
@@ -180,7 +180,7 @@ def make_server(transport: str = "stdio") -> FastMCP:
         server_name,
         instructions=instructions,
         icons=_SERVER_ICON,
-        lifespan=make_collection_lifespan(config),
+        lifespan=make_vault_lifespan(config),
         auth=auth,
     )
 
@@ -261,13 +261,13 @@ def make_server(transport: str = "stdio") -> FastMCP:
     # is hidden if either condition fires (set-union on disabled tags).
     #
     # Check the config directly rather than constructing a strategy via
-    # ``config.to_collection_kwargs()`` — that call builds an embedding
+    # ``config.to_vault_kwargs()`` — that call builds an embedding
     # provider (slow, GBs of memory) and may run ``git clone`` as a side
     # effect.  The runtime check inside the ``git_sync`` tool body
     # (``isinstance(strategy, GitWriteStrategy) and strategy._managed``)
     # stays aligned with this gate via the same ``config.git.repo_url``
     # value: managed mode requires an explicit remote URL.  See #220 for
-    # the broader cleanup of duplicate ``to_collection_kwargs`` calls.
+    # the broader cleanup of duplicate ``to_vault_kwargs`` calls.
     if config.git.repo_url is None:
         mcp.disable(tags={"git-managed"})
 

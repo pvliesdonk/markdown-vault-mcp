@@ -7,8 +7,8 @@ Failure modes covered:
 - push + HEAD advances → force_pull + reindex
 - push + already up-to-date → no reindex
 - push + force_pull applied=False → 503 retry (GitHub retries transient failures)
-- push + collection not queryable → 200, pull runs, reindex skipped
-- push + collection singleton not initialized → 503 retry
+- push + vault not queryable → 200, pull runs, reindex skipped
+- push + vault singleton not initialized → 503 retry
 - push + reindex raises → 200 (reindex failure is logged, not surfaced to GitHub)
 - push + no git strategy → 200 graceful no-op
 """
@@ -30,8 +30,8 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 from markdown_vault_mcp._github_webhook import _verify_signature, make_webhook_handler
-from markdown_vault_mcp.collection import Collection
 from markdown_vault_mcp.git import PullResult
+from markdown_vault_mcp.vault import Vault
 
 SECRET = "test-webhook-secret-xyz"
 
@@ -67,7 +67,7 @@ def _pull_result(*, from_sha: str, to_sha: str, applied: bool = True) -> PullRes
     )
 
 
-def _mock_collection(
+def _mock_vault(
     *, queryable: bool = True, pull_result: PullResult | None = None
 ) -> MagicMock:
     col = MagicMock()
@@ -170,9 +170,7 @@ def test_webhook_rejects_tampered_body():
 def test_webhook_ping_returns_200_without_pull():
     client = _make_client()
     body = json.dumps({"zen": "Keep it logically awesome."}).encode()
-    with patch(
-        "markdown_vault_mcp._github_webhook.get_collection_singleton"
-    ) as mock_get:
+    with patch("markdown_vault_mcp._github_webhook.get_vault_singleton") as mock_get:
         resp = client.post(
             "/github-webhook",
             content=body,
@@ -196,9 +194,7 @@ def test_webhook_ping_returns_200_without_pull():
 def test_webhook_ignores_non_push_events(event: str):
     client = _make_client()
     body = json.dumps({"action": "opened"}).encode()
-    with patch(
-        "markdown_vault_mcp._github_webhook.get_collection_singleton"
-    ) as mock_get:
+    with patch("markdown_vault_mcp._github_webhook.get_vault_singleton") as mock_get:
         resp = client.post(
             "/github-webhook",
             content=body,
@@ -220,11 +216,11 @@ def test_webhook_ignores_non_push_events(event: str):
 
 def test_webhook_push_triggers_pull_and_reindex():
     """Valid push with HEAD advancing calls force_pull then reindex."""
-    col = _mock_collection(pull_result=_pull_result(from_sha="aaa", to_sha="bbb"))
+    col = _mock_vault(pull_result=_pull_result(from_sha="aaa", to_sha="bbb"))
     client = _make_client()
     body = _push_body()
     with patch(
-        "markdown_vault_mcp._github_webhook.get_collection_singleton", return_value=col
+        "markdown_vault_mcp._github_webhook.get_vault_singleton", return_value=col
     ):
         resp = client.post(
             "/github-webhook",
@@ -243,11 +239,11 @@ def test_webhook_push_triggers_pull_and_reindex():
 
 def test_webhook_push_skips_reindex_when_already_up_to_date():
     """Remote already matches local HEAD — no reindex needed."""
-    col = _mock_collection(pull_result=_pull_result(from_sha="aaa", to_sha="aaa"))
+    col = _mock_vault(pull_result=_pull_result(from_sha="aaa", to_sha="aaa"))
     client = _make_client()
     body = _push_body()
     with patch(
-        "markdown_vault_mcp._github_webhook.get_collection_singleton", return_value=col
+        "markdown_vault_mcp._github_webhook.get_vault_singleton", return_value=col
     ):
         resp = client.post(
             "/github-webhook",
@@ -265,13 +261,13 @@ def test_webhook_push_skips_reindex_when_already_up_to_date():
 
 def test_webhook_push_returns_503_when_pull_fails():
     """force_pull applied=False → 503 so GitHub retries transient failures."""
-    col = _mock_collection(
+    col = _mock_vault(
         pull_result=_pull_result(from_sha="aaa", to_sha="aaa", applied=False)
     )
     client = _make_client()
     body = _push_body()
     with patch(
-        "markdown_vault_mcp._github_webhook.get_collection_singleton", return_value=col
+        "markdown_vault_mcp._github_webhook.get_vault_singleton", return_value=col
     ):
         resp = client.post(
             "/github-webhook",
@@ -289,14 +285,14 @@ def test_webhook_push_returns_503_when_pull_fails():
 
 def test_webhook_push_runs_pull_but_skips_reindex_when_not_queryable():
     """Cold start — force_pull runs (pure git, no FTS dependency) but reindex is skipped."""
-    col = _mock_collection(
+    col = _mock_vault(
         queryable=False,
         pull_result=_pull_result(from_sha="aaa", to_sha="bbb"),
     )
     client = _make_client()
     body = _push_body()
     with patch(
-        "markdown_vault_mcp._github_webhook.get_collection_singleton", return_value=col
+        "markdown_vault_mcp._github_webhook.get_vault_singleton", return_value=col
     ):
         resp = client.post(
             "/github-webhook",
@@ -318,7 +314,7 @@ def test_webhook_push_returns_503_when_singleton_not_initialized():
     client = _make_client()
     body = _push_body()
     with patch(
-        "markdown_vault_mcp._github_webhook.get_collection_singleton",
+        "markdown_vault_mcp._github_webhook.get_vault_singleton",
         side_effect=RuntimeError("not initialized"),
     ):
         resp = client.post(
@@ -335,13 +331,13 @@ def test_webhook_push_returns_503_when_singleton_not_initialized():
 
 
 def test_webhook_push_no_git_strategy_returns_200():
-    """Collection has no git strategy — force_pull returns None; graceful no-op."""
-    col = _mock_collection()
+    """Vault has no git strategy — force_pull returns None; graceful no-op."""
+    col = _mock_vault()
     col.force_pull.return_value = None  # no git strategy
     client = _make_client()
     body = _push_body()
     with patch(
-        "markdown_vault_mcp._github_webhook.get_collection_singleton", return_value=col
+        "markdown_vault_mcp._github_webhook.get_vault_singleton", return_value=col
     ):
         resp = client.post(
             "/github-webhook",
@@ -358,12 +354,12 @@ def test_webhook_push_no_git_strategy_returns_200():
 
 def test_webhook_push_reindex_failure_does_not_propagate_to_github():
     """Reindex error is logged but webhook returns 200 so GitHub doesn't retry."""
-    col = _mock_collection(pull_result=_pull_result(from_sha="aaa", to_sha="bbb"))
+    col = _mock_vault(pull_result=_pull_result(from_sha="aaa", to_sha="bbb"))
     col.index.reindex.side_effect = Exception("disk full")
     client = _make_client()
     body = _push_body()
     with patch(
-        "markdown_vault_mcp._github_webhook.get_collection_singleton", return_value=col
+        "markdown_vault_mcp._github_webhook.get_vault_singleton", return_value=col
     ):
         resp = client.post(
             "/github-webhook",
@@ -379,23 +375,23 @@ def test_webhook_push_reindex_failure_does_not_propagate_to_github():
 
 
 # ---------------------------------------------------------------------------
-# Collection.force_pull — unit tests for the new public facade
+# Vault.force_pull — unit tests for the new public facade
 # ---------------------------------------------------------------------------
 
 
-def test_collection_force_pull_returns_none_without_git_strategy(
+def test_vault_force_pull_returns_none_without_git_strategy(
     tmp_path: Path,
 ) -> None:
-    """Collection with no git strategy returns None."""
+    """Vault with no git strategy returns None."""
 
     vault = tmp_path / "vault"
     vault.mkdir()
-    col = Collection(source_dir=vault)
+    col = Vault(source_dir=vault)
     assert col.force_pull() is None
 
 
-def test_collection_force_pull_delegates_to_strategy(tmp_path: Path) -> None:
-    """Collection with a git strategy calls strategy.force_pull() and returns its result."""
+def test_vault_force_pull_delegates_to_strategy(tmp_path: Path) -> None:
+    """Vault with a git strategy calls strategy.force_pull() and returns its result."""
 
     vault = tmp_path / "vault"
     vault.mkdir()
@@ -408,13 +404,13 @@ def test_collection_force_pull_delegates_to_strategy(tmp_path: Path) -> None:
     )
     mock_strategy = MagicMock()
     mock_strategy.force_pull.return_value = expected
-    col = Collection(source_dir=vault, git_strategy=mock_strategy)
+    col = Vault(source_dir=vault, git_strategy=mock_strategy)
     result = col.force_pull()
     assert result is expected
     mock_strategy.force_pull.assert_called_once_with()
 
 
-def test_collection_force_pull_acquires_pause_writes(tmp_path: Path) -> None:
+def test_vault_force_pull_acquires_pause_writes(tmp_path: Path) -> None:
     """force_pull holds pause_writes for the duration of the git strategy call."""
     from contextlib import contextmanager
 
@@ -425,7 +421,7 @@ def test_collection_force_pull_acquires_pause_writes(tmp_path: Path) -> None:
         applied=True, fast_forward=True, commits_pulled=1, from_sha="aaa", to_sha="bbb"
     )
     mock_strategy = MagicMock()
-    col = Collection(source_dir=vault, git_strategy=mock_strategy)
+    col = Vault(source_dir=vault, git_strategy=mock_strategy)
 
     call_order: list[str] = []
 

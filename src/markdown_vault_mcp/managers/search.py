@@ -24,12 +24,12 @@ from typing import TYPE_CHECKING, Any, Literal, Protocol, TypeVar
 from markdown_vault_mcp.types import (
     AttachmentInfo,
     BacklinkInfo,
-    CollectionStats,
     GroupedResult,
     NoteContext,
     NoteInfo,
     OutlinkInfo,
     SectionHit,
+    VaultStats,
 )
 from markdown_vault_mcp.utils import (
     effective_attachment_extensions,
@@ -506,7 +506,7 @@ class SearchManager:
         chunks_per_file: int | None = None,
         snippet_words: int | None = None,
     ) -> list[GroupedResult]:
-        """Search the collection.
+        """Search the vault.
 
         Args:
             query: Search string.
@@ -980,7 +980,7 @@ class SearchManager:
         pattern: str | None = None,
         include_attachments: bool = False,
     ) -> list[NoteInfo | AttachmentInfo]:
-        """List documents (and optionally attachments) in the collection.
+        """List documents (and optionally attachments) in the vault.
 
         Args:
             folder: If provided, only return documents in this folder (and
@@ -1074,10 +1074,10 @@ class SearchManager:
         return notes + attachments
 
     def list_folders(self) -> builtins.list[str]:
-        """Return all distinct folder values across the indexed collection.
+        """Return all distinct folder values across the indexed vault.
 
         Returns:
-            Sorted list of folder strings (``""`` for the collection root).
+            Sorted list of folder strings (``""`` for the vault root).
         """
         return self._fts.list_folders()
 
@@ -1094,11 +1094,11 @@ class SearchManager:
         """
         return self._fts.list_field_values(field)
 
-    def stats(self) -> CollectionStats:
-        """Return collection-wide statistics.
+    def stats(self) -> VaultStats:
+        """Return vault-wide statistics.
 
         Returns:
-            :class:`~markdown_vault_mcp.types.CollectionStats` snapshot.
+            :class:`~markdown_vault_mcp.types.VaultStats` snapshot.
         """
         rows = self._fts.list_notes()
         doc_count = len(rows)
@@ -1116,7 +1116,7 @@ class SearchManager:
         exts = self._effective_attachment_extensions()
         attachment_extensions = ["*"] if "*" in exts else sorted(exts)
 
-        return CollectionStats(
+        return VaultStats(
             document_count=doc_count,
             chunk_count=chunk_count,
             folder_count=folder_count,

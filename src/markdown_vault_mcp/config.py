@@ -1,7 +1,7 @@
 """Configuration loading from environment variables for markdown-vault-mcp.
 
-Reads env vars and returns a :class:`CollectionConfig` suitable for
-constructing a :class:`~markdown_vault_mcp.collection.Collection`.
+Reads env vars and returns a :class:`VaultConfig` suitable for
+constructing a :class:`~markdown_vault_mcp.vault.Vault`.
 """
 
 from __future__ import annotations
@@ -48,11 +48,11 @@ def _env(name: str, default: str | None = None) -> str | None:
 
 
 @dataclass
-class CollectionConfig:
-    """Configuration for a :class:`~markdown_vault_mcp.collection.Collection`.
+class VaultConfig:
+    """Configuration for a :class:`~markdown_vault_mcp.vault.Vault`.
 
     Attributes:
-        source_dir: Root directory of the markdown collection.
+        source_dir: Root directory of the markdown vault.
         read_only: When ``True`` (default), write operations raise
             :exc:`~markdown_vault_mcp.exceptions.ReadOnlyError`.
         server_name: Display name for the MCP server (default
@@ -72,7 +72,7 @@ class CollectionConfig:
     Example::
 
         config = load_config()
-        collection = Collection(**config.to_collection_kwargs())
+        vault = Vault(**config.to_vault_kwargs())
     """
 
     # CONFIG-FIELDS-START — domain fields; kept across copier update
@@ -91,20 +91,20 @@ class CollectionConfig:
     # Universal server fields delegated to fastmcp_pvl_core.ServerConfig.
     server: ServerConfig = field(default_factory=ServerConfig)
 
-    def to_collection_kwargs(self) -> dict[str, Any]:
-        """Return keyword arguments suitable for ``Collection(**kwargs)``.
+    def to_vault_kwargs(self) -> dict[str, Any]:
+        """Return keyword arguments suitable for ``Vault(**kwargs)``.
 
         Resolves the embedding provider (when ``indexing.embeddings_path``
         is set) and creates a :class:`~markdown_vault_mcp.git.GitWriteStrategy`.
 
         Returns:
             Dict of keyword arguments accepted by
-            :class:`~markdown_vault_mcp.collection.Collection.__init__`.
+            :class:`~markdown_vault_mcp.vault.Vault.__init__`.
 
         Example::
 
             config = load_config()
-            collection = Collection(**config.to_collection_kwargs())
+            vault = Vault(**config.to_vault_kwargs())
         """
         kwargs: dict[str, Any] = {
             "source_dir": self.source_dir,
@@ -205,7 +205,7 @@ class CollectionConfig:
         )
 
 
-def load_config() -> CollectionConfig:
+def load_config() -> VaultConfig:
     """Load configuration from environment variables.
 
     Reads the following environment variables:
@@ -301,7 +301,7 @@ def load_config() -> CollectionConfig:
     ``docs/configuration.md`` for the full list.
 
     Returns:
-        A fully populated :class:`CollectionConfig` instance.
+        A fully populated :class:`VaultConfig` instance.
 
     Raises:
         ValueError: If ``MARKDOWN_VAULT_MCP_SOURCE_DIR`` is not set.
@@ -311,13 +311,13 @@ def load_config() -> CollectionConfig:
         import os
         os.environ["MARKDOWN_VAULT_MCP_SOURCE_DIR"] = "/home/user/vault"
         config = load_config()
-        collection = Collection(**config.to_collection_kwargs())
+        vault = Vault(**config.to_vault_kwargs())
     """
     raw_source_dir = (_env("SOURCE_DIR") or "").strip()
     if not raw_source_dir:
         raise ValueError(
             "MARKDOWN_VAULT_MCP_SOURCE_DIR is required but not set. "
-            "Set it to the path of your markdown collection."
+            "Set it to the path of your markdown vault."
         )
     source_dir = Path(raw_source_dir)
     logger.debug("load_config: source_dir=%s", source_dir)
@@ -464,7 +464,7 @@ def load_config() -> CollectionConfig:
     raw_attachment_extensions = (_env("ATTACHMENT_EXTENSIONS") or "").strip()
     attachment_extensions: list[str] | None
     if not raw_attachment_extensions:
-        attachment_extensions = None  # use default list in Collection
+        attachment_extensions = None  # use default list in Vault
     elif raw_attachment_extensions == "*":
         attachment_extensions = ["*"]
     else:
@@ -654,7 +654,7 @@ def load_config() -> CollectionConfig:
         raise ValueError(f"max_chunk_words must be >= 1, got {max_chunk_words}")
     logger.debug("load_config: max_chunk_words=%s", max_chunk_words)
 
-    return CollectionConfig(
+    return VaultConfig(
         # CONFIG-FROM-ENV-START — domain fields populated from env; kept across copier update
         source_dir=source_dir,
         read_only=read_only,

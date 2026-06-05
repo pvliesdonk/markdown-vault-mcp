@@ -4,7 +4,7 @@
 the synchronous/asynchronous build entry points, the background-build
 readiness state machine (delegated to :class:`ReadinessState`), the
 per-variant async error capture, status/drain observation, and dirty-path
-routing. `Collection` constructs one coordinator and delegates to it; the
+routing. `Vault` constructs one coordinator and delegates to it; the
 coordinator constructs, starts, and closes the single-owner
 :class:`~markdown_vault_mcp.indexing.index_writer.IndexWriter` thread.
 """
@@ -61,7 +61,7 @@ class IndexWriteCoordinator:
         self._file_write_lock = file_write_lock
         self._readiness = ReadinessState()
         # Deprecated background-build thread bookkeeping (guarded by the
-        # injected file-write lock, matching the former Collection locking).
+        # injected file-write lock, matching the former Vault locking).
         self._background_build_thread: threading.Thread | None = None
         self._background_started: bool = False
         # Per-async-variant error capture (#561), surfaced via get_index_status.
@@ -461,7 +461,7 @@ class IndexWriteCoordinator:
 
         Closes the writer AFTER joining the background build (whose worker
         submits jobs to the writer). Does NOT close the FTS index — the
-        owner (Collection) closes FTS last, after the writer is drained.
+        owner (Vault) closes FTS last, after the writer is drained.
         """
         with self._file_write_lock:
             thread = self._background_build_thread

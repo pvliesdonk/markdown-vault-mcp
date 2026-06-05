@@ -73,11 +73,11 @@ def needs_queryable(
     (``is_queryable`` already True) the wait is skipped — no
     thread-pool overhead.
 
-    The wrapper does NOT redeclare ``collection`` in its own
+    The wrapper does NOT redeclare ``vault`` in its own
     signature. ``functools.wraps`` preserves the wrapped handler's
     signature so FastMCP's introspection sees the original
-    ``collection: Collection = Depends(get_collection)`` parameter
-    and injects it via kwargs. The wrapper reads ``collection`` from
+    ``vault: Vault = Depends(get_vault)`` parameter
+    and injects it via kwargs. The wrapper reads ``vault`` from
     kwargs and passes args/kwargs through unchanged.
 
     Stacking order: place ``@needs_queryable(...)`` BELOW
@@ -103,25 +103,23 @@ def needs_queryable(
 
     def deco(handler: Callable[..., Any]) -> Callable[..., Any]:
         # Capture the handler's signature once at decoration time so
-        # collection can be looked up regardless of whether it was
+        # vault can be looked up regardless of whether it was
         # passed positionally or by keyword.
         sig = inspect.signature(handler)
 
         @functools.wraps(handler)
         async def wrapper(*args: Any, **kwargs: Any) -> Any:
             bound = sig.bind_partial(*args, **kwargs)
-            collection = bound.arguments.get("collection")
-            if collection is None:
+            vault = bound.arguments.get("vault")
+            if vault is None:
                 raise RuntimeError(
-                    "needs_queryable: collection was not injected; "
+                    "needs_queryable: vault was not injected; "
                     "handler must declare "
-                    "`collection: Collection = Depends(get_collection)`."
+                    "`vault: Vault = Depends(get_vault)`."
                 )
-            if not collection.index.is_queryable():
+            if not vault.index.is_queryable():
                 effective = timeout if timeout is not None else _resolve_build_timeout()
-                await asyncio.to_thread(
-                    collection.index.wait_until_queryable, effective
-                )
+                await asyncio.to_thread(vault.index.wait_until_queryable, effective)
             try:
                 return await handler(*args, **kwargs)
             except sqlite3.OperationalError as exc:

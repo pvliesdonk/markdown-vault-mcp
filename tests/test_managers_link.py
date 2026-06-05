@@ -1,4 +1,4 @@
-"""Tests for LinkManager in isolation (no Collection dependency)."""
+"""Tests for LinkManager in isolation (no Vault dependency)."""
 
 from __future__ import annotations
 

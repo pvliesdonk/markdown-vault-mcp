@@ -75,13 +75,13 @@ def mock_provider() -> MockEmbeddingProvider:
 
 
 @pytest.fixture
-def populated_collection(tmp_path: Path):
-    """A small Collection with one doc that has 'foo' in multiple sections.
+def populated_vault(tmp_path: Path):
+    """A small Vault with one doc that has 'foo' in multiple sections.
 
     Used by test_search_grouping and other tests that exercise the
     field-collapsed shape with multi-chunk documents.
     """
-    from markdown_vault_mcp.collection import Collection
+    from markdown_vault_mcp.vault import Vault
 
     vault = tmp_path / "vault"
     vault.mkdir()
@@ -93,7 +93,7 @@ def populated_collection(tmp_path: Path):
         + "\n## C\n\nfoo third section foo\n"
     )
     (vault / "other.md").write_text("# Other\n\n" + ("baz baz baz\n" * 12))
-    col = Collection(
+    col = Vault(
         source_dir=vault,
         embedding_provider=MockEmbeddingProvider(),
         embeddings_path=tmp_path / "vectors",
@@ -105,10 +105,10 @@ def populated_collection(tmp_path: Path):
 
 @pytest.fixture
 def built(vault_path: Path):
-    """A built Collection over the clean vault fixture (shared by facet tests)."""
-    from markdown_vault_mcp.collection import Collection
+    """A built Vault over the clean vault fixture (shared by facet tests)."""
+    from markdown_vault_mcp.vault import Vault
 
-    col = Collection(source_dir=vault_path)
+    col = Vault(source_dir=vault_path)
     col.index.build_index()
     try:
         yield col
@@ -166,12 +166,12 @@ def _mcp_env(vault_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 def wait_for_writer_drain(col: object, timeout: float = 5.0) -> None:
     """Wait for IndexWriter queue + dirty-sets to drain (#559).
 
-    Used by Collection-level tests that need to assert FTS / vector
+    Used by Vault-level tests that need to assert FTS / vector
     state after a write / edit / delete / rename — which now go through
     the single-owner :class:`IndexWriter` and complete asynchronously.
 
     Args:
-        col: The :class:`Collection` instance under test.
+        col: The :class:`Vault` instance under test.
         timeout: Maximum wait in seconds.
 
     Raises:
@@ -234,7 +234,7 @@ async def wait_for_mcp_writer_drain(client: object, timeout: float = 5.0) -> Non
 def vault_path(tmp_path: Path, fixtures_path: Path) -> Path:
     """Copy fixtures into a temp directory.
 
-    Excludes ``invalid_utf8.md`` (non-UTF-8 bytes) so that Collection tests
+    Excludes ``invalid_utf8.md`` (non-UTF-8 bytes) so that Vault tests
     can scan the vault without errors.  ``malformed_yaml.md`` is included
     because ``scan_directory`` handles YAML parse errors gracefully.
 

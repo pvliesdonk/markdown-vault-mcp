@@ -36,11 +36,11 @@ except ImportError as exc:  # pragma: no cover - dep-pin guard
         "pyproject.toml."
     ) from exc
 
-from markdown_vault_mcp.collection import Collection
 from markdown_vault_mcp.config import _ENV_PREFIX
+from markdown_vault_mcp.vault import Vault
 
 from ._icons import _TOOL_ICONS
-from ._server_deps import get_collection
+from ._server_deps import get_vault
 
 logger = logging.getLogger(__name__)
 
@@ -249,7 +249,7 @@ def register_apps(mcp: FastMCP) -> None:
     async def browse_vault(
         path: str | None = None,
         view: Literal["context", "graph", "browse", "note"] | None = None,
-        collection: Collection = Depends(get_collection),
+        vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
         """Open a visual vault explorer UI for the user — not for reading vault content.
 
@@ -278,7 +278,7 @@ def register_apps(mcp: FastMCP) -> None:
         summary_parts: list[str] = []
 
         if path:
-            note = await asyncio.to_thread(collection.reader.read, path)
+            note = await asyncio.to_thread(vault.reader.read, path)
             if note:
                 summary_parts.append(f"Note: {note.title} ({path})")
                 summary_parts.append(f"Folder: {note.folder}")
@@ -288,7 +288,7 @@ def register_apps(mcp: FastMCP) -> None:
             else:
                 summary_parts.append(f"Note not found: {path}")
         else:
-            stats = await asyncio.to_thread(collection.reader.stats)
+            stats = await asyncio.to_thread(vault.reader.stats)
             summary_parts.append(
                 f"Vault: {stats.document_count} notes, {stats.folder_count} folders"
             )
@@ -316,7 +316,7 @@ def register_apps(mcp: FastMCP) -> None:
     )
     async def vault_context(
         path: str,
-        collection: Collection = Depends(get_collection),
+        vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
         """Return the full NoteContext for a note (app-only).
 
@@ -332,7 +332,7 @@ def register_apps(mcp: FastMCP) -> None:
             field details. Returns {"error": "..."} if the note is not found.
         """
         try:
-            ctx = await asyncio.to_thread(collection.reader.get_context, path)
+            ctx = await asyncio.to_thread(vault.reader.get_context, path)
         except ValueError:
             return {"error": f"Note not found: {path}"}
         return asdict(ctx)
@@ -348,7 +348,7 @@ def register_apps(mcp: FastMCP) -> None:
     )
     async def show_context(
         path: str,
-        collection: Collection = Depends(get_collection),
+        vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
         """Open a visual context card UI for the user — not for reading note relationships.
 
@@ -369,7 +369,7 @@ def register_apps(mcp: FastMCP) -> None:
             - summary (str): Text summary with backlink, outlink, and similarity counts.
         """
         try:
-            ctx = await asyncio.to_thread(collection.reader.get_context, path)
+            ctx = await asyncio.to_thread(vault.reader.get_context, path)
         except ValueError:
             return {
                 "path": path,
@@ -410,7 +410,7 @@ def register_apps(mcp: FastMCP) -> None:
         depth: int = 1,
         include_semantic: bool = False,
         max_nodes: int = 200,
-        collection: Collection = Depends(get_collection),
+        vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
         """Return the link neighborhood of a note as a node/edge graph (app-only).
 
@@ -463,7 +463,7 @@ def register_apps(mcp: FastMCP) -> None:
             visited.add(current)
 
             # Add node
-            note = await asyncio.to_thread(collection.reader.read, current)
+            note = await asyncio.to_thread(vault.reader.read, current)
             label = (
                 note.title if note else current.rsplit("/", 1)[-1].replace(".md", "")
             )
@@ -482,15 +482,11 @@ def register_apps(mcp: FastMCP) -> None:
 
             # Fetch backlinks/outlinks for interior nodes (orphan detection + edges)
             try:
-                backlinks = await asyncio.to_thread(
-                    collection.graph.get_backlinks, current
-                )
+                backlinks = await asyncio.to_thread(vault.graph.get_backlinks, current)
             except ValueError:
                 backlinks = []
             try:
-                outlinks = await asyncio.to_thread(
-                    collection.graph.get_outlinks, current
-                )
+                outlinks = await asyncio.to_thread(vault.graph.get_outlinks, current)
             except ValueError:
                 outlinks = []
             is_orphan = len(backlinks) == 0 and len(outlinks) == 0
@@ -545,10 +541,10 @@ def register_apps(mcp: FastMCP) -> None:
                     break
                 try:
                     similar = await asyncio.to_thread(
-                        collection.reader.get_similar, node_path, limit=5
+                        vault.reader.get_similar, node_path, limit=5
                     )
                 except ValueError:
-                    # Expected when embeddings are not configured for this collection
+                    # Expected when embeddings are not configured for this vault
                     continue
                 except Exception:
                     logger.warning(
@@ -568,9 +564,7 @@ def register_apps(mcp: FastMCP) -> None:
                         if len(nodes) >= max_nodes:
                             truncated = True
                             break
-                        sim_note = await asyncio.to_thread(
-                            collection.reader.read, sr.path
-                        )
+                        sim_note = await asyncio.to_thread(vault.reader.read, sr.path)
                         sim_label = (
                             sim_note.title
                             if sim_note
@@ -607,7 +601,7 @@ def register_apps(mcp: FastMCP) -> None:
     )
     async def vault_graph_hubs(
         limit: int = 20,
-        collection: Collection = Depends(get_collection),
+        vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
         """Return the most-linked notes and their connections as a graph (app-only).
 
@@ -634,7 +628,7 @@ def register_apps(mcp: FastMCP) -> None:
               - to (str): Target node ID.
               - type (str): "markdown", "wikilink", or "reference".
         """
-        hubs = await asyncio.to_thread(collection.graph.get_most_linked, limit=limit)
+        hubs = await asyncio.to_thread(vault.graph.get_most_linked, limit=limit)
         nodes: dict[str, dict[str, Any]] = {}
         edges: list[dict[str, Any]] = []
         seen_edges: set[tuple[str, str]] = set()
@@ -650,16 +644,12 @@ def register_apps(mcp: FastMCP) -> None:
 
             # Get immediate connections for each hub
             try:
-                backlinks = await asyncio.to_thread(
-                    collection.graph.get_backlinks, hub.path
-                )
+                backlinks = await asyncio.to_thread(vault.graph.get_backlinks, hub.path)
             except ValueError:
                 backlinks = []
             for bl in backlinks:
                 if bl.source_path not in nodes:
-                    note = await asyncio.to_thread(
-                        collection.reader.read, bl.source_path
-                    )
+                    note = await asyncio.to_thread(vault.reader.read, bl.source_path)
                     label = (
                         note.title
                         if note
@@ -699,7 +689,7 @@ def register_apps(mcp: FastMCP) -> None:
     )
     async def vault_list(
         folder: str | None = None,
-        collection: Collection = Depends(get_collection),
+        vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
         """List folders and notes in a vault directory (app-only).
 
@@ -721,9 +711,9 @@ def register_apps(mcp: FastMCP) -> None:
               - kind (str): "note" or "attachment".
         """
         docs = await asyncio.to_thread(
-            collection.reader.list_documents, folder=folder, include_attachments=True
+            vault.reader.list_documents, folder=folder, include_attachments=True
         )
-        folders = await asyncio.to_thread(collection.reader.list_folders)
+        folders = await asyncio.to_thread(vault.reader.list_folders)
 
         # Build direct children: extract the first path component after the
         # prefix from every folder that lives under it.  This handles vaults
@@ -765,7 +755,7 @@ def register_apps(mcp: FastMCP) -> None:
     )
     async def vault_read(
         path: str,
-        collection: Collection = Depends(get_collection),
+        vault: Vault = Depends(get_vault),
     ) -> dict[str, Any] | None:
         """Read a note's full content for preview rendering (app-only).
 
@@ -779,7 +769,7 @@ def register_apps(mcp: FastMCP) -> None:
             Dict with path, title, frontmatter, content (markdown body), and
             modified_at (Unix timestamp), or null if the note is not found.
         """
-        note = await asyncio.to_thread(collection.reader.read, path)
+        note = await asyncio.to_thread(vault.reader.read, path)
         if note is None:
             return None
         return {
@@ -805,7 +795,7 @@ def register_apps(mcp: FastMCP) -> None:
         query: str,
         mode: Literal["keyword", "semantic", "hybrid"] = "hybrid",
         limit: int = 20,
-        collection: Collection = Depends(get_collection),
+        vault: Vault = Depends(get_vault),
     ) -> list[dict[str, Any]]:
         """Search the vault (app-only).
 
@@ -824,7 +814,7 @@ def register_apps(mcp: FastMCP) -> None:
         """
         try:
             results = await asyncio.to_thread(
-                collection.reader.search, query, limit=limit, mode=mode
+                vault.reader.search, query, limit=limit, mode=mode
             )
         except ValueError as exc:
             return [{"error": str(exc)}]

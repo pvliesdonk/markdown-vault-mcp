@@ -3,7 +3,7 @@
 A Zettelkasten is a personal knowledge management system based on atomic notes, cross-linking, and emergent discovery. This guide shows how to use markdown-vault-mcp as your Zettelkasten backend, leveraging its search, linking, and graph navigation tools to build a connected knowledge base.
 
 !!! note
-    This is one of many ways to organize a vault with markdown-vault-mcp. The server is a generic markdown collection backend — Zettelkasten conventions are applied in this guide but not required or enforced by the server.
+    This is one of many ways to organize a vault with markdown-vault-mcp. The server is a generic markdown vault backend — Zettelkasten conventions are applied in this guide but not required or enforced by the server.
 
 ## Vault Setup
 
@@ -75,8 +75,8 @@ export MARKDOWN_VAULT_MCP_INDEXED_FIELDS=type,tags
 Then you can search by note type or tag using the Python API:
 
 ```python
-results = collection.reader.search("query", filters={"type": "permanent"})
-results = collection.reader.search("query", filters={"tags": "system-design"})
+results = vault.reader.search("query", filters={"type": "permanent"})
+results = vault.reader.search("query", filters={"tags": "system-design"})
 ```
 
 Or restrict to a folder via the CLI:
@@ -112,10 +112,10 @@ markdown-vault-mcp serve &
 Or programmatically:
 
 ```python
-from markdown_vault_mcp import Collection
+from markdown_vault_mcp import Vault
 
-collection = Collection(source_dir="/path/to/vault")
-collection.writer.write(
+vault = Vault(source_dir="/path/to/vault")
+vault.writer.write(
     "Inbox/quick-idea.md",
     content="Distributed systems are hard.",
     frontmatter={"type": "fleeting", "tags": ["systems"]}
@@ -154,15 +154,15 @@ Expand fleeting notes into permanent knowledge. Two paths:
 
 ```python
 # See the note's current neighborhood
-context = collection.reader.get_context("Inbox/consensus-algorithms.md")
+context = vault.reader.get_context("Inbox/consensus-algorithms.md")
 print(f"Backlinks: {context.backlinks}")
 print(f"Similar notes: {context.similar}")
 
 # Search for related notes
-results = collection.reader.search("consensus", mode="hybrid", limit=20)
+results = vault.reader.search("consensus", mode="hybrid", limit=20)
 
 # Once expanded, update the note
-collection.writer.edit(
+vault.writer.edit(
     "Inbox/consensus-algorithms.md",
     old_text="type: fleeting",
     new_text="type: permanent"
@@ -177,7 +177,7 @@ Linking transforms isolated notes into a knowledge network. Four tools support t
 
 ```python
 # See everything connected to this note
-context = collection.reader.get_context("Notes/consensus.md")
+context = vault.reader.get_context("Notes/consensus.md")
 ```
 
 Returns:
@@ -191,7 +191,7 @@ Returns:
 **Find related notes you haven't linked yet:**
 
 ```python
-similar = collection.reader.get_similar("Notes/consensus.md", limit=10)
+similar = vault.reader.get_similar("Notes/consensus.md", limit=10)
 for note in similar:
     print(f"Similar: {note.title} ({note.score:.2f})")
 ```
@@ -200,7 +200,7 @@ for note in similar:
 
 ```python
 # Find the shortest path between two ideas
-path = collection.graph.get_connection_path(
+path = vault.graph.get_connection_path(
     source="Notes/distributed-systems.md",
     target="Notes/fault-tolerance.md",
     max_depth=5
@@ -216,7 +216,7 @@ else:
 Edit the note and add `[[wikilink]]` or `[text](path.md)` references:
 
 ```python
-collection.writer.edit(
+vault.writer.edit(
     "Notes/consensus.md",
     old_text="## Evidence",
     new_text="## Evidence\n\nSee [[Byzantine Fault Tolerance]] for formal proofs."
@@ -233,7 +233,7 @@ All three link formats work:
 When a note title changes, rename it and update all backlinks automatically:
 
 ```python
-collection.writer.rename(
+vault.writer.rename(
     "Notes/old-title.md",
     "Notes/new-title.md",
     update_links=True  # Rewrites [[old-title]] to [[new-title]] in all notes
@@ -247,7 +247,7 @@ Weekly reviews keep your vault healthy and connected:
 **Check vault statistics:**
 
 ```python
-stats = collection.reader.stats()
+stats = vault.reader.stats()
 print(f"Documents: {stats.document_count}")
 print(f"Broken links: {stats.broken_link_count}")
 print(f"Orphan notes: {stats.orphan_count}")
@@ -256,7 +256,7 @@ print(f"Orphan notes: {stats.orphan_count}")
 **Find isolated notes:**
 
 ```python
-orphans = collection.graph.get_orphan_notes()
+orphans = vault.graph.get_orphan_notes()
 for note in orphans:
     print(f"Isolated: {note.path}")
     # Either link it to the rest of the vault, or delete it
@@ -265,7 +265,7 @@ for note in orphans:
 **Find and fix broken links:**
 
 ```python
-broken = collection.graph.get_broken_links()
+broken = vault.graph.get_broken_links()
 for link in broken:
     print(f"Broken: {link.source_path} -> {link.target_path}")
     # Fix the link or delete the file it points to
@@ -274,7 +274,7 @@ for link in broken:
 **Identify hub notes (candidates for MOCs):**
 
 ```python
-hubs = collection.graph.get_most_linked(limit=10)
+hubs = vault.graph.get_most_linked(limit=10)
 for hub in hubs:
     print(f"{hub.title}: {hub.backlink_count} inbound links")
 ```
@@ -294,15 +294,15 @@ A **MOC** (Map of Content) is a curated hub note that aggregates links to relate
 1. Identify the theme — e.g., "Distributed Systems"
 2. Search for related notes:
    ```python
-   results = collection.reader.search("distributed systems", mode="hybrid", limit=30)
+   results = vault.reader.search("distributed systems", mode="hybrid", limit=30)
    ```
 3. Use `get_most_linked()` to find existing hubs:
    ```python
-   hubs = collection.graph.get_most_linked(limit=10)
+   hubs = vault.graph.get_most_linked(limit=10)
    ```
 4. Create a new `moc` template note:
    ```python
-   collection.writer.write(
+   vault.writer.write(
        "Notes/Distributed-Systems-MOC.md",
        content="# Distributed Systems\n\n## Core concepts\n...",
        frontmatter={
@@ -315,7 +315,7 @@ A **MOC** (Map of Content) is a curated hub note that aggregates links to relate
 5. Add `[[wikilinks]]` to permanent notes grouped by depth or topic
 6. Link the MOC back from related permanent notes:
    ```python
-   collection.writer.edit(
+   vault.writer.edit(
        "Notes/consensus.md",
        old_text="## Related",
        new_text="## Related\n\nSee [[Distributed-Systems-MOC]] for the full map."
@@ -432,7 +432,7 @@ The prompt will walk you through connecting the note, discovering related ideas,
 Before writing your first note, run `stats()` to understand your vault's shape:
 
 ```python
-stats = collection.reader.stats()
+stats = vault.reader.stats()
 print(f"Documents: {stats.document_count}")
 print(f"Broken links: {stats.broken_link_count}")
 print(f"Orphaned notes: {stats.orphan_count}")
@@ -455,10 +455,10 @@ Always prefer `mode='hybrid'` when searching:
 
 ```python
 # Good
-collection.reader.search("consensus", mode="hybrid", limit=20)
+vault.reader.search("consensus", mode="hybrid", limit=20)
 
 # Weaker (keyword only)
-collection.reader.search("consensus", mode="keyword", limit=20)
+vault.reader.search("consensus", mode="keyword", limit=20)
 ```
 
 Hybrid search combines full-text ranking (exact matches, stemming) with semantic similarity (meaning), so you get both precision and discovery.
@@ -468,7 +468,7 @@ Hybrid search combines full-text ranking (exact matches, stemming) with semantic
 Orphaned notes (no inbound or outbound links) are knowledge dead zones. Schedule a weekly check:
 
 ```python
-orphans = collection.graph.get_orphan_notes()
+orphans = vault.graph.get_orphan_notes()
 for note in orphans:
     # Either integrate it: add outlinks to existing notes
     # Or delete it: it wasn't worth connecting
@@ -481,7 +481,7 @@ This prevents accumulating notes you're not thinking about.
 When you want to see how two seemingly distant topics relate, use `get_connection_path()`:
 
 ```python
-path = collection.graph.get_connection_path(
+path = vault.graph.get_connection_path(
     source="Notes/machine-learning.md",
     target="Notes/philosophy.md",
     max_depth=6

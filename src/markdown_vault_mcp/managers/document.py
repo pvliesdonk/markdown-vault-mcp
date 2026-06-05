@@ -2,7 +2,7 @@
 
 Handles all read/write/edit/delete/rename operations, attachment I/O,
 path validation, and backlink updates — all with dependency injection
-and no back-reference to :class:`Collection`.
+and no back-reference to :class:`Vault`.
 """
 
 from __future__ import annotations
@@ -129,14 +129,14 @@ class DocumentManager:
     # ------------------------------------------------------------------
 
     def _check_writable(self) -> None:
-        """Raise ReadOnlyError if the collection is configured as read-only.
+        """Raise ReadOnlyError if the vault is configured as read-only.
 
         Raises:
             ReadOnlyError: If ``read_only=True``.
         """
         if self._read_only:
             raise ReadOnlyError(
-                "Collection is read-only; write operations are not permitted."
+                "Vault is read-only; write operations are not permitted."
             )
 
     def _effective_attachment_extensions(self) -> frozenset[str]:
@@ -479,7 +479,7 @@ class DocumentManager:
             :class:`~markdown_vault_mcp.types.WriteResult`.
 
         Raises:
-            ReadOnlyError: If the collection is read-only.
+            ReadOnlyError: If the vault is read-only.
             ConcurrentModificationError: If *if_match* is provided and does
                 not match the current file hash (or the file does not exist).
             ValueError: If *path* escapes the source directory.
@@ -555,7 +555,7 @@ class DocumentManager:
             :class:`~markdown_vault_mcp.types.WriteResult`.
 
         Raises:
-            ReadOnlyError: If the collection is read-only.
+            ReadOnlyError: If the vault is read-only.
             ConcurrentModificationError: If *if_match* is provided and does
                 not match the current file hash, or *if_match* is supplied
                 for a file that does not yet exist.
@@ -662,7 +662,7 @@ class DocumentManager:
             :class:`~markdown_vault_mcp.types.EditResult`.
 
         Raises:
-            ReadOnlyError: If the collection is read-only.
+            ReadOnlyError: If the vault is read-only.
             DocumentNotFoundError: If the file does not exist.
             ConcurrentModificationError: If *if_match* is provided and does
                 not match the current file hash.
@@ -867,7 +867,7 @@ class DocumentManager:
             :class:`~markdown_vault_mcp.types.DeleteResult`.
 
         Raises:
-            ReadOnlyError: If the collection is read-only.
+            ReadOnlyError: If the vault is read-only.
             DocumentNotFoundError: If the file does not exist.
             ConcurrentModificationError: If *if_match* is provided and does
                 not match the current file hash.
@@ -940,7 +940,7 @@ class DocumentManager:
             *updated_links* counting source documents successfully updated.
 
         Raises:
-            ReadOnlyError: If the collection is read-only.
+            ReadOnlyError: If the vault is read-only.
             DocumentNotFoundError: If *old_path* does not exist.
             DocumentExistsError: If *new_path* already exists.
             ConcurrentModificationError: If *if_match* is provided and does

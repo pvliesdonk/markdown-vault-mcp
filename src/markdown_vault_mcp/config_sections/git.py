@@ -1,4 +1,4 @@
-"""Git write-strategy configuration for a markdown vault collection."""
+"""Git write-strategy configuration for a markdown vault."""
 
 from __future__ import annotations
 

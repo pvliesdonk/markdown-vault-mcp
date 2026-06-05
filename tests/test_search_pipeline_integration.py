@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from markdown_vault_mcp.collection import Collection
+from markdown_vault_mcp.vault import Vault
 
 from .conftest import MockEmbeddingProvider
 
@@ -58,15 +58,15 @@ def diagnostic_vault(tmp_path: Path) -> Path:
     return tmp_path
 
 
-def _make_collection(vault: Path, *, with_embeddings: bool = False) -> Collection:
-    """Create a Collection for the diagnostic vault.
+def _make_vault(vault: Path, *, with_embeddings: bool = False) -> Vault:
+    """Create a Vault for the diagnostic vault.
 
     Args:
         vault: Path to the vault root.
         with_embeddings: Whether to configure an embedding provider.
 
     Returns:
-        A configured Collection instance.
+        A configured Vault instance.
     """
     kwargs: dict = {
         "source_dir": vault,
@@ -77,12 +77,12 @@ def _make_collection(vault: Path, *, with_embeddings: bool = False) -> Collectio
         provider = MockEmbeddingProvider()
         kwargs["embedding_provider"] = provider
         kwargs["embeddings_path"] = vault / ".embeddings"
-    return Collection(**kwargs)
+    return Vault(**kwargs)
 
 
 def test_essay_capped_in_top_ten_keyword(diagnostic_vault: Path) -> None:
     """The essay must not exceed chunks_per_file=2 sections in keyword mode."""
-    coll = _make_collection(diagnostic_vault)
+    coll = _make_vault(diagnostic_vault)
     coll.index.build_index()
 
     results = coll.reader.search(
@@ -104,7 +104,7 @@ def test_essay_capped_in_top_ten_keyword(diagnostic_vault: Path) -> None:
 
 def test_essay_capped_in_top_ten_semantic(diagnostic_vault: Path) -> None:
     """The essay must not exceed chunks_per_file=2 sections in semantic mode."""
-    coll = _make_collection(diagnostic_vault, with_embeddings=True)
+    coll = _make_vault(diagnostic_vault, with_embeddings=True)
     coll.index.build_index()
     coll.index.build_embeddings()
 
@@ -125,7 +125,7 @@ def test_essay_capped_in_top_ten_semantic(diagnostic_vault: Path) -> None:
 
 def test_essay_capped_in_top_ten_hybrid(diagnostic_vault: Path) -> None:
     """The essay must not exceed chunks_per_file=2 sections in hybrid mode."""
-    coll = _make_collection(diagnostic_vault, with_embeddings=True)
+    coll = _make_vault(diagnostic_vault, with_embeddings=True)
     coll.index.build_index()
     coll.index.build_embeddings()
 
@@ -146,7 +146,7 @@ def test_essay_capped_in_top_ten_hybrid(diagnostic_vault: Path) -> None:
 
 def test_payloads_bounded_by_default(diagnostic_vault: Path) -> None:
     """Default snippet_words=200; per-section payloads stay below ~220 words."""
-    coll = _make_collection(diagnostic_vault)
+    coll = _make_vault(diagnostic_vault)
     coll.index.build_index()
     results = coll.reader.search("etymology secura", mode="keyword", limit=10)
     for r in results:

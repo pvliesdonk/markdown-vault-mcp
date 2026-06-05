@@ -330,10 +330,10 @@ class TestGitSync:
         FTS index is stale and can recover via the standalone ``reindex``
         tool.
 
-        The reindex callable is monkey-patched on the singleton Collection
+        The reindex callable is monkey-patched on the singleton Vault
         AFTER the lifespan has constructed it (the singleton accessor is
         the only seam that exposes the live instance to tests; FastMCP's
-        ``Depends(get_collection)`` resolves through the lifespan context).
+        ``Depends(get_vault)`` resolves through the lifespan context).
         """
         # Seed a remote commit so ``force_pull`` actually moves HEAD —
         # without it the pull short-circuits as "already up to date" and
@@ -349,12 +349,12 @@ class TestGitSync:
         async with Client(server) as client:
             # Lifespan has set the singleton; monkey-patch reindex BEFORE
             # the tool call so the post-pull bookkeeping path raises.
-            collection = _server_deps.get_collection_singleton()
+            vault = _server_deps.get_vault_singleton()
 
             def _failing_reindex() -> None:
                 raise RuntimeError("simulated reindex failure")
 
-            monkeypatch.setattr(collection.index, "reindex", _failing_reindex)
+            monkeypatch.setattr(vault.index, "reindex", _failing_reindex)
 
             result = await client.call_tool("git_sync", {"direction": "pull"})
 
@@ -402,8 +402,8 @@ class TestGitSync:
 
         server = make_server()
         async with Client(server) as client:
-            collection = _server_deps.get_collection_singleton()
-            strategy = collection._git_strategy
+            vault = _server_deps.get_vault_singleton()
+            strategy = vault._git_strategy
 
             push_called = {"count": 0}
 
@@ -466,7 +466,7 @@ class TestGitSyncVisibility:
             monkeypatch.delenv(var, raising=False)
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault_path))
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
-        # No GIT_REPO_URL → to_collection_kwargs() falls into the unmanaged
+        # No GIT_REPO_URL → to_vault_kwargs() falls into the unmanaged
         # commit-only branch, which builds a strategy with managed=False.
 
         server = make_server()

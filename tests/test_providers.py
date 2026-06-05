@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from markdown_vault_mcp.config import CollectionConfig
+from markdown_vault_mcp.config import VaultConfig
 from markdown_vault_mcp.config_sections import EmbeddingsConfig
 from markdown_vault_mcp.providers import (
     FastEmbedProvider,
@@ -37,9 +37,9 @@ def _make_httpx_mock(
     return mock_client, mock_response
 
 
-def _config(**embedding_overrides: object) -> CollectionConfig:
-    """Build a minimal CollectionConfig with optional embedding overrides."""
-    return CollectionConfig(
+def _config(**embedding_overrides: object) -> VaultConfig:
+    """Build a minimal VaultConfig with optional embedding overrides."""
+    return VaultConfig(
         source_dir=Path("/tmp/vault"),
         embeddings=EmbeddingsConfig(**embedding_overrides),  # type: ignore[arg-type]
     )

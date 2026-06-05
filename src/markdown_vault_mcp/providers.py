@@ -7,7 +7,7 @@ Provides an :class:`EmbeddingProvider` ABC and three concrete implementations:
 - :class:`FastEmbedProvider` — local fastembed/ONNX runtime embeddings.
 
 Use :func:`get_embedding_provider` to auto-detect and return the best
-available provider based on a :class:`CollectionConfig` instance.
+available provider based on a :class:`VaultConfig` instance.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from markdown_vault_mcp.config import CollectionConfig
+    from markdown_vault_mcp.config import VaultConfig
 
 logger = logging.getLogger(__name__)
 
@@ -383,7 +383,7 @@ class FastEmbedProvider(EmbeddingProvider):
         return self._model_name
 
 
-def get_embedding_provider(config: CollectionConfig) -> EmbeddingProvider:
+def get_embedding_provider(config: VaultConfig) -> EmbeddingProvider:
     """Auto-detect and return an embedding provider from config.
 
     Checks ``config.embeddings.provider`` for an explicit selection. When
@@ -397,7 +397,7 @@ def get_embedding_provider(config: CollectionConfig) -> EmbeddingProvider:
     4. Raises :class:`RuntimeError` with installation instructions.
 
     Args:
-        config: Collection configuration containing embedding settings.
+        config: Vault configuration containing embedding settings.
 
     Returns:
         An initialised :class:`EmbeddingProvider` instance.

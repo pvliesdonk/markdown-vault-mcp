@@ -6,15 +6,15 @@ The `config` module loads configuration from environment variables and provides 
 
 ```python
 import os
-from markdown_vault_mcp import Collection, load_config
+from markdown_vault_mcp import Vault, load_config
 
 os.environ["MARKDOWN_VAULT_MCP_SOURCE_DIR"] = "/path/to/vault"
 config = load_config()
-collection = Collection(**config.to_collection_kwargs())
+vault = Vault(**config.to_vault_kwargs())
 ```
 
 ## API Reference
 
-::: markdown_vault_mcp.config.CollectionConfig
+::: markdown_vault_mcp.config.VaultConfig
 
 ::: markdown_vault_mcp.config.load_config

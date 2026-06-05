@@ -23,8 +23,8 @@ import pytest
 if TYPE_CHECKING:
     from pathlib import Path
 
-from markdown_vault_mcp.collection import Collection
 from markdown_vault_mcp.fts_index import FTSIndex
+from markdown_vault_mcp.vault import Vault
 from tests.conftest import wait_for_writer_drain
 
 
@@ -95,11 +95,11 @@ def close_tracker() -> tuple[list[object], type]:
     return closed, _CloseTracker
 
 
-def _make_collection(tmp_path: Path) -> Collection:
-    """Build a writeable file-backed Collection."""
+def _make_vault(tmp_path: Path) -> Vault:
+    """Build a writeable file-backed Vault."""
     vault = tmp_path / "vault"
     vault.mkdir(exist_ok=True)
-    return Collection(
+    return Vault(
         source_dir=vault,
         index_path=tmp_path / "fts.sqlite",
         read_only=False,
@@ -343,12 +343,12 @@ def test_memory_db_is_shared_across_threads(fts_memory: FTSIndex) -> None:
     assert out.get("count") == 0
 
 
-def test_concurrent_writers_serialize_via_collection_write_lock(
+def test_concurrent_writers_serialize_via_vault_write_lock(
     tmp_path: Path,
 ) -> None:
-    """Two writer threads each writing 20 distinct paths through Collection
+    """Two writer threads each writing 20 distinct paths through Vault
     produce 40 docs with no SQLITE_BUSY / lost writes."""
-    coll = _make_collection(tmp_path)
+    coll = _make_vault(tmp_path)
     coll.index.build_index()
 
     errors: list[BaseException] = []
@@ -389,7 +389,7 @@ def test_concurrent_build_and_reads_pr518_pattern(tmp_path: Path) -> None:
     for i in range(10):
         (vault / f"seed-{i}.md").write_text(f"# Seed {i}\n\ncontent {i}\n")
 
-    coll = Collection(
+    coll = Vault(
         source_dir=vault,
         index_path=tmp_path / "fts.sqlite",
         read_only=False,

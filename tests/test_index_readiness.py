@@ -12,7 +12,7 @@ def test_fresh_state_not_built_but_done_preset() -> None:
     r = ReadinessState()
     assert r.is_built is False
     assert r.is_queryable() is False
-    # done-event is pre-set so a never-built collection does not block waiters
+    # done-event is pre-set so a never-built vault does not block waiters
     assert r.wait(timeout=0) is True
 
 

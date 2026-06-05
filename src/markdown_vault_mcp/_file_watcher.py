@@ -71,7 +71,7 @@ def should_start_file_watcher(
             run.  This is *not* ``GIT_PULL_INTERVAL_S > 0`` alone — the
             interval defaults to 600 even on non-git vaults, but the pull
             loop only runs when a git strategy is configured.  Pass the
-            resolved ``git_pull_interval_s`` from ``to_collection_kwargs()``
+            resolved ``git_pull_interval_s`` from ``to_vault_kwargs()``
             (which is 0 unless ``git_repo_url``/``git_token`` is set),
             compared ``> 0``.
         github_webhook_secret: Value of ``GITHUB_WEBHOOK_SECRET`` config field.

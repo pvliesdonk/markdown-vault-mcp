@@ -15,7 +15,7 @@ section: utils
 priority: optional
 maintainer: "Peter van Liesdonk <pvliesdonk@users.noreply.github.com>"
 description: |
-  Generic markdown collection MCP server with FTS5 + semantic search,
+  Generic markdown vault MCP server with FTS5 + semantic search,
   frontmatter-aware indexing, and incremental reindexing.
 homepage: "https://pvliesdonk.github.io/markdown-vault-mcp/"
 license: "MIT"  # project-owned — keep across copier updates

@@ -26,7 +26,7 @@ from markdown_vault_mcp._file_watcher import (
     _has_hidden_component,
     should_start_file_watcher,
 )
-from markdown_vault_mcp._server_deps import make_collection_lifespan
+from markdown_vault_mcp._server_deps import make_vault_lifespan
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -359,7 +359,7 @@ def test_fire_exception_in_on_change_is_logged(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Lifespan wiring (integration — drives make_collection_lifespan directly)
+# Lifespan wiring (integration — drives make_vault_lifespan directly)
 # ---------------------------------------------------------------------------
 
 
@@ -367,11 +367,11 @@ def test_lifespan_starts_and_stops_watcher_when_no_git(tmp_path: Path) -> None:
     """The lifespan starts the watcher on a non-git vault and stops it on exit."""
     import asyncio
 
-    from markdown_vault_mcp.config import CollectionConfig
+    from markdown_vault_mcp.config import VaultConfig
 
     (tmp_path / "note.md").write_text("# note\n\nbody", encoding="utf-8")
-    config = CollectionConfig(source_dir=tmp_path, read_only=False)
-    lifespan_fn = make_collection_lifespan(config)
+    config = VaultConfig(source_dir=tmp_path, read_only=False)
+    lifespan_fn = make_vault_lifespan(config)
 
     async def _run() -> None:
         with (
@@ -379,7 +379,7 @@ def test_lifespan_starts_and_stops_watcher_when_no_git(tmp_path: Path) -> None:
             patch.object(VaultFileWatcher, "stop") as mock_stop,
         ):
             async with lifespan_fn(None) as ctx:  # type: ignore[arg-type]
-                assert ctx["collection"] is not None
+                assert ctx["vault"] is not None
                 mock_start.assert_called_once()
                 mock_stop.assert_not_called()
             mock_stop.assert_called_once()
@@ -396,22 +396,22 @@ def test_lifespan_skips_watcher_when_git_pull_active(tmp_path: Path) -> None:
     """
     import asyncio
 
-    from markdown_vault_mcp.config import CollectionConfig
+    from markdown_vault_mcp.config import VaultConfig
 
     (tmp_path / "note.md").write_text("# note\n\nbody", encoding="utf-8")
     from markdown_vault_mcp.config_sections import GitConfig
 
-    config = CollectionConfig(
+    config = VaultConfig(
         source_dir=tmp_path,
         read_only=False,
         git=GitConfig(token="fake-token", pull_interval_s=600),
     )
-    lifespan_fn = make_collection_lifespan(config)
+    lifespan_fn = make_vault_lifespan(config)
 
     async def _run() -> None:
         with patch.object(VaultFileWatcher, "start") as mock_start:
             async with lifespan_fn(None) as ctx:  # type: ignore[arg-type]
-                assert ctx["collection"] is not None
+                assert ctx["vault"] is not None
                 mock_start.assert_not_called()
 
     asyncio.run(_run())
@@ -421,22 +421,22 @@ def test_lifespan_skips_watcher_when_webhook_active(tmp_path: Path) -> None:
     """The lifespan does not start the watcher when a webhook secret is configured."""
     import asyncio
 
-    from markdown_vault_mcp.config import CollectionConfig
+    from markdown_vault_mcp.config import VaultConfig
 
     (tmp_path / "note.md").write_text("# note\n\nbody", encoding="utf-8")
     from markdown_vault_mcp.config_sections import SyncConfig
 
-    config = CollectionConfig(
+    config = VaultConfig(
         source_dir=tmp_path,
         read_only=False,
         sync=SyncConfig(github_webhook_secret="shhh"),
     )
-    lifespan_fn = make_collection_lifespan(config)
+    lifespan_fn = make_vault_lifespan(config)
 
     async def _run() -> None:
         with patch.object(VaultFileWatcher, "start") as mock_start:
             async with lifespan_fn(None) as ctx:  # type: ignore[arg-type]
-                assert ctx["collection"] is not None
+                assert ctx["vault"] is not None
                 mock_start.assert_not_called()
 
     asyncio.run(_run())

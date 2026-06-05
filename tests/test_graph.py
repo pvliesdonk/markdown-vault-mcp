@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from markdown_vault_mcp.collection import Collection
 from markdown_vault_mcp.fts_index import FTSIndex
 from markdown_vault_mcp.types import (
     Chunk,
@@ -16,6 +15,7 @@ from markdown_vault_mcp.types import (
     NoteInfo,
     ParsedNote,
 )
+from markdown_vault_mcp.vault import Vault
 from tests.conftest import wait_for_mcp_writer_drain
 
 if TYPE_CHECKING:
@@ -248,24 +248,24 @@ def graph_vault(tmp_path: Path) -> Path:
     return vault
 
 
-class TestCollectionOrphanAndHub:
+class TestVaultOrphanAndHub:
     def test_get_orphan_notes_returns_note_info(self, graph_vault: Path) -> None:
         """GraphFacet.get_orphan_notes() returns NoteInfo objects."""
-        col = Collection(source_dir=graph_vault)
+        col = Vault(source_dir=graph_vault)
         col.index.build_index()
         orphans = col.graph.get_orphan_notes()
         assert all(isinstance(n, NoteInfo) for n in orphans)
 
     def test_get_orphan_notes_finds_orphan(self, graph_vault: Path) -> None:
         """The orphan note appears in results."""
-        col = Collection(source_dir=graph_vault)
+        col = Vault(source_dir=graph_vault)
         col.index.build_index()
         paths = {n.path for n in col.graph.get_orphan_notes()}
         assert "orphan.md" in paths
 
     def test_get_orphan_notes_excludes_linked(self, graph_vault: Path) -> None:
         """Notes with links (in or out) are not orphans."""
-        col = Collection(source_dir=graph_vault)
+        col = Vault(source_dir=graph_vault)
         col.index.build_index()
         paths = {n.path for n in col.graph.get_orphan_notes()}
         assert "hub.md" not in paths
@@ -274,14 +274,14 @@ class TestCollectionOrphanAndHub:
 
     def test_get_most_linked_returns_dataclasses(self, graph_vault: Path) -> None:
         """GraphFacet.get_most_linked() returns list of MostLinkedNote dataclasses."""
-        col = Collection(source_dir=graph_vault)
+        col = Vault(source_dir=graph_vault)
         col.index.build_index()
         results = col.graph.get_most_linked()
         assert all(isinstance(r, MostLinkedNote) for r in results)
 
     def test_get_most_linked_hub_is_first(self, graph_vault: Path) -> None:
         """The hub note (most backlinks) appears first."""
-        col = Collection(source_dir=graph_vault)
+        col = Vault(source_dir=graph_vault)
         col.index.build_index()
         results = col.graph.get_most_linked()
         assert results[0].path == "hub.md"
@@ -289,14 +289,14 @@ class TestCollectionOrphanAndHub:
 
     def test_get_most_linked_limit(self, graph_vault: Path) -> None:
         """limit caps the result count."""
-        col = Collection(source_dir=graph_vault)
+        col = Vault(source_dir=graph_vault)
         col.index.build_index()
         results = col.graph.get_most_linked(limit=1)
         assert len(results) == 1
 
     def test_get_most_linked_includes_folder(self, graph_vault: Path) -> None:
         """MostLinkedNote.folder is populated from the documents table."""
-        col = Collection(source_dir=graph_vault)
+        col = Vault(source_dir=graph_vault)
         col.index.build_index()
         results = col.graph.get_most_linked()
         hub = next(r for r in results if r.path == "hub.md")
@@ -571,7 +571,7 @@ class TestFTSGetConnectionPath:
 # ---------------------------------------------------------------------------
 
 
-class TestCollectionGetConnectionPath:
+class TestVaultGetConnectionPath:
     """Integration tests for GraphFacet.get_connection_path."""
 
     @pytest.fixture
@@ -589,21 +589,21 @@ class TestCollectionGetConnectionPath:
 
     def test_direct_connection(self, path_vault: Path) -> None:
         """Direct link a→b returns [a.md, b.md]."""
-        col = Collection(source_dir=path_vault)
+        col = Vault(source_dir=path_vault)
         col.index.build_index()
         result = col.graph.get_connection_path("a.md", "b.md")
         assert result == ["a.md", "b.md"]
 
     def test_two_hop_connection(self, path_vault: Path) -> None:
         """Two-hop path a→b→c returns [a.md, b.md, c.md]."""
-        col = Collection(source_dir=path_vault)
+        col = Vault(source_dir=path_vault)
         col.index.build_index()
         result = col.graph.get_connection_path("a.md", "c.md")
         assert result == ["a.md", "b.md", "c.md"]
 
     def test_undirected_reverse(self, path_vault: Path) -> None:
         """Reverse direction (c→a) is reachable via undirected graph."""
-        col = Collection(source_dir=path_vault)
+        col = Vault(source_dir=path_vault)
         col.index.build_index()
         result = col.graph.get_connection_path("c.md", "a.md")
         assert result is not None
@@ -612,14 +612,14 @@ class TestCollectionGetConnectionPath:
 
     def test_unreachable_returns_none(self, path_vault: Path) -> None:
         """Isolated note returns None."""
-        col = Collection(source_dir=path_vault)
+        col = Vault(source_dir=path_vault)
         col.index.build_index()
         result = col.graph.get_connection_path("a.md", "isolated.md")
         assert result is None
 
     def test_path_traversal_rejected(self, path_vault: Path) -> None:
         """Path traversal in source/target raises ValueError."""
-        col = Collection(source_dir=path_vault)
+        col = Vault(source_dir=path_vault)
         col.index.build_index()
         with pytest.raises(ValueError):
             col.graph.get_connection_path("../etc/passwd", "a.md")

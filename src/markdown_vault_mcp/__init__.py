@@ -1,7 +1,6 @@
-"""Generic markdown collection with FTS5 + semantic search."""
+"""Generic markdown vault with FTS5 + semantic search."""
 
-from markdown_vault_mcp.collection import Collection
-from markdown_vault_mcp.config import CollectionConfig, load_config
+from markdown_vault_mcp.config import VaultConfig, load_config
 from markdown_vault_mcp.exceptions import (
     ConcurrentModificationError,
     ConfigurationError,
@@ -21,7 +20,6 @@ from markdown_vault_mcp.types import (
     BrokenLinkInfo,
     ChangeSet,
     Chunk,
-    CollectionStats,
     CommitDiff,
     DeleteResult,
     EditResult,
@@ -40,9 +38,11 @@ from markdown_vault_mcp.types import (
     RenameResult,
     SearchResult,
     SectionHit,
+    VaultStats,
     WriteCallback,
     WriteResult,
 )
+from markdown_vault_mcp.vault import Vault
 
 __all__ = [
     "AttachmentContent",
@@ -51,9 +51,6 @@ __all__ = [
     "BrokenLinkInfo",
     "ChangeSet",
     "Chunk",
-    "Collection",
-    "CollectionConfig",
-    "CollectionStats",
     "CommitDiff",
     "ConcurrentModificationError",
     "ConfigurationError",
@@ -82,6 +79,9 @@ __all__ = [
     "RenameResult",
     "SearchResult",
     "SectionHit",
+    "Vault",
+    "VaultConfig",
+    "VaultStats",
     "WriteCallback",
     "WriteResult",
     "git_write_strategy",

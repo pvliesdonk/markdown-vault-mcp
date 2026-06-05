@@ -3,9 +3,9 @@
 Handles read-only git queries (commit history, diffs) with dependency
 injection — receives a :class:`~markdown_vault_mcp.git.GitWriteStrategy`
 (or ``None`` when the vault is not a git repository) and the ``source_dir``,
-with no back-reference to :class:`Collection`. Sibling to
+with no back-reference to :class:`Vault`. Sibling to
 :class:`~markdown_vault_mcp.managers.link.LinkManager`. Extracted from
-``Collection`` (#610) so the read facet stays thin.
+``Vault`` (#610) so the read facet stays thin.
 """
 
 from __future__ import annotations

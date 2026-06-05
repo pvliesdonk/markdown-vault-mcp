@@ -1,4 +1,4 @@
-"""Tests for SearchManager in isolation (no Collection dependency)."""
+"""Tests for SearchManager in isolation (no Vault dependency)."""
 
 from __future__ import annotations
 
@@ -84,7 +84,7 @@ def search_mgr(search_vault: Path) -> SearchManager:
 
 
 class TestStats:
-    def test_stats_reports_collection_snapshot(self, search_mgr: SearchManager) -> None:
+    def test_stats_reports_vault_snapshot(self, search_mgr: SearchManager) -> None:
         stats = search_mgr.stats()
         assert stats.document_count == 4  # alpha, beta, notes/gamma, notes/delta
         assert stats.indexed_frontmatter_fields == ["tags"]
@@ -807,10 +807,10 @@ def test_semantic_search_does_not_have_flush_embeddings_attr(tmp_path):
     is now the sole owner of embedding flushes. Structurally guarantee
     that the attribute is gone so a regression would surface immediately.
     """
-    from markdown_vault_mcp.collection import Collection
+    from markdown_vault_mcp.vault import Vault
     from tests.conftest import MockEmbeddingProvider
 
-    col = Collection(
+    col = Vault(
         source_dir=tmp_path,
         read_only=False,
         embeddings_path=tmp_path / "vec",

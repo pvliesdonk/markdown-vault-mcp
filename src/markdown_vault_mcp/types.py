@@ -353,8 +353,8 @@ class AttachmentInfo:
 
 
 @dataclass
-class CollectionStats:
-    """Collection-wide statistics, returned by :meth:`~markdown_vault_mcp.facets.reader.ReaderFacet.stats`.
+class VaultStats:
+    """Vault-wide statistics, returned by :meth:`~markdown_vault_mcp.facets.reader.ReaderFacet.stats`.
 
     Attributes:
         document_count: Number of indexed markdown documents.
@@ -427,7 +427,7 @@ class OutlinkInfo:
         link_type: Link syntax: ``"markdown"``, ``"wikilink"``, or ``"reference"``.
         fragment: Heading anchor if present.
         raw_target: The unresolved link target exactly as written.
-        exists: ``True`` if the target document exists in the collection.
+        exists: ``True`` if the target document exists in the vault.
     """
 
     target_path: str

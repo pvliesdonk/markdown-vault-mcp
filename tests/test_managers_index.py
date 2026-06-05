@@ -1,4 +1,4 @@
-"""Tests for IndexManager in isolation (no Collection dependency)."""
+"""Tests for IndexManager in isolation (no Vault dependency)."""
 
 from __future__ import annotations
 
@@ -120,7 +120,7 @@ class TestBuildIndex:
         mgr, _fts, _ = index_mgr
         result1 = mgr.build_index()
         result2 = mgr.build_index()
-        # IndexManager always rescans; the Collection wrapper handles the no-op.
+        # IndexManager always rescans; the Vault wrapper handles the no-op.
         assert result2.documents_indexed == result1.documents_indexed
 
     def test_force_rebuild(self, index_mgr):
@@ -454,7 +454,7 @@ class TestFlushDirtyEmbeddingsWithSnapshot:
 
 def test_start_line_propagated_to_vector_metadata(tmp_path):
     """Each vector row carries start_line for stable section ordering (#469)."""
-    from markdown_vault_mcp.collection import Collection
+    from markdown_vault_mcp.vault import Vault
     from tests.conftest import MockEmbeddingProvider
 
     vault = tmp_path / "vault"
@@ -467,7 +467,7 @@ def test_start_line_propagated_to_vector_metadata(tmp_path):
         + "\n## C\n\nthird.\n"
     )
 
-    col = Collection(
+    col = Vault(
         source_dir=vault,
         embedding_provider=MockEmbeddingProvider(),
         embeddings_path=tmp_path / "vectors",

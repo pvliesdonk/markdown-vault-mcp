@@ -13,7 +13,7 @@ markdown-vault-mcp exposes MCP tools across several categories. Write tools are 
 | [`list_documents`](#list_documents) | Read | List indexed documents and optionally attachments |
 | [`list_folders`](#list_folders) | Read | List all folder paths in the vault |
 | [`list_tags`](#list_tags) | Read | List all unique frontmatter tag values |
-| [`stats`](#stats) | Read | Get collection statistics and capabilities |
+| [`stats`](#stats) | Read | Get vault statistics and capabilities |
 | [`embeddings_status`](#embeddings_status) | Read | Check embedding provider and vector index status |
 | [`get_index_status`](#get_index_status) | Read | Check background FTS build state (queryable / building / failed) |
 | [`get_backlinks`](#get_backlinks) | Read | Find all documents that link to a given document |
@@ -135,7 +135,7 @@ partial markdown reads (see the tip above).
 
 ### `list_documents`
 
-List documents (and optionally attachments) in the collection.
+List documents (and optionally attachments) in the vault.
 
 **Parameters:**
 
@@ -155,7 +155,7 @@ List all folder paths that contain documents. Use this to discover valid folder 
 
 ### `list_tags`
 
-List all distinct values for a frontmatter field across the collection.
+List all distinct values for a frontmatter field across the vault.
 
 **Parameters:**
 
@@ -167,7 +167,7 @@ List all distinct values for a frontmatter field across the collection.
 
 ### `stats`
 
-Get an overview of the collection's size, capabilities, and configuration. Call this at the start of a session to understand what the collection contains and what search modes are available.
+Get an overview of the vault's size, capabilities, and configuration. Call this at the start of a session to understand what the vault contains and what search modes are available.
 
 **Returns:**
 
@@ -238,7 +238,7 @@ If semantic search is configured, the queued reindex job re-embeds the changed d
 
 ### `build_embeddings`
 
-Build vector embeddings to enable semantic and hybrid search. This can be slow for large collections.
+Build vector embeddings to enable semantic and hybrid search. This can be slow for large vaults.
 
 **Parameters:**
 

@@ -605,35 +605,35 @@ class TestGitWriteStrategyClass:
 class TestConfigIntegration:
     def test_git_token_wires_up_strategy(self, tmp_path: Path) -> None:
         """Legacy mode: token-only config still wires pull+push strategy."""
-        from markdown_vault_mcp.config import CollectionConfig
+        from markdown_vault_mcp.config import VaultConfig
         from markdown_vault_mcp.config_sections import GitConfig
 
-        config = CollectionConfig(
+        config = VaultConfig(
             source_dir=tmp_path,
             read_only=False,
             git=GitConfig(token="ghp_test"),
         )
-        kwargs = config.to_collection_kwargs()
+        kwargs = config.to_vault_kwargs()
         assert "on_write" in kwargs
         assert isinstance(kwargs["on_write"], GitWriteStrategy)
         assert kwargs["git_pull_interval_s"] == 600
 
     def test_no_git_token_uses_local_only_mode(self, tmp_path: Path) -> None:
         """No token and no repo URL uses local-only mode with no pull loop."""
-        from markdown_vault_mcp.config import CollectionConfig
+        from markdown_vault_mcp.config import VaultConfig
 
-        config = CollectionConfig(
+        config = VaultConfig(
             source_dir=tmp_path,
             read_only=False,
         )
-        kwargs = config.to_collection_kwargs()
+        kwargs = config.to_vault_kwargs()
         assert "on_write" in kwargs
         assert kwargs["git_pull_interval_s"] == 0
 
     def test_git_repo_url_enables_managed_mode(self, tmp_path: Path) -> None:
         """Managed mode uses configured pull interval and write callback."""
 
-        from markdown_vault_mcp.config import CollectionConfig
+        from markdown_vault_mcp.config import VaultConfig
         from markdown_vault_mcp.config_sections import GitConfig
 
         bare = tmp_path / "remote.git"
@@ -643,26 +643,26 @@ class TestConfigIntegration:
             capture_output=True,
         )
 
-        config = CollectionConfig(
+        config = VaultConfig(
             source_dir=tmp_path / "vault",
             read_only=False,
             git=GitConfig(repo_url=str(bare), token="ghp_test", pull_interval_s=321),
         )
-        kwargs = config.to_collection_kwargs()
+        kwargs = config.to_vault_kwargs()
         assert "on_write" in kwargs
         assert kwargs["git_pull_interval_s"] == 321
 
     def test_push_delay_passed_to_strategy(self, tmp_path: Path) -> None:
-        """to_collection_kwargs() passes git_push_delay_s to strategy."""
-        from markdown_vault_mcp.config import CollectionConfig
+        """to_vault_kwargs() passes git_push_delay_s to strategy."""
+        from markdown_vault_mcp.config import VaultConfig
         from markdown_vault_mcp.config_sections import GitConfig
 
-        config = CollectionConfig(
+        config = VaultConfig(
             source_dir=tmp_path,
             read_only=False,
             git=GitConfig(token="ghp_test", push_delay_s=60.0),
         )
-        kwargs = config.to_collection_kwargs()
+        kwargs = config.to_vault_kwargs()
         strategy = kwargs["on_write"]
         assert isinstance(strategy, GitWriteStrategy)
         assert strategy._push_delay_s == 60.0
@@ -690,10 +690,10 @@ class TestConfigIntegration:
         assert config.git.push_delay_s == 30.0
 
 
-class TestCollectionCloseWiresStrategy:
-    def test_collection_close_calls_strategy_close(self, tmp_path: Path) -> None:
-        """Collection.close() calls on_write.close() if available."""
-        from markdown_vault_mcp.collection import Collection
+class TestVaultCloseWiresStrategy:
+    def test_vault_close_calls_strategy_close(self, tmp_path: Path) -> None:
+        """Vault.close() calls on_write.close() if available."""
+        from markdown_vault_mcp.vault import Vault
 
         closed = []
 
@@ -707,7 +707,7 @@ class TestCollectionCloseWiresStrategy:
         vault = tmp_path / "vault"
         vault.mkdir()
         (vault / "test.md").write_text("# Test\n")
-        col = Collection(
+        col = Vault(
             source_dir=vault,
             read_only=False,
             on_write=MockStrategy(),  # type: ignore[arg-type]
@@ -2924,23 +2924,23 @@ class TestGetFileHistoryVaultScope:
         assert entries[0].paths_changed == ["note.md"]
 
 
-class TestCollectionGitHistoryMethods:
+class TestVaultGitHistoryMethods:
     """Tests for ReaderFacet.get_history / ReaderFacet.get_diff edge cases."""
 
-    def _make_collection_no_git(self, tmp_path: Path):  # type: ignore[no-untyped-def]
-        """Return a Collection with no git strategy (plain directory vault)."""
-        from markdown_vault_mcp.collection import Collection
+    def _make_vault_no_git(self, tmp_path: Path):  # type: ignore[no-untyped-def]
+        """Return a Vault with no git strategy (plain directory vault)."""
+        from markdown_vault_mcp.vault import Vault
 
         vault = tmp_path / "vault"
         vault.mkdir()
         (vault / "note.md").write_text("# Note\n")
-        col = Collection(source_dir=vault, git_strategy=None)
+        col = Vault(source_dir=vault, git_strategy=None)
         col.index.build_index()
         return col
 
-    def _make_collection_with_git(self, tmp_path: Path):  # type: ignore[no-untyped-def]
-        """Return a Collection backed by a git repo with two commits."""
-        from markdown_vault_mcp.collection import Collection
+    def _make_vault_with_git(self, tmp_path: Path):  # type: ignore[no-untyped-def]
+        """Return a Vault backed by a git repo with two commits."""
+        from markdown_vault_mcp.vault import Vault
 
         vault = tmp_path / "vault"
         vault.mkdir()
@@ -2976,20 +2976,20 @@ class TestCollectionGitHistoryMethods:
             check=True,
         )
         strategy = GitWriteStrategy()
-        col = Collection(source_dir=vault, git_strategy=strategy)
+        col = Vault(source_dir=vault, git_strategy=strategy)
         col.index.build_index()
         return col, vault
 
     def test_get_history_no_git_strategy_returns_empty(self, tmp_path: Path) -> None:
         """get_history returns [] when _git_strategy is None."""
-        col = self._make_collection_no_git(tmp_path)
+        col = self._make_vault_no_git(tmp_path)
         assert col.reader.get_history() == []
 
     def test_get_diff_no_git_strategy_returns_empty_string(
         self, tmp_path: Path
     ) -> None:
         """get_diff returns '' when _git_strategy is None and per_commit=False."""
-        col = self._make_collection_no_git(tmp_path)
+        col = self._make_vault_no_git(tmp_path)
         result = col.reader.get_diff("note.md", since_sha="abcd1234")
         assert result == ""
 
@@ -2997,13 +2997,13 @@ class TestCollectionGitHistoryMethods:
         self, tmp_path: Path
     ) -> None:
         """get_diff returns [] when _git_strategy is None and per_commit=True."""
-        col = self._make_collection_no_git(tmp_path)
+        col = self._make_vault_no_git(tmp_path)
         result = col.reader.get_diff("note.md", since_sha="abcd1234", per_commit=True)
         assert result == []
 
     def test_get_history_with_since_filter(self, tmp_path: Path) -> None:
         """get_history passes the since filter through to git log."""
-        col, _ = self._make_collection_with_git(tmp_path)
+        col, _ = self._make_vault_with_git(tmp_path)
         # A far-future date should still return results (all commits are before it).
         entries = col.reader.get_history(since="2000-01-01")
         assert isinstance(entries, list)
@@ -3022,17 +3022,17 @@ class TestCollectionGitHistoryMethods:
     # `until` filter on get_history (issue #340)
     # ------------------------------------------------------------------
 
-    def _make_collection_with_dated_commits(
+    def _make_vault_with_dated_commits(
         self,
         tmp_path: Path,
         dates: list[str],
     ):  # type: ignore[no-untyped-def]
-        """Return a Collection where each commit has a pinned ISO author date.
+        """Return a Vault where each commit has a pinned ISO author date.
 
         `GIT_AUTHOR_DATE` / `GIT_COMMITTER_DATE` are used so `--since` /
         `--until` boundary tests are deterministic, without sleeping.
         """
-        from markdown_vault_mcp.collection import Collection
+        from markdown_vault_mcp.vault import Vault
 
         vault = tmp_path / "vault_dated"
         vault.mkdir()
@@ -3072,13 +3072,13 @@ class TestCollectionGitHistoryMethods:
                 env=env,
             )
         strategy = GitWriteStrategy()
-        col = Collection(source_dir=vault, git_strategy=strategy)
+        col = Vault(source_dir=vault, git_strategy=strategy)
         col.index.build_index()
         return col
 
     def test_get_history_with_until_filter(self, tmp_path: Path) -> None:
         """get_history passes `until` through to `git log --until`."""
-        col = self._make_collection_with_dated_commits(
+        col = self._make_vault_with_dated_commits(
             tmp_path,
             dates=[
                 "2026-01-01T12:00:00+0000",
@@ -3093,7 +3093,7 @@ class TestCollectionGitHistoryMethods:
 
     def test_get_history_with_since_and_until_window(self, tmp_path: Path) -> None:
         """`since` and `until` together bound the window."""
-        col = self._make_collection_with_dated_commits(
+        col = self._make_vault_with_dated_commits(
             tmp_path,
             dates=[
                 "2026-01-01T12:00:00+0000",
@@ -3110,7 +3110,7 @@ class TestCollectionGitHistoryMethods:
 
     def test_get_history_until_no_match_returns_empty(self, tmp_path: Path) -> None:
         """`until` in the distant past returns an empty list."""
-        col = self._make_collection_with_dated_commits(
+        col = self._make_vault_with_dated_commits(
             tmp_path,
             dates=["2026-01-01T00:00:00+0000"],
         )
@@ -3126,7 +3126,7 @@ class TestCollectionGitHistoryMethods:
         asserts that passing that exact instant as ``until`` still returns
         it (regression guard for the documented boundary behaviour).
         """
-        col = self._make_collection_with_dated_commits(
+        col = self._make_vault_with_dated_commits(
             tmp_path,
             dates=["2026-02-01T12:00:00+0000"],
         )
@@ -3138,9 +3138,9 @@ class TestCollectionGitHistoryMethods:
     # `limit` on get_diff per_commit (issue #339)
     # ------------------------------------------------------------------
 
-    def _make_collection_with_n_commits(self, tmp_path: Path, n: int):  # type: ignore[no-untyped-def]
+    def _make_vault_with_n_commits(self, tmp_path: Path, n: int):  # type: ignore[no-untyped-def]
         """Return (col, vault) with `n` commits touching note.md."""
-        from markdown_vault_mcp.collection import Collection
+        from markdown_vault_mcp.vault import Vault
 
         vault = tmp_path / f"vault_{n}"
         vault.mkdir()
@@ -3170,7 +3170,7 @@ class TestCollectionGitHistoryMethods:
                 check=True,
             )
         strategy = GitWriteStrategy()
-        col = Collection(source_dir=vault, git_strategy=strategy)
+        col = Vault(source_dir=vault, git_strategy=strategy)
         col.index.build_index()
         return col, vault
 
@@ -3185,7 +3185,7 @@ class TestCollectionGitHistoryMethods:
 
     def test_get_diff_per_commit_respects_limit(self, tmp_path: Path) -> None:
         """get_diff(per_commit=True, limit=N) returns the N newest commits."""
-        col, vault = self._make_collection_with_n_commits(tmp_path, 5)
+        col, vault = self._make_vault_with_n_commits(tmp_path, 5)
         oldest = self._oldest_sha(vault)
         out = col.reader.get_diff("note.md", since_sha=oldest, per_commit=True, limit=2)
         assert isinstance(out, list)
@@ -3195,7 +3195,7 @@ class TestCollectionGitHistoryMethods:
 
     def test_get_diff_per_commit_limit_none_is_unlimited(self, tmp_path: Path) -> None:
         """limit=None (default) walks all intervening commits."""
-        col, vault = self._make_collection_with_n_commits(tmp_path, 4)
+        col, vault = self._make_vault_with_n_commits(tmp_path, 4)
         oldest = self._oldest_sha(vault)
         out = col.reader.get_diff("note.md", since_sha=oldest, per_commit=True)
         assert isinstance(out, list)
@@ -3204,7 +3204,7 @@ class TestCollectionGitHistoryMethods:
 
     def test_get_diff_limit_ignored_when_not_per_commit(self, tmp_path: Path) -> None:
         """`limit` has no effect when per_commit=False (single unified diff)."""
-        col, vault = self._make_collection_with_n_commits(tmp_path, 4)
+        col, vault = self._make_vault_with_n_commits(tmp_path, 4)
         oldest = self._oldest_sha(vault)
         result = col.reader.get_diff(
             "note.md", since_sha=oldest, per_commit=False, limit=1
@@ -3215,7 +3215,7 @@ class TestCollectionGitHistoryMethods:
 
     def test_get_diff_limit_clamped_low(self, tmp_path: Path) -> None:
         """limit <= 0 is clamped to 1."""
-        col, vault = self._make_collection_with_n_commits(tmp_path, 3)
+        col, vault = self._make_vault_with_n_commits(tmp_path, 3)
         oldest = self._oldest_sha(vault)
         out = col.reader.get_diff("note.md", since_sha=oldest, per_commit=True, limit=0)
         assert isinstance(out, list)
@@ -3223,7 +3223,7 @@ class TestCollectionGitHistoryMethods:
 
     def test_get_diff_limit_clamped_high(self, tmp_path: Path) -> None:
         """limit > 100 is clamped to 100 (matches get_history)."""
-        col, vault = self._make_collection_with_n_commits(tmp_path, 3)
+        col, vault = self._make_vault_with_n_commits(tmp_path, 3)
         oldest = self._oldest_sha(vault)
         # Only 2 intervening commits exist; clamp should not expand beyond reality.
         out = col.reader.get_diff(
@@ -3489,16 +3489,16 @@ class TestGitClaimConfig:
         assert config.git.commit_email_claim is None
 
     def test_claim_config_passed_to_strategy(self, tmp_path: Path) -> None:
-        """CollectionConfig.to_collection_kwargs() passes claim keys to GitWriteStrategy."""
-        from markdown_vault_mcp.config import CollectionConfig
+        """VaultConfig.to_vault_kwargs() passes claim keys to GitWriteStrategy."""
+        from markdown_vault_mcp.config import VaultConfig
         from markdown_vault_mcp.config_sections import GitConfig
 
-        config = CollectionConfig(
+        config = VaultConfig(
             source_dir=tmp_path,
             read_only=False,
             git=GitConfig(commit_name_claim="name", commit_email_claim="email"),
         )
-        kwargs = config.to_collection_kwargs()
+        kwargs = config.to_vault_kwargs()
         strategy = kwargs["on_write"]
         assert isinstance(strategy, GitWriteStrategy)
         assert strategy._commit_name_claim == "name"

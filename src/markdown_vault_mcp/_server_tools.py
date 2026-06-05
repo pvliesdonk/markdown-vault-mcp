@@ -20,15 +20,15 @@ from fastmcp import FastMCP
 from fastmcp.dependencies import Depends
 from fastmcp.exceptions import ToolError
 
-from markdown_vault_mcp.collection import Collection
 from markdown_vault_mcp.exceptions import EditConflictError
 from markdown_vault_mcp.git import GitWriteStrategy, PullResult, PushResult
+from markdown_vault_mcp.vault import Vault
 
 if TYPE_CHECKING:
     from pathlib import Path
 
 from ._icons import _TOOL_ICONS
-from ._server_deps import get_collection
+from ._server_deps import get_vault
 from ._server_queryable import needs_queryable
 
 logger = logging.getLogger(__name__)
@@ -40,7 +40,7 @@ def _resolve_drain_timeout() -> float:
 
 
 async def _maybe_wait_for_drain(
-    collection: Collection, wait_for_drain: bool, tool_name: str
+    vault: Vault, wait_for_drain: bool, tool_name: str
 ) -> bool:
     """Wait for the writer to drain when requested. Log on timeout.
 
@@ -61,7 +61,7 @@ async def _maybe_wait_for_drain(
     deadline = loop.time() + timeout
     poll_interval = 0.05
     while True:
-        if collection.index.is_drained():
+        if vault.index.is_drained():
             return True
         if loop.time() >= deadline:
             logger.warning(
@@ -112,19 +112,19 @@ def _is_private_url(url: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def _resolve_managed_strategy(collection: Collection) -> GitWriteStrategy:
-    """Resolve and validate the managed-mode git strategy from a Collection.
+def _resolve_managed_strategy(vault: Vault) -> GitWriteStrategy:
+    """Resolve and validate the managed-mode git strategy from a Vault.
 
     Returns:
-        The Collection's :class:`GitWriteStrategy` if it's in managed mode.
+        The Vault's :class:`GitWriteStrategy` if it's in managed mode.
 
     Raises:
         ValueError: If the deployment isn't wired with a managed git
             strategy (no ``MARKDOWN_VAULT_MCP_GIT_REPO_URL`` env var).
     """
-    # The MCP layer is a trusted consumer of Collection internals — adding
+    # The MCP layer is a trusted consumer of Vault internals — adding
     # a public accessor for this single tool would be scope creep.
-    strategy = collection._git_strategy
+    strategy = vault._git_strategy
     if not isinstance(strategy, GitWriteStrategy) or not strategy._managed:
         raise ValueError(
             "git_sync requires a managed git deployment.  Set "
@@ -200,9 +200,7 @@ def _format_push_dict(result: PushResult) -> dict[str, Any]:
     return push_dict
 
 
-async def _reindex_after_pull(
-    collection: Collection, pull_dict: dict[str, Any]
-) -> None:
+async def _reindex_after_pull(vault: Vault, pull_dict: dict[str, Any]) -> None:
     """Refresh the FTS index after a pull that moved HEAD.
 
     ``force_pull`` only mutates the working tree; without this call,
@@ -222,8 +220,8 @@ async def _reindex_after_pull(
     """
 
     def _pause_and_reindex() -> None:
-        with collection.pause_writes():
-            collection.index.reindex()
+        with vault.pause_writes():
+            vault.index.reindex()
 
     try:
         await asyncio.to_thread(_pause_and_reindex)
@@ -243,7 +241,7 @@ async def _reindex_after_pull(
 
 async def _run_pull_leg(
     strategy: GitWriteStrategy,
-    collection: Collection,
+    vault: Vault,
     *,
     dry_run: bool,
 ) -> dict[str, Any]:
@@ -256,7 +254,7 @@ async def _run_pull_leg(
 
     Args:
         strategy: Resolved managed-mode strategy.
-        collection: Collection used for the post-pull reindex.
+        vault: Vault used for the post-pull reindex.
         dry_run: Forwarded to ``force_pull`` and to
             :func:`_format_pull_dict`.
 
@@ -271,7 +269,7 @@ async def _run_pull_leg(
         and pull_result.applied
         and pull_result.from_sha != pull_result.to_sha
     ):
-        await _reindex_after_pull(collection, pull_dict)
+        await _reindex_after_pull(vault, pull_dict)
     return pull_dict
 
 
@@ -306,11 +304,11 @@ def register_tools(mcp: FastMCP) -> None:
         filters: dict[str, str] | None = None,
         chunks_per_file: int | None = None,
         snippet_words: int | None = None,
-        collection: Collection = Depends(get_collection),
+        vault: Vault = Depends(get_vault),
     ) -> list[dict[str, Any]]:
         """Find documents matching a query using full-text or semantic search.
 
-        Search the collection. Default mode is "keyword" (FTS5/BM25). Pass
+        Search the vault. Default mode is "keyword" (FTS5/BM25). Pass
         mode="hybrid" when 'stats' shows semantic_search_available=True —
         hybrid fuses keyword and vector results for best quality. Use
         mode="semantic" for pure vector similarity.
@@ -370,7 +368,7 @@ def register_tools(mcp: FastMCP) -> None:
                 provider is configured.
         """
         results = await asyncio.to_thread(
-            collection.reader.search,
+            vault.reader.search,
             query,
             limit=limit,
             mode=mode,
@@ -392,7 +390,7 @@ def register_tools(mcp: FastMCP) -> None:
     async def read(
         path: str,
         section: str | None = None,
-        collection: Collection = Depends(get_collection),
+        vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
         """Read the full content of a document or attachment by path.
 
@@ -443,11 +441,9 @@ def register_tools(mcp: FastMCP) -> None:
                 limit, or the requested section heading is not found.
         """
         if not path.endswith(".md"):
-            attachment = await asyncio.to_thread(
-                collection.reader.read_attachment, path
-            )
+            attachment = await asyncio.to_thread(vault.reader.read_attachment, path)
             return asdict(attachment)
-        note = await asyncio.to_thread(collection.reader.read, path, section=section)
+        note = await asyncio.to_thread(vault.reader.read, path, section=section)
         if note is None:
             raise ValueError(f"Document not found: {path}")
         return asdict(note)
@@ -464,9 +460,9 @@ def register_tools(mcp: FastMCP) -> None:
         folder: str | None = None,
         pattern: str | None = None,
         include_attachments: bool = False,
-        collection: Collection = Depends(get_collection),
+        vault: Vault = Depends(get_vault),
     ) -> list[dict[str, Any]]:
-        """List documents (and optionally attachments) in the collection.
+        """List documents (and optionally attachments) in the vault.
 
         Use this to enumerate documents when you need a complete listing, not
         ranked search results. For finding documents by content, use 'search'.
@@ -490,7 +486,7 @@ def register_tools(mcp: FastMCP) -> None:
             Body content is not included in either case.
         """
         results = await asyncio.to_thread(
-            collection.reader.list_documents,
+            vault.reader.list_documents,
             folder=folder,
             pattern=pattern,
             include_attachments=include_attachments,
@@ -506,7 +502,7 @@ def register_tools(mcp: FastMCP) -> None:
         },
     )
     async def list_folders(
-        collection: Collection = Depends(get_collection),
+        vault: Vault = Depends(get_vault),
     ) -> list[str]:
         """List all folder paths that contain documents.
 
@@ -519,7 +515,7 @@ def register_tools(mcp: FastMCP) -> None:
             Pass any of these as the 'folder' argument to 'search' or
             'list_documents'.
         """
-        return await asyncio.to_thread(collection.reader.list_folders)
+        return await asyncio.to_thread(vault.reader.list_folders)
 
     @mcp.tool(
         icons=_TOOL_ICONS["list_tags"],
@@ -531,9 +527,9 @@ def register_tools(mcp: FastMCP) -> None:
     )
     async def list_tags(
         field: str = "tags",
-        collection: Collection = Depends(get_collection),
+        vault: Vault = Depends(get_vault),
     ) -> list[str]:
-        """List all distinct values for a frontmatter field across the collection.
+        """List all distinct values for a frontmatter field across the vault.
 
         Use this to discover valid filter values before calling 'search' with
         the 'filters' argument. Only fields listed in indexed_frontmatter_fields
@@ -550,7 +546,7 @@ def register_tools(mcp: FastMCP) -> None:
             ["craft", "pacing", "worldbuilding"]. Use these as values in the
             'filters' dict when calling 'search'.
         """
-        return await asyncio.to_thread(collection.reader.list_tags, field)
+        return await asyncio.to_thread(vault.reader.list_tags, field)
 
     @mcp.tool(
         icons=_TOOL_ICONS["stats"],
@@ -561,11 +557,11 @@ def register_tools(mcp: FastMCP) -> None:
         },
     )
     async def stats(
-        collection: Collection = Depends(get_collection),
+        vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
-        """Get an overview of the collection's size, capabilities, and configuration.
+        """Get an overview of the vault's size, capabilities, and configuration.
 
-        Call this at the start of a session to understand what the collection
+        Call this at the start of a session to understand what the vault
         contains and what search modes are available. The
         'semantic_search_available' field tells you whether mode="semantic" or
         mode="hybrid" can be used in 'search'.
@@ -588,7 +584,7 @@ def register_tools(mcp: FastMCP) -> None:
             - orphan_count (int): Notes with no inbound or outbound links.
               Call 'get_orphan_notes' if non-zero.
         """
-        result = await asyncio.to_thread(collection.reader.stats)
+        result = await asyncio.to_thread(vault.reader.stats)
         return asdict(result)
 
     @mcp.tool(
@@ -600,7 +596,7 @@ def register_tools(mcp: FastMCP) -> None:
         },
     )
     async def embeddings_status(
-        collection: Collection = Depends(get_collection),
+        vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
         """Check the embedding provider configuration and vector index status.
 
@@ -620,7 +616,7 @@ def register_tools(mcp: FastMCP) -> None:
             - chunk_count (int): Number of chunks currently in the vector index.
             - path (str | None): Vector index file path when persisted, or null.
         """
-        return await asyncio.to_thread(collection.index.embeddings_status)
+        return await asyncio.to_thread(vault.index.embeddings_status)
 
     @mcp.tool(
         annotations={
@@ -630,7 +626,7 @@ def register_tools(mcp: FastMCP) -> None:
         icons=_TOOL_ICONS["get_index_status"],
     )
     async def get_index_status(
-        collection: Collection = Depends(get_collection),
+        vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
         """Return background-build state of the FTS index.
 
@@ -661,7 +657,7 @@ def register_tools(mcp: FastMCP) -> None:
             - error (str | None): ``None`` unless the background build
               raised.
         """
-        return await asyncio.to_thread(collection.index.get_index_status)
+        return await asyncio.to_thread(vault.index.get_index_status)
 
     # --- Link tools (read-only) ---
 
@@ -678,7 +674,7 @@ def register_tools(mcp: FastMCP) -> None:
         path: str,
         limit: int | None = None,
         wait_for_drain: bool = False,
-        collection: Collection = Depends(get_collection),
+        vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
         """Find all documents that link TO the given document (backlinks).
 
@@ -730,17 +726,15 @@ def register_tools(mcp: FastMCP) -> None:
             ValueError: If no document exists at the given path.
         """
         drained_on_request = await _maybe_wait_for_drain(
-            collection, wait_for_drain, "get_backlinks"
+            vault, wait_for_drain, "get_backlinks"
         )
-        gen_before = collection.index.write_generation()
-        results = await asyncio.to_thread(
-            collection.graph.get_backlinks, path, limit=limit
-        )
+        gen_before = vault.index.write_generation()
+        results = await asyncio.to_thread(vault.graph.get_backlinks, path, limit=limit)
         return {
             "stale": (
                 (not drained_on_request)
-                or (collection.index.write_generation() != gen_before)
-                or (not collection.index.is_drained())
+                or (vault.index.write_generation() != gen_before)
+                or (not vault.index.is_drained())
             ),
             "data": [asdict(r) for r in results],
         }
@@ -758,7 +752,7 @@ def register_tools(mcp: FastMCP) -> None:
         path: str,
         limit: int | None = None,
         wait_for_drain: bool = False,
-        collection: Collection = Depends(get_collection),
+        vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
         """Find all links FROM the given document to other documents (outlinks).
 
@@ -767,7 +761,7 @@ def register_tools(mcp: FastMCP) -> None:
         this separately. Call 'get_outlinks' directly when you only need
         the outbound link list. Each result includes an 'exists' flag —
         False means the link is broken (the target is missing from the
-        collection).
+        vault).
 
         Args:
             path: Relative path of the source document (e.g.
@@ -808,17 +802,15 @@ def register_tools(mcp: FastMCP) -> None:
             ValueError: If no document exists at the given path.
         """
         drained_on_request = await _maybe_wait_for_drain(
-            collection, wait_for_drain, "get_outlinks"
+            vault, wait_for_drain, "get_outlinks"
         )
-        gen_before = collection.index.write_generation()
-        results = await asyncio.to_thread(
-            collection.graph.get_outlinks, path, limit=limit
-        )
+        gen_before = vault.index.write_generation()
+        results = await asyncio.to_thread(vault.graph.get_outlinks, path, limit=limit)
         return {
             "stale": (
                 (not drained_on_request)
-                or (collection.index.write_generation() != gen_before)
-                or (not collection.index.is_drained())
+                or (vault.index.write_generation() != gen_before)
+                or (not vault.index.is_drained())
             ),
             "data": [asdict(r) for r in results],
         }
@@ -833,11 +825,11 @@ def register_tools(mcp: FastMCP) -> None:
     )
     async def get_broken_links(
         folder: str | None = None,
-        collection: Collection = Depends(get_collection),
+        vault: Vault = Depends(get_vault),
     ) -> list[dict[str, Any]]:
         """Find all links that point to non-existent documents (broken links).
 
-        Use this to audit link health across the collection. Call this when
+        Use this to audit link health across the vault. Call this when
         'stats' shows broken_link_count > 0, or after a 'rename' that did
         not use update_links=True, to see what links were left pointing to
         the old path. A broken link means the target path does not match any
@@ -860,9 +852,7 @@ def register_tools(mcp: FastMCP) -> None:
             - fragment (str | None): Heading anchor (e.g. "#section"), or null.
             - raw_target (str): Literal link target as written in the source.
         """
-        results = await asyncio.to_thread(
-            collection.graph.get_broken_links, folder=folder
-        )
+        results = await asyncio.to_thread(vault.graph.get_broken_links, folder=folder)
         return [asdict(r) for r in results]
 
     # --- Similarity tools (read-only) ---
@@ -881,7 +871,7 @@ def register_tools(mcp: FastMCP) -> None:
         limit: int = 10,
         chunks_per_file: int | None = None,
         wait_for_drain: bool = False,
-        collection: Collection = Depends(get_collection),
+        vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
         """Find notes most semantically similar to the given document.
 
@@ -939,11 +929,11 @@ def register_tools(mcp: FastMCP) -> None:
             ValueError: If no document exists at the given path.
         """
         drained_on_request = await _maybe_wait_for_drain(
-            collection, wait_for_drain, "get_similar"
+            vault, wait_for_drain, "get_similar"
         )
-        gen_before = collection.index.write_generation()
+        gen_before = vault.index.write_generation()
         results = await asyncio.to_thread(
-            collection.reader.get_similar,
+            vault.reader.get_similar,
             path,
             limit=limit,
             chunks_per_file=chunks_per_file,
@@ -951,8 +941,8 @@ def register_tools(mcp: FastMCP) -> None:
         return {
             "stale": (
                 (not drained_on_request)
-                or (collection.index.write_generation() != gen_before)
-                or (not collection.index.is_drained())
+                or (vault.index.write_generation() != gen_before)
+                or (not vault.index.is_drained())
             ),
             "data": [asdict(r) for r in results],
         }
@@ -970,9 +960,9 @@ def register_tools(mcp: FastMCP) -> None:
     async def get_recent(
         limit: int = 20,
         folder: str | None = None,
-        collection: Collection = Depends(get_collection),
+        vault: Vault = Depends(get_vault),
     ) -> list[dict[str, Any]]:
-        """Get the most recently modified notes in the collection.
+        """Get the most recently modified notes in the vault.
 
         Returns notes ordered by file modification time (most recent first).
         Useful for surfacing recently changed content without a search query —
@@ -989,7 +979,7 @@ def register_tools(mcp: FastMCP) -> None:
             frontmatter, modified_at (Unix timestamp), kind ("note").
         """
         results = await asyncio.to_thread(
-            collection.reader.get_recent, limit=limit, folder=folder
+            vault.reader.get_recent, limit=limit, folder=folder
         )
         return [asdict(r) for r in results]
 
@@ -1009,7 +999,7 @@ def register_tools(mcp: FastMCP) -> None:
         similar_limit: int = 5,
         link_limit: int = 10,
         wait_for_drain: bool = False,
-        collection: Collection = Depends(get_collection),
+        vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
         """Get a consolidated context dossier for a document.
 
@@ -1101,11 +1091,11 @@ def register_tools(mcp: FastMCP) -> None:
             ValueError: If no document exists at the given path.
         """
         drained_on_request = await _maybe_wait_for_drain(
-            collection, wait_for_drain, "get_context"
+            vault, wait_for_drain, "get_context"
         )
-        gen_before = collection.index.write_generation()
+        gen_before = vault.index.write_generation()
         result = await asyncio.to_thread(
-            collection.reader.get_context,
+            vault.reader.get_context,
             path,
             similar_limit=similar_limit,
             link_limit=link_limit,
@@ -1113,8 +1103,8 @@ def register_tools(mcp: FastMCP) -> None:
         return {
             "stale": (
                 (not drained_on_request)
-                or (collection.index.write_generation() != gen_before)
-                or (not collection.index.is_drained())
+                or (vault.index.write_generation() != gen_before)
+                or (not vault.index.is_drained())
             ),
             "data": asdict(result),
         }
@@ -1128,7 +1118,7 @@ def register_tools(mcp: FastMCP) -> None:
         },
     )
     async def get_orphan_notes(
-        collection: Collection = Depends(get_collection),
+        vault: Vault = Depends(get_vault),
     ) -> list[dict[str, Any]]:
         """Return all notes with no inbound or outbound links.
 
@@ -1150,7 +1140,7 @@ def register_tools(mcp: FastMCP) -> None:
             - modified_at (float): Unix timestamp of last modification.
             - kind (str): Always "note".
         """
-        results = await asyncio.to_thread(collection.graph.get_orphan_notes)
+        results = await asyncio.to_thread(vault.graph.get_orphan_notes)
         return [asdict(r) for r in results]
 
     @mcp.tool(
@@ -1163,7 +1153,7 @@ def register_tools(mcp: FastMCP) -> None:
     )
     async def get_most_linked(
         limit: int = 10,
-        collection: Collection = Depends(get_collection),
+        vault: Vault = Depends(get_vault),
     ) -> list[dict[str, Any]]:
         """Return the documents with the most inbound links, ranked by backlink count.
 
@@ -1179,7 +1169,7 @@ def register_tools(mcp: FastMCP) -> None:
             — number of distinct source documents linking to this note), ordered
             by backlink_count descending.
         """
-        results = await asyncio.to_thread(collection.graph.get_most_linked, limit=limit)
+        results = await asyncio.to_thread(vault.graph.get_most_linked, limit=limit)
         return [asdict(r) for r in results]
 
     @mcp.tool(
@@ -1196,7 +1186,7 @@ def register_tools(mcp: FastMCP) -> None:
         target: str,
         max_depth: int = 10,
         wait_for_drain: bool = False,
-        collection: Collection = Depends(get_collection),
+        vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
         """Find the shortest connection path between two notes in the link graph.
 
@@ -1235,11 +1225,11 @@ def register_tools(mcp: FastMCP) -> None:
                 not found.
         """
         drained_on_request = await _maybe_wait_for_drain(
-            collection, wait_for_drain, "get_connection_path"
+            vault, wait_for_drain, "get_connection_path"
         )
-        gen_before = collection.index.write_generation()
+        gen_before = vault.index.write_generation()
         result: list[str] | None = await asyncio.to_thread(
-            collection.graph.get_connection_path, source, target, max_depth
+            vault.graph.get_connection_path, source, target, max_depth
         )
 
         if result is None:
@@ -1249,8 +1239,8 @@ def register_tools(mcp: FastMCP) -> None:
         return {
             "stale": (
                 (not drained_on_request)
-                or (collection.index.write_generation() != gen_before)
-                or (not collection.index.is_drained())
+                or (vault.index.write_generation() != gen_before)
+                or (not vault.index.is_drained())
             ),
             "data": inner,
         }
@@ -1270,7 +1260,7 @@ def register_tools(mcp: FastMCP) -> None:
         since: str | None = None,
         until: str | None = None,
         limit: int = 20,
-        collection: Collection = Depends(get_collection),
+        vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
         """List commits that touched a note or the whole vault.
 
@@ -1315,7 +1305,7 @@ def register_tools(mcp: FastMCP) -> None:
         """
         try:
             results = await asyncio.to_thread(
-                collection.reader.get_history,
+                vault.reader.get_history,
                 path,
                 since=since,
                 until=until,
@@ -1340,7 +1330,7 @@ def register_tools(mcp: FastMCP) -> None:
         since_timestamp: str | None = None,
         per_commit: bool = False,
         limit: int | None = None,
-        collection: Collection = Depends(get_collection),
+        vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
         """Return the diff of a note between a reference point and HEAD.
 
@@ -1394,7 +1384,7 @@ def register_tools(mcp: FastMCP) -> None:
         """
         try:
             result = await asyncio.to_thread(
-                collection.reader.get_diff,
+                vault.reader.get_diff,
                 path,
                 since_sha=since_sha,
                 since_timestamp=since_timestamp,
@@ -1420,7 +1410,7 @@ def register_tools(mcp: FastMCP) -> None:
     )
     @needs_queryable()
     async def reindex(
-        collection: Collection = Depends(get_collection),
+        vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
         """Submit an incremental reindex job to the writer.
 
@@ -1444,7 +1434,7 @@ def register_tools(mcp: FastMCP) -> None:
               stringified exception.  Operators can re-run ``reindex`` to
               retry; a subsequent successful run clears the field.
         """
-        collection.index.reindex_async()
+        vault.index.reindex_async()
         return {"status": "queued"}
 
     @mcp.tool(
@@ -1458,7 +1448,7 @@ def register_tools(mcp: FastMCP) -> None:
     @needs_queryable()
     async def build_embeddings(
         force: bool = False,
-        collection: Collection = Depends(get_collection),
+        vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
         """Rebuild vector embeddings for semantic and hybrid search.
 
@@ -1484,7 +1474,7 @@ def register_tools(mcp: FastMCP) -> None:
               ``build_embeddings`` to retry; a subsequent successful run
               clears the field.
         """
-        collection.index.build_embeddings_async(force=force)
+        vault.index.build_embeddings_async(force=force)
         return {"status": "queued"}
 
     # --- Write tools (tag-based visibility) ---
@@ -1504,7 +1494,7 @@ def register_tools(mcp: FastMCP) -> None:
         frontmatter: dict[str, Any] | None = None,
         content_base64: str = "",
         if_match: str | None = None,
-        collection: Collection = Depends(get_collection),
+        vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
         """Create or overwrite a document or attachment.
 
@@ -1560,11 +1550,11 @@ def register_tools(mcp: FastMCP) -> None:
             except Exception as exc:
                 raise ValueError(f"Invalid base64 in content_base64: {exc}") from exc
             result = await asyncio.to_thread(
-                collection.writer.write_attachment, path, raw_bytes, if_match=if_match
+                vault.writer.write_attachment, path, raw_bytes, if_match=if_match
             )
             return asdict(result)
         result = await asyncio.to_thread(
-            collection.writer.write,
+            vault.writer.write,
             path,
             content,
             frontmatter=frontmatter,
@@ -1588,7 +1578,7 @@ def register_tools(mcp: FastMCP) -> None:
         if_match: str | None = None,
         line_start: int | None = None,
         line_end: int | None = None,
-        collection: Collection = Depends(get_collection),
+        vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
         """Make a targeted text replacement in an existing .md note (not supported for attachments).
 
@@ -1640,7 +1630,7 @@ def register_tools(mcp: FastMCP) -> None:
         """
         try:
             result = await asyncio.to_thread(
-                collection.writer.edit,
+                vault.writer.edit,
                 path,
                 old_text=old_text,
                 new_text=new_text,
@@ -1673,7 +1663,7 @@ def register_tools(mcp: FastMCP) -> None:
     async def delete(
         path: str,
         if_match: str | None = None,
-        collection: Collection = Depends(get_collection),
+        vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
         """Permanently delete a document or attachment.
 
@@ -1701,9 +1691,7 @@ def register_tools(mcp: FastMCP) -> None:
             McpError: If if_match is provided and the file has been modified
                 (ConcurrentModificationError).
         """
-        result = await asyncio.to_thread(
-            collection.writer.delete, path, if_match=if_match
-        )
+        result = await asyncio.to_thread(vault.writer.delete, path, if_match=if_match)
         return asdict(result)
 
     @mcp.tool(
@@ -1720,7 +1708,7 @@ def register_tools(mcp: FastMCP) -> None:
         new_path: str,
         if_match: str | None = None,
         update_links: bool = False,
-        collection: Collection = Depends(get_collection),
+        vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
         """Rename or move a document or attachment. When renaming a .md note,
         always pass update_links=True to rewrite links in other documents
@@ -1758,7 +1746,7 @@ def register_tools(mcp: FastMCP) -> None:
                 (ConcurrentModificationError).
         """
         result = await asyncio.to_thread(
-            collection.writer.rename,
+            vault.writer.rename,
             old_path,
             new_path,
             if_match=if_match,
@@ -1778,7 +1766,7 @@ def register_tools(mcp: FastMCP) -> None:
     async def git_sync(
         direction: Literal["pull", "push", "both"] = "both",
         dry_run: bool = False,
-        collection: Collection = Depends(get_collection),
+        vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
         """Synchronously reconcile the local clone with ``origin``.
 
@@ -1834,7 +1822,7 @@ def register_tools(mcp: FastMCP) -> None:
                 :class:`GitWriteStrategy` (i.e. the deployment is not
                 wired with ``MARKDOWN_VAULT_MCP_GIT_REPO_URL``).
         """
-        strategy = _resolve_managed_strategy(collection)
+        strategy = _resolve_managed_strategy(vault)
         git_root = strategy._resolve_force_repo()
 
         result: dict[str, Any] = {
@@ -1848,7 +1836,7 @@ def register_tools(mcp: FastMCP) -> None:
             result["dry_run"] = True
 
         if direction in ("pull", "both"):
-            pull_dict = await _run_pull_leg(strategy, collection, dry_run=dry_run)
+            pull_dict = await _run_pull_leg(strategy, vault, dry_run=dry_run)
             result["pull"] = pull_dict
 
             # Short-circuit the push leg when the pull failed in 'both' mode
@@ -1893,7 +1881,7 @@ def register_tools(mcp: FastMCP) -> None:
         frontmatter: dict[str, Any] | None = None,
         if_match: str | None = None,
         timeout_s: float = 30.0,
-        collection: Collection = Depends(get_collection),
+        vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
         """Download a file from a URL and save it to the vault.
 
@@ -1972,11 +1960,11 @@ def register_tools(mcp: FastMCP) -> None:
         # covers the non-fetch code path.
         is_markdown = path.endswith(".md")
         # pylint: disable=protected-access  # No public API for size limit;
-        # MCP layer is a trusted consumer of Collection internals.
+        # MCP layer is a trusted consumer of Vault internals.
         max_bytes = (
             0
-            if is_markdown or collection._max_attachment_size_mb <= 0
-            else int(collection._max_attachment_size_mb * 1024 * 1024)
+            if is_markdown or vault._max_attachment_size_mb <= 0
+            else int(vault._max_attachment_size_mb * 1024 * 1024)
         )
 
         # Stream download — enforce size limit as chunks arrive.
@@ -1993,7 +1981,7 @@ def register_tools(mcp: FastMCP) -> None:
                 if max_bytes > 0 and downloaded > max_bytes:
                     raise ValueError(
                         f"Download exceeded the attachment size limit "
-                        f"of {collection._max_attachment_size_mb} MB "
+                        f"of {vault._max_attachment_size_mb} MB "
                         f"({max_bytes} bytes). Raise "
                         "MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB or "
                         "set it to 0 to disable the limit."
@@ -2035,7 +2023,7 @@ def register_tools(mcp: FastMCP) -> None:
                     "Only UTF-8 encoded responses can be saved as .md notes."
                 ) from exc
             result = await asyncio.to_thread(
-                collection.writer.write,
+                vault.writer.write,
                 path,
                 text,
                 frontmatter=frontmatter,
@@ -2043,7 +2031,7 @@ def register_tools(mcp: FastMCP) -> None:
             )
         else:
             result = await asyncio.to_thread(
-                collection.writer.write_attachment,
+                vault.writer.write_attachment,
                 path,
                 raw_bytes,
                 if_match=if_match,

@@ -1,4 +1,4 @@
-"""Integration tests for Collection."""
+"""Integration tests for Vault."""
 
 from __future__ import annotations
 
@@ -11,7 +11,6 @@ from unittest.mock import patch
 
 import pytest
 
-from markdown_vault_mcp.collection import Collection
 from markdown_vault_mcp.exceptions import (
     ConcurrentModificationError,
     DocumentExistsError,
@@ -23,12 +22,12 @@ from markdown_vault_mcp.hashing import compute_file_hash
 from markdown_vault_mcp.types import (
     AttachmentContent,
     AttachmentInfo,
-    CollectionStats,
     DeleteResult,
     EditResult,
     NoteContent,
     NoteInfo,
     RenameResult,
+    VaultStats,
     WriteResult,
 )
 from markdown_vault_mcp.utils.text import (
@@ -40,6 +39,7 @@ from markdown_vault_mcp.utils.text import (
 from markdown_vault_mcp.utils.text import (
     normalize_text as _normalize_text,
 )
+from markdown_vault_mcp.vault import Vault
 from tests.conftest import wait_for_writer_drain
 
 if TYPE_CHECKING:
@@ -51,7 +51,7 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 
 
-def _make_collection(
+def _make_vault(
     source_dir: Path,
     *,
     index_path: Path | None = None,
@@ -62,13 +62,13 @@ def _make_collection(
     read_only: bool = True,
     on_write: object = None,
     exclude_patterns: list[str] | None = None,
-) -> Collection:
-    """Create a Collection for testing with sensible defaults.
+) -> Vault:
+    """Create a Vault for testing with sensible defaults.
 
     Uses an in-memory SQLite index unless *index_path* is given.
 
     Args:
-        source_dir: Root directory of the markdown collection.
+        source_dir: Root directory of the markdown vault.
         index_path: Optional path to a persistent SQLite file.
         embeddings_path: Base path for vector sidecar files.
         embedding_provider: Provider for semantic search.
@@ -79,9 +79,9 @@ def _make_collection(
         exclude_patterns: Glob patterns to exclude from indexing.
 
     Returns:
-        A configured :class:`Collection` instance.
+        A configured :class:`Vault` instance.
     """
-    return Collection(
+    return Vault(
         source_dir=source_dir,
         index_path=index_path,
         embeddings_path=embeddings_path,
@@ -100,9 +100,9 @@ def _make_collection(
 
 
 @pytest.fixture
-def collection(vault_path: Path) -> Collection:
-    """Built Collection backed by the clean vault fixture."""
-    col = _make_collection(vault_path)
+def vault(vault_path: Path) -> Vault:
+    """Built Vault backed by the clean vault fixture."""
+    col = _make_vault(vault_path)
     col.index.build_index()
     return col
 
@@ -115,7 +115,7 @@ def collection(vault_path: Path) -> Collection:
 class TestBuildIndex:
     def test_build_index_from_fixtures(self, vault_path: Path) -> None:
         """build_index() indexes all parseable documents and their chunks."""
-        col = _make_collection(vault_path)
+        col = _make_vault(vault_path)
         stats = col.index.build_index()
 
         # 9 valid .md files (excludes invalid_utf8.md; malformed_yaml.md skipped).
@@ -126,7 +126,7 @@ class TestBuildIndex:
 
     def test_build_index_force_rebuild(self, vault_path: Path) -> None:
         """build_index(force=True) rebuilds without crashing."""
-        col = _make_collection(vault_path)
+        col = _make_vault(vault_path)
         col.index.build_index()
         stats = col.index.build_index(force=True)
 
@@ -135,7 +135,7 @@ class TestBuildIndex:
 
     def test_build_index_idempotent_without_force(self, vault_path: Path) -> None:
         """Calling build_index() twice (no force) does not double-index."""
-        col = _make_collection(vault_path)
+        col = _make_vault(vault_path)
         col.index.build_index()
         # Second call is a no-op; documents_indexed reflects existing count.
         stats2 = col.index.build_index()
@@ -144,7 +144,7 @@ class TestBuildIndex:
     def test_reindex_detects_new_file(self, tmp_path: Path, vault_path: Path) -> None:
         """reindex() detects and indexes a file added after build_index()."""
         state_path = tmp_path / "state.json"
-        col = _make_collection(vault_path, state_path=state_path)
+        col = _make_vault(vault_path, state_path=state_path)
         col.index.build_index()
 
         # Add a new file to the vault.
@@ -157,7 +157,7 @@ class TestBuildIndex:
 
     def test_build_index_continues_on_upsert_error(self, vault_path: Path) -> None:
         """build_index() skips documents that fail to index and continues."""
-        col = _make_collection(vault_path)
+        col = _make_vault(vault_path)
         call_count = 0
         original_upsert = col._fts.upsert_note
 
@@ -180,7 +180,7 @@ class TestBuildIndex:
     ) -> None:
         """reindex() skips documents that fail to upsert and continues."""
         state_path = tmp_path / "state.json"
-        col = _make_collection(vault_path, state_path=state_path)
+        col = _make_vault(vault_path, state_path=state_path)
         col.index.build_index()
 
         # Add two new files.
@@ -208,7 +208,7 @@ class TestBuildIndex:
     ) -> None:
         """reindex() must not index files matching exclude_patterns."""
         state_path = tmp_path / "state.json"
-        col = _make_collection(
+        col = _make_vault(
             vault_path,
             state_path=state_path,
             exclude_patterns=[".claude/**"],
@@ -249,17 +249,15 @@ class TestBuildIndex:
         excluded_dir.mkdir(parents=True, exist_ok=True)
         (excluded_dir / "test.md").write_text("# Excluded\nSome content.\n")
 
-        col1 = _make_collection(
-            vault_path, state_path=state_path, index_path=index_path
-        )
+        col1 = _make_vault(vault_path, state_path=state_path, index_path=index_path)
         col1.index.build_index()
 
         # The file is in the index because no exclude_patterns were set.
         paths1 = [row["path"] for row in col1._fts.list_notes()]
         assert ".claude/test.md" in paths1
 
-        # Phase 2: create a new Collection WITH exclude_patterns and reindex.
-        col2 = _make_collection(
+        # Phase 2: create a new Vault WITH exclude_patterns and reindex.
+        col2 = _make_vault(
             vault_path,
             state_path=state_path,
             index_path=index_path,
@@ -290,7 +288,7 @@ class TestBuildIndex:
         excluded_dir.mkdir(parents=True, exist_ok=True)
         (excluded_dir / "test.md").write_text("# Excluded\nSome content.\n")
 
-        col1 = _make_collection(
+        col1 = _make_vault(
             vault_path,
             state_path=state_path,
             index_path=index_path,
@@ -304,7 +302,7 @@ class TestBuildIndex:
         assert ".claude/test.md" in vec_paths1
 
         # Phase 2: reindex WITH exclude_patterns — stale doc purged from both.
-        col2 = _make_collection(
+        col2 = _make_vault(
             vault_path,
             state_path=state_path,
             index_path=index_path,
@@ -333,16 +331,16 @@ class TestBuildIndex:
         excluded_dir.mkdir(parents=True, exist_ok=True)
         (excluded_dir / "test.md").write_text("# Excluded\nSome content.\n")
 
-        col1 = _make_collection(vault_path, index_path=index_path)
+        col1 = _make_vault(vault_path, index_path=index_path)
         col1.index.build_index()
         paths1 = [row["path"] for row in col1._fts.list_notes()]
         assert ".claude/test.md" in paths1
 
-        # Phase 2: new Collection WITH exclude_patterns. Per issue #525 the
+        # Phase 2: new Vault WITH exclude_patterns. Per issue #525 the
         # short-circuit fires on populated FTS state alone, so a plain
         # build_index() would no-op — config changes (exclude_patterns,
         # required_frontmatter) need an explicit force=True rebuild.
-        col2 = _make_collection(
+        col2 = _make_vault(
             vault_path,
             index_path=index_path,
             exclude_patterns=[".claude/**"],
@@ -366,7 +364,7 @@ class TestBuildIndex:
         excluded_dir.mkdir(parents=True, exist_ok=True)
         (excluded_dir / "test.md").write_text("# Excluded\nSome content.\n")
 
-        col1 = _make_collection(
+        col1 = _make_vault(
             vault_path,
             index_path=index_path,
             embeddings_path=embeddings_path,
@@ -382,7 +380,7 @@ class TestBuildIndex:
         # both FTS and embeddings — see the sibling test for the rationale
         # (issue #525). Vectors need their own force=True because the
         # short-circuit in build_embeddings is independent.
-        col2 = _make_collection(
+        col2 = _make_vault(
             vault_path,
             index_path=index_path,
             embeddings_path=embeddings_path,
@@ -408,7 +406,7 @@ class TestBuildIndex:
 class TestLazyInitialisation:
     def test_search_without_build_index_returns_empty(self, vault_path: Path) -> None:
         """search() on an unbuilt index returns [] without crashing (bucket 2)."""
-        col = _make_collection(vault_path)
+        col = _make_vault(vault_path)
 
         results = col.reader.search("simple")
 
@@ -416,7 +414,7 @@ class TestLazyInitialisation:
 
     def test_list_without_build_index_returns_empty(self, vault_path: Path) -> None:
         """list() on an unbuilt index returns [] (bucket 2 — no implicit build)."""
-        col = _make_collection(vault_path)
+        col = _make_vault(vault_path)
 
         notes = col.reader.list_documents()
 
@@ -429,24 +427,24 @@ class TestLazyInitialisation:
 
 
 class TestSearch:
-    def test_search_keyword_returns_results(self, collection: Collection) -> None:
+    def test_search_keyword_returns_results(self, vault: Vault) -> None:
         """Keyword search for a term present in fixtures returns results."""
-        results = collection.reader.search("simple", mode="keyword")
+        results = vault.reader.search("simple", mode="keyword")
 
         assert len(results) > 0
         assert all(hasattr(r, "path") for r in results)
         assert all(hasattr(r, "score") for r in results)
 
-    def test_search_keyword_term_in_content(self, collection: Collection) -> None:
+    def test_search_keyword_term_in_content(self, vault: Vault) -> None:
         """Keyword results reference documents that contain the query term."""
-        results = collection.reader.search("unicode", mode="keyword")
+        results = vault.reader.search("unicode", mode="keyword")
 
         paths = [r.path for r in results]
         assert any("unicode" in p.lower() for p in paths)
 
     def test_search_semantic_no_embeddings_raises(self, vault_path: Path) -> None:
         """Semantic search without a provider configured raises ValueError."""
-        col = _make_collection(vault_path)
+        col = _make_vault(vault_path)
         col.index.build_index()
 
         with pytest.raises(ValueError, match="embedding_provider"):
@@ -460,7 +458,7 @@ class TestSearch:
     ) -> None:
         """Hybrid search returns results when both FTS and vector indexes are built."""
         embeddings_path = tmp_path / "embeddings"
-        col = Collection(
+        col = Vault(
             source_dir=vault_path,
             embeddings_path=embeddings_path,
             embedding_provider=mock_provider,
@@ -486,7 +484,7 @@ class TestSearch:
         rather than one source completely overshadowing the other.
         """
         embeddings_path = tmp_path / "embeddings"
-        col = Collection(
+        col = Vault(
             source_dir=vault_path,
             embeddings_path=embeddings_path,
             embedding_provider=mock_provider,
@@ -504,7 +502,7 @@ class TestSearch:
 
     def test_search_hybrid_no_embeddings_raises(self, vault_path: Path) -> None:
         """Hybrid search without a provider configured raises ValueError."""
-        col = _make_collection(vault_path)
+        col = _make_vault(vault_path)
         col.index.build_index()
 
         with pytest.raises(ValueError, match="embedding_provider"):
@@ -530,7 +528,7 @@ class TestSearch:
             "# Beta Note\n\nContent from the beta folder.\n"
         )
 
-        col = _make_collection(vault)
+        col = _make_vault(vault)
         col.index.build_index()
 
         notes = col.reader.list_documents()
@@ -552,9 +550,9 @@ class TestSearch:
 
 
 class TestRead:
-    def test_read_returns_content(self, collection: Collection) -> None:
+    def test_read_returns_content(self, vault: Vault) -> None:
         """read() returns a NoteContent with correct fields."""
-        result = collection.reader.read("full_frontmatter.md")
+        result = vault.reader.read("full_frontmatter.md")
 
         assert isinstance(result, NoteContent)
         assert result.path == "full_frontmatter.md"
@@ -563,25 +561,25 @@ class TestRead:
         assert result.frontmatter.get("cluster") == "fiction"
         assert result.folder == ""
 
-    def test_read_subfolder_document(self, collection: Collection) -> None:
+    def test_read_subfolder_document(self, vault: Vault) -> None:
         """read() works for documents nested in subfolders."""
-        result = collection.reader.read("subfolder/nested.md")
+        result = vault.reader.read("subfolder/nested.md")
 
         assert isinstance(result, NoteContent)
         assert result.path == "subfolder/nested.md"
         assert result.folder == "subfolder"
 
-    def test_read_not_found_returns_none(self, collection: Collection) -> None:
+    def test_read_not_found_returns_none(self, vault: Vault) -> None:
         """read() returns None for a path that does not exist."""
-        result = collection.reader.read("nonexistent/missing.md")
+        result = vault.reader.read("nonexistent/missing.md")
 
         assert result is None
 
-    def test_read_returns_etag(self, collection: Collection, vault_path: Path) -> None:
+    def test_read_returns_etag(self, vault: Vault, vault_path: Path) -> None:
         """read() returns an etag field containing the SHA256 hex digest."""
         import hashlib
 
-        result = collection.reader.read("full_frontmatter.md")
+        result = vault.reader.read("full_frontmatter.md")
 
         assert result is not None
         expected = hashlib.sha256(
@@ -589,10 +587,10 @@ class TestRead:
         ).hexdigest()
         assert result.etag == expected
 
-    def test_read_etag_is_stable(self, collection: Collection) -> None:
+    def test_read_etag_is_stable(self, vault: Vault) -> None:
         """read() returns the same etag on repeated reads of unchanged content."""
-        result1 = collection.reader.read("full_frontmatter.md")
-        result2 = collection.reader.read("full_frontmatter.md")
+        result1 = vault.reader.read("full_frontmatter.md")
+        result2 = vault.reader.read("full_frontmatter.md")
 
         assert result1 is not None
         assert result2 is not None
@@ -602,7 +600,7 @@ class TestRead:
 
     def test_read_etag_changes_after_write(self, vault_path: Path) -> None:
         """read() etag changes when file content changes."""
-        col = _make_collection(vault_path, read_only=False)
+        col = _make_vault(vault_path, read_only=False)
         col.index.build_index()
 
         result_before = col.reader.read("full_frontmatter.md")
@@ -622,27 +620,27 @@ class TestRead:
 
 
 class TestList:
-    def test_list_all(self, collection: Collection) -> None:
+    def test_list_all(self, vault: Vault) -> None:
         """list() returns all indexed documents."""
-        notes = collection.reader.list_documents()
+        notes = vault.reader.list_documents()
 
         assert len(notes) == 9
         assert all(isinstance(n, NoteInfo) for n in notes)
 
-    def test_list_with_folder(self, collection: Collection) -> None:
+    def test_list_with_folder(self, vault: Vault) -> None:
         """list(folder=...) returns only documents in that folder."""
-        notes = collection.reader.list_documents(folder="subfolder")
+        notes = vault.reader.list_documents(folder="subfolder")
 
         assert len(notes) >= 1
         assert all("subfolder" in n.folder for n in notes)
 
-    def test_list_with_pattern(self, collection: Collection) -> None:
+    def test_list_with_pattern(self, vault: Vault) -> None:
         """list(pattern=...) returns only documents matching the glob.
 
         ``fnmatch`` treats ``*`` as matching path separators, so
         ``subfolder/*.md`` also matches ``subfolder/deep/doc.md``.
         """
-        notes = collection.reader.list_documents(pattern="subfolder/*.md")
+        notes = vault.reader.list_documents(pattern="subfolder/*.md")
 
         paths = [n.path for n in notes]
         assert "subfolder/nested.md" in paths
@@ -651,9 +649,9 @@ class TestList:
         # Root-level documents must not be included.
         assert all(n.path.startswith("subfolder/") for n in notes)
 
-    def test_list_subfolder_deep_pattern(self, collection: Collection) -> None:
+    def test_list_subfolder_deep_pattern(self, vault: Vault) -> None:
         """list() with a deep glob pattern returns deeply nested documents."""
-        notes = collection.reader.list_documents(pattern="subfolder/**/*.md")
+        notes = vault.reader.list_documents(pattern="subfolder/**/*.md")
 
         paths = [n.path for n in notes]
         assert "subfolder/deep/doc.md" in paths
@@ -665,11 +663,11 @@ class TestList:
 
 
 class TestStats:
-    def test_stats_returns_collection_stats(self, collection: Collection) -> None:
-        """stats() returns a CollectionStats with correct counts."""
-        s = collection.reader.stats()
+    def test_stats_returns_vault_stats(self, vault: Vault) -> None:
+        """stats() returns a VaultStats with correct counts."""
+        s = vault.reader.stats()
 
-        assert isinstance(s, CollectionStats)
+        assert isinstance(s, VaultStats)
         assert s.document_count == 9
         assert s.chunk_count == 9
         # Folders: "" (root), "subfolder", "subfolder/deep"
@@ -683,7 +681,7 @@ class TestStats:
         mock_provider: MockEmbeddingProvider,
     ) -> None:
         """stats() reports semantic_search_available=True when provider is set."""
-        col = Collection(
+        col = Vault(
             source_dir=vault_path,
             embeddings_path=tmp_path / "embeddings",
             embedding_provider=mock_provider,
@@ -693,9 +691,9 @@ class TestStats:
         s = col.reader.stats()
         assert s.semantic_search_available is True
 
-    def test_list_folders(self, collection: Collection) -> None:
+    def test_list_folders(self, vault: Vault) -> None:
         """list_folders() returns the distinct folder values across the index."""
-        folders = collection.reader.list_folders()
+        folders = vault.reader.list_folders()
 
         assert isinstance(folders, list)
         assert "" in folders  # root documents
@@ -704,7 +702,7 @@ class TestStats:
 
     def test_list_tags(self, vault_path: Path) -> None:
         """list_tags() returns distinct values for indexed frontmatter fields."""
-        col = Collection(
+        col = Vault(
             source_dir=vault_path,
             indexed_frontmatter_fields=["cluster", "topics"],
         )
@@ -719,11 +717,9 @@ class TestStats:
         assert "horror" in topics
         assert "gothic" in topics
 
-    def test_list_tags_unindexed_field_returns_empty(
-        self, collection: Collection
-    ) -> None:
+    def test_list_tags_unindexed_field_returns_empty(self, vault: Vault) -> None:
         """list_tags() on a field not in indexed_frontmatter_fields returns []."""
-        result = collection.reader.list_tags("cluster")
+        result = vault.reader.list_tags("cluster")
         assert result == []
 
 
@@ -733,25 +729,25 @@ class TestStats:
 
 
 class TestWriteReadOnly:
-    def test_write_raises_readonly(self, collection: Collection) -> None:
-        """write() raises ReadOnlyError on a default (read-only) collection."""
+    def test_write_raises_readonly(self, vault: Vault) -> None:
+        """write() raises ReadOnlyError on a default (read-only) vault."""
         with pytest.raises(ReadOnlyError):
-            collection.writer.write("new_note.md", "# New Note\n\nContent.")
+            vault.writer.write("new_note.md", "# New Note\n\nContent.")
 
-    def test_edit_raises_readonly(self, collection: Collection) -> None:
-        """edit() raises ReadOnlyError on a read-only collection."""
+    def test_edit_raises_readonly(self, vault: Vault) -> None:
+        """edit() raises ReadOnlyError on a read-only vault."""
         with pytest.raises(ReadOnlyError):
-            collection.writer.edit("simple.md", "old text", "new text")
+            vault.writer.edit("simple.md", "old text", "new text")
 
-    def test_delete_raises_readonly(self, collection: Collection) -> None:
-        """delete() raises ReadOnlyError on a read-only collection."""
+    def test_delete_raises_readonly(self, vault: Vault) -> None:
+        """delete() raises ReadOnlyError on a read-only vault."""
         with pytest.raises(ReadOnlyError):
-            collection.writer.delete("simple.md")
+            vault.writer.delete("simple.md")
 
-    def test_rename_raises_readonly(self, collection: Collection) -> None:
-        """rename() raises ReadOnlyError on a read-only collection."""
+    def test_rename_raises_readonly(self, vault: Vault) -> None:
+        """rename() raises ReadOnlyError on a read-only vault."""
         with pytest.raises(ReadOnlyError):
-            collection.writer.rename("simple.md", "renamed.md")
+            vault.writer.rename("simple.md", "renamed.md")
 
 
 # ---------------------------------------------------------------------------
@@ -760,9 +756,9 @@ class TestWriteReadOnly:
 
 
 @pytest.fixture
-def writable(vault_path: Path) -> Collection:
-    """Writable Collection backed by the clean vault fixture."""
-    col = _make_collection(vault_path, read_only=False)
+def writable(vault_path: Path) -> Vault:
+    """Writable Vault backed by the clean vault fixture."""
+    col = _make_vault(vault_path, read_only=False)
     col.index.build_index()
     return col
 
@@ -772,9 +768,9 @@ def writable_with_embeddings(
     vault_path: Path,
     tmp_path: Path,
     mock_provider: MockEmbeddingProvider,
-) -> Collection:
-    """Writable Collection with mock embeddings enabled."""
-    col = Collection(
+) -> Vault:
+    """Writable Vault with mock embeddings enabled."""
+    col = Vault(
         source_dir=vault_path,
         embeddings_path=tmp_path / "embeddings",
         embedding_provider=mock_provider,
@@ -786,9 +782,7 @@ def writable_with_embeddings(
 
 
 class TestWrite:
-    def test_write_creates_new_file(
-        self, writable: Collection, vault_path: Path
-    ) -> None:
+    def test_write_creates_new_file(self, writable: Vault, vault_path: Path) -> None:
         """write() creates a new file on disk and returns created=True."""
         result = writable.writer.write("new_note.md", "# New Note\n\nNew content.\n")
 
@@ -799,7 +793,7 @@ class TestWrite:
         assert "New content" in (vault_path / "new_note.md").read_text()
 
     def test_write_creates_intermediate_directories(
-        self, writable: Collection, vault_path: Path
+        self, writable: Vault, vault_path: Path
     ) -> None:
         """write() creates intermediate dirs as needed."""
         writable.writer.write("deep/nested/note.md", "# Deep\n\nNested.\n")
@@ -807,7 +801,7 @@ class TestWrite:
         assert (vault_path / "deep" / "nested" / "note.md").is_file()
 
     def test_write_overwrites_existing_file(
-        self, writable: Collection, vault_path: Path
+        self, writable: Vault, vault_path: Path
     ) -> None:
         """write() overwrites existing file and returns created=False."""
         result = writable.writer.write("simple.md", "# Replaced\n\nNew body.\n")
@@ -815,9 +809,7 @@ class TestWrite:
         assert result.created is False
         assert "Replaced" in (vault_path / "simple.md").read_text()
 
-    def test_write_with_frontmatter(
-        self, writable: Collection, vault_path: Path
-    ) -> None:
+    def test_write_with_frontmatter(self, writable: Vault, vault_path: Path) -> None:
         """write() serialises frontmatter as YAML header."""
         writable.writer.write(
             "with_fm.md",
@@ -829,7 +821,7 @@ class TestWrite:
         assert "---" in content
         assert "title: Hello" in content
 
-    def test_write_immediately_searchable(self, writable: Collection) -> None:
+    def test_write_immediately_searchable(self, writable: Vault) -> None:
         """Written content is immediately searchable."""
         writable.writer.write(
             "searchable.md", "# Unique Xylophone\n\nRare content for testing.\n"
@@ -843,7 +835,7 @@ class TestWrite:
     def test_write_triggers_callback(self, vault_path: Path) -> None:
         """write() invokes the on_write callback with correct arguments."""
         calls: list = []
-        col = _make_collection(
+        col = _make_vault(
             vault_path, read_only=False, on_write=lambda *args: calls.append(args)
         )
         col.index.build_index()
@@ -857,19 +849,17 @@ class TestWrite:
         assert "Callback" in content
         assert operation == "write"
 
-    def test_write_path_traversal_rejected(self, writable: Collection) -> None:
+    def test_write_path_traversal_rejected(self, writable: Vault) -> None:
         """write() rejects paths that escape the source directory."""
         with pytest.raises(ValueError, match="traversal"):
             writable.writer.write("../../etc/passwd.md", "malicious")
 
-    def test_write_non_md_extension_rejected(self, writable: Collection) -> None:
+    def test_write_non_md_extension_rejected(self, writable: Vault) -> None:
         """write() rejects paths that do not end with .md."""
         with pytest.raises(ValueError, match=r"\.md"):
             writable.writer.write("notes.yaml", "content")
 
-    def test_write_updates_vector_index(
-        self, writable_with_embeddings: Collection
-    ) -> None:
+    def test_write_updates_vector_index(self, writable_with_embeddings: Vault) -> None:
         """write() with embeddings configured makes the doc findable via semantic search."""
         writable_with_embeddings.writer.write(
             "new_semantic.md",
@@ -883,7 +873,7 @@ class TestWrite:
         paths = [r.path for r in results]
         assert "new_semantic.md" in paths
 
-    def test_write_frontmatter_roundtrip(self, writable: Collection) -> None:
+    def test_write_frontmatter_roundtrip(self, writable: Vault) -> None:
         """write() with frontmatter dict round-trips correctly through read()."""
         frontmatter = {
             "title": "Roundtrip Note",
@@ -901,7 +891,7 @@ class TestWrite:
         assert result.frontmatter["tags"] == ["alpha", "beta"]
         assert result.frontmatter["meta"] == {"key": "value"}
 
-    def test_write_empty_content(self, writable: Collection) -> None:
+    def test_write_empty_content(self, writable: Vault) -> None:
         """write() with empty body and frontmatter produces a readable document."""
         writable.writer.write("empty_body.md", "", frontmatter={"title": "Empty Body"})
 
@@ -910,7 +900,7 @@ class TestWrite:
         assert result is not None
         assert result.frontmatter["title"] == "Empty Body"
 
-    def test_write_unicode_content(self, writable: Collection) -> None:
+    def test_write_unicode_content(self, writable: Vault) -> None:
         """write() with Unicode and emoji content produces a searchable document."""
         writable.writer.write(
             "unicode_note.md",
@@ -924,7 +914,7 @@ class TestWrite:
 
 
 class TestEdit:
-    def test_edit_replaces_text(self, writable: Collection, vault_path: Path) -> None:
+    def test_edit_replaces_text(self, writable: Vault, vault_path: Path) -> None:
         """edit() replaces exactly one occurrence of old_text."""
         result = writable.writer.edit(
             "simple.md", "Simple Document", "Updated Document"
@@ -938,31 +928,31 @@ class TestEdit:
         assert "Updated Document" in content
         assert "Simple Document" not in content
 
-    def test_edit_match_type_exact_default(self, writable: Collection) -> None:
+    def test_edit_match_type_exact_default(self, writable: Vault) -> None:
         """edit() returns match_type='exact' by default."""
         result = writable.writer.edit(
             "simple.md", "Simple Document", "Updated Document"
         )
         assert result.match_type == "exact"
 
-    def test_edit_empty_old_text_raises(self, writable: Collection) -> None:
+    def test_edit_empty_old_text_raises(self, writable: Vault) -> None:
         """edit() raises ValueError when old_text is empty."""
         with pytest.raises(ValueError, match="old_text must not be empty"):
             writable.writer.edit("simple.md", "", "new")
 
-    def test_edit_not_found_raises(self, writable: Collection) -> None:
+    def test_edit_not_found_raises(self, writable: Vault) -> None:
         """edit() raises DocumentNotFoundError for missing files."""
         with pytest.raises(DocumentNotFoundError):
             writable.writer.edit("nonexistent.md", "old", "new")
 
-    def test_edit_old_text_missing_raises(self, writable: Collection) -> None:
+    def test_edit_old_text_missing_raises(self, writable: Vault) -> None:
         """edit() raises EditConflictError when old_text is not found."""
         with pytest.raises(EditConflictError, match="not found"):
             writable.writer.edit("simple.md", "text that does not exist", "new")
 
     def test_edit_old_text_multiple_raises(
         self,
-        writable: Collection,
+        writable: Vault,
     ) -> None:
         """edit() raises EditConflictError when old_text appears multiple times."""
         # Create a file with repeated content.
@@ -971,7 +961,7 @@ class TestEdit:
         with pytest.raises(EditConflictError, match="3 times"):
             writable.writer.edit("repeated.md", "word", "replaced")
 
-    def test_edit_updates_index(self, writable: Collection) -> None:
+    def test_edit_updates_index(self, writable: Vault) -> None:
         """Edited content is immediately searchable."""
         writable.writer.write("editable.md", "# Old Title\n\nOld body text.\n")
         writable.writer.edit("editable.md", "Old Title", "New Unique Xylophone Title")
@@ -984,7 +974,7 @@ class TestEdit:
     def test_edit_triggers_callback(self, vault_path: Path) -> None:
         """edit() invokes the on_write callback with correct arguments."""
         calls: list = []
-        col = _make_collection(
+        col = _make_vault(
             vault_path, read_only=False, on_write=lambda *args: calls.append(args)
         )
         col.index.build_index()
@@ -996,7 +986,7 @@ class TestEdit:
         _, _, operation = calls[0]
         assert operation == "edit"
 
-    def test_edit_old_content_removed_from_fts(self, writable: Collection) -> None:
+    def test_edit_old_content_removed_from_fts(self, writable: Vault) -> None:
         """edit() removes the old content from FTS; old text is no longer searchable."""
         writable.writer.write("editable_fts.md", "# OldUniqueTitle\n\nOld body text.\n")
         wait_for_writer_drain(writable)
@@ -1012,9 +1002,7 @@ class TestEdit:
         after_old = writable.reader.search("OldUniqueTitle", mode="keyword")
         assert not any(r.path == "editable_fts.md" for r in after_old)
 
-    def test_edit_updates_vector_index(
-        self, writable_with_embeddings: Collection
-    ) -> None:
+    def test_edit_updates_vector_index(self, writable_with_embeddings: Vault) -> None:
         """edit() with embeddings configured reflects new content in semantic search."""
         writable_with_embeddings.writer.write(
             "vec_editable.md",
@@ -1033,9 +1021,7 @@ class TestEdit:
         paths = [r.path for r in results]
         assert "vec_editable.md" in paths
 
-    def test_edit_line_range_replaces(
-        self, writable: Collection, vault_path: Path
-    ) -> None:
+    def test_edit_line_range_replaces(self, writable: Vault, vault_path: Path) -> None:
         """edit() with line_start/line_end replaces the specified lines."""
         writable.writer.write("lines.md", "line1\nline2\nline3\nline4\n")
         result = writable.writer.edit(
@@ -1046,7 +1032,7 @@ class TestEdit:
         assert content == "line1\nreplaced\nline4\n"
 
     def test_edit_line_range_single_line(
-        self, writable: Collection, vault_path: Path
+        self, writable: Vault, vault_path: Path
     ) -> None:
         """line_start == line_end replaces exactly one line."""
         writable.writer.write("lines.md", "line1\nline2\nline3\n")
@@ -1054,34 +1040,34 @@ class TestEdit:
         content = (vault_path / "lines.md").read_text()
         assert content == "line1\nnew2\nline3\n"
 
-    def test_edit_line_range_out_of_bounds(self, writable: Collection) -> None:
+    def test_edit_line_range_out_of_bounds(self, writable: Vault) -> None:
         """line_end beyond file length raises ValueError."""
         writable.writer.write("lines.md", "line1\nline2\n")
         with pytest.raises(ValueError, match="out of range"):
             writable.writer.edit("lines.md", new_text="x", line_start=1, line_end=5)
 
-    def test_edit_line_range_inverted(self, writable: Collection) -> None:
+    def test_edit_line_range_inverted(self, writable: Vault) -> None:
         """line_start > line_end raises ValueError."""
         writable.writer.write("lines.md", "line1\nline2\n")
         with pytest.raises(ValueError, match=r"line_start.*line_end"):
             writable.writer.edit("lines.md", new_text="x", line_start=3, line_end=1)
 
-    def test_edit_line_range_only_one_provided(self, writable: Collection) -> None:
+    def test_edit_line_range_only_one_provided(self, writable: Vault) -> None:
         """Providing only line_start without line_end raises ValueError."""
         with pytest.raises(ValueError, match=r"both.*line_start.*line_end"):
             writable.writer.edit("simple.md", new_text="x", line_start=1)
 
-    def test_edit_no_old_text_no_lines(self, writable: Collection) -> None:
+    def test_edit_no_old_text_no_lines(self, writable: Vault) -> None:
         """Neither old_text nor line range raises ValueError."""
         with pytest.raises(ValueError, match=r"old_text.*line_start"):
             writable.writer.edit("simple.md", new_text="x")
 
-    def test_edit_line_range_zero_raises(self, writable: Collection) -> None:
+    def test_edit_line_range_zero_raises(self, writable: Vault) -> None:
         """line_start < 1 raises ValueError (1-based)."""
         with pytest.raises(ValueError, match=r"line_start.*>= 1"):
             writable.writer.edit("simple.md", new_text="x", line_start=0, line_end=1)
 
-    def test_edit_line_range_updates_index(self, writable: Collection) -> None:
+    def test_edit_line_range_updates_index(self, writable: Vault) -> None:
         """Line-range edit updates the FTS index."""
         writable.writer.write("lines.md", "# Old Title\n\nOld body.\n")
         writable.writer.edit(
@@ -1092,7 +1078,7 @@ class TestEdit:
         assert any(r.path == "lines.md" for r in results)
 
     def test_edit_line_range_with_if_match(
-        self, writable: Collection, vault_path: Path
+        self, writable: Vault, vault_path: Path
     ) -> None:
         """Line-range edit respects if_match etag."""
         writable.writer.write("lines.md", "line1\nline2\n")
@@ -1107,7 +1093,7 @@ class TestEdit:
         content = (vault_path / "lines.md").read_text()
         assert content == "new1\nline2\n"
 
-    def test_edit_line_range_with_wrong_if_match(self, writable: Collection) -> None:
+    def test_edit_line_range_with_wrong_if_match(self, writable: Vault) -> None:
         """Line-range edit rejects stale etag."""
         writable.writer.write("lines.md", "line1\nline2\n")
         with pytest.raises(ConcurrentModificationError):
@@ -1122,7 +1108,7 @@ class TestEdit:
     def test_edit_line_range_triggers_callback(self, vault_path: Path) -> None:
         """Line-range edit fires the on_write callback."""
         calls: list = []
-        col = _make_collection(
+        col = _make_vault(
             vault_path, read_only=False, on_write=lambda *args: calls.append(args)
         )
         col.index.build_index()
@@ -1138,7 +1124,7 @@ class TestEdit:
     # Scoped match tests
     # -----------------------------------------------------------------------
 
-    def test_edit_scoped_match(self, writable: Collection, vault_path: Path) -> None:
+    def test_edit_scoped_match(self, writable: Vault, vault_path: Path) -> None:
         """old_text + line range disambiguates repeated text."""
         writable.writer.write("repeated.md", "hello\nworld\nhello\n")
         # "hello" appears twice, but only once in lines 1-1.
@@ -1153,7 +1139,7 @@ class TestEdit:
         content = (vault_path / "repeated.md").read_text()
         assert content == "goodbye\nworld\nhello\n"
 
-    def test_edit_scoped_match_not_found(self, writable: Collection) -> None:
+    def test_edit_scoped_match_not_found(self, writable: Vault) -> None:
         """old_text not in the specified line range raises EditConflictError."""
         writable.writer.write("scoped.md", "aaa\nbbb\nccc\n")
         with pytest.raises(EditConflictError, match="not found"):
@@ -1169,9 +1155,7 @@ class TestEdit:
     # Normalized match tests
     # -----------------------------------------------------------------------
 
-    def test_edit_normalized_dashes(
-        self, writable: Collection, vault_path: Path
-    ) -> None:
+    def test_edit_normalized_dashes(self, writable: Vault, vault_path: Path) -> None:
         """Normalized match handles em-dash vs hyphen."""
         writable.writer.write("dashes.md", "hello \u2014 world\n")
         result = writable.writer.edit(
@@ -1181,9 +1165,7 @@ class TestEdit:
         content = (vault_path / "dashes.md").read_text()
         assert content == "goodbye\n"
 
-    def test_edit_normalized_quotes(
-        self, writable: Collection, vault_path: Path
-    ) -> None:
+    def test_edit_normalized_quotes(self, writable: Vault, vault_path: Path) -> None:
         """Normalized match handles smart quotes vs straight."""
         writable.writer.write("quotes.md", "\u201chello\u201d\n")
         result = writable.writer.edit(
@@ -1194,7 +1176,7 @@ class TestEdit:
         assert content == "goodbye\n"
 
     def test_edit_normalized_whitespace(
-        self, writable: Collection, vault_path: Path
+        self, writable: Vault, vault_path: Path
     ) -> None:
         """Normalized match handles collapsed whitespace."""
         writable.writer.write("ws.md", "hello   world\n")
@@ -1206,7 +1188,7 @@ class TestEdit:
         assert content == "goodbye\n"
 
     def test_edit_normalized_trailing_ws(
-        self, writable: Collection, vault_path: Path
+        self, writable: Vault, vault_path: Path
     ) -> None:
         """Normalized match handles trailing whitespace difference."""
         writable.writer.write("trail.md", "hello   \nworld\n")
@@ -1217,9 +1199,7 @@ class TestEdit:
         content = (vault_path / "trail.md").read_text()
         assert content == "goodbye\n"
 
-    def test_edit_normalized_unicode(
-        self, writable: Collection, vault_path: Path
-    ) -> None:
+    def test_edit_normalized_unicode(self, writable: Vault, vault_path: Path) -> None:
         """Normalized match handles NFC decomposed vs composed."""
         # File content: decomposed é written as "café" (will normalize to composed on write)
         # We match it with composed é from old_text, confirming normalization works
@@ -1235,26 +1215,26 @@ class TestEdit:
         content = (vault_path / "unicode.md").read_text()
         assert content == "tea\n"
 
-    def test_edit_normalized_returns_match_type(self, writable: Collection) -> None:
+    def test_edit_normalized_returns_match_type(self, writable: Vault) -> None:
         """Normalized match returns match_type='normalized' in EditResult."""
         writable.writer.write("norm.md", "a\u2014b\n")
         result = writable.writer.edit("norm.md", old_text="a-b", new_text="c")
         assert result.match_type == "normalized"
 
-    def test_edit_normalized_multiple_raises(self, writable: Collection) -> None:
+    def test_edit_normalized_multiple_raises(self, writable: Vault) -> None:
         """Normalized match with >1 occurrences raises EditConflictError."""
         writable.writer.write("multi.md", "a\u2014b and a\u2014b\n")
         with pytest.raises(EditConflictError, match="after normalization"):
             writable.writer.edit("multi.md", old_text="a-b", new_text="c")
 
-    def test_edit_exact_preferred_over_normalized(self, writable: Collection) -> None:
+    def test_edit_exact_preferred_over_normalized(self, writable: Vault) -> None:
         """Exact match is used even when normalized would also work."""
         writable.writer.write("exact.md", "a-b\n")
         result = writable.writer.edit("exact.md", old_text="a-b", new_text="c")
         assert result.match_type == "exact"
 
     def test_edit_normalized_preserves_original_bytes(
-        self, writable: Collection, vault_path: Path
+        self, writable: Vault, vault_path: Path
     ) -> None:
         """Normalized replacement preserves original bytes outside the match."""
         # File has smart quotes + em-dash in OTHER parts.
@@ -1268,7 +1248,7 @@ class TestEdit:
         assert content == "\u201cintro\u201d\ngoodbye\n\u201coutro\u201d\n"
 
     def test_edit_normalized_decomposed_unicode_replacement(
-        self, writable: Collection, vault_path: Path
+        self, writable: Vault, vault_path: Path
     ) -> None:
         """Normalized match correctly replaces decomposed Unicode (multi-char → one).
 
@@ -1291,7 +1271,7 @@ class TestEdit:
         assert "\u0301" not in content
 
     def test_edit_normalized_within_line_range(
-        self, writable: Collection, vault_path: Path
+        self, writable: Vault, vault_path: Path
     ) -> None:
         """Normalized match works within a scoped line range."""
         writable.writer.write("scoped_norm.md", "aaa\nhello\u2014world\nccc\n")
@@ -1310,7 +1290,7 @@ class TestEdit:
     # Diagnostic error tests
     # -----------------------------------------------------------------------
 
-    def test_edit_diagnostic_closest_line(self, writable: Collection) -> None:
+    def test_edit_diagnostic_closest_line(self, writable: Vault) -> None:
         """Failed match includes closest_match_line in error."""
         writable.writer.write("diag.md", "line one\nthe quick brown fox\nline three\n")
         with pytest.raises(EditConflictError) as exc_info:
@@ -1319,7 +1299,7 @@ class TestEdit:
             )
         assert exc_info.value.closest_match_line == 2
 
-    def test_edit_diagnostic_diff_snippet(self, writable: Collection) -> None:
+    def test_edit_diagnostic_diff_snippet(self, writable: Vault) -> None:
         """Failed match includes expected/found snippets."""
         writable.writer.write("diag2.md", "the quick brown fox\n")
         with pytest.raises(EditConflictError) as exc_info:
@@ -1330,7 +1310,7 @@ class TestEdit:
         assert err.expected_snippet is not None
         assert err.found_snippet is not None
 
-    def test_edit_diagnostic_no_close_match(self, writable: Collection) -> None:
+    def test_edit_diagnostic_no_close_match(self, writable: Vault) -> None:
         """No diagnostics when nothing is remotely close."""
         writable.writer.write("diag3.md", "aaaa\nbbbb\ncccc\n")
         with pytest.raises(EditConflictError) as exc_info:
@@ -1494,7 +1474,7 @@ class TestFindClosestMatch:
 
 
 class TestDelete:
-    def test_delete_removes_file(self, writable: Collection, vault_path: Path) -> None:
+    def test_delete_removes_file(self, writable: Vault, vault_path: Path) -> None:
         """delete() removes the file from disk."""
         result = writable.writer.delete("simple.md")
 
@@ -1502,12 +1482,12 @@ class TestDelete:
         assert result.path == "simple.md"
         assert not (vault_path / "simple.md").is_file()
 
-    def test_delete_not_found_raises(self, writable: Collection) -> None:
+    def test_delete_not_found_raises(self, writable: Vault) -> None:
         """delete() raises DocumentNotFoundError for missing files."""
         with pytest.raises(DocumentNotFoundError):
             writable.writer.delete("nonexistent.md")
 
-    def test_delete_removes_from_search(self, writable: Collection) -> None:
+    def test_delete_removes_from_search(self, writable: Vault) -> None:
         """Deleted content no longer appears in search results."""
         # Verify it's searchable first.
         results_before = writable.reader.search("Simple Document", mode="keyword")
@@ -1522,7 +1502,7 @@ class TestDelete:
     def test_delete_triggers_callback(self, vault_path: Path) -> None:
         """delete() invokes the on_write callback with empty content."""
         calls: list = []
-        col = _make_collection(
+        col = _make_vault(
             vault_path, read_only=False, on_write=lambda *args: calls.append(args)
         )
         col.index.build_index()
@@ -1537,7 +1517,7 @@ class TestDelete:
         assert operation == "delete"
 
     def test_delete_removes_from_vector_index(
-        self, writable_with_embeddings: Collection
+        self, writable_with_embeddings: Vault
     ) -> None:
         """delete() removes the document from semantic search results."""
         # Confirm the doc is reachable via semantic search first.
@@ -1556,7 +1536,7 @@ class TestDelete:
 
 
 class TestRename:
-    def test_rename_moves_file(self, writable: Collection, vault_path: Path) -> None:
+    def test_rename_moves_file(self, writable: Vault, vault_path: Path) -> None:
         """rename() moves the file on disk."""
         result = writable.writer.rename("simple.md", "moved.md")
 
@@ -1566,7 +1546,7 @@ class TestRename:
         assert not (vault_path / "simple.md").is_file()
         assert (vault_path / "moved.md").is_file()
 
-    def test_rename_updates_search(self, writable: Collection) -> None:
+    def test_rename_updates_search(self, writable: Vault) -> None:
         """After rename, search finds the document at the new path only."""
         writable.writer.rename("simple.md", "moved.md")
         wait_for_writer_drain(writable)
@@ -1577,19 +1557,19 @@ class TestRename:
         assert "simple.md" not in paths
 
     def test_rename_creates_intermediate_dirs(
-        self, writable: Collection, vault_path: Path
+        self, writable: Vault, vault_path: Path
     ) -> None:
         """rename() creates intermediate directories for the new path."""
         writable.writer.rename("simple.md", "new_folder/moved.md")
 
         assert (vault_path / "new_folder" / "moved.md").is_file()
 
-    def test_rename_not_found_raises(self, writable: Collection) -> None:
+    def test_rename_not_found_raises(self, writable: Vault) -> None:
         """rename() raises DocumentNotFoundError when old_path missing."""
         with pytest.raises(DocumentNotFoundError):
             writable.writer.rename("nonexistent.md", "target.md")
 
-    def test_rename_target_exists_raises(self, writable: Collection) -> None:
+    def test_rename_target_exists_raises(self, writable: Vault) -> None:
         """rename() raises DocumentExistsError when new_path exists."""
         with pytest.raises(DocumentExistsError):
             writable.writer.rename("simple.md", "no_frontmatter.md")
@@ -1597,7 +1577,7 @@ class TestRename:
     def test_rename_triggers_callback(self, vault_path: Path) -> None:
         """rename() invokes the on_write callback with new path."""
         calls: list = []
-        col = _make_collection(
+        col = _make_vault(
             vault_path, read_only=False, on_write=lambda *args: calls.append(args)
         )
         col.index.build_index()
@@ -1611,7 +1591,7 @@ class TestRename:
         assert content != ""
         assert operation == "rename"
 
-    def test_rename_folder_updated(self, writable: Collection) -> None:
+    def test_rename_folder_updated(self, writable: Vault) -> None:
         """rename() updates the folder derivation after move."""
         writable.writer.rename("simple.md", "new_folder/simple.md")
         wait_for_writer_drain(writable)
@@ -1621,7 +1601,7 @@ class TestRename:
         assert "new_folder/simple.md" in paths
 
     def test_rename_preserves_file_content(
-        self, writable: Collection, vault_path: Path
+        self, writable: Vault, vault_path: Path
     ) -> None:
         """rename() produces a file whose content is byte-identical to the original."""
         original_bytes = (vault_path / "simple.md").read_bytes()
@@ -1631,7 +1611,7 @@ class TestRename:
         renamed_bytes = (vault_path / "preserved.md").read_bytes()
         assert renamed_bytes == original_bytes
 
-    def test_rename_old_path_removed_from_fts(self, writable: Collection) -> None:
+    def test_rename_old_path_removed_from_fts(self, writable: Vault) -> None:
         """rename() removes the old path from FTS; old path is no longer searchable."""
         # Confirm old path is searchable before rename.
         before = writable.reader.search("Simple Document", mode="keyword")
@@ -1643,9 +1623,7 @@ class TestRename:
         after = writable.reader.search("Simple Document", mode="keyword")
         assert not any(r.path == "simple.md" for r in after)
 
-    def test_rename_updates_vector_index(
-        self, writable_with_embeddings: Collection
-    ) -> None:
+    def test_rename_updates_vector_index(self, writable_with_embeddings: Vault) -> None:
         """rename() with embeddings configured indexes the new path, drops the old."""
         writable_with_embeddings.writer.rename("simple.md", "renamed_semantic.md")
         wait_for_writer_drain(writable_with_embeddings)
@@ -1657,7 +1635,7 @@ class TestRename:
         assert "renamed_semantic.md" in paths
         assert "simple.md" not in paths
 
-    def test_rename_to_same_path_raises(self, writable: Collection) -> None:
+    def test_rename_to_same_path_raises(self, writable: Vault) -> None:
         """rename() to the same path raises DocumentExistsError."""
         with pytest.raises(DocumentExistsError):
             writable.writer.rename("simple.md", "simple.md")
@@ -1669,11 +1647,11 @@ class TestRename:
 
 
 class TestConcurrentWrites:
-    def test_concurrent_writes(self, writable: Collection, vault_path: Path) -> None:
+    def test_concurrent_writes(self, writable: Vault, vault_path: Path) -> None:
         """10 simultaneous write() calls to distinct paths all succeed.
 
         Uses :class:`concurrent.futures.ThreadPoolExecutor` to exercise the
-        ``_write_lock`` on a single Collection instance.
+        ``_write_lock`` on a single Vault instance.
         """
         paths = [f"concurrent_write_{i}.md" for i in range(10)]
 
@@ -1697,9 +1675,7 @@ class TestConcurrentWrites:
         for p in paths:
             assert p in result_paths, f"Expected {p} to be searchable"
 
-    def test_concurrent_write_and_edit(
-        self, writable: Collection, vault_path: Path
-    ) -> None:
+    def test_concurrent_write_and_edit(self, writable: Vault, vault_path: Path) -> None:
         """Simultaneous edit() calls on distinct unique strings do not corrupt data.
 
         Writes a file with 10 uniquely-labelled sections, then submits 10
@@ -1737,7 +1713,7 @@ class TestConcurrentWrites:
         import threading
         import time
 
-        col = Collection(source_dir=vault_path, read_only=False)
+        col = Vault(source_dir=vault_path, read_only=False)
 
         finished = threading.Event()
 
@@ -1788,7 +1764,7 @@ class TestConcurrentWrites:
                 return False
 
         git_strategy = DummyGitStrategy()
-        col = Collection(
+        col = Vault(
             source_dir=vault_path,
             read_only=False,
             git_strategy=git_strategy,  # type: ignore[arg-type]
@@ -1800,7 +1776,7 @@ class TestConcurrentWrites:
         assert git_strategy.started["repo_path"] == vault_path
         assert git_strategy.started["pull_interval_s"] == 60
 
-        # Verify Collection.stop() delegates to git_strategy.stop() (Option C lifecycle).
+        # Verify Vault.stop() delegates to git_strategy.stop() (Option C lifecycle).
         col.stop()
         assert git_strategy.stopped is True
 
@@ -1824,7 +1800,7 @@ class TestConcurrentWrites:
                 return None
 
         git_strategy = DummyGitStrategy()
-        col = Collection(
+        col = Vault(
             source_dir=vault_path,
             git_strategy=git_strategy,  # type: ignore[arg-type]
             git_pull_interval_s=60,
@@ -1843,7 +1819,7 @@ class TestAtomicWrites:
     """write(), edit(), and write_attachment() must use Path.replace for atomicity."""
 
     def test_write_uses_path_replace(
-        self, writable: Collection, monkeypatch: pytest.MonkeyPatch
+        self, writable: Vault, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """write() calls Path.replace to atomically land the new file."""
         replace_calls: list[tuple[str, str]] = []
@@ -1861,7 +1837,7 @@ class TestAtomicWrites:
         )
 
     def test_edit_uses_path_replace(
-        self, writable: Collection, monkeypatch: pytest.MonkeyPatch
+        self, writable: Vault, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """edit() calls Path.replace to atomically land the patched file."""
         writable.writer.write("atomic_edit.md", "original content")
@@ -1882,7 +1858,7 @@ class TestAtomicWrites:
         )
 
     def test_write_attachment_uses_path_replace(
-        self, writable: Collection, monkeypatch: pytest.MonkeyPatch
+        self, writable: Vault, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """write_attachment() calls Path.replace to atomically land the attachment."""
         replace_calls: list[tuple[str, str]] = []
@@ -1900,7 +1876,7 @@ class TestAtomicWrites:
         )
 
     def test_write_preserves_original_on_failed_write(
-        self, writable: Collection, vault_path: Path
+        self, writable: Vault, vault_path: Path
     ) -> None:
         """If the write fails, the original file is untouched (no silent truncation)."""
         writable.writer.write("safe.md", "original content")
@@ -1918,7 +1894,7 @@ class TestAtomicWrites:
         )
 
     def test_write_preserves_file_permissions_on_overwrite(
-        self, writable: Collection, vault_path: Path
+        self, writable: Vault, vault_path: Path
     ) -> None:
         """Overwriting an existing file must not downgrade its permissions."""
         writable.writer.write("perms.md", "original content")
@@ -1933,7 +1909,7 @@ class TestAtomicWrites:
         )
 
     def test_edit_preserves_file_permissions_on_overwrite(
-        self, writable: Collection, vault_path: Path
+        self, writable: Vault, vault_path: Path
     ) -> None:
         """edit() on an existing file must not downgrade its permissions."""
         writable.writer.write("perms_edit.md", "original content")
@@ -1950,7 +1926,7 @@ class TestAtomicWrites:
         )
 
     def test_write_attachment_preserves_file_permissions_on_overwrite(
-        self, writable: Collection, vault_path: Path
+        self, writable: Vault, vault_path: Path
     ) -> None:
         """Overwriting an existing attachment must not downgrade its permissions."""
         writable.writer.write_attachment("diagram.png", b"\x89PNG\r\n\x1a\n")
@@ -1965,7 +1941,7 @@ class TestAtomicWrites:
         )
 
     def test_write_attachment_preserves_original_on_failed_write(
-        self, writable: Collection, vault_path: Path
+        self, writable: Vault, vault_path: Path
     ) -> None:
         """If write_attachment fails, the original is untouched and no .tmp files remain."""
         writable.writer.write_attachment("diagram.png", b"original bytes")
@@ -1990,36 +1966,36 @@ class TestAtomicWrites:
 class TestAttachmentHelpers:
     def test_is_attachment_pdf(self, vault_path: Path) -> None:
         """_is_attachment() returns True for a .pdf path with default allowlist."""
-        col = Collection(source_dir=vault_path)
+        col = Vault(source_dir=vault_path)
         assert col._doc_mgr._is_attachment("assets/report.pdf") is True
 
     def test_is_attachment_md_always_false(self, vault_path: Path) -> None:
         """_is_attachment() always returns False for .md paths."""
-        col = Collection(source_dir=vault_path)
+        col = Vault(source_dir=vault_path)
         assert col._doc_mgr._is_attachment("notes/note.md") is False
 
     def test_is_attachment_disallowed_extension(self, vault_path: Path) -> None:
         """_is_attachment() returns False for extensions not in the default list."""
-        col = Collection(source_dir=vault_path)
+        col = Vault(source_dir=vault_path)
         # .xyz is not in the default list
         assert col._doc_mgr._is_attachment("file.xyz") is False
 
     def test_is_attachment_wildcard_allows_all(self, vault_path: Path) -> None:
         """_is_attachment() returns True for any non-.md extension when '*' is set."""
-        col = Collection(source_dir=vault_path, attachment_extensions=["*"])
+        col = Vault(source_dir=vault_path, attachment_extensions=["*"])
         assert col._doc_mgr._is_attachment("file.xyz") is True
         assert col._doc_mgr._is_attachment("file.bin") is True
         assert col._doc_mgr._is_attachment("notes/note.md") is False
 
     def test_validate_attachment_path_rejects_md(self, vault_path: Path) -> None:
         """_validate_attachment_path() raises ValueError for .md paths."""
-        col = Collection(source_dir=vault_path)
+        col = Vault(source_dir=vault_path)
         with pytest.raises(ValueError, match=r"\.md"):
             col._validate_attachment_path("note.md")
 
     def test_validate_attachment_path_rejects_traversal(self, vault_path: Path) -> None:
         """_validate_attachment_path() raises ValueError on path traversal."""
-        col = Collection(source_dir=vault_path)
+        col = Vault(source_dir=vault_path)
         with pytest.raises(ValueError, match="traversal"):
             col._validate_attachment_path("../../etc/passwd.pdf")
 
@@ -2027,7 +2003,7 @@ class TestAttachmentHelpers:
         self, vault_path: Path
     ) -> None:
         """_validate_attachment_path() raises ValueError for disallowed extensions."""
-        col = Collection(source_dir=vault_path)
+        col = Vault(source_dir=vault_path)
         with pytest.raises(ValueError, match="allowlist"):
             col._validate_attachment_path("file.xyz")
 
@@ -2053,7 +2029,7 @@ class TestReadAttachment:
         """read_attachment() returns base64-encoded content and mime type."""
         import base64
 
-        col = Collection(source_dir=vault_with_attachment)
+        col = Vault(source_dir=vault_with_attachment)
         result = col.reader.read_attachment("assets/report.pdf")
 
         assert isinstance(result, AttachmentContent)
@@ -2067,7 +2043,7 @@ class TestReadAttachment:
         self, vault_with_attachment: Path
     ) -> None:
         """read_attachment() raises ValueError for missing files."""
-        col = Collection(source_dir=vault_with_attachment)
+        col = Vault(source_dir=vault_with_attachment)
         with pytest.raises(ValueError, match="not found"):
             col.reader.read_attachment("assets/missing.pdf")
 
@@ -2075,7 +2051,7 @@ class TestReadAttachment:
         self, vault_with_attachment: Path
     ) -> None:
         """read_attachment() raises ValueError for disallowed extensions."""
-        col = Collection(source_dir=vault_with_attachment)
+        col = Vault(source_dir=vault_with_attachment)
         with pytest.raises(ValueError, match="allowlist"):
             col.reader.read_attachment("assets/report.xyz")
 
@@ -2084,9 +2060,7 @@ class TestReadAttachment:
     ) -> None:
         """read_attachment() raises ValueError when file exceeds the size limit."""
         # 1-byte limit
-        col = Collection(
-            source_dir=vault_with_attachment, max_attachment_size_mb=0.000001
-        )
+        col = Vault(source_dir=vault_with_attachment, max_attachment_size_mb=0.000001)
         with pytest.raises(ValueError, match="exceeds"):
             col.reader.read_attachment("assets/report.pdf")
 
@@ -2094,13 +2068,13 @@ class TestReadAttachment:
         self, vault_with_attachment: Path
     ) -> None:
         """read_attachment() with max_attachment_size_mb=0 has no size limit."""
-        col = Collection(source_dir=vault_with_attachment, max_attachment_size_mb=0)
+        col = Vault(source_dir=vault_with_attachment, max_attachment_size_mb=0)
         result = col.reader.read_attachment("assets/report.pdf")
         assert result.size_bytes > 0
 
     def test_read_attachment_png_mime_type(self, vault_with_attachment: Path) -> None:
         """read_attachment() detects image/png MIME type."""
-        col = Collection(source_dir=vault_with_attachment)
+        col = Vault(source_dir=vault_with_attachment)
         result = col.reader.read_attachment("assets/image.png")
         assert result.mime_type == "image/png"
 
@@ -2108,7 +2082,7 @@ class TestReadAttachment:
         """read_attachment() returns an etag field containing the SHA256 hex digest."""
         from markdown_vault_mcp.hashing import compute_file_hash
 
-        col = Collection(source_dir=vault_with_attachment)
+        col = Vault(source_dir=vault_with_attachment)
         result = col.reader.read_attachment("assets/report.pdf")
 
         expected = compute_file_hash(vault_with_attachment / "assets" / "report.pdf")
@@ -2116,7 +2090,7 @@ class TestReadAttachment:
 
     def test_read_attachment_etag_is_stable(self, vault_with_attachment: Path) -> None:
         """read_attachment() returns the same etag on repeated reads."""
-        col = Collection(source_dir=vault_with_attachment)
+        col = Vault(source_dir=vault_with_attachment)
         result1 = col.reader.read_attachment("assets/report.pdf")
         result2 = col.reader.read_attachment("assets/report.pdf")
 
@@ -2128,7 +2102,7 @@ class TestReadAttachment:
         self, vault_with_attachment: Path
     ) -> None:
         """read_attachment() etag changes when file content changes."""
-        col = Collection(source_dir=vault_with_attachment, read_only=False)
+        col = Vault(source_dir=vault_with_attachment, read_only=False)
         result_before = col.reader.read_attachment("assets/report.pdf")
         etag_before = result_before.etag
 
@@ -2141,7 +2115,7 @@ class TestReadAttachment:
 class TestWriteAttachment:
     def test_write_attachment_creates_file(self, vault_with_attachment: Path) -> None:
         """write_attachment() creates a new binary file on disk."""
-        col = Collection(source_dir=vault_with_attachment, read_only=False)
+        col = Vault(source_dir=vault_with_attachment, read_only=False)
         raw = b"\x89PNG\r\n\x1a\n" + b"\x00" * 8
         result = col.writer.write_attachment("assets/new.png", raw)
 
@@ -2154,7 +2128,7 @@ class TestWriteAttachment:
         self, vault_with_attachment: Path
     ) -> None:
         """write_attachment() overwrites an existing file, returns created=False."""
-        col = Collection(source_dir=vault_with_attachment, read_only=False)
+        col = Vault(source_dir=vault_with_attachment, read_only=False)
         new_content = b"new pdf content"
         result = col.writer.write_attachment("assets/report.pdf", new_content)
 
@@ -2167,7 +2141,7 @@ class TestWriteAttachment:
         self, vault_with_attachment: Path
     ) -> None:
         """write_attachment() creates parent directories as needed."""
-        col = Collection(source_dir=vault_with_attachment, read_only=False)
+        col = Vault(source_dir=vault_with_attachment, read_only=False)
         col.writer.write_attachment("deep/nested/file.pdf", b"content")
 
         assert (vault_with_attachment / "deep" / "nested" / "file.pdf").is_file()
@@ -2175,8 +2149,8 @@ class TestWriteAttachment:
     def test_write_attachment_readonly_raises(
         self, vault_with_attachment: Path
     ) -> None:
-        """write_attachment() raises ReadOnlyError on a read-only collection."""
-        col = Collection(source_dir=vault_with_attachment, read_only=True)
+        """write_attachment() raises ReadOnlyError on a read-only vault."""
+        col = Vault(source_dir=vault_with_attachment, read_only=True)
         with pytest.raises(ReadOnlyError):
             col.writer.write_attachment("assets/new.pdf", b"content")
 
@@ -2184,7 +2158,7 @@ class TestWriteAttachment:
         self, vault_with_attachment: Path
     ) -> None:
         """write_attachment() raises ValueError when content exceeds size limit."""
-        col = Collection(
+        col = Vault(
             source_dir=vault_with_attachment,
             read_only=False,
             max_attachment_size_mb=0.000001,
@@ -2196,7 +2170,7 @@ class TestWriteAttachment:
         self, vault_with_attachment: Path
     ) -> None:
         """write_attachment() raises ValueError for disallowed extensions."""
-        col = Collection(source_dir=vault_with_attachment, read_only=False)
+        col = Vault(source_dir=vault_with_attachment, read_only=False)
         with pytest.raises(ValueError, match="allowlist"):
             col.writer.write_attachment("file.xyz", b"content")
 
@@ -2205,7 +2179,7 @@ class TestWriteAttachment:
     ) -> None:
         """write_attachment() invokes the on_write callback."""
         calls: list = []
-        col = Collection(
+        col = Vault(
             source_dir=vault_with_attachment,
             read_only=False,
             on_write=lambda *args: calls.append(args),
@@ -2230,7 +2204,7 @@ class TestListWithAttachments:
         self, vault_with_attachment: Path
     ) -> None:
         """list() without include_attachments does not return attachment files."""
-        col = Collection(source_dir=vault_with_attachment)
+        col = Vault(source_dir=vault_with_attachment)
         col.index.build_index()
         results = col.reader.list_documents()
 
@@ -2241,7 +2215,7 @@ class TestListWithAttachments:
         self, vault_with_attachment: Path
     ) -> None:
         """list(include_attachments=True) returns notes and attachments."""
-        col = Collection(source_dir=vault_with_attachment)
+        col = Vault(source_dir=vault_with_attachment)
         col.index.build_index()
         results = col.reader.list_documents(include_attachments=True)
 
@@ -2251,7 +2225,7 @@ class TestListWithAttachments:
 
     def test_list_attachment_info_fields(self, vault_with_attachment: Path) -> None:
         """AttachmentInfo entries have the correct fields."""
-        col = Collection(source_dir=vault_with_attachment)
+        col = Vault(source_dir=vault_with_attachment)
         col.index.build_index()
         results = col.reader.list_documents(include_attachments=True)
 
@@ -2269,7 +2243,7 @@ class TestListWithAttachments:
     ) -> None:
         """Attachments with disallowed extensions are not returned."""
         (vault_with_attachment / "assets" / "data.xyz").write_bytes(b"unknown")
-        col = Collection(source_dir=vault_with_attachment)
+        col = Vault(source_dir=vault_with_attachment)
         col.index.build_index()
         results = col.reader.list_documents(include_attachments=True)
 
@@ -2281,7 +2255,7 @@ class TestListWithAttachments:
     ) -> None:
         """attachment_extensions=['*'] returns all non-.md files."""
         (vault_with_attachment / "assets" / "data.xyz").write_bytes(b"unknown")
-        col = Collection(source_dir=vault_with_attachment, attachment_extensions=["*"])
+        col = Vault(source_dir=vault_with_attachment, attachment_extensions=["*"])
         col.index.build_index()
         results = col.reader.list_documents(include_attachments=True)
 
@@ -2290,7 +2264,7 @@ class TestListWithAttachments:
 
     def test_list_attachments_folder_filter(self, vault_with_attachment: Path) -> None:
         """list(include_attachments=True, folder=...) filters attachments by folder."""
-        col = Collection(source_dir=vault_with_attachment)
+        col = Vault(source_dir=vault_with_attachment)
         col.index.build_index()
         results = col.reader.list_documents(include_attachments=True, folder="assets")
 
@@ -2306,7 +2280,7 @@ class TestListWithAttachments:
 class TestDeleteAttachment:
     def test_delete_attachment_removes_file(self, vault_with_attachment: Path) -> None:
         """delete() removes an attachment file from disk."""
-        col = Collection(source_dir=vault_with_attachment, read_only=False)
+        col = Vault(source_dir=vault_with_attachment, read_only=False)
         col.index.build_index()
         result = col.writer.delete("assets/report.pdf")
 
@@ -2318,7 +2292,7 @@ class TestDeleteAttachment:
         self, vault_with_attachment: Path
     ) -> None:
         """delete() raises DocumentNotFoundError for missing attachment."""
-        col = Collection(source_dir=vault_with_attachment, read_only=False)
+        col = Vault(source_dir=vault_with_attachment, read_only=False)
         col.index.build_index()
         with pytest.raises(DocumentNotFoundError):
             col.writer.delete("assets/missing.pdf")
@@ -2328,7 +2302,7 @@ class TestDeleteAttachment:
     ) -> None:
         """delete() on a disallowed extension raises ValueError."""
         (vault_with_attachment / "file.xyz").write_bytes(b"data")
-        col = Collection(source_dir=vault_with_attachment, read_only=False)
+        col = Vault(source_dir=vault_with_attachment, read_only=False)
         col.index.build_index()
         with pytest.raises(ValueError, match="allowlist"):
             col.writer.delete("file.xyz")
@@ -2338,7 +2312,7 @@ class TestDeleteAttachment:
     ) -> None:
         """delete() on an attachment invokes the on_write callback."""
         calls: list = []
-        col = Collection(
+        col = Vault(
             source_dir=vault_with_attachment,
             read_only=False,
             on_write=lambda *args: calls.append(args),
@@ -2355,7 +2329,7 @@ class TestDeleteAttachment:
 class TestRenameAttachment:
     def test_rename_attachment_moves_file(self, vault_with_attachment: Path) -> None:
         """rename() moves an attachment file on disk."""
-        col = Collection(source_dir=vault_with_attachment, read_only=False)
+        col = Vault(source_dir=vault_with_attachment, read_only=False)
         col.index.build_index()
         result = col.writer.rename("assets/report.pdf", "docs/report.pdf")
 
@@ -2367,7 +2341,7 @@ class TestRenameAttachment:
         self, vault_with_attachment: Path
     ) -> None:
         """rename() raises DocumentNotFoundError for missing attachment."""
-        col = Collection(source_dir=vault_with_attachment, read_only=False)
+        col = Vault(source_dir=vault_with_attachment, read_only=False)
         col.index.build_index()
         with pytest.raises(DocumentNotFoundError):
             col.writer.rename("assets/missing.pdf", "docs/report.pdf")
@@ -2376,7 +2350,7 @@ class TestRenameAttachment:
         self, vault_with_attachment: Path
     ) -> None:
         """rename() raises DocumentExistsError when the target already exists."""
-        col = Collection(source_dir=vault_with_attachment, read_only=False)
+        col = Vault(source_dir=vault_with_attachment, read_only=False)
         col.index.build_index()
         with pytest.raises(DocumentExistsError):
             col.writer.rename("assets/report.pdf", "assets/image.png")
@@ -2385,7 +2359,7 @@ class TestRenameAttachment:
         self, vault_with_attachment: Path
     ) -> None:
         """rename() creates parent directories for the attachment target."""
-        col = Collection(source_dir=vault_with_attachment, read_only=False)
+        col = Vault(source_dir=vault_with_attachment, read_only=False)
         col.index.build_index()
         col.writer.rename("assets/report.pdf", "new_folder/sub/report.pdf")
 
@@ -2396,7 +2370,7 @@ class TestRenameAttachment:
     ) -> None:
         """rename() produces a file byte-identical to the original."""
         original = (vault_with_attachment / "assets" / "report.pdf").read_bytes()
-        col = Collection(source_dir=vault_with_attachment, read_only=False)
+        col = Vault(source_dir=vault_with_attachment, read_only=False)
         col.index.build_index()
         col.writer.rename("assets/report.pdf", "docs/report.pdf")
 
@@ -2409,11 +2383,9 @@ class TestRenameAttachment:
 
 
 class TestStatsAttachmentExtensions:
-    def test_stats_includes_attachment_extensions_default(
-        self, collection: Collection
-    ) -> None:
+    def test_stats_includes_attachment_extensions_default(self, vault: Vault) -> None:
         """stats() includes attachment_extensions from the default allowlist."""
-        s = collection.reader.stats()
+        s = vault.reader.stats()
         assert isinstance(s.attachment_extensions, list)
         assert "pdf" in s.attachment_extensions
         assert "png" in s.attachment_extensions
@@ -2422,7 +2394,7 @@ class TestStatsAttachmentExtensions:
         self, vault_path: Path
     ) -> None:
         """stats() reflects a custom attachment_extensions list."""
-        col = Collection(source_dir=vault_path, attachment_extensions=["pdf", "docx"])
+        col = Vault(source_dir=vault_path, attachment_extensions=["pdf", "docx"])
         col.index.build_index()
         s = col.reader.stats()
         assert sorted(s.attachment_extensions) == ["docx", "pdf"]
@@ -2431,7 +2403,7 @@ class TestStatsAttachmentExtensions:
         self, vault_path: Path
     ) -> None:
         """stats() shows ['*'] when attachment_extensions is the wildcard."""
-        col = Collection(source_dir=vault_path, attachment_extensions=["*"])
+        col = Vault(source_dir=vault_path, attachment_extensions=["*"])
         col.index.build_index()
         s = col.reader.stats()
         assert s.attachment_extensions == ["*"]
@@ -2443,13 +2415,13 @@ class TestStatsAttachmentExtensions:
 
 
 @pytest.fixture
-def semantic_collection(
+def semantic_vault(
     vault_path: Path,
     tmp_path: Path,
     mock_provider: MockEmbeddingProvider,
-) -> Collection:
-    """Collection with FTS index and vector embeddings fully built."""
-    col = Collection(
+) -> Vault:
+    """Vault with FTS index and vector embeddings fully built."""
+    col = Vault(
         source_dir=vault_path,
         embeddings_path=tmp_path / "embeddings",
         embedding_provider=mock_provider,
@@ -2460,20 +2432,16 @@ def semantic_collection(
 
 
 class TestSemanticSearch:
-    def test_semantic_search_returns_semantic_type(
-        self, semantic_collection: Collection
-    ) -> None:
+    def test_semantic_search_returns_semantic_type(self, semantic_vault: Vault) -> None:
         """search(mode='semantic') returns results with search_type='semantic'."""
-        results = semantic_collection.reader.search("document content", mode="semantic")
+        results = semantic_vault.reader.search("document content", mode="semantic")
 
         assert len(results) > 0
         assert all(r.search_type == "semantic" for r in results)
 
-    def test_semantic_search_result_fields(
-        self, semantic_collection: Collection
-    ) -> None:
+    def test_semantic_search_result_fields(self, semantic_vault: Vault) -> None:
         """Semantic search results carry path, title, score, and frontmatter fields."""
-        results = semantic_collection.reader.search("document content", mode="semantic")
+        results = semantic_vault.reader.search("document content", mode="semantic")
 
         assert len(results) > 0
         for r in results:
@@ -2482,11 +2450,9 @@ class TestSemanticSearch:
             assert isinstance(r.score, float)
             assert isinstance(r.frontmatter, dict)
 
-    def test_semantic_search_limit_respected(
-        self, semantic_collection: Collection
-    ) -> None:
+    def test_semantic_search_limit_respected(self, semantic_vault: Vault) -> None:
         """search(mode='semantic', limit=N) never returns more than N results."""
-        results = semantic_collection.reader.search("content", mode="semantic", limit=2)
+        results = semantic_vault.reader.search("content", mode="semantic", limit=2)
 
         assert len(results) <= 2
 
@@ -2497,7 +2463,7 @@ class TestSemanticSearch:
         mock_provider: MockEmbeddingProvider,
     ) -> None:
         """search(mode='semantic', folder='subfolder') returns only subfolder docs."""
-        col = Collection(
+        col = Vault(
             source_dir=vault_path,
             embeddings_path=tmp_path / "embeddings",
             embedding_provider=mock_provider,
@@ -2521,7 +2487,7 @@ class TestSemanticSearch:
         mock_provider: MockEmbeddingProvider,
     ) -> None:
         """search(mode='semantic', filters={...}) filters by frontmatter value."""
-        col = Collection(
+        col = Vault(
             source_dir=vault_path,
             embeddings_path=tmp_path / "embeddings",
             embedding_provider=mock_provider,
@@ -2541,7 +2507,7 @@ class TestSemanticSearch:
 
     def test_semantic_search_no_provider_raises(self, vault_path: Path) -> None:
         """search(mode='semantic') raises ValueError when provider is not configured."""
-        col = _make_collection(vault_path)
+        col = _make_vault(vault_path)
         col.index.build_index()
 
         with pytest.raises(ValueError, match="embedding_provider"):
@@ -2555,7 +2521,7 @@ class TestSemanticSearch:
     ) -> None:
         """_load_vectors() creates an empty VectorIndex when no .npy file exists."""
         embeddings_path = tmp_path / "embeddings"
-        col = Collection(
+        col = Vault(
             source_dir=vault_path,
             embeddings_path=embeddings_path,
             embedding_provider=mock_provider,
@@ -2580,7 +2546,7 @@ class TestSemanticSearch:
         embeddings_path = tmp_path / "embeddings"
 
         # Build and persist the vector index.
-        col1 = Collection(
+        col1 = Vault(
             source_dir=vault_path,
             embeddings_path=embeddings_path,
             embedding_provider=mock_provider,
@@ -2589,8 +2555,8 @@ class TestSemanticSearch:
         chunk_count = col1.index.build_embeddings()
         assert chunk_count > 0
 
-        # Create a fresh collection pointing at the same paths — vectors not yet loaded.
-        col2 = Collection(
+        # Create a fresh vault pointing at the same paths — vectors not yet loaded.
+        col2 = Vault(
             source_dir=vault_path,
             embeddings_path=embeddings_path,
             embedding_provider=mock_provider,
@@ -2611,7 +2577,7 @@ class TestSemanticSearch:
         """_load_vectors() rebuilds when persisted provider/model metadata differs."""
         embeddings_path = tmp_path / "embeddings"
 
-        col1 = Collection(
+        col1 = Vault(
             source_dir=vault_path,
             embeddings_path=embeddings_path,
             embedding_provider=mock_provider,
@@ -2629,7 +2595,7 @@ class TestSemanticSearch:
             def model_name(self) -> str:
                 return "alternate-model-v1"
 
-        col2 = Collection(
+        col2 = Vault(
             source_dir=vault_path,
             embeddings_path=embeddings_path,
             embedding_provider=AlternateProvider(),
@@ -2646,7 +2612,7 @@ class TestSemanticSearch:
 
     def test_require_vectors_raises_when_unconfigured(self, vault_path: Path) -> None:
         """_require_vectors() raises ValueError when provider/path are absent."""
-        col = _make_collection(vault_path)
+        col = _make_vault(vault_path)
 
         with pytest.raises(ValueError, match="embedding_provider"):
             col._search_mgr._require_vectors()
@@ -2658,19 +2624,15 @@ class TestSemanticSearch:
 
 
 class TestHybridSearch:
-    def test_hybrid_search_returns_results(
-        self, semantic_collection: Collection
-    ) -> None:
+    def test_hybrid_search_returns_results(self, semantic_vault: Vault) -> None:
         """search(mode='hybrid') returns at least one result."""
-        results = semantic_collection.reader.search("document content", mode="hybrid")
+        results = semantic_vault.reader.search("document content", mode="hybrid")
 
         assert len(results) > 0
 
-    def test_hybrid_search_search_type_varies(
-        self, semantic_collection: Collection
-    ) -> None:
+    def test_hybrid_search_search_type_varies(self, semantic_vault: Vault) -> None:
         """Hybrid results can carry 'keyword', 'semantic', or 'hybrid' search_type."""
-        results = semantic_collection.reader.search(
+        results = semantic_vault.reader.search(
             "document content", mode="hybrid", limit=9
         )
 
@@ -2686,7 +2648,7 @@ class TestHybridSearch:
         mock_provider: MockEmbeddingProvider,
     ) -> None:
         """search(mode='hybrid', folder='subfolder') confines results to that folder."""
-        col = Collection(
+        col = Vault(
             source_dir=vault_path,
             embeddings_path=tmp_path / "embeddings",
             embedding_provider=mock_provider,
@@ -2709,7 +2671,7 @@ class TestHybridSearch:
         mock_provider: MockEmbeddingProvider,
     ) -> None:
         """search(mode='hybrid', filters={...}) filters semantic candidates by tag."""
-        col = Collection(
+        col = Vault(
             source_dir=vault_path,
             embeddings_path=tmp_path / "embeddings",
             embedding_provider=mock_provider,
@@ -2751,7 +2713,7 @@ class TestHybridSearch:
             "# Brewing Science\n\nBeer and fermentation science overview.\n"
         )
         embeddings_path = tmp_path / "rrf_emb"
-        col = Collection(
+        col = Vault(
             source_dir=vault,
             embeddings_path=embeddings_path,
             embedding_provider=mock_provider,
@@ -2771,7 +2733,7 @@ class TestHybridSearch:
 
     def test_hybrid_search_no_embeddings_raises(self, vault_path: Path) -> None:
         """search(mode='hybrid') raises ValueError without a configured provider."""
-        col = _make_collection(vault_path)
+        col = _make_vault(vault_path)
         col.index.build_index()
 
         with pytest.raises(ValueError, match="embedding_provider"):
@@ -2786,7 +2748,7 @@ class TestHybridSearch:
 class TestEmbeddingsStatus:
     def test_status_unavailable_when_no_provider(self, vault_path: Path) -> None:
         """embeddings_status() returns available=False when no provider is set."""
-        col = _make_collection(vault_path)
+        col = _make_vault(vault_path)
         col.index.build_index()
 
         status = col.index.embeddings_status()
@@ -2803,7 +2765,7 @@ class TestEmbeddingsStatus:
         mock_provider: MockEmbeddingProvider,
     ) -> None:
         """embeddings_status() returns available=True with chunk_count=0 before build."""
-        col = Collection(
+        col = Vault(
             source_dir=vault_path,
             embeddings_path=tmp_path / "embeddings",
             embedding_provider=mock_provider,
@@ -2816,11 +2778,9 @@ class TestEmbeddingsStatus:
         assert status["chunk_count"] == 0
         assert "MockEmbeddingProvider" in status["provider"]
 
-    def test_status_chunk_count_after_build(
-        self, semantic_collection: Collection
-    ) -> None:
+    def test_status_chunk_count_after_build(self, semantic_vault: Vault) -> None:
         """embeddings_status() returns correct chunk_count after build_embeddings()."""
-        status = semantic_collection.index.embeddings_status()
+        status = semantic_vault.index.embeddings_status()
 
         assert status["available"] is True
         # 9 documents, each one chunk — chunk_count must match.
@@ -2840,7 +2800,7 @@ class TestEmbeddingsStatus:
         """
         embeddings_path = tmp_path / "embeddings"
 
-        col1 = Collection(
+        col1 = Vault(
             source_dir=vault_path,
             embeddings_path=embeddings_path,
             embedding_provider=mock_provider,
@@ -2849,7 +2809,7 @@ class TestEmbeddingsStatus:
         chunk_count = col1.index.build_embeddings()
         assert chunk_count > 0
 
-        col2 = Collection(
+        col2 = Vault(
             source_dir=vault_path,
             embeddings_path=embeddings_path,
             embedding_provider=mock_provider,
@@ -2882,7 +2842,7 @@ class TestBuildEmbeddings:
         force) must return the same count without re-embedding.
         """
         embeddings_path = tmp_path / "embeddings"
-        col = Collection(
+        col = Vault(
             source_dir=vault_path,
             embeddings_path=embeddings_path,
             embedding_provider=mock_provider,
@@ -2915,7 +2875,7 @@ class TestBuildEmbeddings:
     ) -> None:
         """build_embeddings(force=True) re-embeds even when index exists."""
         embeddings_path = tmp_path / "embeddings"
-        col = Collection(
+        col = Vault(
             source_dir=vault_path,
             embeddings_path=embeddings_path,
             embedding_provider=mock_provider,
@@ -2948,7 +2908,7 @@ class TestBuildEmbeddings:
         from markdown_vault_mcp.managers.index import _EMBEDDING_BATCH_SIZE
 
         embeddings_path = tmp_path / "embeddings"
-        col = Collection(
+        col = Vault(
             source_dir=vault_path,
             embeddings_path=embeddings_path,
             embedding_provider=mock_provider,
@@ -2989,7 +2949,7 @@ class TestBuildEmbeddings:
             )
 
         embeddings_path = tmp_path / "embeddings"
-        col = Collection(
+        col = Vault(
             source_dir=vault,
             embeddings_path=embeddings_path,
             embedding_provider=mock_provider,
@@ -3030,7 +2990,7 @@ class TestBuildIndexNoOp:
         The IndexStats returned on the second call must reflect the existing
         document count (9) while chunks_indexed=0 (no new scanning performed).
         """
-        col = _make_collection(vault_path)
+        col = _make_vault(vault_path)
         col.index.build_index()
 
         # Intercept scan_directory to confirm it is NOT called again.
@@ -3065,9 +3025,9 @@ class TestReindexWithVectors:
         vault_path: Path,
         tmp_path: Path,
         mock_provider: MockEmbeddingProvider,
-    ) -> Collection:
-        """Writable collection with vectors loaded in memory."""
-        col = Collection(
+    ) -> Vault:
+        """Writable vault with vectors loaded in memory."""
+        col = Vault(
             source_dir=vault_path,
             embeddings_path=tmp_path / "embeddings",
             embedding_provider=mock_provider,
@@ -3082,7 +3042,7 @@ class TestReindexWithVectors:
 
     def test_reindex_adds_vector_entries_for_new_files(
         self,
-        writable_semantic: Collection,
+        writable_semantic: Vault,
         vault_path: Path,
     ) -> None:
         """reindex() embeds newly added files when the vector index is loaded."""
@@ -3103,7 +3063,7 @@ class TestReindexWithVectors:
 
     def test_reindex_removes_vector_entries_for_deleted_files(
         self,
-        writable_semantic: Collection,
+        writable_semantic: Vault,
         vault_path: Path,
     ) -> None:
         """reindex() removes deleted files from the vector index."""
@@ -3122,7 +3082,7 @@ class TestReindexWithVectors:
 
     def test_reindex_updates_vector_entries_for_modified_files(
         self,
-        writable_semantic: Collection,
+        writable_semantic: Vault,
         vault_path: Path,
     ) -> None:
         """reindex() re-embeds modified files so updated content is searchable."""
@@ -3148,31 +3108,31 @@ class TestReindexWithVectors:
 class TestResolveChunkStrategy:
     def test_whole_returns_whole_document_chunker(self) -> None:
         """_resolve_chunk_strategy('whole') returns a WholeDocumentChunker."""
-        from markdown_vault_mcp.collection import _resolve_chunk_strategy
         from markdown_vault_mcp.scanner import WholeDocumentChunker
+        from markdown_vault_mcp.vault import _resolve_chunk_strategy
 
         result = _resolve_chunk_strategy("whole")
         assert isinstance(result, WholeDocumentChunker)
 
     def test_heading_returns_heading_chunker(self) -> None:
         """_resolve_chunk_strategy('heading') returns a HeadingChunker."""
-        from markdown_vault_mcp.collection import _resolve_chunk_strategy
         from markdown_vault_mcp.scanner import HeadingChunker
+        from markdown_vault_mcp.vault import _resolve_chunk_strategy
 
         result = _resolve_chunk_strategy("heading")
         assert isinstance(result, HeadingChunker)
 
     def test_unknown_string_raises_value_error(self) -> None:
         """_resolve_chunk_strategy raises ValueError for unrecognised string."""
-        from markdown_vault_mcp.collection import _resolve_chunk_strategy
+        from markdown_vault_mcp.vault import _resolve_chunk_strategy
 
         with pytest.raises(ValueError, match="Unknown chunk_strategy"):
             _resolve_chunk_strategy("paragraph")
 
     def test_strategy_instance_passes_through(self) -> None:
         """_resolve_chunk_strategy passes a ChunkStrategy instance through unchanged."""
-        from markdown_vault_mcp.collection import _resolve_chunk_strategy
         from markdown_vault_mcp.scanner import WholeDocumentChunker
+        from markdown_vault_mcp.vault import _resolve_chunk_strategy
 
         strategy = WholeDocumentChunker()
         result = _resolve_chunk_strategy(strategy)
@@ -3245,22 +3205,22 @@ class TestFtsRowToNoteInfoMalformedJson:
 
 
 class TestReadErrorPaths:
-    def test_read_returns_none_for_path_traversal(self, collection: Collection) -> None:
+    def test_read_returns_none_for_path_traversal(self, vault: Vault) -> None:
         """read() returns None for paths that escape the source directory."""
-        result = collection.reader.read("../secret.md")
+        result = vault.reader.read("../secret.md")
         assert result is None
 
     def test_read_returns_none_when_file_deleted_from_disk(
         self, vault_path: Path
     ) -> None:
         """read() returns None when file exists in index but was deleted from disk."""
-        col = _make_collection(vault_path)
+        col = _make_vault(vault_path)
         col.index.build_index()
 
         # Confirm the file is readable before deleting it.
         assert col.reader.read("simple.md") is not None
 
-        # Delete the file directly from disk (bypassing the Collection API).
+        # Delete the file directly from disk (bypassing the Vault API).
         (vault_path / "simple.md").unlink()
 
         # read() must return None — file no longer exists.
@@ -3275,11 +3235,11 @@ class TestReadErrorPaths:
 
 class TestSearchNoFrontmatter:
     def test_search_no_frontmatter_document_has_empty_frontmatter(
-        self, collection: Collection
+        self, vault: Vault
     ) -> None:
         """search() on a document with no frontmatter returns result.frontmatter == {}."""
         # no_frontmatter.md has no YAML header at all.
-        results = collection.reader.search("plain markdown", mode="keyword")
+        results = vault.reader.search("plain markdown", mode="keyword")
         no_fm_results = [r for r in results if r.path == "no_frontmatter.md"]
 
         assert len(no_fm_results) >= 1
@@ -3305,7 +3265,7 @@ class TestListAttachmentEdgeCases:
         self, vault_with_root_attachment: Path
     ) -> None:
         """Attachments at the vault root have folder='' (not '.' or '/')."""
-        col = Collection(source_dir=vault_with_root_attachment)
+        col = Vault(source_dir=vault_with_root_attachment)
         col.index.build_index()
         results = col.reader.list_documents(include_attachments=True)
 
@@ -3318,7 +3278,7 @@ class TestListAttachmentEdgeCases:
         self, vault_with_root_attachment: Path
     ) -> None:
         """list(include_attachments=True, pattern='*.json') returns only .json files."""
-        col = Collection(source_dir=vault_with_root_attachment)
+        col = Vault(source_dir=vault_with_root_attachment)
         col.index.build_index()
         results = col.reader.list_documents(include_attachments=True, pattern="*.json")
 
@@ -3331,7 +3291,7 @@ class TestListAttachmentEdgeCases:
         self, vault_with_root_attachment: Path
     ) -> None:
         """list(include_attachments=True, folder='notes') only returns notes/ attachments."""
-        col = Collection(source_dir=vault_with_root_attachment)
+        col = Vault(source_dir=vault_with_root_attachment)
         col.index.build_index()
         results = col.reader.list_documents(include_attachments=True, folder="notes")
 
@@ -3353,7 +3313,7 @@ class TestWriteAttachmentSizeLimit:
         self, vault_path: Path
     ) -> None:
         """write_attachment() raises ValueError when content size exceeds the limit."""
-        col = Collection(
+        col = Vault(
             source_dir=vault_path,
             read_only=False,
             max_attachment_size_mb=0.000001,  # ~1 byte limit
@@ -3365,7 +3325,7 @@ class TestWriteAttachmentSizeLimit:
         self, vault_path: Path
     ) -> None:
         """write_attachment() with max_attachment_size_mb=0 accepts any size."""
-        col = Collection(
+        col = Vault(
             source_dir=vault_path,
             read_only=False,
             max_attachment_size_mb=0,
@@ -3401,7 +3361,7 @@ class TestListAttachmentHiddenDirFiltering:
             "{}", encoding="utf-8"
         )
 
-        col = Collection(source_dir=vault, attachment_extensions=["pdf", "json"])
+        col = Vault(source_dir=vault, attachment_extensions=["pdf", "json"])
         col.index.build_index()
         results = col.reader.list_documents(include_attachments=True)
 
@@ -3422,7 +3382,7 @@ class TestListAttachmentHiddenDirFiltering:
         # A dotfile directly in the vault root.
         (vault / ".hidden_config.json").write_bytes(b"{}")
 
-        col = Collection(source_dir=vault, attachment_extensions=["json"])
+        col = Vault(source_dir=vault, attachment_extensions=["json"])
         col.index.build_index()
         results = col.reader.list_documents(include_attachments=True)
 
@@ -3444,7 +3404,7 @@ class TestListAttachmentHiddenDirFiltering:
         (vault / "assets").mkdir()
         (vault / "assets" / "chart.pdf").write_bytes(b"PDF")
 
-        col = Collection(
+        col = Vault(
             source_dir=vault,
             attachment_extensions=["pdf", "json"],
             exclude_patterns=["archived/**", "trash/**"],
@@ -3503,20 +3463,18 @@ Line 31.
 
 
 @pytest.fixture
-def collection_with_long_doc(vault_path: Path) -> Collection:
-    """Collection with a long multi-section document added for ToC testing."""
+def vault_with_long_doc(vault_path: Path) -> Vault:
+    """Vault with a long multi-section document added for ToC testing."""
     (vault_path / "long_doc.md").write_text(_LONG_DOC, encoding="utf-8")
-    col = _make_collection(vault_path)
+    col = _make_vault(vault_path)
     col.index.build_index()
     return col
 
 
-class TestCollectionGetToc:
-    def test_get_toc_returns_headings(
-        self, collection_with_long_doc: Collection
-    ) -> None:
+class TestVaultGetToc:
+    def test_get_toc_returns_headings(self, vault_with_long_doc: Vault) -> None:
         """get_toc() returns headings for a document with multiple sections."""
-        toc = collection_with_long_doc.reader.get_toc("long_doc.md")
+        toc = vault_with_long_doc.reader.get_toc("long_doc.md")
 
         assert isinstance(toc, list)
         assert len(toc) >= 2
@@ -3528,19 +3486,17 @@ class TestCollectionGetToc:
             assert "level" in entry
 
     def test_get_toc_first_entry_is_synthetic_h1(
-        self, collection_with_long_doc: Collection
+        self, vault_with_long_doc: Vault
     ) -> None:
         """The first entry in get_toc() is always the document title at level 1."""
-        toc = collection_with_long_doc.reader.get_toc("long_doc.md")
+        toc = vault_with_long_doc.reader.get_toc("long_doc.md")
 
         assert toc[0]["level"] == 1
         assert toc[0]["heading"] == "Long Document Title"
 
-    def test_get_toc_no_duplicate_h1(
-        self, collection_with_long_doc: Collection
-    ) -> None:
+    def test_get_toc_no_duplicate_h1(self, vault_with_long_doc: Vault) -> None:
         """Synthetic H1 title must not duplicate a real H1 heading."""
-        toc = collection_with_long_doc.reader.get_toc("long_doc.md")
+        toc = vault_with_long_doc.reader.get_toc("long_doc.md")
 
         h1_entries = [e for e in toc if e["level"] == 1]
         assert len(h1_entries) == 1, (
@@ -3549,11 +3505,11 @@ class TestCollectionGetToc:
         assert h1_entries[0]["heading"] == "Long Document Title"
 
     def test_get_toc_raises_for_nonexistent_document(
-        self, collection_with_long_doc: Collection
+        self, vault_with_long_doc: Vault
     ) -> None:
         """get_toc() raises ValueError for a path not in the index."""
         with pytest.raises(ValueError, match="Document not found"):
-            collection_with_long_doc.reader.get_toc("does_not_exist.md")
+            vault_with_long_doc.reader.get_toc("does_not_exist.md")
 
 
 class TestReindexThreadSafety:
@@ -3564,7 +3520,7 @@ class TestReindexThreadSafety:
     ) -> None:
         """Concurrent reindex + write does not crash or corrupt the FTS index."""
         state_path = tmp_path / "state.json"
-        col = _make_collection(vault_path, state_path=state_path, read_only=False)
+        col = _make_vault(vault_path, state_path=state_path, read_only=False)
         col.index.build_index()
 
         # Add a file that reindex will discover.
@@ -3602,7 +3558,7 @@ class TestOptimisticConcurrency:
     # --- write() ---
 
     def test_write_with_correct_if_match_succeeds(
-        self, writable: Collection, vault_path: Path
+        self, writable: Vault, vault_path: Path
     ) -> None:
         """write() with a matching if_match etag succeeds."""
         path = "simple.md"
@@ -3615,7 +3571,7 @@ class TestOptimisticConcurrency:
         assert result.created is False
         assert "Updated" in (vault_path / path).read_text()
 
-    def test_write_with_wrong_if_match_raises(self, writable: Collection) -> None:
+    def test_write_with_wrong_if_match_raises(self, writable: Vault) -> None:
         """write() with a stale etag raises ConcurrentModificationError."""
         with pytest.raises(ConcurrentModificationError) as exc_info:
             writable.writer.write("simple.md", "# Body\n", if_match="stale-etag-value")
@@ -3625,7 +3581,7 @@ class TestOptimisticConcurrency:
         assert exc_info.value.actual != "stale-etag-value"
 
     def test_write_with_if_match_on_nonexistent_file_raises(
-        self, writable: Collection
+        self, writable: Vault
     ) -> None:
         """write() with if_match for a nonexistent file raises ConcurrentModificationError."""
         with pytest.raises(ConcurrentModificationError) as exc_info:
@@ -3635,7 +3591,7 @@ class TestOptimisticConcurrency:
         assert exc_info.value.actual == "(file does not exist)"
 
     def test_write_without_if_match_works_as_before(
-        self, writable: Collection, vault_path: Path
+        self, writable: Vault, vault_path: Path
     ) -> None:
         """write() without if_match performs unconditional write (backwards compatible)."""
         result = writable.writer.write("simple.md", "# New Body\n\nContent.\n")
@@ -3646,7 +3602,7 @@ class TestOptimisticConcurrency:
     # --- edit() ---
 
     def test_edit_with_correct_if_match_succeeds(
-        self, writable: Collection, vault_path: Path
+        self, writable: Vault, vault_path: Path
     ) -> None:
         """edit() with a matching if_match etag succeeds."""
         path = "simple.md"
@@ -3659,7 +3615,7 @@ class TestOptimisticConcurrency:
 
         assert result.replacements == 1
 
-    def test_edit_with_wrong_if_match_raises(self, writable: Collection) -> None:
+    def test_edit_with_wrong_if_match_raises(self, writable: Vault) -> None:
         """edit() with a stale etag raises ConcurrentModificationError."""
         with pytest.raises(ConcurrentModificationError) as exc_info:
             writable.writer.edit(
@@ -3675,7 +3631,7 @@ class TestOptimisticConcurrency:
     # --- delete() ---
 
     def test_delete_with_correct_if_match_succeeds(
-        self, writable: Collection, vault_path: Path
+        self, writable: Vault, vault_path: Path
     ) -> None:
         """delete() with a matching if_match etag removes the file."""
         path = "simple.md"
@@ -3687,7 +3643,7 @@ class TestOptimisticConcurrency:
         assert not (vault_path / path).exists()
 
     def test_delete_with_wrong_if_match_raises(
-        self, writable: Collection, vault_path: Path
+        self, writable: Vault, vault_path: Path
     ) -> None:
         """delete() with a stale etag raises ConcurrentModificationError."""
         with pytest.raises(ConcurrentModificationError) as exc_info:
@@ -3700,7 +3656,7 @@ class TestOptimisticConcurrency:
     # --- rename() ---
 
     def test_rename_with_correct_if_match_succeeds(
-        self, writable: Collection, vault_path: Path
+        self, writable: Vault, vault_path: Path
     ) -> None:
         """rename() with a matching if_match etag renames the file."""
         old_path = "simple.md"
@@ -3715,7 +3671,7 @@ class TestOptimisticConcurrency:
         assert (vault_path / new_path).exists()
 
     def test_rename_with_wrong_if_match_raises(
-        self, writable: Collection, vault_path: Path
+        self, writable: Vault, vault_path: Path
     ) -> None:
         """rename() with a stale etag raises ConcurrentModificationError."""
         with pytest.raises(ConcurrentModificationError) as exc_info:
@@ -3734,7 +3690,7 @@ class TestOptimisticConcurrency:
         self, vault_with_attachment: Path
     ) -> None:
         """write_attachment() with a matching if_match etag overwrites the file."""
-        col = Collection(source_dir=vault_with_attachment, read_only=False)
+        col = Vault(source_dir=vault_with_attachment, read_only=False)
         att_path = vault_with_attachment / "assets" / "report.pdf"
         current_etag = compute_file_hash(att_path)
         new_content = b"updated PDF bytes"
@@ -3750,7 +3706,7 @@ class TestOptimisticConcurrency:
         self, vault_with_attachment: Path
     ) -> None:
         """write_attachment() with a stale etag raises ConcurrentModificationError."""
-        col = Collection(source_dir=vault_with_attachment, read_only=False)
+        col = Vault(source_dir=vault_with_attachment, read_only=False)
 
         with pytest.raises(ConcurrentModificationError) as exc_info:
             col.writer.write_attachment(
@@ -3764,7 +3720,7 @@ class TestOptimisticConcurrency:
         self, vault_with_attachment: Path
     ) -> None:
         """write_attachment() with if_match for a missing file raises CME."""
-        col = Collection(source_dir=vault_with_attachment, read_only=False)
+        col = Vault(source_dir=vault_with_attachment, read_only=False)
 
         with pytest.raises(ConcurrentModificationError) as exc_info:
             col.writer.write_attachment(
@@ -3776,7 +3732,7 @@ class TestOptimisticConcurrency:
 
     # --- Round-trip test ---
 
-    def test_read_etag_roundtrip_with_write(self, writable: Collection) -> None:
+    def test_read_etag_roundtrip_with_write(self, writable: Vault) -> None:
         """read() etag can be passed directly to write() as if_match and succeeds."""
         note = writable.reader.read("simple.md")
         assert note is not None
@@ -3789,7 +3745,7 @@ class TestOptimisticConcurrency:
         assert result.created is False
 
     def test_read_etag_roundtrip_with_edit(
-        self, writable: Collection, vault_path: Path
+        self, writable: Vault, vault_path: Path
     ) -> None:
         """read() etag can be passed to edit() as if_match and succeeds."""
         note = writable.reader.read("simple.md")
@@ -3804,7 +3760,7 @@ class TestOptimisticConcurrency:
 
         assert result.replacements == 1
 
-    def test_read_etag_stale_after_write(self, writable: Collection) -> None:
+    def test_read_etag_stale_after_write(self, writable: Vault) -> None:
         """etag from read() is no longer valid after the file is modified."""
         note = writable.reader.read("simple.md")
         assert note is not None
@@ -3840,7 +3796,7 @@ class TestDeferredEmbeddings:
         flushes it as a follow-up job; ``wait_for_writer_drain`` is the
         observation point.
         """
-        col = Collection(
+        col = Vault(
             source_dir=vault_path,
             embeddings_path=tmp_path / "embeddings",
             embedding_provider=mock_provider,
@@ -3877,7 +3833,7 @@ class TestDeferredEmbeddings:
         finishes before ``close()`` returns.
         """
         embeddings_path = tmp_path / "embeddings"
-        col = Collection(
+        col = Vault(
             source_dir=vault_path,
             embeddings_path=embeddings_path,
             embedding_provider=mock_provider,
@@ -3908,7 +3864,7 @@ class TestDeferredEmbeddings:
             calls.append(args)
             event.set()
 
-        col = _make_collection(vault_path, read_only=False, on_write=slow_callback)
+        col = _make_vault(vault_path, read_only=False, on_write=slow_callback)
         col.index.build_index()
 
         col.writer.write("bg_callback.md", "# Background\n\nTest.\n")
@@ -3940,7 +3896,7 @@ class TestLoggingAuditSilentPaths:
         att = vault / "data.csv"
         att.write_text("a,b\n1,2\n", encoding="utf-8")
 
-        col = Collection(source_dir=vault, attachment_extensions=["csv"])
+        col = Vault(source_dir=vault, attachment_extensions=["csv"])
         col.index.build_index()
 
         # Patch Path.stat to raise OSError for data.csv.
@@ -3968,7 +3924,7 @@ class TestLoggingAuditSilentPaths:
             return original_is_file(self_path, *a, **kw)
 
         with (
-            caplog.at_level(logging.WARNING, logger="markdown_vault_mcp.collection"),
+            caplog.at_level(logging.WARNING, logger="markdown_vault_mcp.vault"),
             patch.object(_Path, "stat", stat_that_fails),
             patch.object(_Path, "is_file", is_file_override),
         ):
@@ -3980,11 +3936,11 @@ class TestLoggingAuditSilentPaths:
     def test_get_frontmatter_invalid_json_logs_warning(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """Collection._get_frontmatter logs WARNING for invalid JSON."""
+        """Vault._get_frontmatter logs WARNING for invalid JSON."""
         vault = tmp_path / "vault"
         vault.mkdir()
         (vault / "note.md").write_text("# Note\n", encoding="utf-8")
-        col = Collection(source_dir=vault)
+        col = Vault(source_dir=vault)
         col.index.build_index()
 
         bad_row = {
@@ -4007,26 +3963,26 @@ class TestLoggingAuditSilentPaths:
         )
 
 
-def test_collection_constructs_chunker_with_max_chunk_words(tmp_path):
-    """Collection plumbs max_chunk_words into HeadingChunker."""
-    from markdown_vault_mcp.collection import Collection
+def test_vault_constructs_chunker_with_max_chunk_words(tmp_path):
+    """Vault plumbs max_chunk_words into HeadingChunker."""
     from markdown_vault_mcp.scanner import HeadingChunker
+    from markdown_vault_mcp.vault import Vault
 
-    coll = Collection(source_dir=tmp_path, max_chunk_words=250)
+    coll = Vault(source_dir=tmp_path, max_chunk_words=250)
     assert isinstance(coll._chunk_strategy, HeadingChunker)
     assert coll._chunk_strategy.max_chunk_words == 250
 
 
-def test_collection_search_honours_default_chunks_per_file(tmp_path):
-    """A Collection-level search uses chunks_per_file=2 by default."""
-    from markdown_vault_mcp.collection import Collection
+def test_vault_search_honours_default_chunks_per_file(tmp_path):
+    """A Vault-level search uses chunks_per_file=2 by default."""
+    from markdown_vault_mcp.vault import Vault
 
     (tmp_path / "long.md").write_text(
         "# Top\n## A\nworld a\n## B\nworld b\n## C\nworld c\n",
         encoding="utf-8",
     )
     (tmp_path / "short.md").write_text("# Short\nworld\n", encoding="utf-8")
-    coll = Collection(source_dir=tmp_path)
+    coll = Vault(source_dir=tmp_path)
     coll.index.build_index()
     results = coll.reader.search("world", mode="keyword", limit=10)
     # Each file appears at most once in the grouped output; the file score's
@@ -4038,11 +3994,11 @@ def test_collection_search_honours_default_chunks_per_file(tmp_path):
         assert len(long_groups[0].sections) <= 2
 
 
-def test_collection_build_index_uses_writer(tmp_path):
+def test_vault_build_index_uses_writer(tmp_path):
     """IndexFacet.build_index() routes through the IndexWriter."""
-    from markdown_vault_mcp.collection import Collection
+    from markdown_vault_mcp.vault import Vault
 
-    col = Collection(source_dir=tmp_path, read_only=False)
+    col = Vault(source_dir=tmp_path, read_only=False)
     try:
         stats = col.index.build_index()
         # IndexWriter is non-None; build_index returned via writer.
@@ -4052,11 +4008,11 @@ def test_collection_build_index_uses_writer(tmp_path):
         col.close()
 
 
-def test_collection_writer_is_started_after_construction(tmp_path):
-    """The IndexWriter is started by Collection construction."""
-    from markdown_vault_mcp.collection import Collection
+def test_vault_writer_is_started_after_construction(tmp_path):
+    """The IndexWriter is started by Vault construction."""
+    from markdown_vault_mcp.vault import Vault
 
-    col = Collection(source_dir=tmp_path, read_only=False)
+    col = Vault(source_dir=tmp_path, read_only=False)
     try:
         assert col._coordinator.writer is not None
         assert col._coordinator.writer._thread is not None  # thread started
@@ -4065,12 +4021,12 @@ def test_collection_writer_is_started_after_construction(tmp_path):
         col.close()
 
 
-def test_collection_build_index_async_returns_future(tmp_path):
+def test_vault_build_index_async_returns_future(tmp_path):
     from concurrent.futures import Future
 
-    from markdown_vault_mcp.collection import Collection
+    from markdown_vault_mcp.vault import Vault
 
-    col = Collection(source_dir=tmp_path, read_only=False)
+    col = Vault(source_dir=tmp_path, read_only=False)
     try:
         future = col.index.build_index_async()
         assert isinstance(future, Future)
@@ -4079,12 +4035,12 @@ def test_collection_build_index_async_returns_future(tmp_path):
         col.close()
 
 
-def test_collection_reindex_async_returns_future(tmp_path):
+def test_vault_reindex_async_returns_future(tmp_path):
     from concurrent.futures import Future
 
-    from markdown_vault_mcp.collection import Collection
+    from markdown_vault_mcp.vault import Vault
 
-    col = Collection(source_dir=tmp_path, read_only=False)
+    col = Vault(source_dir=tmp_path, read_only=False)
     try:
         col.index.build_index()  # required precondition
         future = col.index.reindex_async()
@@ -4094,13 +4050,13 @@ def test_collection_reindex_async_returns_future(tmp_path):
         col.close()
 
 
-def test_collection_build_embeddings_async_returns_future(tmp_path):
+def test_vault_build_embeddings_async_returns_future(tmp_path):
     from concurrent.futures import Future
 
-    from markdown_vault_mcp.collection import Collection
+    from markdown_vault_mcp.vault import Vault
     from tests.conftest import MockEmbeddingProvider
 
-    col = Collection(
+    col = Vault(
         source_dir=tmp_path,
         read_only=False,
         embeddings_path=tmp_path / "vec",
@@ -4120,10 +4076,10 @@ def test_reindex_async_failure_recorded_in_status(tmp_path, monkeypatch):
     into get_index_status['last_reindex_error'] (#561)."""
     import time
 
-    from markdown_vault_mcp.collection import Collection
     from markdown_vault_mcp.managers import index as index_module
+    from markdown_vault_mcp.vault import Vault
 
-    col = Collection(source_dir=tmp_path, read_only=False)
+    col = Vault(source_dir=tmp_path, read_only=False)
     try:
         col.index.build_index()
 
@@ -4160,9 +4116,9 @@ def test_reindex_async_success_clears_prior_error(tmp_path):
     """A successful async reindex clears any prior captured error (#561)."""
     import time
 
-    from markdown_vault_mcp.collection import Collection
+    from markdown_vault_mcp.vault import Vault
 
-    col = Collection(source_dir=tmp_path, read_only=False)
+    col = Vault(source_dir=tmp_path, read_only=False)
     try:
         col.index.build_index()
         # Seed a prior error.
@@ -4186,11 +4142,11 @@ def test_build_embeddings_async_failure_recorded_in_status(tmp_path, monkeypatch
     captured into get_index_status['last_build_embeddings_error'] (#561)."""
     import time
 
-    from markdown_vault_mcp.collection import Collection
     from markdown_vault_mcp.managers import index as index_module
+    from markdown_vault_mcp.vault import Vault
     from tests.conftest import MockEmbeddingProvider
 
-    col = Collection(
+    col = Vault(
         source_dir=tmp_path,
         read_only=False,
         embeddings_path=tmp_path / "vec",
@@ -4225,9 +4181,9 @@ class TestIsDrained:
     """Tests for IndexFacet.is_drained() (#534)."""
 
     def test_returns_true_on_idle_writer(self, tmp_path: Path) -> None:
-        from markdown_vault_mcp.collection import Collection
+        from markdown_vault_mcp.vault import Vault
 
-        col = Collection(source_dir=tmp_path, read_only=False)
+        col = Vault(source_dir=tmp_path, read_only=False)
         try:
             col.index.build_index()
             assert col.index.is_drained() is True
@@ -4235,9 +4191,9 @@ class TestIsDrained:
             col.close()
 
     def test_returns_false_when_dirty_paths_present(self, tmp_path: Path) -> None:
-        from markdown_vault_mcp.collection import Collection
+        from markdown_vault_mcp.vault import Vault
 
-        col = Collection(source_dir=tmp_path, read_only=False)
+        col = Vault(source_dir=tmp_path, read_only=False)
         try:
             col.index.build_index()
             col._coordinator.writer.mark_dirty(["fake.md"])
@@ -4246,9 +4202,9 @@ class TestIsDrained:
             col.close()
 
     def test_returns_false_when_dirty_embeddings_present(self, tmp_path: Path) -> None:
-        from markdown_vault_mcp.collection import Collection
+        from markdown_vault_mcp.vault import Vault
 
-        col = Collection(source_dir=tmp_path, read_only=False)
+        col = Vault(source_dir=tmp_path, read_only=False)
         try:
             col.index.build_index()
             col._coordinator.writer.mark_embedding_dirty(["fake.md"])
@@ -4259,10 +4215,10 @@ class TestIsDrained:
     def test_returns_false_during_in_flight_job(self, tmp_path: Path) -> None:
         import threading
 
-        from markdown_vault_mcp.collection import Collection
         from markdown_vault_mcp.indexing import BuildIndex
+        from markdown_vault_mcp.vault import Vault
 
-        col = Collection(source_dir=tmp_path, read_only=False)
+        col = Vault(source_dir=tmp_path, read_only=False)
         try:
             col.index.build_index()
             release = threading.Event()
@@ -4290,9 +4246,9 @@ class TestWriteGeneration:
     """Tests for IndexFacet.write_generation() (#534)."""
 
     def test_increments_on_job_completion(self, tmp_path: Path) -> None:
-        from markdown_vault_mcp.collection import Collection
+        from markdown_vault_mcp.vault import Vault
 
-        col = Collection(source_dir=tmp_path, read_only=False)
+        col = Vault(source_dir=tmp_path, read_only=False)
         try:
             col.index.build_index()
             gen_before = col.index.write_generation()
@@ -4310,10 +4266,10 @@ class TestWriteGeneration:
     def test_monotonic_across_multiple_jobs(self, tmp_path: Path) -> None:
         from itertools import pairwise
 
-        from markdown_vault_mcp.collection import Collection
         from markdown_vault_mcp.indexing import BuildIndex
+        from markdown_vault_mcp.vault import Vault
 
-        col = Collection(source_dir=tmp_path, read_only=False)
+        col = Vault(source_dir=tmp_path, read_only=False)
         try:
             col.index.build_index()
             samples = [col.index.write_generation()]
@@ -4334,9 +4290,9 @@ class TestWaitForDrain:
     ) -> None:
         import time
 
-        from markdown_vault_mcp.collection import Collection
+        from markdown_vault_mcp.vault import Vault
 
-        col = Collection(source_dir=tmp_path, read_only=False)
+        col = Vault(source_dir=tmp_path, read_only=False)
         try:
             col.index.build_index()
             start = time.monotonic()
@@ -4350,10 +4306,10 @@ class TestWaitForDrain:
     def test_returns_true_after_writer_drains(self, tmp_path: Path) -> None:
         import threading
 
-        from markdown_vault_mcp.collection import Collection
         from markdown_vault_mcp.indexing import BuildIndex
+        from markdown_vault_mcp.vault import Vault
 
-        col = Collection(source_dir=tmp_path, read_only=False)
+        col = Vault(source_dir=tmp_path, read_only=False)
         try:
             col.index.build_index()
             release = threading.Event()
@@ -4377,10 +4333,10 @@ class TestWaitForDrain:
     def test_returns_false_on_timeout(self, tmp_path: Path) -> None:
         import threading
 
-        from markdown_vault_mcp.collection import Collection
         from markdown_vault_mcp.indexing import BuildIndex
+        from markdown_vault_mcp.vault import Vault
 
-        col = Collection(source_dir=tmp_path, read_only=False)
+        col = Vault(source_dir=tmp_path, read_only=False)
         try:
             col.index.build_index()
             release = threading.Event()
@@ -4422,13 +4378,13 @@ _RETAINED_SURFACE = [
 ]  # fmt: skip
 
 
-class TestCollectionThinSurface:
+class TestVaultThinSurface:
     """The facade is a thin composition root after the flat delegators (PR4a)."""
 
     def test_flat_delegators_are_gone(self) -> None:
-        present = [m for m in _REMOVED_FLAT_METHODS if hasattr(Collection, m)]
-        assert present == [], f"flat delegators still on Collection: {present}"
+        present = [m for m in _REMOVED_FLAT_METHODS if hasattr(Vault, m)]
+        assert present == [], f"flat delegators still on Vault: {present}"
 
     def test_facet_accessors_and_lifecycle_retained(self) -> None:
-        missing = [m for m in _RETAINED_SURFACE if not hasattr(Collection, m)]
-        assert missing == [], f"retained surface missing from Collection: {missing}"
+        missing = [m for m in _RETAINED_SURFACE if not hasattr(Vault, m)]
+        assert missing == [], f"retained surface missing from Vault: {missing}"

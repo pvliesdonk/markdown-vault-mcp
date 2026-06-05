@@ -1,6 +1,6 @@
 """Background dispatcher for deferred write callbacks (issue #175).
 
-Extracted from :class:`~markdown_vault_mcp.collection.Collection` (issue #599)
+Extracted from :class:`~markdown_vault_mcp.vault.Vault` (issue #599)
 so the git-commit dispatch concern lives apart from the index-write machinery
 in :mod:`markdown_vault_mcp.indexing`.
 

@@ -1,6 +1,6 @@
 site_name: markdown-vault-mcp
 site_url: https://pvliesdonk.github.io/markdown-vault-mcp/
-site_description: Generic markdown collection MCP server with FTS5 + semantic search
+site_description: Generic markdown vault MCP server with FTS5 + semantic search
 repo_url: https://github.com/pvliesdonk/markdown-vault-mcp
 repo_name: pvliesdonk/markdown-vault-mcp
 edit_uri: edit/main/docs/
@@ -50,7 +50,7 @@ plugins:
   - llmstxt:
       full_output: llms-full.txt
       markdown_description: >
-        markdown-vault-mcp is a generic markdown collection MCP server with
+        markdown-vault-mcp is a generic markdown vault MCP server with
         FTS5 full-text search, semantic search via embeddings, frontmatter-aware
         indexing, and incremental reindexing. It exposes 28 LLM-visible tools
         (plus 6 app-only tools), 9 resources, and 6 prompts over the Model
@@ -87,12 +87,12 @@ plugins:
           - deployment/claude-desktop.md: Claude Desktop configuration reference
           - deployment/oidc.md: OIDC authentication setup with Authelia
         Python API:
-          - api/collection.md: Collection class API reference
+          - api/vault.md: Vault class API reference
           - api/facets.md: Reader/Writer/Graph/Index facet API reference
           - api/git.md: GitWriteStrategy API reference
           - api/config.md: Configuration loading API reference
           - api/providers.md: Embedding provider API reference
-          - api/types.md: All data types returned by the Collection API
+          - api/types.md: All data types returned by the Vault API
           - api/exceptions.md: All exceptions raised by the library
         # PROJECT-LLMSTXT-SECTIONS-END
   - mkdocstrings:
@@ -159,7 +159,7 @@ nav:
       - Claude Desktop: deployment/claude-desktop.md
       - OIDC Authentication: deployment/oidc.md
   - Python API:
-      - Collection: api/collection.md
+      - Vault: api/vault.md
       - Facets: api/facets.md
       - Git Integration: api/git.md
       - Configuration: api/config.md

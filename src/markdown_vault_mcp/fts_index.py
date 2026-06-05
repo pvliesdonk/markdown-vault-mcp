@@ -227,7 +227,7 @@ def _derive_folder(path: str) -> str:
 
     Returns:
         The parent directory as a forward-slash string, or ``""`` for
-        documents at the collection root. Examples::
+        documents at the vault root. Examples::
 
             "Journal/note.md"             -> "Journal"
             "Journal/2024/January/a.md"   -> "Journal/2024/January"
@@ -260,7 +260,7 @@ def _resolve_connect_uri(db_path: Path | str) -> tuple[str, bool, bool]:
     returns the path string directly.
 
     The shared-cache URI is unique per ``FTSIndex`` instance (uuid4 token) so
-    distinct in-process collections do not collide.
+    distinct in-process vaults do not collide.
     """
     if str(db_path) == ":memory:":
         token = uuid.uuid4().hex
@@ -272,7 +272,7 @@ class FTSIndex:
     """SQLite FTS5 index providing BM25 search and tag filtering.
 
     Wraps a SQLite database file (or in-memory database) and exposes CRUD
-    operations and full-text search over a collection of markdown documents.
+    operations and full-text search over a vault of markdown documents.
 
     **Thread safety (issue #519):** every public method is safe to call from
     any thread. Each thread that touches the index opens its own
@@ -283,7 +283,7 @@ class FTSIndex:
     serialised by the single-owner :class:`IndexWriter` thread (#559),
     not by this class. After :meth:`close`,
     every public method raises ``sqlite3.ProgrammingError``. See
-    ``docs/design.md`` "Collection thread-safety contract" for the full
+    ``docs/design.md`` "Vault thread-safety contract" for the full
     contract.
 
     Tag indexing behaviour is controlled by ``indexed_frontmatter_fields``:

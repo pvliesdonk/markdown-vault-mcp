@@ -1,6 +1,6 @@
 """Tests for the indexing-readiness policy from issue #525.
 
-Collection methods fall into four buckets:
+Vault methods fall into four buckets:
 
 - Bucket 1 (never block): ``read``, ``write``, ``edit``, ``delete``,
   ``rename``, ``write_attachment``. Disk is the source of truth; the FTS
@@ -29,8 +29,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from markdown_vault_mcp.collection import Collection
 from markdown_vault_mcp.exceptions import IndexUnavailableError
+from markdown_vault_mcp.vault import Vault
 from tests.conftest import MockEmbeddingProvider
 
 if TYPE_CHECKING:
@@ -58,7 +58,7 @@ class TestBucket1NeverBlock:
     def test_read_on_unbuilt_returns_disk_content(self, tmp_path: Path) -> None:
         vault = _vault(tmp_path)
         _seed(vault, "a.md", "# A\n\nbody\n")
-        col = Collection(source_dir=vault)
+        col = Vault(source_dir=vault)
 
         result = col.reader.read("a.md")
 
@@ -67,7 +67,7 @@ class TestBucket1NeverBlock:
 
     def test_write_on_unbuilt_persists_to_disk(self, tmp_path: Path) -> None:
         vault = _vault(tmp_path)
-        col = Collection(source_dir=vault, read_only=False)
+        col = Vault(source_dir=vault, read_only=False)
 
         col.writer.write("new.md", "# New\n\ncreated\n")
 
@@ -76,7 +76,7 @@ class TestBucket1NeverBlock:
     def test_edit_on_unbuilt_modifies_disk(self, tmp_path: Path) -> None:
         vault = _vault(tmp_path)
         _seed(vault, "e.md", "# E\n\nfoo\n")
-        col = Collection(source_dir=vault, read_only=False)
+        col = Vault(source_dir=vault, read_only=False)
 
         col.writer.edit("e.md", old_text="foo", new_text="bar")
 
@@ -85,7 +85,7 @@ class TestBucket1NeverBlock:
     def test_delete_on_unbuilt_removes_from_disk(self, tmp_path: Path) -> None:
         vault = _vault(tmp_path)
         _seed(vault, "d.md")
-        col = Collection(source_dir=vault, read_only=False)
+        col = Vault(source_dir=vault, read_only=False)
 
         col.writer.delete("d.md")
 
@@ -94,7 +94,7 @@ class TestBucket1NeverBlock:
     def test_rename_on_unbuilt_moves_file(self, tmp_path: Path) -> None:
         vault = _vault(tmp_path)
         _seed(vault, "old.md")
-        col = Collection(source_dir=vault, read_only=False)
+        col = Vault(source_dir=vault, read_only=False)
 
         col.writer.rename("old.md", "new.md")
 
@@ -103,7 +103,7 @@ class TestBucket1NeverBlock:
 
     def test_write_attachment_on_unbuilt_persists(self, tmp_path: Path) -> None:
         vault = _vault(tmp_path)
-        col = Collection(
+        col = Vault(
             source_dir=vault,
             read_only=False,
             attachment_extensions=["bin"],
@@ -123,7 +123,7 @@ class TestBucket2PartialReport:
     def test_search_on_unbuilt_returns_empty(self, tmp_path: Path) -> None:
         vault = _vault(tmp_path)
         _seed(vault, "a.md", "# A\n\nhello world\n")
-        col = Collection(source_dir=vault)
+        col = Vault(source_dir=vault)
 
         results = col.reader.search("hello")
 
@@ -133,7 +133,7 @@ class TestBucket2PartialReport:
         vault = _vault(tmp_path)
         _seed(vault, "a.md")
         _seed(vault, "b.md")
-        col = Collection(source_dir=vault)
+        col = Vault(source_dir=vault)
 
         notes = col.reader.list_documents()
 
@@ -142,7 +142,7 @@ class TestBucket2PartialReport:
     def test_stats_on_unbuilt_reports_zero_documents(self, tmp_path: Path) -> None:
         vault = _vault(tmp_path)
         _seed(vault)
-        col = Collection(source_dir=vault)
+        col = Vault(source_dir=vault)
 
         result = col.reader.stats()
 
@@ -158,7 +158,7 @@ class TestBucket3Block:
     def test_get_backlinks_on_unbuilt_raises(self, tmp_path: Path) -> None:
         vault = _vault(tmp_path)
         _seed(vault)
-        col = Collection(source_dir=vault)
+        col = Vault(source_dir=vault)
 
         with pytest.raises(IndexUnavailableError) as excinfo:
             col.graph.get_backlinks("note.md")
@@ -167,7 +167,7 @@ class TestBucket3Block:
     def test_get_outlinks_on_unbuilt_raises(self, tmp_path: Path) -> None:
         vault = _vault(tmp_path)
         _seed(vault)
-        col = Collection(source_dir=vault)
+        col = Vault(source_dir=vault)
 
         with pytest.raises(IndexUnavailableError) as excinfo:
             col.graph.get_outlinks("note.md")
@@ -176,7 +176,7 @@ class TestBucket3Block:
     def test_get_similar_on_unbuilt_raises(self, tmp_path: Path) -> None:
         vault = _vault(tmp_path)
         _seed(vault)
-        col = Collection(
+        col = Vault(
             source_dir=vault,
             embedding_provider=MockEmbeddingProvider(),
             embeddings_path=tmp_path / "vectors",
@@ -189,7 +189,7 @@ class TestBucket3Block:
     def test_get_context_on_unbuilt_raises(self, tmp_path: Path) -> None:
         vault = _vault(tmp_path)
         _seed(vault)
-        col = Collection(source_dir=vault)
+        col = Vault(source_dir=vault)
 
         with pytest.raises(IndexUnavailableError) as excinfo:
             col.reader.get_context("note.md")
@@ -199,7 +199,7 @@ class TestBucket3Block:
         vault = _vault(tmp_path)
         _seed(vault, "a.md")
         _seed(vault, "b.md")
-        col = Collection(source_dir=vault)
+        col = Vault(source_dir=vault)
 
         with pytest.raises(IndexUnavailableError) as excinfo:
             col.graph.get_connection_path("a.md", "b.md")
@@ -211,7 +211,7 @@ class TestBucket3Block:
         """
         vault = _vault(tmp_path)
         _seed(vault)
-        col = Collection(source_dir=vault)
+        col = Vault(source_dir=vault)
 
         with pytest.raises(IndexUnavailableError) as excinfo:
             col.reader.get_toc("note.md")
@@ -228,7 +228,7 @@ class TestBucket4Coordinate:
     def test_reindex_on_unbuilt_raises(self, tmp_path: Path) -> None:
         vault = _vault(tmp_path)
         _seed(vault)
-        col = Collection(source_dir=vault)
+        col = Vault(source_dir=vault)
 
         with pytest.raises(IndexUnavailableError) as excinfo:
             col.index.reindex()
@@ -237,7 +237,7 @@ class TestBucket4Coordinate:
     def test_build_embeddings_on_unbuilt_raises(self, tmp_path: Path) -> None:
         vault = _vault(tmp_path)
         _seed(vault)
-        col = Collection(
+        col = Vault(
             source_dir=vault,
             embedding_provider=MockEmbeddingProvider(),
             embeddings_path=tmp_path / "vectors",
@@ -248,7 +248,7 @@ class TestBucket4Coordinate:
         assert excinfo.value.reason == "never_built"
 
     def test_build_index_short_circuits_on_warm_restart(self, tmp_path: Path) -> None:
-        """A second Collection on the same persistent FTS DB short-circuits.
+        """A second Vault on the same persistent FTS DB short-circuits.
 
         Pre-fix: ``_initialized`` resets to False on every process start,
         so ``build_index()`` re-scans every file even when the FTS DB
@@ -261,11 +261,11 @@ class TestBucket4Coordinate:
 
         index_path = tmp_path / "fts.db"
 
-        col1 = Collection(source_dir=vault, index_path=index_path)
+        col1 = Vault(source_dir=vault, index_path=index_path)
         col1.index.build_index()
         col1.close()
 
-        col2 = Collection(source_dir=vault, index_path=index_path)
+        col2 = Vault(source_dir=vault, index_path=index_path)
         stats = col2.index.build_index()
 
         # Short-circuit returns the existing count, indexes zero new chunks.
@@ -282,7 +282,7 @@ class TestBucket4Coordinate:
 class TestWaitUntilQueryable:
     def test_unbuilt_raises(self, tmp_path: Path) -> None:
         vault = _vault(tmp_path)
-        col = Collection(source_dir=vault)
+        col = Vault(source_dir=vault)
 
         with pytest.raises(IndexUnavailableError) as excinfo:
             col.index.wait_until_queryable(timeout=0.1)
@@ -291,7 +291,7 @@ class TestWaitUntilQueryable:
     def test_after_build_returns(self, tmp_path: Path) -> None:
         vault = _vault(tmp_path)
         _seed(vault)
-        col = Collection(source_dir=vault)
+        col = Vault(source_dir=vault)
         col.index.build_index()
 
         # Must return without raising.
@@ -332,7 +332,7 @@ class TestWarmRestartCompletenessSentinel:
         fts.close()
 
         # Next process opens the same DB and calls build_index().
-        col = Collection(source_dir=vault, index_path=index_path)
+        col = Vault(source_dir=vault, index_path=index_path)
         col.index.build_index()
 
         # Must have rebuilt fully — not short-circuited on the 1 stale row.
@@ -352,11 +352,11 @@ class TestWarmRestartCompletenessSentinel:
             _seed(vault, f"n_{i}.md", f"# N{i}\n\nbody {i}\n")
         index_path = tmp_path / "fts.db"
 
-        col1 = Collection(source_dir=vault, index_path=index_path)
+        col1 = Vault(source_dir=vault, index_path=index_path)
         col1.index.build_index()
         col1.close()
 
-        col2 = Collection(source_dir=vault, index_path=index_path)
+        col2 = Vault(source_dir=vault, index_path=index_path)
         stats = col2.index.build_index()
 
         # Short-circuit: zero chunks reindexed.
@@ -367,13 +367,13 @@ class TestWarmRestartCompletenessSentinel:
 
 class TestReadinessFlagSemantics:
     def test_failed_force_rebuild_clears_flag(self, tmp_path: Path) -> None:
-        """A failed build_index(force=True) on a previously-built Collection
+        """A failed build_index(force=True) on a previously-built Vault
         must clear ``_index_built`` — otherwise bucket-3 queries proceed
         against a cleared / partially rebuilt index.
         """
         vault = _vault(tmp_path)
         _seed(vault)
-        col = Collection(source_dir=vault)
+        col = Vault(source_dir=vault)
         col.index.build_index()  # Sets _index_built = True.
 
         def boom(*_a: object, **_kw: object) -> None:
@@ -393,7 +393,7 @@ class TestReadinessFlagSemantics:
         """If build_index() raises, subsequent bucket-3 calls still raise."""
         vault = _vault(tmp_path)
         _seed(vault)
-        col = Collection(source_dir=vault)
+        col = Vault(source_dir=vault)
 
         # Force the underlying index manager to fail.
         def boom(*_a: object, **_kw: object) -> None:
@@ -430,15 +430,15 @@ def test_lifespan_yields_quickly_on_cold_start(tmp_path: Path) -> None:
     import asyncio
     import time
 
-    from markdown_vault_mcp._server_deps import make_collection_lifespan
-    from markdown_vault_mcp.config import CollectionConfig
+    from markdown_vault_mcp._server_deps import make_vault_lifespan
+    from markdown_vault_mcp.config import VaultConfig
 
     # Construct a cold vault (many files, no existing DB).
     for i in range(50):
         (tmp_path / f"n{i}.md").write_text(f"# n{i}\n\nhello", encoding="utf-8")
 
-    config = CollectionConfig(source_dir=tmp_path, read_only=False)
-    lifespan_fn = make_collection_lifespan(config)
+    config = VaultConfig(source_dir=tmp_path, read_only=False)
+    lifespan_fn = make_vault_lifespan(config)
 
     async def _run() -> None:
         start = time.monotonic()
@@ -446,16 +446,16 @@ def test_lifespan_yields_quickly_on_cold_start(tmp_path: Path) -> None:
             elapsed = time.monotonic() - start
             # Fire-and-forget yield must be sub-second even on a cold vault.
             assert elapsed < 2.0, f"Lifespan took {elapsed:.2f}s to yield"
-            assert ctx["collection"] is not None
+            assert ctx["vault"] is not None
 
     asyncio.run(_run())
 
 
 def test_get_index_status_includes_writer_keys(tmp_path):
     """get_index_status() returns writer state in addition to legacy keys (#559)."""
-    from markdown_vault_mcp.collection import Collection
+    from markdown_vault_mcp.vault import Vault
 
-    col = Collection(source_dir=tmp_path, read_only=False)
+    col = Vault(source_dir=tmp_path, read_only=False)
     try:
         col.index.build_index()
         status = col.index.get_index_status()

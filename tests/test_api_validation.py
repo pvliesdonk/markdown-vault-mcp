@@ -1,4 +1,4 @@
-"""API validation tests: verify Collection works with ifcraftcorpus settings.
+"""API validation tests: verify Vault works with ifcraftcorpus settings.
 
 Phase 1 gate — confirms that required_frontmatter exclusion, tag filtering,
 list_tags, and stats all behave correctly before proceeding to Phase 2.
@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from markdown_vault_mcp.collection import Collection
+from markdown_vault_mcp.vault import Vault
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -118,20 +118,20 @@ def corpus_path(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def corpus_collection(corpus_path: Path) -> tuple[Collection, IndexStats]:
-    """Return a built Collection configured with ifcraftcorpus settings.
+def corpus_vault(corpus_path: Path) -> tuple[Vault, IndexStats]:
+    """Return a built Vault configured with ifcraftcorpus settings.
 
     Returns:
-        Tuple of (collection, index_stats) so tests can inspect both.
+        Tuple of (vault, index_stats) so tests can inspect both.
     """
-    collection = Collection(
+    vault = Vault(
         source_dir=corpus_path,
         required_frontmatter=["title", "cluster"],
         indexed_frontmatter_fields=["cluster", "topics"],
         read_only=True,
     )
-    stats = collection.index.build_index()
-    return collection, stats
+    stats = vault.index.build_index()
+    return vault, stats
 
 
 # ---------------------------------------------------------------------------
@@ -141,38 +141,36 @@ def corpus_collection(corpus_path: Path) -> tuple[Collection, IndexStats]:
 
 class TestRequiredFrontmatter:
     def test_required_frontmatter_excludes_incomplete(
-        self, corpus_collection: tuple[Collection, IndexStats]
+        self, corpus_vault: tuple[Vault, IndexStats]
     ) -> None:
         """Only 3 documents are indexed; incomplete.md and no_frontmatter.md are skipped."""
-        collection, _ = corpus_collection
-        s = collection.reader.stats()
+        vault, _ = corpus_vault
+        s = vault.reader.stats()
         assert s.document_count == 3
 
-    def test_stats_skipped_count(
-        self, corpus_collection: tuple[Collection, IndexStats]
-    ) -> None:
+    def test_stats_skipped_count(self, corpus_vault: tuple[Vault, IndexStats]) -> None:
         """build_index() reports skipped == 2 (incomplete + no_frontmatter)."""
-        _, index_stats = corpus_collection
+        _, index_stats = corpus_vault
         assert index_stats.skipped == 2
 
 
 class TestSearchWithFilters:
     def test_search_with_cluster_filter(
-        self, corpus_collection: tuple[Collection, IndexStats]
+        self, corpus_vault: tuple[Vault, IndexStats]
     ) -> None:
         """search(filters={"cluster": "nonfiction"}) returns only exemplar2."""
-        collection, _ = corpus_collection
-        results = collection.reader.search("guide", filters={"cluster": "nonfiction"})
+        vault, _ = corpus_vault
+        results = vault.reader.search("guide", filters={"cluster": "nonfiction"})
 
         assert len(results) == 1
         assert results[0].path == "exemplar2.md"
 
     def test_search_with_fiction_filter(
-        self, corpus_collection: tuple[Collection, IndexStats]
+        self, corpus_vault: tuple[Vault, IndexStats]
     ) -> None:
         """search(filters={"cluster": "fiction"}) returns only fiction docs."""
-        collection, _ = corpus_collection
-        results = collection.reader.search("gothic", filters={"cluster": "fiction"})
+        vault, _ = corpus_vault
+        results = vault.reader.search("gothic", filters={"cluster": "fiction"})
 
         paths = {r.path for r in results}
         # Keyword search for "gothic" only matches exemplar3.md (gothic in
@@ -180,12 +178,10 @@ class TestSearchWithFilters:
         # which is not in the FTS5 virtual table.
         assert paths == {"exemplar3.md"}, f"Unexpected paths in results: {paths}"
 
-    def test_multi_tag_filter(
-        self, corpus_collection: tuple[Collection, IndexStats]
-    ) -> None:
+    def test_multi_tag_filter(self, corpus_vault: tuple[Vault, IndexStats]) -> None:
         """search with cluster=fiction AND topics=gothic returns only matching docs."""
-        collection, _ = corpus_collection
-        results = collection.reader.search(
+        vault, _ = corpus_vault
+        results = vault.reader.search(
             "gothic",
             filters={"cluster": "fiction", "topics": "gothic"},
         )
@@ -198,20 +194,16 @@ class TestSearchWithFilters:
 
 
 class TestListTags:
-    def test_list_tags_cluster(
-        self, corpus_collection: tuple[Collection, IndexStats]
-    ) -> None:
+    def test_list_tags_cluster(self, corpus_vault: tuple[Vault, IndexStats]) -> None:
         """list_tags("cluster") returns ["fiction", "nonfiction"] (sorted)."""
-        collection, _ = corpus_collection
-        clusters = collection.reader.list_tags("cluster")
+        vault, _ = corpus_vault
+        clusters = vault.reader.list_tags("cluster")
         assert clusters == ["fiction", "nonfiction"]
 
-    def test_list_tags_topics(
-        self, corpus_collection: tuple[Collection, IndexStats]
-    ) -> None:
+    def test_list_tags_topics(self, corpus_vault: tuple[Vault, IndexStats]) -> None:
         """list_tags("topics") returns all distinct topic values from the 3 indexed docs."""
-        collection, _ = corpus_collection
-        topics = collection.reader.list_tags("topics")
+        vault, _ = corpus_vault
+        topics = vault.reader.list_tags("topics")
 
         # Topics from the three indexed documents:
         #   exemplar1: horror, gothic, haunted-house
@@ -231,31 +223,29 @@ class TestListTags:
         assert topics == expected
 
     def test_list_tags_unindexed_field(
-        self, corpus_collection: tuple[Collection, IndexStats]
+        self, corpus_vault: tuple[Vault, IndexStats]
     ) -> None:
         """list_tags("author") returns [] — author is not in indexed_frontmatter_fields."""
-        collection, _ = corpus_collection
-        result = collection.reader.list_tags("author")
+        vault, _ = corpus_vault
+        result = vault.reader.list_tags("author")
         assert result == []
 
 
 class TestStats:
-    def test_stats_indexed_fields(
-        self, corpus_collection: tuple[Collection, IndexStats]
-    ) -> None:
+    def test_stats_indexed_fields(self, corpus_vault: tuple[Vault, IndexStats]) -> None:
         """stats().indexed_frontmatter_fields reports ["cluster", "topics"]."""
-        collection, _ = corpus_collection
-        s = collection.reader.stats()
+        vault, _ = corpus_vault
+        s = vault.reader.stats()
         assert sorted(s.indexed_frontmatter_fields) == ["cluster", "topics"]
 
 
 class TestFrontmatterInResults:
     def test_search_returns_frontmatter(
-        self, corpus_collection: tuple[Collection, IndexStats]
+        self, corpus_vault: tuple[Vault, IndexStats]
     ) -> None:
         """Search results include the correct frontmatter dict for the matched document."""
-        collection, _ = corpus_collection
-        results = collection.reader.search("guide", filters={"cluster": "nonfiction"})
+        vault, _ = corpus_vault
+        results = vault.reader.search("guide", filters={"cluster": "nonfiction"})
 
         assert len(results) == 1
         fm = results[0].frontmatter

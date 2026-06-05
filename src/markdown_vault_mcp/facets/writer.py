@@ -2,8 +2,8 @@
 
 A thin view over :class:`~markdown_vault_mcp.managers.document.DocumentManager`
 exposing the vault's write / edit / delete / rename / attachment operations.
-Part of the ``collection.py`` facade decomposition (#576); reached via the
-``Collection.writer`` accessor.
+Part of the ``vault.py`` facade decomposition (#576); reached via the
+``Vault.writer`` accessor.
 """
 
 from __future__ import annotations
@@ -58,7 +58,7 @@ class WriterFacet:
             :class:`~markdown_vault_mcp.types.WriteResult`.
 
         Raises:
-            ReadOnlyError: If the collection is read-only.
+            ReadOnlyError: If the vault is read-only.
             ConcurrentModificationError: If *if_match* is provided and does
                 not match the current file hash, or *if_match* is supplied
                 for a file that does not yet exist.
@@ -99,7 +99,7 @@ class WriterFacet:
         Raises:
             EditConflictError: If *old_text* is not found or appears more than
                 once.
-            ReadOnlyError: If the collection is read-only.
+            ReadOnlyError: If the vault is read-only.
             ConcurrentModificationError: If *if_match* is provided and does
                 not match.
             DocumentNotFoundError: If the file does not exist.
@@ -129,7 +129,7 @@ class WriterFacet:
             :class:`~markdown_vault_mcp.types.DeleteResult`.
 
         Raises:
-            ReadOnlyError: If the collection is read-only.
+            ReadOnlyError: If the vault is read-only.
             ConcurrentModificationError: If *if_match* is provided and does
                 not match.
             DocumentNotFoundError: If *path* does not exist.
@@ -162,7 +162,7 @@ class WriterFacet:
             :class:`~markdown_vault_mcp.types.RenameResult`.
 
         Raises:
-            ReadOnlyError: If the collection is read-only.
+            ReadOnlyError: If the vault is read-only.
             ConcurrentModificationError: If *if_match* is provided and does
                 not match.
             DocumentNotFoundError: If *old_path* does not exist.
@@ -191,7 +191,7 @@ class WriterFacet:
             :class:`~markdown_vault_mcp.types.WriteResult`.
 
         Raises:
-            ReadOnlyError: If the collection is read-only.
+            ReadOnlyError: If the vault is read-only.
             ConcurrentModificationError: If *if_match* is provided and does
                 not match the current file hash, or *if_match* is supplied
                 for a file that does not yet exist.

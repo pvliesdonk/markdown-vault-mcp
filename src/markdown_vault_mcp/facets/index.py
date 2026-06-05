@@ -7,7 +7,7 @@ embeddings sync + async, plus the readiness and writer-status queries) and
 (:meth:`IndexFacet.embeddings_status`). It deliberately does NOT expose the coordinator's
 internal surface (``close``, ``writer``, ``require_built``,
 ``mark_paths_dirty``, ``rebuild_embeddings``), which the root owns. Part of the
-``collection.py`` facade decomposition (#576).
+``vault.py`` facade decomposition (#576).
 """
 
 from __future__ import annotations
