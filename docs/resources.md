@@ -123,7 +123,7 @@ Top 10 semantically similar notes for a document. Requires embeddings to be buil
 Results are **grouped per file** — each file appears at most once, with up to `chunks_per_file` (server default `2`) best-matching sections in a `sections` array. Each entry is a `GroupedResult` dict with `path`, `title`, `folder`, `score` (max section score), `search_type` (`"semantic"`), `frontmatter`, and `sections` — a list of `{heading, content, score}` dicts sorted by score then document order.
 
 !!! note "Resource shape differs from `get_similar` tool"
-    This resource returns a flat JSON array. The `get_similar` MCP tool wraps the same data in a `{"stale": bool, "data": [...]}` envelope so callers see a drift signal (#534). Resource handlers do not accept a `wait_for_drain` parameter, so this resource intentionally omits the envelope; clients that need the drift signal should use the tool. Lifting the envelope to resources is tracked as a follow-up — see [`Collection.is_drained()`](https://github.com/pvliesdonk/markdown-vault-mcp/issues/534) for the underlying primitive.
+    This resource returns a flat JSON array. The `get_similar` MCP tool wraps the same data in a `{"stale": bool, "data": [...]}` envelope so callers see a drift signal (#534). Resource handlers do not accept a `wait_for_drain` parameter, so this resource intentionally omits the envelope; clients that need the drift signal should use the tool. Lifting the envelope to resources is tracked as a follow-up — see [`IndexFacet.is_drained()`](https://github.com/pvliesdonk/markdown-vault-mcp/issues/534) for the underlying primitive.
 
 **Example:** `similar://vault/Journal/note.md`
 

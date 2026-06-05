@@ -11,8 +11,8 @@ from pathlib import (
 def compute_etag(data: bytes) -> str:
     """Compute the SHA256 hex digest of in-memory bytes.
 
-    Used to compute the ``etag`` field returned by :meth:`Collection.read`
-    and :meth:`Collection.read_attachment` from already-loaded byte content.
+    Used to compute the ``etag`` field returned by :meth:`ReaderFacet.read`
+    and :meth:`ReaderFacet.read_attachment` from already-loaded byte content.
 
     Args:
         data: Raw bytes to hash.

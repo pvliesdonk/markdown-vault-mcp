@@ -111,9 +111,9 @@ class IndexUnavailableError(MarkdownMCPError):
     - **Build did not complete successfully** (``reason="build_failed"``).
       A previous build was scheduled, ran, raised, and was not retried
       (``_index_built`` remained False; the captured error is available
-      via :meth:`Collection.get_index_status`'s ``error`` field) (#586).
+      via :meth:`IndexFacet.get_index_status`'s ``error`` field) (#586).
     - **Timeout** (``reason="timeout"``). A caller waited via
-      :meth:`Collection.wait_until_queryable` and the bounded timeout
+      :meth:`IndexFacet.wait_until_queryable` and the bounded timeout
       elapsed before the background build signaled completion.
     - **SQLite operational error — broken** (``reason="broken"``). A
       bucket-3/4 MCP handler call raised ``sqlite3.OperationalError``
@@ -129,7 +129,7 @@ class IndexUnavailableError(MarkdownMCPError):
 
     A captured background-build error is NOT a separate exception
     class: it is diagnostic state surfaced via
-    :meth:`Collection.get_index_status`'s ``error`` field.
+    :meth:`IndexFacet.get_index_status`'s ``error`` field.
     """
 
     def __init__(self, message: str, *, reason: IndexUnavailableReason) -> None:

@@ -4,7 +4,7 @@ A thin view over the
 :class:`~markdown_vault_mcp.indexing.IndexWriteCoordinator` (build / reindex /
 embeddings sync + async, plus the readiness and writer-status queries) and
 :class:`~markdown_vault_mcp.managers.index.IndexManager`
-(:meth:`embeddings_status`). It deliberately does NOT expose the coordinator's
+(:meth:`IndexFacet.embeddings_status`). It deliberately does NOT expose the coordinator's
 internal surface (``close``, ``writer``, ``require_built``,
 ``mark_paths_dirty``, ``rebuild_embeddings``), which the root owns. Part of the
 ``collection.py`` facade decomposition (#576).
@@ -27,7 +27,7 @@ class IndexFacet:
     """Index build, readiness, writer-status, and embeddings-status operations.
 
     Delegates 1:1 to the :class:`IndexWriteCoordinator` (build / readiness /
-    writer status) and to :class:`IndexManager` (:meth:`embeddings_status`).
+    writer status) and to :class:`IndexManager` (:meth:`IndexFacet.embeddings_status`).
     """
 
     def __init__(
@@ -42,7 +42,7 @@ class IndexFacet:
             coordinator: The shared :class:`IndexWriteCoordinator` owned by the
                 root. Only its public operations are surfaced here.
             index_mgr: The shared :class:`IndexManager`, queried by
-                :meth:`embeddings_status`.
+                :meth:`IndexFacet.embeddings_status`.
         """
         self._coordinator = coordinator
         self._index_mgr = index_mgr
@@ -51,15 +51,15 @@ class IndexFacet:
         """Return True when the FTS index is queryable (precondition snapshot).
 
         A captured build error does NOT demote queryability: it is
-        diagnostic state surfaced via :meth:`get_index_status`, not a gate.
+        diagnostic state surfaced via :meth:`IndexFacet.get_index_status`, not a gate.
         """
         return self._coordinator.is_queryable()
 
     def start_background_build_index(self) -> None:
-        """Spawn a daemon thread that runs :meth:`build_index` to completion.
+        """Spawn a daemon thread that runs :meth:`IndexFacet.build_index` to completion.
 
         .. deprecated:: 1.28
-           Superseded by :meth:`build_index_async`. Retained for legacy tests.
+           Superseded by :meth:`IndexFacet.build_index_async`. Retained for legacy tests.
         """
         self._coordinator.start_background_build_index()
 
@@ -74,7 +74,7 @@ class IndexFacet:
     def is_drained(self) -> bool:
         """Return True iff the IndexWriter has no pending or in-flight work.
 
-        Reflects the moment of call only; pair with :meth:`write_generation`
+        Reflects the moment of call only; pair with :meth:`IndexFacet.write_generation`
         to detect a complete write cycle inside a read window.
         """
         return self._coordinator.is_drained()
@@ -82,13 +82,13 @@ class IndexFacet:
     def write_generation(self) -> int:
         """Return the writer's monotonic completion counter.
 
-        Increments once per completed job. Pair with :meth:`is_drained` to
+        Increments once per completed job. Pair with :meth:`IndexFacet.is_drained` to
         detect a write cycle inside a read window.
         """
         return self._coordinator.write_generation()
 
     def wait_for_drain(self, timeout: float | None = None) -> bool:
-        """Block until :meth:`is_drained`; ``True`` if drained, ``False`` on timeout."""
+        """Block until :meth:`IndexFacet.is_drained`; ``True`` if drained, ``False`` on timeout."""
         return self._coordinator.wait_for_drain(timeout)
 
     def get_index_status(self) -> dict[str, Any]:
@@ -110,7 +110,7 @@ class IndexFacet:
 
         A captured build error does NOT block here; it surfaces as
         ``IndexUnavailableError(reason="build_failed")`` and is also readable
-        via :meth:`get_index_status`. Library bucket-3/4 methods use the
+        via :meth:`IndexFacet.get_index_status`. Library bucket-3/4 methods use the
         root's ``_require_built`` instead, which raises immediately.
 
         Raises:
@@ -139,7 +139,7 @@ class IndexFacet:
             :class:`~markdown_vault_mcp.types.ReindexResult` with counts applied.
 
         Raises:
-            IndexUnavailableError: If :meth:`build_index` has not been called.
+            IndexUnavailableError: If :meth:`IndexFacet.build_index` has not been called.
         """
         return self._coordinator.reindex()
 
@@ -154,7 +154,7 @@ class IndexFacet:
             Total number of chunks embedded.
 
         Raises:
-            IndexUnavailableError: If :meth:`build_index` has not been called.
+            IndexUnavailableError: If :meth:`IndexFacet.build_index` has not been called.
             ValueError: If ``embedding_provider`` or ``embeddings_path`` is unset.
         """
         return self._coordinator.build_embeddings(force=force)
@@ -164,7 +164,7 @@ class IndexFacet:
 
         Caller may ``.result()`` to wait or fire-and-forget. Warm-restart
         short-circuit returns an already-resolved Future without queuing a
-        job, mirroring :meth:`build_index`.
+        job, mirroring :meth:`IndexFacet.build_index`.
 
         Args:
             force: When ``True``, drop and rebuild the index unconditionally.
@@ -177,18 +177,18 @@ class IndexFacet:
     def reindex_async(self) -> Future[ReindexResult]:
         """Submit an incremental FTS reindex and return the Future.
 
-        Does not require :meth:`build_index` first — the writer's FIFO queue
+        Does not require :meth:`IndexFacet.build_index` first — the writer's FIFO queue
         orders any earlier :class:`BuildIndex` before this job. Writer-thread
-        failures are surfaced via :meth:`get_index_status` (#561).
+        failures are surfaced via :meth:`IndexFacet.get_index_status` (#561).
         """
         return self._coordinator.reindex_async()
 
     def build_embeddings_async(self, *, force: bool = False) -> Future[int]:
         """Submit a vector index build and return the Future.
 
-        Does not require :meth:`build_index` first — FIFO ordering runs any
+        Does not require :meth:`IndexFacet.build_index` first — FIFO ordering runs any
         earlier :class:`BuildIndex` first. Writer-thread failures are surfaced
-        via :meth:`get_index_status` (#561).
+        via :meth:`IndexFacet.get_index_status` (#561).
         """
         return self._coordinator.build_embeddings_async(force=force)
 

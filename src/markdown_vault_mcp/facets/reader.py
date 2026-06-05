@@ -4,10 +4,10 @@ A thin view exposing search, document reads, listing, table-of-contents,
 similarity, recent, context, stats, attachment reads, and git history/diff.
 Each method delegates 1:1 to one collaborator (:class:`SearchManager`,
 :class:`DocumentManager`, or :class:`GitQueryManager`); the bucket-3 methods
-(:meth:`get_toc`,
-:meth:`get_similar`, :meth:`get_context`) gate on the index-readiness callback
-first. Part of the ``collection.py`` facade decomposition (#576); the flat
-``Collection`` read methods delegate here.
+(:meth:`ReaderFacet.get_toc`,
+:meth:`ReaderFacet.get_similar`, :meth:`ReaderFacet.get_context`) gate on the index-readiness callback
+first. Part of the ``collection.py`` facade decomposition (#576); reached via
+the ``Collection.reader`` accessor.
 """
 
 from __future__ import annotations
@@ -187,7 +187,7 @@ class ReaderFacet:
             position, with the document title prepended as level 1.
 
         Raises:
-            IndexUnavailableError: If :meth:`build_index` has not been called.
+            IndexUnavailableError: If :meth:`IndexFacet.build_index` has not been called.
             ValueError: If no document exists at the given path.
         """
         self._require_built()
@@ -232,7 +232,7 @@ class ReaderFacet:
             List of grouped results.
 
         Raises:
-            IndexUnavailableError: If :meth:`build_index` has not been called.
+            IndexUnavailableError: If :meth:`IndexFacet.build_index` has not been called.
         """
         self._require_built()
         return self._search_mgr.get_similar(
@@ -265,7 +265,7 @@ class ReaderFacet:
             stays compact.
 
         Raises:
-            IndexUnavailableError: If :meth:`build_index` has not been called.
+            IndexUnavailableError: If :meth:`IndexFacet.build_index` has not been called.
             ValueError: If no document exists at the given path.
         """
         self._require_built()

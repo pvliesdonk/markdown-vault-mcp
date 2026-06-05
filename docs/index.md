@@ -43,7 +43,8 @@ from pathlib import Path
 from markdown_vault_mcp import Collection
 
 collection = Collection(source_dir=Path("/path/to/vault"))
-results = collection.search("query text", limit=10)
+collection.index.build_index()
+results = collection.reader.search("query text", limit=10)
 ```
 
 ### As an MCP server

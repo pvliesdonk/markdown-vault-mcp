@@ -2925,7 +2925,7 @@ class TestGetFileHistoryVaultScope:
 
 
 class TestCollectionGitHistoryMethods:
-    """Tests for Collection.get_history / Collection.get_diff edge cases."""
+    """Tests for ReaderFacet.get_history / ReaderFacet.get_diff edge cases."""
 
     def _make_collection_no_git(self, tmp_path: Path):  # type: ignore[no-untyped-def]
         """Return a Collection with no git strategy (plain directory vault)."""

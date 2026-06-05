@@ -88,6 +88,7 @@ plugins:
           - deployment/oidc.md: OIDC authentication setup with Authelia
         Python API:
           - api/collection.md: Collection class API reference
+          - api/facets.md: Reader/Writer/Graph/Index facet API reference
           - api/git.md: GitWriteStrategy API reference
           - api/config.md: Configuration loading API reference
           - api/providers.md: Embedding provider API reference
@@ -159,6 +160,7 @@ nav:
       - OIDC Authentication: deployment/oidc.md
   - Python API:
       - Collection: api/collection.md
+      - Facets: api/facets.md
       - Git Integration: api/git.md
       - Configuration: api/config.md
       - Embedding Providers: api/providers.md

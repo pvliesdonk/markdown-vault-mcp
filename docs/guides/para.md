@@ -110,14 +110,14 @@ Then you can run targeted queries via the Python API:
 
 ```python
 # All active projects
-results = collection.search(
+results = collection.reader.search(
     "project",
     filters={"type": "project", "status": "active"},
     limit=50,
 )
 
 # All active projects in the Health area
-results = collection.search(
+results = collection.reader.search(
     "project",
     filters={"type": "project", "status": "active", "area": "Health"},
     limit=50,
@@ -158,7 +158,7 @@ Use the create_from_template prompt with template_name="inbox"
 from markdown_vault_mcp import Collection
 
 collection = Collection(source_dir="/path/to/vault")
-collection.write(
+collection.writer.write(
     "0-Inbox/migrate-postgres.md",
     content="We should look into migrating to Postgres 16.",
     frontmatter={"tags": [], "created": "2026-04-19"},
@@ -268,14 +268,14 @@ collection = Collection(source_dir="/path/to/vault")
 today = date.today().isoformat()
 
 # Flip status and add archived_at. One targeted replacement each.
-collection.edit(
+collection.writer.edit(
     "1-Projects/ship-v2.md",
     old_text="status: active",
     new_text=f"status: archived\narchived_at: {today}",
 )
 
 # Move to the archive folder, preserving backlinks.
-collection.rename(
+collection.writer.rename(
     "1-Projects/ship-v2.md",
     "4-Archive/ship-v2.md",
     update_links=True,

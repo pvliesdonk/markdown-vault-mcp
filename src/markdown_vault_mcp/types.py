@@ -69,7 +69,7 @@ class ParsedNote:
 
 @dataclass
 class SearchResult:
-    """A search result from :meth:`~markdown_vault_mcp.collection.Collection.search`.
+    """A search result from :meth:`~markdown_vault_mcp.facets.reader.ReaderFacet.search`.
 
     Attributes:
         path: Relative path of the document containing this chunk.
@@ -182,7 +182,7 @@ class FTSResult:
 
 @dataclass
 class NoteContent:
-    """Full content of a document, returned by :meth:`~markdown_vault_mcp.collection.Collection.read`.
+    """Full content of a document, returned by :meth:`~markdown_vault_mcp.facets.reader.ReaderFacet.read`.
 
     Attributes:
         path: Relative path from the vault root (e.g. ``Journal/note.md``).
@@ -205,7 +205,7 @@ class NoteContent:
 
 @dataclass
 class NoteInfo:
-    """Summary info for a document, returned by :meth:`~markdown_vault_mcp.collection.Collection.list_documents`.
+    """Summary info for a document, returned by :meth:`~markdown_vault_mcp.facets.reader.ReaderFacet.list_documents`.
 
     Attributes:
         path: Relative path from the vault root.
@@ -280,7 +280,7 @@ class RenameResult:
 
 @dataclass
 class IndexStats:
-    """Statistics from :meth:`~markdown_vault_mcp.collection.Collection.build_index`.
+    """Statistics from :meth:`~markdown_vault_mcp.facets.index.IndexFacet.build_index`.
 
     Attributes:
         documents_indexed: Number of documents successfully indexed.
@@ -295,7 +295,7 @@ class IndexStats:
 
 @dataclass
 class ReindexResult:
-    """Result of :meth:`~markdown_vault_mcp.collection.Collection.reindex`.
+    """Result of :meth:`~markdown_vault_mcp.facets.index.IndexFacet.reindex`.
 
     Attributes:
         added: Documents added since the last index.
@@ -312,7 +312,7 @@ class ReindexResult:
 
 @dataclass
 class AttachmentContent:
-    """Full content of an attachment, returned by :meth:`~markdown_vault_mcp.collection.Collection.read` for non-.md files.
+    """Full content of an attachment, returned by :meth:`~markdown_vault_mcp.facets.reader.ReaderFacet.read_attachment` for non-.md files.
 
     Attributes:
         path: Relative path from the vault root.
@@ -333,7 +333,7 @@ class AttachmentContent:
 
 @dataclass
 class AttachmentInfo:
-    """Summary info for an attachment, returned by :meth:`~markdown_vault_mcp.collection.Collection.list_documents` when ``include_attachments=True``.
+    """Summary info for an attachment, returned by :meth:`~markdown_vault_mcp.facets.reader.ReaderFacet.list_documents` when ``include_attachments=True``.
 
     Attributes:
         path: Relative path from the vault root.
@@ -354,7 +354,7 @@ class AttachmentInfo:
 
 @dataclass
 class CollectionStats:
-    """Collection-wide statistics, returned by :meth:`~markdown_vault_mcp.collection.Collection.stats`.
+    """Collection-wide statistics, returned by :meth:`~markdown_vault_mcp.facets.reader.ReaderFacet.stats`.
 
     Attributes:
         document_count: Number of indexed markdown documents.
@@ -398,7 +398,7 @@ class ChangeSet:
 
 @dataclass
 class BacklinkInfo:
-    """A document that links to a given path, returned by :meth:`~markdown_vault_mcp.collection.Collection.get_backlinks`.
+    """A document that links to a given path, returned by :meth:`~markdown_vault_mcp.facets.graph.GraphFacet.get_backlinks`.
 
     Attributes:
         source_path: Relative path of the document containing the link.
@@ -419,7 +419,7 @@ class BacklinkInfo:
 
 @dataclass
 class OutlinkInfo:
-    """A link from a document to another path, returned by :meth:`~markdown_vault_mcp.collection.Collection.get_outlinks`.
+    """A link from a document to another path, returned by :meth:`~markdown_vault_mcp.facets.graph.GraphFacet.get_outlinks`.
 
     Attributes:
         target_path: Resolved relative path of the link target.
@@ -440,7 +440,7 @@ class OutlinkInfo:
 
 @dataclass
 class BrokenLinkInfo:
-    """A link whose target does not exist, returned by :meth:`~markdown_vault_mcp.collection.Collection.get_broken_links`.
+    """A link whose target does not exist, returned by :meth:`~markdown_vault_mcp.facets.graph.GraphFacet.get_broken_links`.
 
     Attributes:
         source_path: Relative path of the document containing the broken link.
@@ -463,7 +463,7 @@ class BrokenLinkInfo:
 
 @dataclass
 class MostLinkedNote:
-    """A document with its inbound backlink count, returned by :meth:`~markdown_vault_mcp.collection.Collection.get_most_linked`.
+    """A document with its inbound backlink count, returned by :meth:`~markdown_vault_mcp.facets.graph.GraphFacet.get_most_linked`.
 
     Attributes:
         path: Relative path from the vault root.
@@ -480,7 +480,7 @@ class MostLinkedNote:
 
 @dataclass
 class NoteContext:
-    """Consolidated context for a document, returned by :meth:`~markdown_vault_mcp.collection.Collection.get_context`.
+    """Consolidated context for a document, returned by :meth:`~markdown_vault_mcp.facets.reader.ReaderFacet.get_context`.
 
     Attributes:
         path: Relative path from the vault root.
@@ -511,7 +511,7 @@ class NoteContext:
 
 @dataclass
 class HistoryEntry:
-    """A commit that touched a note or the vault, returned by :meth:`~markdown_vault_mcp.collection.Collection.get_history`.
+    """A commit that touched a note or the vault, returned by :meth:`~markdown_vault_mcp.facets.reader.ReaderFacet.get_history`.
 
     Attributes:
         sha: Full 40-character commit SHA.
@@ -536,7 +536,7 @@ class HistoryEntry:
 
 @dataclass
 class CommitDiff:
-    """A per-commit diff entry, returned by :meth:`~markdown_vault_mcp.collection.Collection.get_diff` when ``per_commit=True``.
+    """A per-commit diff entry, returned by :meth:`~markdown_vault_mcp.facets.reader.ReaderFacet.get_diff` when ``per_commit=True``.
 
     Attributes:
         sha: Full 40-character commit SHA.

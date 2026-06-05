@@ -324,7 +324,7 @@ class TestWarmRestartCompletenessSentinel:
 
         # Simulate a crash-mid-build: upsert one note directly into the
         # FTS DB (so list_notes() is non-empty) without going through
-        # Collection.build_index() (so no sentinel is set).
+        # IndexFacet.build_index() (so no sentinel is set).
         fts = FTSIndex(db_path=index_path)
         for note in scan_directory(vault):
             fts.upsert_note(note)

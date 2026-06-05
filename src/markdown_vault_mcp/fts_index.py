@@ -194,7 +194,7 @@ CREATE TABLE IF NOT EXISTS meta (
 );
 """
 
-# Key written into ``meta`` after :meth:`Collection.build_index` completes
+# Key written into ``meta`` after :meth:`IndexFacet.build_index` completes
 # a full scan successfully. Warm-restart short-circuits keyed solely on
 # ``documents`` row presence would otherwise treat a partial index (left
 # by a crash mid-build, since per-document upserts each commit in their
@@ -887,7 +887,7 @@ class FTSIndex:
 
         Absence of the sentinel — paired with non-empty ``documents`` —
         signals a partial index left by a crashed prior build, and the
-        caller (``Collection.build_index``) treats it as cold.
+        caller (``IndexFacet.build_index``) treats it as cold.
         """
         conn = self._conn()
         with conn:
@@ -1315,7 +1315,7 @@ class FTSIndex:
         and do not participate in vault-wide resolution.
 
         Call this method after all documents have been indexed
-        (``Collection.build_index()`` and ``Collection.reindex()`` do this
+        (``IndexFacet.build_index()`` and ``IndexFacet.reindex()`` do this
         automatically).  Callers that add documents via :meth:`upsert_note`
         directly are responsible for calling this method once all upserts are
         complete.

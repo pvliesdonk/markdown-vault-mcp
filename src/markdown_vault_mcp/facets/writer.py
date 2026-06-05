@@ -2,9 +2,8 @@
 
 A thin view over :class:`~markdown_vault_mcp.managers.document.DocumentManager`
 exposing the vault's write / edit / delete / rename / attachment operations.
-Part of the ``collection.py`` facade decomposition (#576); the flat
-``Collection.write`` / ``edit`` / ``delete`` / ``rename`` / ``write_attachment``
-methods delegate here.
+Part of the ``collection.py`` facade decomposition (#576); reached via the
+``Collection.writer`` accessor.
 """
 
 from __future__ import annotations
@@ -50,7 +49,7 @@ class WriterFacet:
             path: Relative document path (e.g. ``"notes/topic.md"``).
             content: Markdown body (excluding frontmatter).
             frontmatter: Optional frontmatter dict serialised as a YAML header.
-            if_match: Optional etag from a previous :meth:`read` call.  When
+            if_match: Optional etag from a previous :meth:`ReaderFacet.read` call.  When
                 provided, the write is only performed if the current file hash
                 matches this value, preventing overwrites of concurrent
                 modifications.  Pass ``None`` (default) to skip the check.
@@ -90,7 +89,7 @@ class WriterFacet:
                 Mutually exclusive with *line_start* / *line_end*.
             new_text: Replacement text (may be empty to delete *old_text*).
             if_match: Optional etag for optimistic concurrency; see
-                :meth:`write`.
+                :meth:`WriterFacet.write`.
             line_start: 1-based start line for line-range mode.
             line_end: 1-based end line (inclusive) for line-range mode.
 
@@ -124,7 +123,7 @@ class WriterFacet:
         Args:
             path: Relative path of the document or attachment to remove.
             if_match: Optional etag for optimistic concurrency; see
-                :meth:`write`.
+                :meth:`WriterFacet.write`.
 
         Returns:
             :class:`~markdown_vault_mcp.types.DeleteResult`.
@@ -155,7 +154,7 @@ class WriterFacet:
             old_path: Current relative path of the document or attachment.
             new_path: Desired relative path after the move.
             if_match: Optional etag for optimistic concurrency; see
-                :meth:`write`.
+                :meth:`WriterFacet.write`.
             update_links: When ``True``, rewrite internal links across the
                 vault to reflect the new path.  Defaults to ``False``.
 

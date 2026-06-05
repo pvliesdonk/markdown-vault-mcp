@@ -322,7 +322,7 @@ class TestGitSync:
     ) -> None:
         """Failed reindex after a successful pull surfaces ``reindex_failed=True``.
 
-        Regression for ``fb524e8``: when ``Collection.reindex()`` raises
+        Regression for ``fb524e8``: when ``IndexFacet.reindex()`` raises
         after the pull leg has already moved HEAD, the tool must not fail —
         the side-effect on disk is real and the agent needs to see it.
         Instead, the bookkeeping failure is surfaced on the pull payload as

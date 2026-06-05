@@ -4039,7 +4039,7 @@ def test_collection_search_honours_default_chunks_per_file(tmp_path):
 
 
 def test_collection_build_index_uses_writer(tmp_path):
-    """Collection.build_index() routes through the IndexWriter."""
+    """IndexFacet.build_index() routes through the IndexWriter."""
     from markdown_vault_mcp.collection import Collection
 
     col = Collection(source_dir=tmp_path, read_only=False)
@@ -4222,7 +4222,7 @@ def test_build_embeddings_async_failure_recorded_in_status(tmp_path, monkeypatch
 
 
 class TestIsDrained:
-    """Tests for Collection.is_drained() (#534)."""
+    """Tests for IndexFacet.is_drained() (#534)."""
 
     def test_returns_true_on_idle_writer(self, tmp_path: Path) -> None:
         from markdown_vault_mcp.collection import Collection
@@ -4287,7 +4287,7 @@ class TestIsDrained:
 
 
 class TestWriteGeneration:
-    """Tests for Collection.write_generation() (#534)."""
+    """Tests for IndexFacet.write_generation() (#534)."""
 
     def test_increments_on_job_completion(self, tmp_path: Path) -> None:
         from markdown_vault_mcp.collection import Collection
@@ -4327,7 +4327,7 @@ class TestWriteGeneration:
 
 
 class TestWaitForDrain:
-    """Tests for Collection.wait_for_drain() (#534)."""
+    """Tests for IndexFacet.wait_for_drain() (#534)."""
 
     def test_returns_true_immediately_when_already_drained(
         self, tmp_path: Path
@@ -4400,3 +4400,35 @@ class TestWaitForDrain:
             fut.result(timeout=5)
         finally:
             col.close()
+
+
+# The 39 flat delegators removed in PR4a (#627) — reachable only via the facets.
+_REMOVED_FLAT_METHODS = [
+    "search", "read", "read_attachment", "list_documents", "list_folders",
+    "list_tags", "get_toc", "get_recent", "get_similar", "get_context",
+    "get_history", "get_diff", "stats", "write", "edit", "delete", "rename",
+    "write_attachment", "get_backlinks", "get_outlinks", "get_broken_links",
+    "get_orphan_notes", "get_most_linked", "get_connection_path", "build_index",
+    "build_index_async", "reindex", "reindex_async", "build_embeddings",
+    "build_embeddings_async", "is_queryable", "is_drained", "wait_for_drain",
+    "wait_until_queryable", "write_generation", "get_index_status",
+    "embeddings_status", "start_background_build_index", "should_use_background_build",
+]  # fmt: skip
+# Facet accessors + lifecycle the thin facade still exposes.
+_RETAINED_SURFACE = [
+    "reader", "writer", "graph", "index",
+    "start", "stop", "close", "pause_writes", "force_pull",
+    "sync_from_remote_before_index",
+]  # fmt: skip
+
+
+class TestCollectionThinSurface:
+    """The facade is a thin composition root after the flat delegators (PR4a)."""
+
+    def test_flat_delegators_are_gone(self) -> None:
+        present = [m for m in _REMOVED_FLAT_METHODS if hasattr(Collection, m)]
+        assert present == [], f"flat delegators still on Collection: {present}"
+
+    def test_facet_accessors_and_lifecycle_retained(self) -> None:
+        missing = [m for m in _RETAINED_SURFACE if not hasattr(Collection, m)]
+        assert missing == [], f"retained surface missing from Collection: {missing}"

@@ -1011,12 +1011,12 @@ class TestParsedNoteDefault:
 
 
 # ---------------------------------------------------------------------------
-# Collection.get_context
+# ReaderFacet.get_context
 # ---------------------------------------------------------------------------
 
 
 class TestCollectionGetContext:
-    """Tests for Collection.get_context(), including graceful degradation."""
+    """Tests for ReaderFacet.get_context(), including graceful degradation."""
 
     @pytest.fixture
     def context_vault(self, tmp_path: Path) -> Path:
@@ -1137,7 +1137,7 @@ class TestCollectionGetContext:
 
 
 # ---------------------------------------------------------------------------
-# Collection.rename update_links
+# WriterFacet.rename update_links
 # ---------------------------------------------------------------------------
 
 

@@ -69,7 +69,7 @@ def needs_queryable(
     """Decorator for bucket-3/4 MCP tool and resource handlers.
 
     Before invoking the wrapped handler, blocks on
-    ``Collection.wait_until_queryable(timeout)``. On the warm path
+    ``IndexFacet.wait_until_queryable(timeout)``. On the warm path
     (``is_queryable`` already True) the wait is skipped — no
     thread-pool overhead.
 

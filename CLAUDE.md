@@ -34,7 +34,7 @@ src/markdown_vault_mcp/
   vector_index.py      -- numpy embeddings, cosine similarity
   providers.py         -- embedding provider ABC + implementations
   tracker.py           -- hash-based change detection
-  collection.py        -- thin facade: lifecycle, wiring, delegation (index-write → indexing/coordinator.py)
+  collection.py        -- thin composition root: lifecycle, wiring, facet accessors (index-write → indexing/coordinator.py)
   write_callback.py    -- WriteCallbackDispatcher: deferred git-commit callback worker (#599)
   config.py            -- configuration loading
   server.py            -- generic FastMCP server factory (make_server) with tool annotations

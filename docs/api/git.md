@@ -23,7 +23,7 @@ collection = Collection(
 )
 
 # Writes are now auto-committed and pushed
-collection.write("notes/new.md", "Hello world")
+collection.writer.write("notes/new.md", "Hello world")
 
 # Clean up on shutdown
 collection.close()

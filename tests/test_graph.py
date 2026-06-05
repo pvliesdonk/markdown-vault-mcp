@@ -226,7 +226,7 @@ class TestFTSGetMostLinked:
 
 
 # ---------------------------------------------------------------------------
-# Collection.get_orphan_notes / Collection.get_most_linked
+# GraphFacet.get_orphan_notes / GraphFacet.get_most_linked
 # ---------------------------------------------------------------------------
 
 
@@ -250,7 +250,7 @@ def graph_vault(tmp_path: Path) -> Path:
 
 class TestCollectionOrphanAndHub:
     def test_get_orphan_notes_returns_note_info(self, graph_vault: Path) -> None:
-        """Collection.get_orphan_notes() returns NoteInfo objects."""
+        """GraphFacet.get_orphan_notes() returns NoteInfo objects."""
         col = Collection(source_dir=graph_vault)
         col.index.build_index()
         orphans = col.graph.get_orphan_notes()
@@ -273,7 +273,7 @@ class TestCollectionOrphanAndHub:
         assert "source2.md" not in paths
 
     def test_get_most_linked_returns_dataclasses(self, graph_vault: Path) -> None:
-        """Collection.get_most_linked() returns list of MostLinkedNote dataclasses."""
+        """GraphFacet.get_most_linked() returns list of MostLinkedNote dataclasses."""
         col = Collection(source_dir=graph_vault)
         col.index.build_index()
         results = col.graph.get_most_linked()
@@ -567,12 +567,12 @@ class TestFTSGetConnectionPath:
 
 
 # ---------------------------------------------------------------------------
-# Collection.get_connection_path
+# GraphFacet.get_connection_path
 # ---------------------------------------------------------------------------
 
 
 class TestCollectionGetConnectionPath:
-    """Integration tests for Collection.get_connection_path."""
+    """Integration tests for GraphFacet.get_connection_path."""
 
     @pytest.fixture
     def path_vault(self, tmp_path: Path) -> Path:

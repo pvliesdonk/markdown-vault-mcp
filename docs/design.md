@@ -64,7 +64,7 @@ markdown-vault-mcp (new package)
 +-- vector_index.py   -- numpy embeddings, cosine similarity
 +-- providers.py      -- Ollama / OpenAI / SentenceTransformers
 +-- tracker.py        -- hash-based change detection
-+-- collection.py     -- thin facade: lifecycle, wiring, delegation (index-write → indexing/coordinator.py)
++-- collection.py     -- thin composition root: lifecycle, wiring, facet accessors (index-write → indexing/coordinator.py)
 +-- write_callback.py -- WriteCallbackDispatcher: deferred git-commit callback worker (#599)
 +-- config.py         -- configuration loading
 +-- config_sections/  -- domain-grouped sub-configs (git/indexing/embeddings/search/sync/content)
@@ -376,7 +376,7 @@ Two methods manage the index:
   crashed mid-build, since `IndexManager.build_index` commits per-document
   in its own transaction — is treated as cold and triggers a full
   rebuild. The sentinel is the `build_completed_at` row in the FTS
-  `meta` table, cleared by `Collection.build_index` before any
+  `meta` table, cleared by `IndexFacet.build_index` before any
   destructive rebuild and written only after `_index_mgr.build_index`
   returns cleanly. `force=True` drops and rebuilds from scratch. When a
   persistent `index_path` contains documents that now match
@@ -417,12 +417,12 @@ with a captured error — `wait_until_queryable` reports that as
 **Cold-start background FTS (issue #513 PR1, tool-layer wait
 boundary)**: when the persisted FTS DB is cold (sentinel absent),
 the MCP server lifespan calls
-`Collection.start_background_build_index()` to spawn a daemon
+`IndexFacet.start_background_build_index()` to spawn a daemon
 thread that runs `build_index()` to completion. Bucket-3/4 calls
 arriving at the MCP layer go through the
 `needs_queryable` decorator (in
 `src/markdown_vault_mcp/_server_queryable.py`), which blocks via
-`Collection.wait_until_queryable(timeout)` with a configurable
+`IndexFacet.wait_until_queryable(timeout)` with a configurable
 default (env `MARKDOWN_VAULT_MCP_BUILD_TIMEOUT_S`, default 60s).
 A failed background build surfaces to operators as
 `get_index_status` reporting
@@ -461,7 +461,7 @@ without deadlocking on internal blocking.
 
 The `MARKDOWN_VAULT_MCP_BUILD_TIMEOUT_S` env var bounds the
 `@needs_queryable` decorator's wait, which calls
-`Collection.wait_until_queryable`. The env var and the method name
+`IndexFacet.wait_until_queryable`. The env var and the method name
 describe the same wait from different angles — operators tune the
 timeout in seconds; the method describes what predicate the wait
 resolves to.
@@ -554,7 +554,7 @@ takes a snapshot set as an argument (no lock contention with the writer's
 dirty-set ownership) and performs the slow embed step outside any
 file-mutation lock.
 
-**Status surface.** `Collection.get_index_status()` merges the writer's
+**Status surface.** `IndexFacet.get_index_status()` merges the writer's
 non-blocking snapshot (`queue_depth`, `in_flight`, `dirty_paths`,
 `dirty_embeddings`) into its response shape, so operators can observe
 exactly what the writer is doing without taking any lock. The document
@@ -597,12 +597,12 @@ pair could not detect: a write that started and finished entirely
 between two snapshots.
 
 Each B3 tool accepts an optional `wait_for_drain: bool = false`
-parameter. When `true`, the tool layer polls `Collection.is_drained()`
+parameter. When `true`, the tool layer polls `IndexFacet.is_drained()`
 with `asyncio.sleep` until the writer drains or
 `MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S` (default 60s) elapses, then
 runs the query. On timeout the tool returns the result with
 `stale=true` rather than raising — best-effort fresh-read
-semantics. (`Collection.wait_for_drain()` is the synchronous
+semantics. (`IndexFacet.wait_for_drain()` is the synchronous
 counterpart for in-process callers.)
 
 The drift signal reflects writer-internal state only: paths in
@@ -685,8 +685,8 @@ The etag used for comparison is the same value returned in the `etag` field of
 `read()` and `read_attachment()` responses, so the round-trip pattern is:
 
 ```python
-note = collection.read("doc.md")
-collection.write("doc.md", new_content, if_match=note.etag)
+note = collection.reader.read("doc.md")
+collection.writer.write("doc.md", new_content, if_match=note.etag)
 ```
 
 ### Security: Path Traversal Protection
@@ -759,8 +759,8 @@ The library is **synchronous** internally. This is appropriate for the
 single-user vault use case and for Python library consumers (LangChain tools
 are typically sync).
 
-In the MCP server layer, use `asyncio.to_thread(collection.search, ...)` for
-tool handlers to avoid blocking the FastMCP event loop.
+In the MCP server layer, use `asyncio.to_thread(collection.reader.search, ...)`
+for tool handlers to avoid blocking the FastMCP event loop.
 
 **Future work**: async embedding provider path for non-blocking batch
 operations.
@@ -1104,7 +1104,7 @@ vault-wide resolution rules rather than relative path resolution:
   shortest path wins. Path matches always take priority over alias matches.
 
 `resolve_vault_wikilinks()` is called automatically at the end of
-`Collection.build_index()`, `Collection.reindex()`, and every
+`IndexFacet.build_index()`, `IndexFacet.reindex()`, and every
 `DocumentManager` write that mutates the `links` table — `write()` and
 `edit()` of a `.md` document, `delete()` of a `.md` document, and
 `rename()` of a `.md` document.  Attachment writes do not invoke the
@@ -1139,7 +1139,7 @@ The adjacency dict is built per-query from the `links` table; it is not cached
 between calls. For typical vault sizes (hundreds to low thousands of notes),
 this is fast enough that caching adds complexity without measurable benefit.
 
-`Collection.get_connection_path()` wraps the FTS call and applies path
+`GraphFacet.get_connection_path()` wraps the FTS call and applies path
 traversal protection via `_validate_path()` before delegating.
 
 The MCP tool `get_connection_path` returns
@@ -1192,13 +1192,17 @@ deliberate wrapper: it surfaces the coordinator's public operations (plus
 internals (``close``, ``writer``, ``require_built``, ``mark_paths_dirty``,
 ``rebuild_embeddings``).
 
-The migration follows **addition before removal**: the flat ``Collection``
-methods now delegate to the facets (PR3a, #604); callers migrate to the facet
-accessors in follow-up PRs (#605, #606); the flat methods are removed and
-``Collection`` is renamed to ``Vault`` in the final PR.
+The migration followed **addition before removal**: the flat ``Collection``
+methods first delegated to the facets (PR3a, #604); production callers (PR3b,
+#605) and the test suite (PR3c, #606) then migrated to the facet accessors; the
+flat delegators were removed (PR4a, #627), leaving ``Collection`` a thin
+composition root. ``Collection`` is renamed to ``Vault`` in PR4b.
 
-Collection's public API signatures remain unchanged — clients interact with
-Collection (or, increasingly, its facets), never with managers directly.
+Clients reach the read / write / graph / index operations through the facet
+accessors (e.g. ``collection.reader.search(...)``), never through managers
+directly. ``Collection`` itself now exposes only construction, the four facet
+accessors, and lifecycle — the per-facet method surface is the Facets table
+above.
 
 ```python
 class Collection:
@@ -1218,52 +1222,27 @@ class Collection:
         exclude_patterns: list[str] | None = None,
     ): ...
 
-    # --- Search ---
-    def search(
-        self, query: str, *, limit: int = 10,
-        mode: Literal["keyword", "semantic", "hybrid"] = "keyword",
-        filters: dict[str, str] | None = None,
-        folder: str | None = None,
-        chunks_per_file: int | None = None,
-        snippet_words: int | None = None,
-    ) -> list[GroupedResult]: ...
+    # --- Facet accessors (the public operation surface) ---
+    # search / read / write / edit / delete / rename / list / graph / index /
+    # stats operations live on these facets; see the Facets table above for the
+    # per-facet method surface (e.g. collection.reader.search(...),
+    # collection.writer.write(...), collection.index.build_index(...)).
+    @property
+    def reader(self) -> ReaderFacet: ...
+    @property
+    def writer(self) -> WriterFacet: ...
+    @property
+    def graph(self) -> GraphFacet: ...
+    @property
+    def index(self) -> IndexFacet: ...
 
-    # --- Read/Write (mirrors LLM file tool semantics) ---
-    def read(self, path: str) -> NoteContent | None: ...
-    def write(self, path: str, content: str,
-              frontmatter: dict | None = None,
-              if_match: str | None = None) -> WriteResult: ...
-    def edit(self, path: str, old_text: str | None = None,
-             new_text: str = "", if_match: str | None = None,
-             line_start: int | None = None,
-             line_end: int | None = None) -> EditResult: ...
-    def delete(self, path: str,
-               if_match: str | None = None) -> DeleteResult: ...
-    def rename(self, old_path: str, new_path: str,
-               if_match: str | None = None, *,
-               update_links: bool = False) -> RenameResult: ...
-    def list_documents(self, *, folder: str | None = None,
-                       pattern: str | None = None) -> list[NoteInfo]: ...
-
-    # --- Index management ---
-    def build_index(self, *, force: bool = False) -> IndexStats: ...
-    def reindex(self) -> ReindexResult: ...
-    def build_embeddings(self, *, force: bool = False) -> int: ...
-    def embeddings_status(self) -> dict: ...
-
-    # --- Metadata ---
-    def list_folders(self) -> list[str]: ...
-    def list_tags(self, field: str = "tags") -> list[str]: ...
-    def get_backlinks(self, path: str, *, limit: int | None = None) -> list[BacklinkInfo]: ...
-    def get_outlinks(self, path: str, *, limit: int | None = None) -> list[OutlinkInfo]: ...
-    def get_broken_links(self, *, folder: str | None = None) -> list[BrokenLinkInfo]: ...
-    def get_similar(self, path: str, *, limit: int = 10,
-                    chunks_per_file: int | None = None) -> list[GroupedResult]: ...
-    def get_recent(self, *, limit: int = 20, folder: str | None = None) -> list[NoteInfo]: ...
-    def get_context(self, path: str, *, similar_limit: int = 5, link_limit: int = 10) -> NoteContext: ...
-    def get_orphan_notes(self) -> list[NoteInfo]: ...
-    def get_most_linked(self, *, limit: int = 10) -> list[MostLinkedNote]: ...
-    def stats(self) -> CollectionStats: ...
+    # --- Lifecycle ---
+    def start(self) -> None: ...
+    def stop(self) -> None: ...
+    def close(self) -> None: ...
+    def pause_writes(self) -> Iterator[None]: ...        # context manager
+    def force_pull(self) -> PullResult | None: ...
+    def sync_from_remote_before_index(self) -> None: ...
 ```
 
 **Constructor defaults**:
@@ -1272,9 +1251,9 @@ class Collection:
 - `embeddings_path=None`: semantic search is disabled.
 - `state_path=None`: defaults to `{source_dir}/.markdown_vault_mcp/state.json`.
 
-**Lazy initialization**: on first call to `search()`, `list_documents()`, or
-`read()`, `Collection` lazily builds the FTS index from `source_dir` if no
-pre-built `index_path` was provided.
+**Index build**: callers build the FTS index explicitly via
+`IndexFacet.build_index` — the server builds at startup, and a cold on-disk
+start builds in the background (#513). There is no lazy build on first query.
 
 **Write operations** (`write`, `edit`, `delete`, `rename`) raise
 `ReadOnlyError` when `read_only=True`.
@@ -1404,7 +1383,7 @@ class FTSIndex:
 
 Uses the schema defined in [Database Schema](#database-schema). Note that
 `FTSIndex.search()` returns `list[FTSResult]` (raw BM25 results), while
-`Collection.search()` returns `list[GroupedResult]` (file-grouped results
+`ReaderFacet.search()` returns `list[GroupedResult]` (file-grouped results
 with RRF scoring in hybrid mode; each file appears once with up to
 `chunks_per_file` matching sections).
 
@@ -1484,7 +1463,7 @@ pattern). Each tool is annotated with MCP `ToolAnnotations`:
 
 **Tool name note**: the MCP tool is registered as `list_documents` (not `list`)
 to avoid shadowing Python's built-in `list`. The underlying
-`Collection.list_documents()` method matches the MCP name; both deliberately
+`ReaderFacet.list_documents()` method matches the MCP name; both deliberately
 avoid the bare name `list` so type annotations like `list[NoteInfo]` are not
 mis-resolved against the method in class scope.
 
@@ -1525,11 +1504,11 @@ template functions with no collection dependency.
 | URI | Source | Description |
 |-----|--------|-------------|
 | ``config://vault`` | ``CollectionConfig`` | Source dir, read-only flag, indexed fields, extensions |
-| ``stats://vault`` | ``Collection.stats()`` | Document/chunk/folder counts, capabilities |
-| ``tags://vault`` | ``Collection.list_tags()`` | All tags grouped by indexed field |
-| ``tags://vault/{field}`` | ``Collection.list_tags(field)`` | Flat list for one field (template) |
-| ``folders://vault`` | ``Collection.list_folders()`` | Sorted folder path list |
-| ``toc://vault/{path}`` | ``Collection.get_toc(path)`` | Document headings with synthetic H1 title |
+| ``stats://vault`` | ``ReaderFacet.stats()`` | Document/chunk/folder counts, capabilities |
+| ``tags://vault`` | ``ReaderFacet.list_tags()`` | All tags grouped by indexed field |
+| ``tags://vault/{field}`` | ``ReaderFacet.list_tags(field)`` | Flat list for one field (template) |
+| ``folders://vault`` | ``ReaderFacet.list_folders()`` | Sorted folder path list |
+| ``toc://vault/{path}`` | ``ReaderFacet.get_toc(path)`` | Document headings with synthetic H1 title |
 
 Resources return JSON (``mime_type="application/json"``). The ToC resource
 queries the existing ``sections`` table — no file I/O.
@@ -1933,7 +1912,7 @@ Set `MARKDOWN_VAULT_MCP_GIT_LFS=false` for repos that do not use LFS, or when
   so the index scans the freshest working tree.
 - Starts a daemon thread that repeats `fetch + ff-only update` every interval.
 - After a successful fast-forward that advanced `HEAD`, triggers
-  `Collection.reindex()` to incrementally update the index.
+  `IndexFacet.reindex()` to incrementally update the index.
 - Blocks write operations during the **reindex phase** of each pull tick
   (not during fetch/ff-only merge) by acquiring the Collection write lock.
   Read/search operations are not blocked at the Python level (SQLite WAL
@@ -1950,7 +1929,7 @@ Safety branch mode for push failures is tracked separately (see #119).
 
 Both methods use the existing `_git_env()` / `_cleanup_git_env()` pattern for credential forwarding and cleanup. Path arguments are always validated via `Collection._validate_path()` before being passed to the git layer. No shell injection is possible because all subprocess calls use list arguments with `shell=False`.
 
-**MCP response envelope**: the MCP wrappers for `get_history` and `get_diff(per_commit=True)` return a `{"commits": [...], "total": N}` envelope rather than a bare list, so the structured payload is self-describing on the wire. FastMCP otherwise auto-wraps list-typed tool returns under a synthetic `"result"` key (`x-fastmcp-wrap-result: true` in the output schema), which forces clients re-reading persisted MCP content to know FastMCP's wrapping convention to find the data. The Python facade (`Collection.get_history`, `Collection.get_diff`) stays list-returning — only the MCP-tool wrapper transforms to the envelope. `get_diff(per_commit=False)` keeps its existing `{"diff": str}` shape since it is already self-describing.
+**MCP response envelope**: the MCP wrappers for `get_history` and `get_diff(per_commit=True)` return a `{"commits": [...], "total": N}` envelope rather than a bare list, so the structured payload is self-describing on the wire. FastMCP otherwise auto-wraps list-typed tool returns under a synthetic `"result"` key (`x-fastmcp-wrap-result: true` in the output schema), which forces clients re-reading persisted MCP content to know FastMCP's wrapping convention to find the data. The Python facade (`ReaderFacet.get_history`, `ReaderFacet.get_diff`) stays list-returning — only the MCP-tool wrapper transforms to the envelope. `get_diff(per_commit=False)` keeps its existing `{"diff": str}` shape since it is already self-describing.
 
 ### Release channels
 

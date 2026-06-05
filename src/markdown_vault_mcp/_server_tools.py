@@ -44,7 +44,7 @@ async def _maybe_wait_for_drain(
 ) -> bool:
     """Wait for the writer to drain when requested. Log on timeout.
 
-    Polls :meth:`Collection.is_drained` directly with ``asyncio.sleep``
+    Polls :meth:`IndexFacet.is_drained` directly with ``asyncio.sleep``
     so concurrent waiters yield to the event loop instead of occupying
     ``asyncio.to_thread`` slots for the full timeout (would starve the
     default thread pool at moderate concurrency).

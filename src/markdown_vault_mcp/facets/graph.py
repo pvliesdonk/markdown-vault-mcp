@@ -3,8 +3,8 @@
 A thin view over :class:`~markdown_vault_mcp.managers.link.LinkManager`
 exposing backlinks / outlinks / broken-links / orphans / most-linked /
 connection-path queries. Part of the ``collection.py`` facade decomposition
-(#576). The bucket-3 methods (:meth:`get_backlinks`, :meth:`get_outlinks`,
-:meth:`get_connection_path`) gate on the index-readiness callback before
+(#576). The bucket-3 methods (:meth:`GraphFacet.get_backlinks`, :meth:`GraphFacet.get_outlinks`,
+:meth:`GraphFacet.get_connection_path`) gate on the index-readiness callback before
 delegating; the bucket-2 methods operate on a cold index.
 """
 
@@ -57,7 +57,7 @@ class GraphFacet:
             for each document that contains a link pointing to ``path``.
 
         Raises:
-            IndexUnavailableError: If :meth:`build_index` has not been called.
+            IndexUnavailableError: If :meth:`IndexFacet.build_index` has not been called.
             ValueError: If no document exists at the given path.
         """
         self._require_built()
@@ -80,7 +80,7 @@ class GraphFacet:
             each link originating from ``path``.
 
         Raises:
-            IndexUnavailableError: If :meth:`build_index` has not been called.
+            IndexUnavailableError: If :meth:`IndexFacet.build_index` has not been called.
             ValueError: If no document exists at the given path.
         """
         self._require_built()
@@ -141,7 +141,7 @@ class GraphFacet:
             (inclusive), or ``None`` if unreachable within *max_depth* hops.
 
         Raises:
-            IndexUnavailableError: If :meth:`build_index` has not been called.
+            IndexUnavailableError: If :meth:`IndexFacet.build_index` has not been called.
             ValueError: If *source* or *target* is not found in the index.
         """
         self._require_built()
