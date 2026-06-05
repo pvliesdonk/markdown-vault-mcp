@@ -66,3 +66,51 @@ def test_sweep_removes_dead_in_flight_token():
     clock.t = 2000.0  # past the 1010 TTL and past the 1300 lease
     store.create("download", "b.md", False, 60)  # triggers the sweep
     assert rec.token not in store._entries
+
+
+def test_double_claim_second_returns_none():
+    """A live in-flight reservation blocks a concurrent second claim."""
+    store = TransferStore(clock=_Clock(1000.0), lease_seconds=300.0)
+    rec = store.create("download", "a.md", False, 10000)
+    assert store.claim(rec.token, "download") is rec
+    assert store.claim(rec.token, "download") is None
+
+
+def test_complete_then_claim_returns_none():
+    """A consumed token never claims again."""
+    store = TransferStore(clock=_Clock(1000.0))
+    rec = store.create("download", "a.md", False, 10000)
+    assert store.claim(rec.token, "download") is rec
+    store.complete(rec.token)
+    assert store.claim(rec.token, "download") is None
+
+
+def test_release_then_claim_succeeds():
+    """Releasing an in-flight token makes it claimable again."""
+    store = TransferStore(clock=_Clock(1000.0))
+    rec = store.create("upload", "a.md", False, 10000)
+    assert store.claim(rec.token, "upload") is rec
+    store.release(rec.token)
+    assert store.claim(rec.token, "upload") is rec
+
+
+def test_stale_lease_is_reclaimable():
+    """An in-flight token past its lease (crashed handler) is reclaimable."""
+    clock = _Clock(1000.0)
+    store = TransferStore(clock=clock, lease_seconds=300.0)
+    rec = store.create("upload", "a.md", False, 100000)
+    assert store.claim(rec.token, "upload") is rec
+    assert store.claim(rec.token, "upload") is None
+    clock.t = 1301.0
+    assert store.claim(rec.token, "upload") is rec
+
+
+def test_create_sweeps_expired():
+    """Creating a token drops previously-expired entries."""
+    clock = _Clock(1000.0)
+    store = TransferStore(clock=clock)
+    old = store.create("download", "a.md", False, 10)
+    clock.t = 2000.0
+    new = store.create("download", "b.md", False, 10)
+    assert store.claim(old.token, "download") is None
+    assert store.claim(new.token, "download") is new
