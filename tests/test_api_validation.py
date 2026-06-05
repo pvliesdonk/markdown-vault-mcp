@@ -13,6 +13,7 @@ import pytest
 from markdown_vault_mcp.vault import Vault
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
     from pathlib import Path
 
     from markdown_vault_mcp.types import IndexStats
@@ -118,10 +119,10 @@ def corpus_path(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def corpus_vault(corpus_path: Path) -> tuple[Vault, IndexStats]:
-    """Return a built Vault configured with ifcraftcorpus settings.
+def corpus_vault(corpus_path: Path) -> Iterator[tuple[Vault, IndexStats]]:
+    """A built Vault configured with ifcraftcorpus settings.
 
-    Returns:
+    Yields:
         Tuple of (vault, index_stats) so tests can inspect both.
     """
     vault = Vault(
@@ -130,8 +131,11 @@ def corpus_vault(corpus_path: Path) -> tuple[Vault, IndexStats]:
         indexed_frontmatter_fields=["cluster", "topics"],
         read_only=True,
     )
-    stats = vault.index.build_index()
-    return vault, stats
+    try:
+        stats = vault.index.build_index()
+        yield vault, stats
+    finally:
+        vault.close()
 
 
 # ---------------------------------------------------------------------------

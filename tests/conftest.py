@@ -98,9 +98,12 @@ def populated_vault(tmp_path: Path):
         embedding_provider=MockEmbeddingProvider(),
         embeddings_path=tmp_path / "vectors",
     )
-    col.index.build_index()
-    col.index.build_embeddings()
-    return col
+    try:
+        col.index.build_index()
+        col.index.build_embeddings()
+        yield col
+    finally:
+        col.close()
 
 
 @pytest.fixture

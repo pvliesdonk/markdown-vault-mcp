@@ -43,6 +43,8 @@ from markdown_vault_mcp.vault import Vault
 from tests.conftest import wait_for_writer_drain
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from .conftest import MockEmbeddingProvider
 
 
@@ -100,11 +102,14 @@ def _make_vault(
 
 
 @pytest.fixture
-def vault(vault_path: Path) -> Vault:
+def vault(vault_path: Path) -> Iterator[Vault]:
     """Built Vault backed by the clean vault fixture."""
     col = _make_vault(vault_path)
-    col.index.build_index()
-    return col
+    try:
+        col.index.build_index()
+        yield col
+    finally:
+        col.close()
 
 
 # ---------------------------------------------------------------------------
@@ -756,11 +761,14 @@ class TestWriteReadOnly:
 
 
 @pytest.fixture
-def writable(vault_path: Path) -> Vault:
+def writable(vault_path: Path) -> Iterator[Vault]:
     """Writable Vault backed by the clean vault fixture."""
     col = _make_vault(vault_path, read_only=False)
-    col.index.build_index()
-    return col
+    try:
+        col.index.build_index()
+        yield col
+    finally:
+        col.close()
 
 
 @pytest.fixture
@@ -768,7 +776,7 @@ def writable_with_embeddings(
     vault_path: Path,
     tmp_path: Path,
     mock_provider: MockEmbeddingProvider,
-) -> Vault:
+) -> Iterator[Vault]:
     """Writable Vault with mock embeddings enabled."""
     col = Vault(
         source_dir=vault_path,
@@ -776,9 +784,12 @@ def writable_with_embeddings(
         embedding_provider=mock_provider,
         read_only=False,
     )
-    col.index.build_index()
-    col.index.build_embeddings()
-    return col
+    try:
+        col.index.build_index()
+        col.index.build_embeddings()
+        yield col
+    finally:
+        col.close()
 
 
 class TestWrite:
@@ -2419,16 +2430,19 @@ def semantic_vault(
     vault_path: Path,
     tmp_path: Path,
     mock_provider: MockEmbeddingProvider,
-) -> Vault:
+) -> Iterator[Vault]:
     """Vault with FTS index and vector embeddings fully built."""
     col = Vault(
         source_dir=vault_path,
         embeddings_path=tmp_path / "embeddings",
         embedding_provider=mock_provider,
     )
-    col.index.build_index()
-    col.index.build_embeddings()
-    return col
+    try:
+        col.index.build_index()
+        col.index.build_embeddings()
+        yield col
+    finally:
+        col.close()
 
 
 class TestSemanticSearch:
@@ -3025,7 +3039,7 @@ class TestReindexWithVectors:
         vault_path: Path,
         tmp_path: Path,
         mock_provider: MockEmbeddingProvider,
-    ) -> Vault:
+    ) -> Iterator[Vault]:
         """Writable vault with vectors loaded in memory."""
         col = Vault(
             source_dir=vault_path,
@@ -3034,11 +3048,14 @@ class TestReindexWithVectors:
             state_path=tmp_path / "state.json",
             read_only=False,
         )
-        col.index.build_index()
-        col.index.build_embeddings()
-        # Trigger vector load so _vectors is not None.
-        col._search_mgr._load_vectors()
-        return col
+        try:
+            col.index.build_index()
+            col.index.build_embeddings()
+            # Trigger vector load so _vectors is not None.
+            col._search_mgr._load_vectors()
+            yield col
+        finally:
+            col.close()
 
     def test_reindex_adds_vector_entries_for_new_files(
         self,
@@ -3463,12 +3480,15 @@ Line 31.
 
 
 @pytest.fixture
-def vault_with_long_doc(vault_path: Path) -> Vault:
+def vault_with_long_doc(vault_path: Path) -> Iterator[Vault]:
     """Vault with a long multi-section document added for ToC testing."""
     (vault_path / "long_doc.md").write_text(_LONG_DOC, encoding="utf-8")
     col = _make_vault(vault_path)
-    col.index.build_index()
-    return col
+    try:
+        col.index.build_index()
+        yield col
+    finally:
+        col.close()
 
 
 class TestVaultGetToc:
