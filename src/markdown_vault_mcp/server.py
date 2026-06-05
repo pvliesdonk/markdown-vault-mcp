@@ -244,11 +244,14 @@ def make_server(transport: str = "stdio") -> FastMCP:
         )
     # DOMAIN-WIRING-END
 
-    # DOMAIN-FILE-EXCHANGE-START — file-exchange wiring sentinel, kept across
-    # copier update.  Intentionally empty: this server does not use pvl-core's
-    # file-exchange helpers.  The one-time upload/download link tooling that
-    # previously lived here was removed (#620); a fresh MV-local
-    # implementation is tracked in #622.
+    # DOMAIN-FILE-EXCHANGE-START — one-time transfer-link wiring (#622), kept
+    # across copier update.  HTTP/SSE only: stdio has no server to receive
+    # requests.  Registers the create_*_link tools and the /transfer/{token}
+    # route, sharing one in-memory TransferStore.
+    if transport != "stdio":
+        from markdown_vault_mcp._server_transfer import register_transfer
+
+        register_transfer(mcp, config)
     # DOMAIN-FILE-EXCHANGE-END
 
     # --- Visibility: hide write-tagged components in read-only mode ---

@@ -3272,3 +3272,28 @@ class TestB3StaleSignal:
         envelope = _parse_tool_data(result)
         assert envelope["stale"] is True
         assert "data" in envelope
+
+
+# ---------------------------------------------------------------------------
+# Transfer tools transport gating
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.usefixtures("_mcp_env_writable")
+async def test_transfer_tools_present_on_http() -> None:
+    """The transfer tools register on HTTP transport (writable vault)."""
+    server = make_server(transport="http")
+    async with Client(server) as client:
+        names = {t.name for t in await client.list_tools()}
+    assert "create_download_link" in names
+    assert "create_upload_link" in names
+
+
+@pytest.mark.usefixtures("_mcp_env_writable")
+async def test_transfer_tools_absent_on_stdio() -> None:
+    """The transfer tools are not registered on stdio transport."""
+    server = make_server(transport="stdio")
+    async with Client(server) as client:
+        names = {t.name for t in await client.list_tools()}
+    assert "create_download_link" not in names
+    assert "create_upload_link" not in names
