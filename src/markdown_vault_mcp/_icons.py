@@ -54,6 +54,8 @@ _TOOL_ICONS: dict[str, list[Icon]] = {
         "get_most_linked",
         "get_connection_path",
         "fetch",
+        "create_download_link",
+        "create_upload_link",
         "browse_vault",
         "show_context",
         "get_history",
