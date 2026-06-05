@@ -1,5 +1,7 @@
 """Integration tests for the /transfer/{token} route (#622)."""
 
+import base64
+
 import pytest
 from starlette.applications import Starlette
 from starlette.routing import Route
@@ -111,3 +113,116 @@ def test_download_vault_not_initialised_503():
     client = TestClient(app, raise_server_exceptions=False)
     assert client.get(f"/transfer/{rec.token}").status_code == 503
     assert store.claim(rec.token, "download") is not None
+
+
+def test_upload_note_commits_201(vault):
+    """POST on an upload token writes the note and returns 201."""
+    store = TransferStore()
+    rec = store.create("upload", "out.md", False, 60, max_upload_bytes=1000)
+    resp = _client(store, vault).post(f"/transfer/{rec.token}", content=b"# New\n\nx\n")
+    assert resp.status_code == 201
+    assert resp.json()["path"] == "out.md"
+    assert vault.reader.read("out.md") is not None
+
+
+def test_upload_attachment_via_put_alias(vault):
+    """PUT is accepted as an upload alias and writes an attachment."""
+    store = TransferStore()
+    rec = store.create("upload", "shot.png", True, 60, max_upload_bytes=1000)
+    resp = _client(store, vault).put(f"/transfer/{rec.token}", content=b"PNGDATA")
+    assert resp.status_code == 201
+    att = vault.reader.read_attachment("shot.png")
+    assert base64.b64decode(att.content_base64) == b"PNGDATA"
+
+
+def test_upload_oversized_content_length_413(vault):
+    """A declared Content-Length over the cap is rejected with 413."""
+    store = TransferStore()
+    rec = store.create("upload", "out.md", False, 60, max_upload_bytes=10)
+    resp = _client(store, vault).post(f"/transfer/{rec.token}", content=b"x" * 200)
+    assert resp.status_code == 413
+
+
+def test_upload_streamed_oversize_413(vault):
+    """A chunked body exceeding the cap mid-stream is rejected with 413."""
+    store = TransferStore()
+    rec = store.create("upload", "out.md", False, 60, max_upload_bytes=100)
+
+    def chunks():
+        yield b"x" * 60
+        yield b"x" * 60
+
+    resp = _client(store, vault).post(f"/transfer/{rec.token}", content=chunks())
+    assert resp.status_code == 413
+
+
+def test_upload_413_does_not_burn_token(vault):
+    """A rejected oversize upload frees the link to retry."""
+    store = TransferStore()
+    rec = store.create("upload", "out.md", False, 60, max_upload_bytes=100)
+    client = _client(store, vault)
+    assert client.post(f"/transfer/{rec.token}", content=b"x" * 200).status_code == 413
+    assert client.post(f"/transfer/{rec.token}", content=b"hi").status_code == 201
+
+
+def test_upload_is_one_time(vault):
+    """A successful upload consumes the token."""
+    store = TransferStore()
+    rec = store.create("upload", "out.md", False, 60, max_upload_bytes=1000)
+    client = _client(store, vault)
+    assert client.post(f"/transfer/{rec.token}", content=b"a").status_code == 201
+    assert client.post(f"/transfer/{rec.token}", content=b"b").status_code == 404
+
+
+def test_kind_confusion_download_token_via_post_404(vault):
+    """A download token cannot be used for upload."""
+    store = TransferStore()
+    rec = store.create("download", "note.md", False, 60)
+    resp = _client(store, vault).post(f"/transfer/{rec.token}", content=b"x")
+    assert resp.status_code == 404
+
+
+def test_no_leak_uniform_404(vault):
+    """Unknown, consumed, expired, and kind-mismatched tokens all 404 identically."""
+
+    class _Clock:
+        def __init__(self, t=1000.0):
+            self.t = t
+
+        def __call__(self):
+            return self.t
+
+    clock = _Clock()
+    store = TransferStore(clock=clock)
+    client = _client(store, vault)
+
+    unknown = client.get("/transfer/unknown")
+
+    consumed = store.create("download", "note.md", False, 60)
+    client.get(f"/transfer/{consumed.token}")  # burn it
+    consumed_resp = client.get(f"/transfer/{consumed.token}")
+
+    expired = store.create("download", "note.md", False, 10)
+    clock.t = 2000.0
+    expired_resp = client.get(f"/transfer/{expired.token}")
+
+    for resp in (unknown, consumed_resp, expired_resp):
+        assert resp.status_code == 404
+        assert resp.content == unknown.content
+
+
+def test_upload_vault_not_initialised_503():
+    """An unavailable vault on upload yields 503 and releases the token."""
+    store = TransferStore()
+    rec = store.create("upload", "out.md", False, 60, max_upload_bytes=1000)
+
+    def _raise() -> Vault:
+        raise RuntimeError("vault not initialised")
+
+    handler = make_transfer_handler(store, vault_getter=_raise)
+    app = Starlette(
+        routes=[Route("/transfer/{token}", handler, methods=["GET", "POST", "PUT"])]
+    )
+    client = TestClient(app, raise_server_exceptions=False)
+    assert client.post(f"/transfer/{rec.token}", content=b"x").status_code == 503
+    assert store.claim(rec.token, "upload") is not None

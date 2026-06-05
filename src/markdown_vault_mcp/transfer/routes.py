@@ -9,7 +9,7 @@ import re
 from typing import TYPE_CHECKING
 
 from starlette.background import BackgroundTask
-from starlette.responses import Response
+from starlette.responses import JSONResponse, Response
 
 from markdown_vault_mcp._server_deps import get_vault_singleton
 
@@ -96,10 +96,51 @@ async def _handle_download(
 
 
 async def _handle_upload(
-    store: TransferStore,  # noqa: ARG001
-    vault_getter: Callable[[], Vault],  # noqa: ARG001
-    request: Request,  # noqa: ARG001
-    token: str,  # noqa: ARG001
+    store: TransferStore,
+    vault_getter: Callable[[], Vault],
+    request: Request,
+    token: str,
 ) -> Response:
-    """Placeholder returning 404; upload is not yet supported on this route."""
-    return Response(status_code=404)
+    """Commit an uploaded body for a claimed upload token, burning it on success."""
+    record = store.claim(token, "upload")
+    if record is None:
+        return Response(status_code=404)
+    try:
+        vault = vault_getter()
+    except RuntimeError:
+        store.release(token)
+        return Response(status_code=503)
+    cap = record.max_upload_bytes
+    declared = request.headers.get("content-length")
+    if cap is not None and declared is not None:
+        try:
+            if int(declared) > cap:
+                store.release(token)
+                return Response(status_code=413)
+        except ValueError:
+            pass
+    chunks: list[bytes] = []
+    size = 0
+    async for chunk in request.stream():
+        size += len(chunk)
+        if cap is not None and size > cap:
+            store.release(token)
+            return Response(status_code=413)
+        chunks.append(chunk)
+    body = b"".join(chunks)
+    try:
+        if record.is_attachment:
+            await asyncio.to_thread(vault.writer.write_attachment, record.path, body)
+        else:
+            await asyncio.to_thread(
+                vault.writer.write, record.path, body.decode("utf-8")
+            )
+    except ValueError:
+        store.release(token)
+        return Response(status_code=415)
+    except Exception:
+        store.release(token)
+        logger.warning("transfer_upload_failed path=%s", record.path, exc_info=True)
+        return Response(status_code=500)
+    store.complete(token)
+    return JSONResponse({"path": record.path, "bytes": len(body)}, status_code=201)
