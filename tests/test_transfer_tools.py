@@ -93,3 +93,10 @@ async def test_download_missing_attachment_raises(env):
     store, config, vault = env
     with pytest.raises(ValueError):
         await T._create_download_link(store, config, vault, "ghost.png", None)
+
+
+async def test_ttl_clamped_to_floor(env):
+    """A zero or negative requested TTL is clamped up to 1 second."""
+    store, config, vault = env
+    out = await T._create_download_link(store, config, vault, "note.md", 0)
+    assert out["expires_in_seconds"] == 1

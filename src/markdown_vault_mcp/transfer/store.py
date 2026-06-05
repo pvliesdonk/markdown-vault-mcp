@@ -50,9 +50,10 @@ class TransferStore:
     """Thread-safe in-memory store of one-time transfer tokens.
 
     The state machine per token is ``available → in_flight → consumed``;
-    a failed or abandoned ``in_flight`` reservation returns to ``available``
-    via :meth:`release` or lease expiry, so a one-time link survives a
-    transient failure.
+    a failed or abandoned ``in_flight`` reservation becomes claimable again —
+    explicitly via :meth:`release` (which resets it to ``available``), or
+    implicitly once its lease expires (:meth:`claim` treats a stale in-flight
+    entry as available) — so a one-time link survives a transient failure.
     """
 
     def __init__(

@@ -86,6 +86,10 @@ async def _handle_download(
     except ValueError:
         store.release(token)
         return Response(status_code=404)
+    except Exception:
+        store.release(token)
+        logger.warning("transfer_download_failed path=%s", record.path, exc_info=True)
+        return Response(status_code=500)
     filename = _sanitize_filename(record.path)
     return Response(
         content=body,

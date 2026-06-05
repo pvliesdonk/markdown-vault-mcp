@@ -219,7 +219,7 @@ def register_transfer(mcp: FastMCP, config: VaultConfig) -> None:
     @mcp.tool(
         icons=_TOOL_ICONS["create_download_link"],
         annotations={
-            "readOnlyHint": False,
+            "readOnlyHint": True,
             "destructiveHint": False,
             "idempotentHint": False,
         },

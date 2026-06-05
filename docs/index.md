@@ -20,6 +20,7 @@ Point it at a directory of Markdown files — an Obsidian vault, a docs folder, 
 - **MCP resources** — vault configuration, statistics, tags, folders, document outlines, similar notes, and recent notes
 - **MCP prompts** — summarize, research, discuss, create from template, compare, and find related notes
 - **MCP Apps** — four browser-based views (Context Card, Graph Explorer, Vault Browser, Note Preview) for clients supporting the MCP Apps protocol
+- **One-time transfer links** — mint short-lived capability URLs to move files into or out of the vault out-of-band over HTTP (`create_download_link` / `create_upload_link`; HTTP/SSE transports only)
 <!-- DOMAIN-INDEX-FEATURES-END -->
 
 <!-- DOMAIN-INDEX-USE-CASES-START -->

@@ -226,3 +226,21 @@ def test_upload_vault_not_initialised_503():
     client = TestClient(app, raise_server_exceptions=False)
     assert client.post(f"/transfer/{rec.token}", content=b"x").status_code == 503
     assert store.claim(rec.token, "upload") is not None
+
+
+def test_kind_confusion_upload_token_via_get_404(vault):
+    """An upload token cannot be used for download."""
+    store = TransferStore()
+    rec = store.create("upload", "out.md", False, 60, max_upload_bytes=1000)
+    resp = _client(store, vault).get(f"/transfer/{rec.token}")
+    assert resp.status_code == 404
+
+
+def test_upload_invalid_utf8_to_note_415(vault):
+    """Non-UTF-8 bytes to a note destination yield 415 and free the token."""
+    store = TransferStore()
+    rec = store.create("upload", "out.md", False, 60, max_upload_bytes=1000)
+    client = _client(store, vault)
+    resp = client.post(f"/transfer/{rec.token}", content=b"\xff\xfe\xfd")
+    assert resp.status_code == 415
+    assert store.claim(rec.token, "upload") is not None

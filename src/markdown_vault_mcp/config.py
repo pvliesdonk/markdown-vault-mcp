@@ -83,6 +83,7 @@ class VaultConfig:
         search: Search ranking and snippet-truncation knobs.
         sync: File-watcher and GitHub-webhook settings.
         content: Attachment/note-read limits and template/prompt folder paths.
+        transfer: One-time upload/download transfer-link TTL and size settings.
         server: Shared server-level configuration (transport, host/port,
             auth, base URL, event store URL, MCP App domain) populated
             from ``MARKDOWN_VAULT_MCP_*`` env vars by
@@ -313,6 +314,15 @@ def load_config() -> VaultConfig:
       ``"BAAI/bge-small-en-v1.5"``.
     - ``MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR``: FastEmbed model cache
       directory; default ``None``.
+
+    **Transfer links:**
+
+    - ``MARKDOWN_VAULT_MCP_TRANSFER_TTL_DEFAULT_S``: token lifetime when the
+      caller omits one; default ``3600`` (1 hour).
+    - ``MARKDOWN_VAULT_MCP_TRANSFER_TTL_MAX_S``: ceiling a requested TTL is
+      clamped to; default ``86400`` (24 hours).
+    - ``MARKDOWN_VAULT_MCP_TRANSFER_MAX_UPLOAD_BYTES``: per-upload size cap in
+      bytes; default ``104857600`` (100 MiB).
 
     Transport and auth variables (``TRANSPORT``, ``HOST``, ``PORT``,
     ``BASE_URL``, ``AUTH_MODE``, ``OIDC_*``, ``BEARER_TOKEN``,

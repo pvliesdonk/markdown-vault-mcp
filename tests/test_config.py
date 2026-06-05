@@ -15,6 +15,7 @@ from markdown_vault_mcp.config_sections import (
     EmbeddingsConfig,
     GitConfig,
     IndexingConfig,
+    TransferConfig,
 )
 
 
@@ -1091,3 +1092,15 @@ def test_transfer_config_env_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
     assert cfg.transfer.ttl_default_s == 120
     assert cfg.transfer.ttl_max_s == 600
     assert cfg.transfer.max_upload_bytes == 2048
+
+
+def test_transfer_config_rejects_default_above_max():
+    """TransferConfig refuses a default TTL above the ceiling."""
+    with pytest.raises(ValueError, match="ttl_max_s"):
+        TransferConfig(ttl_default_s=7200, ttl_max_s=3600)
+
+
+def test_transfer_config_rejects_nonpositive_upload_cap():
+    """TransferConfig refuses a non-positive upload size cap."""
+    with pytest.raises(ValueError, match="max_upload_bytes"):
+        TransferConfig(max_upload_bytes=0)
