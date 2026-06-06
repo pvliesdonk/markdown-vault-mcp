@@ -270,12 +270,12 @@ class TestCmdServe:
 
     @patch("uvicorn.run")
     @patch("markdown_vault_mcp.server.build_event_store")
-    @patch("markdown_vault_mcp._cli_impl.load_config")
+    @patch("markdown_vault_mcp._cli_impl.VaultConfig")
     @patch("markdown_vault_mcp.server.make_server")
     def test_serve_http_calls_http_app_and_uvicorn(
         self,
         mock_create: MagicMock,
-        mock_load_config: MagicMock,
+        mock_vault_config: MagicMock,
         mock_build_es: MagicMock,
         mock_uvicorn_run: MagicMock,
     ) -> None:
@@ -284,7 +284,7 @@ class TestCmdServe:
         mock_create.return_value = mock_server
         mock_config = MagicMock()
         mock_config.server.event_store_url = None
-        mock_load_config.return_value = mock_config
+        mock_vault_config.from_env.return_value = mock_config
         mock_event_store = MagicMock()
         mock_build_es.return_value = mock_event_store
         mock_app = MagicMock()
@@ -310,12 +310,12 @@ class TestCmdServe:
 
     @patch("uvicorn.run")
     @patch("markdown_vault_mcp.server.build_event_store")
-    @patch("markdown_vault_mcp._cli_impl.load_config")
+    @patch("markdown_vault_mcp._cli_impl.VaultConfig")
     @patch("markdown_vault_mcp.server.make_server")
     def test_serve_http_custom_path(
         self,
         mock_create: MagicMock,
-        mock_load_config: MagicMock,
+        mock_vault_config: MagicMock,
         mock_build_es: MagicMock,
         _mock_uvicorn_run: MagicMock,
     ) -> None:
@@ -324,7 +324,7 @@ class TestCmdServe:
         mock_create.return_value = mock_server
         mock_config = MagicMock()
         mock_config.server.event_store_url = None
-        mock_load_config.return_value = mock_config
+        mock_vault_config.from_env.return_value = mock_config
         mock_build_es.return_value = MagicMock()
         mock_server.http_app.return_value = MagicMock()
 
@@ -339,12 +339,12 @@ class TestCmdServe:
 
     @patch("uvicorn.run")
     @patch("markdown_vault_mcp.server.build_event_store")
-    @patch("markdown_vault_mcp._cli_impl.load_config")
+    @patch("markdown_vault_mcp._cli_impl.VaultConfig")
     @patch("markdown_vault_mcp.server.make_server")
     def test_serve_http_custom_path_normalised(
         self,
         mock_create: MagicMock,
-        mock_load_config: MagicMock,
+        mock_vault_config: MagicMock,
         mock_build_es: MagicMock,
         _mock_uvicorn_run: MagicMock,
     ) -> None:
@@ -353,7 +353,7 @@ class TestCmdServe:
         mock_create.return_value = mock_server
         mock_config = MagicMock()
         mock_config.server.event_store_url = None
-        mock_load_config.return_value = mock_config
+        mock_vault_config.from_env.return_value = mock_config
         mock_build_es.return_value = MagicMock()
         mock_server.http_app.return_value = MagicMock()
 
@@ -368,12 +368,12 @@ class TestCmdServe:
 
     @patch("uvicorn.run")
     @patch("markdown_vault_mcp.server.build_event_store")
-    @patch("markdown_vault_mcp._cli_impl.load_config")
+    @patch("markdown_vault_mcp._cli_impl.VaultConfig")
     @patch("markdown_vault_mcp.server.make_server")
     def test_serve_http_path_env_fallback(
         self,
         mock_create: MagicMock,
-        mock_load_config: MagicMock,
+        mock_vault_config: MagicMock,
         mock_build_es: MagicMock,
         _mock_uvicorn_run: MagicMock,
     ) -> None:
@@ -382,7 +382,7 @@ class TestCmdServe:
         mock_create.return_value = mock_server
         mock_config = MagicMock()
         mock_config.server.event_store_url = None
-        mock_load_config.return_value = mock_config
+        mock_vault_config.from_env.return_value = mock_config
         mock_build_es.return_value = MagicMock()
         mock_server.http_app.return_value = MagicMock()
 
@@ -396,12 +396,12 @@ class TestCmdServe:
 
     @patch("uvicorn.run")
     @patch("markdown_vault_mcp.server.build_event_store")
-    @patch("markdown_vault_mcp._cli_impl.load_config")
+    @patch("markdown_vault_mcp._cli_impl.VaultConfig")
     @patch("markdown_vault_mcp.server.make_server")
     def test_serve_http_path_cli_overrides_env(
         self,
         mock_create: MagicMock,
-        mock_load_config: MagicMock,
+        mock_vault_config: MagicMock,
         mock_build_es: MagicMock,
         _mock_uvicorn_run: MagicMock,
     ) -> None:
@@ -410,7 +410,7 @@ class TestCmdServe:
         mock_create.return_value = mock_server
         mock_config = MagicMock()
         mock_config.server.event_store_url = None
-        mock_load_config.return_value = mock_config
+        mock_vault_config.from_env.return_value = mock_config
         mock_build_es.return_value = MagicMock()
         mock_server.http_app.return_value = MagicMock()
 

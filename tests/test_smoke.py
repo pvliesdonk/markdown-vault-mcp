@@ -1,7 +1,7 @@
 """Smoke tests for Markdown Vault MCP.
 
 This file diverges from the template's scaffold because MV's
-``make_server`` calls ``load_config`` which requires a non-empty
+``make_server`` calls ``VaultConfig.from_env`` which requires a non-empty
 ``MARKDOWN_VAULT_MCP_SOURCE_DIR``.  The template's bare
 ``server = make_server(); assert server`` would raise before the
 assertion ever runs.  Providing a throwaway ``tmp_path`` via

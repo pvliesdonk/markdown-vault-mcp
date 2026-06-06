@@ -21,7 +21,7 @@ from fastmcp_pvl_core import (
     normalise_http_path,
 )
 
-from markdown_vault_mcp.config import _ENV_PREFIX, load_config
+from markdown_vault_mcp.config import _ENV_PREFIX, VaultConfig
 from markdown_vault_mcp.vault import Vault
 
 if TYPE_CHECKING:
@@ -53,7 +53,7 @@ def _build_vault(args: argparse.Namespace) -> Vault:
     if source_dir_override:
         os.environ[f"{_ENV_PREFIX}_SOURCE_DIR"] = source_dir_override
 
-    config = load_config()
+    config = VaultConfig.from_env()
     kwargs = config.to_vault_kwargs()
 
     # CLI --index-path overrides env var / config default.
@@ -96,7 +96,7 @@ def _cmd_serve(args: argparse.Namespace) -> None:
     if transport == "http":
         import uvicorn
 
-        config = load_config()
+        config = VaultConfig.from_env()
         event_store = build_event_store(config.server)
         # FastMCP's run() doesn't pass event_store through to http_app(),
         # so we build the ASGI app and run uvicorn directly.

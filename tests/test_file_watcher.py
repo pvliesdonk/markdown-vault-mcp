@@ -294,51 +294,51 @@ def test_should_not_start_when_both_git_and_disabled() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_load_config_file_watcher_disabled_via_env(
+def test_from_env_file_watcher_disabled_via_env(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """FILE_WATCHER=false sets file_watcher_enabled=False."""
-    from markdown_vault_mcp.config import load_config
+    from markdown_vault_mcp.config import VaultConfig
 
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_FILE_WATCHER", "false")
-    config = load_config()
+    config = VaultConfig.from_env()
     assert config.sync.file_watcher_enabled is False
 
 
-def test_load_config_file_watcher_debounce_custom(
+def test_from_env_file_watcher_debounce_custom(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """FILE_WATCHER_DEBOUNCE_S=5.0 is accepted."""
-    from markdown_vault_mcp.config import load_config
+    from markdown_vault_mcp.config import VaultConfig
 
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_FILE_WATCHER_DEBOUNCE_S", "5.0")
-    config = load_config()
+    config = VaultConfig.from_env()
     assert config.sync.file_watcher_debounce_s == 5.0
 
 
-def test_load_config_file_watcher_debounce_invalid_falls_back(
+def test_from_env_file_watcher_debounce_invalid_falls_back(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Non-numeric FILE_WATCHER_DEBOUNCE_S falls back to 2.0."""
-    from markdown_vault_mcp.config import load_config
+    from markdown_vault_mcp.config import VaultConfig
 
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_FILE_WATCHER_DEBOUNCE_S", "not-a-number")
-    config = load_config()
+    config = VaultConfig.from_env()
     assert config.sync.file_watcher_debounce_s == 2.0
 
 
-def test_load_config_file_watcher_debounce_nonpositive_falls_back(
+def test_from_env_file_watcher_debounce_nonpositive_falls_back(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """FILE_WATCHER_DEBOUNCE_S <= 0 falls back to 2.0."""
-    from markdown_vault_mcp.config import load_config
+    from markdown_vault_mcp.config import VaultConfig
 
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_FILE_WATCHER_DEBOUNCE_S", "0")
-    config = load_config()
+    config = VaultConfig.from_env()
     assert config.sync.file_watcher_debounce_s == 2.0
 
 

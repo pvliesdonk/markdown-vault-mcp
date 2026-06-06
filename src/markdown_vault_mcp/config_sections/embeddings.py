@@ -29,9 +29,8 @@ class EmbeddingsConfig:
         """Construct EmbeddingsConfig by reading ``{prefix}_*`` env vars.
 
         Reads ``OLLAMA_HOST`` and ``OPENAI_API_KEY`` from the bare (unprefixed)
-        environment, matching the ecosystem conventions preserved in
-        ``load_config``.  ``OPENAI_BASE_URL`` and ``OPENAI_EMBEDDING_MODEL``
-        use prefixed-wins-bare-fallback semantics.
+        environment, matching the ecosystem conventions.  ``OPENAI_BASE_URL``
+        and ``OPENAI_EMBEDDING_MODEL`` use prefixed-wins-bare-fallback semantics.
 
         Args:
             prefix: Env var prefix, e.g. ``"MARKDOWN_VAULT_MCP"``.

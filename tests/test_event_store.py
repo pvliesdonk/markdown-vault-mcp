@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from fastmcp_pvl_core import ServerConfig
 
-from markdown_vault_mcp.config import load_config
+from markdown_vault_mcp.config import VaultConfig
 from markdown_vault_mcp.server import build_event_store
 
 
@@ -80,28 +80,28 @@ class TestEventStoreConfig:
         """Unset EVENT_STORE_URL yields None in config."""
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
         monkeypatch.delenv("MARKDOWN_VAULT_MCP_EVENT_STORE_URL", raising=False)
-        config = load_config()
+        config = VaultConfig.from_env()
         assert config.server.event_store_url is None
 
     def test_event_store_url_from_env(self, monkeypatch):
         """EVENT_STORE_URL is read from environment."""
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_EVENT_STORE_URL", "memory://")
-        config = load_config()
+        config = VaultConfig.from_env()
         assert config.server.event_store_url == "memory://"
 
     def test_kv_store_url_from_env(self, monkeypatch):
         """KV_STORE_URL is read into config.server.kv_store_url (preferred over EVENT_STORE_URL)."""
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_KV_STORE_URL", "memory://")
-        config = load_config()
+        config = VaultConfig.from_env()
         assert config.server.kv_store_url == "memory://"
 
     def test_event_store_url_empty_is_none(self, monkeypatch):
         """Empty EVENT_STORE_URL yields None (file default)."""
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_EVENT_STORE_URL", "  ")
-        config = load_config()
+        config = VaultConfig.from_env()
         assert config.server.event_store_url is None
 
     def test_event_store_url_file_path(self, monkeypatch):
@@ -110,7 +110,7 @@ class TestEventStoreConfig:
         monkeypatch.setenv(
             "MARKDOWN_VAULT_MCP_EVENT_STORE_URL", "file:///data/state/events"
         )
-        config = load_config()
+        config = VaultConfig.from_env()
         assert config.server.event_store_url == "file:///data/state/events"
 
 

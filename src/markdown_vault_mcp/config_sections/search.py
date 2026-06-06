@@ -20,7 +20,7 @@ class SearchConfig:
 
         Raises:
             ValueError: If any search integer/float env var is invalid or
-                out of range (same semantics as ``load_config``).
+                out of range.
 
         Args:
             prefix: Env var prefix, e.g. ``"MARKDOWN_VAULT_MCP"``.

@@ -70,7 +70,8 @@ def make_vault_lifespan(config: VaultConfig) -> Any:
 
     Args:
         config: A fully-loaded :class:`~markdown_vault_mcp.config.VaultConfig`
-            instance, typically produced by a single :func:`load_config` call in
+            instance, typically produced by a single
+            :meth:`~markdown_vault_mcp.config.VaultConfig.from_env` call in
             :func:`~markdown_vault_mcp.server.make_server`.
 
     Returns:

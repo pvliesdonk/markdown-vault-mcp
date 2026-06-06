@@ -36,7 +36,7 @@ from fastmcp_pvl_core import (
 
 from markdown_vault_mcp.config import (
     _ENV_PREFIX,
-    load_config,
+    VaultConfig,
 )
 
 from ._icons import _SERVER_ICON
@@ -120,7 +120,8 @@ def _build_default_instructions(*, read_only: bool) -> str:
 def make_server(transport: str = "stdio") -> FastMCP:
     """Create and configure the FastMCP server.
 
-    Reads configuration from environment variables via :func:`load_config`.
+    Reads configuration from environment variables via
+    :meth:`~markdown_vault_mcp.config.VaultConfig.from_env`.
     Write tools are tagged with ``{"write"}`` and hidden via
     ``mcp.disable(tags={"write"})`` when ``READ_ONLY=true``.
 
@@ -142,7 +143,7 @@ def make_server(transport: str = "stdio") -> FastMCP:
     Returns:
         A fully configured :class:`~fastmcp.FastMCP` instance ready to run.
     """
-    config = load_config()
+    config = VaultConfig.from_env()
     is_read_only = config.read_only
 
     server_name = config.server_name

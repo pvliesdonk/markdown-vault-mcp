@@ -667,26 +667,26 @@ class TestConfigIntegration:
         assert isinstance(strategy, GitWriteStrategy)
         assert strategy._push_delay_s == 60.0
 
-    def test_load_config_reads_push_delay(
+    def test_from_env_reads_push_delay(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """load_config() reads GIT_PUSH_DELAY_S from environment."""
-        from markdown_vault_mcp.config import load_config
+        """VaultConfig.from_env() reads GIT_PUSH_DELAY_S from environment."""
+        from markdown_vault_mcp.config import VaultConfig
 
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_PUSH_DELAY_S", "45")
-        config = load_config()
+        config = VaultConfig.from_env()
         assert config.git.push_delay_s == 45.0
 
-    def test_load_config_invalid_push_delay_uses_default(
+    def test_from_env_invalid_push_delay_uses_default(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """load_config() falls back to default on invalid GIT_PUSH_DELAY_S."""
-        from markdown_vault_mcp.config import load_config
+        """VaultConfig.from_env() falls back to default on invalid GIT_PUSH_DELAY_S."""
+        from markdown_vault_mcp.config import VaultConfig
 
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_PUSH_DELAY_S", "not_a_number")
-        config = load_config()
+        config = VaultConfig.from_env()
         assert config.git.push_delay_s == 30.0
 
 
@@ -3453,38 +3453,38 @@ class TestOidcClaimGitIdentity:
 class TestGitClaimConfig:
     """Tests for GIT_COMMIT_NAME_CLAIM and GIT_COMMIT_EMAIL_CLAIM config loading."""
 
-    def test_load_config_reads_name_claim(
+    def test_from_env_reads_name_claim(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """load_config() reads GIT_COMMIT_NAME_CLAIM from the environment."""
-        from markdown_vault_mcp.config import load_config
+        """VaultConfig.from_env() reads GIT_COMMIT_NAME_CLAIM from the environment."""
+        from markdown_vault_mcp.config import VaultConfig
 
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_COMMIT_NAME_CLAIM", "name")
-        config = load_config()
+        config = VaultConfig.from_env()
         assert config.git.commit_name_claim == "name"
 
-    def test_load_config_reads_email_claim(
+    def test_from_env_reads_email_claim(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """load_config() reads GIT_COMMIT_EMAIL_CLAIM from the environment."""
-        from markdown_vault_mcp.config import load_config
+        """VaultConfig.from_env() reads GIT_COMMIT_EMAIL_CLAIM from the environment."""
+        from markdown_vault_mcp.config import VaultConfig
 
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_COMMIT_EMAIL_CLAIM", "email")
-        config = load_config()
+        config = VaultConfig.from_env()
         assert config.git.commit_email_claim == "email"
 
-    def test_load_config_claim_defaults_to_none(
+    def test_from_env_claim_defaults_to_none(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Claim env vars default to None when not set."""
-        from markdown_vault_mcp.config import load_config
+        from markdown_vault_mcp.config import VaultConfig
 
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
         monkeypatch.delenv("MARKDOWN_VAULT_MCP_GIT_COMMIT_NAME_CLAIM", raising=False)
         monkeypatch.delenv("MARKDOWN_VAULT_MCP_GIT_COMMIT_EMAIL_CLAIM", raising=False)
-        config = load_config()
+        config = VaultConfig.from_env()
         assert config.git.commit_name_claim is None
         assert config.git.commit_email_claim is None
 

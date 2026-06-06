@@ -1,6 +1,6 @@
 """Generic markdown vault with FTS5 + semantic search."""
 
-from markdown_vault_mcp.config import VaultConfig, load_config
+from markdown_vault_mcp.config import VaultConfig
 from markdown_vault_mcp.exceptions import (
     ConcurrentModificationError,
     ConfigurationError,
@@ -85,5 +85,4 @@ __all__ = [
     "WriteCallback",
     "WriteResult",
     "git_write_strategy",
-    "load_config",
 ]
