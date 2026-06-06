@@ -1333,3 +1333,54 @@ class TestSearchConfigFromEnv:
 
         with pytest.raises(dataclasses.FrozenInstanceError):
             SearchConfig().chunks_per_file = 5  # type: ignore[misc]
+
+
+class TestSyncConfigFromEnv:
+    def test_defaults(self, monkeypatch):
+        from markdown_vault_mcp.config_sections import SyncConfig
+
+        for k in ("FILE_WATCHER", "FILE_WATCHER_DEBOUNCE_S", "GITHUB_WEBHOOK_SECRET"):
+            monkeypatch.delenv(f"MARKDOWN_VAULT_MCP_{k}", raising=False)
+        cfg = SyncConfig.from_env("MARKDOWN_VAULT_MCP")
+        assert cfg == SyncConfig()
+
+    def test_file_watcher_false(self, monkeypatch):
+        from markdown_vault_mcp.config_sections import SyncConfig
+
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_FILE_WATCHER", "false")
+        assert SyncConfig.from_env("MARKDOWN_VAULT_MCP").file_watcher_enabled is False
+
+    def test_debounce_invalid_resets_to_default(self, monkeypatch):
+        from markdown_vault_mcp.config_sections import SyncConfig
+
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_FILE_WATCHER_DEBOUNCE_S", "notanumber")
+        assert SyncConfig.from_env("MARKDOWN_VAULT_MCP").file_watcher_debounce_s == 2.0
+
+    def test_debounce_zero_resets_to_default(self, monkeypatch):
+        from markdown_vault_mcp.config_sections import SyncConfig
+
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_FILE_WATCHER_DEBOUNCE_S", "0")
+        assert SyncConfig.from_env("MARKDOWN_VAULT_MCP").file_watcher_debounce_s == 2.0
+
+    def test_debounce_negative_resets_to_default(self, monkeypatch):
+        from markdown_vault_mcp.config_sections import SyncConfig
+
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_FILE_WATCHER_DEBOUNCE_S", "-1.0")
+        assert SyncConfig.from_env("MARKDOWN_VAULT_MCP").file_watcher_debounce_s == 2.0
+
+    def test_github_webhook_secret(self, monkeypatch):
+        from markdown_vault_mcp.config_sections import SyncConfig
+
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_GITHUB_WEBHOOK_SECRET", "mysecret")
+        assert (
+            SyncConfig.from_env("MARKDOWN_VAULT_MCP").github_webhook_secret
+            == "mysecret"
+        )
+
+    def test_frozen(self):
+        import dataclasses
+
+        from markdown_vault_mcp.config_sections import SyncConfig
+
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            SyncConfig().file_watcher_enabled = False  # type: ignore[misc]
