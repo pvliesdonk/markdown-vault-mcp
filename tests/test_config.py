@@ -1316,6 +1316,23 @@ class TestSearchConfigFromEnv:
         with pytest.raises(ValueError, match="MARKDOWN_VAULT_MCP_CHUNKS_PER_FILE"):
             SearchConfig.from_env("MARKDOWN_VAULT_MCP")
 
+    @pytest.mark.parametrize(
+        ("var", "value"),
+        [
+            ("SNIPPET_WORDS", "-1"),
+            ("SNIPPET_WORDS", "nope"),
+            ("LENGTH_DOWNWEIGHT_ALPHA", "-0.5"),
+            ("MAX_CHUNK_WORDS", "0"),
+            ("MAX_CHUNK_WORDS", "nope"),
+        ],
+    )
+    def test_invalid_or_out_of_range_raises(self, monkeypatch, var, value):
+        from markdown_vault_mcp.config_sections import SearchConfig
+
+        monkeypatch.setenv(f"MARKDOWN_VAULT_MCP_{var}", value)
+        with pytest.raises(ValueError):
+            SearchConfig.from_env("MARKDOWN_VAULT_MCP")
+
     def test_alpha_invalid_raises(self, monkeypatch):
         from markdown_vault_mcp.config_sections import SearchConfig
 
