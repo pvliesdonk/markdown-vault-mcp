@@ -1153,3 +1153,54 @@ class TestConfigHelpers:
 
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_X", "nope")
         assert parse_float_env("MARKDOWN_VAULT_MCP", "X", 1.5) == 1.5
+
+
+class TestIndexingConfigFromEnv:
+    def test_defaults(self, monkeypatch):
+        from markdown_vault_mcp.config_sections import IndexingConfig
+
+        for k in (
+            "INDEX_PATH",
+            "STATE_PATH",
+            "EMBEDDINGS_PATH",
+            "INDEXED_FIELDS",
+            "REQUIRED_FIELDS",
+            "EXCLUDE",
+        ):
+            monkeypatch.delenv(f"MARKDOWN_VAULT_MCP_{k}", raising=False)
+        cfg = IndexingConfig.from_env("MARKDOWN_VAULT_MCP")
+        assert cfg == IndexingConfig()
+
+    def test_index_path_set(self, monkeypatch):
+        from pathlib import Path
+
+        from markdown_vault_mcp.config_sections import IndexingConfig
+
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_INDEX_PATH", "/x/index.db")
+        assert IndexingConfig.from_env("MARKDOWN_VAULT_MCP").index_path == Path(
+            "/x/index.db"
+        )
+
+    def test_list_fields_parsed(self, monkeypatch):
+        from markdown_vault_mcp.config_sections import IndexingConfig
+
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_INDEXED_FIELDS", "a, b, c")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_EXCLUDE", ".obsidian/**")
+        cfg = IndexingConfig.from_env("MARKDOWN_VAULT_MCP")
+        assert cfg.indexed_frontmatter_fields == ["a", "b", "c"]
+        assert cfg.exclude_patterns == [".obsidian/**"]
+
+    def test_empty_list_yields_none(self, monkeypatch):
+        from markdown_vault_mcp.config_sections import IndexingConfig
+
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_INDEXED_FIELDS", "")
+        cfg = IndexingConfig.from_env("MARKDOWN_VAULT_MCP")
+        assert cfg.indexed_frontmatter_fields is None
+
+    def test_frozen(self):
+        import dataclasses
+
+        from markdown_vault_mcp.config_sections import IndexingConfig
+
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            IndexingConfig().index_path = None  # type: ignore[misc]
