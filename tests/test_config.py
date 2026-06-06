@@ -1384,3 +1384,118 @@ class TestSyncConfigFromEnv:
 
         with pytest.raises(dataclasses.FrozenInstanceError):
             SyncConfig().file_watcher_enabled = False  # type: ignore[misc]
+
+
+class TestContentConfigFromEnv:
+    def test_defaults(self, monkeypatch, tmp_path):
+        from markdown_vault_mcp.config_sections import ContentConfig
+
+        for k in (
+            "ATTACHMENT_EXTENSIONS",
+            "MAX_ATTACHMENT_SIZE_MB",
+            "MAX_NOTE_READ_BYTES",
+            "TEMPLATES_FOLDER",
+            "PROMPTS_FOLDER",
+        ):
+            monkeypatch.delenv(f"MARKDOWN_VAULT_MCP_{k}", raising=False)
+        cfg = ContentConfig.from_env("MARKDOWN_VAULT_MCP", tmp_path)
+        assert cfg == ContentConfig()
+
+    def test_attachment_extensions_wildcard(self, monkeypatch, tmp_path):
+        from markdown_vault_mcp.config_sections import ContentConfig
+
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS", "*")
+        cfg = ContentConfig.from_env("MARKDOWN_VAULT_MCP", tmp_path)
+        assert cfg.attachment_extensions == ["*"]
+
+    def test_attachment_extensions_list(self, monkeypatch, tmp_path):
+        from markdown_vault_mcp.config_sections import ContentConfig
+
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS", "pdf,png,docx")
+        cfg = ContentConfig.from_env("MARKDOWN_VAULT_MCP", tmp_path)
+        assert cfg.attachment_extensions == ["pdf", "png", "docx"]
+
+    def test_attachment_extensions_empty_is_none(self, monkeypatch, tmp_path):
+        from markdown_vault_mcp.config_sections import ContentConfig
+
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS", "")
+        cfg = ContentConfig.from_env("MARKDOWN_VAULT_MCP", tmp_path)
+        assert cfg.attachment_extensions is None
+
+    def test_max_attachment_invalid_resets(self, monkeypatch, tmp_path):
+        from markdown_vault_mcp.config_sections import ContentConfig
+
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB", "not-a-number")
+        cfg = ContentConfig.from_env("MARKDOWN_VAULT_MCP", tmp_path)
+        assert cfg.max_attachment_size_mb == 1.0
+
+    def test_max_attachment_negative_resets(self, monkeypatch, tmp_path):
+        from markdown_vault_mcp.config_sections import ContentConfig
+
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB", "-5")
+        cfg = ContentConfig.from_env("MARKDOWN_VAULT_MCP", tmp_path)
+        assert cfg.max_attachment_size_mb == 1.0
+
+    def test_max_attachment_zero_allowed(self, monkeypatch, tmp_path):
+        from markdown_vault_mcp.config_sections import ContentConfig
+
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB", "0")
+        cfg = ContentConfig.from_env("MARKDOWN_VAULT_MCP", tmp_path)
+        assert cfg.max_attachment_size_mb == 0.0
+
+    def test_max_note_read_bytes_invalid_resets(self, monkeypatch, tmp_path):
+        from markdown_vault_mcp.config_sections import ContentConfig
+
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES", "nope")
+        cfg = ContentConfig.from_env("MARKDOWN_VAULT_MCP", tmp_path)
+        assert cfg.max_note_read_bytes == 262144
+
+    def test_max_note_read_bytes_negative_resets(self, monkeypatch, tmp_path):
+        from markdown_vault_mcp.config_sections import ContentConfig
+
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES", "-1")
+        cfg = ContentConfig.from_env("MARKDOWN_VAULT_MCP", tmp_path)
+        assert cfg.max_note_read_bytes == 262144
+
+    def test_max_note_read_bytes_zero_allowed(self, monkeypatch, tmp_path):
+        from markdown_vault_mcp.config_sections import ContentConfig
+
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES", "0")
+        cfg = ContentConfig.from_env("MARKDOWN_VAULT_MCP", tmp_path)
+        assert cfg.max_note_read_bytes == 0
+
+    def test_templates_folder_backslash_trailing_slash(self, monkeypatch, tmp_path):
+        from markdown_vault_mcp.config_sections import ContentConfig
+
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER", "Templates\\Notes\\")
+        cfg = ContentConfig.from_env("MARKDOWN_VAULT_MCP", tmp_path)
+        assert cfg.templates_folder == "Templates/Notes"
+
+    def test_templates_folder_slash_only_falls_back(self, monkeypatch, tmp_path):
+        from markdown_vault_mcp.config_sections import ContentConfig
+
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER", "/")
+        cfg = ContentConfig.from_env("MARKDOWN_VAULT_MCP", tmp_path)
+        assert cfg.templates_folder == "_templates"
+
+    def test_prompts_folder_relative_joined_to_source_dir(self, monkeypatch, tmp_path):
+        from markdown_vault_mcp.config_sections import ContentConfig
+
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_PROMPTS_FOLDER", "prompts")
+        cfg = ContentConfig.from_env("MARKDOWN_VAULT_MCP", tmp_path)
+        assert cfg.prompts_folder == str(tmp_path / "prompts")
+
+    def test_prompts_folder_absolute_kept(self, monkeypatch, tmp_path):
+        from markdown_vault_mcp.config_sections import ContentConfig
+
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_PROMPTS_FOLDER", "/abs/prompts")
+        cfg = ContentConfig.from_env("MARKDOWN_VAULT_MCP", tmp_path)
+        assert cfg.prompts_folder == "/abs/prompts"
+
+    def test_frozen(self):
+        import dataclasses
+
+        from markdown_vault_mcp.config_sections import ContentConfig
+
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            ContentConfig().templates_folder = "other"  # type: ignore[misc]
