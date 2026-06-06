@@ -229,10 +229,10 @@ If `BASE_URL` is already set (e.g., for OIDC), no additional configuration is ne
 For long-running HTTP sessions (especially with MCP Apps), configure the event store so sessions survive container restarts:
 
 ```bash
-MARKDOWN_VAULT_MCP_EVENT_STORE_URL=file:///data/state/events
+MARKDOWN_VAULT_MCP_KV_STORE_URL=file:///data/state
 ```
 
-This is the default when using the Docker image with the `state-data` volume. For development, use `memory://` (sessions lost on restart).
+This is the default when using the Docker image with the `state-data` volume (the `events` keyspace is namespaced inside the directory). The legacy `MARKDOWN_VAULT_MCP_EVENT_STORE_URL` still works but logs a one-shot deprecation warning. For development, use `memory://` (sessions lost on restart).
 
 ### Verify
 

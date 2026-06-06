@@ -51,10 +51,11 @@ faster client feedback when the index has chronic backlog.
 | `MARKDOWN_VAULT_MCP_INSTRUCTIONS` | string | (auto) | System-level instructions injected into LLM context; defaults to a description that reflects read-only vs read-write state |
 | `MARKDOWN_VAULT_MCP_HTTP_PATH` | path | `/mcp` | HTTP endpoint path for streamable HTTP transport (`serve --transport http`) |
 | `MARKDOWN_VAULT_MCP_BASE_URL` | url | — | Public base URL of the server (e.g. `https://mcp.example.com`). Required for OIDC auth, MCP Apps domain computation, and the one-time transfer link tools |
-| `MARKDOWN_VAULT_MCP_EVENT_STORE_URL` | url | `file:///data/state/events` | Event store backend for HTTP session persistence. `file:///path` survives restarts; `memory://` for dev (lost on restart) |
+| `MARKDOWN_VAULT_MCP_KV_STORE_URL` | url | `file:///data/state` | Unified key-value backend for HTTP session persistence (the `events` keyspace is namespaced inside the directory). `file:///path` survives restarts; `memory://` for dev (lost on restart). Preferred over `EVENT_STORE_URL`. |
+| `MARKDOWN_VAULT_MCP_EVENT_STORE_URL` | url | (unset) | Legacy alias for `KV_STORE_URL`; honoured only when `KV_STORE_URL` is unset, and logs a one-shot deprecation warning. Prefer `KV_STORE_URL`. |
 | `MARKDOWN_VAULT_MCP_APP_DOMAIN` | string | (auto) | Override the Claude app domain used for MCP Apps iframe sandboxing. Auto-computed from `BASE_URL` when not set |
 | `FASTMCP_LOG_LEVEL` | string | `INFO` | Log level for FastMCP internals (`DEBUG`, `INFO`, `WARNING`, `ERROR`). `-v` CLI flag overrides both app and FastMCP loggers to `DEBUG` |
-| `FASTMCP_ENABLE_RICH_LOGGING` | bool | `true` | Set to `false` for plain/structured JSON log output instead of Rich-formatted output |
+| `FASTMCP_ENABLE_RICH_LOGGING` | bool | `true` | Rich `key=value` text by default. Set to `false` for one-JSON-object-per-record output — recommended for production / log-aggregator deployments |
 
 ## Search Ranking and Snippet Truncation
 

@@ -54,20 +54,25 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-def build_event_store(url: str | None = None) -> EventStore:
+def build_event_store(config: ServerConfig) -> EventStore:
     """Build an ``EventStore`` for SSE polling/resumability.
 
-    Thin shim over :func:`fastmcp_pvl_core.build_event_store`: wraps the
-    legacy URL-only call shape used by ``cli.py`` and delegates the actual
-    backend selection (file-tree vs in-memory) to the shared core helper.
+    Thin shim over :func:`fastmcp_pvl_core.build_event_store`: forwards the
+    whole server config so the unified KV factory honours ``kv_store_url``
+    (preferred) or the legacy ``event_store_url`` per its own resolution
+    priority, then selects the backend from the URL scheme (``file://``,
+    ``memory://``, or any extra-installed backend — see the fastmcp-pvl-core
+    docs).
 
     Args:
-        url: Event store URL from ``MARKDOWN_VAULT_MCP_EVENT_STORE_URL``.
+        config: The server config; its ``kv_store_url`` / ``event_store_url``
+            fields (from ``MARKDOWN_VAULT_MCP_KV_STORE_URL`` /
+            ``MARKDOWN_VAULT_MCP_EVENT_STORE_URL``) select the backend.
 
     Returns:
         A configured :class:`~fastmcp.server.event_store.EventStore`.
     """
-    return _core_build_event_store(_ENV_PREFIX, ServerConfig(event_store_url=url))
+    return _core_build_event_store(_ENV_PREFIX, config)
 
 
 # ---------------------------------------------------------------------------
@@ -184,8 +189,8 @@ def make_server(transport: str = "stdio") -> FastMCP:
         auth=auth,
     )
 
-    # include_traceback=None infers from root log level (-v→DEBUG→tracebacks); transform_errors=False lets exceptions propagate to FastMCP's own handlers.
-    wire_middleware_stack(mcp, include_traceback=None, transform_errors=False)
+    # 3.x: kwargs removed; installs one tool-aware logging middleware.
+    wire_middleware_stack(mcp)
 
     # Optional: enable opt-in per-subject authorization on tools / resources /
     # prompts.  See fastmcp-pvl-core's README "Authorization" section for the

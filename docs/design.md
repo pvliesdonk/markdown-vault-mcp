@@ -838,11 +838,14 @@ receive the transfer request).
 ### HTTP Session Persistence
 
 For HTTP/streamable-HTTP transport, the server uses an `EventStore` so MCP
-sessions survive container restarts. The backend is configured via
-`MARKDOWN_VAULT_MCP_EVENT_STORE_URL`:
+sessions survive container restarts. The backend is configured via the unified
+key-value store URL `MARKDOWN_VAULT_MCP_KV_STORE_URL` (the legacy
+`MARKDOWN_VAULT_MCP_EVENT_STORE_URL` is still honoured when `KV_STORE_URL` is
+unset, with a one-shot deprecation warning):
 
-- **Default** (unset or `file:///path`): `FileTreeStore` at
-  `/data/state/events`. Sessions persist on disk inside the Docker state volume.
+- **Default** (unset): a file-backed store at `/data/state` (the `events`
+  keyspace is namespaced inside the directory). Sessions persist on disk inside
+  the Docker state volume.
 - **`memory://`**: In-memory store; sessions are lost on restart. Suitable for
   development or single-shot CI environments.
 
@@ -871,6 +874,17 @@ Follow FastMCP conventions and standard Python logging:
 unless overridden by `-v` (sets both app and FastMCP to `DEBUG`). When
 `DEBUG` is active, `httpx` and
 `httpcore` loggers are pinned to `WARNING` to reduce noise.
+
+**Request logging:** `make_server()` wires pvl-core's single
+`RequestLoggingMiddleware` (via `wire_middleware_stack`), which emits
+family-conforming, tool-aware lines — a bare event name first, then
+`key=value` pairs, with request timing carried inline on the terminal line.
+Tool calls (`tools/call`) use the `tool_call_started` / `tool_call_completed`
+/ `tool_call_failed` vocabulary and carry `tool=<name>`; other messages use
+`<type>_started` / `<type>_completed` / `<type>_failed`. Output is `key=value`
+text by default, or one JSON object per record when
+`FASTMCP_ENABLE_RICH_LOGGING=false`. Tracebacks attach to `*_failed` records
+when the root logger is at `DEBUG`.
 
 **Auth logging:** At `DEBUG`, the OIDC and bearer auth builders log full
 configuration details (secrets redacted). At `INFO`, only the auth mode

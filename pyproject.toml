@@ -31,7 +31,7 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
-    "fastmcp-pvl-core>=2.1.0,<4",
+    "fastmcp-pvl-core>=3.2.0,<4",
     # PROJECT-DEPS-START — add domain dependencies below; kept across copier update
     "python-frontmatter>=1.0",
     "requests>=2.33.0",

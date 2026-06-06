@@ -3,70 +3,74 @@
 from __future__ import annotations
 
 import pytest
+from fastmcp_pvl_core import ServerConfig
 
 from markdown_vault_mcp.config import load_config
 from markdown_vault_mcp.server import build_event_store
 
 
 class TestBuildEventStore:
-    """Unit tests for build_event_store() URL parsing and backend selection."""
+    """Unit tests for build_event_store() backend selection from ServerConfig."""
 
     def test_default_uses_file_backend(self, tmp_path):
-        """Unset URL defaults to FileTreeStore."""
+        """An empty config defaults to a file-backed store at the package default dir."""
         from unittest.mock import patch
 
         with patch(
-            "fastmcp_pvl_core._factory._DEFAULT_EVENT_STORE_DIR",
+            "fastmcp_pvl_core._kv_store._DEFAULT_KV_STORE_DIR",
             str(tmp_path / "events"),
         ):
-            store = build_event_store(None)
+            store = build_event_store(ServerConfig())
 
         assert store is not None
         assert (tmp_path / "events").is_dir()
 
     def test_empty_string_uses_file_backend(self, tmp_path):
-        """Empty string URL defaults to FileTreeStore."""
+        """Empty event_store_url defaults to a file-backed store at the package default dir."""
         from unittest.mock import patch
 
         with patch(
-            "fastmcp_pvl_core._factory._DEFAULT_EVENT_STORE_DIR",
+            "fastmcp_pvl_core._kv_store._DEFAULT_KV_STORE_DIR",
             str(tmp_path / "events"),
         ):
-            store = build_event_store("")
+            store = build_event_store(ServerConfig(event_store_url=""))
 
         assert store is not None
         assert (tmp_path / "events").is_dir()
 
     def test_file_url_creates_directory(self, tmp_path):
-        """file:// URL creates specified directory and uses FileTreeStore."""
+        """file:// URL creates the specified directory and uses a file backend."""
         target = tmp_path / "custom" / "events"
-        store = build_event_store(f"file://{target}")
+        store = build_event_store(ServerConfig(event_store_url=f"file://{target}"))
 
         assert store is not None
         assert target.is_dir()
 
     def test_memory_url_returns_in_memory_store(self):
         """memory:// URL returns an in-memory EventStore."""
-        store = build_event_store("memory://")
+        store = build_event_store(ServerConfig(event_store_url="memory://"))
         assert store is not None
+
+    def test_kv_store_url_takes_priority(self, tmp_path):
+        """kv_store_url is honoured over the legacy event_store_url."""
+        ignored = tmp_path / "should-not-exist"
+        store = build_event_store(
+            ServerConfig(kv_store_url="memory://", event_store_url=f"file://{ignored}")
+        )
+
+        assert store is not None
+        # If event_store_url had been used, file:// would have created this dir.
+        assert not ignored.exists()
 
     def test_unsupported_scheme_raises(self):
-        """Unsupported URL scheme raises ValueError."""
-        with pytest.raises(ValueError, match="Unsupported event store URL scheme"):
-            build_event_store("redis://localhost:6379")
+        """An unrecognised URL scheme propagates a ValueError from the core factory."""
+        with pytest.raises(ValueError):
+            build_event_store(ServerConfig(event_store_url="bogus://host"))
 
-    def test_file_url_without_path_uses_default(self, tmp_path):
-        """file:// with no path falls back to default directory."""
-        from unittest.mock import patch
-
-        with patch(
-            "fastmcp_pvl_core._factory._DEFAULT_EVENT_STORE_DIR",
-            str(tmp_path / "events"),
-        ):
-            store = build_event_store("file://")
-
-        assert store is not None
-        assert (tmp_path / "events").is_dir()
+    def test_file_url_without_path_raises(self):
+        """pvl-core 3.x rejects a path-less file:// URL (use the file:///path form)."""
+        with pytest.raises(ValueError):
+            build_event_store(ServerConfig(event_store_url="file://"))
 
 
 class TestEventStoreConfig:
@@ -85,6 +89,13 @@ class TestEventStoreConfig:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_EVENT_STORE_URL", "memory://")
         config = load_config()
         assert config.server.event_store_url == "memory://"
+
+    def test_kv_store_url_from_env(self, monkeypatch):
+        """KV_STORE_URL is read into config.server.kv_store_url (preferred over EVENT_STORE_URL)."""
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_KV_STORE_URL", "memory://")
+        config = load_config()
+        assert config.server.kv_store_url == "memory://"
 
     def test_event_store_url_empty_is_none(self, monkeypatch):
         """Empty EVENT_STORE_URL yields None (file default)."""
@@ -112,13 +123,13 @@ class TestFileEventStorePersistence:
         url = f"file://{store_dir}"
 
         # First store instance — write an event (None message = priming event)
-        store1 = build_event_store(url)
+        store1 = build_event_store(ServerConfig(event_store_url=url))
         stream_id = "test-session-1"
         event_id = await store1.store_event(stream_id, None)
         assert event_id  # UUID string returned
 
         # Second store instance — same path, simulating restart
-        store2 = build_event_store(url)
+        store2 = build_event_store(ServerConfig(event_store_url=url))
         # Verify the event is retrievable by replaying after it
         replayed_events: list = []
 

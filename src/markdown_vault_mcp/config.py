@@ -326,7 +326,8 @@ def load_config() -> VaultConfig:
 
     Transport and auth variables (``TRANSPORT``, ``HOST``, ``PORT``,
     ``BASE_URL``, ``AUTH_MODE``, ``OIDC_*``, ``BEARER_TOKEN``,
-    ``EVENT_STORE_URL``, ``APP_DOMAIN``) are read into ``config.server`` by
+    ``KV_STORE_URL`` (legacy ``EVENT_STORE_URL``), ``APP_DOMAIN``) are read
+    into ``config.server`` by
     :meth:`fastmcp_pvl_core.ServerConfig.from_env`; see
     ``docs/configuration.md`` for the full list.
 

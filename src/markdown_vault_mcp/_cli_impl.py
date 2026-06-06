@@ -97,7 +97,7 @@ def _cmd_serve(args: argparse.Namespace) -> None:
         import uvicorn
 
         config = load_config()
-        event_store = build_event_store(config.server.event_store_url)
+        event_store = build_event_store(config.server)
         # FastMCP's run() doesn't pass event_store through to http_app(),
         # so we build the ASGI app and run uvicorn directly.
         app = server.http_app(

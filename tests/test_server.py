@@ -2675,49 +2675,32 @@ class TestStartupSummaryLogging:
 
 
 class TestMiddlewareStack:
-    """Verify that make_server() wires the expected middleware."""
+    """Verify that make_server() wires pvl-core 3.x's logging middleware."""
 
     @pytest.mark.usefixtures("_mcp_env")
-    def test_default_middleware_stack(self) -> None:
-        """Server has ErrorHandling, Timing, and Logging middleware by default."""
-        from fastmcp.server.middleware.error_handling import ErrorHandlingMiddleware
-        from fastmcp.server.middleware.logging import LoggingMiddleware
-        from fastmcp.server.middleware.timing import TimingMiddleware
+    def test_default_middleware_wired(self) -> None:
+        """make_server() installs one RequestLoggingMiddleware in rich mode by default."""
+        # Not re-exported at pvl-core's public root; private import is unavoidable.
+        from fastmcp_pvl_core._middleware import RequestLoggingMiddleware
 
         server = make_server()
-        types = [type(m) for m in server.middleware]
-        assert ErrorHandlingMiddleware in types
-        assert TimingMiddleware in types
-        assert LoggingMiddleware in types
+        mws = [m for m in server.middleware if isinstance(m, RequestLoggingMiddleware)]
+        assert len(mws) == 1
+        assert mws[0].structured is False
 
     @pytest.mark.usefixtures("_mcp_env")
     def test_structured_logging_when_rich_disabled(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """FASTMCP_ENABLE_RICH_LOGGING=false selects StructuredLoggingMiddleware."""
-        from fastmcp.server.middleware.logging import StructuredLoggingMiddleware
+        """FASTMCP_ENABLE_RICH_LOGGING=false selects structured (JSON) output."""
+        # Not re-exported at pvl-core's public root; private import is unavoidable.
+        from fastmcp_pvl_core._middleware import RequestLoggingMiddleware
 
         monkeypatch.setenv("FASTMCP_ENABLE_RICH_LOGGING", "false")
         server = make_server()
-        types = [type(m) for m in server.middleware]
-        assert StructuredLoggingMiddleware in types
-
-    @pytest.mark.usefixtures("_mcp_env")
-    def test_middleware_order(self) -> None:
-        """ErrorHandling is first, then Timing, then Logging."""
-        from fastmcp.server.middleware.error_handling import ErrorHandlingMiddleware
-        from fastmcp.server.middleware.logging import LoggingMiddleware
-        from fastmcp.server.middleware.timing import TimingMiddleware
-
-        server = make_server()
-        types = [type(m) for m in server.middleware]
-        assert ErrorHandlingMiddleware in types, "ErrorHandlingMiddleware missing"
-        assert TimingMiddleware in types, "TimingMiddleware missing"
-        assert LoggingMiddleware in types, "LoggingMiddleware missing"
-        eh_idx = types.index(ErrorHandlingMiddleware)
-        tm_idx = types.index(TimingMiddleware)
-        lg_idx = types.index(LoggingMiddleware)
-        assert eh_idx < tm_idx < lg_idx
+        mws = [m for m in server.middleware if isinstance(m, RequestLoggingMiddleware)]
+        assert len(mws) == 1
+        assert mws[0].structured is True
 
 
 # ---------------------------------------------------------------------------

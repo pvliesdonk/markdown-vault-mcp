@@ -43,9 +43,9 @@
           ]
         },
         {
-          "name": "MARKDOWN_VAULT_MCP_EVENT_STORE_URL",
-          "description": "Event store backend for HTTP session persistence (file:///path or memory://)",
-          "default": "file:///data/state/events"
+          "name": "MARKDOWN_VAULT_MCP_KV_STORE_URL",
+          "description": "Unified key-value backend for HTTP session persistence (file:///path or memory://). Legacy alias: MARKDOWN_VAULT_MCP_EVENT_STORE_URL",
+          "default": "file:///data/state"
         },
         {
           "name": "MARKDOWN_VAULT_MCP_SERVER_NAME",
@@ -274,9 +274,9 @@
           ]
         },
         {
-          "name": "MARKDOWN_VAULT_MCP_EVENT_STORE_URL",
-          "description": "Event store backend for HTTP session persistence (file:///path or memory://)",
-          "default": "file:///data/state/events"
+          "name": "MARKDOWN_VAULT_MCP_KV_STORE_URL",
+          "description": "Unified key-value backend for HTTP session persistence (file:///path or memory://). Legacy alias: MARKDOWN_VAULT_MCP_EVENT_STORE_URL",
+          "default": "file:///data/state"
         },
         {
           "name": "MARKDOWN_VAULT_MCP_SERVER_NAME",

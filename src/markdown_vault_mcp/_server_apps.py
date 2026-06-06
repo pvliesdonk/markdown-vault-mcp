@@ -216,7 +216,7 @@ def register_apps(mcp: FastMCP) -> None:
 
     app_config = AppConfig(
         domain=app_domain,
-        csp=ResourceCSP(resourceDomains=_CDN_RESOURCE_DOMAINS),
+        csp=ResourceCSP(resource_domains=_CDN_RESOURCE_DOMAINS),
     )
 
     # -- SPA shell resource -------------------------------------------------
@@ -244,7 +244,7 @@ def register_apps(mcp: FastMCP) -> None:
             "destructiveHint": False,
             "idempotentHint": True,
         },
-        app=AppConfig(resourceUri=_VAULT_APP_URI),
+        app=AppConfig(resource_uri=_VAULT_APP_URI),
     )
     async def browse_vault(
         path: str | None = None,
@@ -312,7 +312,7 @@ def register_apps(mcp: FastMCP) -> None:
             "openWorldHint": False,
         },
         meta=_app_tool_meta("vault_context"),
-        app=AppConfig(resourceUri=_VAULT_APP_URI, visibility=["app"]),
+        app=AppConfig(resource_uri=_VAULT_APP_URI, visibility=["app"]),
     )
     async def vault_context(
         path: str,
@@ -344,7 +344,7 @@ def register_apps(mcp: FastMCP) -> None:
             "destructiveHint": False,
             "idempotentHint": True,
         },
-        app=AppConfig(resourceUri=_VAULT_APP_URI),
+        app=AppConfig(resource_uri=_VAULT_APP_URI),
     )
     async def show_context(
         path: str,
@@ -403,7 +403,7 @@ def register_apps(mcp: FastMCP) -> None:
             "openWorldHint": False,
         },
         meta=_app_tool_meta("vault_graph_neighborhood"),
-        app=AppConfig(resourceUri=_VAULT_APP_URI, visibility=["app"]),
+        app=AppConfig(resource_uri=_VAULT_APP_URI, visibility=["app"]),
     )
     async def vault_graph_neighborhood(
         path: str,
@@ -597,7 +597,7 @@ def register_apps(mcp: FastMCP) -> None:
             "openWorldHint": False,
         },
         meta=_app_tool_meta("vault_graph_hubs"),
-        app=AppConfig(resourceUri=_VAULT_APP_URI, visibility=["app"]),
+        app=AppConfig(resource_uri=_VAULT_APP_URI, visibility=["app"]),
     )
     async def vault_graph_hubs(
         limit: int = 20,
@@ -685,7 +685,7 @@ def register_apps(mcp: FastMCP) -> None:
             "openWorldHint": False,
         },
         meta=_app_tool_meta("vault_list"),
-        app=AppConfig(resourceUri=_VAULT_APP_URI, visibility=["app"]),
+        app=AppConfig(resource_uri=_VAULT_APP_URI, visibility=["app"]),
     )
     async def vault_list(
         folder: str | None = None,
@@ -751,7 +751,7 @@ def register_apps(mcp: FastMCP) -> None:
             "openWorldHint": False,
         },
         meta=_app_tool_meta("vault_read"),
-        app=AppConfig(resourceUri=_VAULT_APP_URI, visibility=["app"]),
+        app=AppConfig(resource_uri=_VAULT_APP_URI, visibility=["app"]),
     )
     async def vault_read(
         path: str,
@@ -789,7 +789,7 @@ def register_apps(mcp: FastMCP) -> None:
             "openWorldHint": False,
         },
         meta=_app_tool_meta("vault_search"),
-        app=AppConfig(resourceUri=_VAULT_APP_URI, visibility=["app"]),
+        app=AppConfig(resource_uri=_VAULT_APP_URI, visibility=["app"]),
     )
     async def vault_search(
         query: str,
