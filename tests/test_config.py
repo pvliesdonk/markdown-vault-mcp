@@ -1204,3 +1204,73 @@ class TestIndexingConfigFromEnv:
 
         with pytest.raises(dataclasses.FrozenInstanceError):
             IndexingConfig().index_path = None  # type: ignore[misc]
+
+
+class TestEmbeddingsConfigFromEnv:
+    def test_defaults(self, monkeypatch):
+        from markdown_vault_mcp.config_sections import EmbeddingsConfig
+
+        for k in (
+            "EMBEDDING_PROVIDER",
+            "OLLAMA_MODEL",
+            "OLLAMA_CPU_ONLY",
+            "OPENAI_EMBEDDING_MODEL",
+            "FASTEMBED_MODEL",
+            "FASTEMBED_CACHE_DIR",
+        ):
+            monkeypatch.delenv(f"MARKDOWN_VAULT_MCP_{k}", raising=False)
+        monkeypatch.delenv("OLLAMA_HOST", raising=False)
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
+        monkeypatch.delenv("OPENAI_EMBEDDING_MODEL", raising=False)
+        cfg = EmbeddingsConfig.from_env("MARKDOWN_VAULT_MCP")
+        assert cfg == EmbeddingsConfig()
+
+    def test_ollama_host_bare_read(self, monkeypatch):
+        from markdown_vault_mcp.config_sections import EmbeddingsConfig
+
+        monkeypatch.setenv("OLLAMA_HOST", "http://gpu-server:11434/")
+        cfg = EmbeddingsConfig.from_env("MARKDOWN_VAULT_MCP")
+        assert cfg.ollama_host == "http://gpu-server:11434"
+
+    def test_openai_base_url_prefixed_wins(self, monkeypatch):
+        from markdown_vault_mcp.config_sections import EmbeddingsConfig
+
+        monkeypatch.setenv(
+            "MARKDOWN_VAULT_MCP_OPENAI_BASE_URL", "https://api.prefixed.example/v1"
+        )
+        monkeypatch.setenv("OPENAI_BASE_URL", "https://api.bare.example/v1")
+        cfg = EmbeddingsConfig.from_env("MARKDOWN_VAULT_MCP")
+        assert cfg.openai_base_url == "https://api.prefixed.example/v1"
+
+    def test_openai_base_url_bare_fallback(self, monkeypatch):
+        from markdown_vault_mcp.config_sections import EmbeddingsConfig
+
+        monkeypatch.delenv("MARKDOWN_VAULT_MCP_OPENAI_BASE_URL", raising=False)
+        monkeypatch.setenv("OPENAI_BASE_URL", "https://api.bare.example/v1")
+        cfg = EmbeddingsConfig.from_env("MARKDOWN_VAULT_MCP")
+        assert cfg.openai_base_url == "https://api.bare.example/v1"
+
+    def test_openai_api_key_bare_read(self, monkeypatch):
+        from markdown_vault_mcp.config_sections import EmbeddingsConfig
+
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-test123")
+        cfg = EmbeddingsConfig.from_env("MARKDOWN_VAULT_MCP")
+        assert cfg.openai_api_key == "sk-test123"
+
+    def test_post_init_still_normalizes_on_direct_construction(self):
+        from markdown_vault_mcp.config_sections import EmbeddingsConfig
+
+        assert EmbeddingsConfig(ollama_host="").ollama_host == "http://localhost:11434"
+        assert (
+            EmbeddingsConfig(ollama_host="http://gpu:11434/").ollama_host
+            == "http://gpu:11434"
+        )
+
+    def test_frozen(self):
+        import dataclasses
+
+        from markdown_vault_mcp.config_sections import EmbeddingsConfig
+
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            EmbeddingsConfig().provider = "ollama"  # type: ignore[misc]
