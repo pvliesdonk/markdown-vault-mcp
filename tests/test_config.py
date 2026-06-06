@@ -1104,3 +1104,23 @@ def test_transfer_config_rejects_nonpositive_upload_cap():
     """TransferConfig refuses a non-positive upload size cap."""
     with pytest.raises(ValueError, match="max_upload_bytes"):
         TransferConfig(max_upload_bytes=0)
+
+
+class TestConfigHelpers:
+    def test_parse_int_env_valid(self, monkeypatch):
+        from markdown_vault_mcp.config_sections._helpers import parse_int_env
+
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_X", "7")
+        assert parse_int_env("MARKDOWN_VAULT_MCP", "X", 3) == 7
+
+    def test_parse_int_env_invalid_falls_back(self, monkeypatch):
+        from markdown_vault_mcp.config_sections._helpers import parse_int_env
+
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_X", "nope")
+        assert parse_int_env("MARKDOWN_VAULT_MCP", "X", 3) == 3
+
+    def test_parse_float_env_invalid_falls_back(self, monkeypatch):
+        from markdown_vault_mcp.config_sections._helpers import parse_float_env
+
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_X", "nope")
+        assert parse_float_env("MARKDOWN_VAULT_MCP", "X", 1.5) == 1.5
