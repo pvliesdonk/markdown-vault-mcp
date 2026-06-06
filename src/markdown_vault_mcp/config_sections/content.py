@@ -57,14 +57,14 @@ class ContentConfig:
                 max_attachment_size_mb = float(raw_max_att)
             except ValueError:
                 logger.warning(
-                    "from_env:invalid MAX_ATTACHMENT_SIZE_MB=%r, using default 1.0",
+                    "from_env: invalid MAX_ATTACHMENT_SIZE_MB=%r, using default 1.0",
                     raw_max_att,
                 )
                 max_attachment_size_mb = 1.0
             else:
                 if max_attachment_size_mb < 0:
                     logger.warning(
-                        "from_env:MAX_ATTACHMENT_SIZE_MB=%r is negative, using default 1.0",
+                        "from_env: MAX_ATTACHMENT_SIZE_MB=%r is negative, using default 1.0",
                         max_attachment_size_mb,
                     )
                     max_attachment_size_mb = 1.0
@@ -78,14 +78,14 @@ class ContentConfig:
                 max_note_read_bytes = int(raw_max_note)
             except ValueError:
                 logger.warning(
-                    "from_env:invalid MAX_NOTE_READ_BYTES=%r, using default 262144",
+                    "from_env: invalid MAX_NOTE_READ_BYTES=%r, using default 262144",
                     raw_max_note,
                 )
                 max_note_read_bytes = 262144
             else:
                 if max_note_read_bytes < 0:
                     logger.warning(
-                        "from_env:MAX_NOTE_READ_BYTES=%r is negative, using default 262144",
+                        "from_env: MAX_NOTE_READ_BYTES=%r is negative, using default 262144",
                         max_note_read_bytes,
                     )
                     max_note_read_bytes = 262144

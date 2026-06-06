@@ -28,6 +28,7 @@ class SearchConfig:
         Returns:
             Populated SearchConfig with defaults for unset vars.
         """
+        # Only env (not parse_int/float_env): SearchConfig raises on invalid input, not warn-and-default.
         from markdown_vault_mcp.config_sections._helpers import env
 
         raw_chunks = (env(prefix, "CHUNKS_PER_FILE") or "").strip()
