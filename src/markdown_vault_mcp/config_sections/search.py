@@ -30,20 +30,6 @@ class SearchConfig:
         """
         from markdown_vault_mcp.config_sections._helpers import env
 
-        def _bounded_int(name: str, default: int, minimum: int) -> int:
-            raw = (env(prefix, name) or "").strip()
-            if not raw:
-                return default
-            try:
-                val = int(raw)
-            except ValueError as e:
-                raise ValueError(
-                    f"{prefix}_{name} must be an integer, got {raw!r}"
-                ) from e
-            if val < minimum:
-                raise ValueError(f"{prefix}_{name} must be >= {minimum}, got {val}")
-            return val
-
         raw_chunks = (env(prefix, "CHUNKS_PER_FILE") or "").strip()
         if raw_chunks:
             try:
