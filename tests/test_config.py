@@ -564,6 +564,35 @@ class TestGitLfsConfig:
         assert strategy._git_lfs is True
 
 
+class TestGitConfigFromEnv:
+    def test_defaults(self, monkeypatch):
+        from markdown_vault_mcp.config_sections import GitConfig
+
+        for k in (
+            "GIT_TOKEN",
+            "GIT_REPO_URL",
+            "GIT_PULL_INTERVAL_S",
+            "GIT_PUSH_DELAY_S",
+        ):
+            monkeypatch.delenv(f"MARKDOWN_VAULT_MCP_{k}", raising=False)
+        g = GitConfig.from_env("MARKDOWN_VAULT_MCP")
+        assert g == GitConfig()
+
+    def test_pull_interval_negative_clamps_to_zero(self, monkeypatch):
+        from markdown_vault_mcp.config_sections import GitConfig
+
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_PULL_INTERVAL_S", "-5")
+        assert GitConfig.from_env("MARKDOWN_VAULT_MCP").pull_interval_s == 0
+
+    def test_frozen(self):
+        import dataclasses
+
+        from markdown_vault_mcp.config_sections import GitConfig
+
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            GitConfig().token = "x"  # type: ignore[misc]
+
+
 class TestVaultConfigDefaults:
     """Verify all new fields on VaultConfig have correct defaults."""
 
