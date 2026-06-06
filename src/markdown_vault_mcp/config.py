@@ -346,7 +346,7 @@ class VaultConfig:
 
         if git.token and not git.repo_url:
             logger.warning(
-                "load_config: MARKDOWN_VAULT_MCP_GIT_TOKEN is set without "
+                "from_env: MARKDOWN_VAULT_MCP_GIT_TOKEN is set without "
                 "MARKDOWN_VAULT_MCP_GIT_REPO_URL. This legacy mode is deprecated; "
                 "set GIT_REPO_URL to enable explicit managed mode."
             )

@@ -44,9 +44,8 @@ class EmbeddingsConfig:
 
         from markdown_vault_mcp.config_sections._helpers import env
 
-        ollama_host = (
-            os.environ.get("OLLAMA_HOST") or "http://localhost:11434"
-        ).rstrip("/")
+        # __post_init__ normalizes (strip trailing slash / empty→default).
+        ollama_host = os.environ.get("OLLAMA_HOST") or "http://localhost:11434"
         raw_cpu = env(prefix, "OLLAMA_CPU_ONLY")
         openai_base_url = (
             env(prefix, "OPENAI_BASE_URL") or os.environ.get("OPENAI_BASE_URL") or ""
