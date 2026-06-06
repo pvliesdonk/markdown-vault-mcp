@@ -1274,3 +1274,62 @@ class TestEmbeddingsConfigFromEnv:
 
         with pytest.raises(dataclasses.FrozenInstanceError):
             EmbeddingsConfig().provider = "ollama"  # type: ignore[misc]
+
+
+class TestSearchConfigFromEnv:
+    def test_defaults(self, monkeypatch):
+        from markdown_vault_mcp.config_sections import SearchConfig
+
+        for k in (
+            "CHUNKS_PER_FILE",
+            "SNIPPET_WORDS",
+            "LENGTH_DOWNWEIGHT_ALPHA",
+            "MAX_CHUNK_WORDS",
+        ):
+            monkeypatch.delenv(f"MARKDOWN_VAULT_MCP_{k}", raising=False)
+        cfg = SearchConfig.from_env("MARKDOWN_VAULT_MCP")
+        assert cfg == SearchConfig()
+
+    def test_overrides(self, monkeypatch):
+        from markdown_vault_mcp.config_sections import SearchConfig
+
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_CHUNKS_PER_FILE", "3")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SNIPPET_WORDS", "100")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_LENGTH_DOWNWEIGHT_ALPHA", "0.5")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_MAX_CHUNK_WORDS", "800")
+        cfg = SearchConfig.from_env("MARKDOWN_VAULT_MCP")
+        assert cfg.chunks_per_file == 3
+        assert cfg.snippet_words == 100
+        assert cfg.length_downweight_alpha == 0.5
+        assert cfg.max_chunk_words == 800
+
+    def test_chunks_per_file_zero_raises(self, monkeypatch):
+        from markdown_vault_mcp.config_sections import SearchConfig
+
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_CHUNKS_PER_FILE", "0")
+        with pytest.raises(ValueError, match="chunks_per_file"):
+            SearchConfig.from_env("MARKDOWN_VAULT_MCP")
+
+    def test_chunks_per_file_invalid_raises(self, monkeypatch):
+        from markdown_vault_mcp.config_sections import SearchConfig
+
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_CHUNKS_PER_FILE", "nope")
+        with pytest.raises(ValueError, match="MARKDOWN_VAULT_MCP_CHUNKS_PER_FILE"):
+            SearchConfig.from_env("MARKDOWN_VAULT_MCP")
+
+    def test_alpha_invalid_raises(self, monkeypatch):
+        from markdown_vault_mcp.config_sections import SearchConfig
+
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_LENGTH_DOWNWEIGHT_ALPHA", "abc")
+        with pytest.raises(
+            ValueError, match="MARKDOWN_VAULT_MCP_LENGTH_DOWNWEIGHT_ALPHA"
+        ):
+            SearchConfig.from_env("MARKDOWN_VAULT_MCP")
+
+    def test_frozen(self):
+        import dataclasses
+
+        from markdown_vault_mcp.config_sections import SearchConfig
+
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            SearchConfig().chunks_per_file = 5  # type: ignore[misc]
