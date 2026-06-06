@@ -1499,3 +1499,51 @@ class TestContentConfigFromEnv:
 
         with pytest.raises(dataclasses.FrozenInstanceError):
             ContentConfig().templates_folder = "other"  # type: ignore[misc]
+
+
+class TestTransferConfigFromEnv:
+    def test_defaults(self, monkeypatch):
+        from markdown_vault_mcp.config_sections import TransferConfig
+
+        for k in (
+            "TRANSFER_TTL_DEFAULT_S",
+            "TRANSFER_TTL_MAX_S",
+            "TRANSFER_MAX_UPLOAD_BYTES",
+        ):
+            monkeypatch.delenv(f"MARKDOWN_VAULT_MCP_{k}", raising=False)
+        cfg = TransferConfig.from_env("MARKDOWN_VAULT_MCP")
+        assert cfg == TransferConfig()
+
+    def test_env_overrides(self, monkeypatch):
+        from markdown_vault_mcp.config_sections import TransferConfig
+
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_TRANSFER_TTL_DEFAULT_S", "120")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_TRANSFER_TTL_MAX_S", "600")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_TRANSFER_MAX_UPLOAD_BYTES", "2048")
+        cfg = TransferConfig.from_env("MARKDOWN_VAULT_MCP")
+        assert cfg.ttl_default_s == 120
+        assert cfg.ttl_max_s == 600
+        assert cfg.max_upload_bytes == 2048
+
+    def test_invalid_falls_back_to_default(self, monkeypatch):
+        from markdown_vault_mcp.config_sections import TransferConfig
+
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_TRANSFER_TTL_DEFAULT_S", "nope")
+        cfg = TransferConfig.from_env("MARKDOWN_VAULT_MCP")
+        assert cfg.ttl_default_s == 3600
+
+    def test_post_init_raises_on_default_above_max(self, monkeypatch):
+        from markdown_vault_mcp.config_sections import TransferConfig
+
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_TRANSFER_TTL_DEFAULT_S", "7200")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_TRANSFER_TTL_MAX_S", "3600")
+        with pytest.raises(ValueError, match="ttl_max_s"):
+            TransferConfig.from_env("MARKDOWN_VAULT_MCP")
+
+    def test_frozen(self):
+        import dataclasses
+
+        from markdown_vault_mcp.config_sections import TransferConfig
+
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            TransferConfig().ttl_default_s = 999  # type: ignore[misc]
