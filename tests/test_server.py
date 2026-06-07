@@ -263,7 +263,9 @@ class TestSearchTool:
             result = await client.call_tool(
                 "search", {"query": "simple document", "limit": 5}
             )
-        data = _parse_tool_data(result)
+        envelope = _parse_tool_data(result)
+        assert "stale" in envelope
+        data = envelope["data"]
         assert isinstance(data, list)
         assert len(data) > 0
         paths = {r["path"] for r in data}
@@ -278,7 +280,9 @@ class TestSearchTool:
                 "search",
                 {"query": "subfolder nested", "folder": "subfolder"},
             )
-        data = _parse_tool_data(result)
+        envelope = _parse_tool_data(result)
+        assert "stale" in envelope
+        data = envelope["data"]
         assert isinstance(data, list)
         assert len(data) > 0, (
             "expected at least one result for 'subfolder nested' in subfolder"
@@ -3059,7 +3063,9 @@ async def test_search_tool_accepts_chunks_per_file_and_snippet_words(
                 "limit": 10,
             },
         )
-    results = _parse_tool_data(result)
+    envelope = _parse_tool_data(result)
+    assert "stale" in envelope
+    results = envelope["data"]
     paths = [r["path"] for r in results]
     assert len(set(paths)) == len(paths)
     # GroupedResult shape: each result holds sections[].content; with

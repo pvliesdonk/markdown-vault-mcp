@@ -304,8 +304,9 @@ def register_tools(mcp: FastMCP) -> None:
         filters: dict[str, str] | None = None,
         chunks_per_file: int | None = None,
         snippet_words: int | None = None,
+        wait_for_drain: bool = False,
         vault: Vault = Depends(get_vault),
-    ) -> list[dict[str, Any]]:
+    ) -> dict[str, Any]:
         """Find documents matching a query using full-text or semantic search.
 
         Search the vault. Default mode is "keyword" (FTS5/BM25). Pass
@@ -338,11 +339,22 @@ def register_tools(mcp: FastMCP) -> None:
             snippet_words: Width of the snippet window in words. Omit to use
                 the server default. Set to 0 to return full chunk content.
                 Use read(path, section=heading) for full section recovery.
+            wait_for_drain: When True, block until the IndexWriter has
+                no pending or in-flight work before answering. Bounded
+                by MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S (default 60s).
+                On timeout, returns the result with `stale=True` rather
+                than raising — best-effort fresh read. Default False
+                returns immediately and reports staleness via the
+                envelope's `stale` field.
 
         Returns:
-            List of result dicts ranked by file relevance. Each contains:
+            Envelope dict with the following fields:
 
-            - path (str): Relative path of the document.
+            - stale (bool): True when the IndexWriter had pending or
+              in-flight work at the time the read occurred.
+            - data (list[dict]): List of result dicts ranked by file relevance. Each contains:
+
+              - path (str): Relative path of the document.
             - title (str): Document title.
             - folder (str): Parent folder path.
             - score (float): File-level score = max(section.score).
@@ -367,17 +379,32 @@ def register_tools(mcp: FastMCP) -> None:
             ValueError: If mode is "semantic" or "hybrid" and no embedding
                 provider is configured.
         """
-        results = await asyncio.to_thread(
-            vault.reader.search,
-            query,
-            limit=limit,
-            mode=mode,
-            folder=folder,
-            filters=filters,
-            chunks_per_file=chunks_per_file,
-            snippet_words=snippet_words,
+        drained_on_request = await _maybe_wait_for_drain(
+            vault, wait_for_drain, "search"
         )
-        return [asdict(r) for r in results]
+        gen_before = vault.index.write_generation()
+
+        def _get() -> list[dict[str, Any]]:
+            results = vault.reader.search(
+                query,
+                limit=limit,
+                mode=mode,
+                folder=folder,
+                filters=filters,
+                chunks_per_file=chunks_per_file,
+                snippet_words=snippet_words,
+            )
+            return [asdict(r) for r in results]
+
+        data = await asyncio.to_thread(_get)
+        return {
+            "stale": (
+                (not drained_on_request)
+                or (vault.index.write_generation() != gen_before)
+                or (not vault.index.is_drained())
+            ),
+            "data": data,
+        }
 
     @mcp.tool(
         icons=_TOOL_ICONS["read"],
