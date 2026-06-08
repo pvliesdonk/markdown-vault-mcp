@@ -12,6 +12,14 @@ on:
 
 jobs:
   claude-review:
+    # Skip PRs from forks: GitHub does not expose repository secrets
+    # (including CLAUDE_CODE_OAUTH_TOKEN) to workflows running in fork-PR
+    # context, regardless of maintainer approval. Running anyway produces
+    # a hard-failing check on every external contribution. Maintainers who
+    # want a bot review on a fork PR can push the contributor's branch to
+    # this repo under a topic name and the workflow will run.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+
     # Optional: Filter by PR author
     # if: |
     #   github.event.pull_request.user.login == 'external-contributor' ||

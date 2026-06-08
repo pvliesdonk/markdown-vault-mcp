@@ -4,6 +4,7 @@ markdown-vault-mcp exposes MCP tools across several categories. Write tools are 
 
 <!-- DOMAIN-TOOLS-LIST-START -->
 
+<<<<<<< before updating
 ## Quick Reference
 
 | Tool | Category | Description |
@@ -830,4 +831,9 @@ Open the Context Card view for a specific note, showing backlinks, outlinks, sim
 | `path` | string | Relative path to the document |
 
 **Returns:** For Apps-capable clients, opens the Context Card. For other clients, returns the context dossier as text.
+=======
+Health-check tool that returns `"pong"` if the service is alive.
+Replace with real tools per the scaffold in
+`src/markdown_vault_mcp/tools.py`.
+>>>>>>> after updating
 <!-- DOMAIN-TOOLS-LIST-END -->

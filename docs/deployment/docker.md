@@ -62,7 +62,18 @@ All `/data/*` directories are pre-created and owned by the runtime user in the i
 
 The `compose.yml` includes Traefik labels out of the box. When Traefik is running and watching Docker, it picks up these labels and routes traffic automatically.
 
+<<<<<<< before updating
 **What the labels do:**
+=======
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MARKDOWN_VAULT_MCP_READ_ONLY` | `true` | Disable write tools |
+| `MARKDOWN_VAULT_MCP_BEARER_TOKEN` | n/a | Enable bearer token auth |
+| `MARKDOWN_VAULT_MCP_LOG_LEVEL` | `INFO` | Log level |
+| `MARKDOWN_VAULT_MCP_INSTRUCTIONS` | (computed at startup) | System instructions for LLM context |
+| `MARKDOWN_VAULT_MCP_DEBUG_PORT` | n/a | Remote-debugger TCP port (see [Remote debugging](#remote-debugging); requires `--build-arg DEBUG=true` image) |
+| `MARKDOWN_VAULT_MCP_DEBUG_WAIT` | `false` | Block startup until IDE attaches (see [Remote debugging](#remote-debugging)) |
+>>>>>>> after updating
 
 - `traefik.enable=true` — opt this service in to Traefik discovery
 - `traefik.http.routers.markdown-vault-mcp.rule` — defines the `Host` rule; defaults to `markdown-vault-mcp.local`
@@ -237,7 +248,7 @@ services:
 
 ## Remote debugging
 
-Production images ship without `debugpy` to keep the image lean.  To attach a remote Python debugger from VS Code or PyCharm:
+Production images ship without `debugpy` to keep the image lean. To attach a remote Python debugger from VS Code or PyCharm:
 
 1. **Build with the debug extra:**
 
@@ -245,7 +256,7 @@ Production images ship without `debugpy` to keep the image lean.  To attach a re
     docker build --build-arg DEBUG=true -t markdown-vault-mcp:debug .
     ```
 
-    This installs the `[debug]` optional-dependency group (which pulls `debugpy` transitively from `fastmcp-pvl-core`).  Default builds (`DEBUG=false`) skip it.
+    This installs the `[debug]` optional-dependency group (which pulls `debugpy` transitively from `fastmcp-pvl-core`). Default builds (`DEBUG=false`) skip it.
 
 2. **Run with the debug env vars set and the port mapped:**
 
@@ -261,9 +272,9 @@ Production images ship without `debugpy` to keep the image lean.  To attach a re
     | Env var | Effect |
     |---------|--------|
     | `MARKDOWN_VAULT_MCP_DEBUG_PORT` | TCP port the debugger listens on (any value parsing to ``0`` disables; non-numeric or out-of-range values log a WARNING and the listener stays off) |
-    | `MARKDOWN_VAULT_MCP_DEBUG_WAIT` | When truthy (``1``/``true``/``yes``/``on``), block startup until the IDE attaches.  Default is non-blocking. |
+    | `MARKDOWN_VAULT_MCP_DEBUG_WAIT` | When truthy (``1``/``true``/``yes``/``on``), block startup until the IDE attaches. Default is non-blocking. |
 
-3. **Attach from VS Code** — add a launch config:
+3. **Attach from VS Code**, adding a launch config:
 
     ```json
     {
@@ -277,9 +288,9 @@ Production images ship without `debugpy` to keep the image lean.  To attach a re
     PyCharm uses *Run → Edit Configurations → Python Debug Server* with the same host/port.
 
 !!! danger "Never publish the debug port on a public network"
-    The debug listener binds `0.0.0.0` inside the container so the IDE can reach it from the host, but **debugpy's DAP protocol is unauthenticated** — any peer that can reach the port has arbitrary code execution as the server process.  Always bind the port mapping to localhost (`-p 127.0.0.1:5678:5678`) or tunnel via `kubectl port-forward` / SSH.  Production images should be built with default `DEBUG=false`.
+    The debug listener binds `0.0.0.0` inside the container so the IDE can reach it from the host, but **debugpy's DAP protocol is unauthenticated**: any peer that can reach the port has arbitrary code execution as the server process. Always bind the port mapping to localhost (`-p 127.0.0.1:5678:5678`) or tunnel via `kubectl port-forward` / SSH. Production images should be built with default `DEBUG=false`.
 
-When the helper is invoked but `debugpy` isn't installed (e.g. someone sets `DEBUG_PORT` on a non-debug image), it logs a WARNING and continues — safe failure mode.
+When the helper is invoked but `debugpy` isn't installed (say, someone sets `DEBUG_PORT` on a non-debug image), it logs a WARNING and continues; this is the safe failure mode.
 
 <!-- DOMAIN-DOCKER-EXTRA-START -->
 <!-- DOMAIN-DOCKER-EXTRA-END -->
