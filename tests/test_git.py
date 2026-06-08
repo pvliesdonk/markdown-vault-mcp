@@ -776,10 +776,10 @@ class TestCheckIdentity:
             if record.levelname == "WARNING"
         )
 
-    def test_check_identity_custom_name_and_email_in_warning(
+    def test_check_identity_no_warning_when_custom_identity_set(
         self, git_repo: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """_check_identity warning shows custom commit name and email."""
+        """_check_identity does not warn when a custom identity is set."""
         from unittest.mock import patch
 
         strategy = GitWriteStrategy(
@@ -791,9 +791,31 @@ class TestCheckIdentity:
             mock_run.return_value.stdout = ""
             strategy._check_identity()
 
-        # Verify the warning mentions the custom identity.
-        assert any(
-            "CustomBot" in record.message and "bot@custom.local" in record.message
+        # Verify no warning was logged.
+        assert not any(
+            "no user.email in git config" in record.message
+            for record in caplog.records
+            if record.levelname == "WARNING"
+        )
+
+    def test_check_identity_no_warning_when_oidc_claims_set(
+        self, git_repo: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """_check_identity does not warn when OIDC claims are set."""
+        from unittest.mock import patch
+
+        strategy = GitWriteStrategy(
+            commit_name_claim="name", commit_email_claim="email"
+        )
+        strategy._git_root = git_repo
+
+        with patch("markdown_vault_mcp.git.subprocess.run") as mock_run:
+            mock_run.return_value.stdout = ""
+            strategy._check_identity()
+
+        # Verify no warning was logged.
+        assert not any(
+            "no user.email in git config" in record.message
             for record in caplog.records
             if record.levelname == "WARNING"
         )

@@ -710,7 +710,12 @@ class GitWriteStrategy:
             )
         except FileNotFoundError:
             return
-        if not result.stdout.strip():
+        if not result.stdout.strip() and (
+            self._commit_name == self.DEFAULT_COMMIT_NAME
+            and self._commit_email == self.DEFAULT_COMMIT_EMAIL
+            and not self._commit_name_claim
+            and not self._commit_email_claim
+        ):
             logger.warning(
                 "Git: no user.email in git config — commits will use "
                 "committer identity '%s <%s>'. Set MARKDOWN_VAULT_MCP_GIT_COMMIT_NAME "
