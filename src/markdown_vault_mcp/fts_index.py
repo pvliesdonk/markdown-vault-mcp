@@ -13,7 +13,7 @@ import time
 import uuid
 from collections import deque
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any, NamedTuple, TypeVar
 
 from markdown_vault_mcp.types import FTSResult, ParsedNote
 
@@ -201,14 +201,34 @@ CREATE TABLE IF NOT EXISTS meta (
 # own transaction) as ready — see issue #525.
 _META_BUILD_COMPLETED_KEY = "build_completed_at"
 
-# Keys recording the embedding model name and the effective per-chunk
-# character cap in force at build time (#649). The chunker is shared by FTS
-# and embeddings, so the char cap is derived from the embedding model; a
-# change to either invalidates the FTS chunk boundaries and must reject the
-# warm-restart short-circuit (forcing a cold rebuild). A ``None`` value is
-# stored as the empty string and read back as ``None``.
+# Keys recording the embedding provenance that determines FTS chunk
+# boundaries at build time (#649). The chunker is shared by FTS and
+# embeddings; its char cap is derived from the embedding model's context
+# unless an explicit override is set. We record the two STABLE inputs to that
+# derivation — the model name and the explicit ``MAX_CHUNK_CHARS`` override —
+# rather than the derived cap itself. Comparing the stable inputs on warm
+# restart rejects the short-circuit on a genuine model or override change,
+# while NOT flapping when the derived cap merely differs because the model's
+# context length was read transiently differently (e.g. an Ollama instance
+# briefly unreachable). A ``None`` value is stored as the empty string and
+# read back as ``None``.
 _META_EMBED_MODEL_KEY = "embed_model_name"
-_META_MAX_CHUNK_CHARS_KEY = "max_chunk_chars"
+_META_MAX_CHUNK_CHARS_OVERRIDE_KEY = "max_chunk_chars_override"
+
+
+class ChunkingMeta(NamedTuple):
+    """Embedding provenance recorded with an FTS build (#649).
+
+    Attributes:
+        model: Embedding model name, or ``None`` when no provider is
+            configured.
+        max_chunk_chars_override: The explicit operator ``MAX_CHUNK_CHARS``
+            override in force, or ``None`` when the cap was derived from the
+            model context.
+    """
+
+    model: str | None
+    max_chunk_chars_override: int | None
 
 
 def _escape_like(value: str) -> str:
@@ -930,25 +950,31 @@ class FTSIndex:
 
     @_retry_on_locked
     def set_chunking_meta(
-        self, *, model: str | None, max_chunk_chars: int | None
+        self, *, model: str | None, max_chunk_chars_override: int | None
     ) -> None:
-        """Record the embedding model + effective char cap used for this build.
+        """Record the embedding provenance used for this build.
 
-        The chunker is shared by FTS and embeddings, so the per-chunk char
-        cap is derived from the embedding model. Persisting both lets a later
-        warm-restart detect a model (or cap) change and reject the
-        short-circuit, triggering a cold rebuild (#649).
+        Persists the two stable inputs that determine the shared chunker's
+        char cap — the embedding model name and the explicit operator
+        override — so a later warm-restart can detect a genuine model or
+        override change and reject the short-circuit, triggering a cold
+        rebuild (#649).
 
         Args:
             model: Embedding model name, or ``None`` when no provider is
                 configured. ``None`` is stored as the empty string.
-            max_chunk_chars: Effective per-chunk character cap, or ``None``.
-                ``None`` is stored as the empty string; an int is stored as
-                its decimal string form.
+            max_chunk_chars_override: The explicit operator char-cap override
+                in force, or ``None`` when the cap was derived from the model
+                context. ``None`` is stored as the empty string; an int is
+                stored as its decimal string form.
         """
         conn = self._conn()
         model_value = "" if model is None else model
-        chars_value = "" if max_chunk_chars is None else str(int(max_chunk_chars))
+        override_value = (
+            ""
+            if max_chunk_chars_override is None
+            else str(int(max_chunk_chars_override))
+        )
         with conn:
             conn.execute(
                 "INSERT OR REPLACE INTO meta(key, value) VALUES(?, ?)",
@@ -956,30 +982,30 @@ class FTSIndex:
             )
             conn.execute(
                 "INSERT OR REPLACE INTO meta(key, value) VALUES(?, ?)",
-                (_META_MAX_CHUNK_CHARS_KEY, chars_value),
+                (_META_MAX_CHUNK_CHARS_OVERRIDE_KEY, override_value),
             )
 
     @_retry_on_locked
-    def get_chunking_meta(self) -> dict[str, str | int | None]:
-        """Return the recorded embedding model + char cap, or ``None`` values.
+    def get_chunking_meta(self) -> ChunkingMeta:
+        """Return the recorded embedding provenance, with ``None`` for absent.
 
         Returns:
-            A dict ``{"model": str | None, "max_chunk_chars": int | None}``.
-            An absent key or a stored empty string reads back as ``None``;
-            ``max_chunk_chars`` reads back as ``int``.
+            A :class:`ChunkingMeta`. An absent key or a stored empty string
+            reads back as ``None``; ``max_chunk_chars_override`` reads back as
+            ``int``.
         """
         conn = self._conn()
         with conn:
             rows = conn.execute(
                 "SELECT key, value FROM meta WHERE key IN (?, ?)",
-                (_META_EMBED_MODEL_KEY, _META_MAX_CHUNK_CHARS_KEY),
+                (_META_EMBED_MODEL_KEY, _META_MAX_CHUNK_CHARS_OVERRIDE_KEY),
             ).fetchall()
         stored = {row[0]: row[1] for row in rows}
         model_raw = stored.get(_META_EMBED_MODEL_KEY)
-        chars_raw = stored.get(_META_MAX_CHUNK_CHARS_KEY)
+        override_raw = stored.get(_META_MAX_CHUNK_CHARS_OVERRIDE_KEY)
         model: str | None = model_raw if model_raw else None
-        max_chunk_chars: int | None = int(chars_raw) if chars_raw else None
-        return {"model": model, "max_chunk_chars": max_chunk_chars}
+        override: int | None = int(override_raw) if override_raw else None
+        return ChunkingMeta(model=model, max_chunk_chars_override=override)
 
     @_retry_on_locked
     def search(

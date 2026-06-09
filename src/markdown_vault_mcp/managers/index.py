@@ -64,8 +64,10 @@ class IndexManager:
             ``None`` when no provider is configured. Recorded into FTS meta
             after a successful build so a later warm-restart can detect a
             model change (#649).
-        max_chunk_chars: Effective per-chunk character cap in force at build
-            time, or ``None``. Recorded into FTS meta alongside the model.
+        max_chunk_chars_override: The explicit operator char-cap override in
+            force at build time, or ``None`` when the cap was derived from the
+            model context. Recorded into FTS meta alongside the model as a
+            stable warm-restart key (#649).
     """
 
     def __init__(
@@ -83,7 +85,7 @@ class IndexManager:
         get_vectors: Callable[[], VectorIndex | None],
         set_vectors: Callable[[VectorIndex | None], None],
         embed_model_name: str | None = None,
-        max_chunk_chars: int | None = None,
+        max_chunk_chars_override: int | None = None,
     ) -> None:
         self._fts = fts
         self._tracker = tracker
@@ -98,9 +100,10 @@ class IndexManager:
         self._set_vectors = set_vectors
         # Chunking provenance recorded into FTS meta after a successful build
         # (#649): the shared chunker's char cap derives from the embedding
-        # model, so a change to either invalidates FTS chunk boundaries.
+        # model (or an explicit override), so a change to either stable input
+        # invalidates FTS chunk boundaries.
         self._embed_model_name = embed_model_name
-        self._max_chunk_chars = max_chunk_chars
+        self._max_chunk_chars_override = max_chunk_chars_override
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -280,12 +283,13 @@ class IndexManager:
                 skipped,
             )
 
-        # Record the embedding model + char cap so a later warm restart can
-        # reject the short-circuit on a model/cap change (#649). Paired with
-        # the completeness sentinel the coordinator sets after this returns.
+        # Record the embedding model + explicit override so a later warm
+        # restart can reject the short-circuit on a model/override change
+        # (#649). Paired with the completeness sentinel the coordinator sets
+        # after this returns.
         self._fts.set_chunking_meta(
             model=self._embed_model_name,
-            max_chunk_chars=self._max_chunk_chars,
+            max_chunk_chars_override=self._max_chunk_chars_override,
         )
         return IndexStats(
             documents_indexed=len(notes) - errored,
@@ -464,10 +468,12 @@ class IndexManager:
                 already exists on disk.
 
         Returns:
-            Number of chunks successfully embedded. Batches the provider
-            rejects (e.g. for exceeding the model's token context) are
-            logged and skipped, so this may be less than the total number
-            of chunks attempted.
+            Number of chunks successfully embedded. Any provider exception on
+            a batch (a token-context rejection being the motivating case, but
+            also transient API/network errors) is logged and the batch
+            skipped, so this may be less than the total number of chunks
+            attempted; if every batch is skipped, ``0`` is returned and no
+            vectors are saved.
 
         Raises:
             ValueError: If ``embedding_provider`` or ``embeddings_path`` is
@@ -585,6 +591,15 @@ class IndexManager:
         if embedded > 0:
             vectors.save(self._embeddings_path)
             logger.info("build_embeddings: embedded and saved %d chunks", embedded)
+        elif total > 0:
+            # Every batch was skipped (e.g. provider down for the whole build,
+            # or a dimension mismatch). Surface it loudly rather than as the
+            # benign "nothing to embed" so an operator can tell an empty vault
+            # apart from a wholesale embedding failure (#649).
+            logger.warning(
+                "build_embeddings_all_batches_failed total=%d (no vectors saved)",
+                total,
+            )
         else:
             logger.info("build_embeddings: nothing to embed")
         return embedded

@@ -169,6 +169,10 @@ class VaultConfig:
             context_length=(provider.context_length if provider is not None else None),
             override=self.search.max_chunk_chars_override,
         )
+        # The explicit override is also threaded straight through as the stable
+        # warm-restart key (#649): the coordinator compares it (not the derived
+        # cap) so a transient model-context read cannot trigger a rebuild.
+        kwargs["max_chunk_chars_override"] = self.search.max_chunk_chars_override
 
         if self.git.repo_url is not None:
             git_strategy = self._build_git_strategy(

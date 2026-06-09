@@ -965,19 +965,25 @@ class TestGetRecent:
 
 
 def test_chunking_meta_roundtrip(tmp_path):
-    from markdown_vault_mcp.fts_index import FTSIndex
+    from markdown_vault_mcp.fts_index import ChunkingMeta, FTSIndex
 
     idx = FTSIndex(db_path=str(tmp_path / "i.db"))
-    idx.set_chunking_meta(model="bge-m3", max_chunk_chars=22938)
-    assert idx.get_chunking_meta() == {"model": "bge-m3", "max_chunk_chars": 22938}
+    idx.set_chunking_meta(model="bge-m3", max_chunk_chars_override=5000)
+    assert idx.get_chunking_meta() == ChunkingMeta(
+        model="bge-m3", max_chunk_chars_override=5000
+    )
     idx2 = FTSIndex(db_path=str(tmp_path / "j.db"))
-    assert idx2.get_chunking_meta() == {"model": None, "max_chunk_chars": None}
+    assert idx2.get_chunking_meta() == ChunkingMeta(
+        model=None, max_chunk_chars_override=None
+    )
 
 
 def test_chunking_meta_stores_none_as_empty(tmp_path):
-    """``None`` model + cap round-trip back as ``None`` (stored as empty)."""
-    from markdown_vault_mcp.fts_index import FTSIndex
+    """``None`` model + override round-trip back as ``None`` (stored empty)."""
+    from markdown_vault_mcp.fts_index import ChunkingMeta, FTSIndex
 
     idx = FTSIndex(db_path=str(tmp_path / "k.db"))
-    idx.set_chunking_meta(model=None, max_chunk_chars=None)
-    assert idx.get_chunking_meta() == {"model": None, "max_chunk_chars": None}
+    idx.set_chunking_meta(model=None, max_chunk_chars_override=None)
+    assert idx.get_chunking_meta() == ChunkingMeta(
+        model=None, max_chunk_chars_override=None
+    )

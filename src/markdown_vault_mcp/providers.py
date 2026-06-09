@@ -233,7 +233,12 @@ class OllamaProvider(EmbeddingProvider):
                     return value
             logger.warning("ollama_context_length_absent model=%s", self._model)
             return None
-        except (OSError, ValueError, KeyError) as exc:
+        except (self._httpx.HTTPError, ValueError) as exc:
+            # httpx network/timeout errors (ConnectError, TimeoutException, ...)
+            # subclass httpx.HTTPError, NOT OSError; a malformed body raises
+            # JSONDecodeError (a ValueError). Catching both keeps an unreachable
+            # Ollama at startup from crashing config construction (config.py
+            # reads this eagerly to derive the chunk char cap).
             logger.warning(
                 "ollama_context_length_query_failed model=%s err=%s",
                 self._model,

@@ -27,7 +27,7 @@ def make_coordinator(
     tmp_path: Path,
     *,
     embed_model_name: str | None = None,
-    max_chunk_chars: int | None = None,
+    max_chunk_chars_override: int | None = None,
     db: Path | None = None,
 ) -> IndexWriteCoordinator:
     """Build a wired coordinator over a tmp vault (mirrors Vault wiring)."""
@@ -51,7 +51,7 @@ def make_coordinator(
         get_vectors=lambda: holder["v"],
         set_vectors=lambda v: holder.__setitem__("v", v),
         embed_model_name=embed_model_name,
-        max_chunk_chars=max_chunk_chars,
+        max_chunk_chars_override=max_chunk_chars_override,
     )
     return IndexWriteCoordinator(
         fts=fts,
@@ -59,7 +59,7 @@ def make_coordinator(
         index_path=db,
         file_write_lock=threading.RLock(),
         embed_model_name=embed_model_name,
-        max_chunk_chars=max_chunk_chars,
+        max_chunk_chars_override=max_chunk_chars_override,
     )
 
 
@@ -127,19 +127,23 @@ def test_build_index_async_warm_restart_short_circuits(tmp_path: Path) -> None:
 
 
 def test_chunking_meta_match_warm_restarts(tmp_path: Path) -> None:
-    """Unchanged model + cap warm-restarts (O(1) path, no re-scan)."""
+    """Unchanged model + override warm-restarts (O(1) path, no re-scan)."""
     db = tmp_path / "index.db"
-    coord = make_coordinator(tmp_path, embed_model_name="A", max_chunk_chars=100, db=db)
+    coord = make_coordinator(
+        tmp_path, embed_model_name="A", max_chunk_chars_override=100, db=db
+    )
     try:
         first = coord.build_index()
         assert first.chunks_indexed > 0  # real build scanned
         assert coord._fts.is_build_completed() is True
-        assert coord._fts.get_chunking_meta() == {"model": "A", "max_chunk_chars": 100}
+        meta = coord._fts.get_chunking_meta()
+        assert meta.model == "A"
+        assert meta.max_chunk_chars_override == 100
     finally:
         coord.close(timeout=5)
 
     coord2 = make_coordinator(
-        tmp_path, embed_model_name="A", max_chunk_chars=100, db=db
+        tmp_path, embed_model_name="A", max_chunk_chars_override=100, db=db
     )
     try:
         stats = coord2.build_index()
@@ -150,22 +154,24 @@ def test_chunking_meta_match_warm_restarts(tmp_path: Path) -> None:
         coord2.close(timeout=5)
 
 
-def test_cap_change_rejects_warm_restart(tmp_path: Path) -> None:
-    """A different char cap forces a full rebuild (chunks re-scanned)."""
+def test_override_change_rejects_warm_restart(tmp_path: Path) -> None:
+    """A different explicit char-cap override forces a full rebuild."""
     db = tmp_path / "index.db"
-    coord = make_coordinator(tmp_path, embed_model_name="A", max_chunk_chars=100, db=db)
+    coord = make_coordinator(
+        tmp_path, embed_model_name="A", max_chunk_chars_override=100, db=db
+    )
     try:
         coord.build_index()
     finally:
         coord.close(timeout=5)
 
     coord2 = make_coordinator(
-        tmp_path, embed_model_name="A", max_chunk_chars=200, db=db
+        tmp_path, embed_model_name="A", max_chunk_chars_override=200, db=db
     )
     try:
         stats = coord2.build_index()
         assert stats.chunks_indexed > 0  # full build ran, not warm O(1)
-        assert coord2._fts.get_chunking_meta()["max_chunk_chars"] == 200
+        assert coord2._fts.get_chunking_meta().max_chunk_chars_override == 200
     finally:
         coord2.close(timeout=5)
 
@@ -173,35 +179,44 @@ def test_cap_change_rejects_warm_restart(tmp_path: Path) -> None:
 def test_model_change_rejects_warm_restart(tmp_path: Path) -> None:
     """A different embedding model forces a full rebuild."""
     db = tmp_path / "index.db"
-    coord = make_coordinator(tmp_path, embed_model_name="A", max_chunk_chars=100, db=db)
+    coord = make_coordinator(
+        tmp_path, embed_model_name="A", max_chunk_chars_override=100, db=db
+    )
     try:
         coord.build_index()
     finally:
         coord.close(timeout=5)
 
     coord2 = make_coordinator(
-        tmp_path, embed_model_name="B", max_chunk_chars=100, db=db
+        tmp_path, embed_model_name="B", max_chunk_chars_override=100, db=db
     )
     try:
         stats = coord2.build_index()
         assert stats.chunks_indexed > 0
-        assert coord2._fts.get_chunking_meta()["model"] == "B"
+        assert coord2._fts.get_chunking_meta().model == "B"
     finally:
         coord2.close(timeout=5)
 
 
-def test_transient_none_cap_does_not_flap(tmp_path: Path) -> None:
-    """Model unchanged + current cap None (provider unreachable) retains the
-    stored cap and warm-restarts — no rebuild flapping."""
+def test_transient_context_read_does_not_flap(tmp_path: Path) -> None:
+    """Model + override unchanged warm-restarts even if the model's context
+    length (and thus the derived cap) was read transiently differently — the
+    coordinator compares the stable override, not the derived cap, so an
+    Ollama instance briefly unreachable cannot trigger a rebuild flap."""
     db = tmp_path / "index.db"
-    coord = make_coordinator(tmp_path, embed_model_name="A", max_chunk_chars=100, db=db)
+    # Build with no explicit override (cap would be derived from the model).
+    coord = make_coordinator(
+        tmp_path, embed_model_name="A", max_chunk_chars_override=None, db=db
+    )
     try:
         coord.build_index()
     finally:
         coord.close(timeout=5)
 
+    # Restart: same model, still no override (a transient context read would
+    # change only the derived cap, which is NOT a warm-restart key).
     coord2 = make_coordinator(
-        tmp_path, embed_model_name="A", max_chunk_chars=None, db=db
+        tmp_path, embed_model_name="A", max_chunk_chars_override=None, db=db
     )
     try:
         assert coord2._chunking_meta_matches() is True

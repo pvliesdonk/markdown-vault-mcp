@@ -600,3 +600,19 @@ def test_char_cap_invariant_and_metadata_preserved_on_mixed_doc() -> None:
         # Every fragment keeps a heading attribution (None only for a true
         # preamble; this doc has none before its first heading).
         assert c.heading in {"Heading One", "Heading Two"}
+
+
+def test_unsplittable_token_emitted_intact_over_budget() -> None:
+    """The one allowed invariant exception: a single whitespace-free token
+    longer than max_chunk_chars is emitted alone and intact (not corrupted by
+    mid-string splitting), while every other chunk stays within budget."""
+    giant = "z" * 5000  # one token, no split points, > the 1000-char cap
+    doc = f"# Title\n\nsmall intro paragraph.\n\n{giant}\n"
+    chunker = HeadingChunker(max_chunk_words=400, max_chunk_chars=1000)
+    chunks = chunker.chunk(doc, {})
+
+    # The giant token survives intact as exactly one chunk's content.
+    assert any(c.content == giant for c in chunks)
+    # Every other chunk respects the budget; only the giant token may exceed.
+    for c in chunks:
+        assert c.content == giant or not chunker._over_budget(c.content)

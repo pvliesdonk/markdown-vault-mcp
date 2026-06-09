@@ -353,6 +353,40 @@ class TestBuildEmbeddings:
         assert count >= 1  # build did not abort
         assert any("skip" in r.getMessage().lower() for r in caplog.records)
 
+    def test_build_embeddings_all_batches_fail_escalates(self, tmp_path, caplog):
+        """Every batch failing returns 0, saves nothing, and warns loudly —
+        distinct from the benign empty-vault 'nothing to embed' (#649)."""
+        import logging
+
+        from tests.conftest import MockEmbeddingProvider
+
+        class DeadProvider(MockEmbeddingProvider):
+            def embed(self, texts):  # noqa: ARG002
+                raise RuntimeError("Ollama API error 500: provider down")
+
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        body = "\n".join(f"## S{i}\n\nbody {i}.\n" for i in range(12))
+        (vault / "big.md").write_text(f"# Big\n\n{body}\n", encoding="utf-8")
+        holder = {"vectors": None}
+        embeddings_path = tmp_path / "embeddings"
+        mgr, _fts, _ = _make_index_mgr(
+            vault,
+            tmp_path,
+            embeddings_path=embeddings_path,
+            embedding_provider=DeadProvider(),
+            get_vectors=lambda: holder["vectors"],
+            set_vectors=lambda v: holder.__setitem__("vectors", v),
+        )
+        mgr.build_index()
+        with caplog.at_level(
+            logging.WARNING, logger="markdown_vault_mcp.managers.index"
+        ):
+            count = mgr.build_embeddings()
+        assert count == 0  # nothing embedded
+        assert not embeddings_path.exists()  # no vectors saved
+        assert any("all_batches_failed" in r.getMessage() for r in caplog.records)
+
 
 # ---------------------------------------------------------------------------
 # embeddings_status

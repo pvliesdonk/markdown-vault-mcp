@@ -193,6 +193,7 @@ class Vault:
         length_downweight_alpha: float = 0.25,
         max_chunk_words: int = 400,
         max_chunk_chars: int | None = None,
+        max_chunk_chars_override: int | None = None,
     ) -> None:
         self._source_dir = source_dir
         self._index_path = index_path
@@ -216,9 +217,13 @@ class Vault:
             # ("heading" string), so explicit-instance callers retain full control.
             self._chunk_strategy = _resolve_chunk_strategy(chunk_strategy)
         self._max_chunk_chars = max_chunk_chars
-        # Embedding model in force, recorded into FTS meta at build time so a
-        # later warm restart rejects the short-circuit on a model/cap change
-        # and cold-rebuilds (#649). None when no provider is configured.
+        # Stable warm-restart keys recorded into FTS meta at build time (#649):
+        # the embedding model name and the explicit char-cap override. A change
+        # to either rejects the short-circuit and cold-rebuilds; the derived
+        # cap (max_chunk_chars, used only for chunking) is deliberately NOT a
+        # key, so a transient model-context read does not trigger a rebuild.
+        self._max_chunk_chars_override = max_chunk_chars_override
+        # None when no provider is configured.
         self._embed_model_name: str | None = (
             embedding_provider.model_name if embedding_provider is not None else None
         )
@@ -287,7 +292,7 @@ class Vault:
             get_vectors=lambda: self._search_mgr.vectors,
             set_vectors=lambda v: setattr(self._search_mgr, "vectors", v),
             embed_model_name=self._embed_model_name,
-            max_chunk_chars=self._max_chunk_chars,
+            max_chunk_chars_override=self._max_chunk_chars_override,
         )
         # Index-write orchestration: owns the single-owner IndexWriter
         # thread + the build-readiness state machine (#576).  Constructed
@@ -299,7 +304,7 @@ class Vault:
             index_path=self._index_path,
             file_write_lock=self._file_write_lock,
             embed_model_name=self._embed_model_name,
-            max_chunk_chars=self._max_chunk_chars,
+            max_chunk_chars_override=self._max_chunk_chars_override,
         )
         # 3. SearchManager (receives IndexManager callbacks via constructor)
         self._search_mgr = SearchManager(
