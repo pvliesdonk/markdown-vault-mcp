@@ -389,15 +389,20 @@ Two methods manage the index:
   by FTS and embeddings, and its per-chunk character cap is derived from the
   embedding model — so a change to the embedding model (or to an explicit
   `max_chunk_chars` override) changes FTS chunk boundaries, not just
-  embeddings. Each clean build records the embedding `model_name` and the
-  effective `max_chunk_chars` in the FTS `meta` table
-  (`embed_model_name` / `max_chunk_chars` rows). On restart the warm-restart
-  short-circuit additionally requires these stored values to match the
-  current config (`IndexWriteCoordinator._chunking_meta_matches`); a model
-  or cap change rejects the short-circuit, so the existing #513 cold-start
-  path runs a full background FTS rebuild followed by embeddings — no manual
-  `reindex` is needed. A *transient* `None` cap (provider temporarily
-  unreachable while the model is unchanged) retains the stored cap and does
+  embeddings. Each clean build records the two **stable inputs** to the
+  derived cap — the embedding `model_name` and the explicit operator
+  `max_chunk_chars` override (`None` when the cap was derived from the model
+  context) — in the FTS `meta` table (`embed_model_name` /
+  `max_chunk_chars_override` rows). The runtime-derived cap itself is
+  deliberately **not** recorded. On restart the warm-restart short-circuit
+  additionally requires these stored values to match the current config
+  (`IndexWriteCoordinator._chunking_meta_matches`); a model or override
+  change rejects the short-circuit, so the existing #513 cold-start path
+  runs a full background FTS rebuild followed by embeddings — no manual
+  `reindex` is needed. Because only the stable inputs are compared, a
+  *transient* model-context read (e.g. the Ollama instance briefly
+  unreachable at startup, so its context length reads as `None` and the cap
+  falls back to a conservative default) changes neither key and so does
   **not** force a rebuild, avoiding flap.
 - **`reindex()`**: incremental update. Uses `ChangeTracker` to detect
   adds/modifies/deletes since the last scan and applies only the delta.

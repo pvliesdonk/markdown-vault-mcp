@@ -337,10 +337,11 @@ class TestBuildEmbeddings:
         body = "\n".join(f"## S{i}\n\nbody {i}.\n" for i in range(20))
         (vault / "big.md").write_text(f"# Big\n\n{body}\n", encoding="utf-8")
         holder = {"vectors": None}
+        embeddings_path = tmp_path / "embeddings"
         mgr, _fts, _ = _make_index_mgr(
             vault,
             tmp_path,
-            embeddings_path=tmp_path / "embeddings",
+            embeddings_path=embeddings_path,
             embedding_provider=FlakyProvider(),
             get_vectors=lambda: holder["vectors"],
             set_vectors=lambda v: holder.__setitem__("vectors", v),
@@ -354,8 +355,7 @@ class TestBuildEmbeddings:
         assert any("skip" in r.getMessage().lower() for r in caplog.records)
 
     def test_build_embeddings_all_batches_fail_escalates(self, tmp_path, caplog):
-        """Every batch failing returns 0, saves nothing, and warns loudly —
-        distinct from the benign empty-vault 'nothing to embed' (#649)."""
+        """Every batch failing returns 0, saves nothing, warns loudly (#649)."""
         import logging
 
         from tests.conftest import MockEmbeddingProvider

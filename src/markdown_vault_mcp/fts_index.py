@@ -1004,6 +1004,8 @@ class FTSIndex:
         model_raw = stored.get(_META_EMBED_MODEL_KEY)
         override_raw = stored.get(_META_MAX_CHUNK_CHARS_OVERRIDE_KEY)
         model: str | None = model_raw if model_raw else None
+        # An empty string (a stored ``None``) is falsy → reads back as None;
+        # config rejects a 0 override so truthiness is safe here.
         override: int | None = int(override_raw) if override_raw else None
         return ChunkingMeta(model=model, max_chunk_chars_override=override)
 
