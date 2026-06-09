@@ -461,7 +461,7 @@ def test_ollama_context_length_parses_api_show(monkeypatch):
         def post(self, url, json, timeout):  # noqa: ARG002
             return _Resp()
 
-    p = OllamaProvider(host="http://x:11434", model="bge-m3")
+    p = OllamaProvider(host="http://x:11434", model="bge-m3:latest")
     monkeypatch.setattr(p._httpx, "Client", lambda *a, **k: _Client())  # noqa: ARG005
     assert p.context_length == 8192
     monkeypatch.setattr(
@@ -497,7 +497,7 @@ def test_ollama_context_length_none_on_network_error(monkeypatch, err_kind):
         def post(self, *a, **k):  # noqa: ARG002
             raise exc
 
-    p = OllamaProvider(host="http://x:11434", model="bge-m3")
+    p = OllamaProvider(host="http://x:11434", model="bge-m3:latest")
     monkeypatch.setattr(p._httpx, "Client", lambda *a, **k: _Client())  # noqa: ARG005
     assert p.context_length is None
 
@@ -522,7 +522,57 @@ def test_ollama_context_length_none_on_malformed_body(monkeypatch):
         def post(self, *a, **k):  # noqa: ARG002
             return _Resp()
 
-    p = OllamaProvider(host="http://x:11434", model="bge-m3")
+    p = OllamaProvider(host="http://x:11434", model="bge-m3:latest")
+    monkeypatch.setattr(p._httpx, "Client", lambda *a, **k: _Client())  # noqa: ARG005
+    assert p.context_length is None
+
+
+def test_ollama_context_length_none_on_non_200(monkeypatch):
+    """A non-200 /api/show (e.g. model not pulled) returns None."""
+    from markdown_vault_mcp.providers import OllamaProvider
+
+    class _Resp:
+        status_code = 404
+
+        def json(self):
+            return {}
+
+    class _Client:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def post(self, *a, **k):  # noqa: ARG002
+            return _Resp()
+
+    p = OllamaProvider(host="http://x:11434", model="bge-m3:latest")
+    monkeypatch.setattr(p._httpx, "Client", lambda *a, **k: _Client())  # noqa: ARG005
+    assert p.context_length is None
+
+
+def test_ollama_context_length_none_when_field_absent(monkeypatch):
+    """A 200 whose model_info carries no *.context_length key returns None."""
+    from markdown_vault_mcp.providers import OllamaProvider
+
+    class _Resp:
+        status_code = 200
+
+        def json(self):
+            return {"model_info": {"general.architecture": "bert"}}
+
+    class _Client:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def post(self, *a, **k):  # noqa: ARG002
+            return _Resp()
+
+    p = OllamaProvider(host="http://x:11434", model="bge-m3:latest")
     monkeypatch.setattr(p._httpx, "Client", lambda *a, **k: _Client())  # noqa: ARG005
     assert p.context_length is None
 

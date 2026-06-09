@@ -91,8 +91,9 @@ class EmbeddingProvider(ABC):
         """Maximum input length the model accepts, in tokens.
 
         Returns None when the limit cannot be determined; callers fall back
-        to a conservative default. Used to derive the chunker char cap so
-        chunks never exceed what the model can embed.
+        to a conservative default. Used to derive a conservative chunker char
+        cap that keeps chunks comfortably under the model's token limit (a
+        token-dense batch that still exceeds it is skipped at embed time).
         """
         ...
 

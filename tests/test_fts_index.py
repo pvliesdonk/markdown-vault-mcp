@@ -968,9 +968,9 @@ def test_chunking_meta_roundtrip(tmp_path):
     from markdown_vault_mcp.fts_index import ChunkingMeta, FTSIndex
 
     idx = FTSIndex(db_path=str(tmp_path / "i.db"))
-    idx.set_chunking_meta(model="bge-m3", max_chunk_chars_override=5000)
+    idx.set_chunking_meta(model="bge-m3:latest", max_chunk_chars_override=5000)
     assert idx.get_chunking_meta() == ChunkingMeta(
-        model="bge-m3", max_chunk_chars_override=5000
+        model="bge-m3:latest", max_chunk_chars_override=5000
     )
     idx2 = FTSIndex(db_path=str(tmp_path / "j.db"))
     assert idx2.get_chunking_meta() == ChunkingMeta(
