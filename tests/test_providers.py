@@ -434,3 +434,9 @@ class TestGetEmbeddingProvider:
             pytest.raises(RuntimeError, match="No embedding provider"),
         ):
             get_embedding_provider(cfg)
+
+
+def test_embedding_provider_requires_context_length():
+    from markdown_vault_mcp.providers import EmbeddingProvider
+
+    assert "context_length" in EmbeddingProvider.__abstractmethods__

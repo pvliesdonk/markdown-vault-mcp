@@ -66,6 +66,17 @@ class EmbeddingProvider(ABC):
         """Stable model identifier for index compatibility metadata."""
         ...
 
+    @property
+    @abstractmethod
+    def context_length(self) -> int | None:
+        """Maximum input length the model accepts, in tokens.
+
+        Returns None when the limit cannot be determined; callers fall back
+        to a conservative default. Used to derive the chunker char cap so
+        chunks never exceed what the model can embed.
+        """
+        ...
+
 
 class OllamaProvider(EmbeddingProvider):
     """Embedding provider backed by the Ollama REST API.
@@ -170,6 +181,10 @@ class OllamaProvider(EmbeddingProvider):
     @property
     def model_name(self) -> str:
         return self._model
+
+    @property
+    def context_length(self) -> int | None:
+        return None
 
 
 class OpenAIProvider(EmbeddingProvider):
@@ -294,6 +309,10 @@ class OpenAIProvider(EmbeddingProvider):
     def model_name(self) -> str:
         return self._model
 
+    @property
+    def context_length(self) -> int | None:
+        return None
+
 
 class FastEmbedProvider(EmbeddingProvider):
     """Embedding provider backed by the local fastembed library.
@@ -381,6 +400,10 @@ class FastEmbedProvider(EmbeddingProvider):
     @property
     def model_name(self) -> str:
         return self._model_name
+
+    @property
+    def context_length(self) -> int | None:
+        return None
 
 
 def get_embedding_provider(config: VaultConfig) -> EmbeddingProvider:
