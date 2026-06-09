@@ -17,26 +17,10 @@ from fastmcp.exceptions import ToolError
 from mcp.shared.exceptions import McpError
 
 from markdown_vault_mcp.server import make_server
-from tests.conftest import wait_for_mcp_writer_drain
+from tests.conftest import _meta_stale, _parse_tool_data, wait_for_mcp_writer_drain
 
 if TYPE_CHECKING:
     import mcp.types as mcp_types
-
-
-def _parse_tool_data(result: Any) -> Any:
-    """Extract data from a CallToolResult, handling FastMCP v2 serialization.
-
-    FastMCP v2 serializes list[dict] as a single JSON TextContent blob.
-    ``result.data`` works for simple types (dict, str, list[str]) but
-    returns opaque ``Root()`` objects for list[dict].  This helper falls
-    back to parsing the raw text content when needed.
-    """
-    data = result.data
-    if isinstance(data, list) and data and not isinstance(data[0], (dict, str)):
-        # Opaque Root objects — parse from raw text content.
-        raw = result.content[0].text if result.content else "[]"
-        return json.loads(raw)
-    return data
 
 
 _CLEAR_VARS = (
@@ -1424,25 +1408,23 @@ class TestLinkTools:
         async with Client(server) as client:
             await wait_for_mcp_writer_drain(client)
             result = await client.call_tool("get_backlinks", {"path": "notes/topic.md"})
-        envelope = _parse_tool_data(result)
-        assert envelope["stale"] is False
-        data = envelope["data"]
+        assert _meta_stale(result) is False
+        data = _parse_tool_data(result)
         assert len(data) == 1
         assert data[0]["source_path"] == "index.md"
         assert data[0]["link_text"] == "Topic"
 
     @pytest.mark.usefixtures("_mcp_env_linked")
-    async def test_get_backlinks_with_wait_for_drain(self) -> None:
+    async def test_get_backlinks_with_wait_for_pending_writes(self) -> None:
         server = make_server()
         async with Client(server) as client:
             await wait_for_mcp_writer_drain(client)
             result = await client.call_tool(
                 "get_backlinks",
-                {"path": "notes/topic.md", "wait_for_drain": True},
+                {"path": "notes/topic.md", "wait_for_pending_writes": True},
             )
-        envelope = _parse_tool_data(result)
-        assert envelope["stale"] is False
-        assert len(envelope["data"]) == 1
+        assert _meta_stale(result) is False
+        assert len(_parse_tool_data(result)) == 1
 
     @pytest.mark.usefixtures("_mcp_env_linked")
     async def test_get_backlinks_nonexistent_raises(self) -> None:
@@ -1457,9 +1439,8 @@ class TestLinkTools:
         async with Client(server) as client:
             await wait_for_mcp_writer_drain(client)
             result = await client.call_tool("get_outlinks", {"path": "index.md"})
-        envelope = _parse_tool_data(result)
-        assert envelope["stale"] is False
-        data = envelope["data"]
+        assert _meta_stale(result) is False
+        data = _parse_tool_data(result)
         assert len(data) == 2
         targets = {d["target_path"] for d in data}
         assert "notes/topic.md" in targets
@@ -1470,17 +1451,16 @@ class TestLinkTools:
         assert by_target["ghost.md"]["exists"] is False
 
     @pytest.mark.usefixtures("_mcp_env_linked")
-    async def test_get_outlinks_with_wait_for_drain(self) -> None:
+    async def test_get_outlinks_with_wait_for_pending_writes(self) -> None:
         server = make_server()
         async with Client(server) as client:
             await wait_for_mcp_writer_drain(client)
             result = await client.call_tool(
                 "get_outlinks",
-                {"path": "index.md", "wait_for_drain": True},
+                {"path": "index.md", "wait_for_pending_writes": True},
             )
-        envelope = _parse_tool_data(result)
-        assert envelope["stale"] is False
-        assert len(envelope["data"]) == 2
+        assert _meta_stale(result) is False
+        assert len(_parse_tool_data(result)) == 2
 
     @pytest.mark.usefixtures("_mcp_env_linked")
     async def test_get_outlinks_nonexistent_path(self) -> None:
@@ -1498,12 +1478,12 @@ class TestLinkTools:
             capped = await client.call_tool(
                 "get_outlinks", {"path": "index.md", "limit": 1}
             )
-            assert len(_parse_tool_data(capped)["data"]) == 1
+            assert len(_parse_tool_data(capped)) == 1
             # get_backlinks also accepts limit and forwards it.
             backlinks = await client.call_tool(
                 "get_backlinks", {"path": "notes/topic.md", "limit": 5}
             )
-            assert len(_parse_tool_data(backlinks)["data"]) == 1
+            assert len(_parse_tool_data(backlinks)) == 1
 
     @pytest.mark.usefixtures("_mcp_env_linked")
     async def test_get_broken_links(self) -> None:
@@ -1548,9 +1528,8 @@ class TestSimilarTool:
         async with Client(server) as client:
             await wait_for_mcp_writer_drain(client)
             result = await client.call_tool("get_similar", {"path": "simple.md"})
-        envelope = _parse_tool_data(result)
-        assert envelope["stale"] is False
-        data = envelope["data"]
+        assert _meta_stale(result) is False
+        data = _parse_tool_data(result)
         assert data == []
 
     @pytest.mark.usefixtures("_mcp_env")
@@ -1572,23 +1551,21 @@ class TestSimilarTool:
                 "get_similar",
                 {"path": "simple.md", "limit": 5, "chunks_per_file": 1},
             )
-        envelope = _parse_tool_data(result)
-        assert envelope["stale"] is False
-        data = envelope["data"]
+        assert _meta_stale(result) is False
+        data = _parse_tool_data(result)
         assert isinstance(data, list)
 
     @pytest.mark.usefixtures("_mcp_env")
-    async def test_get_similar_with_wait_for_drain(self) -> None:
+    async def test_get_similar_with_wait_for_pending_writes(self) -> None:
         server = make_server()
         async with Client(server) as client:
             await wait_for_mcp_writer_drain(client)
             result = await client.call_tool(
                 "get_similar",
-                {"path": "simple.md", "wait_for_drain": True},
+                {"path": "simple.md", "wait_for_pending_writes": True},
             )
-        envelope = _parse_tool_data(result)
-        assert envelope["stale"] is False
-        assert isinstance(envelope["data"], list)
+        assert _meta_stale(result) is False
+        assert isinstance(_parse_tool_data(result), list)
 
 
 class TestRecentTool:
@@ -1670,9 +1647,8 @@ class TestContextTool:
         async with Client(server) as client:
             await wait_for_mcp_writer_drain(client)
             result = await client.call_tool("get_context", {"path": "index.md"})
-        envelope = _parse_tool_data(result)
-        assert envelope["stale"] is False
-        data = envelope["data"]
+        assert _meta_stale(result) is False
+        data = _parse_tool_data(result)
         assert data["path"] == "index.md"
         assert data["title"] == "Index"
         assert "modified_at" in data
@@ -1689,12 +1665,10 @@ class TestContextTool:
         server = make_server()
         async with Client(server) as client:
             await wait_for_mcp_writer_drain(client)
-            envelope = _parse_tool_data(
-                await client.call_tool("get_context", {"path": "index.md"})
-            )
+            ctx_result = await client.call_tool("get_context", {"path": "index.md"})
             read = (await client.call_tool("read", {"path": "index.md"})).data
-        assert envelope["stale"] is False
-        ctx = envelope["data"]
+        assert _meta_stale(ctx_result) is False
+        ctx = _parse_tool_data(ctx_result)
         assert ctx["modified_at"] == read["modified_at"]
 
     @pytest.mark.usefixtures("_mcp_env_context")
@@ -1704,9 +1678,8 @@ class TestContextTool:
         async with Client(server) as client:
             await wait_for_mcp_writer_drain(client)
             result = await client.call_tool("get_context", {"path": "notes/topic.md"})
-        envelope = _parse_tool_data(result)
-        assert envelope["stale"] is False
-        data = envelope["data"]
+        assert _meta_stale(result) is False
+        data = _parse_tool_data(result)
         sources = [b["source_path"] for b in data["backlinks"]]
         assert "index.md" in sources
 
@@ -1717,9 +1690,8 @@ class TestContextTool:
         async with Client(server) as client:
             await wait_for_mcp_writer_drain(client)
             result = await client.call_tool("get_context", {"path": "index.md"})
-        envelope = _parse_tool_data(result)
-        assert envelope["stale"] is False
-        data = envelope["data"]
+        assert _meta_stale(result) is False
+        data = _parse_tool_data(result)
         targets = [o["target_path"] for o in data["outlinks"]]
         assert "notes/topic.md" in targets
 
@@ -1730,9 +1702,8 @@ class TestContextTool:
         async with Client(server) as client:
             await wait_for_mcp_writer_drain(client)
             result = await client.call_tool("get_context", {"path": "notes/topic.md"})
-        envelope = _parse_tool_data(result)
-        assert envelope["stale"] is False
-        data = envelope["data"]
+        assert _meta_stale(result) is False
+        data = _parse_tool_data(result)
         assert "notes/topic.md" not in data["folder_notes"]
         assert "notes/peer.md" in data["folder_notes"]
 
@@ -1743,9 +1714,8 @@ class TestContextTool:
         async with Client(server) as client:
             await wait_for_mcp_writer_drain(client)
             result = await client.call_tool("get_context", {"path": "index.md"})
-        envelope = _parse_tool_data(result)
-        assert envelope["stale"] is False
-        data = envelope["data"]
+        assert _meta_stale(result) is False
+        data = _parse_tool_data(result)
         assert "tags" in data["tags"]
         assert "ai" in data["tags"]["tags"]
         assert "research" in data["tags"]["tags"]
@@ -1757,9 +1727,8 @@ class TestContextTool:
         async with Client(server) as client:
             await wait_for_mcp_writer_drain(client)
             result = await client.call_tool("get_context", {"path": "index.md"})
-        envelope = _parse_tool_data(result)
-        assert envelope["stale"] is False
-        data = envelope["data"]
+        assert _meta_stale(result) is False
+        data = _parse_tool_data(result)
         assert data["similar"] == []
 
     @pytest.mark.usefixtures("_mcp_env_context")
@@ -1780,17 +1749,16 @@ class TestContextTool:
         assert "get_context" in names
 
     @pytest.mark.usefixtures("_mcp_env_context")
-    async def test_get_context_with_wait_for_drain(self) -> None:
+    async def test_get_context_with_wait_for_pending_writes(self) -> None:
         server = make_server()
         async with Client(server) as client:
             await wait_for_mcp_writer_drain(client)
             result = await client.call_tool(
                 "get_context",
-                {"path": "index.md", "wait_for_drain": True},
+                {"path": "index.md", "wait_for_pending_writes": True},
             )
-        envelope = _parse_tool_data(result)
-        assert envelope["stale"] is False
-        assert envelope["data"]["path"] == "index.md"
+        assert _meta_stale(result) is False
+        assert _parse_tool_data(result)["path"] == "index.md"
 
 
 # ---------------------------------------------------------------------------
@@ -3137,8 +3105,13 @@ class TestGitToolsUntilParam:
         assert past_data["total"] == 0
 
 
-class TestB3StaleSignal:
-    """Tests for the writer-state staleness signal on B3 tools (#534)."""
+class TestIndexStaleSignal:
+    """Tests for the writer-state staleness signal carried in ``_meta``.
+
+    Index-querying read tools surface freshness out-of-band as
+    ``result.meta["index_stale"]`` rather than wrapping the payload in a
+    ``{stale, data}`` envelope (#534, #641, #645).
+    """
 
     @pytest.fixture
     def _mcp_env_linked(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -3181,13 +3154,12 @@ class TestB3StaleSignal:
                 # Clear the sentinel so subsequent tests are not affected
                 # by leaked dirty-set state.
                 col._coordinator.writer.drain_dirty_paths()
-        envelope = _parse_tool_data(result)
-        assert envelope["stale"] is True
-        # The data is still returned despite stale=True.
-        assert isinstance(envelope["data"], list)
+        assert _meta_stale(result) is True
+        # The data is still returned despite index_stale=True.
+        assert isinstance(_parse_tool_data(result), list)
 
     @pytest.mark.usefixtures("_mcp_env_linked")
-    async def test_wait_for_drain_clears_stale_when_writer_idle(
+    async def test_wait_for_pending_writes_clears_stale_when_writer_idle(
         self,
     ) -> None:
         server = make_server()
@@ -3195,13 +3167,12 @@ class TestB3StaleSignal:
             await wait_for_mcp_writer_drain(client)
             result = await client.call_tool(
                 "get_backlinks",
-                {"path": "notes/topic.md", "wait_for_drain": True},
+                {"path": "notes/topic.md", "wait_for_pending_writes": True},
             )
-        envelope = _parse_tool_data(result)
-        assert envelope["stale"] is False
+        assert _meta_stale(result) is False
 
     @pytest.mark.usefixtures("_mcp_env_linked")
-    async def test_wait_for_drain_timeout_reports_stale_true(
+    async def test_wait_for_pending_writes_timeout_reports_stale_true(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         from markdown_vault_mcp._server_deps import get_vault_singleton
@@ -3215,32 +3186,67 @@ class TestB3StaleSignal:
             try:
                 result = await client.call_tool(
                     "get_backlinks",
-                    {"path": "notes/topic.md", "wait_for_drain": True},
+                    {"path": "notes/topic.md", "wait_for_pending_writes": True},
                 )
             finally:
                 col._coordinator.writer.drain_dirty_paths()
-        envelope = _parse_tool_data(result)
-        assert envelope["stale"] is True
-        assert isinstance(envelope["data"], list)
+        assert _meta_stale(result) is True
+        assert isinstance(_parse_tool_data(result), list)
+
+    @pytest.mark.usefixtures("_mcp_env_linked")
+    async def test_stale_true_when_generation_advances(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A write that completes inside the read window (write_generation
+        advances while the writer is idle at entry and exit, and no
+        wait_for_pending_writes is requested) flips index_stale True via the middle
+        observation point — the only one the dirty-path tests cannot exercise
+        because a non-empty dirty set short-circuits the OR on is_drained."""
+        import itertools
+
+        from markdown_vault_mcp._server_deps import get_vault_singleton
+
+        server = make_server()
+        async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
+            col = get_vault_singleton()
+            # Drained writer + no wait ⇒ observations 1 and 3 are both False;
+            # advancing the generation counter on every read makes gen_before
+            # differ from the post-read snapshot, so only observation 2 decides.
+            counter = itertools.count()
+            monkeypatch.setattr(col.index, "write_generation", lambda: next(counter))
+            result = await client.call_tool("get_backlinks", {"path": "notes/topic.md"})
+        assert _meta_stale(result) is True
 
     @pytest.mark.usefixtures("_mcp_env_linked")
     @pytest.mark.parametrize(
-        ("tool_name", "tool_args"),
+        ("tool_name", "tool_args", "expected_type"),
         [
-            ("get_backlinks", {"path": "notes/topic.md"}),
-            ("get_outlinks", {"path": "notes/topic.md"}),
-            ("get_similar", {"path": "notes/topic.md"}),
-            ("get_context", {"path": "notes/topic.md"}),
+            ("search", {"query": "topic"}, list),
+            ("list_documents", {}, list),
+            ("list_folders", {}, list),
+            ("list_tags", {}, list),
+            ("stats", {}, dict),
+            ("get_recent", {}, list),
+            ("get_broken_links", {}, list),
+            ("get_orphan_notes", {}, list),
+            ("get_most_linked", {}, list),
+            ("get_backlinks", {"path": "notes/topic.md"}, list),
+            ("get_outlinks", {"path": "notes/topic.md"}, list),
+            ("get_similar", {"path": "notes/topic.md"}, list),
+            ("get_context", {"path": "notes/topic.md"}, dict),
             (
                 "get_connection_path",
                 {"source": "notes/topic.md", "target": "index.md"},
+                dict,
             ),
         ],
     )
-    async def test_stale_true_uniform_across_b3_tools(
-        self, tool_name: str, tool_args: dict[str, str]
+    async def test_index_stale_true_uniform_across_index_tools(
+        self, tool_name: str, tool_args: dict[str, str], expected_type: type
     ) -> None:
-        """Each B3 tool independently ORs stale; catch copy-paste regressions."""
+        """Every index-querying tool independently surfaces index_stale in
+        ``_meta``; catch copy-paste regressions across the whole set."""
         from markdown_vault_mcp._server_deps import get_vault_singleton
 
         server = make_server()
@@ -3252,9 +3258,147 @@ class TestB3StaleSignal:
                 result = await client.call_tool(tool_name, tool_args)
             finally:
                 col._coordinator.writer.drain_dirty_paths()
-        envelope = _parse_tool_data(result)
-        assert envelope["stale"] is True
-        assert "data" in envelope
+        assert _meta_stale(result) is True
+        # The bare payload is still delivered (correct top-level type, never a
+        # {stale, data} envelope) alongside the staleness signal.
+        data = _parse_tool_data(result)
+        assert isinstance(data, expected_type)
+        assert not (isinstance(data, dict) and "stale" in data and "data" in data)
+
+
+# ---------------------------------------------------------------------------
+# wait_for_pending_writes + _meta staleness on search and B2 tools (#641, #645)
+# ---------------------------------------------------------------------------
+
+
+class TestWaitForDrainDirect:
+    """search and B2 tools accept wait_for_pending_writes and return BARE data, with
+    freshness surfaced out-of-band via ``result.meta["index_stale"]`` rather
+    than a ``{stale, data}`` envelope (#641, #645)."""
+
+    @pytest.mark.usefixtures("_mcp_env")
+    async def test_search_wait_for_pending_writes_returns_bare_list_fresh(self) -> None:
+        """search returns a bare list; drained writer ⇒ index_stale False."""
+        server = make_server()
+        async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
+            result = await client.call_tool(
+                "search", {"query": "simple", "wait_for_pending_writes": True}
+            )
+        data = _parse_tool_data(result)
+        assert isinstance(data, list)
+        # Payload is NOT wrapped in a stale/data envelope.
+        assert not (isinstance(data, dict) and "stale" in data and "data" in data)
+        assert _meta_stale(result) is False
+
+    @pytest.mark.usefixtures("_mcp_env")
+    @pytest.mark.parametrize(
+        ("tool_name", "tool_args", "expected_type"),
+        [
+            ("list_documents", {}, list),
+            ("list_folders", {}, list),
+            ("list_tags", {}, list),
+            ("stats", {}, dict),
+            ("get_recent", {}, list),
+            ("get_broken_links", {}, list),
+            ("get_orphan_notes", {}, list),
+            ("get_most_linked", {}, list),
+        ],
+    )
+    async def test_b2_tools_bare_data_and_meta_fresh(
+        self, tool_name: str, tool_args: dict[str, Any], expected_type: type
+    ) -> None:
+        """B2 tools return bare data + index_stale=False on the drained path.
+
+        The positive ``isinstance(data, expected_type)`` check pins the bare
+        shape: it would fail if a list payload regressed to the FastMCP
+        ``{"result": [...]}`` wrapper not being unwrapped (a dict, not a list).
+        """
+        server = make_server()
+        async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
+            result = await client.call_tool(
+                tool_name, {**tool_args, "wait_for_pending_writes": True}
+            )
+        data = _parse_tool_data(result)
+        assert isinstance(data, expected_type)
+        # Bare payload, never a {stale, data} envelope.
+        assert not (isinstance(data, dict) and "stale" in data and "data" in data)
+        assert _meta_stale(result) is False
+
+
+class TestResourceStaleSignal:
+    """MCP resources surface index freshness in the response ``_meta`` field
+    while keeping their contents a bare JSON document (#645)."""
+
+    @pytest.mark.usefixtures("_mcp_env")
+    @pytest.mark.parametrize(
+        "uri",
+        [
+            "config://vault",
+            "stats://vault",
+            "tags://vault",
+            "tags://vault/tags",
+            "folders://vault",
+            "recent://vault",
+            "toc://vault/simple.md",
+            "similar://vault/simple.md",
+        ],
+    )
+    async def test_resource_meta_index_stale_false_when_drained(self, uri: str) -> None:
+        """On a drained index every resource reports index_stale=False in _meta
+        and still returns parseable JSON contents."""
+        server = make_server()
+        async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
+            result = await client.read_resource_mcp(uri)
+        assert result.meta is not None
+        assert result.meta.get("index_stale") is False
+        # Contents stay a bare JSON document — no envelope — and the declared
+        # application/json MIME type survives the ResourceResult wrapping.
+        assert result.contents[0].mimeType == "application/json"
+        json.loads(result.contents[0].text)
+
+    @pytest.mark.usefixtures("_mcp_env")
+    async def test_resource_meta_index_stale_true_when_writer_dirty(self) -> None:
+        """A non-idle writer flips index_stale True in the resource _meta."""
+        from markdown_vault_mcp._server_deps import get_vault_singleton
+
+        server = make_server()
+        async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
+            col = get_vault_singleton()
+            col._coordinator.writer.mark_dirty(["sentinel.md"])
+            try:
+                result = await client.read_resource_mcp("stats://vault")
+            finally:
+                col._coordinator.writer.drain_dirty_paths()
+        assert result.meta is not None
+        assert result.meta.get("index_stale") is True
+
+    @pytest.mark.usefixtures("_mcp_env")
+    async def test_resource_index_stale_true_when_generation_advances(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A write that completes inside the read window (write_generation
+        advances while the writer is idle at entry and exit) flips index_stale
+        True via the generation-counter observation point — the resource case."""
+        import itertools
+
+        from markdown_vault_mcp._server_deps import get_vault_singleton
+
+        server = make_server()
+        async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
+            col = get_vault_singleton()
+            # Writer stays drained (is_drained True); advancing the generation
+            # counter on every read makes gen_before != the post-read snapshot,
+            # isolating the middle observation point.
+            counter = itertools.count()
+            monkeypatch.setattr(col.index, "write_generation", lambda: next(counter))
+            result = await client.read_resource_mcp("stats://vault")
+        assert result.meta is not None
+        assert result.meta.get("index_stale") is True
 
 
 # ---------------------------------------------------------------------------

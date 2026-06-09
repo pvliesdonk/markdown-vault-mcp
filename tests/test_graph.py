@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-import json
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -16,19 +15,10 @@ from markdown_vault_mcp.types import (
     ParsedNote,
 )
 from markdown_vault_mcp.vault import Vault
-from tests.conftest import wait_for_mcp_writer_drain
+from tests.conftest import _meta_stale, _parse_tool_data, wait_for_mcp_writer_drain
 
 if TYPE_CHECKING:
     from pathlib import Path
-
-
-def _parse_tool_data(result: Any) -> Any:
-    """Extract list/dict from a CallToolResult, handling FastMCP serialization."""
-    data = result.data
-    if isinstance(data, list) and data and not isinstance(data[0], (dict, str)):
-        raw = result.content[0].text if result.content else "[]"
-        return json.loads(raw)
-    return data
 
 
 # ---------------------------------------------------------------------------
@@ -670,9 +660,8 @@ class TestMCPGetConnectionPath:
             result = await client.call_tool(
                 "get_connection_path", {"source": "a.md", "target": "c.md"}
             )
-        envelope = _parse_tool_data(result)
-        assert envelope["stale"] is False
-        data = envelope["data"]
+        assert _meta_stale(result) is False
+        data = _parse_tool_data(result)
         assert data["found"] is True
         assert data["path"] == ["a.md", "b.md", "c.md"]
         assert data["hops"] == 2
@@ -690,9 +679,8 @@ class TestMCPGetConnectionPath:
                 "get_connection_path",
                 {"source": "a.md", "target": "isolated.md"},
             )
-        envelope = _parse_tool_data(result)
-        assert envelope["stale"] is False
-        data = envelope["data"]
+        assert _meta_stale(result) is False
+        data = _parse_tool_data(result)
         assert data["found"] is False
         assert data["path"] == []
         assert data["hops"] == -1
@@ -709,9 +697,8 @@ class TestMCPGetConnectionPath:
             result = await client.call_tool(
                 "get_connection_path", {"source": "a.md", "target": "a.md"}
             )
-        envelope = _parse_tool_data(result)
-        assert envelope["stale"] is False
-        data = envelope["data"]
+        assert _meta_stale(result) is False
+        data = _parse_tool_data(result)
         assert data["found"] is True
         assert data["path"] == ["a.md"]
         assert data["hops"] == 0
@@ -731,10 +718,10 @@ class TestMCPGetConnectionPath:
                     {"source": "nonexistent.md", "target": "a.md"},
                 )
 
-    async def test_get_connection_path_with_wait_for_drain(
+    async def test_get_connection_path_with_wait_for_pending_writes(
         self, _mcp_env_path: None
     ) -> None:
-        """wait_for_drain=True blocks until writer drained, then returns envelope."""
+        """wait_for_pending_writes=True blocks until writer drained; index_stale is False."""
         from fastmcp import Client
 
         from markdown_vault_mcp.server import make_server
@@ -747,9 +734,8 @@ class TestMCPGetConnectionPath:
                 {
                     "source": "a.md",
                     "target": "c.md",
-                    "wait_for_drain": True,
+                    "wait_for_pending_writes": True,
                 },
             )
-        envelope = _parse_tool_data(result)
-        assert envelope["stale"] is False
-        assert envelope["data"]["found"] is True
+        assert _meta_stale(result) is False
+        assert _parse_tool_data(result)["found"] is True

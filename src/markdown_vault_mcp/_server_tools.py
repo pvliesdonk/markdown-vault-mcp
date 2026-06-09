@@ -13,12 +13,13 @@ import logging
 import os
 import subprocess
 from dataclasses import asdict
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, TypeVar
 from urllib.parse import urlparse, urlunparse
 
 from fastmcp import FastMCP
 from fastmcp.dependencies import Depends
 from fastmcp.exceptions import ToolError
+from fastmcp.tools import ToolResult
 
 from markdown_vault_mcp.exceptions import EditConflictError
 from markdown_vault_mcp.git import GitWriteStrategy, PullResult, PushResult
@@ -32,6 +33,13 @@ from ._server_deps import get_vault
 from ._server_queryable import needs_queryable
 
 logger = logging.getLogger(__name__)
+
+# Bridges a read tool's data-shaped return annotation (which drives the
+# advertised output schema) to the ToolResult it returns at runtime.
+# Return-only: _staleness_result() is declared `-> _T` but returns a
+# ToolResult, so its result must be `return`ed directly from a tool, never
+# stored or processed as `_T` (mypy would not catch the mismatch).
+_T = TypeVar("_T")
 
 
 def _resolve_drain_timeout() -> float:
@@ -51,8 +59,7 @@ async def _maybe_wait_for_drain(
 
     Returns True when the writer was drained at the point of asking
     (or when no wait was requested), False when the bounded wait
-    timed out. Callers OR the negation into the response envelope's
-    ``stale`` field so a timed-out wait reliably reports ``stale=True``.
+    timed out.
     """
     if not wait_for_drain:
         return True
@@ -71,6 +78,53 @@ async def _maybe_wait_for_drain(
             )
             return False
         await asyncio.sleep(poll_interval)
+
+
+def _staleness_result(
+    vault: Vault,
+    data: _T,
+    *,
+    drained_on_request: bool,
+    gen_before: int,
+) -> _T:
+    """Wrap a read tool's payload with index-freshness metadata.
+
+    The payload is returned unchanged (a bare list/dict) as the tool's
+    content and structured output; freshness rides out-of-band in the MCP
+    ``_meta`` channel as ``index_stale``. Clients that do not care ignore
+    ``_meta`` and read the data exactly as before; the 1% that need a
+    fresh-read guarantee inspect ``result.meta["index_stale"]``.
+
+    ``index_stale`` is True when the IndexWriter had pending or in-flight
+    work at any of three observation points: the optional ``wait_for_pending_writes``
+    timed out (``drained_on_request`` False), a write completed inside the
+    read window (``write_generation`` advanced past ``gen_before``), or the
+    writer was non-idle at response time.
+
+    ``structured_content`` mirrors FastMCP's wrap-result convention (a
+    primitive/collection payload is nested under ``{"result": ...}``) so the
+    client still deserializes ``result.data`` to the bare shape, matching the
+    tool's data-shaped return annotation. The annotation drives the advertised
+    output schema; the ``ToolResult`` is the runtime payload — hence the typed
+    bridge below (the function is declared to return the data type ``_T`` while
+    actually returning a ``ToolResult`` FastMCP unwraps to that same shape).
+
+    ``content`` is the bare ``data`` value: FastMCP's ``ToolResult.content``
+    accepts ``Any`` serializable value and converts it to a JSON ``TextContent``
+    block, which is the documented path for non-content-block payloads (it is
+    not the ``# type: ignore`` target — that is solely the ``-> _T`` bridge).
+    """
+    index_stale = (
+        (not drained_on_request)
+        or (vault.index.write_generation() != gen_before)
+        or (not vault.index.is_drained())
+    )
+    structured = data if isinstance(data, dict) else {"result": data}
+    return ToolResult(  # type: ignore[return-value]
+        content=data,
+        structured_content=structured,
+        meta={"index_stale": index_stale},
+    )
 
 
 _ALLOWED_FETCH_SCHEMES = frozenset({"http", "https"})
@@ -304,6 +358,7 @@ def register_tools(mcp: FastMCP) -> None:
         filters: dict[str, str] | None = None,
         chunks_per_file: int | None = None,
         snippet_words: int | None = None,
+        wait_for_pending_writes: bool = False,
         vault: Vault = Depends(get_vault),
     ) -> list[dict[str, Any]]:
         """Find documents matching a query using full-text or semantic search.
@@ -338,6 +393,18 @@ def register_tools(mcp: FastMCP) -> None:
             snippet_words: Width of the snippet window in words. Omit to use
                 the server default. Set to 0 to return full chunk content.
                 Use read(path, section=heading) for full section recovery.
+            wait_for_pending_writes: When True, wait until your recent
+                write/edit/delete/rename operations have been applied to the
+                index before answering, so the results reflect those changes.
+                Use it right after modifying notes when this read must see
+                them (e.g. right after a write/edit/delete/rename whose
+                effect this read should reflect). Default
+                False answers immediately from the current index — almost
+                always already up to date; inspect the response's
+                ``_meta.index_stale`` field to tell whether a write was still
+                in flight. Bounded by a server timeout (default 60s); on
+                timeout it answers from the current index rather than waiting
+                longer.
 
         Returns:
             List of result dicts ranked by file relevance. Each contains:
@@ -359,6 +426,11 @@ def register_tools(mcp: FastMCP) -> None:
                 the full section text.
               - score (float): Chunk-level score for this section.
 
+            Index freshness rides in the response's ``_meta.index_stale``
+            field — True when the IndexWriter was non-idle, a write completed
+            inside the read window, or ``wait_for_pending_writes`` timed out; False
+            otherwise.
+
         Also useful for finding merge candidates during triage — if a
         close match exists for a new capture, prefer merging over
         creating a near-duplicate.
@@ -367,6 +439,8 @@ def register_tools(mcp: FastMCP) -> None:
             ValueError: If mode is "semantic" or "hybrid" and no embedding
                 provider is configured.
         """
+        drained = await _maybe_wait_for_drain(vault, wait_for_pending_writes, "search")
+        gen_before = vault.index.write_generation()
         results = await asyncio.to_thread(
             vault.reader.search,
             query,
@@ -377,7 +451,12 @@ def register_tools(mcp: FastMCP) -> None:
             chunks_per_file=chunks_per_file,
             snippet_words=snippet_words,
         )
-        return [asdict(r) for r in results]
+        return _staleness_result(
+            vault,
+            [asdict(r) for r in results],
+            drained_on_request=drained,
+            gen_before=gen_before,
+        )
 
     @mcp.tool(
         icons=_TOOL_ICONS["read"],
@@ -473,6 +552,7 @@ def register_tools(mcp: FastMCP) -> None:
         folder: str | None = None,
         pattern: str | None = None,
         include_attachments: bool = False,
+        wait_for_pending_writes: bool = False,
         vault: Vault = Depends(get_vault),
     ) -> list[dict[str, Any]]:
         """List documents (and optionally attachments) in the vault.
@@ -490,6 +570,18 @@ def register_tools(mcp: FastMCP) -> None:
                 images, etc.) that match the configured allowlist. Each
                 attachment entry includes kind="attachment" and mime_type.
                 Default False (notes only).
+            wait_for_pending_writes: When True, wait until your recent
+                write/edit/delete/rename operations have been applied to the
+                index before answering, so the results reflect those changes.
+                Use it right after modifying notes when this read must see
+                them (e.g. right after a write/edit/delete/rename whose
+                effect this read should reflect). Default
+                False answers immediately from the current index — almost
+                always already up to date; inspect the response's
+                ``_meta.index_stale`` field to tell whether a write was still
+                in flight. Bounded by a server timeout (default 60s); on
+                timeout it answers from the current index rather than waiting
+                longer.
 
         Returns:
             List of info dicts. Every entry has a 'kind' field.
@@ -497,14 +589,28 @@ def register_tools(mcp: FastMCP) -> None:
             Attachments (when include_attachments=True): path, folder,
             mime_type, size_bytes, modified_at, kind="attachment".
             Body content is not included in either case.
+
+            Index freshness rides in the response's ``_meta.index_stale``
+            field — True when the IndexWriter was non-idle, a write completed
+            inside the read window, or ``wait_for_pending_writes`` timed out; False
+            otherwise.
         """
+        drained = await _maybe_wait_for_drain(
+            vault, wait_for_pending_writes, "list_documents"
+        )
+        gen_before = vault.index.write_generation()
         results = await asyncio.to_thread(
             vault.reader.list_documents,
             folder=folder,
             pattern=pattern,
             include_attachments=include_attachments,
         )
-        return [asdict(r) for r in results]
+        return _staleness_result(
+            vault,
+            [asdict(r) for r in results],
+            drained_on_request=drained,
+            gen_before=gen_before,
+        )
 
     @mcp.tool(
         icons=_TOOL_ICONS["list_folders"],
@@ -515,6 +621,7 @@ def register_tools(mcp: FastMCP) -> None:
         },
     )
     async def list_folders(
+        wait_for_pending_writes: bool = False,
         vault: Vault = Depends(get_vault),
     ) -> list[str]:
         """List all folder paths that contain documents.
@@ -523,12 +630,38 @@ def register_tools(mcp: FastMCP) -> None:
         'list_documents' by folder. The root folder (top-level documents) is
         represented as an empty string "".
 
+        Args:
+            wait_for_pending_writes: When True, wait until your recent
+                write/edit/delete/rename operations have been applied to the
+                index before answering, so the results reflect those changes.
+                Use it right after modifying notes when this read must see
+                them (e.g. right after a write/edit/delete/rename whose
+                effect this read should reflect). Default
+                False answers immediately from the current index — almost
+                always already up to date; inspect the response's
+                ``_meta.index_stale`` field to tell whether a write was still
+                in flight. Bounded by a server timeout (default 60s); on
+                timeout it answers from the current index rather than waiting
+                longer.
+
         Returns:
             Sorted list of folder paths, e.g. ["", "Journal", "Projects"].
             Pass any of these as the 'folder' argument to 'search' or
             'list_documents'.
+
+            Index freshness rides in the response's ``_meta.index_stale``
+            field — True when the IndexWriter was non-idle, a write completed
+            inside the read window, or ``wait_for_pending_writes`` timed out; False
+            otherwise.
         """
-        return await asyncio.to_thread(vault.reader.list_folders)
+        drained = await _maybe_wait_for_drain(
+            vault, wait_for_pending_writes, "list_folders"
+        )
+        gen_before = vault.index.write_generation()
+        folders = await asyncio.to_thread(vault.reader.list_folders)
+        return _staleness_result(
+            vault, folders, drained_on_request=drained, gen_before=gen_before
+        )
 
     @mcp.tool(
         icons=_TOOL_ICONS["list_tags"],
@@ -540,6 +673,7 @@ def register_tools(mcp: FastMCP) -> None:
     )
     async def list_tags(
         field: str = "tags",
+        wait_for_pending_writes: bool = False,
         vault: Vault = Depends(get_vault),
     ) -> list[str]:
         """List all distinct values for a frontmatter field across the vault.
@@ -553,13 +687,37 @@ def register_tools(mcp: FastMCP) -> None:
                 be one of the values in indexed_frontmatter_fields (from 'stats')
                 — passing any other field silently returns an empty list, not an
                 error.
+            wait_for_pending_writes: When True, wait until your recent
+                write/edit/delete/rename operations have been applied to the
+                index before answering, so the results reflect those changes.
+                Use it right after modifying notes when this read must see
+                them (e.g. right after a write/edit/delete/rename whose
+                effect this read should reflect). Default
+                False answers immediately from the current index — almost
+                always already up to date; inspect the response's
+                ``_meta.index_stale`` field to tell whether a write was still
+                in flight. Bounded by a server timeout (default 60s); on
+                timeout it answers from the current index rather than waiting
+                longer.
 
         Returns:
             Sorted list of distinct string values, e.g.
             ["craft", "pacing", "worldbuilding"]. Use these as values in the
             'filters' dict when calling 'search'.
+
+            Index freshness rides in the response's ``_meta.index_stale``
+            field — True when the IndexWriter was non-idle, a write completed
+            inside the read window, or ``wait_for_pending_writes`` timed out; False
+            otherwise.
         """
-        return await asyncio.to_thread(vault.reader.list_tags, field)
+        drained = await _maybe_wait_for_drain(
+            vault, wait_for_pending_writes, "list_tags"
+        )
+        gen_before = vault.index.write_generation()
+        values = await asyncio.to_thread(vault.reader.list_tags, field)
+        return _staleness_result(
+            vault, values, drained_on_request=drained, gen_before=gen_before
+        )
 
     @mcp.tool(
         icons=_TOOL_ICONS["stats"],
@@ -570,6 +728,7 @@ def register_tools(mcp: FastMCP) -> None:
         },
     )
     async def stats(
+        wait_for_pending_writes: bool = False,
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
         """Get an overview of the vault's size, capabilities, and configuration.
@@ -578,6 +737,20 @@ def register_tools(mcp: FastMCP) -> None:
         contains and what search modes are available. The
         'semantic_search_available' field tells you whether mode="semantic" or
         mode="hybrid" can be used in 'search'.
+
+        Args:
+            wait_for_pending_writes: When True, wait until your recent
+                write/edit/delete/rename operations have been applied to the
+                index before answering, so the results reflect those changes.
+                Use it right after modifying notes when this read must see
+                them (e.g. right after a write/edit/delete/rename whose
+                effect this read should reflect). Default
+                False answers immediately from the current index — almost
+                always already up to date; inspect the response's
+                ``_meta.index_stale`` field to tell whether a write was still
+                in flight. Bounded by a server timeout (default 60s); on
+                timeout it answers from the current index rather than waiting
+                longer.
 
         Returns:
             Dict with the following fields:
@@ -596,9 +769,18 @@ def register_tools(mcp: FastMCP) -> None:
               Call 'get_broken_links' if non-zero.
             - orphan_count (int): Notes with no inbound or outbound links.
               Call 'get_orphan_notes' if non-zero.
+
+            Index freshness rides in the response's ``_meta.index_stale``
+            field — True when the IndexWriter was non-idle, a write completed
+            inside the read window, or ``wait_for_pending_writes`` timed out; False
+            otherwise.
         """
+        drained = await _maybe_wait_for_drain(vault, wait_for_pending_writes, "stats")
+        gen_before = vault.index.write_generation()
         result = await asyncio.to_thread(vault.reader.stats)
-        return asdict(result)
+        return _staleness_result(
+            vault, asdict(result), drained_on_request=drained, gen_before=gen_before
+        )
 
     @mcp.tool(
         icons=_TOOL_ICONS["embeddings_status"],
@@ -686,9 +868,9 @@ def register_tools(mcp: FastMCP) -> None:
     async def get_backlinks(
         path: str,
         limit: int | None = None,
-        wait_for_drain: bool = False,
+        wait_for_pending_writes: bool = False,
         vault: Vault = Depends(get_vault),
-    ) -> dict[str, Any]:
+    ) -> list[dict[str, Any]]:
         """Find all documents that link TO the given document (backlinks).
 
         Use this to discover which notes reference a particular document.
@@ -705,32 +887,35 @@ def register_tools(mcp: FastMCP) -> None:
                 "notes/topic.md"). Case-sensitive.
             limit: Maximum number of backlinks to return. Omitted (the
                 default) returns all.
-            wait_for_drain: When True, block until the IndexWriter has
-                no pending or in-flight work before answering. Bounded
-                by MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S (default 60s).
-                On timeout, returns the result with `stale=True` rather
-                than raising — best-effort fresh read. Default False
-                returns immediately and reports staleness via the
-                envelope's `stale` field.
+            wait_for_pending_writes: When True, wait until your recent
+                write/edit/delete/rename operations have been applied to the
+                index before answering, so the results reflect those changes.
+                Use it right after modifying notes when this read must see
+                them (e.g. right after a write/edit/delete/rename whose
+                effect this read should reflect). Default
+                False answers immediately from the current index — almost
+                always already up to date; inspect the response's
+                ``_meta.index_stale`` field to tell whether a write was still
+                in flight. Bounded by a server timeout (default 60s); on
+                timeout it answers from the current index rather than waiting
+                longer.
 
         Returns:
-            Dict envelope with two keys:
+            List of backlink dicts, each with:
 
-            - stale (bool): True when the IndexWriter had pending or
-              in-flight work at any of three observation points (the
-              optional ``wait_for_drain`` timing out, a completed
-              write cycle inside the read window, or non-idle at
-              response construction). False when none of those
-              conditions held — the data is current as of response
-              time.
-            - data (list[dict]): The backlinks list. Each entry has:
+            - source_path (str): Path of the document containing the link.
+            - source_title (str): Title of the source document.
+            - link_text (str): The clickable text of the link.
+            - link_type (str): One of "markdown", "wikilink", or "reference".
+            - fragment (str | None): Heading anchor (e.g. "#section"), or null.
+            - raw_target (str): Literal link target as written in the source.
 
-              - source_path (str): Path of the document containing the link.
-              - source_title (str): Title of the source document.
-              - link_text (str): The clickable text of the link.
-              - link_type (str): One of "markdown", "wikilink", or "reference".
-              - fragment (str | None): Heading anchor (e.g. "#section"), or null.
-              - raw_target (str): Literal link target as written in the source.
+            Index freshness is reported out-of-band in the response's
+            ``_meta.index_stale`` field — True when the IndexWriter had
+            pending or in-flight work at any of three observation points
+            (``wait_for_pending_writes`` timing out, a write completing inside the
+            read window, or non-idle at response time), False when the data
+            is current as of response time.
 
         Combine with ``get_similar`` to find connection gaps — notes that are
         semantically close to the target but not yet linked.
@@ -738,19 +923,17 @@ def register_tools(mcp: FastMCP) -> None:
         Raises:
             ValueError: If no document exists at the given path.
         """
-        drained_on_request = await _maybe_wait_for_drain(
-            vault, wait_for_drain, "get_backlinks"
+        drained = await _maybe_wait_for_drain(
+            vault, wait_for_pending_writes, "get_backlinks"
         )
         gen_before = vault.index.write_generation()
         results = await asyncio.to_thread(vault.graph.get_backlinks, path, limit=limit)
-        return {
-            "stale": (
-                (not drained_on_request)
-                or (vault.index.write_generation() != gen_before)
-                or (not vault.index.is_drained())
-            ),
-            "data": [asdict(r) for r in results],
-        }
+        return _staleness_result(
+            vault,
+            [asdict(r) for r in results],
+            drained_on_request=drained,
+            gen_before=gen_before,
+        )
 
     @mcp.tool(
         icons=_TOOL_ICONS["get_outlinks"],
@@ -764,9 +947,9 @@ def register_tools(mcp: FastMCP) -> None:
     async def get_outlinks(
         path: str,
         limit: int | None = None,
-        wait_for_drain: bool = False,
+        wait_for_pending_writes: bool = False,
         vault: Vault = Depends(get_vault),
-    ) -> dict[str, Any]:
+    ) -> list[dict[str, Any]]:
         """Find all links FROM the given document to other documents (outlinks).
 
         Use this to see what a document references. For a full picture of
@@ -781,32 +964,35 @@ def register_tools(mcp: FastMCP) -> None:
                 "notes/topic.md"). Case-sensitive.
             limit: Maximum number of outlinks to return. Omitted (the
                 default) returns all.
-            wait_for_drain: When True, block until the IndexWriter has
-                no pending or in-flight work before answering. Bounded
-                by MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S (default 60s).
-                On timeout, returns the result with `stale=True` rather
-                than raising — best-effort fresh read. Default False
-                returns immediately and reports staleness via the
-                envelope's `stale` field.
+            wait_for_pending_writes: When True, wait until your recent
+                write/edit/delete/rename operations have been applied to the
+                index before answering, so the results reflect those changes.
+                Use it right after modifying notes when this read must see
+                them (e.g. right after a write/edit/delete/rename whose
+                effect this read should reflect). Default
+                False answers immediately from the current index — almost
+                always already up to date; inspect the response's
+                ``_meta.index_stale`` field to tell whether a write was still
+                in flight. Bounded by a server timeout (default 60s); on
+                timeout it answers from the current index rather than waiting
+                longer.
 
         Returns:
-            Dict envelope with two keys:
+            List of outlink dicts, each with:
 
-            - stale (bool): True when the IndexWriter had pending or
-              in-flight work at any of three observation points (the
-              optional ``wait_for_drain`` timing out, a completed
-              write cycle inside the read window, or non-idle at
-              response construction). False when none of those
-              conditions held — the data is current as of response
-              time.
-            - data (list[dict]): The outlinks list. Each entry has:
+            - target_path (str): Path of the linked document.
+            - link_text (str): The clickable text of the link.
+            - link_type (str): One of "markdown", "wikilink", or "reference".
+            - fragment (str | None): Heading anchor (e.g. "#section"), or null.
+            - raw_target (str): Literal link target as written in the source.
+            - exists (bool): True if the target document is indexed.
 
-              - target_path (str): Path of the linked document.
-              - link_text (str): The clickable text of the link.
-              - link_type (str): One of "markdown", "wikilink", or "reference".
-              - fragment (str | None): Heading anchor (e.g. "#section"), or null.
-              - raw_target (str): Literal link target as written in the source.
-              - exists (bool): True if the target document is indexed.
+            Index freshness is reported out-of-band in the response's
+            ``_meta.index_stale`` field — True when the IndexWriter had
+            pending or in-flight work at any of three observation points
+            (``wait_for_pending_writes`` timing out, a write completing inside the
+            read window, or non-idle at response time), False when the data
+            is current as of response time.
 
         Combine with ``get_similar`` to find connection gaps — notes the
         source is semantically close to but hasn't linked yet.
@@ -814,19 +1000,17 @@ def register_tools(mcp: FastMCP) -> None:
         Raises:
             ValueError: If no document exists at the given path.
         """
-        drained_on_request = await _maybe_wait_for_drain(
-            vault, wait_for_drain, "get_outlinks"
+        drained = await _maybe_wait_for_drain(
+            vault, wait_for_pending_writes, "get_outlinks"
         )
         gen_before = vault.index.write_generation()
         results = await asyncio.to_thread(vault.graph.get_outlinks, path, limit=limit)
-        return {
-            "stale": (
-                (not drained_on_request)
-                or (vault.index.write_generation() != gen_before)
-                or (not vault.index.is_drained())
-            ),
-            "data": [asdict(r) for r in results],
-        }
+        return _staleness_result(
+            vault,
+            [asdict(r) for r in results],
+            drained_on_request=drained,
+            gen_before=gen_before,
+        )
 
     @mcp.tool(
         icons=_TOOL_ICONS["get_broken_links"],
@@ -838,6 +1022,7 @@ def register_tools(mcp: FastMCP) -> None:
     )
     async def get_broken_links(
         folder: str | None = None,
+        wait_for_pending_writes: bool = False,
         vault: Vault = Depends(get_vault),
     ) -> list[dict[str, Any]]:
         """Find all links that point to non-existent documents (broken links).
@@ -853,6 +1038,18 @@ def register_tools(mcp: FastMCP) -> None:
             folder: Optional folder filter. When provided, only checks
                 links from documents in this folder (e.g. "Journal").
                 Without this, checks all documents.
+            wait_for_pending_writes: When True, wait until your recent
+                write/edit/delete/rename operations have been applied to the
+                index before answering, so the results reflect those changes.
+                Use it right after modifying notes when this read must see
+                them (e.g. right after a write/edit/delete/rename whose
+                effect this read should reflect). Default
+                False answers immediately from the current index — almost
+                always already up to date; inspect the response's
+                ``_meta.index_stale`` field to tell whether a write was still
+                in flight. Bounded by a server timeout (default 60s); on
+                timeout it answers from the current index rather than waiting
+                longer.
 
         Returns:
             List of dicts, each with:
@@ -864,9 +1061,23 @@ def register_tools(mcp: FastMCP) -> None:
             - link_type (str): One of "markdown", "wikilink", or "reference".
             - fragment (str | None): Heading anchor (e.g. "#section"), or null.
             - raw_target (str): Literal link target as written in the source.
+
+            Index freshness rides in the response's ``_meta.index_stale``
+            field — True when the IndexWriter was non-idle, a write completed
+            inside the read window, or ``wait_for_pending_writes`` timed out; False
+            otherwise.
         """
+        drained = await _maybe_wait_for_drain(
+            vault, wait_for_pending_writes, "get_broken_links"
+        )
+        gen_before = vault.index.write_generation()
         results = await asyncio.to_thread(vault.graph.get_broken_links, folder=folder)
-        return [asdict(r) for r in results]
+        return _staleness_result(
+            vault,
+            [asdict(r) for r in results],
+            drained_on_request=drained,
+            gen_before=gen_before,
+        )
 
     # --- Similarity tools (read-only) ---
 
@@ -883,18 +1094,17 @@ def register_tools(mcp: FastMCP) -> None:
         path: str,
         limit: int = 10,
         chunks_per_file: int | None = None,
-        wait_for_drain: bool = False,
+        wait_for_pending_writes: bool = False,
         vault: Vault = Depends(get_vault),
-    ) -> dict[str, Any]:
+    ) -> list[dict[str, Any]]:
         """Find notes most semantically similar to the given document.
 
         Uses stored embedding vectors — no re-embedding needed. The
         reference document is excluded from results. Requires semantic
         search to be configured (check 'stats' for
-        semantic_search_available). The envelope's ``data`` field is an
-        empty list if embeddings are not configured (check
-        'embeddings_status') or the document has no stored vectors (call
-        'build_embeddings' to embed missing chunks).
+        semantic_search_available). Returns an empty list if embeddings are
+        not configured (check 'embeddings_status') or the document has no
+        stored vectors (call 'build_embeddings' to embed missing chunks).
 
         Args:
             path: Relative path of the reference document (e.g.
@@ -902,37 +1112,41 @@ def register_tools(mcp: FastMCP) -> None:
             limit: Maximum number of similar notes to return (default 10).
             chunks_per_file: Maximum sections returned per file (default 2).
                 Set to 1 for one best section per file.  Must be >= 1.
-            wait_for_drain: When True, block until the IndexWriter has
-                no pending or in-flight work before answering. Bounded
-                by MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S (default 60s).
-                On timeout, returns the result with `stale=True` rather
-                than raising — best-effort fresh read. Default False
-                returns immediately and reports staleness via the
-                envelope's `stale` field.
+            wait_for_pending_writes: When True, wait until your recent
+                write/edit/delete/rename operations have been applied to the
+                index before answering, so the results reflect those changes.
+                Use it right after modifying notes when this read must see
+                them (e.g. right after a write/edit/delete/rename whose
+                effect this read should reflect). Default
+                False answers immediately from the current index — almost
+                always already up to date; inspect the response's
+                ``_meta.index_stale`` field to tell whether a write was still
+                in flight. Bounded by a server timeout (default 60s); on
+                timeout it answers from the current index rather than waiting
+                longer.
 
         Returns:
-            Dict envelope with two keys:
+            List of result dicts ranked by file similarity. Each contains:
 
-            - stale (bool): True when the IndexWriter had pending or
-              in-flight work at any of three observation points (wait
-              timed out, write completed inside the read window, or
-              non-idle at response time). False otherwise.
-            - data (list[dict]): Result dicts ranked by file similarity.
-              Each entry contains:
+            - path (str): Relative path of the similar document.
+            - title (str): Document title.
+            - folder (str): Parent folder path.
+            - score (float): File-level cosine similarity (max of section
+              scores), 0.0-1.0; higher = more similar.
+            - search_type (str): Always "semantic".
+            - frontmatter (dict): Parsed YAML frontmatter.
+            - sections (list[dict]): Up to chunks_per_file best-matching
+              sections, each with:
 
-              - path (str): Relative path of the similar document.
-              - title (str): Document title.
-              - folder (str): Parent folder path.
-              - score (float): File-level cosine similarity (max of section
-                scores), 0.0-1.0; higher = more similar.
-              - search_type (str): Always "semantic".
-              - frontmatter (dict): Parsed YAML frontmatter.
-              - sections (list[dict]): Up to chunks_per_file best-matching
-                sections, each with:
+              - heading (str | None): Section heading or null for intro.
+              - content (str): Matched chunk text.
+              - score (float): Chunk-level score for this section.
 
-                - heading (str | None): Section heading or null for intro.
-                - content (str): Matched chunk text.
-                - score (float): Chunk-level score for this section.
+            Index freshness is reported out-of-band in the response's
+            ``_meta.index_stale`` field — True when the IndexWriter had
+            pending or in-flight work at any of three observation points
+            (``wait_for_pending_writes`` timing out, a write completing inside the
+            read window, or non-idle at response time), False otherwise.
 
         Useful for finding link candidates that aren't yet wikilinked — the
         vault's organic graph is almost always denser than its explicit one.
@@ -941,8 +1155,8 @@ def register_tools(mcp: FastMCP) -> None:
         Raises:
             ValueError: If no document exists at the given path.
         """
-        drained_on_request = await _maybe_wait_for_drain(
-            vault, wait_for_drain, "get_similar"
+        drained = await _maybe_wait_for_drain(
+            vault, wait_for_pending_writes, "get_similar"
         )
         gen_before = vault.index.write_generation()
         results = await asyncio.to_thread(
@@ -951,14 +1165,12 @@ def register_tools(mcp: FastMCP) -> None:
             limit=limit,
             chunks_per_file=chunks_per_file,
         )
-        return {
-            "stale": (
-                (not drained_on_request)
-                or (vault.index.write_generation() != gen_before)
-                or (not vault.index.is_drained())
-            ),
-            "data": [asdict(r) for r in results],
-        }
+        return _staleness_result(
+            vault,
+            [asdict(r) for r in results],
+            drained_on_request=drained,
+            gen_before=gen_before,
+        )
 
     # --- Recently modified ---
 
@@ -973,6 +1185,7 @@ def register_tools(mcp: FastMCP) -> None:
     async def get_recent(
         limit: int = 20,
         folder: str | None = None,
+        wait_for_pending_writes: bool = False,
         vault: Vault = Depends(get_vault),
     ) -> list[dict[str, Any]]:
         """Get the most recently modified notes in the vault.
@@ -986,15 +1199,41 @@ def register_tools(mcp: FastMCP) -> None:
             limit: Maximum number of notes to return (default 20).
             folder: Optional folder filter. When provided, only returns
                 notes from this folder (e.g. "Journal").
+            wait_for_pending_writes: When True, wait until your recent
+                write/edit/delete/rename operations have been applied to the
+                index before answering, so the results reflect those changes.
+                Use it right after modifying notes when this read must see
+                them (e.g. right after a write/edit/delete/rename whose
+                effect this read should reflect). Default
+                False answers immediately from the current index — almost
+                always already up to date; inspect the response's
+                ``_meta.index_stale`` field to tell whether a write was still
+                in flight. Bounded by a server timeout (default 60s); on
+                timeout it answers from the current index rather than waiting
+                longer.
 
         Returns:
             List of note info dicts, each with: path, title, folder,
             frontmatter, modified_at (Unix timestamp), kind ("note").
+
+            Index freshness rides in the response's ``_meta.index_stale``
+            field — True when the IndexWriter was non-idle, a write completed
+            inside the read window, or ``wait_for_pending_writes`` timed out; False
+            otherwise.
         """
+        drained = await _maybe_wait_for_drain(
+            vault, wait_for_pending_writes, "get_recent"
+        )
+        gen_before = vault.index.write_generation()
         results = await asyncio.to_thread(
             vault.reader.get_recent, limit=limit, folder=folder
         )
-        return [asdict(r) for r in results]
+        return _staleness_result(
+            vault,
+            [asdict(r) for r in results],
+            drained_on_request=drained,
+            gen_before=gen_before,
+        )
 
     # --- Context dossier ---
 
@@ -1011,7 +1250,7 @@ def register_tools(mcp: FastMCP) -> None:
         path: str,
         similar_limit: int = 5,
         link_limit: int = 10,
-        wait_for_drain: bool = False,
+        wait_for_pending_writes: bool = False,
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
         """Get a consolidated context dossier for a document.
@@ -1035,66 +1274,71 @@ def register_tools(mcp: FastMCP) -> None:
                 are not configured).
             link_limit: Maximum number of backlinks and outlinks to include
                 each (default 10).
-            wait_for_drain: When True, block until the IndexWriter has
-                no pending or in-flight work before answering. Bounded
-                by MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S (default 60s).
-                On timeout, returns the result with `stale=True` rather
-                than raising — best-effort fresh read. Default False
-                returns immediately and reports staleness via the
-                envelope's `stale` field.
+            wait_for_pending_writes: When True, wait until your recent
+                write/edit/delete/rename operations have been applied to the
+                index before answering, so the results reflect those changes.
+                Use it right after modifying notes when this read must see
+                them (e.g. right after a write/edit/delete/rename whose
+                effect this read should reflect). Default
+                False answers immediately from the current index — almost
+                always already up to date; inspect the response's
+                ``_meta.index_stale`` field to tell whether a write was still
+                in flight. Bounded by a server timeout (default 60s); on
+                timeout it answers from the current index rather than waiting
+                longer.
 
         Returns:
-            Dict envelope with two keys:
+            Dict with the note context. Fields:
 
-            - stale (bool): True when the IndexWriter had pending or
-              in-flight work at any of three observation points (wait
-              timed out, write completed inside the read window, or
-              non-idle at response time). False otherwise.
-            - data (dict): The note context. Inner fields:
+            - path (str): Relative path of the document.
+            - title (str): Document title.
+            - folder (str): Parent folder path.
+            - frontmatter (dict): Parsed YAML frontmatter.
+            - modified_at (float): Unix timestamp of last modification.
+            - backlinks (list): Documents linking to this note. List of dicts,
+              each with:
 
-              - path (str): Relative path of the document.
+              - source_path (str): Path of the document containing the link.
+              - source_title (str): Title of the source document.
+              - link_text (str): The clickable text of the link.
+              - link_type (str): One of "markdown", "wikilink", or "reference".
+              - fragment (str | None): Heading anchor (e.g. "#section"), or null.
+              - raw_target (str): Literal link target as written in the source.
+
+            - outlinks (list): Links from this note. List of dicts, each with:
+
+              - target_path (str): Path of the linked document.
+              - link_text (str): The clickable text of the link.
+              - link_type (str): One of "markdown", "wikilink", or "reference".
+              - fragment (str | None): Heading anchor (e.g. "#section"), or null.
+              - raw_target (str): Literal link target as written in the source.
+              - exists (bool): True if the target document is indexed.
+
+            - similar (list): Semantically similar notes, field-collapsed by
+              file (chunks_per_file=1 for compact dossiers).  List of dicts,
+              each with:
+
+              - path (str): Relative path of the similar document.
               - title (str): Document title.
               - folder (str): Parent folder path.
+              - score (float): File-level cosine similarity 0.0-1.0 = score
+                of the best matching section.
+              - search_type (str): Always "semantic".
               - frontmatter (dict): Parsed YAML frontmatter.
-              - modified_at (float): Unix timestamp of last modification.
-              - backlinks (list): Documents linking to this note. List of dicts,
-                each with:
+              - sections (list): Single best-matching section, each with
+                heading (str|null), content (str), score (float).
+                Call get_similar(path, chunks_per_file=N) for more sections.
 
-                - source_path (str): Path of the document containing the link.
-                - source_title (str): Title of the source document.
-                - link_text (str): The clickable text of the link.
-                - link_type (str): One of "markdown", "wikilink", or "reference".
-                - fragment (str | None): Heading anchor (e.g. "#section"), or null.
-                - raw_target (str): Literal link target as written in the source.
+            - folder_notes (list[str]): Paths of other notes in the same
+              folder (up to 20). Plain strings, not dicts.
+            - tags (dict[str, list[str]]): Indexed frontmatter field →
+              distinct values for this note.
 
-              - outlinks (list): Links from this note. List of dicts, each with:
-
-                - target_path (str): Path of the linked document.
-                - link_text (str): The clickable text of the link.
-                - link_type (str): One of "markdown", "wikilink", or "reference".
-                - fragment (str | None): Heading anchor (e.g. "#section"), or null.
-                - raw_target (str): Literal link target as written in the source.
-                - exists (bool): True if the target document is indexed.
-
-              - similar (list): Semantically similar notes, field-collapsed by
-                file (chunks_per_file=1 for compact dossiers).  List of dicts,
-                each with:
-
-                - path (str): Relative path of the similar document.
-                - title (str): Document title.
-                - folder (str): Parent folder path.
-                - score (float): File-level cosine similarity 0.0-1.0 = score
-                  of the best matching section.
-                - search_type (str): Always "semantic".
-                - frontmatter (dict): Parsed YAML frontmatter.
-                - sections (list): Single best-matching section, each with
-                  heading (str|null), content (str), score (float).
-                  Call get_similar(path, chunks_per_file=N) for more sections.
-
-              - folder_notes (list[str]): Paths of other notes in the same
-                folder (up to 20). Plain strings, not dicts.
-              - tags (dict[str, list[str]]): Indexed frontmatter field →
-                distinct values for this note.
+            Index freshness is reported out-of-band in the response's
+            ``_meta.index_stale`` field — True when the IndexWriter had
+            pending or in-flight work at any of three observation points
+            (``wait_for_pending_writes`` timing out, a write completing inside the
+            read window, or non-idle at response time), False otherwise.
 
         The ``similar`` field in the response surfaces notes that may warrant
         explicit links to the context note but don't yet — a common input to
@@ -1103,8 +1347,8 @@ def register_tools(mcp: FastMCP) -> None:
         Raises:
             ValueError: If no document exists at the given path.
         """
-        drained_on_request = await _maybe_wait_for_drain(
-            vault, wait_for_drain, "get_context"
+        drained = await _maybe_wait_for_drain(
+            vault, wait_for_pending_writes, "get_context"
         )
         gen_before = vault.index.write_generation()
         result = await asyncio.to_thread(
@@ -1113,14 +1357,9 @@ def register_tools(mcp: FastMCP) -> None:
             similar_limit=similar_limit,
             link_limit=link_limit,
         )
-        return {
-            "stale": (
-                (not drained_on_request)
-                or (vault.index.write_generation() != gen_before)
-                or (not vault.index.is_drained())
-            ),
-            "data": asdict(result),
-        }
+        return _staleness_result(
+            vault, asdict(result), drained_on_request=drained, gen_before=gen_before
+        )
 
     @mcp.tool(
         icons=_TOOL_ICONS["get_orphan_notes"],
@@ -1131,6 +1370,7 @@ def register_tools(mcp: FastMCP) -> None:
         },
     )
     async def get_orphan_notes(
+        wait_for_pending_writes: bool = False,
         vault: Vault = Depends(get_vault),
     ) -> list[dict[str, Any]]:
         """Return all notes with no inbound or outbound links.
@@ -1143,6 +1383,20 @@ def register_tools(mcp: FastMCP) -> None:
         orphan_count > 0. Useful for finding isolated notes that may need to
         be connected to the rest of the vault or removed.
 
+        Args:
+            wait_for_pending_writes: When True, wait until your recent
+                write/edit/delete/rename operations have been applied to the
+                index before answering, so the results reflect those changes.
+                Use it right after modifying notes when this read must see
+                them (e.g. right after a write/edit/delete/rename whose
+                effect this read should reflect). Default
+                False answers immediately from the current index — almost
+                always already up to date; inspect the response's
+                ``_meta.index_stale`` field to tell whether a write was still
+                in flight. Bounded by a server timeout (default 60s); on
+                timeout it answers from the current index rather than waiting
+                longer.
+
         Returns:
             List of dicts ordered by path, each with:
 
@@ -1152,9 +1406,23 @@ def register_tools(mcp: FastMCP) -> None:
             - frontmatter (dict): Parsed YAML frontmatter.
             - modified_at (float): Unix timestamp of last modification.
             - kind (str): Always "note".
+
+            Index freshness rides in the response's ``_meta.index_stale``
+            field — True when the IndexWriter was non-idle, a write completed
+            inside the read window, or ``wait_for_pending_writes`` timed out; False
+            otherwise.
         """
+        drained = await _maybe_wait_for_drain(
+            vault, wait_for_pending_writes, "get_orphan_notes"
+        )
+        gen_before = vault.index.write_generation()
         results = await asyncio.to_thread(vault.graph.get_orphan_notes)
-        return [asdict(r) for r in results]
+        return _staleness_result(
+            vault,
+            [asdict(r) for r in results],
+            drained_on_request=drained,
+            gen_before=gen_before,
+        )
 
     @mcp.tool(
         icons=_TOOL_ICONS["get_most_linked"],
@@ -1166,6 +1434,7 @@ def register_tools(mcp: FastMCP) -> None:
     )
     async def get_most_linked(
         limit: int = 10,
+        wait_for_pending_writes: bool = False,
         vault: Vault = Depends(get_vault),
     ) -> list[dict[str, Any]]:
         """Return the documents with the most inbound links, ranked by backlink count.
@@ -1176,14 +1445,40 @@ def register_tools(mcp: FastMCP) -> None:
 
         Args:
             limit: Maximum number of results to return. Default 10.
+            wait_for_pending_writes: When True, wait until your recent
+                write/edit/delete/rename operations have been applied to the
+                index before answering, so the results reflect those changes.
+                Use it right after modifying notes when this read must see
+                them (e.g. right after a write/edit/delete/rename whose
+                effect this read should reflect). Default
+                False answers immediately from the current index — almost
+                always already up to date; inspect the response's
+                ``_meta.index_stale`` field to tell whether a write was still
+                in flight. Bounded by a server timeout (default 60s); on
+                timeout it answers from the current index rather than waiting
+                longer.
 
         Returns:
             List of dicts with path (str), title (str), and backlink_count (int
             — number of distinct source documents linking to this note), ordered
             by backlink_count descending.
+
+            Index freshness rides in the response's ``_meta.index_stale``
+            field — True when the IndexWriter was non-idle, a write completed
+            inside the read window, or ``wait_for_pending_writes`` timed out; False
+            otherwise.
         """
+        drained = await _maybe_wait_for_drain(
+            vault, wait_for_pending_writes, "get_most_linked"
+        )
+        gen_before = vault.index.write_generation()
         results = await asyncio.to_thread(vault.graph.get_most_linked, limit=limit)
-        return [asdict(r) for r in results]
+        return _staleness_result(
+            vault,
+            [asdict(r) for r in results],
+            drained_on_request=drained,
+            gen_before=gen_before,
+        )
 
     @mcp.tool(
         icons=_TOOL_ICONS["get_connection_path"],
@@ -1198,7 +1493,7 @@ def register_tools(mcp: FastMCP) -> None:
         source: str,
         target: str,
         max_depth: int = 10,
-        wait_for_drain: bool = False,
+        wait_for_pending_writes: bool = False,
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
         """Find the shortest connection path between two notes in the link graph.
@@ -1214,31 +1509,36 @@ def register_tools(mcp: FastMCP) -> None:
             source: Vault-relative path of the starting note (e.g. 'Ideas/spark.md').
             target: Vault-relative path of the destination note.
             max_depth: Maximum number of hops to search. Default 10, max 10.
-            wait_for_drain: When True, block until the IndexWriter has
-                no pending or in-flight work before answering. Bounded
-                by MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S (default 60s).
-                On timeout, returns the result with `stale=True` rather
-                than raising — best-effort fresh read. Default False
-                returns immediately and reports staleness via the
-                envelope's `stale` field.
+            wait_for_pending_writes: When True, wait until your recent
+                write/edit/delete/rename operations have been applied to the
+                index before answering, so the results reflect those changes.
+                Use it right after modifying notes when this read must see
+                them (e.g. right after a write/edit/delete/rename whose
+                effect this read should reflect). Default
+                False answers immediately from the current index — almost
+                always already up to date; inspect the response's
+                ``_meta.index_stale`` field to tell whether a write was still
+                in flight. Bounded by a server timeout (default 60s); on
+                timeout it answers from the current index rather than waiting
+                longer.
 
         Returns:
-            Dict envelope with two keys:
+            Dict with the connection-path result. Fields:
 
-            - stale (bool): True when the IndexWriter had pending or
-              in-flight work at any of three observation points (wait
-              timed out, write completed inside the read window, or
-              non-idle at response time). False otherwise.
-            - data (dict): The connection-path result. Inner fields:
+            - `found` (bool): Whether a path was found within `max_depth` hops.
+            - `path` (list[str]): Ordered list of note paths from source to target,
+              or an empty list if not found.
+            - `hops` (int): Number of edges in the path (`len(path) - 1`), or -1 if
+              not found.
 
-              - `found` (bool): Whether a path was found within `max_depth` hops.
-              - `path` (list[str]): Ordered list of note paths from source to target,
-                or an empty list if not found.
-              - `hops` (int): Number of edges in the path (`len(path) - 1`), or -1 if
-                not found.
+            Index freshness is reported out-of-band in the response's
+            ``_meta.index_stale`` field — True when the IndexWriter had
+            pending or in-flight work at any of three observation points
+            (``wait_for_pending_writes`` timing out, a write completing inside the
+            read window, or non-idle at response time), False otherwise.
         """
-        drained_on_request = await _maybe_wait_for_drain(
-            vault, wait_for_drain, "get_connection_path"
+        drained = await _maybe_wait_for_drain(
+            vault, wait_for_pending_writes, "get_connection_path"
         )
         gen_before = vault.index.write_generation()
         result: list[str] | None = await asyncio.to_thread(
@@ -1249,14 +1549,9 @@ def register_tools(mcp: FastMCP) -> None:
             inner: dict[str, Any] = {"found": False, "path": [], "hops": -1}
         else:
             inner = {"found": True, "path": result, "hops": len(result) - 1}
-        return {
-            "stale": (
-                (not drained_on_request)
-                or (vault.index.write_generation() != gen_before)
-                or (not vault.index.is_drained())
-            ),
-            "data": inner,
-        }
+        return _staleness_result(
+            vault, inner, drained_on_request=drained, gen_before=gen_before
+        )
 
     # --- Git history tools ---
 

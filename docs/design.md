@@ -581,29 +581,62 @@ See `docs/superpowers/specs/2026-05-31-issue-559-single-writer-for-indexes-desig
 for the full design rationale, including the cascade of #513 / #519
 prerequisites that motivated centralising mutations on a single writer.
 
-#### Drift signals on B3 readers (#534)
+#### Drift signals on index-querying read tools (#534, #641, #645)
 
-B3 MCP tools (`get_backlinks`, `get_outlinks`, `get_similar`,
-`get_context`, `get_connection_path`) wrap their response in a
-`{"stale": bool, "data": ...}` envelope. `stale` is the OR of three
-signals: the optional `wait_for_drain` timed out (writer never went
-idle within the budget), the writer's monotonic `write_generation`
-counter advanced during the read (a write cycle completed inside the
-read window), or `is_drained()` reports a non-idle writer at
-response-construction time (a write is in flight). The
-`write_generation` counter — incremented under `_in_flight_lock`
-once per completed job — closes the case the pre/post `is_drained()`
-pair could not detect: a write that started and finished entirely
-between two snapshots.
+Every MCP read tool that queries the index — `search`, the B2 listing /
+aggregate tools (`list_documents`, `list_folders`, `list_tags`, `stats`,
+`get_recent`, `get_broken_links`, `get_orphan_notes`, `get_most_linked`),
+and the B3 graph tools (`get_backlinks`, `get_outlinks`, `get_similar`,
+`get_context`, `get_connection_path`) — returns its **bare** payload (a
+list or dict) and reports index freshness **out-of-band in the MCP
+response's `_meta.index_stale` field** via FastMCP `ToolResult(meta=...)`.
+The data payload is identical whether the index is fresh or stale, so
+clients that do not care about drift read it exactly as before; the ~1%
+that need a fresh-read guarantee inspect `result._meta.index_stale`. This
+replaces the earlier `{"stale": bool, "data": ...}` envelope (#534): the
+envelope conflated response metadata with domain data, could not extend to
+resources without breaking their bare-JSON contract, and added wrapper
+noise on every fresh read. `_meta` is MCP's dedicated out-of-band channel
+for exactly this kind of response metadata.
 
-Each B3 tool accepts an optional `wait_for_drain: bool = false`
-parameter. When `true`, the tool layer polls `IndexFacet.is_drained()`
+`index_stale` is the OR of three signals: the optional `wait_for_pending_writes`
+timed out (writer never went idle within the budget), the writer's
+monotonic `write_generation` counter advanced during the read (a write
+cycle completed inside the read window), or `is_drained()` reports a
+non-idle writer at response-construction time (a write is in flight). The
+`write_generation` counter — incremented under `_in_flight_lock` once per
+completed job — closes the case the pre/post `is_drained()` pair could not
+detect: a write that started and finished entirely between two snapshots.
+
+Each such tool accepts an optional `wait_for_pending_writes: bool = false`
+parameter (client-facing name; the internal primitive is still "drain").
+When `true`, the tool layer polls `IndexFacet.is_drained()`
 with `asyncio.sleep` until the writer drains or
 `MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S` (default 60s) elapses, then
-runs the query. On timeout the tool returns the result with
-`stale=true` rather than raising — best-effort fresh-read
-semantics. (`IndexFacet.wait_for_drain()` is the synchronous
-counterpart for in-process callers.)
+runs the query. On timeout the tool answers from the current index
+rather than raising — best-effort fresh-read semantics, with
+`index_stale=true` in `_meta`. (`IndexFacet.wait_for_drain()` is the
+synchronous counterpart for in-process callers.)
+
+The index-querying **resources** (`config://vault`, `stats://vault`,
+`tags://vault`, `tags://vault/{field}`, `folders://vault`,
+`toc://vault/{path}`, `similar://vault/{path}`, `recent://vault`) carry
+the same `_meta.index_stale` signal via FastMCP `ResourceResult(meta=...)`,
+readable through the resource read's `_meta`. Resources take no
+`wait_for_pending_writes` parameter (a resource URI template binds only address
+path segments, not ad-hoc control parameters), so they signal staleness
+only. Each body is wrapped in an explicit `application/json`
+`ResourceContent` so the declared MIME type survives — a bare `str` in a
+`ResourceResult` would default to `text/plain`.
+
+Implementation: the shared `_staleness_result()` helper (in
+`_server_tools.py`) wraps a tool's data in a `ToolResult` whose
+`structured_content` mirrors FastMCP's wrap-result convention (a
+list/primitive payload is nested under `{"result": ...}`) so the client
+still deserializes `result.data` to the bare shape advertised by the
+tool's data-typed return annotation. The annotation drives the output
+schema; the `ToolResult` is the runtime payload. The resource counterpart
+is `_stale_resource()` in `_server_resources.py`.
 
 The drift signal reflects writer-internal state only: paths in
 `dirty_paths`, paths in `dirty_embeddings`, the in-flight job

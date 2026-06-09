@@ -2,6 +2,9 @@
 
 MCP resources expose vault metadata that clients can read directly without invoking tools. Most resources return `application/json`; `ui://vault/app.html` is an exception — it returns a self-contained HTML SPA for MCP Apps clients.
 
+!!! note "Index freshness (`_meta.index_stale`)"
+    The index-querying resources — `config://vault`, `stats://vault`, `tags://vault`, `tags://vault/{field}`, `folders://vault`, `toc://vault/{path}`, `similar://vault/{path}`, and `recent://vault` — keep their bare JSON contents unchanged and report index freshness out-of-band in the resource read's **`_meta.index_stale`** field (read it via `read_resource_mcp(uri).meta`). It is `true` when a write landed during the read or the IndexWriter was non-idle at response time. Resources carry no `wait_for_pending_writes` parameter — they signal only; use the equivalent MCP tool with `wait_for_pending_writes=true` when you need to block for a fresh read.
+
 ## Quick Reference
 
 | URI | Description |
@@ -122,8 +125,8 @@ Top 10 semantically similar notes for a document. Requires embeddings to be buil
 
 Results are **grouped per file** — each file appears at most once, with up to `chunks_per_file` (server default `2`) best-matching sections in a `sections` array. Each entry is a `GroupedResult` dict with `path`, `title`, `folder`, `score` (max section score), `search_type` (`"semantic"`), `frontmatter`, and `sections` — a list of `{heading, content, score}` dicts sorted by score then document order.
 
-!!! note "Resource shape differs from `get_similar` tool"
-    This resource returns a flat JSON array. The `get_similar` MCP tool wraps the same data in a `{"stale": bool, "data": [...]}` envelope so callers see a drift signal (#534). Resource handlers do not accept a `wait_for_drain` parameter, so this resource intentionally omits the envelope; clients that need the drift signal should use the tool. Lifting the envelope to resources is tracked as a follow-up — see [`IndexFacet.is_drained()`](https://github.com/pvliesdonk/markdown-vault-mcp/issues/534) for the underlying primitive.
+!!! note "Index freshness via `_meta.index_stale`"
+    This resource returns a flat JSON array as its contents, and reports index freshness out-of-band in the read's `_meta.index_stale` field — the same mechanism the `get_similar` MCP tool uses (#534, #645). Resources carry no `wait_for_pending_writes` parameter (a resource URI template binds only address path segments, not ad-hoc control parameters), so they signal only: read `_meta.index_stale` and re-read or fall back to the `get_similar` tool with `wait_for_pending_writes=true` if you need a fresh-read guarantee.
 
 **Example:** `similar://vault/Journal/note.md`
 

@@ -34,13 +34,16 @@ on stuck builds.
 
 Default: `60` (seconds).
 
-Maximum time the B3 MCP tools (`get_backlinks`, `get_outlinks`,
-`get_similar`, `get_context`, `get_connection_path`) wait for the
-IndexWriter to drain when called with `wait_for_drain=true`. On
-timeout the tool returns the result with `stale=true` rather than
-raising — best-effort fresh read. Increase for very large vaults
-where reindex / build_embeddings jobs take longer; decrease for
-faster client feedback when the index has chronic backlog.
+Maximum time an index-querying read tool (`search`, `list_documents`,
+`list_folders`, `list_tags`, `stats`, `get_recent`, `get_backlinks`,
+`get_outlinks`, `get_broken_links`, `get_similar`, `get_context`,
+`get_orphan_notes`, `get_most_linked`, `get_connection_path`) waits for
+the IndexWriter to drain when called with `wait_for_pending_writes=true`. On
+timeout the tool answers from the current index rather than raising —
+best-effort fresh read — and reports `index_stale=true` in the response's
+`_meta`. Increase for very large vaults where reindex / build_embeddings
+jobs take longer; decrease for faster client feedback when the index has
+chronic backlog.
 
 <!-- DOMAIN-CONFIG-VARS-START -->
 ## Server Identity

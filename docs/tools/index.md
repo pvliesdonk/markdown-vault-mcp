@@ -2,6 +2,9 @@
 
 markdown-vault-mcp exposes MCP tools across several categories. Write tools are only available when `MARKDOWN_VAULT_MCP_READ_ONLY=false`.
 
+!!! note "Index freshness on read tools (`wait_for_pending_writes` + `_meta.index_stale`)"
+    Every read tool that queries the FTS index — `search`, `list_documents`, `list_folders`, `list_tags`, `stats`, `get_recent`, `get_backlinks`, `get_outlinks`, `get_broken_links`, `get_similar`, `get_context`, `get_orphan_notes`, `get_most_linked`, and `get_connection_path` — accepts an optional **`wait_for_pending_writes`** (`bool`, default `false`) parameter and reports index freshness **out-of-band in the MCP response's `_meta.index_stale` field** rather than wrapping the payload in a `{stale, data}` envelope. The data payload is a **bare list/dict, identical whether the index is fresh or stale** — clients that do not care about drift ignore `_meta` entirely. Clients that need a fresh-read guarantee either inspect `result._meta.index_stale`, or pass `wait_for_pending_writes=true` to block until the writer drains (bounded by `MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S`, default 60s; on timeout it answers from the current index rather than raising). `index_stale` is `true` when the IndexWriter had pending or in-flight work at any of three observation points: the optional `wait_for_pending_writes` timed out, a write completed inside the read window, or the writer was non-idle at response time. The same `_meta.index_stale` field rides on the index-querying MCP **resources** (`config://`, `stats://`, `folders://`, `tags://`, `recent://`, `toc://`, `similar://`), readable via the resource read's `_meta` (resources carry no `wait_for_pending_writes` parameter — they signal only).
+
 <!-- DOMAIN-TOOLS-LIST-START -->
 
 ## Quick Reference
@@ -534,12 +537,9 @@ Find all documents that link to a given document.
 |-----------|------|---------|-------------|
 | `path` | string | required | Relative path to the target document |
 | `limit` | int | `null` | Maximum number of backlinks to return. Omitted (the default) returns all. |
-| `wait_for_drain` | bool | `false` | When `true`, blocks until the IndexWriter has no pending or in-flight work before answering. Bounded by `MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S` (default 60s). On timeout, the tool returns the result with `stale=true` rather than raising. Default `false` returns immediately and reports staleness via the envelope's `stale` field. |
+| `wait_for_pending_writes` | bool | `false` | Block until the IndexWriter drains before answering, then report freshness via `_meta.index_stale` (see the *Index freshness on read tools* note at the top of this page). |
 
-**Returns:** Dict envelope with two keys:
-
-- `stale` (bool): True when the IndexWriter had pending or in-flight work at any of three observation points (wait timed out, a write cycle completed inside the read window, or non-idle at response time). False otherwise; the `data` payload reflects the index as of response time.
-- `data` (list[dict]): List of documents containing links to the given path. Each entry has `source_path`, `source_title`, `link_text`, `link_type`, `fragment`, and `raw_target` fields.
+**Returns:** List of documents containing links to the given path. Each entry has `source_path`, `source_title`, `link_text`, `link_type`, `fragment`, and `raw_target` fields. Index freshness is reported in `_meta.index_stale` (see the freshness note at the top of this page).
 
 ### `get_outlinks`
 
@@ -551,12 +551,9 @@ Find all links from a document, with existence check.
 |-----------|------|---------|-------------|
 | `path` | string | required | Relative path to the source document |
 | `limit` | int | `null` | Maximum number of outlinks to return. Omitted (the default) returns all. |
-| `wait_for_drain` | bool | `false` | When `true`, blocks until the IndexWriter has no pending or in-flight work before answering. Bounded by `MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S` (default 60s). On timeout, the tool returns the result with `stale=true` rather than raising. Default `false` returns immediately and reports staleness via the envelope's `stale` field. |
+| `wait_for_pending_writes` | bool | `false` | Block until the IndexWriter drains before answering, then report freshness via `_meta.index_stale` (see the *Index freshness on read tools* note at the top of this page). |
 
-**Returns:** Dict envelope with two keys:
-
-- `stale` (bool): True when the IndexWriter had pending or in-flight work at any of three observation points (wait timed out, a write cycle completed inside the read window, or non-idle at response time). False otherwise; the `data` payload reflects the index as of response time.
-- `data` (list[dict]): List of link targets with an `exists` field indicating whether the target document is in the vault. Each entry has `target_path`, `link_text`, `link_type`, `fragment`, `raw_target`, and `exists` fields.
+**Returns:** List of link targets with an `exists` field indicating whether the target document is in the vault. Each entry has `target_path`, `link_text`, `link_type`, `fragment`, `raw_target`, and `exists` fields. Index freshness is reported in `_meta.index_stale` (see the freshness note at the top of this page).
 
 ### `get_broken_links`
 
@@ -581,12 +578,9 @@ Find semantically similar notes by document path. Requires embeddings to be buil
 | `path` | string | required | Relative path to the document |
 | `limit` | int | `10` | Maximum files to return |
 | `chunks_per_file` | int | server default (`2`) | Maximum number of matching sections returned per file. Overrides `MARKDOWN_VAULT_MCP_CHUNKS_PER_FILE` for this call. `0` is rejected. |
-| `wait_for_drain` | bool | `false` | When `true`, blocks until the IndexWriter has no pending or in-flight work before answering. Bounded by `MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S` (default 60s). On timeout, the tool returns the result with `stale=true` rather than raising. Default `false` returns immediately and reports staleness via the envelope's `stale` field. |
+| `wait_for_pending_writes` | bool | `false` | Block until the IndexWriter drains before answering, then report freshness via `_meta.index_stale` (see the *Index freshness on read tools* note at the top of this page). |
 
-**Returns:** Dict envelope with two keys:
-
-- `stale` (bool): True when the IndexWriter had pending or in-flight work at any of three observation points (wait timed out, a write cycle completed inside the read window, or non-idle at response time). False otherwise; the `data` payload reflects the index as of response time.
-- `data` (list[dict]): List of grouped similar-document dicts ranked by cosine similarity, one entry per file with up to `chunks_per_file` best-matching sections. Each entry contains: `path`, `title`, `folder`, `score` (max section score), `search_type` (`"semantic"`), `frontmatter`, and `sections` — a list of `{heading, content, score}` dicts sorted by score then document order.
+**Returns:** List of grouped similar-document dicts ranked by cosine similarity, one entry per file with up to `chunks_per_file` best-matching sections. Each entry contains: `path`, `title`, `folder`, `score` (max section score), `search_type` (`"semantic"`), `frontmatter`, and `sections` — a list of `{heading, content, score}` dicts sorted by score then document order. Index freshness is reported in `_meta.index_stale` (see the freshness note at the top of this page).
 
 !!! note "Grouped result shape"
     Returns one entry per file with up to `chunks_per_file` best-matching sections. Default is 2 sections per file; pass `chunks_per_file=1` for compact dossiers.
@@ -615,12 +609,9 @@ Get a consolidated context dossier for a note. Combines backlinks, outlinks, sim
 | `path` | string | required | Relative path to the document |
 | `similar_limit` | int | `5` | Max similar files to include. Pass `0` to skip the similarity lookup (e.g. when `stats` shows `semantic_search_available=false`) |
 | `link_limit` | int | `10` | Max backlinks and outlinks to include each |
-| `wait_for_drain` | bool | `false` | When `true`, blocks until the IndexWriter has no pending or in-flight work before answering. Bounded by `MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S` (default 60s). On timeout, the tool returns the result with `stale=true` rather than raising. Default `false` returns immediately and reports staleness via the envelope's `stale` field. |
+| `wait_for_pending_writes` | bool | `false` | Block until the IndexWriter drains before answering, then report freshness via `_meta.index_stale` (see the *Index freshness on read tools* note at the top of this page). |
 
-**Returns:** Dict envelope with two keys:
-
-- `stale` (bool): True when the IndexWriter had pending or in-flight work at any of three observation points (wait timed out, a write cycle completed inside the read window, or non-idle at response time). False otherwise; the `data` payload reflects the index as of response time.
-- `data` (dict): Object with `path`, `title`, `folder`, `frontmatter`, `modified_at`, `backlinks`, `outlinks`, `similar`, `folder_notes`, and `tags` fields. The `similar` list contains grouped result dicts — one entry per file with up to `chunks_per_file` best-matching sections (default 1 for `get_context` to keep dossiers compact).
+**Returns:** Object with `path`, `title`, `folder`, `frontmatter`, `modified_at`, `backlinks`, `outlinks`, `similar`, `folder_notes`, and `tags` fields. The `similar` list contains grouped result dicts — one entry per file with up to `chunks_per_file` best-matching sections (default 1 for `get_context` to keep dossiers compact). Index freshness is reported in `_meta.index_stale` (see the freshness note at the top of this page).
 
 !!! note "Grouped similar shape"
     Each `similar` entry contains `path`, `title`, `folder`, `score`, `search_type`, `frontmatter`, and `sections` — a list of `{heading, content, score}` dicts. `get_context` defaults to one section per file for compact dossiers; `search` and `get_similar` default to 2.
@@ -654,12 +645,9 @@ Find the shortest path between two notes via BFS on the undirected link graph (m
 | `source` | string | required | Relative path to the starting document |
 | `target` | string | required | Relative path to the target document |
 | `max_depth` | int | `10` | Maximum hops to search (clamped to [1, 10]) |
-| `wait_for_drain` | bool | `false` | When `true`, blocks until the IndexWriter has no pending or in-flight work before answering. Bounded by `MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S` (default 60s). On timeout, the tool returns the result with `stale=true` rather than raising. Default `false` returns immediately and reports staleness via the envelope's `stale` field. |
+| `wait_for_pending_writes` | bool | `false` | Block until the IndexWriter drains before answering, then report freshness via `_meta.index_stale` (see the *Index freshness on read tools* note at the top of this page). |
 
-**Returns:** Dict envelope with two keys:
-
-- `stale` (bool): True when the IndexWriter had pending or in-flight work at any of three observation points (wait timed out, a write cycle completed inside the read window, or non-idle at response time). False otherwise; the `data` payload reflects the index as of response time.
-- `data` (dict): Object with `found` (bool), `path` (ordered list of note paths from source to target), and `hops` (number of edges, or `-1` if not found).
+**Returns:** Object with `found` (bool), `path` (ordered list of note paths from source to target), and `hops` (number of edges, or `-1` if not found). Index freshness is reported in `_meta.index_stale` (see the freshness note at the top of this page).
 
 ### `get_history`
 

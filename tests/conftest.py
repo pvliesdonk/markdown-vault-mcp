@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pytest
@@ -14,6 +16,32 @@ from markdown_vault_mcp.providers import EmbeddingProvider
 # test module without requiring a per-file import (which would trip ruff's
 # F811 redefinition check on the parameter shadowing).
 from tests.fixtures.git import git_repo_pair  # noqa: F401
+
+
+def _parse_tool_data(result: Any) -> Any:
+    """Extract the data payload from a CallToolResult, handling FastMCP serialization.
+
+    FastMCP serializes ``list[dict]`` as a single JSON TextContent blob.
+    ``result.data`` works for simple types (dict, str, list[str]) but returns
+    opaque ``Root()`` objects for ``list[dict]``; this falls back to parsing
+    the raw text content when needed.
+    """
+    data = result.data
+    if isinstance(data, list) and data and not isinstance(data[0], (dict, str)):
+        raw = result.content[0].text if result.content else "[]"
+        return json.loads(raw)
+    return data
+
+
+def _meta_stale(result: Any) -> bool | None:
+    """Read ``index_stale`` from a tool result's out-of-band ``_meta`` channel.
+
+    Index-querying read tools surface freshness in ``result.meta`` rather than
+    wrapping the payload in a ``{stale, data}`` envelope. Returns the flag, or
+    None for tools that do not set it.
+    """
+    meta = getattr(result, "meta", None) or {}
+    return meta.get("index_stale")
 
 
 class MockEmbeddingProvider(EmbeddingProvider):
