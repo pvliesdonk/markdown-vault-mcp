@@ -28,6 +28,16 @@ logger = logging.getLogger(__name__)
 # may need to reduce this value significantly — see issue #306.
 _FASTEMBED_ONNX_BATCH_SIZE = 32
 
+# FastEmbed's model registry exposes only `dim`, not context length, so we
+# carry a small table for the models we default to / commonly use. Unknown
+# models return None and fall back to a conservative chunk cap.
+_FASTEMBED_CONTEXT_LENGTHS: dict[str, int] = {
+    "BAAI/bge-small-en-v1.5": 512,
+    "BAAI/bge-base-en-v1.5": 512,
+    "nomic-ai/nomic-embed-text-v1.5": 8192,
+    "jinaai/jina-embeddings-v2-base-en": 8192,
+}
+
 
 class EmbeddingProvider(ABC):
     """Abstract base class for embedding providers."""
@@ -439,7 +449,12 @@ class FastEmbedProvider(EmbeddingProvider):
 
     @property
     def context_length(self) -> int | None:
-        return None
+        """Return the model's context length from the known-model table.
+
+        Returns None for models absent from the table; callers fall back to a
+        conservative chunk cap.
+        """
+        return _FASTEMBED_CONTEXT_LENGTHS.get(self._model_name)
 
 
 def get_embedding_provider(config: VaultConfig) -> EmbeddingProvider:

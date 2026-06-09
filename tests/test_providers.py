@@ -490,3 +490,15 @@ def test_ollama_context_length_none_on_error(monkeypatch):
     p = OllamaProvider(host="http://x:11434", model="bge-m3")
     monkeypatch.setattr(p._httpx, "Client", lambda *a, **k: _Client())  # noqa: ARG005
     assert p.context_length is None
+
+
+def test_fastembed_context_length_table():
+    from markdown_vault_mcp.providers import FastEmbedProvider
+
+    p = FastEmbedProvider.__new__(FastEmbedProvider)
+    p._model_name = "nomic-ai/nomic-embed-text-v1.5"
+    assert p.context_length == 8192
+    p._model_name = "BAAI/bge-small-en-v1.5"
+    assert p.context_length == 512
+    p._model_name = "some/unknown-model"
+    assert p.context_length is None
