@@ -216,12 +216,12 @@ class Vault:
             # max_chunk_words only takes effect for the conventional default
             # ("heading" string), so explicit-instance callers retain full control.
             self._chunk_strategy = _resolve_chunk_strategy(chunk_strategy)
-        self._max_chunk_chars = max_chunk_chars
+        # The derived cap (max_chunk_chars) is passed straight to the chunker
+        # above and kept nowhere else — it is deliberately NOT a warm-restart
+        # key, so a transient model-context read does not trigger a rebuild.
         # Stable warm-restart keys recorded into FTS meta at build time (#649):
         # the embedding model name and the explicit char-cap override. A change
-        # to either rejects the short-circuit and cold-rebuilds; the derived
-        # cap (max_chunk_chars, used only for chunking) is deliberately NOT a
-        # key, so a transient model-context read does not trigger a rebuild.
+        # to either rejects the short-circuit and cold-rebuilds.
         self._max_chunk_chars_override = max_chunk_chars_override
         # None when no provider is configured.
         self._embed_model_name: str | None = (
