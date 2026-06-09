@@ -577,6 +577,32 @@ def test_ollama_context_length_none_when_field_absent(monkeypatch):
     assert p.context_length is None
 
 
+def test_ollama_context_length_none_on_non_dict_body(monkeypatch):
+    """A 200 whose JSON body is not an object (list/string) returns None,
+    not an uncaught AttributeError from .get()."""
+    from markdown_vault_mcp.providers import OllamaProvider
+
+    class _Resp:
+        status_code = 200
+
+        def json(self):
+            return ["not", "a", "dict"]
+
+    class _Client:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def post(self, *a, **k):  # noqa: ARG002
+            return _Resp()
+
+    p = OllamaProvider(host="http://x:11434", model="bge-m3:latest")
+    monkeypatch.setattr(p._httpx, "Client", lambda *a, **k: _Client())  # noqa: ARG005
+    assert p.context_length is None
+
+
 def test_fastembed_context_length_table():
     from markdown_vault_mcp.providers import FastEmbedProvider
 

@@ -208,7 +208,10 @@ class OllamaProvider(EmbeddingProvider):
     def context_length(self) -> int | None:
         """Query /api/show once for the model's context length; cache it.
 
-        Returns None if the query fails or the field is absent.
+        Returns None if the query fails or the field is absent. The result
+        (including ``None`` on failure) is cached permanently for the provider
+        instance — a transiently-unreachable Ollama at startup is not retried,
+        so the conservative fallback cap persists until the server restarts.
         """
         if self._context_queried:
             return self._context_length
@@ -227,7 +230,14 @@ class OllamaProvider(EmbeddingProvider):
                     resp.status_code,
                 )
                 return None
-            info = resp.json().get("model_info", {}) or {}
+            data = resp.json()
+            if not isinstance(data, dict):
+                # A well-behaved Ollama returns an object; a proxy/error page
+                # could return a list or string, on which .get() would raise
+                # an uncaught AttributeError and crash startup.
+                logger.warning("ollama_context_length_absent model=%s", self._model)
+                return None
+            info = data.get("model_info", {}) or {}
             for key, value in info.items():
                 if key.endswith(".context_length") and isinstance(value, int):
                     self._context_length = value

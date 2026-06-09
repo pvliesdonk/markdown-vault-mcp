@@ -59,7 +59,10 @@ def derive_max_chunk_chars(*, context_length: int | None, override: int | None) 
     """
     if override is not None:
         return override
-    if context_length is not None:
+    # ``context_length > 0`` guards against a degenerate 0 cap (no real model
+    # reports a 0-token context, but a malformed/absent value must not yield a
+    # chunker that splits everything to nothing).
+    if context_length is not None and context_length > 0:
         return round(context_length * _CHARS_PER_TOKEN)
     return _DEFAULT_MAX_CHUNK_CHARS
 

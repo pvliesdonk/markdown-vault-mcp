@@ -548,6 +548,21 @@ class HeadingChunker:
                 char_budget is not None and chars > char_budget
             )
 
+        def _emit(frag_tokens: list[str]) -> None:
+            content = " ".join(frag_tokens)
+            if char_budget is not None and len(content) > char_budget:
+                # An unsplittable single token over the char budget (the one
+                # invariant exception). Diagnostic only — the conservative cap
+                # means it may still embed; a true overflow surfaces at embed
+                # time as build_embeddings_skip_batch.
+                logger.debug(
+                    "chunker_unsplittable_token chars=%d budget=%d line_offset=%d",
+                    len(content),
+                    char_budget,
+                    line_offset,
+                )
+            out.append(make_chunk(content, line_offset))
+
         tokens = line.split()
         cur: list[str] = []
         cur_words = 0
@@ -557,7 +572,7 @@ class HeadingChunker:
             # when the fragment is non-empty.
             add_chars = len(tok) + (1 if cur else 0)
             if cur and _over(cur_words + 1, cur_chars + add_chars):
-                out.append(make_chunk(" ".join(cur), line_offset))
+                _emit(cur)
                 cur = []
                 cur_words = 0
                 cur_chars = 0
@@ -566,7 +581,7 @@ class HeadingChunker:
             cur_words += 1
             cur_chars += add_chars
         if cur:
-            out.append(make_chunk(" ".join(cur), line_offset))
+            _emit(cur)
 
 
 def _resolve_title(metadata: dict[str, Any], content: str, path: Path) -> str:

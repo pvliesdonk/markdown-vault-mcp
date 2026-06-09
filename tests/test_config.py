@@ -74,6 +74,7 @@ def test_search_ranking_config_rejects_zero_chunks_per_file(
         (8192, None, round(8192 * 2.8)),
         (512, None, round(512 * 2.8)),
         (None, None, 6000),
+        (0, None, 6000),  # degenerate 0 context falls back, not a 0 cap
         (8192, 4096, 4096),
         (None, 4096, 4096),
     ],

@@ -560,12 +560,17 @@ class IndexManager:
                 vectors.add(texts[start:end], meta[start:end])
                 embedded += end - start
             except Exception as exc:
+                # Broad by design: providers raise heterogeneous types for an
+                # oversized batch (RuntimeError, httpx errors, ...). Log the
+                # traceback so a genuinely unexpected error caught here is still
+                # diagnosable rather than reduced to a one-line message.
                 logger.warning(
                     "build_embeddings_skip_batch chunks=%d-%d of %d err=%s",
                     start + 1,
                     end,
                     total,
                     exc,
+                    exc_info=True,
                 )
             logger.debug(
                 "build_embeddings: embedded chunks %d-%d of %d",
