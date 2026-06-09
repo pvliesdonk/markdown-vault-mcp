@@ -72,27 +72,34 @@ class WholeDocumentChunker:
 
 class HeadingChunker:
     """Split document on heading boundaries, descending adaptively when chunks
-    exceed ``max_chunk_words``.
+    exceed the configured word and/or character budget.
 
-    Default behaviour (``max_chunk_words=None``): split on H1/H2 only — the
-    pre-2026-04 behaviour.  A document that contains only H3+ headings and no
-    H1/H2 headings returns a **single** ``heading=None`` chunk in legacy mode
-    (same as pre-2026-04).  With ``max_chunk_words`` set, after the initial
-    H1/H2 split each chunk that exceeds the threshold is recursively re-split
-    at the next heading level (H3, then H4, …, up to H6) until each chunk
-    fits or no headings of the next level exist inside.  In adaptive mode, if
-    H1/H2 yielded nothing the chunker descends H3→H6 to find the shallowest
-    heading level present — so a doc with only H3 headings is still split at
-    H3 rather than dropped into a single chunk.  When heading-based
-    refinement cannot make further progress — a leaf section with no deeper
-    headings, a preamble with no headings at all, or a short-doc / no-heading
-    document — :meth:`_budget_split` falls back to paragraph and word
-    boundaries so the invariant ``words(chunk) <= max_chunk_words`` holds for
-    every emitted chunk regardless of source structure.
+    Legacy behaviour (both ``max_chunk_words`` and ``max_chunk_chars`` are
+    ``None``): split on H1/H2 only — the pre-2026-04 behaviour.  A document
+    that contains only H3+ headings and no H1/H2 headings returns a
+    **single** ``heading=None`` chunk in legacy mode (same as pre-2026-04).
+    With a budget set, after the initial H1/H2 split each chunk that exceeds
+    the budget is recursively re-split at the next heading level (H3, then
+    H4, …, up to H6) until each chunk fits or no headings of the next level
+    exist inside.  In adaptive mode, if H1/H2 yielded nothing the chunker
+    descends H3→H6 to find the shallowest heading level present — so a doc
+    with only H3 headings is still split at H3 rather than dropped into a
+    single chunk.  When heading-based refinement cannot make further
+    progress — a leaf section with no deeper headings, a preamble with no
+    headings at all, or a short-doc / no-heading document —
+    :meth:`_budget_split` falls back to paragraph, line, and word boundaries
+    so the invariant ``not _over_budget(chunk.content)`` holds for every
+    emitted chunk regardless of source structure (the sole exception being a
+    single token longer than ``max_chunk_chars``, which is unsplittable).
+
+    The ``max_chunk_chars`` cap bounds token-dense content — text with a high
+    character-per-word ratio that fits ``max_chunk_words`` yet exceeds the
+    embedding model's token context; it is derived from the model's context
+    length (see :func:`markdown_vault_mcp.config.derive_max_chunk_chars`).
 
     Short documents (fewer than ``short_doc_lines`` lines) are returned as a
-    single chunk when they fit within ``max_chunk_words``; if they exceed
-    it, the same word-budget fallback applies.
+    single chunk when they fit the budget; if they exceed it, the same
+    budget fallback applies.
 
     This is the default chunking strategy.
     """
@@ -102,6 +109,7 @@ class HeadingChunker:
         short_doc_lines: int = _SHORT_DOC_LINES,
         *,
         max_chunk_words: int | None = None,
+        max_chunk_chars: int | None = None,
     ) -> None:
         """Initialise the chunker.
 
@@ -111,9 +119,28 @@ class HeadingChunker:
             max_chunk_words: Word-count threshold above which a chunk is
                 recursively re-split at the next heading level. ``None``
                 preserves today's H1/H2-only behaviour.
+            max_chunk_chars: Character-count threshold above which a chunk is
+                re-split. Bounds token-dense content (many characters per
+                word) that fits the word budget yet exceeds the embedding
+                model's context. ``None`` disables the char cap; splitting
+                then depends on ``max_chunk_words`` alone.
         """
         self.short_doc_lines = short_doc_lines
         self.max_chunk_words = max_chunk_words
+        self.max_chunk_chars = max_chunk_chars
+
+    def _has_budget(self) -> bool:
+        """True when either a word budget or a char budget is configured."""
+        return self.max_chunk_words is not None or self.max_chunk_chars is not None
+
+    def _over_budget(self, content: str) -> bool:
+        """True when content exceeds either the word or the char budget."""
+        if (
+            self.max_chunk_words is not None
+            and len(content.split()) > self.max_chunk_words
+        ):
+            return True
+        return self.max_chunk_chars is not None and len(content) > self.max_chunk_chars
 
     def chunk(self, content: str, _metadata: dict[str, Any]) -> list[Chunk]:
         """Split content adaptively on heading boundaries.
@@ -129,10 +156,7 @@ class HeadingChunker:
 
         if len(lines) <= self.short_doc_lines:
             single = Chunk(heading=None, heading_level=0, content=content, start_line=0)
-            if (
-                self.max_chunk_words is not None
-                and len(content.split()) > self.max_chunk_words
-            ):
+            if self._over_budget(content):
                 return self._budget_split(single)
             return [single]
 
@@ -141,12 +165,12 @@ class HeadingChunker:
 
         # In adaptive mode, if H1/H2 yielded nothing, descend through H3..H6
         # to find any heading-level present in the doc, so the cap/snippet
-        # pipeline still sees per-section chunks.  In legacy mode
-        # (max_chunk_words is None) we preserve the pre-2026-04 H1/H2-only
-        # behaviour: a doc with only deep headings falls through to the
-        # single-chunk-no-heading return below.
+        # pipeline still sees per-section chunks.  In legacy mode (no budget
+        # configured) we preserve the pre-2026-04 H1/H2-only behaviour: a doc
+        # with only deep headings falls through to the single-chunk-no-heading
+        # return below.
         deepest_split_level = 2
-        if not chunks and self.max_chunk_words is not None:
+        if not chunks and self._has_budget():
             for level in (3, 4, 5, 6):
                 chunks = self._split_at_levels(lines, levels=(level,), base_line=0)
                 if chunks:
@@ -156,14 +180,11 @@ class HeadingChunker:
         if not chunks:
             # No headings at all → single chunk with no heading.
             single = Chunk(heading=None, heading_level=0, content=content, start_line=0)
-            if (
-                self.max_chunk_words is not None
-                and len(content.split()) > self.max_chunk_words
-            ):
+            if self._over_budget(content):
                 return self._budget_split(single)
             return [single]
 
-        if self.max_chunk_words is not None:
+        if self._has_budget():
             chunks = self._refine_oversize(chunks, current_level=deepest_split_level)
         return chunks
 
@@ -237,20 +258,20 @@ class HeadingChunker:
     def _refine_oversize(
         self, chunks: list[Chunk], *, current_level: int
     ) -> list[Chunk]:
-        """Recursively re-split chunks that exceed ``max_chunk_words``.
+        """Recursively re-split chunks that exceed the configured budget.
 
         ``current_level`` is the deepest heading level already used as a
         split point. Refinement attempts ``current_level + 1`` next; if no
         deeper headings exist inside an oversize chunk (or we have already
         reached H6), :meth:`_budget_split` fragments it on paragraph and
-        word boundaries so the invariant
-        ``len(chunk.content.split()) <= max_chunk_words`` holds for every
-        emitted chunk — including preamble chunks with no heading at all.
+        word boundaries so the invariant ``not _over_budget(chunk.content)``
+        holds for every emitted chunk — including preamble chunks with no
+        heading at all.
         """
-        assert self.max_chunk_words is not None  # guarded by caller
+        assert self._has_budget()  # guarded by caller
         out: list[Chunk] = []
         for chunk in chunks:
-            if len(chunk.content.split()) <= self.max_chunk_words:
+            if not self._over_budget(chunk.content):
                 out.append(chunk)
                 continue
 
@@ -281,7 +302,7 @@ class HeadingChunker:
 
     def _budget_split(self, chunk: Chunk) -> list[Chunk]:
         """Split *chunk* on paragraph, line, and word boundaries until each
-        fragment fits within ``max_chunk_words``.
+        fragment fits within the configured word **and** char budgets.
 
         Used as the last-resort splitter when no deeper heading is available
         (e.g. an H6 section longer than the budget, or a preamble with no
@@ -293,8 +314,8 @@ class HeadingChunker:
         Splitting hierarchy (each level used only when the previous level
         cannot keep the budget):
         1. Paragraph boundaries — multiple paragraphs bin-pack into a
-           single chunk when their combined word count fits the budget,
-           preserving inter-paragraph blank lines.
+           single chunk when their combined word/char counts fit the
+           budget, preserving inter-paragraph blank lines.
         2. Line boundaries inside an oversize paragraph — lines bin-pack
            the same way, so tables, lists, code blocks, and other
            line-structured content keep their layout.
@@ -304,15 +325,21 @@ class HeadingChunker:
            the alternative is silent truncation by the embedding model).
 
         Args:
-            chunk: A chunk whose word count exceeds ``max_chunk_words``.
+            chunk: A chunk whose word or char count exceeds the budget.
 
         Returns:
             One or more chunks, each respecting the budget.  Returns
             ``[chunk]`` unchanged when the content is whitespace-only (no
             paragraphs to split on).
         """
-        assert self.max_chunk_words is not None  # guarded by caller
-        budget = self.max_chunk_words
+        assert self._has_budget()  # guarded by caller
+        word_budget = self.max_chunk_words
+        char_budget = self.max_chunk_chars
+
+        def _over(words: int, chars: int) -> bool:
+            return (word_budget is not None and words > word_budget) or (
+                char_budget is not None and chars > char_budget
+            )
 
         # Group consecutive non-blank lines into paragraphs and record each
         # paragraph's line offset within the chunk so fragments can carry
@@ -342,6 +369,7 @@ class HeadingChunker:
         pending_offset: int | None = None
         pending_lines: list[str] = []
         pending_words = 0
+        pending_chars = 0
 
         def make_chunk(content: str, offset: int) -> Chunk:
             return Chunk(
@@ -352,7 +380,7 @@ class HeadingChunker:
             )
 
         def emit() -> None:
-            nonlocal pending_offset, pending_lines, pending_words
+            nonlocal pending_offset, pending_lines, pending_words, pending_chars
             if not pending_lines:
                 return
             assert pending_offset is not None
@@ -360,20 +388,30 @@ class HeadingChunker:
             pending_offset = None
             pending_lines = []
             pending_words = 0
+            pending_chars = 0
 
         for offset, lines in paragraphs:
             words_in_para = sum(len(line.split()) for line in lines)
+            chars_in_para = sum(len(line) for line in lines)
 
-            if words_in_para > budget:
-                # Single paragraph exceeds the budget — flush, then bin-pack
+            if _over(words_in_para, chars_in_para):
+                # Single paragraph exceeds a budget — flush, then bin-pack
                 # its lines.  This preserves line-structured content
                 # (tables, lists, code blocks) within an oversize paragraph
                 # rather than flattening it via word-split.
                 emit()
-                self._budget_split_lines(lines, offset, budget, out, make_chunk)
+                self._budget_split_lines(
+                    lines, offset, word_budget, char_budget, out, make_chunk
+                )
                 continue
 
-            if pending_words + words_in_para > budget:
+            # +1 char accounts for the blank-line separator restored below
+            # when this paragraph joins an existing pending group.
+            sep_chars = 1 if pending_offset is not None else 0
+            if _over(
+                pending_words + words_in_para,
+                pending_chars + sep_chars + chars_in_para,
+            ):
                 emit()
             if pending_offset is None:
                 pending_offset = offset
@@ -381,8 +419,10 @@ class HeadingChunker:
                 # Restore the blank-line separator that paragraph collection
                 # stripped, so accumulated paragraphs stay valid markdown.
                 pending_lines.append("\n")
+                pending_chars += 1
             pending_lines.extend(lines)
             pending_words += words_in_para
+            pending_chars += chars_in_para
 
         emit()
         return out
@@ -391,20 +431,21 @@ class HeadingChunker:
         self,
         lines: list[str],
         paragraph_offset: int,
-        budget: int,
+        word_budget: int | None,
+        char_budget: int | None,
         out: list[Chunk],
         make_chunk: Any,
     ) -> None:
-        """Bin-pack the lines of a single oversize paragraph within *budget*.
+        """Bin-pack the lines of a single oversize paragraph within budget.
 
         Each line keeps its trailing newline (``splitlines(keepends=True)``
         from the caller) so concatenation preserves the original layout —
         tables stay tabular, lists stay listed, code blocks stay
-        line-broken.  Only when an individual line itself exceeds the
-        budget do we resort to ``" ".join(tokens[i:i+budget])`` word-split
-        on that single line; this final fallback collapses internal
-        whitespace but is bounded to pathological cases (a single line
-        carrying more words than the entire budget).
+        line-broken.  Only when an individual line itself exceeds a budget
+        do we resort to a word-split on that single line; this final
+        fallback collapses internal whitespace but is bounded to
+        pathological cases (a single line carrying more words/chars than the
+        entire budget).
 
         Emits chunks via *make_chunk(content, offset)* so the parent
         chunk's ``heading`` / ``heading_level`` / ``start_line`` baseline
@@ -415,49 +456,117 @@ class HeadingChunker:
                 trailing newline preserved.
             paragraph_offset: Line offset of the paragraph within the
                 parent chunk's content.
-            budget: Maximum word count per emitted chunk.
+            word_budget: Maximum word count per emitted chunk, or ``None``.
+            char_budget: Maximum character count per emitted chunk, or
+                ``None``.  At least one budget is non-``None``.
             out: Mutable list to append emitted chunks to.
             make_chunk: Callable ``(content, offset) -> Chunk`` that
                 stamps the parent's metadata onto each fragment.
         """
+
+        def _over(words: int, chars: int) -> bool:
+            return (word_budget is not None and words > word_budget) or (
+                char_budget is not None and chars > char_budget
+            )
+
         line_pending: list[str] = []
         line_pending_words = 0
+        line_pending_chars = 0
         line_pending_offset: int | None = None
 
         def flush_pending() -> None:
-            nonlocal line_pending, line_pending_words, line_pending_offset
+            nonlocal line_pending, line_pending_words, line_pending_chars
+            nonlocal line_pending_offset
             if not line_pending:
                 return
             assert line_pending_offset is not None
             out.append(make_chunk("".join(line_pending), line_pending_offset))
             line_pending = []
             line_pending_words = 0
+            line_pending_chars = 0
             line_pending_offset = None
 
         for li, line in enumerate(lines):
             line_words = len(line.split())
+            line_chars = len(line)
             line_offset = paragraph_offset + li
 
-            if line_words > budget:
-                # Single line over budget — flush pending, then word-split
-                # this one line.  Collapses internal whitespace; bounded to
-                # pathological cases where one line carries more words than
-                # the entire budget would allow.
+            if _over(line_words, line_chars):
+                # Single line over a budget — flush pending, then word-split
+                # this one line so each fragment fits BOTH budgets.  Collapses
+                # internal whitespace and drops the trailing newline; bounded
+                # to pathological cases where one line carries more
+                # words/chars than the entire budget would allow.
                 flush_pending()
-                tokens = line.split()
-                for i in range(0, len(tokens), budget):
-                    segment = " ".join(tokens[i : i + budget])
-                    out.append(make_chunk(segment, line_offset))
+                self._word_split_line(
+                    line, line_offset, word_budget, char_budget, out, make_chunk
+                )
                 continue
 
-            if line_pending_words + line_words > budget:
+            if line_pending and _over(
+                line_pending_words + line_words,
+                line_pending_chars + line_chars,
+            ):
                 flush_pending()
             if line_pending_offset is None:
                 line_pending_offset = line_offset
             line_pending.append(line)
             line_pending_words += line_words
+            line_pending_chars += line_chars
 
         flush_pending()
+
+    def _word_split_line(
+        self,
+        line: str,
+        line_offset: int,
+        word_budget: int | None,
+        char_budget: int | None,
+        out: list[Chunk],
+        make_chunk: Any,
+    ) -> None:
+        """Word-split a single oversize *line* into budget-fitting fragments.
+
+        Greedily packs whitespace-delimited tokens into space-joined
+        fragments, flushing before a token would push the fragment over the
+        word or char budget.  A single token longer than the char budget is
+        emitted alone (it is unsplittable without breaking the token), so the
+        invariant may be violated only by such a pathological token.
+
+        Args:
+            line: The single oversize line (its trailing newline is dropped).
+            line_offset: ``start_line`` offset for every emitted fragment.
+            word_budget: Maximum word count per fragment, or ``None``.
+            char_budget: Maximum character count per fragment, or ``None``.
+            out: Mutable list to append emitted fragments to.
+            make_chunk: Callable ``(content, offset) -> Chunk`` stamping
+                parent metadata onto each fragment.
+        """
+
+        def _over(words: int, chars: int) -> bool:
+            return (word_budget is not None and words > word_budget) or (
+                char_budget is not None and chars > char_budget
+            )
+
+        tokens = line.split()
+        cur: list[str] = []
+        cur_words = 0
+        cur_chars = 0
+        for tok in tokens:
+            # Char cost of adding this token: the token plus a joining space
+            # when the fragment is non-empty.
+            add_chars = len(tok) + (1 if cur else 0)
+            if cur and _over(cur_words + 1, cur_chars + add_chars):
+                out.append(make_chunk(" ".join(cur), line_offset))
+                cur = []
+                cur_words = 0
+                cur_chars = 0
+                add_chars = len(tok)
+            cur.append(tok)
+            cur_words += 1
+            cur_chars += add_chars
+        if cur:
+            out.append(make_chunk(" ".join(cur), line_offset))
 
 
 def _resolve_title(metadata: dict[str, Any], content: str, path: Path) -> str:

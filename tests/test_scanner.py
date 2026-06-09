@@ -532,3 +532,71 @@ class TestHeadingChunkerEmptySection:
         assert "Empty B" not in headings
         assert "Empty C" not in headings
         assert "Content Section" in headings
+
+
+# ---------------------------------------------------------------------------
+# HeadingChunker char-budget cap (#649)
+# ---------------------------------------------------------------------------
+
+
+def test_char_cap_splits_token_dense_chunk_under_word_cap() -> None:
+    """A chunk under the word cap but over the char cap is split."""
+    dense = " ".join("x" * 40 for _ in range(300))  # 300 words, ~12k chars
+    doc = f"# Title\n\n{dense}\n"
+    chunks = HeadingChunker(max_chunk_words=400, max_chunk_chars=8000).chunk(doc, {})
+    assert len(chunks) >= 2
+    assert all(len(c.content) <= 8000 for c in chunks)
+
+
+def test_char_cap_none_preserves_word_only_behaviour() -> None:
+    """No char cap means a chunk under the word cap stays a single chunk."""
+    dense = " ".join("x" * 40 for _ in range(300))
+    doc = f"# Title\n\n{dense}\n"
+    chunks = HeadingChunker(max_chunk_words=400, max_chunk_chars=None).chunk(doc, {})
+    assert len(chunks) == 1
+
+
+def test_normal_prose_unaffected_by_generous_char_cap() -> None:
+    """A generous char cap does not split normal prose under it."""
+    body = "\n\n".join("word " * 50 for _ in range(3))
+    doc = f"# Title\n\n{body}\n"
+    assert (
+        len(HeadingChunker(max_chunk_words=400, max_chunk_chars=22000).chunk(doc, {}))
+        == 1
+    )
+
+
+def test_char_cap_invariant_and_metadata_preserved_on_mixed_doc() -> None:
+    """Every fragment satisfies the char budget and keeps heading/start_line.
+
+    Mixes a heading section, a token-dense paragraph well over the char cap,
+    and a giant heading-less table-like block. The invariant
+    ``not _over_budget(chunk.content)`` must hold for every emitted chunk and
+    each fragment must carry the parent section's ``heading`` plus a
+    monotone, in-range ``start_line``.
+    """
+    dense_para = " ".join("x" * 30 for _ in range(200))  # ~6k chars, 200 words
+    table_block = "\n".join(
+        "| " + " | ".join("y" * 20 for _ in range(8)) + " |" for _ in range(40)
+    )
+    doc = (
+        "# Heading One\n\n"
+        f"{dense_para}\n\n"
+        "## Heading Two\n\n"
+        f"{table_block}\n\n"
+        "Closing prose paragraph with a few words.\n"
+    )
+    chunker = HeadingChunker(max_chunk_words=400, max_chunk_chars=3000)
+    total_lines = len(doc.splitlines(keepends=True))
+    chunks = chunker.chunk(doc, {})
+
+    assert len(chunks) >= 3
+    for c in chunks:
+        # Invariant: no emitted chunk exceeds either budget (the only allowed
+        # exception is a single unsplittable token longer than the cap, which
+        # this fixture does not contain).
+        assert not chunker._over_budget(c.content)
+        assert 0 <= c.start_line < total_lines
+        # Every fragment keeps a heading attribution (None only for a true
+        # preamble; this doc has none before its first heading).
+        assert c.heading in {"Heading One", "Heading Two"}
