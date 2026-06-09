@@ -440,3 +440,53 @@ def test_embedding_provider_requires_context_length():
     from markdown_vault_mcp.providers import EmbeddingProvider
 
     assert "context_length" in EmbeddingProvider.__abstractmethods__
+
+
+def test_ollama_context_length_parses_api_show(monkeypatch):
+    from markdown_vault_mcp.providers import OllamaProvider
+
+    class _Resp:
+        status_code = 200
+
+        def json(self):
+            return {"model_info": {"bert.context_length": 8192}}
+
+    class _Client:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def post(self, url, json, timeout):  # noqa: ARG002
+            return _Resp()
+
+    p = OllamaProvider(host="http://x:11434", model="bge-m3")
+    monkeypatch.setattr(p._httpx, "Client", lambda *a, **k: _Client())  # noqa: ARG005
+    assert p.context_length == 8192
+    monkeypatch.setattr(
+        p._httpx,
+        "Client",
+        lambda *a, **k: (_ for _ in ()).throw(  # noqa: ARG005
+            AssertionError("re-queried")
+        ),
+    )
+    assert p.context_length == 8192  # cached, no re-query
+
+
+def test_ollama_context_length_none_on_error(monkeypatch):
+    from markdown_vault_mcp.providers import OllamaProvider
+
+    class _Client:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def post(self, *a, **k):  # noqa: ARG002
+            raise OSError("down")
+
+    p = OllamaProvider(host="http://x:11434", model="bge-m3")
+    monkeypatch.setattr(p._httpx, "Client", lambda *a, **k: _Client())  # noqa: ARG005
+    assert p.context_length is None

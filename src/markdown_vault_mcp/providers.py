@@ -112,6 +112,8 @@ class OllamaProvider(EmbeddingProvider):
         self._model = model
         self._cpu_only = cpu_only
         self._dimension: int | None = None
+        self._context_length: int | None = None
+        self._context_queried = False
 
         logger.debug(
             "OllamaProvider initialised: host=%s model=%s cpu_only=%s",
@@ -184,7 +186,41 @@ class OllamaProvider(EmbeddingProvider):
 
     @property
     def context_length(self) -> int | None:
-        return None
+        """Query /api/show once for the model's context length; cache it.
+
+        Returns None if the query fails or the field is absent.
+        """
+        if self._context_queried:
+            return self._context_length
+        self._context_queried = True
+        try:
+            with self._httpx.Client() as client:
+                resp = client.post(
+                    f"{self._host}/api/show",
+                    json={"model": self._model},
+                    timeout=10.0,
+                )
+            if resp.status_code != 200:
+                logger.warning(
+                    "ollama_context_length_unavailable model=%s status=%s",
+                    self._model,
+                    resp.status_code,
+                )
+                return None
+            info = resp.json().get("model_info", {}) or {}
+            for key, value in info.items():
+                if key.endswith(".context_length") and isinstance(value, int):
+                    self._context_length = value
+                    return value
+            logger.warning("ollama_context_length_absent model=%s", self._model)
+            return None
+        except (OSError, ValueError, KeyError) as exc:
+            logger.warning(
+                "ollama_context_length_query_failed model=%s err=%s",
+                self._model,
+                exc,
+            )
+            return None
 
 
 class OpenAIProvider(EmbeddingProvider):
