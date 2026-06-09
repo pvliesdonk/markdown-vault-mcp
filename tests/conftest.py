@@ -86,6 +86,10 @@ class MockEmbeddingProvider(EmbeddingProvider):
         return "mock"
 
     @property
+    def context_length(self) -> int | None:
+        return None
+
+    @property
     def model_name(self) -> str:
         return f"mock-dim-{self._dim}"
 
