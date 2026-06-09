@@ -231,13 +231,14 @@ class OllamaProvider(EmbeddingProvider):
                 )
                 return None
             data = resp.json()
-            if not isinstance(data, dict):
-                # A well-behaved Ollama returns an object; a proxy/error page
-                # could return a list or string, on which .get() would raise
-                # an uncaught AttributeError and crash startup.
+            info = data.get("model_info", {}) if isinstance(data, dict) else None
+            if not isinstance(info, dict):
+                # A well-behaved Ollama returns an object whose model_info is an
+                # object; a proxy/error page (or a malformed model_info) could
+                # be a list or string, on which .get()/.items() would raise an
+                # uncaught AttributeError and crash startup.
                 logger.warning("ollama_context_length_absent model=%s", self._model)
                 return None
-            info = data.get("model_info", {}) or {}
             for key, value in info.items():
                 if key.endswith(".context_length") and isinstance(value, int):
                     self._context_length = value

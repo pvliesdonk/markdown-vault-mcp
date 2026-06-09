@@ -577,16 +577,25 @@ def test_ollama_context_length_none_when_field_absent(monkeypatch):
     assert p.context_length is None
 
 
-def test_ollama_context_length_none_on_non_dict_body(monkeypatch):
-    """A 200 whose JSON body is not an object (list/string) returns None,
-    not an uncaught AttributeError from .get()."""
+@pytest.mark.parametrize(
+    "body",
+    [
+        ["not", "a", "dict"],  # top-level body is a list
+        "a string body",  # top-level body is a string
+        {"model_info": ["not", "a", "dict"]},  # model_info is a non-dict
+        {"model_info": "a string"},  # model_info is a string
+    ],
+)
+def test_ollama_context_length_none_on_non_dict_body(monkeypatch, body):
+    """A non-object body OR a non-object model_info returns None, not an
+    uncaught AttributeError from .get()/.items()."""
     from markdown_vault_mcp.providers import OllamaProvider
 
     class _Resp:
         status_code = 200
 
         def json(self):
-            return ["not", "a", "dict"]
+            return body
 
     class _Client:
         def __enter__(self):
