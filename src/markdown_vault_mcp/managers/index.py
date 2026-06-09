@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -513,15 +514,34 @@ class IndexManager:
         if vectors is None:
             raise ValueError("Vector index unexpectedly None after initialisation")
         total = len(texts)
+        # Per-batch detail at DEBUG (loud, opt-in via -v); INFO carries only a
+        # bounded decile heartbeat with an ETA so operators can track progress
+        # without thousands of lines per build (#311).
+        started = time.monotonic()
+        last_decile = 0
         for start in range(0, total, _EMBEDDING_BATCH_SIZE):
             end = min(start + _EMBEDDING_BATCH_SIZE, total)
             vectors.add(texts[start:end], meta[start:end])
-            logger.info(
+            logger.debug(
                 "build_embeddings: embedded chunks %d-%d of %d",
                 start + 1,
                 end,
                 total,
             )
+            decile = end * 10 // total
+            if decile > last_decile:
+                last_decile = decile
+                elapsed = time.monotonic() - started
+                rate = end / elapsed if elapsed > 0 else 0.0
+                remaining = (total - end) / rate if rate > 0 else 0.0
+                logger.info(
+                    "build_embeddings: %d%% (%d/%d chunks, %.0fs elapsed, ~%.0fs remaining)",
+                    decile * 10,
+                    end,
+                    total,
+                    elapsed,
+                    remaining,
+                )
 
         if total > 0:
             vectors.save(self._embeddings_path)

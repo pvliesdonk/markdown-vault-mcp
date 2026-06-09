@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
 
@@ -266,6 +267,52 @@ class TestBuildEmbeddings:
         count = mgr.build_embeddings()
         assert count >= 4
         assert vectors_holder["vectors"] is not None
+
+    def test_progress_logging_throttled_and_per_batch_at_debug(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ):
+        """Per-batch embed detail logs at DEBUG; INFO carries only bounded
+        decile progress lines (≤11) plus the final summary (#311)."""
+        from tests.conftest import MockEmbeddingProvider
+
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        # One doc with 60 H2 sections -> ~60 chunks -> ~15 batches of 4.
+        body = "\n".join(
+            f"## Section {i}\n\nContent for section {i}.\n" for i in range(60)
+        )
+        (vault / "big.md").write_text(f"# Big\n\n{body}\n", encoding="utf-8")
+
+        holder: dict = {"vectors": None}
+        mgr, _fts, _ = _make_index_mgr(
+            vault,
+            tmp_path,
+            embeddings_path=tmp_path / "embeddings",
+            embedding_provider=MockEmbeddingProvider(),
+            get_vectors=lambda: holder["vectors"],
+            set_vectors=lambda v: holder.__setitem__("vectors", v),
+        )
+        mgr.build_index()
+        with caplog.at_level(logging.DEBUG, logger="markdown_vault_mcp.managers.index"):
+            total = mgr.build_embeddings()
+        assert total >= 40  # many chunks => many batches
+
+        per_batch = [r for r in caplog.records if "embedded chunks" in r.getMessage()]
+        info_progress = [
+            r
+            for r in caplog.records
+            if r.levelno == logging.INFO
+            and "build_embeddings:" in r.getMessage()
+            and "%" in r.getMessage()
+        ]
+        # Per-batch detail is still emitted, but only at DEBUG.
+        assert per_batch, "per-batch detail should still be logged (at DEBUG)"
+        assert all(r.levelno == logging.DEBUG for r in per_batch)
+        # INFO progress is throttled well below the per-batch count and bounded
+        # by deciles.
+        assert info_progress, "an INFO decile-progress line should be emitted"
+        assert len(info_progress) <= 11
+        assert len(info_progress) < len(per_batch)
 
 
 # ---------------------------------------------------------------------------
