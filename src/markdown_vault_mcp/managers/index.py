@@ -60,6 +60,12 @@ class IndexManager:
             :class:`~markdown_vault_mcp.vector_index.VectorIndex` (or
             ``None``).
         set_vectors: Callback to set the vector index on the owner.
+        embed_model_name: Embedding model name in force at build time, or
+            ``None`` when no provider is configured. Recorded into FTS meta
+            after a successful build so a later warm-restart can detect a
+            model change (#649).
+        max_chunk_chars: Effective per-chunk character cap in force at build
+            time, or ``None``. Recorded into FTS meta alongside the model.
     """
 
     def __init__(
@@ -76,6 +82,8 @@ class IndexManager:
         indexed_frontmatter_fields: list[str] | None = None,
         get_vectors: Callable[[], VectorIndex | None],
         set_vectors: Callable[[VectorIndex | None], None],
+        embed_model_name: str | None = None,
+        max_chunk_chars: int | None = None,
     ) -> None:
         self._fts = fts
         self._tracker = tracker
@@ -88,6 +96,11 @@ class IndexManager:
         self._indexed_frontmatter_fields: list[str] = indexed_frontmatter_fields or []
         self._get_vectors = get_vectors
         self._set_vectors = set_vectors
+        # Chunking provenance recorded into FTS meta after a successful build
+        # (#649): the shared chunker's char cap derives from the embedding
+        # model, so a change to either invalidates FTS chunk boundaries.
+        self._embed_model_name = embed_model_name
+        self._max_chunk_chars = max_chunk_chars
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -266,6 +279,14 @@ class IndexManager:
                 total_chunks,
                 skipped,
             )
+
+        # Record the embedding model + char cap so a later warm restart can
+        # reject the short-circuit on a model/cap change (#649). Paired with
+        # the completeness sentinel the coordinator sets after this returns.
+        self._fts.set_chunking_meta(
+            model=self._embed_model_name,
+            max_chunk_chars=self._max_chunk_chars,
+        )
         return IndexStats(
             documents_indexed=len(notes) - errored,
             chunks_indexed=total_chunks,

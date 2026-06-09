@@ -384,6 +384,21 @@ Two methods manage the index:
   after the scan — but only when a scan actually runs (i.e. on a cold
   index or with `force=True`); a warm-restart short-circuit does not
   apply config changes.
+
+  **Chunking-provenance invalidation (issue #649)**: the chunker is shared
+  by FTS and embeddings, and its per-chunk character cap is derived from the
+  embedding model — so a change to the embedding model (or to an explicit
+  `max_chunk_chars` override) changes FTS chunk boundaries, not just
+  embeddings. Each clean build records the embedding `model_name` and the
+  effective `max_chunk_chars` in the FTS `meta` table
+  (`embed_model_name` / `max_chunk_chars` rows). On restart the warm-restart
+  short-circuit additionally requires these stored values to match the
+  current config (`IndexWriteCoordinator._chunking_meta_matches`); a model
+  or cap change rejects the short-circuit, so the existing #513 cold-start
+  path runs a full background FTS rebuild followed by embeddings — no manual
+  `reindex` is needed. A *transient* `None` cap (provider temporarily
+  unreachable while the model is unchanged) retains the stored cap and does
+  **not** force a rebuild, avoiding flap.
 - **`reindex()`**: incremental update. Uses `ChangeTracker` to detect
   adds/modifies/deletes since the last scan and applies only the delta.
   Applies `exclude_patterns` filtering and purges stale excluded documents.

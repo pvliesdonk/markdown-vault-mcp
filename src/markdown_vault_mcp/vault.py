@@ -215,6 +215,13 @@ class Vault:
             # max_chunk_words only takes effect for the conventional default
             # ("heading" string), so explicit-instance callers retain full control.
             self._chunk_strategy = _resolve_chunk_strategy(chunk_strategy)
+        self._max_chunk_chars = max_chunk_chars
+        # Embedding model in force, recorded into FTS meta at build time so a
+        # later warm restart rejects the short-circuit on a model/cap change
+        # and cold-rebuilds (#649). None when no provider is configured.
+        self._embed_model_name: str | None = (
+            embedding_provider.model_name if embedding_provider is not None else None
+        )
         self._on_write = on_write
         self._git_strategy = git_strategy
         self._git_pull_interval_s = git_pull_interval_s
@@ -279,6 +286,8 @@ class Vault:
             # only accessed at call-time, not during IndexManager.__init__.
             get_vectors=lambda: self._search_mgr.vectors,
             set_vectors=lambda v: setattr(self._search_mgr, "vectors", v),
+            embed_model_name=self._embed_model_name,
+            max_chunk_chars=self._max_chunk_chars,
         )
         # Index-write orchestration: owns the single-owner IndexWriter
         # thread + the build-readiness state machine (#576).  Constructed
@@ -289,6 +298,8 @@ class Vault:
             index_mgr=self._index_mgr,
             index_path=self._index_path,
             file_write_lock=self._file_write_lock,
+            embed_model_name=self._embed_model_name,
+            max_chunk_chars=self._max_chunk_chars,
         )
         # 3. SearchManager (receives IndexManager callbacks via constructor)
         self._search_mgr = SearchManager(

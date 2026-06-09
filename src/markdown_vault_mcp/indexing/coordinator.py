@@ -55,10 +55,17 @@ class IndexWriteCoordinator:
         index_mgr: IndexManager,
         index_path: Path | str | None,
         file_write_lock: threading.RLock,
+        embed_model_name: str | None = None,
+        max_chunk_chars: int | None = None,
     ) -> None:
         self._fts = fts
         self._index_path = index_path
         self._file_write_lock = file_write_lock
+        # Current embedding model + effective char cap, compared against the
+        # values recorded in FTS meta to decide whether a warm restart is
+        # valid (#649).
+        self._embed_model_name = embed_model_name
+        self._max_chunk_chars = max_chunk_chars
         self._readiness = ReadinessState()
         # Deprecated background-build thread bookkeeping (guarded by the
         # injected file-write lock, matching the former Vault locking).
@@ -186,9 +193,26 @@ class IndexWriteCoordinator:
     # Synchronous builds
     # ------------------------------------------------------------------
 
+    def _chunking_meta_matches(self) -> bool:
+        """True when the stored embedding model + char cap match the current
+        config. A model_name change is the trigger; a transient None cap
+        (provider unreachable, model unchanged) retains the stored cap and
+        does NOT force a rebuild (avoid flapping)."""
+        stored = self._fts.get_chunking_meta()
+        if stored["model"] != self._embed_model_name:
+            return False
+        return (
+            self._max_chunk_chars is None
+            or stored["max_chunk_chars"] == self._max_chunk_chars
+        )
+
     def build_index(self, *, force: bool = False) -> IndexStats:
         """Scan source_dir and build the FTS index (warm restart is O(1))."""
-        if not force and self._fts.is_build_completed():
+        if (
+            not force
+            and self._fts.is_build_completed()
+            and self._chunking_meta_matches()
+        ):
             existing = self._fts.list_notes()
             if existing:
                 logger.debug(
@@ -270,7 +294,11 @@ class IndexWriteCoordinator:
         Warm-restart short-circuit returns an already-resolved Future
         without touching the writer queue, mirroring :meth:`build_index`.
         """
-        if not force and self._fts.is_build_completed():
+        if (
+            not force
+            and self._fts.is_build_completed()
+            and self._chunking_meta_matches()
+        ):
             existing = self._fts.list_notes()
             if existing:
                 logger.debug(

@@ -23,10 +23,18 @@ if TYPE_CHECKING:
     from markdown_vault_mcp.vector_index import VectorIndex
 
 
-def make_coordinator(tmp_path: Path) -> IndexWriteCoordinator:
+def make_coordinator(
+    tmp_path: Path,
+    *,
+    embed_model_name: str | None = None,
+    max_chunk_chars: int | None = None,
+    db: Path | None = None,
+) -> IndexWriteCoordinator:
     """Build a wired coordinator over a tmp vault (mirrors Vault wiring)."""
-    (tmp_path / "a.md").write_text("# A\n\nbody\n", encoding="utf-8")
-    db = tmp_path / "index.db"
+    if not (tmp_path / "a.md").exists():
+        (tmp_path / "a.md").write_text("# A\n\nbody\n", encoding="utf-8")
+    if db is None:
+        db = tmp_path / "index.db"
     fts = FTSIndex(db_path=db)
     tracker = ChangeTracker(tmp_path / ".state.json")
     holder: dict[str, VectorIndex | None] = {"v": None}
@@ -42,12 +50,16 @@ def make_coordinator(tmp_path: Path) -> IndexWriteCoordinator:
         indexed_frontmatter_fields=[],
         get_vectors=lambda: holder["v"],
         set_vectors=lambda v: holder.__setitem__("v", v),
+        embed_model_name=embed_model_name,
+        max_chunk_chars=max_chunk_chars,
     )
     return IndexWriteCoordinator(
         fts=fts,
         index_mgr=index_mgr,
         index_path=db,
         file_write_lock=threading.RLock(),
+        embed_model_name=embed_model_name,
+        max_chunk_chars=max_chunk_chars,
     )
 
 
@@ -109,6 +121,94 @@ def test_build_index_async_warm_restart_short_circuits(tmp_path: Path) -> None:
         assert coord.is_queryable() is True
     finally:
         coord.close(timeout=5)
+
+
+# --- #649: model/cap-change rejects warm restart -> cold rebuild ------------
+
+
+def test_chunking_meta_match_warm_restarts(tmp_path: Path) -> None:
+    """Unchanged model + cap warm-restarts (O(1) path, no re-scan)."""
+    db = tmp_path / "index.db"
+    coord = make_coordinator(tmp_path, embed_model_name="A", max_chunk_chars=100, db=db)
+    try:
+        first = coord.build_index()
+        assert first.chunks_indexed > 0  # real build scanned
+        assert coord._fts.is_build_completed() is True
+        assert coord._fts.get_chunking_meta() == {"model": "A", "max_chunk_chars": 100}
+    finally:
+        coord.close(timeout=5)
+
+    coord2 = make_coordinator(
+        tmp_path, embed_model_name="A", max_chunk_chars=100, db=db
+    )
+    try:
+        stats = coord2.build_index()
+        # Warm O(1) path returns chunks_indexed == 0 (no writer submit).
+        assert stats.chunks_indexed == 0
+        assert stats.documents_indexed >= 1
+    finally:
+        coord2.close(timeout=5)
+
+
+def test_cap_change_rejects_warm_restart(tmp_path: Path) -> None:
+    """A different char cap forces a full rebuild (chunks re-scanned)."""
+    db = tmp_path / "index.db"
+    coord = make_coordinator(tmp_path, embed_model_name="A", max_chunk_chars=100, db=db)
+    try:
+        coord.build_index()
+    finally:
+        coord.close(timeout=5)
+
+    coord2 = make_coordinator(
+        tmp_path, embed_model_name="A", max_chunk_chars=200, db=db
+    )
+    try:
+        stats = coord2.build_index()
+        assert stats.chunks_indexed > 0  # full build ran, not warm O(1)
+        assert coord2._fts.get_chunking_meta()["max_chunk_chars"] == 200
+    finally:
+        coord2.close(timeout=5)
+
+
+def test_model_change_rejects_warm_restart(tmp_path: Path) -> None:
+    """A different embedding model forces a full rebuild."""
+    db = tmp_path / "index.db"
+    coord = make_coordinator(tmp_path, embed_model_name="A", max_chunk_chars=100, db=db)
+    try:
+        coord.build_index()
+    finally:
+        coord.close(timeout=5)
+
+    coord2 = make_coordinator(
+        tmp_path, embed_model_name="B", max_chunk_chars=100, db=db
+    )
+    try:
+        stats = coord2.build_index()
+        assert stats.chunks_indexed > 0
+        assert coord2._fts.get_chunking_meta()["model"] == "B"
+    finally:
+        coord2.close(timeout=5)
+
+
+def test_transient_none_cap_does_not_flap(tmp_path: Path) -> None:
+    """Model unchanged + current cap None (provider unreachable) retains the
+    stored cap and warm-restarts — no rebuild flapping."""
+    db = tmp_path / "index.db"
+    coord = make_coordinator(tmp_path, embed_model_name="A", max_chunk_chars=100, db=db)
+    try:
+        coord.build_index()
+    finally:
+        coord.close(timeout=5)
+
+    coord2 = make_coordinator(
+        tmp_path, embed_model_name="A", max_chunk_chars=None, db=db
+    )
+    try:
+        assert coord2._chunking_meta_matches() is True
+        stats = coord2.build_index()
+        assert stats.chunks_indexed == 0  # warm O(1)
+    finally:
+        coord2.close(timeout=5)
 
 
 def test_rebuild_embeddings_bypasses_require_built(tmp_path: Path) -> None:
