@@ -443,7 +443,10 @@ class IndexManager:
                 already exists on disk.
 
         Returns:
-            Total number of chunks embedded.
+            Number of chunks successfully embedded. Batches the provider
+            rejects (e.g. for exceeding the model's token context) are
+            logged and skipped, so this may be less than the total number
+            of chunks attempted.
 
         Raises:
             ValueError: If ``embedding_provider`` or ``embeddings_path`` is
@@ -519,9 +522,24 @@ class IndexManager:
         # without thousands of lines per build (#311).
         started = time.monotonic()
         last_decile = 0
+        # A batch that exceeds the model's token context (e.g. a strict
+        # provider returning HTTP 400) is logged and skipped rather than
+        # aborting the whole build; ``embedded`` tracks chunks actually
+        # vectorised, while decile progress runs over attempted chunks (#649).
+        embedded = 0
         for start in range(0, total, _EMBEDDING_BATCH_SIZE):
             end = min(start + _EMBEDDING_BATCH_SIZE, total)
-            vectors.add(texts[start:end], meta[start:end])
+            try:
+                vectors.add(texts[start:end], meta[start:end])
+                embedded += end - start
+            except Exception as exc:
+                logger.warning(
+                    "build_embeddings_skip_batch chunks=%d-%d of %d err=%s",
+                    start + 1,
+                    end,
+                    total,
+                    exc,
+                )
             logger.debug(
                 "build_embeddings: embedded chunks %d-%d of %d",
                 start + 1,
@@ -543,12 +561,12 @@ class IndexManager:
                     remaining,
                 )
 
-        if total > 0:
+        if embedded > 0:
             vectors.save(self._embeddings_path)
-            logger.info("build_embeddings: embedded and saved %d chunks", total)
+            logger.info("build_embeddings: embedded and saved %d chunks", embedded)
         else:
             logger.info("build_embeddings: nothing to embed")
-        return total
+        return embedded
 
     def embeddings_status(self) -> dict[str, Any]:
         """Return status information about the vector index.

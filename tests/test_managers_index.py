@@ -314,6 +314,45 @@ class TestBuildEmbeddings:
         assert len(info_progress) <= 11
         assert len(info_progress) < len(per_batch)
 
+    def test_build_embeddings_skips_failing_batch(self, tmp_path, caplog):
+        import logging
+
+        from tests.conftest import MockEmbeddingProvider
+
+        class FlakyProvider(MockEmbeddingProvider):
+            def __init__(self):
+                super().__init__()
+                self.calls = 0
+
+            def embed(self, texts):
+                self.calls += 1
+                if self.calls == 2:
+                    raise RuntimeError(
+                        "Ollama API error 400: input length exceeds context"
+                    )
+                return super().embed(texts)
+
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        body = "\n".join(f"## S{i}\n\nbody {i}.\n" for i in range(20))
+        (vault / "big.md").write_text(f"# Big\n\n{body}\n", encoding="utf-8")
+        holder = {"vectors": None}
+        mgr, _fts, _ = _make_index_mgr(
+            vault,
+            tmp_path,
+            embeddings_path=tmp_path / "embeddings",
+            embedding_provider=FlakyProvider(),
+            get_vectors=lambda: holder["vectors"],
+            set_vectors=lambda v: holder.__setitem__("vectors", v),
+        )
+        mgr.build_index()
+        with caplog.at_level(
+            logging.WARNING, logger="markdown_vault_mcp.managers.index"
+        ):
+            count = mgr.build_embeddings()
+        assert count >= 1  # build did not abort
+        assert any("skip" in r.getMessage().lower() for r in caplog.records)
+
 
 # ---------------------------------------------------------------------------
 # embeddings_status
