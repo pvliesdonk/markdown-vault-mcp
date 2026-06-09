@@ -11,12 +11,12 @@ class EmbeddingsConfig:
 
     provider: str | None = None
     ollama_host: str = "http://localhost:11434"
-    ollama_model: str = "nomic-embed-text"
+    ollama_model: str = "bge-m3"
     ollama_cpu_only: bool = False
     openai_api_key: str | None = None
     openai_base_url: str = "https://api.openai.com/v1"
     openai_embedding_model: str = "text-embedding-3-small"
-    fastembed_model: str = "BAAI/bge-small-en-v1.5"
+    fastembed_model: str = "nomic-ai/nomic-embed-text-v1.5"
     fastembed_cache_dir: str | None = None
 
     def __post_init__(self) -> None:
@@ -58,11 +58,12 @@ class EmbeddingsConfig:
         return cls(
             provider=env(prefix, "EMBEDDING_PROVIDER") or None,
             ollama_host=ollama_host,
-            ollama_model=env(prefix, "OLLAMA_MODEL") or "nomic-embed-text",
+            ollama_model=env(prefix, "OLLAMA_MODEL") or "bge-m3",
             ollama_cpu_only=parse_bool(raw_cpu) if raw_cpu is not None else False,
             openai_api_key=(os.environ.get("OPENAI_API_KEY") or "").strip() or None,
             openai_base_url=openai_base_url.rstrip("/"),
             openai_embedding_model=openai_model,
-            fastembed_model=env(prefix, "FASTEMBED_MODEL") or "BAAI/bge-small-en-v1.5",
+            fastembed_model=env(prefix, "FASTEMBED_MODEL")
+            or "nomic-ai/nomic-embed-text-v1.5",
             fastembed_cache_dir=env(prefix, "FASTEMBED_CACHE_DIR") or None,
         )

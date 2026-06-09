@@ -210,10 +210,12 @@ All configuration is via environment variables with the `MARKDOWN_VAULT_MCP_` pr
 | `OPENAI_API_KEY` | — | OpenAI API key for the OpenAI embedding provider (**not** `MARKDOWN_VAULT_MCP_`-prefixed) |
 | `MARKDOWN_VAULT_MCP_OPENAI_BASE_URL` / `OPENAI_BASE_URL` | `https://api.openai.com/v1` | OpenAI-compatible API base URL for embeddings |
 | `MARKDOWN_VAULT_MCP_OPENAI_EMBEDDING_MODEL` / `OPENAI_EMBEDDING_MODEL` | `text-embedding-3-small` | OpenAI-compatible embedding model name |
-| `MARKDOWN_VAULT_MCP_OLLAMA_MODEL` | `nomic-embed-text` | Ollama embedding model name |
+| `MARKDOWN_VAULT_MCP_OLLAMA_MODEL` | `bge-m3` | Ollama embedding model name (8192-token context) |
 | `MARKDOWN_VAULT_MCP_OLLAMA_CPU_ONLY` | `false` | Force Ollama to use CPU only |
-| `MARKDOWN_VAULT_MCP_FASTEMBED_MODEL` | `BAAI/bge-small-en-v1.5` | FastEmbed model name |
+| `MARKDOWN_VAULT_MCP_FASTEMBED_MODEL` | `nomic-ai/nomic-embed-text-v1.5` | FastEmbed model name (8192-token context) |
 | `MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR` | FastEmbed default | FastEmbed model cache directory (in Docker, stored under `/data/state/fastembed`) |
+
+> **Upgrade note:** the default embedding models are now 8192-token-context models (`nomic-ai/nomic-embed-text-v1.5` for FastEmbed, `bge-m3` for Ollama). Changing the embedding model will, in a later release, trigger an automatic cold rebuild of the embeddings index.
 
 ### Git integration
 

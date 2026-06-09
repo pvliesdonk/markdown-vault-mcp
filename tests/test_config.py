@@ -251,8 +251,8 @@ class TestToVaultKwargs:
     @pytest.mark.xfail(
         raises=ValueError,
         reason="embeddings_path set without a provider resolves FastEmbedProvider, "
-        "which downloads BAAI/bge-small-en-v1.5 from HuggingFace — flaky/unavailable "
-        "in CI (#595)",
+        "which downloads nomic-ai/nomic-embed-text-v1.5 from HuggingFace — "
+        "flaky/unavailable in CI (#595)",
         strict=False,
     )
     def test_includes_all_vault_params(self) -> None:
@@ -606,12 +606,12 @@ class TestVaultConfigDefaults:
         config = VaultConfig(source_dir=Path("/tmp/vault"))
         assert config.embeddings.provider is None
         assert config.embeddings.ollama_host == "http://localhost:11434"
-        assert config.embeddings.ollama_model == "nomic-embed-text"
+        assert config.embeddings.ollama_model == "bge-m3"
         assert config.embeddings.ollama_cpu_only is False
         assert config.embeddings.openai_api_key is None
         assert config.embeddings.openai_base_url == "https://api.openai.com/v1"
         assert config.embeddings.openai_embedding_model == "text-embedding-3-small"
-        assert config.embeddings.fastembed_model == "BAAI/bge-small-en-v1.5"
+        assert config.embeddings.fastembed_model == "nomic-ai/nomic-embed-text-v1.5"
         assert config.embeddings.fastembed_cache_dir is None
 
     def test_custom_values_accepted(self) -> None:
@@ -758,10 +758,10 @@ class TestLoadConfigEmbeddingFields:
         assert config.embeddings.ollama_model == "mxbai-embed-large"
 
     def test_ollama_model_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """VaultConfig.from_env() defaults ollama_model to nomic-embed-text."""
+        """VaultConfig.from_env() defaults ollama_model to bge-m3."""
         monkeypatch.delenv("MARKDOWN_VAULT_MCP_OLLAMA_MODEL", raising=False)
         config = VaultConfig.from_env()
-        assert config.embeddings.ollama_model == "nomic-embed-text"
+        assert config.embeddings.ollama_model == "bge-m3"
 
     def test_ollama_cpu_only_default_false(
         self, monkeypatch: pytest.MonkeyPatch
@@ -875,10 +875,10 @@ class TestLoadConfigEmbeddingFields:
         assert config.embeddings.fastembed_model == "BAAI/bge-base-en-v1.5"
 
     def test_fastembed_model_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """VaultConfig.from_env() defaults fastembed_model to BAAI/bge-small-en-v1.5."""
+        """VaultConfig.from_env() defaults fastembed_model to nomic-embed-text-v1.5."""
         monkeypatch.delenv("MARKDOWN_VAULT_MCP_FASTEMBED_MODEL", raising=False)
         config = VaultConfig.from_env()
-        assert config.embeddings.fastembed_model == "BAAI/bge-small-en-v1.5"
+        assert config.embeddings.fastembed_model == "nomic-ai/nomic-embed-text-v1.5"
 
     def test_fastembed_cache_dir_prefixed(
         self, monkeypatch: pytest.MonkeyPatch
@@ -1563,3 +1563,17 @@ class TestTransferConfigFromEnv:
 
         with pytest.raises(dataclasses.FrozenInstanceError):
             TransferConfig().ttl_default_s = 999  # type: ignore[misc]
+
+
+def test_embeddings_default_models_are_long_context(monkeypatch):
+    """EmbeddingsConfig.from_env() defaults to 8192-context models (#649)."""
+    for var in (
+        "MARKDOWN_VAULT_MCP_FASTEMBED_MODEL",
+        "MARKDOWN_VAULT_MCP_OLLAMA_MODEL",
+    ):
+        monkeypatch.delenv(var, raising=False)
+    from markdown_vault_mcp.config_sections.embeddings import EmbeddingsConfig
+
+    cfg = EmbeddingsConfig.from_env("MARKDOWN_VAULT_MCP")
+    assert cfg.fastembed_model == "nomic-ai/nomic-embed-text-v1.5"
+    assert cfg.ollama_model == "bge-m3"

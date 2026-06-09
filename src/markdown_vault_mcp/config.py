@@ -267,7 +267,7 @@ class VaultConfig:
         - ``OLLAMA_HOST``: Ollama API base URL (ecosystem standard, bare env var);
           default ``"http://localhost:11434"``.
         - ``MARKDOWN_VAULT_MCP_OLLAMA_MODEL``: Ollama model name; default
-          ``"nomic-embed-text"``.
+          ``"bge-m3"``.
         - ``MARKDOWN_VAULT_MCP_OLLAMA_CPU_ONLY``: CPU-only Ollama inference;
           default ``false``.
         - ``OPENAI_API_KEY``: OpenAI API key (ecosystem standard, bare env var).
@@ -277,7 +277,7 @@ class VaultConfig:
           ``OPENAI_EMBEDDING_MODEL``: embedding model name; default
           ``"text-embedding-3-small"``.
         - ``MARKDOWN_VAULT_MCP_FASTEMBED_MODEL``: FastEmbed model name; default
-          ``"BAAI/bge-small-en-v1.5"``.
+          ``"nomic-ai/nomic-embed-text-v1.5"``.
         - ``MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR``: FastEmbed model cache
           directory; default ``None``.
 

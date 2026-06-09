@@ -1744,9 +1744,9 @@ For MCP server deployment:
 | `MARKDOWN_VAULT_MCP_APP_DOMAIN` | Claude app domain for MCP Apps iframe sandboxing; auto-computed from `BASE_URL` via `_compute_claude_app_domain()` | derived from `BASE_URL` |
 | `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` | `openai`, `ollama`, `fastembed` | auto-detect |
 | `OLLAMA_HOST` | Ollama server URL | `http://localhost:11434` |
-| `MARKDOWN_VAULT_MCP_OLLAMA_MODEL` | Ollama embedding model | `nomic-embed-text` |
+| `MARKDOWN_VAULT_MCP_OLLAMA_MODEL` | Ollama embedding model | `bge-m3` |
 | `MARKDOWN_VAULT_MCP_OLLAMA_CPU_ONLY` | Force CPU-only inference | `false` |
-| `MARKDOWN_VAULT_MCP_FASTEMBED_MODEL` | FastEmbed model | `BAAI/bge-small-en-v1.5` |
+| `MARKDOWN_VAULT_MCP_FASTEMBED_MODEL` | FastEmbed model | `nomic-ai/nomic-embed-text-v1.5` |
 | `MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR` | FastEmbed model cache directory | FastEmbed default |
 | `OPENAI_API_KEY` | OpenAI API key | none |
 | `OPENAI_BASE_URL` / `MARKDOWN_VAULT_MCP_OPENAI_BASE_URL` | OpenAI-compatible API base URL (SiliconFlow, Together, internal gateways, …) | `https://api.openai.com/v1` |

@@ -80,9 +80,9 @@ The first three knobs adjust *ranking and rendering* — they take effect immedi
 | `OPENAI_API_KEY` | string | — | OpenAI API key for the OpenAI embedding provider. **Not** `MARKDOWN_VAULT_MCP_`-prefixed |
 | `MARKDOWN_VAULT_MCP_OPENAI_BASE_URL` / `OPENAI_BASE_URL` | url | `https://api.openai.com/v1` | OpenAI-compatible API base URL for embeddings |
 | `MARKDOWN_VAULT_MCP_OPENAI_EMBEDDING_MODEL` / `OPENAI_EMBEDDING_MODEL` | string | `text-embedding-3-small` | OpenAI-compatible embedding model name |
-| `MARKDOWN_VAULT_MCP_OLLAMA_MODEL` | string | `nomic-embed-text` | Ollama embedding model name |
+| `MARKDOWN_VAULT_MCP_OLLAMA_MODEL` | string | `bge-m3` | Ollama embedding model name (8192-token context) |
 | `MARKDOWN_VAULT_MCP_OLLAMA_CPU_ONLY` | bool | `false` | Force Ollama to use CPU only |
-| `MARKDOWN_VAULT_MCP_FASTEMBED_MODEL` | string | `BAAI/bge-small-en-v1.5` | FastEmbed model name |
+| `MARKDOWN_VAULT_MCP_FASTEMBED_MODEL` | string | `nomic-ai/nomic-embed-text-v1.5` | FastEmbed model name (8192-token context) |
 | `MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR` | path | FastEmbed default | FastEmbed model cache directory (in Docker, stored under `/data/state/fastembed`) |
 
 !!! note "Embedding provider auto-detection"
@@ -91,6 +91,9 @@ The first three knobs adjust *ranking and rendering* — they take effect immedi
     1. **OpenAI** — if `OPENAI_API_KEY` is set
     2. **Ollama** — if `OLLAMA_HOST` is reachable
     3. **FastEmbed** — if the `fastembed` package is installed
+
+!!! note "Upgrade note: long-context defaults"
+    The default embedding models are now 8192-token-context models — `nomic-ai/nomic-embed-text-v1.5` for FastEmbed and `bge-m3` for Ollama. Changing the embedding model will, in a later release, trigger an automatic cold rebuild of the embeddings index.
 
 ## Git Integration
 
