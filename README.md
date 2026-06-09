@@ -210,14 +210,13 @@ All configuration is via environment variables with the `MARKDOWN_VAULT_MCP_` pr
 | `OPENAI_API_KEY` | — | OpenAI API key for the OpenAI embedding provider (**not** `MARKDOWN_VAULT_MCP_`-prefixed) |
 | `MARKDOWN_VAULT_MCP_OPENAI_BASE_URL` / `OPENAI_BASE_URL` | `https://api.openai.com/v1` | OpenAI-compatible API base URL for embeddings |
 | `MARKDOWN_VAULT_MCP_OPENAI_EMBEDDING_MODEL` / `OPENAI_EMBEDDING_MODEL` | `text-embedding-3-small` | OpenAI-compatible embedding model name |
-| `MARKDOWN_VAULT_MCP_OLLAMA_MODEL` | `bge-m3` | Ollama embedding model name (8192-token context) |
+| `MARKDOWN_VAULT_MCP_OLLAMA_MODEL` | `nomic-embed-text` | Ollama embedding model name |
 | `MARKDOWN_VAULT_MCP_OLLAMA_CPU_ONLY` | `false` | Force Ollama to use CPU only |
-| `MARKDOWN_VAULT_MCP_FASTEMBED_MODEL` | `nomic-ai/nomic-embed-text-v1.5` | FastEmbed model name (8192-token context) |
+| `MARKDOWN_VAULT_MCP_FASTEMBED_MODEL` | `BAAI/bge-small-en-v1.5` | FastEmbed model name |
 | `MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR` | FastEmbed default | FastEmbed model cache directory (in Docker, stored under `/data/state/fastembed`) |
 | `MARKDOWN_VAULT_MCP_MAX_CHUNK_CHARS` | *(derived from model context)* | Character cap the chunker enforces alongside `MAX_CHUNK_WORDS` to bound token-dense chunks (CJK, code, tables) that fit the word cap yet exceed the model's token context. Unset → `round(context_length × 2.8)` (e.g. 8192-token model → 22938 chars); unknown context → `6000`. Set to override. A reindex applies a new value. |
 
-> **Upgrade note:** the default embedding models are now 8192-token-context models (`nomic-ai/nomic-embed-text-v1.5` for FastEmbed, `bge-m3` for Ollama). The chunker's character cap (`MARKDOWN_VAULT_MCP_MAX_CHUNK_CHARS`) is derived from the model's context length, so changing the embedding model also re-chunks the FTS index, not just the embeddings. Changing the embedding model will, in a later release, trigger an automatic cold rebuild of the index.
-
+> **Note:** the chunker's character cap (`MARKDOWN_VAULT_MCP_MAX_CHUNK_CHARS`) is derived from the embedding model's context length, so changing the embedding model re-chunks the FTS index — not just the embeddings — and triggers an automatic cold rebuild of the index on the next startup. The defaults stay memory-light (`BAAI/bge-small-en-v1.5` for FastEmbed, `nomic-embed-text` for Ollama); long-context models such as `nomic-ai/nomic-embed-text-v1.5` (8192 tokens) are opt-in and need substantially more RAM/VRAM during indexing.
 ### Git integration
 
 Git integration has three modes:
