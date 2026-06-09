@@ -817,6 +817,13 @@ def test_foreground_write_during_background_scan_on_disk(tmp_path: Path) -> None
       2. racy.md row exists in FTS.
       3. NO assertion on which content wins. Last-writer-wins per path
          is the accepted contract; staleness is corrected by next reindex.
+
+    ``write()`` indexes asynchronously: it marks the path dirty and enqueues a
+    ProcessDirtyPaths job on the single-owner writer. ``wait_until_queryable``
+    only fires on the *build's* done-event — when that job is queued behind the
+    BuildIndex, it can still be pending when the build becomes queryable, so the
+    write is not yet in FTS. Sync on ``wait_for_drain`` (writer queue empty) to
+    observe the foreground write, not just the build (#647).
     """
     vault = tmp_path / "vault"
     vault.mkdir()
@@ -828,6 +835,9 @@ def test_foreground_write_during_background_scan_on_disk(tmp_path: Path) -> None
     col.index.start_background_build_index()
     col.writer.write("racy.md", "# Racy\n\nFOREGROUND CONTENT\n")
     col.index.wait_until_queryable(timeout=10.0)
+    # The build is queryable, but the foreground write's index job may still be
+    # in flight — wait for the writer to drain before asserting FTS membership.
+    assert col.index.wait_for_drain(timeout=10.0)
 
     rows = {r["path"]: r for r in col._fts.list_notes()}
     assert "racy.md" in rows, "foreground write must end up in FTS"
