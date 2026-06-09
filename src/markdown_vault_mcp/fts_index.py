@@ -201,6 +201,15 @@ CREATE TABLE IF NOT EXISTS meta (
 # own transaction) as ready — see issue #525.
 _META_BUILD_COMPLETED_KEY = "build_completed_at"
 
+# Keys recording the embedding model name and the effective per-chunk
+# character cap in force at build time (#649). The chunker is shared by FTS
+# and embeddings, so the char cap is derived from the embedding model; a
+# change to either invalidates the FTS chunk boundaries and must reject the
+# warm-restart short-circuit (forcing a cold rebuild). A ``None`` value is
+# stored as the empty string and read back as ``None``.
+_META_EMBED_MODEL_KEY = "embed_model_name"
+_META_MAX_CHUNK_CHARS_KEY = "max_chunk_chars"
+
 
 def _escape_like(value: str) -> str:
     """Escape SQLite LIKE special characters in ``value``.
@@ -914,6 +923,63 @@ class FTSIndex:
         conn = self._conn()
         with conn:
             conn.execute("DELETE FROM meta WHERE key = ?", (_META_BUILD_COMPLETED_KEY,))
+
+    # ------------------------------------------------------------------
+    # Chunking provenance: embedding model + char cap (issue #649)
+    # ------------------------------------------------------------------
+
+    @_retry_on_locked
+    def set_chunking_meta(
+        self, *, model: str | None, max_chunk_chars: int | None
+    ) -> None:
+        """Record the embedding model + effective char cap used for this build.
+
+        The chunker is shared by FTS and embeddings, so the per-chunk char
+        cap is derived from the embedding model. Persisting both lets a later
+        warm-restart detect a model (or cap) change and reject the
+        short-circuit, triggering a cold rebuild (#649).
+
+        Args:
+            model: Embedding model name, or ``None`` when no provider is
+                configured. ``None`` is stored as the empty string.
+            max_chunk_chars: Effective per-chunk character cap, or ``None``.
+                ``None`` is stored as the empty string; an int is stored as
+                its decimal string form.
+        """
+        conn = self._conn()
+        model_value = "" if model is None else model
+        chars_value = "" if max_chunk_chars is None else str(int(max_chunk_chars))
+        with conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO meta(key, value) VALUES(?, ?)",
+                (_META_EMBED_MODEL_KEY, model_value),
+            )
+            conn.execute(
+                "INSERT OR REPLACE INTO meta(key, value) VALUES(?, ?)",
+                (_META_MAX_CHUNK_CHARS_KEY, chars_value),
+            )
+
+    @_retry_on_locked
+    def get_chunking_meta(self) -> dict[str, str | int | None]:
+        """Return the recorded embedding model + char cap, or ``None`` values.
+
+        Returns:
+            A dict ``{"model": str | None, "max_chunk_chars": int | None}``.
+            An absent key or a stored empty string reads back as ``None``;
+            ``max_chunk_chars`` reads back as ``int``.
+        """
+        conn = self._conn()
+        with conn:
+            rows = conn.execute(
+                "SELECT key, value FROM meta WHERE key IN (?, ?)",
+                (_META_EMBED_MODEL_KEY, _META_MAX_CHUNK_CHARS_KEY),
+            ).fetchall()
+        stored = {row[0]: row[1] for row in rows}
+        model_raw = stored.get(_META_EMBED_MODEL_KEY)
+        chars_raw = stored.get(_META_MAX_CHUNK_CHARS_KEY)
+        model: str | None = model_raw if model_raw else None
+        max_chunk_chars: int | None = int(chars_raw) if chars_raw else None
+        return {"model": model, "max_chunk_chars": max_chunk_chars}
 
     @_retry_on_locked
     def search(

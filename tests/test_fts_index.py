@@ -962,3 +962,22 @@ class TestGetRecent:
         """get_recent on empty index returns []."""
         idx = FTSIndex(":memory:")
         assert idx.get_recent() == []
+
+
+def test_chunking_meta_roundtrip(tmp_path):
+    from markdown_vault_mcp.fts_index import FTSIndex
+
+    idx = FTSIndex(db_path=str(tmp_path / "i.db"))
+    idx.set_chunking_meta(model="bge-m3", max_chunk_chars=22938)
+    assert idx.get_chunking_meta() == {"model": "bge-m3", "max_chunk_chars": 22938}
+    idx2 = FTSIndex(db_path=str(tmp_path / "j.db"))
+    assert idx2.get_chunking_meta() == {"model": None, "max_chunk_chars": None}
+
+
+def test_chunking_meta_stores_none_as_empty(tmp_path):
+    """``None`` model + cap round-trip back as ``None`` (stored as empty)."""
+    from markdown_vault_mcp.fts_index import FTSIndex
+
+    idx = FTSIndex(db_path=str(tmp_path / "k.db"))
+    idx.set_chunking_meta(model=None, max_chunk_chars=None)
+    assert idx.get_chunking_meta() == {"model": None, "max_chunk_chars": None}
