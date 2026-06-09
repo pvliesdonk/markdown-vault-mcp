@@ -192,6 +192,7 @@ class Vault:
         snippet_words: int = 200,
         length_downweight_alpha: float = 0.25,
         max_chunk_words: int = 400,
+        max_chunk_chars: int | None = None,
     ) -> None:
         self._source_dir = source_dir
         self._index_path = index_path
@@ -204,7 +205,8 @@ class Vault:
         # custom ChunkStrategy instance or an explicit string name override.
         if isinstance(chunk_strategy, str) and chunk_strategy == "heading":
             self._chunk_strategy: ChunkStrategy = HeadingChunker(
-                max_chunk_words=max_chunk_words
+                max_chunk_words=max_chunk_words,
+                max_chunk_chars=max_chunk_chars,
             )
         else:
             # NOTE: When a caller passes an explicit chunk_strategy instance

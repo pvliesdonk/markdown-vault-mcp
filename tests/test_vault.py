@@ -4411,3 +4411,55 @@ class TestVaultThinSurface:
     def test_facet_accessors_and_lifecycle_retained(self) -> None:
         missing = [m for m in _RETAINED_SURFACE if not hasattr(Vault, m)]
         assert missing == [], f"retained surface missing from Vault: {missing}"
+
+
+class TestMaxChunkCharsWiring:
+    """max_chunk_chars threads from Vault into the default HeadingChunker."""
+
+    def test_vault_passes_max_chunk_chars_to_chunker(self, tmp_path: Path) -> None:
+        """An explicit Vault max_chunk_chars reaches the chunker."""
+        col = Vault(
+            source_dir=tmp_path,
+            max_chunk_words=400,
+            max_chunk_chars=1234,
+        )
+        try:
+            assert col._chunk_strategy.max_chunk_chars == 1234
+        finally:
+            col.close()
+
+    def test_config_derives_chunk_chars_from_provider_context(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """to_vault_kwargs derives the cap from the provider's context_length.
+
+        A provider reporting a 512-token context yields a char cap of
+        round(512 * 2.8) in the kwargs that build the Vault's chunker.
+        """
+        from markdown_vault_mcp import providers as providers_mod
+        from markdown_vault_mcp.config import VaultConfig
+        from tests.conftest import MockEmbeddingProvider
+
+        class _Ctx512Provider(MockEmbeddingProvider):
+            @property
+            def context_length(self) -> int | None:
+                return 512
+
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH", str(tmp_path / "emb"))
+        monkeypatch.delenv("MARKDOWN_VAULT_MCP_MAX_CHUNK_CHARS", raising=False)
+        monkeypatch.setattr(
+            providers_mod,
+            "get_embedding_provider",
+            lambda _config: _Ctx512Provider(),
+        )
+
+        config = VaultConfig.from_env()
+        kwargs = config.to_vault_kwargs()
+        assert kwargs["max_chunk_chars"] == round(512 * 2.8)
+
+        col = Vault(**kwargs)
+        try:
+            assert col._chunk_strategy.max_chunk_chars == round(512 * 2.8)
+        finally:
+            col.close()

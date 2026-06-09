@@ -9,6 +9,7 @@ import pytest
 
 from markdown_vault_mcp.config import (
     VaultConfig,
+    derive_max_chunk_chars,
 )
 from markdown_vault_mcp.config_sections import (
     EmbeddingsConfig,
@@ -64,6 +65,63 @@ def test_search_ranking_config_rejects_zero_chunks_per_file(
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_CHUNKS_PER_FILE", "0")
 
     with pytest.raises(ValueError, match="chunks_per_file"):
+        VaultConfig.from_env()
+
+
+@pytest.mark.parametrize(
+    "ctx,override,expected",
+    [
+        (8192, None, round(8192 * 2.8)),
+        (512, None, round(512 * 2.8)),
+        (None, None, 6000),
+        (8192, 4096, 4096),
+        (None, 4096, 4096),
+    ],
+)
+def test_derive_max_chunk_chars(
+    ctx: int | None, override: int | None, expected: int
+) -> None:
+    """Override wins; else derive from context; else the fixed fallback."""
+    assert derive_max_chunk_chars(context_length=ctx, override=override) == expected
+
+
+def test_max_chunk_chars_override_default_none(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The char-cap override is None when its env var is unset."""
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    monkeypatch.delenv("MARKDOWN_VAULT_MCP_MAX_CHUNK_CHARS", raising=False)
+    cfg = VaultConfig.from_env()
+    assert cfg.search.max_chunk_chars_override is None
+
+
+def test_max_chunk_chars_override_env(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A positive MAX_CHUNK_CHARS env var populates the override."""
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_MAX_CHUNK_CHARS", "12345")
+    cfg = VaultConfig.from_env()
+    assert cfg.search.max_chunk_chars_override == 12345
+
+
+def test_max_chunk_chars_override_rejects_zero(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """MAX_CHUNK_CHARS < 1 is rejected like MAX_CHUNK_WORDS."""
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_MAX_CHUNK_CHARS", "0")
+    with pytest.raises(ValueError, match="max_chunk_chars"):
+        VaultConfig.from_env()
+
+
+def test_max_chunk_chars_override_rejects_malformed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A non-integer MAX_CHUNK_CHARS raises."""
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_MAX_CHUNK_CHARS", "lots")
+    with pytest.raises(ValueError, match="MAX_CHUNK_CHARS"):
         VaultConfig.from_env()
 
 

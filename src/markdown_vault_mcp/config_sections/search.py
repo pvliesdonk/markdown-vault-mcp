@@ -13,6 +13,7 @@ class SearchConfig:
     snippet_words: int = 200
     length_downweight_alpha: float = 0.25
     max_chunk_words: int = 400
+    max_chunk_chars_override: int | None = None
 
     @classmethod
     def from_env(cls, prefix: str) -> SearchConfig:
@@ -90,9 +91,27 @@ class SearchConfig:
         if max_chunk_words < 1:
             raise ValueError(f"max_chunk_words must be >= 1, got {max_chunk_words}")
 
+        raw_max_chars = (env(prefix, "MAX_CHUNK_CHARS") or "").strip()
+        max_chunk_chars_override: int | None
+        if raw_max_chars:
+            try:
+                max_chunk_chars_override = int(raw_max_chars)
+            except ValueError as exc:
+                raise ValueError(
+                    f"{prefix}_MAX_CHUNK_CHARS must be a positive integer, "
+                    f"got {raw_max_chars!r}"
+                ) from exc
+            if max_chunk_chars_override < 1:
+                raise ValueError(
+                    f"max_chunk_chars must be >= 1, got {max_chunk_chars_override}"
+                )
+        else:
+            max_chunk_chars_override = None
+
         return cls(
             chunks_per_file=chunks_per_file,
             snippet_words=snippet_words,
             length_downweight_alpha=alpha,
             max_chunk_words=max_chunk_words,
+            max_chunk_chars_override=max_chunk_chars_override,
         )

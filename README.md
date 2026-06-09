@@ -214,8 +214,9 @@ All configuration is via environment variables with the `MARKDOWN_VAULT_MCP_` pr
 | `MARKDOWN_VAULT_MCP_OLLAMA_CPU_ONLY` | `false` | Force Ollama to use CPU only |
 | `MARKDOWN_VAULT_MCP_FASTEMBED_MODEL` | `nomic-ai/nomic-embed-text-v1.5` | FastEmbed model name (8192-token context) |
 | `MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR` | FastEmbed default | FastEmbed model cache directory (in Docker, stored under `/data/state/fastembed`) |
+| `MARKDOWN_VAULT_MCP_MAX_CHUNK_CHARS` | *(derived from model context)* | Character cap the chunker enforces alongside `MAX_CHUNK_WORDS` to bound token-dense chunks (CJK, code, tables) that fit the word cap yet exceed the model's token context. Unset → `round(context_length × 2.8)` (e.g. 8192-token model → 22938 chars); unknown context → `6000`. Set to override. A reindex applies a new value. |
 
-> **Upgrade note:** the default embedding models are now 8192-token-context models (`nomic-ai/nomic-embed-text-v1.5` for FastEmbed, `bge-m3` for Ollama). Changing the embedding model will, in a later release, trigger an automatic cold rebuild of the embeddings index.
+> **Upgrade note:** the default embedding models are now 8192-token-context models (`nomic-ai/nomic-embed-text-v1.5` for FastEmbed, `bge-m3` for Ollama). The chunker's character cap (`MARKDOWN_VAULT_MCP_MAX_CHUNK_CHARS`) is derived from the model's context length, so changing the embedding model also re-chunks the FTS index, not just the embeddings. Changing the embedding model will, in a later release, trigger an automatic cold rebuild of the index.
 
 ### Git integration
 

@@ -31,6 +31,38 @@ logger = logging.getLogger(__name__)
 
 _ENV_PREFIX = "MARKDOWN_VAULT_MCP"
 
+# Heuristic ratio converting an embedding model's token context length into a
+# conservative character budget for the chunker. English prose averages ~4
+# chars/token; 2.8 leaves headroom for token-dense (CJK, code, tables) content
+# so a derived char cap stays safely under the model's real token limit.
+_CHARS_PER_TOKEN = 2.8
+
+# Fallback char cap when the model's context length is unknown and the operator
+# set no explicit override.
+_DEFAULT_MAX_CHUNK_CHARS = 6000
+
+
+def derive_max_chunk_chars(*, context_length: int | None, override: int | None) -> int:
+    """Resolve the chunker character cap.
+
+    An explicit operator override wins; otherwise the cap is derived from the
+    embedding model's token context length; otherwise a conservative fixed
+    fallback is used.
+
+    Args:
+        context_length: The embedding model's maximum input length in tokens,
+            or ``None`` when it cannot be determined.
+        override: An explicit operator-supplied char cap, or ``None``.
+
+    Returns:
+        The character budget to pass to the chunker.
+    """
+    if override is not None:
+        return override
+    if context_length is not None:
+        return round(context_length * _CHARS_PER_TOKEN)
+    return _DEFAULT_MAX_CHUNK_CHARS
+
 
 @dataclass(frozen=True)
 class VaultConfig:
@@ -116,16 +148,27 @@ class VaultConfig:
         # while the provider lives in config.embeddings (cross-section coupling).
         # ValueError propagates — it means the user set an invalid provider
         # name, which is a config mistake that should not be silenced.
+        provider = None
         if self.indexing.embeddings_path is not None:
             try:
-                from markdown_vault_mcp.providers import get_embedding_provider
+                from markdown_vault_mcp import providers as _providers
 
-                kwargs["embedding_provider"] = get_embedding_provider(self)
+                provider = _providers.get_embedding_provider(self)
+                kwargs["embedding_provider"] = provider
             except (ImportError, RuntimeError):
                 logger.warning(
                     "Could not load embedding provider; semantic search disabled",
                     exc_info=True,
                 )
+
+        # Derive the chunker char cap from the embedding model's token context
+        # (a token-dense chunk that fits max_chunk_words can still exceed the
+        # model context). An explicit override always wins; an unreachable or
+        # unknown provider falls back to a conservative fixed cap.
+        kwargs["max_chunk_chars"] = derive_max_chunk_chars(
+            context_length=(provider.context_length if provider is not None else None),
+            override=self.search.max_chunk_chars_override,
+        )
 
         if self.git.repo_url is not None:
             git_strategy = self._build_git_strategy(
