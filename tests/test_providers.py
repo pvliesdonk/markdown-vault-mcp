@@ -502,3 +502,13 @@ def test_fastembed_context_length_table():
     assert p.context_length == 512
     p._model_name = "some/unknown-model"
     assert p.context_length is None
+
+
+def test_openai_context_length_table():
+    from markdown_vault_mcp.providers import OpenAIProvider
+
+    p = OpenAIProvider.__new__(OpenAIProvider)
+    p._model = "text-embedding-3-small"
+    assert p.context_length == 8191
+    p._model = "unknown-embedding-model"
+    assert p.context_length is None

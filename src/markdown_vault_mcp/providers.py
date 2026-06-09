@@ -38,6 +38,15 @@ _FASTEMBED_CONTEXT_LENGTHS: dict[str, int] = {
     "jinaai/jina-embeddings-v2-base-en": 8192,
 }
 
+# OpenAI's embeddings API does not report a model's context length, so we
+# carry a table for the supported models. Unknown models return None and
+# fall back to a conservative chunk cap.
+_OPENAI_CONTEXT_LENGTHS: dict[str, int] = {
+    "text-embedding-3-small": 8191,
+    "text-embedding-3-large": 8191,
+    "text-embedding-ada-002": 8191,
+}
+
 
 class EmbeddingProvider(ABC):
     """Abstract base class for embedding providers."""
@@ -357,7 +366,12 @@ class OpenAIProvider(EmbeddingProvider):
 
     @property
     def context_length(self) -> int | None:
-        return None
+        """Return the model's context length from the known-model table.
+
+        Returns None for models absent from the table; callers fall back to a
+        conservative chunk cap.
+        """
+        return _OPENAI_CONTEXT_LENGTHS.get(self._model)
 
 
 class FastEmbedProvider(EmbeddingProvider):
