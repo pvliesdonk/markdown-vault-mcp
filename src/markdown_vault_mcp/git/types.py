@@ -72,9 +72,12 @@ class PullResult:
               MCP versions as ``.conflict-mcp-*`` siblings (see #232).
               HEAD advanced; ``applied`` is ``True`` and
               ``conflict_files`` is populated.
-            * ``"conflict_resolution_failed"`` — rebase produced no
-              recoverable saved files and the working tree was
-              restored; HEAD did not move.
+            * ``"conflict_resolution_failed"`` — the conflict-resolution
+              path could not produce a usable result.  Two variants:
+              (a) the rebase was aborted before completing — HEAD did not
+              move (``from_sha == to_sha``); (b) the rebase completed and
+              HEAD advanced, but the sibling-files commit failed — HEAD
+              has moved (``from_sha != to_sha``, ``applied=False``).
 
             See module-level ``PULL_REASON_*`` constants for the
             string values.
@@ -92,19 +95,19 @@ class PullResult:
     from_sha: str
     to_sha: str
     reason: str | None = None
-    conflict_files: tuple[str, ...] = field(default_factory=tuple)
+    conflict_files: tuple[str, ...] = field(default=())
 
     @classmethod
     def head_unchanged_failure(cls, from_sha: str, reason: str) -> PullResult:
         """Construct a ``PullResult`` for a failure path where HEAD did not move.
 
-        The 5 failure paths in :meth:`GitWriteStrategy.force_pull` and its
-        helpers (``no_remote``, ``non_fast_forward``,
-        ``conflict_resolution_failed``, ``non_fast_forward_with_conflicts``,
-        ``fetch_failed``) all share the same shape: ``applied=False``,
-        ``fast_forward=False``, ``commits_pulled=0``, and
-        ``to_sha == from_sha`` (HEAD unchanged).  This factory reduces the
-        repetition.
+        The failure paths in :meth:`GitWriteStrategy.force_pull` and its
+        helpers that use this factory (``no_remote``, ``fetch_failed``,
+        ``conflict_resolution_failed`` when the rebase was aborted before
+        completing, and ``non_fast_forward_with_conflicts``) all share the
+        same shape: ``applied=False``, ``fast_forward=False``,
+        ``commits_pulled=0``, and ``to_sha == from_sha`` (HEAD unchanged).
+        This factory reduces the repetition.
 
         Args:
             from_sha: HEAD SHA before the failed operation.  Used for both

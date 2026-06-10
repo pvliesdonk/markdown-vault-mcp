@@ -32,16 +32,31 @@ def _normalize_remote(url: str) -> str:
 
 def _build_askpass_env(token: str, username: str) -> dict[str, str]:
     fd, script_path_str = tempfile.mkstemp(suffix=".sh", prefix="git_askpass_")
-    script_path = Path(script_path_str)
-    os.close(fd)
-    script_path.write_text(
-        "#!/bin/sh\n"
-        'case "$1" in\n'
-        "  *sername*) printf '%s\\n' \"${MVMCP_GIT_USERNAME:-}\" ;;\n"
-        "  *) printf '%s\\n' \"${MVMCP_GIT_TOKEN:-}\" ;;\n"
-        "esac\n"
-    )
-    script_path.chmod(stat.S_IRWXU)
+    # GIT_ASKPASS must be executable; mkstemp creates the file 0600. Prefer
+    # fchmod on the still-owned fd (no reopen-by-path) where available; fall back
+    # to chmod-by-path on platforms without fchmod (e.g. Windows), where the exec
+    # bit is a no-op anyway since the script only runs under a POSIX shell.
+    _has_fchmod = hasattr(os, "fchmod")
+    try:
+        if _has_fchmod:
+            os.fchmod(fd, stat.S_IRWXU)
+        with os.fdopen(fd, "w") as f:  # fdopen takes ownership of fd
+            f.write(
+                "#!/bin/sh\n"
+                'case "$1" in\n'
+                "  *sername*) printf '%s\\n' \"${MVMCP_GIT_USERNAME:-}\" ;;\n"
+                "  *) printf '%s\\n' \"${MVMCP_GIT_TOKEN:-}\" ;;\n"
+                "esac\n"
+            )
+        if not _has_fchmod:
+            Path(script_path_str).chmod(stat.S_IRWXU)
+    except BaseException:
+        # fdopen took ownership only if it succeeded; suppress double-close.
+        with contextlib.suppress(OSError):
+            os.close(fd)
+        with contextlib.suppress(OSError):
+            Path(script_path_str).unlink()
+        raise
     return {
         **os.environ,
         "GIT_ASKPASS": script_path_str,
@@ -104,7 +119,7 @@ def cleanup_git_env(env: dict[str, str] | None) -> None:
         return
     env.pop("MVMCP_GIT_USERNAME", None)
     env.pop("MVMCP_GIT_TOKEN", None)
-    script_path_str = env.get("GIT_ASKPASS")
+    script_path_str = env.pop("GIT_ASKPASS", None)
     if not script_path_str:
         return
     with contextlib.suppress(OSError):

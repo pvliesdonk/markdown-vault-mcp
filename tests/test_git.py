@@ -556,6 +556,165 @@ class TestGitWriteStrategyClass:
         finally:
             strategy._cleanup_git_env(env)
 
+    def test_askpass_script_is_executable_and_cleanup_pops_key(self) -> None:
+        """GIT_ASKPASS script has exec bit set; cleanup_git_env removes key from dict.
+
+        Regression test for two issues:
+        1. The script must be executable (S_IXUSR) — git cannot run it otherwise.
+           This guards against accidentally dropping the fchmod/chmod call.
+        2. cleanup_git_env must pop (not just read) GIT_ASKPASS so the stale
+           key is gone from the env dict after cleanup.
+        """
+        import stat
+        from pathlib import Path
+
+        from markdown_vault_mcp.git._run import _build_askpass_env, cleanup_git_env
+
+        env = _build_askpass_env("tok", "user")
+        script_path = env["GIT_ASKPASS"]
+        try:
+            # (1) exec bit must be set
+            assert Path(script_path).stat().st_mode & stat.S_IXUSR, (
+                f"GIT_ASKPASS script {script_path!r} is not executable"
+            )
+            # (2) cleanup removes the key from the dict AND unlinks the file
+            cleanup_git_env(env)
+            assert "GIT_ASKPASS" not in env, (
+                "cleanup_git_env must pop GIT_ASKPASS from the env dict"
+            )
+            assert not Path(script_path).exists(), (
+                "cleanup_git_env must unlink the temporary script file"
+            )
+        except AssertionError:
+            # Ensure we don't leak the script on assertion failure before cleanup ran.
+            import contextlib
+
+            with contextlib.suppress(OSError):
+                Path(script_path).unlink()
+            raise
+
+    def test_build_askpass_env_chmod_fallback_without_fchmod(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """On platforms without ``os.fchmod`` (e.g. Windows), the exec bit is set
+        via ``os.chmod`` on the path and the script is still produced.
+
+        Guards the portability fallback in ``_build_askpass_env``: removing
+        ``os.fchmod`` must not raise ``AttributeError`` and must still yield an
+        executable askpass script.
+        """
+        import os
+        import stat
+        from pathlib import Path
+
+        from markdown_vault_mcp.git._run import _build_askpass_env, cleanup_git_env
+
+        monkeypatch.delattr(os, "fchmod", raising=False)
+
+        env = _build_askpass_env("tok", "user")
+        script_path = env["GIT_ASKPASS"]
+        try:
+            assert Path(script_path).stat().st_mode & stat.S_IXUSR, (
+                "chmod fallback did not make the askpass script executable"
+            )
+        finally:
+            cleanup_git_env(env)
+
+    def test_build_askpass_env_unlinks_script_on_failure(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """If a step after mkstemp fails, the temp script is unlinked (no leak).
+
+        Guards the ``except BaseException`` cleanup path in ``_build_askpass_env``
+        (#659): when ``os.fchmod`` raises, the still-owned fd is closed, the
+        just-created temp file is removed, and the original error propagates.
+        """
+        import os
+        import tempfile
+        from pathlib import Path
+
+        from markdown_vault_mcp.git import _run
+
+        created: dict[str, str] = {}
+        real_mkstemp = tempfile.mkstemp
+
+        def recording_mkstemp(*args: object, **kwargs: object) -> tuple[int, str]:
+            fd, path = real_mkstemp(*args, **kwargs)  # type: ignore[arg-type]
+            created["path"] = path
+            return fd, path
+
+        def boom(*_args: object, **_kwargs: object) -> None:
+            raise OSError("simulated fchmod failure")
+
+        monkeypatch.setattr(tempfile, "mkstemp", recording_mkstemp)
+        monkeypatch.setattr(os, "fchmod", boom)
+
+        with pytest.raises(OSError, match="simulated fchmod failure"):
+            _run._build_askpass_env("tok", "user")
+
+        assert "path" in created, "mkstemp was not reached"
+        assert not Path(created["path"]).exists(), (
+            "temp askpass script leaked when _build_askpass_env failed mid-build"
+        )
+
+    def test_build_askpass_env_write_failure_propagates_not_ebadf(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A write failure inside the fdopen block propagates the original error.
+
+        Exercises the second branch of the ``except BaseException`` cleanup in
+        ``_build_askpass_env`` (#659): when ``f.write`` raises inside the
+        ``with os.fdopen(fd)`` block, the context manager has already closed the
+        fd, so the explicit ``os.close(fd)`` in the handler is a double-close that
+        raises ``OSError(EBADF)``.  The ``contextlib.suppress(OSError)`` must
+        absorb it so the ORIGINAL error propagates (not a misleading "Bad file
+        descriptor"), and the temp script must still be unlinked.
+        """
+        import os
+        import tempfile
+        from pathlib import Path
+
+        from markdown_vault_mcp.git import _run
+
+        created: dict[str, str] = {}
+        real_mkstemp = tempfile.mkstemp
+        real_fdopen = os.fdopen
+
+        def recording_mkstemp(*args: object, **kwargs: object) -> tuple[int, str]:
+            fd, path = real_mkstemp(*args, **kwargs)  # type: ignore[arg-type]
+            created["path"] = path
+            return fd, path
+
+        class _BoomWriter:
+            """Delegates ``__exit__`` to the real file (closing the fd) but
+            raises on ``write`` to force a failure inside the ``with`` block."""
+
+            def __init__(self, real: object) -> None:
+                self._real = real
+
+            def __enter__(self) -> _BoomWriter:
+                return self
+
+            def __exit__(self, *exc: object) -> object:
+                return self._real.__exit__(*exc)  # type: ignore[attr-defined]
+
+            def write(self, *_args: object, **_kwargs: object) -> None:
+                raise RuntimeError("simulated write failure")
+
+        def fake_fdopen(fd: int, *args: object, **kwargs: object) -> _BoomWriter:
+            return _BoomWriter(real_fdopen(fd, *args, **kwargs))  # type: ignore[arg-type]
+
+        monkeypatch.setattr(tempfile, "mkstemp", recording_mkstemp)
+        monkeypatch.setattr(os, "fdopen", fake_fdopen)
+
+        with pytest.raises(RuntimeError, match="simulated write failure"):
+            _run._build_askpass_env("tok", "user")
+
+        assert "path" in created, "mkstemp was not reached"
+        assert not Path(created["path"]).exists(), (
+            "temp askpass script leaked when write failed inside the fdopen block"
+        )
+
     def test_startup_recovery_pushes_unpushed(
         self, git_repo_with_remote: tuple[Path, Path]
     ) -> None:
@@ -1364,7 +1523,10 @@ class TestGitSyncOnce:
         captured: list[dict[str, str] | None] = []
 
         def fake_lfs_pull(env: dict[str, str] | None = None) -> None:
-            captured.append(env)
+            # Snapshot the env at call time: sync_once's finally-block runs
+            # cleanup_git_env(env), which pops GIT_ASKPASS from the same dict,
+            # so a by-reference capture would not see it post-cleanup (#659).
+            captured.append(dict(env) if env is not None else None)
 
         strategy._lfs_pull = fake_lfs_pull  # type: ignore[assignment]
         did_advance = strategy.sync_once(work)

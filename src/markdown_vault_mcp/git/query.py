@@ -6,8 +6,11 @@ intercepts them.
 
 The ``git_root`` parameter is pre-resolved by the caller (typically via
 :meth:`GitWriteStrategy._ensure_git_root`, which memoises the result).  Passing
-``None`` is a no-op: both functions return an empty result immediately.  This keeps
-git-root discovery out of these functions so that tests can prime the cache on the
+``None`` to the two query entry points (:func:`get_file_history` /
+:func:`get_file_diff`) is a no-op: they return an empty result immediately.
+(:func:`resolve_path_at_ref` is an internal helper and requires a resolved
+``git_root``.)  This keeps git-root discovery out of these functions so that tests
+can prime the cache on the
 strategy instance and then patch ``subprocess.run`` without the patch also
 interfering with the discovery call.
 """
