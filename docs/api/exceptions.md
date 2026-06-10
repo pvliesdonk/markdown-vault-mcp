@@ -6,7 +6,7 @@ All exceptions are importable from the top-level `markdown_vault_mcp` package.
 from markdown_vault_mcp import DocumentNotFoundError, ReadOnlyError
 ```
 
-All exceptions inherit from `MarkdownMCPError`, so callers can catch the base class to handle any library error.
+Most exceptions inherit from `MarkdownMCPError`, so callers can catch the base class to handle any library error. The one exception is `ConfigurationError`, which is re-exported from `fastmcp-pvl-core` and is **not** a `MarkdownMCPError` subclass (see [Configuration Errors](#configuration-errors)) — startup config failures are meant to fail hard rather than be caught by a library-error handler.
 
 ## Base Exception
 
