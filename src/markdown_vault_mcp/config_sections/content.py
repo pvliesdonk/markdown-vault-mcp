@@ -27,18 +27,25 @@ class ContentConfig:
 
         ``0`` is a valid sentinel for "unlimited"; only negative size values are
         rejected. ``attachment_extensions`` accepts any ``Sequence[str]`` but is
-        stored as a tuple so the frozen config's contents cannot be mutated.
+        stored as a tuple so the frozen config's contents cannot be mutated; a
+        bare ``str``/``bytes`` is rejected (it would otherwise be silently split
+        into characters).
 
         Raises:
             ConfigurationError: If ``max_attachment_size_mb`` or
-                ``max_note_read_bytes`` is negative.
+                ``max_note_read_bytes`` is negative, or ``attachment_extensions``
+                is a ``str``/``bytes`` instead of a sequence of strings.
         """
-        if self.attachment_extensions is not None and not isinstance(
-            self.attachment_extensions, tuple
-        ):
-            object.__setattr__(
-                self, "attachment_extensions", tuple(self.attachment_extensions)
-            )
+        if self.attachment_extensions is not None:
+            if isinstance(self.attachment_extensions, (str, bytes)):
+                raise ConfigurationError(
+                    "attachment_extensions must be a sequence of strings, not a "
+                    f"single {type(self.attachment_extensions).__name__}"
+                )
+            if not isinstance(self.attachment_extensions, tuple):
+                object.__setattr__(
+                    self, "attachment_extensions", tuple(self.attachment_extensions)
+                )
         if self.max_attachment_size_mb < 0:
             raise ConfigurationError(
                 "max_attachment_size_mb must be >= 0, got "

@@ -1369,6 +1369,9 @@ class TestIndexingConfigFromEnv:
         # The stored contents cannot be mutated (the actual #639 contract).
         with pytest.raises(AttributeError):
             cfg.exclude_patterns.append("x")  # type: ignore[union-attr]
+        # A bare str (itself a Sequence[str]) is rejected, not split into chars.
+        with pytest.raises(ConfigurationError, match="must be a sequence of strings"):
+            IndexingConfig(exclude_patterns="x.md")
         # None stays None (not coerced to an empty tuple).
         assert IndexingConfig().exclude_patterns is None
 
@@ -1687,6 +1690,9 @@ class TestContentConfigFromEnv:
         # The stored contents cannot be mutated (the actual #639 contract).
         with pytest.raises(AttributeError):
             cfg.attachment_extensions.append("x")  # type: ignore[union-attr]
+        # A bare str (itself a Sequence[str]) is rejected, not split into chars.
+        with pytest.raises(ConfigurationError, match="must be a sequence of strings"):
+            ContentConfig(attachment_extensions="pdf")
         assert ContentConfig().attachment_extensions is None
 
     def test_defaults(self, monkeypatch, tmp_path):
