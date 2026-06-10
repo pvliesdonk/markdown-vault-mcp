@@ -678,16 +678,17 @@ class TestConfigIntegration:
         config = VaultConfig.from_env()
         assert config.git.push_delay_s == 45.0
 
-    def test_from_env_invalid_push_delay_uses_default(
+    def test_from_env_invalid_push_delay_raises(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """VaultConfig.from_env() falls back to default on invalid GIT_PUSH_DELAY_S."""
+        """VaultConfig.from_env() raises on a non-numeric GIT_PUSH_DELAY_S (#638)."""
         from markdown_vault_mcp.config import VaultConfig
+        from markdown_vault_mcp.exceptions import ConfigurationError
 
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_PUSH_DELAY_S", "not_a_number")
-        config = VaultConfig.from_env()
-        assert config.git.push_delay_s == 30.0
+        with pytest.raises(ConfigurationError):
+            VaultConfig.from_env()
 
 
 class TestVaultCloseWiresStrategy:

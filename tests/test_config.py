@@ -258,21 +258,23 @@ class TestLoadConfig:
         _ = VaultConfig.from_env()
         assert "legacy mode is deprecated" in caplog.text
 
-    def test_invalid_pull_interval_uses_default(
+    def test_invalid_pull_interval_raises(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        """A non-numeric GIT_PULL_INTERVAL_S raises (no warn-and-default; #638)."""
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_PULL_INTERVAL_S", "nope")
-        config = VaultConfig.from_env()
-        assert config.git.pull_interval_s == 600
+        with pytest.raises(ConfigurationError):
+            VaultConfig.from_env()
 
-    def test_negative_pull_interval_disables(
+    def test_negative_pull_interval_raises(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        """A negative GIT_PULL_INTERVAL_S raises (no longer clamps to 0; #638)."""
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_PULL_INTERVAL_S", "-5")
-        config = VaultConfig.from_env()
-        assert config.git.pull_interval_s == 0
+        with pytest.raises(ConfigurationError, match="pull_interval_s"):
+            VaultConfig.from_env()
 
     def test_comma_separated_strips_whitespace(
         self, monkeypatch: pytest.MonkeyPatch
@@ -638,11 +640,31 @@ class TestGitConfigFromEnv:
         g = GitConfig.from_env("MARKDOWN_VAULT_MCP")
         assert g == GitConfig()
 
-    def test_pull_interval_negative_clamps_to_zero(self, monkeypatch):
+    def test_pull_interval_negative_raises(self, monkeypatch):
+        """A negative GIT_PULL_INTERVAL_S raises (no longer clamps to 0; #638)."""
         from markdown_vault_mcp.config_sections import GitConfig
 
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_PULL_INTERVAL_S", "-5")
-        assert GitConfig.from_env("MARKDOWN_VAULT_MCP").pull_interval_s == 0
+        with pytest.raises(ConfigurationError, match="pull_interval_s"):
+            GitConfig.from_env("MARKDOWN_VAULT_MCP")
+
+    def test_push_delay_invalid_raises(self, monkeypatch):
+        """A non-numeric GIT_PUSH_DELAY_S raises (no warn-and-default; #638)."""
+        from markdown_vault_mcp.config_sections import GitConfig
+
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_PUSH_DELAY_S", "nope")
+        with pytest.raises(ConfigurationError):
+            GitConfig.from_env("MARKDOWN_VAULT_MCP")
+
+    @pytest.mark.parametrize(
+        "kwargs", [{"push_delay_s": -1.0}, {"pull_interval_s": -5}]
+    )
+    def test_direct_construction_validates(self, kwargs):
+        """__post_init__ rejects negative cadences on direct construction (#638)."""
+        from markdown_vault_mcp.config_sections import GitConfig
+
+        with pytest.raises(ConfigurationError):
+            GitConfig(**kwargs)
 
     def test_frozen(self):
         import dataclasses
