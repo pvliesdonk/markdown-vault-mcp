@@ -96,7 +96,7 @@ The first three knobs adjust *ranking and rendering* — they take effect immedi
     2. **Ollama** — if `OLLAMA_HOST` is reachable
     3. **FastEmbed** — if the `fastembed` package is installed
 
-    **Explicit vs. auto-detect failure handling:** when you set `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` to a specific backend and it cannot be constructed at startup — a missing dependency, missing/empty credentials, or an unrecognised value — the server **fails fast** with a `ConfigurationError` rather than silently falling back to keyword-only search. (An unreachable Ollama/OpenAI *service* is not probed at startup; that surfaces later as an embedding error during index build.) When the variable is *unset* (auto-detect) and no backend is available, the server logs a warning and continues with semantic search disabled. Set the variable explicitly if you want a missing provider to be a hard startup error.
+    **Explicit vs. auto-detect failure handling:** when you set `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` to a specific backend and it cannot be constructed at startup — a missing dependency, missing/empty credentials, or an unrecognised value — the server **fails fast** with a `ConfigurationError` rather than silently falling back to keyword-only search. (An unreachable Ollama/OpenAI *service* does not prevent startup — the provider still loads; the failure surfaces later as an embedding error during index build.) When the variable is *unset* (auto-detect) and no backend is available, the server logs a warning and continues with semantic search disabled. Set the variable explicitly if you want a missing provider to be a hard startup error.
 
 ## Git Integration
 
