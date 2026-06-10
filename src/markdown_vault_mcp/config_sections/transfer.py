@@ -29,11 +29,18 @@ class TransferConfig:
                 is violated.
         """
         if self.ttl_default_s < 1:
-            raise ConfigurationError("ttl_default_s must be >= 1")
+            raise ConfigurationError(
+                f"ttl_default_s must be >= 1, got {self.ttl_default_s}"
+            )
         if self.ttl_max_s < self.ttl_default_s:
-            raise ConfigurationError("ttl_max_s must be >= ttl_default_s")
+            raise ConfigurationError(
+                f"ttl_max_s must be >= ttl_default_s, got ttl_max_s={self.ttl_max_s} "
+                f"ttl_default_s={self.ttl_default_s}"
+            )
         if self.max_upload_bytes < 1:
-            raise ConfigurationError("max_upload_bytes must be >= 1")
+            raise ConfigurationError(
+                f"max_upload_bytes must be >= 1, got {self.max_upload_bytes}"
+            )
 
     @classmethod
     def from_env(cls, prefix: str) -> TransferConfig:
