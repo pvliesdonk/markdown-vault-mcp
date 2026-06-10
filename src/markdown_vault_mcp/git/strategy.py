@@ -8,15 +8,12 @@ legacy :func:`git_write_strategy` factory for backward compatibility.
 from __future__ import annotations
 
 import contextlib
-import datetime
 import logging
 import re
 import subprocess
 import threading
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
-
-import frontmatter
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -26,7 +23,7 @@ if TYPE_CHECKING:
 from fastmcp.server.dependencies import get_access_token as _get_access_token
 
 from markdown_vault_mcp.exceptions import ConfigurationError
-from markdown_vault_mcp.git import query
+from markdown_vault_mcp.git import conflict, query
 from markdown_vault_mcp.git._run import (
     _build_askpass_env,
     _find_git_root,
@@ -600,77 +597,7 @@ class GitWriteStrategy:
             responsible for aborting any in-progress rebase before
             writing the conflict files.
         """
-        root = str(git_root)
-        saved: dict[str, str] = {}
-        max_iterations = 50  # safety limit
-
-        for _ in range(max_iterations):
-            # Identify conflicting files.
-            result = subprocess.run(
-                ["git", "-C", root, "diff", "--name-only", "--diff-filter=U"],
-                capture_output=True,
-                text=True,
-                env=env,
-            )
-            conflicting = [f for f in result.stdout.strip().splitlines() if f]
-            if not conflicting:
-                # No conflicts — rebase may have stopped for another reason.
-                break
-
-            for rel_path in conflicting:
-                # Save the MCP version (the commit being rebased).
-                show_result = subprocess.run(
-                    ["git", "-C", root, "show", f"REBASE_HEAD:{rel_path}"],
-                    capture_output=True,
-                    text=True,
-                    env=env,
-                )
-                if show_result.returncode == 0:
-                    saved[rel_path] = show_result.stdout
-                else:
-                    logger.warning(
-                        "Git pull: could not read MCP version of %s, skipping conflict file",
-                        rel_path,
-                    )
-
-                # Accept upstream's version.  During rebase, --ours is the
-                # branch being rebased onto (upstream), --theirs is the
-                # commit being replayed (our local MCP commit).
-                subprocess.run(
-                    ["git", "-C", root, "checkout", "--ours", "--", rel_path],
-                    capture_output=True,
-                    text=True,
-                    env=env,
-                    check=True,
-                )
-                subprocess.run(
-                    ["git", "-C", root, "add", "--", rel_path],
-                    capture_output=True,
-                    text=True,
-                    env=env,
-                    check=True,
-                )
-
-            # Continue the rebase.  If another commit conflicts, the loop
-            # iterates again.  ``--no-edit`` avoids opening an editor for
-            # any automatically generated merge messages.
-            cont = subprocess.run(
-                ["git", "-C", root, "rebase", "--continue"],
-                capture_output=True,
-                text=True,
-                env={**(env or {}), "GIT_EDITOR": "true"},
-            )
-            if cont.returncode == 0:
-                # Rebase completed successfully.
-                return list(saved.items())
-            # returncode != 0 means the next commit also has conflicts —
-            # loop around and resolve again.
-
-        # Exhausted iterations or no conflicting files after non-zero continue.
-        logger.error(
-            "Git pull: conflict resolution loop exceeded %d iterations", max_iterations
-        )
-        return list(saved.items())
+        return conflict.resolve_rebase_conflicts(git_root, env)
 
     def _resolve_conflicts_safely(
         self,
@@ -678,49 +605,23 @@ class GitWriteStrategy:
         env: dict[str, str] | None,
         from_sha: str,
     ) -> tuple[list[tuple[str, str]] | None, PullResult | None]:
-        """Defensive wrapper around :meth:`_resolve_rebase_conflicts`.
+        """Delegate to :func:`conflict.resolve_conflicts_safely`.
 
-        Catches the case where conflict resolution itself raises mid-loop,
-        leaving the repository in a half-rebased state.  On exception:
-        logs at ERROR with traceback, runs ``git rebase --abort`` defensively
-        (logging WARNING if the abort itself fails — but not failing the
-        overall recovery), and returns an early-exit ``PullResult`` so the
-        caller can surface ``conflict_resolution_failed`` without a leftover
-        ``rebase-merge`` directory.
-
-        Args:
-            git_root: Working-tree root.
-            env: Optional GIT_ASKPASS environment.
-            from_sha: HEAD SHA captured by the caller before the rebase
-                attempt; reused on the failure path so the returned result
-                has consistent ``from_sha == to_sha`` semantics.
+        Passes ``self._resolve_rebase_conflicts`` as ``resolve_fn`` so
+        instance-level monkeypatches of it in tests are still honoured.
 
         Returns:
-            ``(saved, None)`` on success — ``saved`` is the list of
-            ``(rel_path, mcp_content)`` tuples from
-            :meth:`_resolve_rebase_conflicts`.
-
-            ``(None, PullResult)`` on failure — caller should return the
+            ``(saved, None)`` on success, or ``(None, PullResult)`` on
+            failure — in which case the caller should return the
             ``PullResult`` immediately.
         """
-        try:
-            saved = self._resolve_rebase_conflicts(git_root, env)
-        except Exception:
-            logger.error(
-                "Git force_pull: conflict resolution raised — aborting rebase",
-                exc_info=True,
-            )
-            abort_proc = self._run_git_capturing(git_root, "rebase", "--abort", env=env)
-            if abort_proc.returncode != 0:
-                logger.warning(
-                    "Git force_pull: defensive `git rebase --abort` "
-                    "after conflict-resolution failure also failed: %s",
-                    self._redact((abort_proc.stderr or "").strip()),
-                )
-            return None, PullResult.head_unchanged_failure(
-                from_sha, PULL_REASON_CONFLICT_RESOLUTION_FAILED
-            )
-        return saved, None
+        return conflict.resolve_conflicts_safely(
+            git_root,
+            env,
+            from_sha,
+            token=self._token,
+            resolve_fn=self._resolve_rebase_conflicts,
+        )
 
     def _rebase_in_progress(
         self,
@@ -753,23 +654,7 @@ class GitWriteStrategy:
             tell); ``False`` only when ``rev-parse --git-dir`` succeeded
             AND no ``rebase-merge`` / ``rebase-apply`` directory exists.
         """
-        git_dir_proc = self._run_git_capturing(
-            git_root, "rev-parse", "--git-dir", env=env
-        )
-        if git_dir_proc.returncode != 0:
-            logger.error(
-                "Git force_pull: `git rev-parse --git-dir` failed; "
-                "conservatively assuming rebase is in progress: %s",
-                self._redact((git_dir_proc.stderr or "").strip()),
-            )
-            return True
-
-        git_dir = Path(git_dir_proc.stdout.strip())
-        if not git_dir.is_absolute():
-            git_dir = git_root / git_dir
-        return (git_dir / "rebase-merge").is_dir() or (
-            git_dir / "rebase-apply"
-        ).is_dir()
+        return conflict.rebase_in_progress(git_root, env, token=self._token)
 
     def _abort_in_progress_rebase(
         self,
@@ -788,14 +673,7 @@ class GitWriteStrategy:
             may be inconsistent).  Failure is logged at ERROR with
             token-redacted stderr.
         """
-        abort_proc = self._run_git_capturing(git_root, "rebase", "--abort", env=env)
-        if abort_proc.returncode != 0:
-            logger.error(
-                "Git force_pull: failed to abort rebase: %s",
-                self._redact((abort_proc.stderr or "").strip()),
-            )
-            return False
-        return True
+        return conflict.abort_in_progress_rebase(git_root, env, token=self._token)
 
     def _restore_upstream_paths(
         self,
@@ -829,28 +707,7 @@ class GitWriteStrategy:
             Subset of ``saved`` whose upstream restore succeeded.  May be
             empty if every checkout failed.
         """
-        restored: list[tuple[str, str]] = []
-        for rel_path, mcp_content in saved:
-            checkout_proc = self._run_git_capturing(
-                git_root,
-                "checkout",
-                "@{upstream}",
-                "--",
-                rel_path,
-                env=env,
-            )
-            if checkout_proc.returncode != 0:
-                logger.error(
-                    "Git force_pull: failed to restore upstream "
-                    "version of %r after rebase abort; dropping it "
-                    "from conflict siblings to avoid duplicate MCP "
-                    "content: %s",
-                    rel_path,
-                    self._redact((checkout_proc.stderr or "").strip()),
-                )
-                continue
-            restored.append((rel_path, mcp_content))
-        return restored
+        return conflict.restore_upstream_paths(git_root, env, saved, token=self._token)
 
     def _build_pull_result_advanced(
         self,
@@ -920,105 +777,14 @@ class GitWriteStrategy:
             implying a successful conflict-resolution commit.  Returns an
             empty list when *saved* is empty (nothing to do).
         """
-        root = str(git_root)
-        now = datetime.datetime.now(tz=datetime.UTC)
-        timestamp = now.strftime("%Y%m%d-%H%M%S")
-        conflict_date = now.isoformat(timespec="seconds")
-        written: list[str] = []
-
-        for rel_path, mcp_content in saved:
-            original = Path(rel_path)
-            conflict_name = f"{original.stem}.conflict-mcp-{timestamp}{original.suffix}"
-            conflict_rel = str(original.parent / conflict_name)
-
-            # --- Write conflict file (MCP version) ---
-            try:
-                post = frontmatter.loads(mcp_content)
-            except Exception:
-                # If frontmatter parsing fails, treat as plain content.
-                logger.warning(
-                    "Git pull: failed to parse frontmatter for conflict file %s; treating as plain content",
-                    conflict_rel,
-                    exc_info=True,
-                )
-                post = frontmatter.Post(mcp_content)
-
-            post.metadata["conflict_with"] = rel_path
-            post.metadata["conflict_date"] = conflict_date
-
-            conflict_abs = git_root / conflict_rel
-            conflict_abs.parent.mkdir(parents=True, exist_ok=True)
-            conflict_abs.write_text(frontmatter.dumps(post), encoding="utf-8")
-
-            # --- Update original file with conflict_with frontmatter ---
-            original_abs = git_root / rel_path
-            if original_abs.exists():
-                try:
-                    orig_post = frontmatter.loads(
-                        original_abs.read_text(encoding="utf-8")
-                    )
-                except Exception:
-                    logger.warning(
-                        "Git pull: failed to parse frontmatter for original file %s; treating as plain content",
-                        rel_path,
-                        exc_info=True,
-                    )
-                    orig_post = frontmatter.Post(
-                        original_abs.read_text(encoding="utf-8")
-                    )
-                orig_post.metadata["conflict_with"] = conflict_rel
-                orig_post.metadata["conflict_date"] = conflict_date
-                original_abs.write_text(frontmatter.dumps(orig_post), encoding="utf-8")
-
-            written.append(conflict_rel)
-
-        if not written:
-            return written
-
-        # Stage only the files we touched — the original files (updated with
-        # conflict_with frontmatter) and the new conflict files.
-        paths_to_add = [rel_path for rel_path, _ in saved] + written
-        subprocess.run(
-            ["git", "-C", root, "add", "--", *paths_to_add],
-            capture_output=True,
-            text=True,
-            env=env,
-            check=True,
+        return conflict.write_conflict_files(
+            git_root,
+            saved,
+            env,
+            commit_name=self._commit_name,
+            commit_email=self._commit_email,
+            token=self._token,
         )
-
-        n = len(written)
-        file_list = ", ".join(written)
-        # Conflict resolution runs on the pull background thread, not inside a
-        # request context, so _extract_claim would return None.  Use the static
-        # server identity directly — per-user attribution does not apply here.
-        commit_result = subprocess.run(
-            [
-                "git",
-                "-C",
-                root,
-                "-c",
-                f"user.name={self._commit_name}",
-                "-c",
-                f"user.email={self._commit_email}",
-                "commit",
-                "-m",
-                f"conflict: saved {n} MCP version(s) for manual reconciliation\n\n{file_list}",
-            ],
-            capture_output=True,
-            text=True,
-            env=env,
-        )
-        if commit_result.returncode != 0:
-            logger.error(
-                "Git pull: conflict commit failed (rc=%d): %s",
-                commit_result.returncode,
-                self._redact(
-                    (commit_result.stderr or commit_result.stdout or "").strip()
-                ),
-            )
-            return None
-
-        return written
 
     # ------------------------------------------------------------------
     # Synchronous force-trigger helpers (used by the ``git_sync`` MCP tool)

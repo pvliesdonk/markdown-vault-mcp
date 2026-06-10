@@ -2096,7 +2096,7 @@ class TestGitSyncOnce:
 
         with (
             mock.patch(
-                "markdown_vault_mcp.git.strategy.frontmatter.loads",
+                "markdown_vault_mcp.git.conflict.frontmatter.loads",
                 side_effect=Exception("yaml parse error"),
             ),
             caplog.at_level(logging.WARNING, logger="markdown_vault_mcp.git"),

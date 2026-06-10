@@ -12,10 +12,11 @@ subprocess``). Because ``markdown_vault_mcp.git.subprocess`` is the stdlib
 applies globally, so calls from any submodule that does ``import subprocess`` are
 still intercepted. Keeping the attribute here preserves those patch targets.
 
-Symbols that strategy.py looks up via its own module globals (``_stage_and_commit``,
-``_push``, ``_get_access_token``, ``frontmatter``) are patched by tests at their
-real home -- ``markdown_vault_mcp.git.strategy.<name>`` -- not via this package
-namespace. "Patch where the name is used."
+Symbols that a submodule looks up via its own module globals (e.g.
+``_stage_and_commit`` / ``_push`` / ``_get_access_token`` in ``strategy``;
+``frontmatter`` in ``conflict``) are patched by tests at their real home --
+``markdown_vault_mcp.git.<submodule>.<name>`` -- not via this package namespace.
+"Patch where the name is used."
 """
 
 from __future__ import annotations
