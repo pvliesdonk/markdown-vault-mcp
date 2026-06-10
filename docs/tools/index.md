@@ -669,7 +669,7 @@ List commits that touched a note (or the whole vault) within an optional time wi
 | `sha` | string | Full 40-character commit SHA |
 | `short_sha` | string | 7-character abbreviated SHA |
 | `timestamp` | string | ISO 8601 author timestamp |
-| `author` | string | Committer name and email |
+| `author` | string | Author name and email |
 | `message` | string | First line of the commit message |
 | `paths_changed` | list[string] | Files touched by the commit. Populated for vault-wide queries (`path=null`); always empty for single-note queries, since the path is already determined by the query arguments — callers know which file the commit touched without needing it echoed back. |
 

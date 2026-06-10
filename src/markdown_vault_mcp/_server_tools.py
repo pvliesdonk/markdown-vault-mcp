@@ -1597,7 +1597,7 @@ def register_tools(mcp: FastMCP) -> None:
                 - sha (str): Full 40-character commit SHA.
                 - short_sha (str): 7-character abbreviated SHA.
                 - timestamp (str): ISO 8601 author timestamp.
-                - author (str): Committer name and email, e.g. "Name <email>".
+                - author (str): Author name and email, e.g. "Name <email>".
                 - message (str): First line of the commit message.
                 - paths_changed (list[str]): Files touched by the commit.
                   Populated for vault-wide queries (path=None). Always empty
