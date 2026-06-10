@@ -32,6 +32,6 @@ Step-by-step walkthroughs for common deployment scenarios. Each guide takes you 
 All guides assume you have:
 
 - A directory of markdown files (e.g., an Obsidian vault)
-- Python 3.10+ installed (for local installs) or Docker (for container deployments)
+- Python 3.11+ installed (for local installs) or Docker (for container deployments)
 
 For installation instructions, see [Installation](../installation.md). For the full environment variable reference, see [Configuration](../configuration.md).

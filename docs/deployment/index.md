@@ -15,7 +15,7 @@ This section covers deploying markdown-vault-mcp in various environments.
 
 - **Docker deployments:** Docker Engine 24+ and Docker Compose v2
 - **systemd deployments:** Python 3.11+ on a Linux system with systemd
-- **Claude Desktop:** Python 3.10+ with `markdown-vault-mcp[mcp]` installed
+- **Claude Desktop:** Python 3.11+ with `markdown-vault-mcp[mcp]` installed
 - **All deployments:** A directory of Markdown files to serve
 
 ## Transport Modes

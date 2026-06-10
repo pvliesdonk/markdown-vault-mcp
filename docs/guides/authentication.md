@@ -100,7 +100,7 @@ Set `MARKDOWN_VAULT_MCP_AUTH_MODE` to force a mode, or let the server auto-detec
 !!! tip "Migrating from oidc-proxy to remote"
     Remove `OIDC_CLIENT_ID` and `OIDC_CLIENT_SECRET` from your env. The server will auto-detect remote mode. Or set `AUTH_MODE=remote` explicitly.
 
-### How it works (remote mode)
+### How it works (remote mode) { #remote-mode }
 
 The server validates tokens locally using JWKS — no upstream token calls after startup:
 
@@ -139,7 +139,7 @@ Client → markdown-vault-mcp (OIDCProxy) → OIDC Provider
 | `MARKDOWN_VAULT_MCP_AUTH_MODE` | auto-detected | Force OIDC mode: `remote` or `oidc-proxy` |
 | `MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY` | ephemeral | JWT signing key — **required on Linux/Docker** (oidc-proxy mode only) |
 | `MARKDOWN_VAULT_MCP_OIDC_AUDIENCE` | — | Expected JWT audience claim; leave unset if your provider does not set one |
-| `MARKDOWN_VAULT_MCP_OIDC_REQUIRED_SCOPES` | `openid` | Comma-separated required scopes |
+| `MARKDOWN_VAULT_MCP_OIDC_REQUIRED_SCOPES` | `openid` (oidc-proxy) | Comma-separated required scopes. The `openid` default applies in oidc-proxy mode; remote mode requires no scopes unless this is set |
 | `MARKDOWN_VAULT_MCP_OIDC_VERIFY_ACCESS_TOKEN` | `false` | Set `true` to verify the access token as a JWT instead of the id token; useful for audience-claim validation on JWT access tokens (oidc-proxy mode only) |
 
 !!! danger "JWT signing key on Linux/Docker (oidc-proxy mode)"

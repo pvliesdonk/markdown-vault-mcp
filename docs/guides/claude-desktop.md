@@ -28,8 +28,8 @@ This is the easiest option for non-technical users.
 
 3. Claude Desktop opens a GUI wizard that prompts for the required env vars. No manual JSON editing needed.
 
-!!! note "Fewer configurable env vars"
-    The `.mcpb` bundle exposes a curated set of env vars (vault path, read-only mode, embedding provider, and exclude patterns). For full control over all configuration options, use Step 1 instead.
+!!! note "Configured through the GUI wizard"
+    The `.mcpb` bundle surfaces a broad set of env vars in Claude Desktop's wizard — vault path, read-only mode, state/index/embedding paths, the embedding provider and its per-provider model settings, git configuration, and auth (bearer / OIDC), among others. If you need to set an option the wizard doesn't expose, use Step 1 (manual config) instead.
 
 ---
 
@@ -37,7 +37,7 @@ This is the easiest option for non-technical users.
 
 **Goal:** Connect a local Obsidian vault to Claude Desktop with keyword search.
 
-**Prerequisites:** Python 3.10+, Claude Desktop installed.
+**Prerequisites:** Python 3.11+, Claude Desktop installed.
 
 ### Install
 

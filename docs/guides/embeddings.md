@@ -240,3 +240,20 @@ Regardless of which provider you choose:
     The ONNX batch size is tuned for the default `BAAI/bge-small-en-v1.5` model (512-token context). ONNX self-attention scales as O(batch × seq_len²) in RAM; long-context models require a much smaller batch size to avoid OOM — see issue [#306](https://github.com/pvliesdonk/markdown-vault-mcp/issues/306).
 
     For very large vaults (thousands of notes), the first startup may take several minutes. If the process is interrupted mid-build, it will rebuild from scratch on the next startup — partial indices are never persisted.
+
+### Chunk sizing and the embedding context
+
+The chunker (shared by keyword and semantic search) bounds every chunk by **both** a word cap (`MARKDOWN_VAULT_MCP_MAX_CHUNK_WORDS`, default `400`) **and** a character cap (`MARKDOWN_VAULT_MCP_MAX_CHUNK_CHARS`). The character cap exists because a chunk that fits the word cap can still exceed the embedding model's **token** limit — token-dense content (tables, code, CJK) packs far more tokens per word. Without it, such a chunk would abort the build (Ollama returns HTTP 400) or be silently truncated (FastEmbed), producing degraded embeddings.
+
+`MAX_CHUNK_CHARS` is **derived from the embedding model's token context** when you don't set it explicitly: `round(context_length × 2.8)` (deliberately conservative for dense content). For example:
+
+- `bge-small-en-v1.5` (512-token context) → ~1,434 chars
+- `nomic-embed-text` (Ollama default, 2048-token context) → ~5,734 chars
+- an 8192-token model → ~22,938 chars
+- unknown context (no provider, or Ollama unreachable at startup) → a fixed `6000`-char fallback
+
+!!! note "Changing the embedding model triggers a one-time cold rebuild"
+    Because the char cap is derived from the model's context, the chunk boundaries themselves depend on the embedding model. Changing the embedding model (or setting/changing `MAX_CHUNK_CHARS`) re-chunks the **FTS index**, not just the embeddings — so on the next startup the server automatically rejects the warm-restart short-circuit and does a background cold rebuild (keyword search returns first, semantic search once embeddings finish). No manual `reindex` is needed. The same one-time rebuild happens when an embedding-enabled vault is upgraded from a release before this behavior existed.
+
+!!! warning "Long-context models are opt-in"
+    The defaults (`BAAI/bge-small-en-v1.5` for FastEmbed, `nomic-embed-text` for Ollama) are memory-light. Long-context models — `nomic-ai/nomic-embed-text-v1.5` (8192 tokens) for FastEmbed, or `bge-m3:latest` for Ollama (note the `name:tag` form Ollama uses) — give larger chunks but cost substantially more memory: FastEmbed runs ONNX in-process and its self-attention is `O(batch × seq_len²)` in RAM (see the memory note under [FastEmbed](#fastembed) and issue [#306](https://github.com/pvliesdonk/markdown-vault-mcp/issues/306)); Ollama needs the model to fit GPU VRAM at the larger context. Prefer the defaults unless you have the headroom.

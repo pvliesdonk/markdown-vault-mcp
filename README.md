@@ -29,7 +29,7 @@ Point it at a directory of Markdown files (an Obsidian vault, a docs folder, a Z
 - **OIDC authentication** — optional token-based auth for HTTP deployments (Authelia, Keycloak, etc.)
 - **MCP tools** — 31 LLM-visible tools including search, read, write, edit, delete, rename, git history, manual git sync, one-time transfer links, and admin operations; plus 6 app-only tools for MCP Apps clients
 - **MCP resources** — 9 resources exposing vault configuration, statistics, tags, folders, document outlines, similar notes, recent notes, and an interactive SPA
-- **MCP prompts** — 6 prompt templates including template-driven note creation
+- **MCP prompts** — 7 prompt templates including template-driven note creation
 <!-- DOMAIN-END -->
 
 ## What you can do with it
@@ -187,6 +187,7 @@ All configuration is via environment variables with the `MARKDOWN_VAULT_MCP_` pr
 | `MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER` | `_templates` | No | Relative folder path where note templates live (used by the `create_from_template` prompt) |
 | `MARKDOWN_VAULT_MCP_PROMPTS_FOLDER` | — | No | Path to a directory of `.md` prompt files that extend or override built-in prompts (see [User-defined prompts](#user-defined-prompts)) |
 | `MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S` | `60` | No | Maximum seconds an index-querying read tool waits for the IndexWriter to drain when called with `wait_for_pending_writes=True`. On timeout the tool answers from the current index rather than raising and reports `index_stale=True` in the response's `_meta`. |
+| `MARKDOWN_VAULT_MCP_BUILD_TIMEOUT_S` | `60` | No | Maximum seconds a relational/FTS-backed tool or resource waits for the index to become queryable during a cold-start background build before raising `IndexUnavailableError(reason="timeout")`. Increase for very large vaults. |
 
 ### Server identity
 
@@ -214,7 +215,11 @@ All configuration is via environment variables with the `MARKDOWN_VAULT_MCP_` pr
 | `MARKDOWN_VAULT_MCP_OLLAMA_CPU_ONLY` | `false` | Force Ollama to use CPU only |
 | `MARKDOWN_VAULT_MCP_FASTEMBED_MODEL` | `BAAI/bge-small-en-v1.5` | FastEmbed model name |
 | `MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR` | FastEmbed default | FastEmbed model cache directory (in Docker, stored under `/data/state/fastembed`) |
-| `MARKDOWN_VAULT_MCP_MAX_CHUNK_CHARS` | *(derived from model context)* | Character cap the chunker enforces alongside `MAX_CHUNK_WORDS` to bound token-dense chunks (CJK, code, tables) that fit the word cap yet exceed the model's token context. Unset → `round(context_length × 2.8)` (e.g. 8192-token model → 22938 chars); unknown context → `6000`. Set to override. A reindex applies a new value. |
+| `MARKDOWN_VAULT_MCP_MAX_CHUNK_WORDS` | `400` | Word cap per chunk; the adaptive chunker splits at deeper heading levels, then paragraph/word boundaries, to respect it. Match it to the embedding model's context. A reindex applies a new value. |
+| `MARKDOWN_VAULT_MCP_MAX_CHUNK_CHARS` | *(derived from model context)* | Character cap the chunker enforces alongside `MAX_CHUNK_WORDS` to bound token-dense chunks (CJK, code, tables) that fit the word cap yet exceed the model's token context. Unset → `round(context_length × 2.8)` (e.g. 8192-token model → 22938 chars; the default `BAAI/bge-small-en-v1.5` model → ~1434 chars); unknown context → `6000`. Set to override. A reindex applies a new value. |
+| `MARKDOWN_VAULT_MCP_CHUNKS_PER_FILE` | `2` | Maximum chunks returned per document in `search` results. |
+| `MARKDOWN_VAULT_MCP_SNIPPET_WORDS` | `200` | Width of the snippet window (words) in `search` results; `0` returns full chunk content. |
+| `MARKDOWN_VAULT_MCP_LENGTH_DOWNWEIGHT_ALPHA` | `0.25` | Down-weights longer chunks in ranking (`score / (1 + alpha · log(chunk_count))`). |
 
 > **Note:** the chunker's character cap (`MARKDOWN_VAULT_MCP_MAX_CHUNK_CHARS`) is derived from the embedding model's context length, so changing the embedding model re-chunks the FTS index — not just the embeddings — and triggers an automatic cold rebuild of the index on the next startup. The defaults stay memory-light (`BAAI/bge-small-en-v1.5` for FastEmbed, `nomic-embed-text` for Ollama); long-context models — `nomic-ai/nomic-embed-text-v1.5` (8192 tokens) for FastEmbed, or `bge-m3:latest` for Ollama — are opt-in and need substantially more RAM/VRAM during indexing.
 
@@ -432,8 +437,9 @@ Prompt templates guide the LLM through multi-step workflows using the vault tool
 | `create_from_template` | `template_name` (optional) | Discover templates (if needed), read a template, gather user values, and write a new note |
 | `related` | `path` | Find related notes via search and suggest cross-references as markdown links |
 | `compare` | `path1`, `path2` | Read two documents and produce a side-by-side comparison |
+| `propose-links` | `scope` (optional), `per_note_limit` (optional) | Scan a candidate set of notes (a folder, `recent`, or `all`), propose meaningful links between semantically-close notes that aren't already connected, and write them on confirmation |
 
-Write prompts (`research`, `discuss`, `create_from_template`) are only available when `MARKDOWN_VAULT_MCP_READ_ONLY=false`.
+Write prompts (`research`, `discuss`, `create_from_template`, `propose-links`) are only available when `MARKDOWN_VAULT_MCP_READ_ONLY=false`.
 
 Templates are regular markdown files. If placeholder template text pollutes search results, add your templates folder to `MARKDOWN_VAULT_MCP_EXCLUDE` (for example `_templates/**`).
 
@@ -485,6 +491,12 @@ curl -X POST --data-binary @new-diagram.png "https://mcp.example.com/transfer/<t
 Each token is consumed on its first **successful** use. A failed or interrupted transfer does not burn the token — retry is permitted until the TTL expires.
 
 Requirements: HTTP or SSE transport; `MARKDOWN_VAULT_MCP_BASE_URL` set. See the [transfer links guide](https://pvliesdonk.github.io/markdown-vault-mcp/guides/transfer-links/) for the full walkthrough and security model.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MARKDOWN_VAULT_MCP_TRANSFER_TTL_DEFAULT_S` | `3600` | Default token lifetime (seconds) when the caller omits `ttl_seconds`; clamped to the max below. |
+| `MARKDOWN_VAULT_MCP_TRANSFER_TTL_MAX_S` | `86400` | Maximum permitted TTL; any larger `ttl_seconds` is silently clamped to this ceiling. |
+| `MARKDOWN_VAULT_MCP_TRANSFER_MAX_UPLOAD_BYTES` | `104857600` (100 MiB) | Per-upload size cap; requests whose body exceeds it are rejected with HTTP 413. |
 
 ## Attachments
 
