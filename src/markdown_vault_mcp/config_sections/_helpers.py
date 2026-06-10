@@ -6,8 +6,6 @@ import these without a cycle.
 
 from __future__ import annotations
 
-import logging
-
 from fastmcp_pvl_core import (
     env as _core_env,
 )
@@ -17,8 +15,6 @@ from fastmcp_pvl_core import (
 from fastmcp_pvl_core import (
     env_int as _core_env_int,
 )
-
-logger = logging.getLogger(__name__)
 
 
 def env(prefix: str, name: str, default: str | None = None) -> str | None:
@@ -51,27 +47,3 @@ def env_float(prefix: str, name: str, default: float) -> float:
 def opt_int(prefix: str, name: str) -> int | None:
     """Read a strict optional int env var (``None`` when unset); raise on invalid."""
     return _core_env_int(prefix, name, None, strict=True)
-
-
-def parse_int_env(prefix: str, name: str, default: int) -> int:
-    """Read an int env var; warn-and-default on absence/parse error."""
-    raw = (env(prefix, name) or "").strip()
-    if not raw:
-        return default
-    try:
-        return int(raw)
-    except ValueError:
-        logger.warning("invalid %s_%s=%r, using default %s", prefix, name, raw, default)
-        return default
-
-
-def parse_float_env(prefix: str, name: str, default: float) -> float:
-    """Read a float env var; warn-and-default on absence/parse error."""
-    raw = (env(prefix, name) or "").strip()
-    if not raw:
-        return default
-    try:
-        return float(raw)
-    except ValueError:
-        logger.warning("invalid %s_%s=%r, using default %s", prefix, name, raw, default)
-        return default

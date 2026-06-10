@@ -2,6 +2,9 @@
 
 All configuration is via environment variables. Most use the `MARKDOWN_VAULT_MCP_` prefix. `OLLAMA_HOST` and `OPENAI_API_KEY` are bare ecosystem-standard names; all other variables use the `MARKDOWN_VAULT_MCP_` prefix.
 
+!!! note "Configuration is validated at startup"
+    Numeric variables are validated against the **Type** column below (e.g. `int ≥ 1`). A non-numeric or out-of-range value makes the server **fail fast** at startup with a `ConfigurationError` naming the offending setting, rather than silently falling back to a default — so a typo in an env var surfaces immediately instead of producing surprising behavior later.
+
 ## Core
 
 | Variable | Type | Default | Required | Description |

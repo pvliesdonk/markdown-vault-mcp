@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from markdown_vault_mcp.exceptions import ConfigurationError
+
 
 @dataclass(frozen=True)
 class TransferConfig:
@@ -20,33 +22,37 @@ class TransferConfig:
     max_upload_bytes: int = 104857600  # 100 MiB
 
     def __post_init__(self) -> None:
-        """Validate the TTL ordering and positivity invariants at construction."""
+        """Validate the TTL ordering and positivity invariants at construction.
+
+        Raises:
+            ConfigurationError: If any value is out of range or the TTL ordering
+                is violated.
+        """
         if self.ttl_default_s < 1:
-            raise ValueError("ttl_default_s must be >= 1")
+            raise ConfigurationError("ttl_default_s must be >= 1")
         if self.ttl_max_s < self.ttl_default_s:
-            raise ValueError("ttl_max_s must be >= ttl_default_s")
+            raise ConfigurationError("ttl_max_s must be >= ttl_default_s")
         if self.max_upload_bytes < 1:
-            raise ValueError("max_upload_bytes must be >= 1")
+            raise ConfigurationError("max_upload_bytes must be >= 1")
 
     @classmethod
     def from_env(cls, prefix: str) -> TransferConfig:
         """Construct TransferConfig by reading ``{prefix}_TRANSFER_*`` env vars.
-
-        Invalid values warn and fall back to the default; out-of-range values
-        are validated by ``__post_init__`` (raises ``ValueError``).
 
         Args:
             prefix: Env var prefix, e.g. ``"MARKDOWN_VAULT_MCP"``.
 
         Returns:
             Populated TransferConfig with defaults for unset vars.
+
+        Raises:
+            ConfigurationError: If any ``TRANSFER_*`` value is non-numeric or
+                out of range.
         """
-        from markdown_vault_mcp.config_sections._helpers import parse_int_env
+        from markdown_vault_mcp.config_sections._helpers import env_int
 
         return cls(
-            ttl_default_s=parse_int_env(prefix, "TRANSFER_TTL_DEFAULT_S", 3600),
-            ttl_max_s=parse_int_env(prefix, "TRANSFER_TTL_MAX_S", 86400),
-            max_upload_bytes=parse_int_env(
-                prefix, "TRANSFER_MAX_UPLOAD_BYTES", 104857600
-            ),
+            ttl_default_s=env_int(prefix, "TRANSFER_TTL_DEFAULT_S", 3600),
+            ttl_max_s=env_int(prefix, "TRANSFER_TTL_MAX_S", 86400),
+            max_upload_bytes=env_int(prefix, "TRANSFER_MAX_UPLOAD_BYTES", 104857600),
         )

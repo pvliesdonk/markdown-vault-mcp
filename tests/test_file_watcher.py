@@ -21,6 +21,8 @@ import time
 from typing import TYPE_CHECKING
 from unittest.mock import patch
 
+import pytest
+
 from markdown_vault_mcp._file_watcher import (
     VaultFileWatcher,
     _has_hidden_component,
@@ -30,8 +32,6 @@ from markdown_vault_mcp._server_deps import make_vault_lifespan
 
 if TYPE_CHECKING:
     from pathlib import Path
-
-    import pytest
 
 
 # ---------------------------------------------------------------------------
@@ -318,28 +318,30 @@ def test_from_env_file_watcher_debounce_custom(
     assert config.sync.file_watcher_debounce_s == 5.0
 
 
-def test_from_env_file_watcher_debounce_invalid_falls_back(
+def test_from_env_file_watcher_debounce_invalid_raises(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Non-numeric FILE_WATCHER_DEBOUNCE_S falls back to 2.0."""
+    """Non-numeric FILE_WATCHER_DEBOUNCE_S raises (no warn-and-default; #638)."""
     from markdown_vault_mcp.config import VaultConfig
+    from markdown_vault_mcp.exceptions import ConfigurationError
 
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_FILE_WATCHER_DEBOUNCE_S", "not-a-number")
-    config = VaultConfig.from_env()
-    assert config.sync.file_watcher_debounce_s == 2.0
+    with pytest.raises(ConfigurationError):
+        VaultConfig.from_env()
 
 
-def test_from_env_file_watcher_debounce_nonpositive_falls_back(
+def test_from_env_file_watcher_debounce_nonpositive_raises(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """FILE_WATCHER_DEBOUNCE_S <= 0 falls back to 2.0."""
+    """FILE_WATCHER_DEBOUNCE_S <= 0 raises (must be > 0; #638)."""
     from markdown_vault_mcp.config import VaultConfig
+    from markdown_vault_mcp.exceptions import ConfigurationError
 
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_FILE_WATCHER_DEBOUNCE_S", "0")
-    config = VaultConfig.from_env()
-    assert config.sync.file_watcher_debounce_s == 2.0
+    with pytest.raises(ConfigurationError, match="file_watcher_debounce_s"):
+        VaultConfig.from_env()
 
 
 def test_fire_exception_in_on_change_is_logged(tmp_path: Path) -> None:

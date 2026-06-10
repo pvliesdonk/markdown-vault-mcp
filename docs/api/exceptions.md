@@ -28,4 +28,10 @@ All exceptions inherit from `MarkdownMCPError`, so callers can catch the base cl
 
 ## Configuration Errors
 
-::: markdown_vault_mcp.exceptions.ConfigurationError
+`markdown_vault_mcp.exceptions.ConfigurationError` is re-exported from
+[`fastmcp-pvl-core`](https://github.com/pvliesdonk/fastmcp-pvl-core) — the shared
+base library across the `*-mcp` server series — so the whole ecosystem raises one
+canonical config error. It is raised for invalid or out-of-range configuration at
+startup (e.g. a non-numeric env var, a value outside its documented range, or a
+missing required variable). Unlike the other exceptions on this page it is **not**
+a subclass of `MarkdownMCPError`.

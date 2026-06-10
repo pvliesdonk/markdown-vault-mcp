@@ -25,6 +25,7 @@ from markdown_vault_mcp.config_sections import (
     TransferConfig,
 )
 from markdown_vault_mcp.config_sections._helpers import env as _env
+from markdown_vault_mcp.exceptions import ConfigurationError
 from markdown_vault_mcp.git import GitWriteStrategy
 
 logger = logging.getLogger(__name__)
@@ -354,8 +355,8 @@ class VaultConfig:
             A fully populated :class:`VaultConfig` instance.
 
         Raises:
-            ValueError: If ``MARKDOWN_VAULT_MCP_SOURCE_DIR`` is not set, or if a
-                search ranking env var is invalid or out of range.
+            ConfigurationError: If ``MARKDOWN_VAULT_MCP_SOURCE_DIR`` is not set,
+                or if a search-ranking env var is non-numeric or out of range.
 
         Example::
 
@@ -366,8 +367,8 @@ class VaultConfig:
         """
         raw_source_dir = (_env(prefix, "SOURCE_DIR") or "").strip()
         if not raw_source_dir:
-            raise ValueError(
-                "MARKDOWN_VAULT_MCP_SOURCE_DIR is required but not set. "
+            raise ConfigurationError(
+                f"{prefix}_SOURCE_DIR is required but not set. "
                 "Set it to the path of your markdown vault."
             )
         source_dir = Path(raw_source_dir)

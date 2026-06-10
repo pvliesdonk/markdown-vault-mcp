@@ -20,9 +20,11 @@ class EmbeddingsConfig:
     fastembed_cache_dir: str | None = None
 
     def __post_init__(self) -> None:
-        """Normalize ollama_host: non-empty, no trailing slash."""
+        """Normalize ollama_host and openai_base_url: non-empty, no trailing slash."""
         host = (self.ollama_host or "http://localhost:11434").rstrip("/")
         object.__setattr__(self, "ollama_host", host)
+        base = (self.openai_base_url or "https://api.openai.com/v1").rstrip("/")
+        object.__setattr__(self, "openai_base_url", base)
 
     @classmethod
     def from_env(cls, prefix: str) -> EmbeddingsConfig:
@@ -61,7 +63,7 @@ class EmbeddingsConfig:
             ollama_model=env(prefix, "OLLAMA_MODEL") or "nomic-embed-text",
             ollama_cpu_only=parse_bool(raw_cpu) if raw_cpu is not None else False,
             openai_api_key=(os.environ.get("OPENAI_API_KEY") or "").strip() or None,
-            openai_base_url=openai_base_url.rstrip("/"),
+            openai_base_url=openai_base_url,
             openai_embedding_model=openai_model,
             fastembed_model=env(prefix, "FASTEMBED_MODEL") or "BAAI/bge-small-en-v1.5",
             fastembed_cache_dir=env(prefix, "FASTEMBED_CACHE_DIR") or None,
