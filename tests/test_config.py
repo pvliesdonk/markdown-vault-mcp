@@ -1246,33 +1246,19 @@ class TestConfigHelpers:
         monkeypatch.delenv("MARKDOWN_VAULT_MCP_X", raising=False)
         assert opt_int("MARKDOWN_VAULT_MCP", "X") is None
 
+    def test_opt_int_empty_string_is_none(self, monkeypatch):
+        """An empty/whitespace value is treated as unset (returns None), not invalid."""
+        from markdown_vault_mcp.config_sections._helpers import opt_int
+
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_X", "   ")
+        assert opt_int("MARKDOWN_VAULT_MCP", "X") is None
+
     def test_opt_int_invalid_raises(self, monkeypatch):
         from markdown_vault_mcp.config_sections._helpers import opt_int
 
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_X", "nope")
         with pytest.raises(ConfigurationError):
             opt_int("MARKDOWN_VAULT_MCP", "X")
-
-
-class TestConfigurationErrorCanonical:
-    """Pin the canonical-config-error contract (#638)."""
-
-    def test_is_pvl_core_class(self):
-        """The project's ConfigurationError IS pvl-core's, so env_int's raises are catchable."""
-        import fastmcp_pvl_core
-
-        import markdown_vault_mcp
-
-        assert ConfigurationError is fastmcp_pvl_core.ConfigurationError
-        assert (
-            markdown_vault_mcp.ConfigurationError is fastmcp_pvl_core.ConfigurationError
-        )
-
-    def test_not_a_markdown_mcp_error_subclass(self):
-        """Deliberately outside the MarkdownMCPError tree (env_int raises the bare CE)."""
-        from markdown_vault_mcp.exceptions import MarkdownMCPError
-
-        assert not issubclass(ConfigurationError, MarkdownMCPError)
 
 
 class TestIndexingConfigFromEnv:
@@ -1758,6 +1744,21 @@ class TestTransferConfigFromEnv:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_TRANSFER_TTL_MAX_S", "3600")
         with pytest.raises(ConfigurationError, match="ttl_max_s"):
             TransferConfig.from_env("MARKDOWN_VAULT_MCP")
+
+    @pytest.mark.parametrize(
+        ("kwargs", "match"),
+        [
+            ({"ttl_default_s": 0}, "ttl_default_s"),
+            ({"ttl_default_s": 7200, "ttl_max_s": 3600}, "ttl_max_s"),
+            ({"max_upload_bytes": 0}, "max_upload_bytes"),
+        ],
+    )
+    def test_direct_construction_validates(self, kwargs, match):
+        """__post_init__ rejects out-of-range/ordering violations on direct construction (#638)."""
+        from markdown_vault_mcp.config_sections import TransferConfig
+
+        with pytest.raises(ConfigurationError, match=match):
+            TransferConfig(**kwargs)
 
     def test_frozen(self):
         import dataclasses

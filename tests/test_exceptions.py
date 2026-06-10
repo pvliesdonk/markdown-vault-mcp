@@ -55,3 +55,26 @@ def test_index_unavailable_reason_literal_values() -> None:
     for value in ("never_built", "build_failed", "timeout", "broken", "busy"):
         err = IndexUnavailableError("x", reason=value)  # type: ignore[arg-type]
         assert err.reason == value
+
+
+class TestConfigurationErrorCanonical:
+    """ConfigurationError is pvl-core's canonical type, re-exported (#638)."""
+
+    def test_is_pvl_core_class(self) -> None:
+        """The project's ConfigurationError IS pvl-core's, so env_int's raises are catchable."""
+        import fastmcp_pvl_core
+
+        import markdown_vault_mcp
+        from markdown_vault_mcp.exceptions import ConfigurationError
+
+        assert ConfigurationError is fastmcp_pvl_core.ConfigurationError
+        assert (
+            markdown_vault_mcp.ConfigurationError is fastmcp_pvl_core.ConfigurationError
+        )
+
+    def test_not_a_markdown_mcp_error_subclass(self) -> None:
+        """Deliberately outside the MarkdownMCPError tree (env_int raises the bare CE)."""
+        from markdown_vault_mcp.exceptions import ConfigurationError
+
+        assert not issubclass(ConfigurationError, MarkdownMCPError)
+        assert issubclass(ConfigurationError, Exception)
