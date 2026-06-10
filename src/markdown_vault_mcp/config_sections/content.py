@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+# Imported at runtime (not under TYPE_CHECKING) so the frozen dataclass's field
+# annotation stays resolvable if anything introspects it via get_type_hints.
+# (TC003 is suppressed for this file in pyproject.toml, matching indexing.py.)
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -12,22 +16,29 @@ from markdown_vault_mcp.exceptions import ConfigurationError
 class ContentConfig:
     """Attachment/note-read limits and template/prompt folder paths."""
 
-    attachment_extensions: list[str] | None = None
+    attachment_extensions: Sequence[str] | None = None
     max_attachment_size_mb: float = 1.0  # MB; 0 = unlimited
     max_note_read_bytes: int = 262144  # 256 KB; 0 = unlimited
     templates_folder: str = "_templates"
     prompts_folder: str | None = None
 
     def __post_init__(self) -> None:
-        """Validate non-negative size limits on every construction path (#638).
+        """Validate size limits (#638) and freeze attachment_extensions (#639).
 
-        ``0`` is a valid sentinel for "unlimited"; only negative values are
-        rejected.
+        ``0`` is a valid sentinel for "unlimited"; only negative size values are
+        rejected. ``attachment_extensions`` accepts any ``Sequence[str]`` but is
+        stored as a tuple so the frozen config's contents cannot be mutated.
 
         Raises:
             ConfigurationError: If ``max_attachment_size_mb`` or
                 ``max_note_read_bytes`` is negative.
         """
+        if self.attachment_extensions is not None and not isinstance(
+            self.attachment_extensions, tuple
+        ):
+            object.__setattr__(
+                self, "attachment_extensions", tuple(self.attachment_extensions)
+            )
         if self.max_attachment_size_mb < 0:
             raise ConfigurationError(
                 "max_attachment_size_mb must be >= 0, got "

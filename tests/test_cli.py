@@ -746,7 +746,7 @@ class TestBuildVaultConfigFields:
         args = _build_parser().parse_args(["index"])
         vault = _build_vault(args)
 
-        assert vault._exclude_patterns == ["**/*.log.md", ".obsidian/**"]
+        assert vault._exclude_patterns == ("**/*.log.md", ".obsidian/**")
 
     def test_attachment_fields_propagated_from_env(
         self,
@@ -766,7 +766,7 @@ class TestBuildVaultConfigFields:
         args = _build_parser().parse_args(["index"])
         vault = _build_vault(args)
 
-        assert vault._attachment_extensions == ["pdf", "png", "jpg"]
+        assert vault._attachment_extensions == ("pdf", "png", "jpg")
         assert vault._max_attachment_size_mb == 25.0
 
     def test_exclude_patterns_are_functional_via_cli_path(

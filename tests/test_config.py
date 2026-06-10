@@ -209,9 +209,9 @@ class TestLoadConfig:
         assert config.indexing.index_path == Path("/data/index.db")
         assert config.indexing.embeddings_path == Path("/data/embeddings")
         assert config.indexing.state_path == Path("/data/state.json")
-        assert config.indexing.indexed_frontmatter_fields == ["cluster", "topics"]
-        assert config.indexing.required_frontmatter == ["title", "cluster"]
-        assert config.indexing.exclude_patterns == [".obsidian/**", ".trash/**"]
+        assert config.indexing.indexed_frontmatter_fields == ("cluster", "topics")
+        assert config.indexing.required_frontmatter == ("title", "cluster")
+        assert config.indexing.exclude_patterns == (".obsidian/**", ".trash/**")
         assert config.git.repo_url == "https://github.com/acme/vault.git"
         assert config.git.username == "oauth2"
         assert config.git.token == "ghp_test123"
@@ -281,7 +281,7 @@ class TestLoadConfig:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_INDEXED_FIELDS", " a , b , c ")
         config = VaultConfig.from_env()
-        assert config.indexing.indexed_frontmatter_fields == ["a", "b", "c"]
+        assert config.indexing.indexed_frontmatter_fields == ("a", "b", "c")
 
     def test_empty_comma_list_yields_none(
         self, monkeypatch: pytest.MonkeyPatch
@@ -299,7 +299,7 @@ class TestToVaultKwargs:
             indexing=IndexingConfig(exclude_patterns=[".obsidian/**"]),
         )
         kwargs = config.to_vault_kwargs()
-        assert kwargs["exclude_patterns"] == [".obsidian/**"]
+        assert kwargs["exclude_patterns"] == (".obsidian/**",)
         assert kwargs["source_dir"] == Path("/tmp/vault")
 
     def test_excludes_git_token(self) -> None:
@@ -340,9 +340,9 @@ class TestToVaultKwargs:
         assert kwargs["index_path"] == Path("/tmp/index.db")
         assert kwargs["embeddings_path"] == Path("/tmp/emb")
         assert kwargs["state_path"] == Path("/tmp/state.json")
-        assert kwargs["indexed_frontmatter_fields"] == ["cluster"]
-        assert kwargs["required_frontmatter"] == ["title"]
-        assert kwargs["exclude_patterns"] == [".obsidian/**"]
+        assert kwargs["indexed_frontmatter_fields"] == ("cluster",)
+        assert kwargs["required_frontmatter"] == ("title",)
+        assert kwargs["exclude_patterns"] == (".obsidian/**",)
         assert kwargs["attachment_extensions"] is None
         assert kwargs["max_attachment_size_mb"] == 1.0
         assert kwargs["git_pull_interval_s"] == 0
@@ -587,7 +587,7 @@ class TestAttachmentConfig:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS", "pdf,png,docx")
         config = VaultConfig.from_env()
-        assert config.content.attachment_extensions == ["pdf", "png", "docx"]
+        assert config.content.attachment_extensions == ("pdf", "png", "docx")
 
     def test_attachment_extensions_wildcard(
         self, monkeypatch: pytest.MonkeyPatch
@@ -596,7 +596,7 @@ class TestAttachmentConfig:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS", "*")
         config = VaultConfig.from_env()
-        assert config.content.attachment_extensions == ["*"]
+        assert config.content.attachment_extensions == ("*",)
 
     def test_attachment_extensions_empty_returns_none(
         self, monkeypatch: pytest.MonkeyPatch
@@ -661,7 +661,7 @@ class TestAttachmentConfig:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB", "5.0")
         config = VaultConfig.from_env()
         kwargs = config.to_vault_kwargs()
-        assert kwargs["attachment_extensions"] == ["pdf", "png"]
+        assert kwargs["attachment_extensions"] == ("pdf", "png")
         assert kwargs["max_attachment_size_mb"] == 5.0
 
 
@@ -1353,6 +1353,25 @@ class TestConfigHelpers:
 
 
 class TestIndexingConfigFromEnv:
+    def test_sequence_fields_frozen_as_tuples(self):
+        """List inputs are stored as tuples so the frozen config is deeply immutable (#639)."""
+        from markdown_vault_mcp.config_sections import IndexingConfig
+
+        cfg = IndexingConfig(
+            indexed_frontmatter_fields=["a", "b"],
+            required_frontmatter=["title"],
+            exclude_patterns=[".obsidian/**"],
+        )
+        assert cfg.indexed_frontmatter_fields == ("a", "b")
+        assert isinstance(cfg.indexed_frontmatter_fields, tuple)
+        assert isinstance(cfg.required_frontmatter, tuple)
+        assert isinstance(cfg.exclude_patterns, tuple)
+        # The stored contents cannot be mutated (the actual #639 contract).
+        with pytest.raises(AttributeError):
+            cfg.exclude_patterns.append("x")  # type: ignore[union-attr]
+        # None stays None (not coerced to an empty tuple).
+        assert IndexingConfig().exclude_patterns is None
+
     def test_defaults(self, monkeypatch):
         from markdown_vault_mcp.config_sections import IndexingConfig
 
@@ -1384,8 +1403,8 @@ class TestIndexingConfigFromEnv:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_INDEXED_FIELDS", "a, b, c")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_EXCLUDE", ".obsidian/**")
         cfg = IndexingConfig.from_env("MARKDOWN_VAULT_MCP")
-        assert cfg.indexed_frontmatter_fields == ["a", "b", "c"]
-        assert cfg.exclude_patterns == [".obsidian/**"]
+        assert cfg.indexed_frontmatter_fields == ("a", "b", "c")
+        assert cfg.exclude_patterns == (".obsidian/**",)
 
     def test_empty_list_yields_none(self, monkeypatch):
         from markdown_vault_mcp.config_sections import IndexingConfig
@@ -1658,6 +1677,18 @@ class TestSyncConfigFromEnv:
 
 
 class TestContentConfigFromEnv:
+    def test_attachment_extensions_frozen_as_tuple(self):
+        """A list of extensions is stored as a tuple for deep immutability (#639)."""
+        from markdown_vault_mcp.config_sections import ContentConfig
+
+        cfg = ContentConfig(attachment_extensions=["png", "pdf"])
+        assert cfg.attachment_extensions == ("png", "pdf")
+        assert isinstance(cfg.attachment_extensions, tuple)
+        # The stored contents cannot be mutated (the actual #639 contract).
+        with pytest.raises(AttributeError):
+            cfg.attachment_extensions.append("x")  # type: ignore[union-attr]
+        assert ContentConfig().attachment_extensions is None
+
     def test_defaults(self, monkeypatch, tmp_path):
         from markdown_vault_mcp.config_sections import ContentConfig
 
@@ -1677,14 +1708,14 @@ class TestContentConfigFromEnv:
 
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS", "*")
         cfg = ContentConfig.from_env("MARKDOWN_VAULT_MCP", tmp_path)
-        assert cfg.attachment_extensions == ["*"]
+        assert cfg.attachment_extensions == ("*",)
 
     def test_attachment_extensions_list(self, monkeypatch, tmp_path):
         from markdown_vault_mcp.config_sections import ContentConfig
 
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS", "pdf,png,docx")
         cfg = ContentConfig.from_env("MARKDOWN_VAULT_MCP", tmp_path)
-        assert cfg.attachment_extensions == ["pdf", "png", "docx"]
+        assert cfg.attachment_extensions == ("pdf", "png", "docx")
 
     def test_attachment_extensions_empty_is_none(self, monkeypatch, tmp_path):
         from markdown_vault_mcp.config_sections import ContentConfig

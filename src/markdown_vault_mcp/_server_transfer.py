@@ -25,6 +25,7 @@ from markdown_vault_mcp.utils import (
 from markdown_vault_mcp.vault import Vault
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
     from pathlib import Path
 
     from fastmcp import FastMCP
@@ -70,7 +71,7 @@ def _iso(epoch: float) -> str:
 def _validate_destination(
     path: str,
     source_dir: Path,
-    attachment_extensions: list[str] | None,
+    attachment_extensions: Sequence[str] | None,
 ) -> bool:
     """Validate an upload destination and return whether it is an attachment.
 
@@ -101,7 +102,7 @@ def _validate_destination(
 def _validate_source(
     path: str,
     source_dir: Path,
-    attachment_extensions: list[str] | None,
+    attachment_extensions: Sequence[str] | None,
 ) -> bool:
     """Validate a download source (stat-only) and return whether it is an attachment.
 

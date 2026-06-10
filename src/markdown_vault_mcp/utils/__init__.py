@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 from markdown_vault_mcp.types import DEFAULT_ATTACHMENT_EXTENSIONS
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
     from pathlib import Path
 from markdown_vault_mcp.utils.fts import fts_row_to_note_info
 from markdown_vault_mcp.utils.links import (
@@ -22,7 +23,7 @@ from markdown_vault_mcp.utils.text import (
 )
 
 
-def is_path_excluded(path: str, exclude_patterns: list[str] | None) -> bool:
+def is_path_excluded(path: str, exclude_patterns: Sequence[str] | None) -> bool:
     """Check whether *path* matches any configured exclude pattern.
 
     Args:
@@ -39,7 +40,7 @@ def is_path_excluded(path: str, exclude_patterns: list[str] | None) -> bool:
 
 
 def effective_attachment_extensions(
-    attachment_extensions: list[str] | None,
+    attachment_extensions: Sequence[str] | None,
 ) -> frozenset[str]:
     """Return the effective set of allowed attachment extensions.
 
