@@ -1,9 +1,9 @@
 """Git integration package.
 
 ``markdown_vault_mcp.git`` was historically a single 2721-LOC module. It is now a
-package; this ``__init__`` preserves the public (and test-relied-upon) import
-surface so ``from markdown_vault_mcp.git import X`` keeps resolving for every
-symbol that the module previously exposed.
+package; this ``__init__`` preserves the public and test-relied-upon import
+surface so existing ``from markdown_vault_mcp.git import X`` imports keep
+resolving.
 
 ``import subprocess`` is intentional and load-bearing: tests patch
 ``markdown_vault_mcp.git.subprocess.run`` (and ``from markdown_vault_mcp.git import
@@ -22,10 +22,12 @@ from __future__ import annotations
 
 import subprocess  # noqa: F401 -- preserves the `markdown_vault_mcp.git.subprocess` patch target
 
+from markdown_vault_mcp.git._run import (
+    _find_git_root,  # noqa: F401 -- re-exported for the historic import surface
+)
 from markdown_vault_mcp.git.strategy import (  # noqa: F401 -- re-exported for the historic import surface
     GitWriteStrategy,
     _extract_claim,
-    _find_git_root,
     _stage_and_commit,
     git_write_strategy,
 )

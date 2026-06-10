@@ -10,11 +10,8 @@ from __future__ import annotations
 import contextlib
 import datetime
 import logging
-import os
 import re
-import stat
 import subprocess
-import tempfile
 import threading
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
@@ -27,6 +24,13 @@ if TYPE_CHECKING:
 from fastmcp.server.dependencies import get_access_token as _get_access_token
 
 from markdown_vault_mcp.exceptions import ConfigurationError
+from markdown_vault_mcp.git import _run
+from markdown_vault_mcp.git._run import (
+    _build_askpass_env,
+    _find_git_root,
+    _is_ssh_remote,
+    _normalize_remote,
+)
 from markdown_vault_mcp.git.types import (
     PULL_REASON_CONFLICT_RESOLUTION_FAILED,
     PULL_REASON_CONFLICTS_RESOLVED_WITH_SIBLINGS,
@@ -44,65 +48,6 @@ from markdown_vault_mcp.git.types import (
 from markdown_vault_mcp.types import CommitDiff, HistoryEntry
 
 logger = logging.getLogger(__name__)
-
-
-def _is_ssh_remote(url: str) -> bool:
-    return url.startswith("git@") or url.startswith("ssh://")
-
-
-def _normalize_remote(url: str) -> str:
-    normalized = url.strip().rstrip("/")
-    if normalized.endswith(".git"):
-        normalized = normalized[: -len(".git")]
-    return normalized
-
-
-def _build_askpass_env(token: str, username: str) -> dict[str, str]:
-    fd, script_path_str = tempfile.mkstemp(suffix=".sh", prefix="git_askpass_")
-    script_path = Path(script_path_str)
-    os.close(fd)
-    script_path.write_text(
-        "#!/bin/sh\n"
-        'case "$1" in\n'
-        "  *sername*) printf '%s\\n' \"${MVMCP_GIT_USERNAME:-}\" ;;\n"
-        "  *) printf '%s\\n' \"${MVMCP_GIT_TOKEN:-}\" ;;\n"
-        "esac\n"
-    )
-    script_path.chmod(stat.S_IRWXU)
-    return {
-        **os.environ,
-        "GIT_ASKPASS": script_path_str,
-        "GIT_TERMINAL_PROMPT": "0",
-        "MVMCP_GIT_USERNAME": username,
-        "MVMCP_GIT_TOKEN": token,
-    }
-
-
-def _find_git_root(path: Path) -> Path | None:
-    """Find the git repository root containing *path*.
-
-    Args:
-        path: Absolute path to search from.
-
-    Returns:
-        The git repository root, or ``None`` if not inside a repo.
-    """
-    try:
-        result = subprocess.run(
-            [
-                "git",
-                "-C",
-                str(path if path.is_dir() else path.parent),
-                "rev-parse",
-                "--show-toplevel",
-            ],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        return Path(result.stdout.strip())
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return None
 
 
 def _extract_claim(claim_key: str | None) -> str | None:
@@ -241,20 +186,10 @@ class GitWriteStrategy:
         prompting interactively. This mirrors the push path and keeps the token
         out of command-line arguments.
         """
-        if not self._token:
-            return None
-        return _build_askpass_env(self._token, self._username)
+        return _run.git_env(self._token, self._username)
 
     def _cleanup_git_env(self, env: dict[str, str] | None) -> None:
-        if env is None:
-            return
-        env.pop("MVMCP_GIT_USERNAME", None)
-        env.pop("MVMCP_GIT_TOKEN", None)
-        script_path_str = env.get("GIT_ASKPASS")
-        if not script_path_str:
-            return
-        with contextlib.suppress(OSError):
-            Path(script_path_str).unlink()
+        _run.cleanup_git_env(env)
 
     def _redact(self, text: str) -> str:
         """Replace the configured PAT with ``***`` so it never reaches logs/responses.
@@ -267,9 +202,7 @@ class GitWriteStrategy:
             ``"***"``.  Returns ``text`` unchanged when no token is configured
             or the text doesn't contain it (cheap no-op for the common case).
         """
-        if self._token and self._token in text:
-            return text.replace(self._token, "***")
-        return text
+        return _run.redact(text, self._token)
 
     def _ensure_git_root(self, repo_path: Path) -> Path | None:
         if self._git_root_checked:
@@ -1121,14 +1054,7 @@ class GitWriteStrategy:
                 handle this for branches that can legitimately fail
                 (e.g. ``merge --ff-only``).
         """
-        result = subprocess.run(
-            ["git", "-C", str(git_root), *args],
-            capture_output=True,
-            text=True,
-            check=True,
-            env=env,
-        )
-        return result.stdout
+        return _run.run_git(git_root, *args, env=env)
 
     def _run_git_capturing(
         self,
@@ -1156,13 +1082,7 @@ class GitWriteStrategy:
             and ``stderr`` populated.  Stderr will need to be passed through
             :meth:`_redact` before logging or surfacing to callers.
         """
-        return subprocess.run(
-            ["git", "-C", str(git_root), *args],
-            capture_output=True,
-            text=True,
-            env=env,
-            check=False,  # explicit — caller inspects returncode
-        )
+        return _run.run_git_capturing(git_root, *args, env=env)
 
     def force_pull(self, *, dry_run: bool = False) -> PullResult:
         """Pull from ``origin`` synchronously and return a structured result.
