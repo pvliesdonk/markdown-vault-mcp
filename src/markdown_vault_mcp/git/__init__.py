@@ -23,6 +23,13 @@ from __future__ import annotations
 import subprocess  # noqa: F401 -- preserves the `markdown_vault_mcp.git.subprocess` patch target
 
 from markdown_vault_mcp.git.strategy import (  # noqa: F401 -- re-exported for the historic import surface
+    GitWriteStrategy,
+    _extract_claim,
+    _find_git_root,
+    _stage_and_commit,
+    git_write_strategy,
+)
+from markdown_vault_mcp.git.types import (
     PULL_REASON_CONFLICT_RESOLUTION_FAILED,
     PULL_REASON_CONFLICTS_RESOLVED_WITH_SIBLINGS,
     PULL_REASON_FETCH_FAILED,
@@ -33,13 +40,8 @@ from markdown_vault_mcp.git.strategy import (  # noqa: F401 -- re-exported for t
     PUSH_REASON_NO_REMOTE,
     PUSH_REASON_NON_FAST_FORWARD,
     PUSH_REASON_PUSH_FAILED,
-    GitWriteStrategy,
     PullResult,
     PushResult,
-    _extract_claim,
-    _find_git_root,
-    _stage_and_commit,
-    git_write_strategy,
 )
 
 __all__ = [
