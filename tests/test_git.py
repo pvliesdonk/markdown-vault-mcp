@@ -846,7 +846,10 @@ class TestTokenRedactionInLogs:
         )
 
         with (
-            patch("markdown_vault_mcp.git._stage_and_commit", side_effect=fake_exc),
+            patch(
+                "markdown_vault_mcp.git.strategy._stage_and_commit",
+                side_effect=fake_exc,
+            ),
             caplog.at_level(logging.ERROR, logger="markdown_vault_mcp.git"),
         ):
             test_file = git_repo / "note.md"
@@ -876,7 +879,7 @@ class TestTokenRedactionInLogs:
         )
 
         with (
-            patch("markdown_vault_mcp.git._push", side_effect=fake_exc),
+            patch("markdown_vault_mcp.git.strategy._push", side_effect=fake_exc),
             caplog.at_level(logging.ERROR, logger="markdown_vault_mcp.git"),
         ):
             strategy._do_push_safe()
@@ -898,7 +901,8 @@ class TestTokenRedactionInLogs:
 
         with (
             patch(
-                "markdown_vault_mcp.git._push", side_effect=RuntimeError("network down")
+                "markdown_vault_mcp.git.strategy._push",
+                side_effect=RuntimeError("network down"),
             ),
             caplog.at_level(logging.ERROR, logger="markdown_vault_mcp.git"),
         ):
@@ -941,7 +945,7 @@ class TestTokenRedactionInLogs:
         )
 
         with (
-            patch("markdown_vault_mcp.git._push", side_effect=fake_exc),
+            patch("markdown_vault_mcp.git.strategy._push", side_effect=fake_exc),
             caplog.at_level(logging.ERROR, logger="markdown_vault_mcp.git"),
         ):
             strategy._push_if_unpushed()
@@ -1092,7 +1096,7 @@ class TestGitLfsSupport:
         with (
             patch.object(strategy, "_lfs_pull", lfs_pull_mock),
             patch.object(strategy, "_push_if_unpushed", push_if_unpushed_mock),
-            patch("markdown_vault_mcp.git._stage_and_commit", commit_mock),
+            patch("markdown_vault_mcp.git.strategy._stage_and_commit", commit_mock),
         ):
             # First call — triggers lazy init including _lfs_pull.
             strategy(test_file, "# Test\n", "write")
@@ -1257,7 +1261,7 @@ class TestCommitterIdentityInCommit:
         )
 
         with patch(
-            "markdown_vault_mcp.git._stage_and_commit",
+            "markdown_vault_mcp.git.strategy._stage_and_commit",
             side_effect=recording_stage_and_commit,
         ):
             strategy(test_file, "# Note\n", "write")
@@ -1930,7 +1934,7 @@ class TestGitSyncOnce:
 
         with (
             mock.patch(
-                "markdown_vault_mcp.git.frontmatter.loads",
+                "markdown_vault_mcp.git.strategy.frontmatter.loads",
                 side_effect=Exception("yaml parse error"),
             ),
             caplog.at_level(logging.WARNING, logger="markdown_vault_mcp.git"),
@@ -2361,7 +2365,7 @@ class TestCheckRemoteProtocol:
         from markdown_vault_mcp.exceptions import ConfigurationError
 
         monkeypatch.setattr(
-            "markdown_vault_mcp.git._find_git_root",
+            "markdown_vault_mcp.git.strategy._find_git_root",
             lambda _repo_path: tmp_path,
         )
         monkeypatch.setattr(
@@ -3267,7 +3271,9 @@ class TestExtractClaim:
 
         token = MagicMock()
         token.claims = {"name": "Alice"}
-        with patch("markdown_vault_mcp.git._get_access_token", return_value=token):
+        with patch(
+            "markdown_vault_mcp.git.strategy._get_access_token", return_value=token
+        ):
             assert _extract_claim("name") == "Alice"
 
     def test_returns_none_when_no_token(self) -> None:
@@ -3276,7 +3282,9 @@ class TestExtractClaim:
 
         from markdown_vault_mcp.git import _extract_claim
 
-        with patch("markdown_vault_mcp.git._get_access_token", return_value=None):
+        with patch(
+            "markdown_vault_mcp.git.strategy._get_access_token", return_value=None
+        ):
             assert _extract_claim("name") is None
 
     def test_returns_none_when_claim_absent(self) -> None:
@@ -3287,7 +3295,9 @@ class TestExtractClaim:
 
         token = MagicMock()
         token.claims = {"sub": "user123"}
-        with patch("markdown_vault_mcp.git._get_access_token", return_value=token):
+        with patch(
+            "markdown_vault_mcp.git.strategy._get_access_token", return_value=token
+        ):
             assert _extract_claim("name") is None
 
     def test_returns_none_when_claim_is_empty_string(self) -> None:
@@ -3298,7 +3308,9 @@ class TestExtractClaim:
 
         token = MagicMock()
         token.claims = {"name": ""}
-        with patch("markdown_vault_mcp.git._get_access_token", return_value=token):
+        with patch(
+            "markdown_vault_mcp.git.strategy._get_access_token", return_value=token
+        ):
             assert _extract_claim("name") is None
 
     def test_returns_none_when_claim_is_not_string(self) -> None:
@@ -3309,7 +3321,9 @@ class TestExtractClaim:
 
         token = MagicMock()
         token.claims = {"email_verified": True}
-        with patch("markdown_vault_mcp.git._get_access_token", return_value=token):
+        with patch(
+            "markdown_vault_mcp.git.strategy._get_access_token", return_value=token
+        ):
             assert _extract_claim("email_verified") is None
 
     def test_returns_none_when_claims_is_not_dict(self) -> None:
@@ -3320,7 +3334,9 @@ class TestExtractClaim:
 
         token = MagicMock()
         token.claims = None
-        with patch("markdown_vault_mcp.git._get_access_token", return_value=token):
+        with patch(
+            "markdown_vault_mcp.git.strategy._get_access_token", return_value=token
+        ):
             assert _extract_claim("name") is None
 
     def test_returns_none_when_claim_key_is_none(self) -> None:
@@ -3331,7 +3347,9 @@ class TestExtractClaim:
 
         token = MagicMock()
         token.claims = {"name": "Alice"}
-        with patch("markdown_vault_mcp.git._get_access_token", return_value=token):
+        with patch(
+            "markdown_vault_mcp.git.strategy._get_access_token", return_value=token
+        ):
             assert _extract_claim(None) is None
 
 
@@ -3368,7 +3386,9 @@ class TestOidcClaimGitIdentity:
 
         token = MagicMock()
         token.claims = {"name": "Alice Human"}
-        with patch("markdown_vault_mcp.git._get_access_token", return_value=token):
+        with patch(
+            "markdown_vault_mcp.git.strategy._get_access_token", return_value=token
+        ):
             strategy(test_file, "# Note\n", "write")
 
         name, email = self._get_commit_identity(git_repo)
@@ -3389,7 +3409,9 @@ class TestOidcClaimGitIdentity:
 
         token = MagicMock()
         token.claims = {"email": "alice@humans.org"}
-        with patch("markdown_vault_mcp.git._get_access_token", return_value=token):
+        with patch(
+            "markdown_vault_mcp.git.strategy._get_access_token", return_value=token
+        ):
             strategy(test_file, "# Note\n", "write")
 
         name, email = self._get_commit_identity(git_repo)
@@ -3411,7 +3433,9 @@ class TestOidcClaimGitIdentity:
 
         token = MagicMock()
         token.claims = {"name": "Alice Human", "email": "alice@humans.org"}
-        with patch("markdown_vault_mcp.git._get_access_token", return_value=token):
+        with patch(
+            "markdown_vault_mcp.git.strategy._get_access_token", return_value=token
+        ):
             strategy(test_file, "# Note\n", "write")
 
         name, email = self._get_commit_identity(git_repo)
@@ -3431,7 +3455,9 @@ class TestOidcClaimGitIdentity:
         test_file = git_repo / "note.md"
         test_file.write_text("# Note\n")
 
-        with patch("markdown_vault_mcp.git._get_access_token", return_value=None):
+        with patch(
+            "markdown_vault_mcp.git.strategy._get_access_token", return_value=None
+        ):
             strategy(test_file, "# Note\n", "write")
 
         name, email = self._get_commit_identity(git_repo)
@@ -3452,7 +3478,9 @@ class TestOidcClaimGitIdentity:
 
         token = MagicMock()
         token.claims = {"sub": "user123"}  # has sub but not name
-        with patch("markdown_vault_mcp.git._get_access_token", return_value=token):
+        with patch(
+            "markdown_vault_mcp.git.strategy._get_access_token", return_value=token
+        ):
             strategy(test_file, "# Note\n", "write")
 
         name, _email = self._get_commit_identity(git_repo)
@@ -3756,7 +3784,9 @@ class TestOidcClaimAuthorCommitterSplit:
 
         token = MagicMock()
         token.claims = {"name": "Alice Human", "email": "alice@humans.org"}
-        with patch("markdown_vault_mcp.git._get_access_token", return_value=token):
+        with patch(
+            "markdown_vault_mcp.git.strategy._get_access_token", return_value=token
+        ):
             strategy(f, "# hi\n", "write")
 
         a_name, a_email, c_name, c_email = self._get_identity(git_repo)
@@ -3792,7 +3822,9 @@ class TestOidcClaimAuthorCommitterSplit:
         f = git_repo / "note.md"
         f.write_text("# hi\n")
 
-        with patch("markdown_vault_mcp.git._get_access_token", return_value=None):
+        with patch(
+            "markdown_vault_mcp.git.strategy._get_access_token", return_value=None
+        ):
             strategy(f, "# hi\n", "write")
 
         a_name, a_email, c_name, c_email = self._get_identity(git_repo)
@@ -3813,7 +3845,9 @@ class TestOidcClaimAuthorCommitterSplit:
 
         token = MagicMock()
         token.claims = {"name": "Alice Human"}
-        with patch("markdown_vault_mcp.git._get_access_token", return_value=token):
+        with patch(
+            "markdown_vault_mcp.git.strategy._get_access_token", return_value=token
+        ):
             strategy(f, "# hi\n", "write")
 
         a_name, a_email, c_name, c_email = self._get_identity(git_repo)
