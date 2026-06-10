@@ -21,9 +21,12 @@ import frontmatter
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from markdown_vault_mcp.types import CommitDiff, HistoryEntry
+
 from fastmcp.server.dependencies import get_access_token as _get_access_token
 
 from markdown_vault_mcp.exceptions import ConfigurationError
+from markdown_vault_mcp.git import query
 from markdown_vault_mcp.git._run import (
     _build_askpass_env,
     _find_git_root,
@@ -49,7 +52,6 @@ from markdown_vault_mcp.git.types import (
     PullResult,
     PushResult,
 )
-from markdown_vault_mcp.types import CommitDiff, HistoryEntry
 
 logger = logging.getLogger(__name__)
 
@@ -1876,101 +1878,16 @@ class GitWriteStrategy:
             ValueError: If ``git log`` exits non-zero (e.g. an invalid
                 ``since`` / ``until`` expression).
         """
-        git_root = self._ensure_git_root(repo_path)
-        if git_root is None:
-            return []
-
-        limit = min(max(1, limit), 100)
-
-        # Compute vault-relative prefix for normalising --name-only output.
-        # When the git root is a parent of repo_path, git reports paths
-        # relative to the git root (e.g. "vault/note.md").  We strip the
-        # leading prefix so callers always receive vault-relative paths.
-        # Resolve repo_path to handle symlinks: git rev-parse --show-toplevel
-        # always returns the real (resolved) path, so we must match it.
-        try:
-            vault_rel = repo_path.resolve().relative_to(git_root)
-        except ValueError:
-            vault_rel = Path()
-        vault_prefix = "" if vault_rel == Path() else vault_rel.as_posix() + "/"
-
-        # \x1e (ASCII Record Separator) is the sentinel used to split commit
-        # blocks in the output — it cannot appear in filenames or commit messages.
-        _SENTINEL = "\x1e"
-        cmd = [
-            "git",
-            "-C",
-            str(git_root),
-            "log",
-            f"--format={_SENTINEL}%H%x00%h%x00%aI%x00%aN <%aE>%x00%s",
-            f"-n{limit}",
-        ]
-        if since:
-            cmd.append(f"--since={since}")
-        if until:
-            cmd.append(f"--until={until}")
-        if path is None:
-            # vault-wide: scope to the resolved real path so symlinked SOURCE_DIR
-            # values work correctly (git compares against the real toplevel).
-            cmd += ["--name-only", "--", str(repo_path.resolve())]
-        else:
-            cmd += ["--follow", "--", str(path)]
-
-        env = self._git_env()
-        try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=True,
-                env=env,
-            )
-        except subprocess.CalledProcessError as exc:
-            raise ValueError(f"git log failed: {(exc.stderr or '').strip()}") from exc
-        finally:
-            self._cleanup_git_env(env)
-
-        entries: list[HistoryEntry] = []
-        raw = result.stdout
-        if not raw.strip():
-            return []
-        # Split on the sentinel we embedded at the start of each format line.
-        # The first element will be empty (output starts with sentinel), so we
-        # skip it.  Each remaining block is: header_line\nfile1\nfile2\n
-        blocks = raw.split(_SENTINEL)
-        for block in blocks:
-            block = block.strip()
-            if not block:
-                continue
-            lines = block.splitlines()
-            if not lines:
-                continue
-            header = lines[0]
-            parts = header.split("\x00")
-            if len(parts) < 5:
-                continue
-            sha, short_sha, timestamp, author, message = parts[:5]
-            paths_changed: list[str] = []
-            if path is None and len(lines) > 1:
-                # vault-wide query: strip vault prefix to get vault-relative paths
-                for ln in lines[1:]:
-                    ln = ln.strip()
-                    if not ln:
-                        continue
-                    if vault_prefix and ln.startswith(vault_prefix):
-                        ln = ln[len(vault_prefix) :]
-                    paths_changed.append(ln)
-            entries.append(
-                HistoryEntry(
-                    sha=sha,
-                    short_sha=short_sha,
-                    timestamp=timestamp,
-                    author=author,
-                    message=message,
-                    paths_changed=paths_changed,
-                )
-            )
-        return entries
+        return query.get_file_history(
+            self._ensure_git_root(repo_path),
+            repo_path,
+            path,
+            since,
+            limit,
+            until,
+            token=self._token,
+            username=self._username,
+        )
 
     @staticmethod
     def _resolve_path_at_ref(
@@ -1980,48 +1897,7 @@ class GitWriteStrategy:
         env: dict[str, str] | None,
     ) -> str | None:
         """Return the path *cur_rel* had at *ref* via rename detection, else None."""
-        try:
-            result = subprocess.run(
-                [
-                    "git",
-                    "-C",
-                    str(git_root),
-                    "diff",
-                    "--name-status",
-                    # 30% threshold: catch rename-with-edits per #338, avoid template false-positives.
-                    "--find-renames=30",
-                    # -z: NUL-terminated fields, tolerates tabs/newlines in paths.
-                    "-z",
-                    ref,
-                    "HEAD",
-                ],
-                capture_output=True,
-                text=True,
-                check=True,
-                env=env,
-            )
-        except subprocess.CalledProcessError:
-            return None
-        # Stream: <status>\0<path>\0  (R*/C* add a second path before the closing NUL).
-        items = result.stdout.split("\0")[:-1]
-        i = 0
-        while i < len(items):
-            status = items[i]
-            if status.startswith("R"):
-                if i + 2 >= len(items):
-                    break
-                if items[i + 2] == cur_rel:
-                    return items[i + 1]
-                i += 3
-            elif status.startswith("C"):
-                if i + 2 >= len(items):
-                    break
-                i += 3
-            else:
-                if i + 1 >= len(items):
-                    break
-                i += 2
-        return None
+        return query.resolve_path_at_ref(git_root, ref, cur_rel, env)
 
     def get_file_diff(
         self,
@@ -2064,189 +1940,16 @@ class GitWriteStrategy:
             ValueError: If *ref* is not found in history, *since_timestamp*
                 cannot be resolved, or a git subprocess exits non-zero.
         """
-        _DIFF_MAX_BYTES = 50 * 1024  # 50 KB
-
-        git_root = self._ensure_git_root(repo_path)
-        if git_root is None:
-            if per_commit:
-                return []
-            return ""
-
-        path_str = str(path)
-        env = self._git_env()
-        try:
-            if since_timestamp is not None:
-                # Resolve the ISO timestamp to the most recent commit before it.
-                try:
-                    rev_result = subprocess.run(
-                        [
-                            "git",
-                            "-C",
-                            str(git_root),
-                            "rev-list",
-                            f"--before={since_timestamp}",
-                            "-1",
-                            "HEAD",
-                            # No path filter: git rev-list has no --follow, so
-                            # filtering by current path silently misses pre-rename
-                            # commits.  Resolve the timestamp globally and let the
-                            # subsequent diff (which uses -- path_str) handle scope.
-                        ],
-                        capture_output=True,
-                        text=True,
-                        check=True,
-                        env=env,
-                    )
-                except subprocess.CalledProcessError as exc:
-                    raise ValueError(
-                        f"Could not resolve timestamp {since_timestamp!r}: "
-                        f"{(exc.stderr or '').strip()}"
-                    ) from exc
-                ref = rev_result.stdout.strip()
-                if not ref:
-                    return [] if per_commit else ""
-
-            if ref is None:
-                raise ValueError("Either 'ref' or 'since_timestamp' must be provided")
-
-            if not per_commit:
-                # Recover path-at-ref so diffs across renames show real deltas.
-                try:
-                    cur_rel = path.resolve().relative_to(git_root).as_posix()
-                except ValueError:
-                    cur_rel = None
-                old_path = (
-                    self._resolve_path_at_ref(git_root, ref, cur_rel, env)
-                    if cur_rel is not None
-                    else None
-                )
-                if old_path is None or cur_rel is None or old_path == cur_rel:
-                    diff_cmd = [
-                        "git",
-                        "-C",
-                        str(git_root),
-                        "diff",
-                        f"{ref}..HEAD",
-                        "--",
-                        path_str,
-                    ]
-                else:
-                    diff_cmd = [
-                        "git",
-                        "-C",
-                        str(git_root),
-                        "diff",
-                        f"{ref}:{old_path}",
-                        f"HEAD:{cur_rel}",
-                    ]
-                try:
-                    result = subprocess.run(
-                        diff_cmd,
-                        capture_output=True,
-                        text=True,
-                        check=True,
-                        env=env,
-                    )
-                except subprocess.CalledProcessError as exc:
-                    raise ValueError(
-                        f"Could not compute diff against {ref!r}: invalid ref or "
-                        f"path not present at that revision"
-                    ) from exc
-                diff = result.stdout
-                if len(diff.encode()) > _DIFF_MAX_BYTES:
-                    omitted = len(diff.encode()) - _DIFF_MAX_BYTES
-                    diff = diff.encode()[:_DIFF_MAX_BYTES].decode(errors="replace")
-                    diff += f"\n[diff truncated: {omitted} bytes omitted]"
-                return diff
-
-            # per_commit=True: enumerate commits in range then show each.
-            # Use --name-only with a sentinel so we can recover the path the
-            # file had at each commit — critical for correct diffs across
-            # renames (git show sha -- new.md returns nothing for pre-rename
-            # commits; we must pass the old filename instead).
-            _PC_SENTINEL = "\x1e"
-            log_cmd = [
-                "git",
-                "-C",
-                str(git_root),
-                "log",
-                "--follow",
-                f"--format={_PC_SENTINEL}%H%x00%h%x00%aI%x00%s",
-                "--name-only",
-            ]
-            if limit is not None:
-                clamped_limit = min(max(1, limit), 100)
-                log_cmd.append(f"-n{clamped_limit}")
-            log_cmd += [f"{ref}..HEAD", "--", path_str]
-            try:
-                log_result = subprocess.run(
-                    log_cmd,
-                    capture_output=True,
-                    text=True,
-                    check=True,
-                    env=env,
-                )
-            except subprocess.CalledProcessError as exc:
-                raise ValueError(f"Commit {ref!r} not found in history") from exc
-
-            diffs: list[CommitDiff] = []
-            for block in log_result.stdout.split(_PC_SENTINEL):
-                block = block.strip()
-                if not block:
-                    continue
-                lines = block.splitlines()
-                if not lines:
-                    continue
-                parts = lines[0].split("\x00")
-                if len(parts) < 4:
-                    continue
-                sha, short_sha, timestamp, message = parts[:4]
-                # Recover the path the file had at this specific commit.
-                # With --follow, this will be the old name for pre-rename commits.
-                commit_path = next(
-                    (ln.strip() for ln in lines[1:] if ln.strip()), path_str
-                )
-                try:
-                    show_result = subprocess.run(
-                        [
-                            "git",
-                            "-C",
-                            str(git_root),
-                            "show",
-                            "--format=",
-                            "-p",
-                            sha,
-                            "--",
-                            commit_path,
-                        ],
-                        capture_output=True,
-                        text=True,
-                        check=True,
-                        env=env,
-                    )
-                except subprocess.CalledProcessError as exc:
-                    raise ValueError(
-                        f"Could not retrieve diff for commit {sha!r}"
-                    ) from exc
-                commit_diff = show_result.stdout.lstrip("\n")
-                if len(commit_diff.encode()) > _DIFF_MAX_BYTES:
-                    omitted = len(commit_diff.encode()) - _DIFF_MAX_BYTES
-                    commit_diff = commit_diff.encode()[:_DIFF_MAX_BYTES].decode(
-                        errors="replace"
-                    )
-                    commit_diff += f"\n[diff truncated: {omitted} bytes omitted]"
-                diffs.append(
-                    CommitDiff(
-                        sha=sha,
-                        short_sha=short_sha,
-                        timestamp=timestamp,
-                        message=message,
-                        diff=commit_diff,
-                    )
-                )
-            return diffs
-        finally:
-            self._cleanup_git_env(env)
+        return query.get_file_diff(
+            self._ensure_git_root(repo_path),
+            path,
+            ref,
+            per_commit,
+            since_timestamp,
+            limit,
+            token=self._token,
+            username=self._username,
+        )
 
 
 def git_write_strategy(
