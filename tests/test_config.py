@@ -15,8 +15,10 @@ from markdown_vault_mcp.config_sections import (
     EmbeddingsConfig,
     GitConfig,
     IndexingConfig,
+    SearchConfig,
     TransferConfig,
 )
+from markdown_vault_mcp.exceptions import ConfigurationError
 
 
 def test_search_ranking_config_defaults(
@@ -64,7 +66,7 @@ def test_search_ranking_config_rejects_zero_chunks_per_file(
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_CHUNKS_PER_FILE", "0")
 
-    with pytest.raises(ValueError, match="chunks_per_file"):
+    with pytest.raises(ConfigurationError, match="chunks_per_file"):
         VaultConfig.from_env()
 
 
@@ -112,7 +114,7 @@ def test_max_chunk_chars_override_rejects_zero(
     """MAX_CHUNK_CHARS < 1 is rejected like MAX_CHUNK_WORDS."""
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_MAX_CHUNK_CHARS", "0")
-    with pytest.raises(ValueError, match="max_chunk_chars"):
+    with pytest.raises(ConfigurationError, match="max_chunk_chars"):
         VaultConfig.from_env()
 
 
@@ -122,7 +124,7 @@ def test_max_chunk_chars_override_rejects_malformed(
     """A non-integer MAX_CHUNK_CHARS raises."""
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_MAX_CHUNK_CHARS", "lots")
-    with pytest.raises(ValueError, match="MAX_CHUNK_CHARS"):
+    with pytest.raises(ConfigurationError, match="MAX_CHUNK_CHARS"):
         VaultConfig.from_env()
 
 
@@ -1078,7 +1080,7 @@ def test_search_ranking_config_rejects_malformed_int(
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_CHUNKS_PER_FILE", "foo")
 
-    with pytest.raises(ValueError, match="MARKDOWN_VAULT_MCP_CHUNKS_PER_FILE"):
+    with pytest.raises(ConfigurationError, match="MARKDOWN_VAULT_MCP_CHUNKS_PER_FILE"):
         VaultConfig.from_env()
 
 
@@ -1089,7 +1091,9 @@ def test_search_ranking_config_rejects_malformed_float(
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_LENGTH_DOWNWEIGHT_ALPHA", "abc")
 
-    with pytest.raises(ValueError, match="MARKDOWN_VAULT_MCP_LENGTH_DOWNWEIGHT_ALPHA"):
+    with pytest.raises(
+        ConfigurationError, match="MARKDOWN_VAULT_MCP_LENGTH_DOWNWEIGHT_ALPHA"
+    ):
         VaultConfig.from_env()
 
 
@@ -1365,14 +1369,16 @@ class TestSearchConfigFromEnv:
         from markdown_vault_mcp.config_sections import SearchConfig
 
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_CHUNKS_PER_FILE", "0")
-        with pytest.raises(ValueError, match="chunks_per_file"):
+        with pytest.raises(ConfigurationError, match="chunks_per_file"):
             SearchConfig.from_env("MARKDOWN_VAULT_MCP")
 
     def test_chunks_per_file_invalid_raises(self, monkeypatch):
         from markdown_vault_mcp.config_sections import SearchConfig
 
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_CHUNKS_PER_FILE", "nope")
-        with pytest.raises(ValueError, match="MARKDOWN_VAULT_MCP_CHUNKS_PER_FILE"):
+        with pytest.raises(
+            ConfigurationError, match="MARKDOWN_VAULT_MCP_CHUNKS_PER_FILE"
+        ):
             SearchConfig.from_env("MARKDOWN_VAULT_MCP")
 
     @pytest.mark.parametrize(
@@ -1389,7 +1395,7 @@ class TestSearchConfigFromEnv:
         from markdown_vault_mcp.config_sections import SearchConfig
 
         monkeypatch.setenv(f"MARKDOWN_VAULT_MCP_{var}", value)
-        with pytest.raises(ValueError):
+        with pytest.raises(ConfigurationError):
             SearchConfig.from_env("MARKDOWN_VAULT_MCP")
 
     def test_alpha_invalid_raises(self, monkeypatch):
@@ -1397,7 +1403,7 @@ class TestSearchConfigFromEnv:
 
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_LENGTH_DOWNWEIGHT_ALPHA", "abc")
         with pytest.raises(
-            ValueError, match="MARKDOWN_VAULT_MCP_LENGTH_DOWNWEIGHT_ALPHA"
+            ConfigurationError, match="MARKDOWN_VAULT_MCP_LENGTH_DOWNWEIGHT_ALPHA"
         ):
             SearchConfig.from_env("MARKDOWN_VAULT_MCP")
 
@@ -1408,6 +1414,32 @@ class TestSearchConfigFromEnv:
 
         with pytest.raises(dataclasses.FrozenInstanceError):
             SearchConfig().chunks_per_file = 5  # type: ignore[misc]
+
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            {"chunks_per_file": 0},
+            {"snippet_words": -1},
+            {"length_downweight_alpha": -0.5},
+            {"max_chunk_words": 0},
+            {"max_chunk_chars_override": 0},
+        ],
+    )
+    def test_direct_construction_validates(self, kwargs):
+        """__post_init__ rejects out-of-range values on every construction path (#638)."""
+        with pytest.raises(ConfigurationError):
+            SearchConfig(**kwargs)
+
+    def test_direct_construction_valid_passes(self):
+        """In-range values (and a None char-cap override) construct fine."""
+        cfg = SearchConfig(
+            chunks_per_file=1,
+            snippet_words=0,
+            length_downweight_alpha=0.0,
+            max_chunk_words=1,
+            max_chunk_chars_override=None,
+        )
+        assert cfg.max_chunk_chars_override is None
 
 
 class TestSyncConfigFromEnv:

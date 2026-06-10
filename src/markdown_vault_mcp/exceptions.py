@@ -2,6 +2,13 @@
 
 from typing import Literal
 
+# ConfigurationError is owned by fastmcp-pvl-core — the shared base guaranteed
+# across the whole *-mcp server series — and re-exported here as the project's
+# one canonical config error (#638). env_int/env_float(strict=...) raise it,
+# and config validation + git-remote checks raise the same catchable type, so
+# `markdown_vault_mcp.ConfigurationError` and the pvl-core class are identical.
+from fastmcp_pvl_core import ConfigurationError as ConfigurationError
+
 
 class MarkdownMCPError(Exception):
     """Base exception for all markdown-vault-mcp errors."""
@@ -62,10 +69,6 @@ class ConcurrentModificationError(MarkdownMCPError):
             f"Concurrent modification on {path}: "
             f"expected etag {expected!r}, actual {actual!r}"
         )
-
-
-class ConfigurationError(MarkdownMCPError):
-    """Raised for invalid or unsupported configuration at startup."""
 
 
 IndexUnavailableReason = Literal[
