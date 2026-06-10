@@ -310,14 +310,18 @@ class TestToVaultKwargs:
         kwargs = config.to_vault_kwargs()
         assert "git_token" not in kwargs
 
-    @pytest.mark.xfail(
-        raises=ValueError,
-        reason="embeddings_path set without a provider resolves FastEmbedProvider, "
-        "which downloads BAAI/bge-small-en-v1.5 from HuggingFace — flaky/unavailable "
-        "in CI (#595)",
-        strict=False,
-    )
-    def test_includes_all_vault_params(self) -> None:
+    def test_includes_all_vault_params(self, monkeypatch) -> None:
+        # Monkeypatch the resolver so the test is deterministic (the old form
+        # relied on a live FastEmbed model download and was flaky-xfail).
+        import markdown_vault_mcp.providers as providers_mod
+
+        class _FakeProvider:
+            context_length = 512
+
+        fake = _FakeProvider()
+        monkeypatch.setattr(
+            providers_mod, "get_embedding_provider", lambda _config: fake
+        )
         config = VaultConfig(
             source_dir=Path("/tmp/vault"),
             read_only=False,
@@ -342,6 +346,9 @@ class TestToVaultKwargs:
         assert kwargs["attachment_extensions"] is None
         assert kwargs["max_attachment_size_mb"] == 1.0
         assert kwargs["git_pull_interval_s"] == 0
+        assert kwargs["embedding_provider"] is fake
+        # The resolved provider's context length drives the chunk char cap (#649).
+        assert kwargs["max_chunk_chars"] == round(512 * 2.8)
         assert "git_strategy" in kwargs
         assert "on_write" in kwargs
 
@@ -365,6 +372,90 @@ class TestToVaultKwargs:
         assert kwargs["git_pull_interval_s"] == 123
         assert "git_strategy" in kwargs
         assert "on_write" in kwargs
+
+
+class TestToVaultKwargsProvider:
+    """Embedding-provider resolution in to_vault_kwargs (#638 PR2).
+
+    An *explicitly* configured provider that fails to load is a hard
+    ConfigurationError; auto-detection failures degrade to keyword-only.
+    """
+
+    def _config(self, *, provider: str | None, tmp_path: Path) -> VaultConfig:
+        return VaultConfig(
+            source_dir=tmp_path,
+            embeddings=EmbeddingsConfig(provider=provider),
+            indexing=IndexingConfig(embeddings_path=tmp_path / "emb"),
+        )
+
+    @pytest.mark.parametrize("exc", [ImportError("missing dep"), RuntimeError("boom")])
+    def test_explicit_provider_load_failure_raises(
+        self, monkeypatch, tmp_path, exc
+    ) -> None:
+        """An explicit provider that can't load fails hard (no silent degrade)."""
+        import markdown_vault_mcp.providers as providers_mod
+
+        def _boom(_config):
+            raise exc
+
+        monkeypatch.setattr(providers_mod, "get_embedding_provider", _boom)
+        config = self._config(provider="openai", tmp_path=tmp_path)
+        with pytest.raises(ConfigurationError, match="openai"):
+            config.to_vault_kwargs()
+
+    def test_unrecognized_provider_name_raises(self, tmp_path) -> None:
+        """A bogus EMBEDDING_PROVIDER value surfaces as ConfigurationError."""
+        config = self._config(provider="bogus", tmp_path=tmp_path)
+        with pytest.raises(ConfigurationError, match="Unrecognised"):
+            config.to_vault_kwargs()
+
+    @pytest.mark.parametrize("exc", [ImportError("missing dep"), RuntimeError("none")])
+    def test_autodetect_failure_degrades(self, monkeypatch, tmp_path, exc) -> None:
+        """Auto-detection (no explicit provider) degrades to keyword-only, no raise."""
+        import markdown_vault_mcp.providers as providers_mod
+
+        def _boom(_config):
+            raise exc
+
+        monkeypatch.setattr(providers_mod, "get_embedding_provider", _boom)
+        config = self._config(provider=None, tmp_path=tmp_path)
+        kwargs = config.to_vault_kwargs()
+        assert "embedding_provider" not in kwargs
+        # No provider → the chunk char cap falls back to the fixed default (#649).
+        assert kwargs["max_chunk_chars"] == 6000
+
+    def test_no_embeddings_path_skips_provider(self, monkeypatch, tmp_path) -> None:
+        """With no embeddings_path the provider is never resolved, even if broken."""
+        import markdown_vault_mcp.providers as providers_mod
+
+        def _boom(_config):
+            raise RuntimeError("should not be called")
+
+        monkeypatch.setattr(providers_mod, "get_embedding_provider", _boom)
+        config = VaultConfig(
+            source_dir=tmp_path,
+            embeddings=EmbeddingsConfig(provider="openai"),
+            indexing=IndexingConfig(embeddings_path=None),
+        )
+        kwargs = config.to_vault_kwargs()
+        assert "embedding_provider" not in kwargs
+
+    def test_provider_loads_sets_kwarg(self, monkeypatch, tmp_path) -> None:
+        """A successfully resolved provider is threaded into the kwargs."""
+        import markdown_vault_mcp.providers as providers_mod
+
+        class _FakeProvider:
+            context_length = 512
+
+        fake = _FakeProvider()
+        monkeypatch.setattr(
+            providers_mod, "get_embedding_provider", lambda _config: fake
+        )
+        config = self._config(provider="openai", tmp_path=tmp_path)
+        kwargs = config.to_vault_kwargs()
+        assert kwargs["embedding_provider"] is fake
+        # The resolved provider's context length drives the chunk char cap (#649).
+        assert kwargs["max_chunk_chars"] == round(512 * 2.8)
 
 
 class TestGitCommitterConfig:

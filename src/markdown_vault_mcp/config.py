@@ -150,18 +150,31 @@ class VaultConfig:
 
         # Semantic search is gated by the storage path in config.indexing,
         # while the provider lives in config.embeddings (cross-section coupling).
-        # ValueError propagates — it means the user set an invalid provider
-        # name, which is a config mistake that should not be silenced.
+        # An unrecognised provider name raises ConfigurationError from the
+        # resolver and propagates here unchanged.
         provider = None
         if self.indexing.embeddings_path is not None:
+            explicit_provider = (self.embeddings.provider or "").strip()
             try:
                 from markdown_vault_mcp import providers as _providers
 
                 provider = _providers.get_embedding_provider(self)
                 kwargs["embedding_provider"] = provider
-            except (ImportError, RuntimeError):
+            except (ImportError, RuntimeError) as exc:
+                if explicit_provider:
+                    # The operator explicitly chose a backend; a load failure is
+                    # a configuration error that must surface, not silently fall
+                    # back to keyword-only search.
+                    raise ConfigurationError(
+                        f"Embedding provider {explicit_provider!r} was explicitly "
+                        "configured (MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER) but "
+                        f"could not be loaded: {exc}. Fix the configuration, or "
+                        "unset the variable to fall back to auto-detection."
+                    ) from exc
                 logger.warning(
-                    "Could not load embedding provider; semantic search disabled",
+                    "Could not auto-detect an embedding provider; semantic "
+                    "search disabled. Set MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER "
+                    "to require a specific backend.",
                     exc_info=True,
                 )
 

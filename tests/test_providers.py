@@ -370,10 +370,12 @@ class TestGetEmbeddingProvider:
             provider = get_embedding_provider(cfg)
         assert isinstance(provider, FastEmbedProvider)
 
-    def test_explicit_unknown_raises_value_error(self) -> None:
+    def test_explicit_unknown_raises_configuration_error(self) -> None:
+        from markdown_vault_mcp.exceptions import ConfigurationError
+
         cfg = _config(provider="unknown_value")
         with pytest.raises(
-            ValueError, match="Valid values: 'openai', 'ollama', 'fastembed'"
+            ConfigurationError, match="Valid values: 'openai', 'ollama', 'fastembed'"
         ):
             get_embedding_provider(cfg)
 

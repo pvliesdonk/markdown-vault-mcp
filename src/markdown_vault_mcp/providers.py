@@ -16,6 +16,8 @@ import logging
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any
 
+from markdown_vault_mcp.exceptions import ConfigurationError
+
 if TYPE_CHECKING:
     from markdown_vault_mcp.config import VaultConfig
 
@@ -511,7 +513,7 @@ def get_embedding_provider(config: VaultConfig) -> EmbeddingProvider:
         RuntimeError: If no provider is available and
             ``config.embeddings.provider`` is not set, or if the explicitly
             requested provider cannot be initialised.
-        ValueError: If ``config.embeddings.provider`` is set to an
+        ConfigurationError: If ``config.embeddings.provider`` is set to an
             unrecognised value.
     """
     explicit = (config.embeddings.provider or "").strip().lower()
@@ -543,7 +545,7 @@ def get_embedding_provider(config: VaultConfig) -> EmbeddingProvider:
         )
 
     if explicit:
-        raise ValueError(
+        raise ConfigurationError(
             f"Unrecognised embedding_provider value: {explicit!r}. "
             "Valid values: 'openai', 'ollama', 'fastembed'."
         )
