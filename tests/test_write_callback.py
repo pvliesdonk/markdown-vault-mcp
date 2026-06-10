@@ -1,9 +1,11 @@
-"""Unit tests for WriteCallbackDispatcher (issue #599).
+"""Unit tests for WriteCallbackDispatcher (issues #599, #601).
 
-Pins the six behavioural invariants the dispatcher inherits from the former
-Vault callback worker (#175): on_write=None no-op, lazy+idempotent single
-worker, FIFO order, callback-exception isolation, bounded draining close, and
-the daemon worker identity.
+Pins the behavioural invariants the dispatcher inherits from the former Vault
+callback worker (#175) — on_write=None no-op, lazy+idempotent single worker,
+FIFO order, callback-exception isolation, bounded draining close, daemon worker
+identity — plus the #601 close/fire lifecycle contract: fire-after-close is a
+dropped, logged no-op that does not resurrect the worker; double-close is an
+explicit no-op; and the join-timeout warning quantifies the pending count.
 """
 
 from __future__ import annotations
@@ -113,3 +115,62 @@ class TestClose:
             dispatcher.close(timeout=0.05)  # join times out -> warn
         assert any("did not finish" in r.getMessage() for r in caplog.records)
         release.set()  # let the daemon worker exit
+
+    def test_close_timeout_warning_quantifies_pending(self, caplog) -> None:
+        """The hang warning must report how many commits are at risk (#601)."""
+        started = threading.Event()
+        release = threading.Event()
+
+        def cb(_abs_path: Path, _content: str, _operation: str) -> None:
+            started.set()
+            release.wait(5)  # block the worker on the first item
+
+        dispatcher = WriteCallbackDispatcher(cb)
+        dispatcher.fire(Path("a.md"), "first", "write")
+        assert started.wait(2)
+        dispatcher.fire(Path("b.md"), "second", "write")  # queued behind the block
+        with caplog.at_level(logging.WARNING):
+            dispatcher.close(timeout=0.05)
+        warning = next(
+            r.getMessage() for r in caplog.records if "did not finish" in r.getMessage()
+        )
+        # Worker is blocked on "first" (in-flight); "second" is queued; close()
+        # adds the sentinel. qsize() = [second, sentinel] = 2, which equals the
+        # commits genuinely at risk: the in-flight "first" + the queued "second".
+        assert "2 pending" in warning, warning
+        release.set()
+
+
+class TestThreadContract:
+    """#601: enforce the close/fire lifecycle contract by the type, not by
+    caller convention."""
+
+    def test_fire_after_close_is_dropped(self, caplog) -> None:
+        calls, cb = _recorder()
+        dispatcher = WriteCallbackDispatcher(cb)
+        dispatcher.fire(Path("a.md"), "before", "write")
+        dispatcher.close()
+        assert calls == [(Path("a.md"), "before", "write")]
+        worker_after_close = dispatcher._worker
+
+        with caplog.at_level(logging.WARNING):
+            dispatcher.fire(Path("b.md"), "after", "write")
+        dispatcher.close()  # idempotent; nothing new to drain
+
+        # The post-close fire must NOT run the callback...
+        assert calls == [(Path("a.md"), "before", "write")]
+        # ...nor resurrect a fresh worker thread.
+        assert dispatcher._worker is worker_after_close
+        assert any("after close" in r.getMessage().lower() for r in caplog.records), [
+            r.getMessage() for r in caplog.records
+        ]
+
+    def test_double_close_is_idempotent_noop(self) -> None:
+        calls, cb = _recorder()
+        dispatcher = WriteCallbackDispatcher(cb)
+        dispatcher.fire(Path("a.md"), "x", "write")
+        dispatcher.close()
+        worker = dispatcher._worker
+        dispatcher.close()  # second close: explicit no-op via the closed flag
+        assert dispatcher._worker is worker  # unchanged
+        assert calls == [(Path("a.md"), "x", "write")]

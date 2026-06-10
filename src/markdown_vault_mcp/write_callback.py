@@ -45,12 +45,19 @@ class WriteCallbackDispatcher:
             queue.Queue()
         )
         self._worker: threading.Thread | None = None
+        # Guards every read/write of ``_worker`` and ``_closed`` AND the
+        # ``_queue.put`` of a real item, so ``fire`` is atomic with respect to
+        # ``close``: an item is enqueued only while not closed, and never after
+        # ``close`` has queued the sentinel.
         self._worker_lock = threading.Lock()
+        self._closed = False
 
     def fire(self, abs_path: Path, content: str, operation: WriteOperation) -> None:
         """Queue a callback invocation, starting the worker if needed.
 
-        No-op when no callback is configured.
+        No-op when no callback is configured. After :meth:`close`, this is a
+        logged no-op — it does not resurrect a worker or enqueue an item that
+        would never be drained.
 
         Args:
             abs_path: Absolute path of the written file.
@@ -59,35 +66,44 @@ class WriteCallbackDispatcher:
         """
         if self._on_write is None:
             return
-        self._ensure_worker()
-        self._queue.put((abs_path, content, operation))
-
-    def _ensure_worker(self) -> None:
-        """Start the background worker if it is not already running."""
         with self._worker_lock:
-            if self._worker is not None and self._worker.is_alive():
+            if self._closed:
+                logger.warning(
+                    "Write callback fired after close(); dropping %s (%s)",
+                    abs_path,
+                    operation,
+                )
                 return
-            self._worker = threading.Thread(
-                target=self._run, daemon=True, name="write-callback"
-            )
-            self._worker.start()
+            self._ensure_worker_locked()
+            # Enqueue under the lock so close() cannot slip the sentinel in
+            # ahead of this item (which would leave it permanently undrained).
+            self._queue.put((abs_path, content, operation))
+
+    def _ensure_worker_locked(self) -> None:
+        """Start the background worker if it is not running.
+
+        Caller MUST hold ``_worker_lock``.
+        """
+        if self._worker is not None and self._worker.is_alive():
+            return
+        self._worker = threading.Thread(
+            target=self._run, daemon=True, name="write-callback"
+        )
+        self._worker.start()
 
     def _run(self) -> None:
         """Worker loop: drain the queue until the sentinel is dequeued."""
+        # The worker is started only by ``fire`` (via ``_ensure_worker_locked``),
+        # and ``fire`` runs only when ``_on_write`` is not None. ``_on_write`` is
+        # set once in ``__init__`` and never reassigned, so it is non-None here.
+        on_write = self._on_write
+        assert on_write is not None
         while True:
             item = self._queue.get()
             if item is None:
                 break
             abs_path, content, operation = item
-            on_write = self._on_write
             try:
-                if on_write is None:
-                    logger.error(
-                        "Write callback is None in worker; dropping %s (%s)",
-                        abs_path,
-                        operation,
-                    )
-                    continue
                 on_write(abs_path, content, operation)
             except Exception:
                 logger.error(
@@ -100,18 +116,31 @@ class WriteCallbackDispatcher:
     def close(self, timeout: float = 30.0) -> None:
         """Drain pending callbacks and join the worker (bounded by ``timeout``).
 
-        Safe to call when the worker was never started, and idempotent on a
-        second call. Logs a warning if the worker does not finish in time.
+        Safe to call when the worker was never started, and idempotent: a second
+        call returns immediately. After ``close`` returns, :meth:`fire` is a
+        logged no-op. Logs a warning (with the number of still-queued commits) if
+        the worker does not finish in time.
 
         Args:
             timeout: Seconds to wait for the worker to drain and exit.
         """
-        if self._worker is not None and self._worker.is_alive():
+        with self._worker_lock:
+            if self._closed:
+                return
+            self._closed = True
+            worker = self._worker
+        if worker is not None and worker.is_alive():
             self._queue.put(None)  # sentinel
-            self._worker.join(timeout=timeout)
-            if self._worker.is_alive():
+            worker.join(timeout=timeout)
+            if worker.is_alive():
+                # qsize() counts the still-queued real items plus the sentinel,
+                # but excludes the one item the hung worker already dequeued and
+                # is blocked on. Those two offsets cancel, so qsize() equals the
+                # number of commits genuinely at risk. Do NOT "fix" this to
+                # qsize()-1 — that would undercount by one.
                 logger.warning(
                     "Write-callback worker did not finish within %s s; "
-                    "pending git commits may be lost.",
+                    "%d pending git commit(s) may be lost.",
                     timeout,
+                    self._queue.qsize(),
                 )
