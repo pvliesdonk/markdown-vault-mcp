@@ -24,12 +24,16 @@ if TYPE_CHECKING:
 from fastmcp.server.dependencies import get_access_token as _get_access_token
 
 from markdown_vault_mcp.exceptions import ConfigurationError
-from markdown_vault_mcp.git import _run
 from markdown_vault_mcp.git._run import (
     _build_askpass_env,
     _find_git_root,
     _is_ssh_remote,
     _normalize_remote,
+    cleanup_git_env,
+    git_env,
+    redact,
+    run_git,
+    run_git_capturing,
 )
 from markdown_vault_mcp.git.types import (
     PULL_REASON_CONFLICT_RESOLUTION_FAILED,
@@ -186,10 +190,10 @@ class GitWriteStrategy:
         prompting interactively. This mirrors the push path and keeps the token
         out of command-line arguments.
         """
-        return _run.git_env(self._token, self._username)
+        return git_env(self._token, self._username)
 
     def _cleanup_git_env(self, env: dict[str, str] | None) -> None:
-        _run.cleanup_git_env(env)
+        cleanup_git_env(env)
 
     def _redact(self, text: str) -> str:
         """Replace the configured PAT with ``***`` so it never reaches logs/responses.
@@ -202,7 +206,7 @@ class GitWriteStrategy:
             ``"***"``.  Returns ``text`` unchanged when no token is configured
             or the text doesn't contain it (cheap no-op for the common case).
         """
-        return _run.redact(text, self._token)
+        return redact(text, self._token)
 
     def _ensure_git_root(self, repo_path: Path) -> Path | None:
         if self._git_root_checked:
@@ -1054,7 +1058,7 @@ class GitWriteStrategy:
                 handle this for branches that can legitimately fail
                 (e.g. ``merge --ff-only``).
         """
-        return _run.run_git(git_root, *args, env=env)
+        return run_git(git_root, *args, env=env)
 
     def _run_git_capturing(
         self,
@@ -1082,7 +1086,7 @@ class GitWriteStrategy:
             and ``stderr`` populated.  Stderr will need to be passed through
             :meth:`_redact` before logging or surfacing to callers.
         """
-        return _run.run_git_capturing(git_root, *args, env=env)
+        return run_git_capturing(git_root, *args, env=env)
 
     def force_pull(self, *, dry_run: bool = False) -> PullResult:
         """Pull from ``origin`` synchronously and return a structured result.

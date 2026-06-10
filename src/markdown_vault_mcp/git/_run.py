@@ -91,6 +91,15 @@ def git_env(token: str | None, username: str) -> dict[str, str] | None:
 
 
 def cleanup_git_env(env: dict[str, str] | None) -> None:
+    """Tear down an env built by :func:`git_env`.
+
+    Pops the ``MVMCP_GIT_USERNAME`` / ``MVMCP_GIT_TOKEN`` credential vars and
+    unlinks the temporary ``GIT_ASKPASS`` script (suppressing ``OSError`` if it
+    is already gone). A ``None`` env (no token was set) is a no-op.
+
+    Args:
+        env: The environment dict returned by :func:`git_env`, or ``None``.
+    """
     if env is None:
         return
     env.pop("MVMCP_GIT_USERNAME", None)
