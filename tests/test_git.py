@@ -2902,6 +2902,125 @@ class TestGetFileDiff:
         )
         return repo, first_sha
 
+    def _make_repo_with_attachments(self, tmp_path: Path) -> tuple[Path, str]:
+        """Create a repo with a note plus a binary and a text attachment.
+
+        Across two commits this changes ``note.md`` (text), ``assets/x.png``
+        (binary -- distinct PNG bytes) and ``assets/diagram.svg`` (text).
+        Returns the repo path and the SHA of the first commit (before the
+        second-commit changes).
+        """
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        subprocess.run(
+            ["git", "-C", str(repo), "init"], capture_output=True, check=True
+        )
+        subprocess.run(
+            ["git", "-C", str(repo), "config", "user.email", "test@test.com"],
+            capture_output=True,
+            check=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(repo), "config", "user.name", "Test"],
+            capture_output=True,
+            check=True,
+        )
+        assets = repo / "assets"
+        assets.mkdir()
+        (repo / "note.md").write_text("# Note v1\n")
+        # A minimal but valid-looking PNG header plus distinct payload bytes.
+        (assets / "x.png").write_bytes(b"\x89PNG\r\n\x1a\n\x00\x01\x02\x03")
+        (assets / "diagram.svg").write_text("<svg>1</svg>\n")
+        subprocess.run(
+            ["git", "-C", str(repo), "add", "."], capture_output=True, check=True
+        )
+        subprocess.run(
+            ["git", "-C", str(repo), "commit", "-m", "add note + attachments"],
+            capture_output=True,
+            check=True,
+        )
+        first_sha = subprocess.run(
+            ["git", "-C", str(repo), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        # Commit 2: change all three with DIFFERENT bytes/content.
+        (repo / "note.md").write_text("# Note v2\n")
+        (assets / "x.png").write_bytes(b"\x89PNG\r\n\x1a\n\xff\xfe\xfd\xfc\xfb")
+        (assets / "diagram.svg").write_text("<svg>2</svg>\n")
+        subprocess.run(
+            ["git", "-C", str(repo), "add", "."], capture_output=True, check=True
+        )
+        subprocess.run(
+            ["git", "-C", str(repo), "commit", "-m", "edit note + attachments"],
+            capture_output=True,
+            check=True,
+        )
+        return repo, first_sha
+
+    def test_get_file_diff_binary_attachment_returns_stat(self, tmp_path: Path) -> None:
+        """A binary attachment with summarize_binary=True returns a --stat summary."""
+        repo, first_sha = self._make_repo_with_attachments(tmp_path)
+        strategy = GitWriteStrategy()
+        out = strategy.get_file_diff(
+            repo,
+            repo / "assets" / "x.png",
+            ref=first_sha,
+            per_commit=False,
+            summarize_binary=True,
+        )
+        assert isinstance(out, str)
+        assert "Bin" in out and "x.png" in out
+        assert "@@" not in out  # NOT a unified patch
+
+    def test_get_file_diff_text_attachment_returns_full_diff(
+        self, tmp_path: Path
+    ) -> None:
+        """A text attachment with summarize_binary=True still returns a full diff."""
+        repo, first_sha = self._make_repo_with_attachments(tmp_path)
+        strategy = GitWriteStrategy()
+        out = strategy.get_file_diff(
+            repo,
+            repo / "assets" / "diagram.svg",
+            ref=first_sha,
+            per_commit=False,
+            summarize_binary=True,
+        )
+        assert isinstance(out, str)
+        assert "@@" in out and "Bin" not in out
+
+    def test_get_file_diff_note_unchanged_with_summarize_false(
+        self, tmp_path: Path
+    ) -> None:
+        """summarize_binary=False (default) leaves note diffs as full patches."""
+        repo, first_sha = self._make_repo_with_attachments(tmp_path)
+        strategy = GitWriteStrategy()
+        out = strategy.get_file_diff(
+            repo,
+            repo / "note.md",
+            ref=first_sha,
+            per_commit=False,
+            summarize_binary=False,
+        )
+        assert isinstance(out, str)
+        assert "@@" in out
+
+    def test_get_file_diff_binary_per_commit_stat_lines(self, tmp_path: Path) -> None:
+        """per_commit=True + binary returns CommitDiffs whose diff is a --stat."""
+        repo, first_sha = self._make_repo_with_attachments(tmp_path)
+        strategy = GitWriteStrategy()
+        out = strategy.get_file_diff(
+            repo,
+            repo / "assets" / "x.png",
+            ref=first_sha,
+            per_commit=True,
+            summarize_binary=True,
+        )
+        assert isinstance(out, list) and out
+        assert all("@@" not in cd.diff for cd in out)
+        assert any(("Bin" in cd.diff) or ("x.png" in cd.diff) for cd in out)
+
     def test_single_diff(self, tmp_path: Path) -> None:
         """get_file_diff with per_commit=False returns a unified diff string."""
         repo, first_sha = self._make_repo_with_commits(tmp_path)

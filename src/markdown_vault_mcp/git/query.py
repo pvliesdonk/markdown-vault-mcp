@@ -27,6 +27,35 @@ from markdown_vault_mcp.types import CommitDiff, HistoryEntry
 logger = logging.getLogger(__name__)
 
 
+def _diff_is_binary(
+    git_root: Path, ref: str, path_str: str, env: dict[str, str] | None
+) -> bool:
+    """True if git reports *path_str* as a binary change over ``ref..HEAD``.
+
+    ``git diff --numstat`` prints ``-\\t-\\t<path>`` for binary files and real
+    ``<added>\\t<deleted>`` counts for text. Empty output (no change) is treated
+    as non-binary.
+    """
+    result = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(git_root),
+            "diff",
+            "--numstat",
+            f"{ref}..HEAD",
+            "--",
+            path_str,
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    first = result.stdout.strip().split("\n", 1)[0]
+    return first.startswith("-\t-")
+
+
 def get_file_history(
     git_root: Path | None,
     repo_path: Path,
@@ -225,6 +254,7 @@ def get_file_diff(
     *,
     token: str | None,
     username: str,
+    summarize_binary: bool = False,
 ) -> str | list[CommitDiff]:
     """Return a unified diff of *path* from *ref* to HEAD.
 
@@ -254,6 +284,11 @@ def get_file_diff(
         token: Personal access token for authenticated git operations, or
             ``None`` for unauthenticated access.
         username: Git username for authenticated operations.
+        summarize_binary: When ``True`` and git reports the file as a binary
+            change over the range, return a ``git diff --stat`` summary
+            instead of a (meaningless) binary patch.  Text files -- and every
+            note, since the default is ``False`` -- fall through to the normal
+            full unified diff (#342).
 
     Returns:
         A unified diff string when *per_commit* is ``False``, or a list of
@@ -308,6 +343,28 @@ def get_file_diff(
             raise ValueError("Either 'ref' or 'since_timestamp' must be provided")
 
         if not per_commit:
+            # Binary attachments: a unified patch is meaningless, so emit a
+            # --stat summary instead.  Text attachments (and notes, since the
+            # default is summarize_binary=False) fall through to the full diff.
+            if summarize_binary and _diff_is_binary(git_root, ref, path_str, env):
+                stat = subprocess.run(
+                    [
+                        "git",
+                        "-C",
+                        str(git_root),
+                        "diff",
+                        "--stat",
+                        f"{ref}..HEAD",
+                        "--",
+                        path_str,
+                    ],
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                    env=env,
+                )
+                return stat.stdout
+
             # Recover path-at-ref so diffs across renames show real deltas.
             try:
                 cur_rel = path.resolve().relative_to(git_root).as_posix()
@@ -357,6 +414,10 @@ def get_file_diff(
                 diff += f"\n[diff truncated: {omitted} bytes omitted]"
             return diff
 
+        # Binary attachments: per-commit patches are equally meaningless, so
+        # detect once up front and emit a --stat for each commit below.
+        binary = summarize_binary and _diff_is_binary(git_root, ref, path_str, env)
+
         # per_commit=True: enumerate commits in range then show each.
         # Use --name-only with a sentinel so we can recover the path the
         # file had at each commit — critical for correct diffs across
@@ -402,19 +463,20 @@ def get_file_diff(
             # Recover the path the file had at this specific commit.
             # With --follow, this will be the old name for pre-rename commits.
             commit_path = next((ln.strip() for ln in lines[1:] if ln.strip()), path_str)
+            show_cmd = [
+                "git",
+                "-C",
+                str(git_root),
+                "show",
+                "--format=",
+                "--stat" if binary else "-p",
+                sha,
+                "--",
+                commit_path,
+            ]
             try:
                 show_result = subprocess.run(
-                    [
-                        "git",
-                        "-C",
-                        str(git_root),
-                        "show",
-                        "--format=",
-                        "-p",
-                        sha,
-                        "--",
-                        commit_path,
-                    ],
+                    show_cmd,
                     capture_output=True,
                     text=True,
                     check=True,

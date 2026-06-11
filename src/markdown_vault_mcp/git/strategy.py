@@ -1747,6 +1747,8 @@ class GitWriteStrategy:
         per_commit: bool,
         since_timestamp: str | None = None,
         limit: int | None = None,
+        *,
+        summarize_binary: bool = False,
     ) -> str | list[CommitDiff]:
         """Return a unified diff of *path* from *ref* to HEAD.
 
@@ -1771,6 +1773,8 @@ class GitWriteStrategy:
                 ``[1, 100]``).  Ignored when *per_commit* is ``False``.
                 ``None`` means unbounded (still capped by the underlying
                 ``ref..HEAD`` range).
+            summarize_binary: When True and the file is binary, return a
+                ``--stat`` summary instead of a patch (#342).
 
         Returns:
             A unified diff string when *per_commit* is ``False``, or a list of
@@ -1789,6 +1793,7 @@ class GitWriteStrategy:
             limit,
             token=self._token,
             username=self._username,
+            summarize_binary=summarize_binary,
         )
 
 
