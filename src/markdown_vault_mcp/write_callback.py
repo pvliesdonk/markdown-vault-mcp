@@ -24,6 +24,20 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+class _DrainMarker:
+    """Queue sentinel meaning 'all items enqueued before me are processed'.
+
+    Unlike the ``None`` close-sentinel, the worker does NOT exit on this: it
+    sets ``event`` and continues. FIFO ordering guarantees every real item
+    enqueued before the marker has been processed when the worker reaches it.
+    """
+
+    __slots__ = ("event",)
+
+    def __init__(self) -> None:
+        self.event = threading.Event()
+
+
 class WriteCallbackDispatcher:
     """Run write callbacks on a single background thread, in FIFO order.
 
@@ -41,9 +55,9 @@ class WriteCallbackDispatcher:
                 each fired write, or ``None`` to disable dispatch entirely.
         """
         self._on_write = on_write
-        self._queue: queue.Queue[tuple[Path, str, WriteOperation] | None] = (
-            queue.Queue()
-        )
+        self._queue: queue.Queue[
+            tuple[Path, str, WriteOperation] | None | _DrainMarker
+        ] = queue.Queue()
         self._worker: threading.Thread | None = None
         # Guards every read/write of ``_worker`` and ``_closed`` AND the
         # ``_queue.put`` of a real item, so ``fire`` is atomic with respect to
@@ -102,6 +116,9 @@ class WriteCallbackDispatcher:
             item = self._queue.get()
             if item is None:
                 break
+            if isinstance(item, _DrainMarker):
+                item.event.set()
+                continue
             abs_path, content, operation = item
             try:
                 on_write(abs_path, content, operation)
@@ -112,6 +129,42 @@ class WriteCallbackDispatcher:
                     operation,
                     exc_info=True,
                 )
+
+    def drain(self, timeout: float = 30.0) -> None:
+        """Block until all currently-queued callbacks have been processed.
+
+        Unlike :meth:`close`, the dispatcher stays open: the worker keeps
+        running and :meth:`fire` continues to work afterward. Used before a git
+        pull so every already-queued commit lands before the merge touches the
+        working tree.
+
+        No-op when no callback is configured, the worker was never started, or
+        the dispatcher is closed. Best-effort: if the queue does not drain
+        within ``timeout`` seconds, logs a WARNING (with the pending count) and
+        returns rather than blocking the caller indefinitely.
+
+        Args:
+            timeout: Seconds to wait for the queued items to drain.
+        """
+        if self._on_write is None:
+            return
+        with self._worker_lock:
+            if self._closed:
+                return
+            worker = self._worker
+            if worker is None or not worker.is_alive():
+                return
+            marker = _DrainMarker()
+            # Enqueue under the lock, mirroring fire(), so close() cannot slip
+            # its sentinel ahead of this marker.
+            self._queue.put(marker)
+        if not marker.event.wait(timeout):
+            logger.warning(
+                "Write-callback drain did not finish within %s s; "
+                "%d pending git commit(s) not yet committed before pull.",
+                timeout,
+                self._queue.qsize(),
+            )
 
     def close(self, timeout: float = 30.0) -> None:
         """Drain pending callbacks and join the worker (bounded by ``timeout``).
