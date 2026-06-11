@@ -86,14 +86,17 @@ def validate_history_path(
 
     Unlike :func:`validate_path` (which is strictly ``.md`` and is used by the
     write/edit/read paths), this accepts a ``.md`` note OR a path whose suffix
-    (lowercased, without the dot) is in *attachment_extensions*. Applies the same
-    traversal guard. Does not require the path to exist — history of a
-    since-deleted file is still queryable.
+    (lowercased, without the dot) is in *attachment_extensions* (or
+    *attachment_extensions* contains ``"*"``, meaning all non-``.md`` files).
+    Applies the same traversal guard. Does not require the path to exist —
+    history of a since-deleted file is still queryable.
 
     Args:
         path: Vault-relative path (note or attachment).
         source_dir: Absolute vault root.
         attachment_extensions: Allowed attachment extensions (lowercase, no dot).
+            The special value ``frozenset({"*"})`` accepts every non-``.md``
+            extension.
 
     Returns:
         The resolved absolute path.
@@ -103,7 +106,11 @@ def validate_history_path(
             extension, or it escapes *source_dir*.
     """
     suffix = path.rsplit(".", 1)[-1].lower() if "." in path else ""
-    if not (path.endswith(".md") or suffix in attachment_extensions):
+    if not (
+        path.endswith(".md")
+        or "*" in attachment_extensions
+        or suffix in attachment_extensions
+    ):
         raise ValueError(
             f"Path must be a .md note or a configured attachment type: {path}"
         )

@@ -347,22 +347,28 @@ def get_file_diff(
             # --stat summary instead.  Text attachments (and notes, since the
             # default is summarize_binary=False) fall through to the full diff.
             if summarize_binary and _diff_is_binary(git_root, ref, path_str, env):
-                stat = subprocess.run(
-                    [
-                        "git",
-                        "-C",
-                        str(git_root),
-                        "diff",
-                        "--stat",
-                        f"{ref}..HEAD",
-                        "--",
-                        path_str,
-                    ],
-                    capture_output=True,
-                    text=True,
-                    check=True,
-                    env=env,
-                )
+                try:
+                    stat = subprocess.run(
+                        [
+                            "git",
+                            "-C",
+                            str(git_root),
+                            "diff",
+                            "--stat",
+                            f"{ref}..HEAD",
+                            "--",
+                            path_str,
+                        ],
+                        capture_output=True,
+                        text=True,
+                        check=True,
+                        env=env,
+                    )
+                except subprocess.CalledProcessError as exc:
+                    raise ValueError(
+                        f"Could not compute diff summary against {ref!r}: invalid ref "
+                        "or path not present at that revision"
+                    ) from exc
                 return stat.stdout
 
             # Recover path-at-ref so diffs across renames show real deltas.

@@ -38,3 +38,10 @@ def test_rejects_attachment_when_allowlist_empty(tmp_path):
 def test_rejects_traversal(tmp_path):
     with pytest.raises(ValueError, match="traversal"):
         validate_history_path("../escape.png", tmp_path, frozenset({"png"}))
+
+
+def test_accepts_any_attachment_under_wildcard(tmp_path):
+    assert (
+        validate_history_path("assets/photo.heic", tmp_path, frozenset({"*"}))
+        == (tmp_path / "assets/photo.heic").resolve()
+    )

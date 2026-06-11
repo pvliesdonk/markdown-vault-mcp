@@ -145,8 +145,10 @@ class GitQueryManager:
         Returns:
             A unified diff string when *per_commit* is ``False``, or a list of
             :class:`~markdown_vault_mcp.types.CommitDiff` when *per_commit* is
-            ``True``.  For binary attachments (any non-``.md`` path),
-            ``--stat`` summary lines are returned instead of a unified patch.
+            ``True``.  For an attachment that git reports as binary, a
+            ``--stat`` summary is returned (per-commit: ``--stat`` lines per
+            commit) instead of a unified patch; a text attachment returns a
+            full unified diff like a ``.md`` note.
             Returns an empty string / empty list when the file has no changes
             in the given range, or when the vault's source directory is not
             inside a git repository.

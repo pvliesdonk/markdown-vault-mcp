@@ -2971,7 +2971,10 @@ class TestGetFileDiff:
             summarize_binary=True,
         )
         assert isinstance(out, str)
-        assert "Bin" in out and "x.png" in out
+        assert "x.png" in out
+        # --stat summary contains "Bin N -> M bytes" arrow; full binary patch does not.
+        assert " -> " in out  # stat-only marker (e.g. "Bin 12 -> 13 bytes")
+        assert "Binary files" not in out  # full binary patch marker must be absent
         assert "@@" not in out  # NOT a unified patch
 
     def test_get_file_diff_text_attachment_returns_full_diff(
@@ -3019,7 +3022,47 @@ class TestGetFileDiff:
         )
         assert isinstance(out, list) and out
         assert all("@@" not in cd.diff for cd in out)
-        assert any(("Bin" in cd.diff) or ("x.png" in cd.diff) for cd in out)
+        # --stat summary contains "Bin N -> M bytes" arrow; full binary patch does not.
+        assert any(" -> " in cd.diff for cd in out)  # stat-only marker
+        assert all("Binary files" not in cd.diff for cd in out)  # no full binary patch
+
+    def test_get_file_diff_text_attachment_per_commit_returns_full_diff(
+        self, tmp_path: Path
+    ) -> None:
+        """Text attachments with per_commit=True return real patches, not --stat."""
+        repo, first_sha = self._make_repo_with_attachments(tmp_path)
+        strategy = GitWriteStrategy()
+        out = strategy.get_file_diff(
+            repo,
+            repo / "assets" / "diagram.svg",
+            ref=first_sha,
+            per_commit=True,
+            summarize_binary=True,
+        )
+        assert isinstance(out, list)
+        # Text attachment: each CommitDiff must contain a real unified-diff hunk
+        assert any("@@" in cd.diff for cd in out)
+
+    def test_get_file_diff_binary_no_change_in_range_returns_empty(
+        self, tmp_path: Path
+    ) -> None:
+        """Diffing a binary against its own HEAD SHA returns an empty string."""
+        repo, _first_sha = self._make_repo_with_attachments(tmp_path)
+        head_sha = subprocess.run(
+            ["git", "-C", str(repo), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        strategy = GitWriteStrategy()
+        out = strategy.get_file_diff(
+            repo,
+            repo / "assets" / "x.png",
+            ref=head_sha,
+            per_commit=False,
+            summarize_binary=True,
+        )
+        assert out == ""
 
     def test_single_diff(self, tmp_path: Path) -> None:
         """get_file_diff with per_commit=False returns a unified diff string."""
