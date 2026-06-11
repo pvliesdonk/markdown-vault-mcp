@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterator
 
     from markdown_vault_mcp.types import CommitDiff, HistoryEntry
 
@@ -175,6 +175,7 @@ class GitWriteStrategy:
         self._pause_writes: (
             Callable[[], contextlib.AbstractContextManager[None]] | None
         ) = None
+        self._drain_writes: Callable[[], bool] | None = None
         self._on_pull: Callable[[], object] | None = None
         if repo_path is not None:
             if self._managed:
@@ -1500,6 +1501,54 @@ class GitWriteStrategy:
             return False
         finally:
             self._cleanup_git_env(env)
+
+    def set_write_quiescer(
+        self,
+        pause_writes: Callable[[], contextlib.AbstractContextManager[None]],
+        drain_writes: Callable[[], bool],
+    ) -> None:
+        """Wire the write-quiescing callables used before a pull (#571).
+
+        Called once by the owner (``Vault``) after the write-callback
+        dispatcher exists, so both the interactive ``force_pull`` and the
+        periodic ``sync_once`` can pause new writes and drain pending commits
+        before the merge — independent of whether the periodic pull loop is
+        started.
+
+        Args:
+            pause_writes: Context manager that blocks new file mutations while
+                held (acquires the shared file-write lock).
+            drain_writes: Blocks until all already-queued write callbacks have
+                been committed; returns ``True`` when the queue drained (or
+                there was nothing to drain), ``False`` if it did not finish or
+                the dispatcher worker has died.
+        """
+        self._pause_writes = pause_writes
+        self._drain_writes = drain_writes
+
+    @contextlib.contextmanager
+    def _quiesce_writes(self, *, skip: bool = False) -> Iterator[None]:
+        """Pause new writes and drain pending commits for the duration.
+
+        Enters ``pause_writes`` (blocking new writes + their callback enqueues),
+        drains the queued commits, then yields so the caller's merge runs on a
+        clean working tree. If the drain does not complete, logs a WARNING and
+        proceeds anyway — a stalled drain must never block the pull; the worst
+        case is the pre-fix dirty-tree churn for the still-pending commit. No-op
+        when ``skip`` is set (e.g. a dry-run pull) or when no quiescer was wired
+        (standalone / tests).
+        """
+        if skip or self._pause_writes is None or self._drain_writes is None:
+            yield
+            return
+        with self._pause_writes():
+            if not self._drain_writes():
+                logger.warning(
+                    "Git pull: write-callback queue did not fully drain before "
+                    "the merge; proceeding anyway (a still-pending commit may "
+                    "cause the pre-fix dirty-tree churn)."
+                )
+            yield
 
     def start(
         self,

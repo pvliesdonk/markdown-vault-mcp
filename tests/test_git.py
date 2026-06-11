@@ -4134,3 +4134,76 @@ class TestOidcClaimAuthorCommitterSplit:
         assert a_email == "bot@srv.com"
         assert c_name == "bot"
         assert c_email == "bot@srv.com"
+
+
+class TestWriteQuiescer:
+    def test_quiesce_writes_pauses_then_drains_then_yields(self) -> None:
+        """_quiesce_writes enters pause_writes, calls drain, then yields — in order (#571)."""
+        import contextlib
+
+        events: list[str] = []
+
+        @contextlib.contextmanager
+        def fake_pause():
+            events.append("pause-enter")
+            try:
+                yield
+            finally:
+                events.append("pause-exit")
+
+        def fake_drain() -> bool:
+            events.append("drain")
+            return True
+
+        strategy = GitWriteStrategy(token=None, push_delay_s=0)
+        strategy.set_write_quiescer(pause_writes=fake_pause, drain_writes=fake_drain)
+        with strategy._quiesce_writes():
+            events.append("body")
+        assert events == ["pause-enter", "drain", "body", "pause-exit"]
+
+    def test_quiesce_writes_noop_when_unset(self) -> None:
+        strategy = GitWriteStrategy(token=None, push_delay_s=0)
+        ran: list[str] = []
+        with strategy._quiesce_writes():
+            ran.append("body")
+        assert ran == ["body"]  # no pause/drain wired -> just runs
+
+    def test_quiesce_writes_skip_bypasses_pause_and_drain(self) -> None:
+        import contextlib
+
+        events: list[str] = []
+
+        @contextlib.contextmanager
+        def fake_pause():
+            events.append("pause")
+            yield
+
+        strategy = GitWriteStrategy(token=None, push_delay_s=0)
+        strategy.set_write_quiescer(
+            pause_writes=fake_pause, drain_writes=lambda: events.append("drain") or True
+        )
+        with strategy._quiesce_writes(skip=True):
+            events.append("body")
+        assert events == ["body"]  # skip -> no pause, no drain
+
+    def test_quiesce_writes_warns_and_proceeds_when_drain_incomplete(
+        self, caplog
+    ) -> None:
+        """If drain_writes() returns False (queue didn't fully drain), the merge
+        still proceeds, with a WARNING (#571 — never block the pull)."""
+        import contextlib
+        import logging
+
+        @contextlib.contextmanager
+        def fake_pause():
+            yield
+
+        strategy = GitWriteStrategy(token=None, push_delay_s=0)
+        strategy.set_write_quiescer(pause_writes=fake_pause, drain_writes=lambda: False)
+        ran: list[str] = []
+        with caplog.at_level(logging.WARNING), strategy._quiesce_writes():
+            ran.append("body")
+        assert ran == ["body"]  # proceeded despite incomplete drain
+        assert any("did not fully drain" in r.getMessage() for r in caplog.records), [
+            r.getMessage() for r in caplog.records
+        ]
