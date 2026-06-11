@@ -3373,6 +3373,99 @@ class TestGetFileDiff:
         assert "Binary files" not in out  # full binary patch marker must be absent
         assert "@@" not in out
 
+    def test_get_file_diff_per_commit_renamed_binary_degraded_stat(
+        self, tmp_path: Path
+    ) -> None:
+        """KNOWN LIMITATION (#683): per-commit --stat of a RENAMED binary shows a
+        text-style stat for the rename commit, not a ``Bin`` summary, because the
+        single-path pathspec defeats git's rename pairing in ``git show``. The
+        non-per-commit path IS rename-aware. Flip this assertion to require
+        ``' -> '``/``Bin`` when #683 is fixed.
+        """
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        subprocess.run(
+            ["git", "-C", str(repo), "init"], capture_output=True, check=True
+        )
+        subprocess.run(
+            ["git", "-C", str(repo), "config", "user.email", "t@t.com"],
+            capture_output=True,
+            check=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(repo), "config", "user.name", "T"],
+            capture_output=True,
+            check=True,
+        )
+        assets = repo / "assets"
+        assets.mkdir()
+        # Same fixture as test_get_file_diff_binary_attachment_stat_across_rename:
+        # NUL-carrying v1 (binary) renamed to y.png with tweaked bytes (v2,
+        # no NUL, high similarity so --find-renames=30 pairs them).
+        common = b"\x89PNG\r\n\x1a\n" + (b"\xaa" * 200)
+        v1 = common + b"\x00" + (b"\xbb" * 50)
+        v2 = common + b"\x11" + (b"\xcc" * 50)
+        (assets / "x.png").write_bytes(v1)
+        subprocess.run(
+            ["git", "-C", str(repo), "add", "."], capture_output=True, check=True
+        )
+        subprocess.run(
+            ["git", "-C", str(repo), "commit", "-m", "add x.png"],
+            capture_output=True,
+            check=True,
+        )
+        first_sha = subprocess.run(
+            ["git", "-C", str(repo), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        subprocess.run(
+            ["git", "-C", str(repo), "mv", "assets/x.png", "assets/y.png"],
+            capture_output=True,
+            check=True,
+        )
+        (assets / "y.png").write_bytes(v2)
+        subprocess.run(
+            ["git", "-C", str(repo), "add", "."], capture_output=True, check=True
+        )
+        subprocess.run(
+            ["git", "-C", str(repo), "commit", "-m", "rename+edit x.png -> y.png"],
+            capture_output=True,
+            check=True,
+        )
+
+        strategy = GitWriteStrategy()
+        out = strategy.get_file_diff(
+            repo,
+            repo / "assets" / "y.png",
+            ref=first_sha,
+            per_commit=True,
+            summarize_binary=True,
+        )
+        assert isinstance(out, list) and out
+        # Currently NO Bin/arrow marker on any per-commit entry (the #683 bug):
+        # git show --stat -- commit_path defeats rename pairing and shows a
+        # text-style count instead of "Bin N -> M bytes".
+        assert not any(" -> " in cd.diff for cd in out)
+
+    def test_get_file_diff_summarize_binary_invalid_ref_raises(
+        self, tmp_path: Path
+    ) -> None:
+        """summarize_binary=True with a bad ref still raises ValueError (the
+        _diff_is_binary check=False swallow is re-surfaced downstream).
+        """
+        repo, _ = self._make_repo_with_attachments(tmp_path)
+        strategy = GitWriteStrategy()
+        with pytest.raises(ValueError):
+            strategy.get_file_diff(
+                repo,
+                repo / "assets" / "x.png",
+                ref="deadbeef",
+                per_commit=False,
+                summarize_binary=True,
+            )
+
     def test_resolve_path_at_ref_handles_tab_in_filename(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

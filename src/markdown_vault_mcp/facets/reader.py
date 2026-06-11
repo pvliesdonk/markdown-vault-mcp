@@ -363,6 +363,10 @@ class ReaderFacet:
             no changes in the given range, or when the vault's source
             directory is not inside a git repository.
 
+            Per-commit (``per_commit=True``) diff of a *renamed* binary
+            attachment currently shows a text-style stat for the rename commit
+            rather than a ``Bin`` summary (#683).
+
         Raises:
             ValueError: If exactly one of *since_sha* / *since_timestamp* is
                 not supplied, *since_sha* contains invalid characters, the

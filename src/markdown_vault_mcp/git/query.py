@@ -393,8 +393,8 @@ def get_file_diff(
             return diff
 
         # Binary attachments: per-commit patches are equally meaningless, so
-        # detect once up front and emit a --stat for each commit below.
-        # detection target (rename-aware), mirroring the non-per-commit branch
+        # detect binariness once up front (rename-aware, mirroring the
+        # non-per-commit branch) and emit a --stat per commit below.
         try:
             cur_rel = path.resolve().relative_to(git_root).as_posix()
         except ValueError:
@@ -455,6 +455,10 @@ def get_file_diff(
             # Recover the path the file had at this specific commit.
             # With --follow, this will be the old name for pre-rename commits.
             commit_path = next((ln.strip() for ln in lines[1:] if ln.strip()), path_str)
+            # NOTE: for a renamed binary the per-commit `git show --stat
+            # -- commit_path` pathspec defeats git's rename pairing and renders a
+            # text-style stat instead of `Bin … bytes` — known limitation, see #683.
+            # The non-per-commit path is rename-aware.
             show_cmd = [
                 "git",
                 "-C",

@@ -2243,7 +2243,9 @@ Both methods use the existing `_git_env()` / `_cleanup_git_env()` pattern for cr
 use). `get_diff` lets git classify each attachment: a binary file (git
 `--numstat` reports `-\t-`) returns a `git diff --stat` size/rename summary,
 while a text attachment (`.svg`, `.csv`, …) returns a full unified diff. `.md`
-notes are unchanged.
+notes are unchanged. Per-commit diff of a *renamed* binary attachment currently
+renders a text-style stat for the rename commit instead of a `Bin` summary
+(tracked in #683).
 
 ### Release channels
 

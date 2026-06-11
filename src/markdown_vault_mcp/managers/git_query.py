@@ -60,7 +60,7 @@ class GitQueryManager:
         until: str | None = None,
         limit: int = 20,
     ) -> list[HistoryEntry]:
-        """Return commits that touched a note or the whole vault.
+        """Return commits that touched a note, attachment, or the whole vault.
 
         When *path* is ``None``, queries the full vault history.  Returns an
         empty list for vaults whose source directory is not inside a git
@@ -115,7 +115,7 @@ class GitQueryManager:
         per_commit: bool = False,
         limit: int | None = None,
     ) -> str | list[CommitDiff]:
-        """Return the diff of a note between a reference point and HEAD.
+        """Return the diff of a note or attachment between a reference point and HEAD.
 
         Exactly one of *since_sha* or *since_timestamp* must be supplied.
 
@@ -152,6 +152,10 @@ class GitQueryManager:
             Returns an empty string / empty list when the file has no changes
             in the given range, or when the vault's source directory is not
             inside a git repository.
+
+            Per-commit (``per_commit=True``) diff of a *renamed* binary
+            attachment currently shows a text-style stat for the rename commit
+            rather than a ``Bin`` summary (#683).
 
         Raises:
             ValueError: If exactly one of *since_sha* / *since_timestamp* is
