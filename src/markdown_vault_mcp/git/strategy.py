@@ -904,7 +904,7 @@ class GitWriteStrategy:
         git_root = self._resolve_force_repo()
         env = self._git_env()
         try:
-            with self._lock:
+            with self._quiesce_writes(skip=dry_run), self._lock:
                 from_sha = self._head_sha(git_root)
 
                 # Always fetch first — both dry-run and real-pull need the
@@ -1337,7 +1337,7 @@ class GitWriteStrategy:
         env = None
         try:
             env = self._git_env()
-            with self._lock:
+            with self._quiesce_writes(), self._lock:
                 upstream_check = subprocess.run(
                     [
                         "git",
@@ -1555,8 +1555,6 @@ class GitWriteStrategy:
         *,
         repo_path: Path,
         pull_interval_s: int,
-        pause_writes: Callable[[], contextlib.AbstractContextManager[None]]
-        | None = None,
         on_pull: Callable[[], object] | None = None,
     ) -> None:
         """Start a periodic fetch + ff-only update loop in a daemon thread."""
@@ -1597,7 +1595,6 @@ class GitWriteStrategy:
                 return
             self._pull_repo_path = repo_path
             self._pull_interval_s = pull_interval_s
-            self._pause_writes = pause_writes
             self._on_pull = on_pull
             self._pull_stop.clear()
             self._pull_thread = threading.Thread(

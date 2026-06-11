@@ -1750,18 +1750,25 @@ class TestConcurrentWrites:
                 self.stopped = False
                 self.closed = False
 
+            def set_write_quiescer(
+                self, *, pause_writes: object, drain_writes: object
+            ) -> None:
+                # Vault wires the write-quiescer here at construction (#571).
+                self.quiescer = {
+                    "pause_writes": pause_writes,
+                    "drain_writes": drain_writes,
+                }
+
             def start(
                 self,
                 *,
                 repo_path: Path,
                 pull_interval_s: int,
-                pause_writes: object,
                 on_pull: object,
             ) -> None:
                 self.started = {
                     "repo_path": repo_path,
                     "pull_interval_s": pull_interval_s,
-                    "pause_writes": pause_writes,
                     "on_pull": on_pull,
                 }
 
@@ -1802,6 +1809,12 @@ class TestConcurrentWrites:
         class DummyGitStrategy:
             def __init__(self) -> None:
                 self.calls: list[Path] = []
+
+            def set_write_quiescer(
+                self, *, pause_writes: object, drain_writes: object
+            ) -> None:
+                # Vault wires the write-quiescer here at construction (#571).
+                pass
 
             def sync_once(self, repo_path: Path) -> bool:
                 self.calls.append(repo_path)

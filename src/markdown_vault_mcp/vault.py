@@ -330,6 +330,15 @@ class Vault:
         # the FTS update.  Constructed before DocumentManager, whose
         # ``on_write_callback`` is wired to ``fire`` (#599).
         self._write_callback = WriteCallbackDispatcher(self._on_write)
+        # #571: let the puller pause new writes and drain pending commits
+        # before a merge so it runs on a clean tree. Wired here (not in start())
+        # so the interactive force_pull is covered even when the periodic pull
+        # loop is disabled. drain is late-bound to the dispatcher just built.
+        if self._git_strategy is not None:
+            self._git_strategy.set_write_quiescer(
+                pause_writes=self.pause_writes,
+                drain_writes=self._write_callback.drain,
+            )
 
         # 4. DocumentManager (mark_paths_dirty routes through the writer)
         self._doc_mgr = DocumentManager(
@@ -441,7 +450,6 @@ class Vault:
         self._git_strategy.start(
             repo_path=self._source_dir,
             pull_interval_s=self._git_pull_interval_s,
-            pause_writes=self.pause_writes,
             on_pull=self._index_facet.reindex,
         )
 
@@ -467,8 +475,9 @@ class Vault:
         """
         if self._git_strategy is None:
             return None
-        with self.pause_writes():
-            return self._git_strategy.force_pull()
+        # The strategy now self-quiesces (pause + drain) around the merge (#571),
+        # so the previous outer pause_writes() wrap here is redundant.
+        return self._git_strategy.force_pull()
 
     def stop(self) -> None:
         """Stop background tasks (e.g. git pull loop) without closing the vault.

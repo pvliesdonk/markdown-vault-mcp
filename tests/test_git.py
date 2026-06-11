@@ -2304,10 +2304,10 @@ class TestGitPullLoop:
         def on_pull() -> None:
             on_pull_calls.append("pull")
 
+        strategy.set_write_quiescer(pause_writes=pause, drain_writes=lambda: True)
         strategy.start(
             repo_path=tmp_path,
             pull_interval_s=3600,
-            pause_writes=pause,  # type: ignore[arg-type]
             on_pull=on_pull,
         )
         time.sleep(0.05)
@@ -2352,7 +2352,6 @@ class TestGitPullLoop:
         strategy.start(
             repo_path=tmp_path,
             pull_interval_s=3600,
-            pause_writes=None,
             on_pull=on_pull,
         )
         time.sleep(0.05)
@@ -2394,7 +2393,6 @@ class TestGitPullLoop:
         strategy.start(
             repo_path=tmp_path,
             pull_interval_s=3600,
-            pause_writes=pause,  # type: ignore[arg-type]
             on_pull=lambda: None,
         )
         time.sleep(0.05)

@@ -410,35 +410,27 @@ def test_vault_force_pull_delegates_to_strategy(tmp_path: Path) -> None:
     mock_strategy.force_pull.assert_called_once_with()
 
 
-def test_vault_force_pull_acquires_pause_writes(tmp_path: Path) -> None:
-    """force_pull holds pause_writes for the duration of the git strategy call."""
-    from contextlib import contextmanager
-
+def test_vault_wires_pause_writes_into_git_strategy(tmp_path: Path) -> None:
+    """Vault wires its pause_writes (and the dispatcher drain) into the git
+    strategy at construction via set_write_quiescer, so the strategy self-quiesces
+    around its own merge (#571). The pull facade no longer wraps pause_writes."""
     vault = tmp_path / "vault"
     vault.mkdir()
 
-    pull_result = PullResult(
-        applied=True, fast_forward=True, commits_pulled=1, from_sha="aaa", to_sha="bbb"
-    )
     mock_strategy = MagicMock()
     col = Vault(source_dir=vault, git_strategy=mock_strategy)
 
-    call_order: list[str] = []
+    mock_strategy.set_write_quiescer.assert_called_once()
+    kwargs = mock_strategy.set_write_quiescer.call_args.kwargs
+    assert kwargs["pause_writes"] == col.pause_writes
+    assert callable(kwargs["drain_writes"])
 
-    @contextmanager
-    def tracking_pause_writes():
-        call_order.append("pause_enter")
-        yield
-        call_order.append("pause_exit")
+    # The facade delegates straight to the strategy (no Vault-level pause wrap).
+    pull_result = PullResult(
+        applied=True, fast_forward=True, commits_pulled=1, from_sha="aaa", to_sha="bbb"
+    )
+    mock_strategy.force_pull.return_value = pull_result
+    assert col.force_pull() is pull_result
+    mock_strategy.force_pull.assert_called_once_with()
 
-    def tracking_force_pull():
-        call_order.append("force_pull")
-        return pull_result
-
-    mock_strategy.force_pull.side_effect = tracking_force_pull
-
-    with patch.object(col, "pause_writes", tracking_pause_writes):
-        result = col.force_pull()
-
-    assert result is pull_result
-    assert call_order == ["pause_enter", "force_pull", "pause_exit"]
+    col.close()
