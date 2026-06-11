@@ -184,5 +184,6 @@ class GitQueryManager:
             per_commit=per_commit,
             since_timestamp=since_timestamp,
             limit=limit if per_commit else None,
+            # True for any non-.md path; get_file_diff only emits --stat if git also reports it binary — text attachments fall through to a full diff.
             summarize_binary=not path.endswith(".md"),
         )

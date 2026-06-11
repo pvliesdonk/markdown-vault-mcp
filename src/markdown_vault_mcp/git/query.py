@@ -28,25 +28,18 @@ logger = logging.getLogger(__name__)
 
 
 def _diff_is_binary(
-    git_root: Path, ref: str, path_str: str, env: dict[str, str] | None
+    git_root: Path, diff_args: list[str], env: dict[str, str] | None
 ) -> bool:
-    """True if git reports *path_str* as a binary change over ``ref..HEAD``.
+    """True if git reports the diff target as binary.
 
-    ``git diff --numstat`` prints ``-\\t-\\t<path>`` for binary files and real
-    ``<added>\\t<deleted>`` counts for text. Empty output (no change) is treated
-    as non-binary.
+    *diff_args* is the ref/path portion of a ``git diff`` invocation — either
+    ``[f"{ref}..HEAD", "--", path_str]`` (no rename) or
+    ``[f"{ref}:{old_path}", f"HEAD:{cur_rel}"]`` (rename-recovered). ``git diff
+    --numstat`` prints ``-\\t-\\t<path>`` for binary and real counts for text;
+    empty output (no change) → non-binary.
     """
     result = subprocess.run(
-        [
-            "git",
-            "-C",
-            str(git_root),
-            "diff",
-            "--numstat",
-            f"{ref}..HEAD",
-            "--",
-            path_str,
-        ],
+        ["git", "-C", str(git_root), "diff", "--numstat", *diff_args],
         capture_output=True,
         text=True,
         check=False,
@@ -343,22 +336,29 @@ def get_file_diff(
             raise ValueError("Either 'ref' or 'since_timestamp' must be provided")
 
         if not per_commit:
+            # Resolve the path-at-ref once so renames are handled uniformly for
+            # binary detection, the --stat summary, and the full diff.
+            try:
+                cur_rel = path.resolve().relative_to(git_root).as_posix()
+            except ValueError:
+                cur_rel = None
+            old_path = (
+                resolve_path_at_ref(git_root, ref, cur_rel, env)
+                if cur_rel is not None
+                else None
+            )
+            if old_path is None or cur_rel is None or old_path == cur_rel:
+                diff_args = [f"{ref}..HEAD", "--", path_str]
+            else:
+                diff_args = [f"{ref}:{old_path}", f"HEAD:{cur_rel}"]
+
             # Binary attachments: a unified patch is meaningless, so emit a
             # --stat summary instead.  Text attachments (and notes, since the
             # default is summarize_binary=False) fall through to the full diff.
-            if summarize_binary and _diff_is_binary(git_root, ref, path_str, env):
+            if summarize_binary and _diff_is_binary(git_root, diff_args, env):
                 try:
                     stat = subprocess.run(
-                        [
-                            "git",
-                            "-C",
-                            str(git_root),
-                            "diff",
-                            "--stat",
-                            f"{ref}..HEAD",
-                            "--",
-                            path_str,
-                        ],
+                        ["git", "-C", str(git_root), "diff", "--stat", *diff_args],
                         capture_output=True,
                         text=True,
                         check=True,
@@ -371,35 +371,7 @@ def get_file_diff(
                     ) from exc
                 return stat.stdout
 
-            # Recover path-at-ref so diffs across renames show real deltas.
-            try:
-                cur_rel = path.resolve().relative_to(git_root).as_posix()
-            except ValueError:
-                cur_rel = None
-            old_path = (
-                resolve_path_at_ref(git_root, ref, cur_rel, env)
-                if cur_rel is not None
-                else None
-            )
-            if old_path is None or cur_rel is None or old_path == cur_rel:
-                diff_cmd = [
-                    "git",
-                    "-C",
-                    str(git_root),
-                    "diff",
-                    f"{ref}..HEAD",
-                    "--",
-                    path_str,
-                ]
-            else:
-                diff_cmd = [
-                    "git",
-                    "-C",
-                    str(git_root),
-                    "diff",
-                    f"{ref}:{old_path}",
-                    f"HEAD:{cur_rel}",
-                ]
+            diff_cmd = ["git", "-C", str(git_root), "diff", *diff_args]
             try:
                 result = subprocess.run(
                     diff_cmd,
@@ -422,7 +394,21 @@ def get_file_diff(
 
         # Binary attachments: per-commit patches are equally meaningless, so
         # detect once up front and emit a --stat for each commit below.
-        binary = summarize_binary and _diff_is_binary(git_root, ref, path_str, env)
+        # detection target (rename-aware), mirroring the non-per-commit branch
+        try:
+            cur_rel = path.resolve().relative_to(git_root).as_posix()
+        except ValueError:
+            cur_rel = None
+        old_path = (
+            resolve_path_at_ref(git_root, ref, cur_rel, env)
+            if cur_rel is not None
+            else None
+        )
+        if old_path is None or cur_rel is None or old_path == cur_rel:
+            detect_args = [f"{ref}..HEAD", "--", path_str]
+        else:
+            detect_args = [f"{ref}:{old_path}", f"HEAD:{cur_rel}"]
+        binary = summarize_binary and _diff_is_binary(git_root, detect_args, env)
 
         # per_commit=True: enumerate commits in range then show each.
         # Use --name-only with a sentinel so we can recover the path the

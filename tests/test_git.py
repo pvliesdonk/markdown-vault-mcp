@@ -3285,6 +3285,94 @@ class TestGetFileDiff:
         assert "-Original line" in diff
         assert "+Modified line" in diff
 
+    def test_get_file_diff_binary_attachment_stat_across_rename(
+        self, tmp_path: Path
+    ) -> None:
+        """A binary attachment renamed within the range still yields a --stat.
+
+        Regression for #342: with rename-unaware binary detection, ``git diff
+        {ref}..HEAD -- assets/y.png`` reports the renamed binary as a plain add
+        (text-style counts, not ``-\t-``), so detection returned False and the
+        code fell through to the full-diff path, emitting the meaningless
+        ``Binary files ... differ`` patch the feature exists to suppress.
+        """
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        subprocess.run(
+            ["git", "-C", str(repo), "init"], capture_output=True, check=True
+        )
+        subprocess.run(
+            ["git", "-C", str(repo), "config", "user.email", "t@t.com"],
+            capture_output=True,
+            check=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(repo), "config", "user.name", "T"],
+            capture_output=True,
+            check=True,
+        )
+        assets = repo / "assets"
+        assets.mkdir()
+        # The original blob carries a NUL byte, so git classifies *it* as
+        # binary; the renamed blob keeps the bulk of the bytes (so git's
+        # --find-renames=30 still pairs the two paths) but drops the NUL.  This
+        # is the discriminating case: `git diff {ref}..HEAD -- assets/y.png`
+        # treats y.png as a plain add and reports text counts (3\t0), so
+        # rename-unaware detection returns False and the old code fell through
+        # to the full diff, emitting "Binary files ... differ".  The rename-
+        # aware blob-pair form `git diff {ref}:assets/x.png HEAD:assets/y.png`
+        # reports the pair as binary (-\t-), so detection now yields a --stat.
+        common = b"\x89PNG\r\n\x1a\n" + (b"\xaa" * 200)
+        v1 = common + b"\x00" + (b"\xbb" * 50)  # NUL -> git sees x.png as binary
+        v2 = common + b"\x11" + (b"\xcc" * 50)  # no NUL, high similarity to v1
+        # Commit 1: add the binary attachment under its original name.
+        (assets / "x.png").write_bytes(v1)
+        subprocess.run(
+            ["git", "-C", str(repo), "add", "."], capture_output=True, check=True
+        )
+        subprocess.run(
+            ["git", "-C", str(repo), "commit", "-m", "add x.png"],
+            capture_output=True,
+            check=True,
+        )
+        first_sha = subprocess.run(
+            ["git", "-C", str(repo), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        # Commit 2: rename x.png -> y.png AND tweak its bytes (a rename-with-edit
+        # within the range that git still detects as a rename at the 30%
+        # threshold used by resolve_path_at_ref).
+        subprocess.run(
+            ["git", "-C", str(repo), "mv", "assets/x.png", "assets/y.png"],
+            capture_output=True,
+            check=True,
+        )
+        (assets / "y.png").write_bytes(v2)
+        subprocess.run(
+            ["git", "-C", str(repo), "add", "."], capture_output=True, check=True
+        )
+        subprocess.run(
+            ["git", "-C", str(repo), "commit", "-m", "rename+edit x.png -> y.png"],
+            capture_output=True,
+            check=True,
+        )
+
+        strategy = GitWriteStrategy()
+        out = strategy.get_file_diff(
+            repo,
+            repo / "assets" / "y.png",
+            ref=first_sha,
+            per_commit=False,
+            summarize_binary=True,
+        )
+        assert isinstance(out, str)
+        # Rename-aware --stat summary, not the garbage binary patch.
+        assert " -> " in out  # stat-only marker (e.g. "Bin 12 -> 13 bytes")
+        assert "Binary files" not in out  # full binary patch marker must be absent
+        assert "@@" not in out
+
     def test_resolve_path_at_ref_handles_tab_in_filename(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

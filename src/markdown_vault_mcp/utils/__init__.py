@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import fnmatch
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from markdown_vault_mcp.types import DEFAULT_ATTACHMENT_EXTENSIONS
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
-    from pathlib import Path
 from markdown_vault_mcp.utils.fts import fts_row_to_note_info
 from markdown_vault_mcp.utils.links import (
     apply_link_replacement,
@@ -105,7 +105,7 @@ def validate_history_path(
         ValueError: *path* is neither ``.md`` nor an allowed attachment
             extension, or it escapes *source_dir*.
     """
-    suffix = path.rsplit(".", 1)[-1].lower() if "." in path else ""
+    suffix = Path(path).suffix.lstrip(".").lower()
     if not (
         path.endswith(".md")
         or "*" in attachment_extensions
