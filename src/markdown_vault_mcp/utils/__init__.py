@@ -79,6 +79,40 @@ def validate_path(path: str, source_dir: Path) -> Path:
     return abs_path
 
 
+def validate_history_path(
+    path: str, source_dir: Path, attachment_extensions: frozenset[str]
+) -> Path:
+    """Resolve a vault-relative path for read-only git history/diff queries.
+
+    Unlike :func:`validate_path` (which is strictly ``.md`` and is used by the
+    write/edit/read paths), this accepts a ``.md`` note OR a path whose suffix
+    (lowercased, without the dot) is in *attachment_extensions*. Applies the same
+    traversal guard. Does not require the path to exist — history of a
+    since-deleted file is still queryable.
+
+    Args:
+        path: Vault-relative path (note or attachment).
+        source_dir: Absolute vault root.
+        attachment_extensions: Allowed attachment extensions (lowercase, no dot).
+
+    Returns:
+        The resolved absolute path.
+
+    Raises:
+        ValueError: *path* is neither ``.md`` nor an allowed attachment
+            extension, or it escapes *source_dir*.
+    """
+    suffix = path.rsplit(".", 1)[-1].lower() if "." in path else ""
+    if not (path.endswith(".md") or suffix in attachment_extensions):
+        raise ValueError(
+            f"Path must be a .md note or a configured attachment type: {path}"
+        )
+    abs_path = (source_dir / path).resolve()
+    if not abs_path.is_relative_to(source_dir.resolve()):
+        raise ValueError(f"Path traversal detected: {path}")
+    return abs_path
+
+
 __all__ = [
     "CHAR_SUBS",
     "apply_link_replacement",
@@ -89,5 +123,6 @@ __all__ = [
     "fts_row_to_note_info",
     "is_path_excluded",
     "normalize_text",
+    "validate_history_path",
     "validate_path",
 ]
