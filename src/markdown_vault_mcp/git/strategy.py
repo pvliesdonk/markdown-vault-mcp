@@ -1336,7 +1336,10 @@ class GitWriteStrategy:
         Self-quiesces before the merge via :meth:`_quiesce_writes` (pause new
         writes + drain the deferred-commit queue, best-effort/time-bounded) so a
         write racing the periodic pull is committed first and the merge runs on
-        a clean tree (#571).
+        a clean tree (#571). As with :meth:`force_pull`, the pause is held for
+        the whole fetch + merge — including the network round-trip — so MCP
+        writes block for the pull's duration; acceptable for a periodic
+        background pull (default every 600 s) and a fast fetch.
         """
         if self._closed or not self._enable_pull:
             return False
