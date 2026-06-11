@@ -536,8 +536,8 @@ class DocumentManager:
                 self._mark_paths_dirty([path])
 
             result = WriteResult(path=path, created=created)
+            self._on_write_callback(abs_path, file_content, "write")
 
-        self._on_write_callback(abs_path, file_content, "write")
         return result
 
     def write_attachment(
@@ -731,7 +731,8 @@ class DocumentManager:
             if self._mark_paths_dirty is not None:
                 self._mark_paths_dirty([path])
 
-        self._on_write_callback(abs_path, new_content, "edit")
+            self._on_write_callback(abs_path, new_content, "edit")
+
         return EditResult(path=path, replacements=1, match_type=match_type)
 
     def _edit_with_lines(
@@ -895,7 +896,8 @@ class DocumentManager:
                         )
                 abs_path.unlink()
 
-        self._on_write_callback(abs_path, "", "delete")
+            self._on_write_callback(abs_path, "", "delete")
+
         return DeleteResult(path=path)
 
     def rename(
@@ -1004,9 +1006,9 @@ class DocumentManager:
 
                 callback_content = ""
 
-        self._on_write_callback(new_abs, callback_content, "rename")
-        for src_abs, src_content in backlink_callbacks:
-            self._on_write_callback(src_abs, src_content, "edit")
+            self._on_write_callback(new_abs, callback_content, "rename")
+            for src_abs, src_content in backlink_callbacks:
+                self._on_write_callback(src_abs, src_content, "edit")
 
         return RenameResult(
             old_path=old_path,
