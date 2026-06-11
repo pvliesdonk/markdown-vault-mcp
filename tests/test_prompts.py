@@ -15,7 +15,10 @@ from pathlib import Path  # noqa: TC003
 import pytest
 from fastmcp import Client
 
-from markdown_vault_mcp._server_prompts import _load_user_prompt_defs
+from markdown_vault_mcp._server_prompts import (
+    _load_builtin_prompt,
+    _load_user_prompt_defs,
+)
 from markdown_vault_mcp.server import make_server
 
 # ---------------------------------------------------------------------------
@@ -124,6 +127,36 @@ class TestLoadUserPromptDefs:
             result = _load_user_prompt_defs(str(tmp_path))
         assert "broken" not in result
         assert "Failed to parse" in caplog.text
+
+    def test_strips_bom_from_user_prompt(self, tmp_path: Path) -> None:
+        """A UTF-8 BOM before the frontmatter must not break parsing (#673)."""
+        (tmp_path / "greet.md").write_bytes(
+            b"\xef\xbb\xbf---\ndescription: Greeter\n---\n\nHello\n"
+        )
+        result = _load_user_prompt_defs(str(tmp_path))
+        assert "greet" in result
+        assert (
+            result["greet"]["description"] == "Greeter"
+        )  # frontmatter parsed past the BOM
+
+
+class TestLoadBuiltinPrompt:
+    """Unit tests for _load_builtin_prompt."""
+
+    def test_strips_bom_from_builtin_prompt(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The built-in prompt loader's hand-rolled utf-8-sig read strips a BOM (#673)."""
+        from markdown_vault_mcp import _server_prompts
+
+        (tmp_path / "demo.md").write_bytes(
+            b"\xef\xbb\xbf---\ndescription: Demo\n---\n\nbody\n"
+        )
+        monkeypatch.setattr(_server_prompts, "_BUILTIN_PROMPTS_DIR", tmp_path)
+        result = _load_builtin_prompt("demo")
+        assert result is not None
+        assert result["description"] == "Demo"  # frontmatter parsed past the BOM
+        assert result["content"] == "body"
 
 
 class TestRegisterOneUserPromptArgValidation:

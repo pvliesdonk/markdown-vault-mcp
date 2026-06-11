@@ -327,7 +327,7 @@ def test_read_and_rewrite_normalizes_bom(tmp_path: Path) -> None:
     nc = mgr.read("note.md")
     assert nc is not None
     # BOM must be stripped on read — content must not start with the BOM char.
-    assert not nc.content.startswith("﻿"), "read() returned BOM-prefixed content"
+    assert not nc.content.startswith("\ufeff"), "read() returned BOM-prefixed content"
     assert nc.content.startswith("# Title")
 
     # Rewrite via edit(); the on-disk file must also lose the BOM.
