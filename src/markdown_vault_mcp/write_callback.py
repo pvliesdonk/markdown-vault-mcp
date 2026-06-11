@@ -159,6 +159,12 @@ class WriteCallbackDispatcher:
             # its sentinel ahead of this marker.
             self._queue.put(marker)
         if not marker.event.wait(timeout):
+            # On timeout the worker is blocked on an in-flight item (else it
+            # would have reached the marker), so qsize() counts the queued real
+            # items plus our still-queued marker but NOT that in-flight commit.
+            # The marker (+1) and the uncounted in-flight commit (-1) cancel, so
+            # qsize() equals the number of commits genuinely at risk — same
+            # accounting as close(). Do NOT "correct" this to qsize()-1.
             logger.warning(
                 "Write-callback drain did not finish within %s s; "
                 "%d pending git commit(s) not yet committed before pull.",

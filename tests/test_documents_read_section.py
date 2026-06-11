@@ -170,6 +170,7 @@ def test_read_section_duplicate_heading_returns_first_by_start_line(tmp_path):
     nc = mgr.read("a.md", section="Repeat")
     assert nc is not None
     assert "first occurrence body" in nc.content
+    assert "second occurrence body" not in nc.content
 
 
 def test_write_fires_callback_while_holding_file_write_lock(tmp_path: Path) -> None:
@@ -240,4 +241,59 @@ def test_write_attachment_fires_callback_while_holding_file_write_lock(
     mgr.write_attachment("assets/pic.png", b"\x89PNG\r\n\x1a\n")
     assert not lock_free_during_callback.is_set(), (
         "write_attachment callback fired outside _file_write_lock"
+    )
+
+
+def test_edit_rename_delete_fire_callbacks_while_holding_file_write_lock(
+    tmp_path: Path,
+) -> None:
+    """edit/rename/delete must also fire their callbacks INSIDE _file_write_lock
+    (#571) — the probe thread must never acquire the lock during the callback."""
+    import threading
+
+    write_lock = threading.RLock()
+    lock_free_during_callback = threading.Event()
+
+    def on_write(_abs_path, _content, _operation) -> None:
+        def probe() -> None:
+            if write_lock.acquire(blocking=False):
+                lock_free_during_callback.set()
+                write_lock.release()
+
+        t = threading.Thread(target=probe)
+        t.start()
+        t.join()
+
+    fts = FTSIndex(db_path=":memory:")
+    chunker = HeadingChunker()
+    mgr = DocumentManager(
+        fts=fts,
+        source_dir=tmp_path,
+        write_lock=write_lock,
+        chunk_strategy=chunker,
+        read_only=False,
+        on_write_callback=on_write,
+    )
+
+    # Seed a file (the write itself fires under the lock); then probe each of
+    # edit/rename/delete in turn, clearing the flag immediately before each so
+    # the assertion isolates that op's callback.
+    mgr.write("note.md", "# hello\nold body\n")
+
+    lock_free_during_callback.clear()
+    mgr.edit("note.md", "old body", "new body")
+    assert not lock_free_during_callback.is_set(), (
+        "edit callback fired outside _file_write_lock"
+    )
+
+    lock_free_during_callback.clear()
+    mgr.rename("note.md", "renamed.md")
+    assert not lock_free_during_callback.is_set(), (
+        "rename callback fired outside _file_write_lock"
+    )
+
+    lock_free_during_callback.clear()
+    mgr.delete("renamed.md")
+    assert not lock_free_during_callback.is_set(), (
+        "delete callback fired outside _file_write_lock"
     )
