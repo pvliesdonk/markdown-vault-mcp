@@ -1577,9 +1577,10 @@ def register_tools(mcp: FastMCP) -> None:
         whether git is configured, or call this and handle the error.
 
         Args:
-            path: Vault-relative path of the note to filter on (e.g.
-                "notes/alpha.md"). Must end with ".md". Omit (or pass null)
-                for vault-wide commit history.
+            path: Vault-relative path of the note or attachment to filter on
+                (e.g. "notes/alpha.md" or "assets/diagram.png"). May be a
+                `.md` note or a configured attachment extension (png, pdf,
+                svg, …). Omit (or pass null) for vault-wide commit history.
             since: ISO 8601 datetime string ("2026-04-01T00:00:00") or a git
                 date expression ("1 week ago"). Passed as --since to git log.
                 Omit for full history.
@@ -1610,7 +1611,7 @@ def register_tools(mcp: FastMCP) -> None:
               beyond the `limit` cap).
 
         Raises:
-            ToolError: If the path is invalid.
+            ToolError: If the path is invalid or uses an unsupported extension.
         """
         try:
             results = await asyncio.to_thread(
@@ -1648,8 +1649,13 @@ def register_tools(mcp: FastMCP) -> None:
         commit SHAs.
 
         Args:
-            path: Vault-relative path of the note to diff (e.g. "notes/alpha.md").
-                Must end with ".md".
+            path: Vault-relative path of the note or attachment to diff (e.g.
+                "notes/alpha.md" or "assets/diagram.png"). May be a `.md`
+                note or a configured attachment extension (png, pdf, svg, …).
+                A binary attachment returns a `--stat` size/rename summary
+                instead of a full unified patch; a text attachment (e.g.
+                `.svg`, `.csv`) returns a full unified diff. `.md` notes are
+                unchanged. An unsupported extension is rejected.
             since_sha: A commit SHA (full or abbreviated, at least 4 hex digits)
                 to diff from. Mutually exclusive with since_timestamp.
             since_timestamp: ISO 8601 datetime string, resolved via
@@ -1689,7 +1695,8 @@ def register_tools(mcp: FastMCP) -> None:
 
         Raises:
             ToolError: If neither or both reference parameters are supplied,
-                the SHA is invalid, or the reference commit is not found.
+                the SHA is invalid, the reference commit is not found, or the
+                path uses an unsupported extension.
         """
         try:
             result = await asyncio.to_thread(

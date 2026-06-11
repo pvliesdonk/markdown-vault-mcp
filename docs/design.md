@@ -2237,6 +2237,14 @@ Both methods use the existing `_git_env()` / `_cleanup_git_env()` pattern for cr
 
 **MCP response envelope**: the MCP wrappers for `get_history` and `get_diff(per_commit=True)` return a `{"commits": [...], "total": N}` envelope rather than a bare list, so the structured payload is self-describing on the wire. FastMCP otherwise auto-wraps list-typed tool returns under a synthetic `"result"` key (`x-fastmcp-wrap-result: true` in the output schema), which forces clients re-reading persisted MCP content to know FastMCP's wrapping convention to find the data. The Python facade (`ReaderFacet.get_history`, `ReaderFacet.get_diff`) stays list-returning — only the MCP-tool wrapper transforms to the envelope. `get_diff(per_commit=False)` keeps its existing `{"diff": str}` shape since it is already self-describing.
 
+**Attachment history & diff (#342).** `get_history` and `get_diff` accept a
+`.md` note OR a configured attachment, validated by `validate_history_path`
+(distinct from the strict-`.md` `validate_path` that the write/edit/read paths
+use). `get_diff` lets git classify each attachment: a binary file (git
+`--numstat` reports `-\t-`) returns a `git diff --stat` size/rename summary,
+while a text attachment (`.svg`, `.csv`, …) returns a full unified diff. `.md`
+notes are unchanged.
+
 ### Release channels
 
 The release workflow (`.github/workflows/release.yml`) publishes two

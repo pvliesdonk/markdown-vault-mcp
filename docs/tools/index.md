@@ -28,8 +28,8 @@ markdown-vault-mcp exposes MCP tools across several categories. Write tools are 
 | [`get_orphan_notes`](#get_orphan_notes) | Read | Find notes with no inbound or outbound links |
 | [`get_most_linked`](#get_most_linked) | Read | Find the most-linked-to notes ranked by backlink count |
 | [`get_connection_path`](#get_connection_path) | Read | Find the shortest path between two notes via link graph |
-| [`get_history`](#get_history) | Read (git) | List commits that touched a note or the whole vault |
-| [`get_diff`](#get_diff) | Read (git) | Return a unified diff of a note between two points in history |
+| [`get_history`](#get_history) | Read (git) | List commits that touched a note, attachment, or the whole vault |
+| [`get_diff`](#get_diff) | Read (git) | Return a diff of a note or attachment between two points in history |
 | [`reindex`](#reindex) | Admin | Force a full reindex of the vault |
 | [`build_embeddings`](#build_embeddings) | Admin | Build or rebuild vector embeddings |
 | [`write`](#write) | Write | Create or overwrite a document or attachment |
@@ -656,13 +656,13 @@ Find the shortest path between two notes via BFS on the undirected link graph (m
 
 ### `get_history`
 
-List commits that touched a note (or the whole vault) within an optional time window, up to a maximum count. Only available for git-backed vaults.
+List commits that touched a note or attachment (or the whole vault) within an optional time window, up to a maximum count. Only available for git-backed vaults.
 
 **Parameters:**
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `path` | string | `null` | Relative vault path (e.g. `"notes/alpha.md"`). Omit for vault-wide history. Must end with `.md`. |
+| `path` | string | `null` | Relative vault path (e.g. `"notes/alpha.md"` or `"assets/diagram.png"`). May be a `.md` note or a configured attachment extension (png, pdf, svg, …). Omit for vault-wide history. An unsupported extension is rejected. |
 | `since` | string | `null` | ISO 8601 datetime string (`"2026-04-01T00:00:00"`) or git date expression (`"1 week ago"`). Passed as `--since` to `git log`. Inclusive at the boundary. |
 | `until` | string | `null` | ISO 8601 datetime string or git date expression, passed as `--until` to `git log`. Combined with `since` to bound a window. Inclusive at the boundary. |
 | `limit` | int | `20` | Maximum number of commits to return. Capped at 100. |
@@ -678,17 +678,17 @@ List commits that touched a note (or the whole vault) within an optional time wi
 | `message` | string | First line of the commit message |
 | `paths_changed` | list[string] | Files touched by the commit. Populated for vault-wide queries (`path=null`); always empty for single-note queries, since the path is already determined by the query arguments — callers know which file the commit touched without needing it echoed back. |
 
-**Raises:** `ToolError` if `path` is invalid.
+**Raises:** `ToolError` if `path` is invalid or uses an unsupported extension.
 
 ### `get_diff`
 
-Return the diff of a specific note between a reference point and `HEAD`. Only available for git-backed vaults.
+Return the diff of a specific note or attachment between a reference point and `HEAD`. Only available for git-backed vaults.
 
 **Parameters:**
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `path` | string | required | Relative vault path. Must end with `.md`. |
+| `path` | string | required | Relative vault path (e.g. `"notes/alpha.md"` or `"assets/diagram.png"`). May be a `.md` note or a configured attachment extension (png, pdf, svg, …). An unsupported extension is rejected. |
 | `since_sha` | string | `null` | A commit SHA (full or abbreviated, at least 4 hex digits) to diff from. Mutually exclusive with `since_timestamp`. |
 | `since_timestamp` | string | `null` | ISO 8601 datetime string, resolved via `git rev-list --before=<ts> -1 HEAD` to the most recent commit at or before that instant. Boundary is **inclusive**: a commit whose committer date equals `since_timestamp` IS the resolved ref. Mutually exclusive with `since_sha`. |
 | `per_commit` | bool | `false` | When `false`, return a single unified diff. When `true`, return one diff per intervening commit, newest-first. |
@@ -698,10 +698,10 @@ Exactly one of `since_sha` / `since_timestamp` must be supplied.
 
 **Returns:**
 
-- `per_commit=false`: object with `diff` (string) — unified diff from reference to HEAD. May include `[diff truncated: N bytes omitted]` if output exceeds 50 KB.
+- `per_commit=false`: object with `diff` (string) — unified diff from reference to HEAD. For a **binary attachment**, this is a `git diff --stat` size/rename summary (e.g. `assets/x.png | Bin 1234 -> 5678 bytes`); for a **text attachment** (`.svg`, `.csv`, …) or `.md` note, it is a full unified patch. May include `[diff truncated: N bytes omitted]` if output exceeds 50 KB.
 - `per_commit=true`: object with `commits` (list of per-commit entries, newest-first — each containing `sha`, `short_sha`, `timestamp`, `message`, and `diff`) and `total` (count — always equals `len(commits)`; does NOT indicate how many commits exist beyond the `limit` cap). The envelope keeps the structured payload self-describing on the wire instead of relying on FastMCP's auto-wrapping `result` key.
 
-**Raises:** `ToolError` if parameters are invalid or the reference commit is not found.
+**Raises:** `ToolError` if parameters are invalid, the reference commit is not found, or the path uses an unsupported extension.
 
 ---
 
