@@ -601,8 +601,8 @@ class DocumentManager:
                 Path(tmp_name).unlink(missing_ok=True)
                 raise
             result = WriteResult(path=path, created=created)
+            self._on_write_callback(abs_path, "", "write")
 
-        self._on_write_callback(abs_path, "", "write")
         return result
 
     def edit(
