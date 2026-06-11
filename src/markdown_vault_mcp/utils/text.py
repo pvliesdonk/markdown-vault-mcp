@@ -9,7 +9,46 @@ from __future__ import annotations
 import re
 import unicodedata
 from difflib import SequenceMatcher
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+
+def read_text_utf8(path: Path) -> str:
+    """Read a text file as UTF-8, stripping a leading BOM if present (#673).
+
+    Uses ``utf-8-sig``: a leading UTF-8 BOM (``\\ufeff``) is stripped, and a
+    file without one decodes identically to plain ``utf-8``. The vault
+    normalizes to no-BOM (writes are plain ``utf-8``), so a BOM-prefixed file
+    read here parses correctly and loses its BOM on the next rewrite. A
+    non-UTF-8 file still raises ``UnicodeDecodeError``, exactly as ``utf-8``
+    would.
+
+    Args:
+        path: File to read.
+
+    Returns:
+        The file's text with any leading UTF-8 BOM removed.
+    """
+    return path.read_text(encoding="utf-8-sig")
+
+
+def decode_utf8(data: bytes) -> str:
+    """Decode bytes as UTF-8, stripping a leading BOM if present (#673).
+
+    The bytes form of :func:`read_text_utf8`, for callers that hold the raw
+    bytes separately (e.g. the scanner hashes the on-disk bytes — BOM included
+    — then decodes the text without the BOM for frontmatter parsing).
+
+    Args:
+        data: Raw file bytes.
+
+    Returns:
+        The decoded text with any leading UTF-8 BOM removed.
+    """
+    return data.decode("utf-8-sig")
+
 
 # Direct single-character substitutions applied during normalization.
 # Used by build_position_map to avoid calling normalize_text() per

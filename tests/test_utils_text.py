@@ -190,3 +190,54 @@ class TestFindClosestMatch:
         file_content = "intro\nalpha\nbeta\ngamma\ntail"
         result = find_closest_match(old, file_content)
         assert result == {}
+
+
+# ---------------------------------------------------------------------------
+# BOM-stripping helpers
+# ---------------------------------------------------------------------------
+
+
+class TestUtf8BomHelpers:
+    def test_read_text_utf8_strips_leading_bom(self, tmp_path) -> None:
+        from markdown_vault_mcp.utils.text import read_text_utf8
+
+        p = tmp_path / "bom.md"
+        p.write_bytes(b"\xef\xbb\xbf# Title\n\nbody\n")  # UTF-8 BOM + content
+        assert read_text_utf8(p) == "# Title\n\nbody\n"
+
+    def test_read_text_utf8_passes_through_without_bom(self, tmp_path) -> None:
+        from markdown_vault_mcp.utils.text import read_text_utf8
+
+        p = tmp_path / "plain.md"
+        p.write_text("# Title\n\nbody\n", encoding="utf-8")
+        assert read_text_utf8(p) == "# Title\n\nbody\n"
+
+    def test_read_text_utf8_raises_on_non_utf8(self, tmp_path) -> None:
+        import pytest
+
+        from markdown_vault_mcp.utils.text import read_text_utf8
+
+        p = tmp_path / "bad.bin"
+        p.write_bytes(b"\xff\xfe not valid utf-8 \x80\n")
+        with pytest.raises(UnicodeDecodeError):
+            read_text_utf8(p)
+
+    def test_decode_utf8_strips_leading_bom(self) -> None:
+        from markdown_vault_mcp.utils.text import decode_utf8
+
+        assert (
+            decode_utf8(b"\xef\xbb\xbf---\ntitle: x\n---\n") == "---\ntitle: x\n---\n"
+        )
+
+    def test_decode_utf8_passes_through_without_bom(self) -> None:
+        from markdown_vault_mcp.utils.text import decode_utf8
+
+        assert decode_utf8(b"plain text\n") == "plain text\n"
+
+    def test_decode_utf8_raises_on_non_utf8(self) -> None:
+        import pytest
+
+        from markdown_vault_mcp.utils.text import decode_utf8
+
+        with pytest.raises(UnicodeDecodeError):
+            decode_utf8(b"\xff\xfe\x80")
