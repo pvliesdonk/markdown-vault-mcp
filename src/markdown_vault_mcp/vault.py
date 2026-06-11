@@ -271,7 +271,11 @@ class Vault:
         # 1. LinkManager (no deps)
         self._link_mgr = LinkManager(fts=self._fts, source_dir=self._source_dir)
         # 1b. GitQueryManager (git history/diff reads; needs git_strategy + source_dir)
-        self._git_query_mgr = GitQueryManager(self._git_strategy, self._source_dir)
+        self._git_query_mgr = GitQueryManager(
+            self._git_strategy,
+            self._source_dir,
+            attachment_extensions=self._attachment_extensions,
+        )
         # 2. IndexManager (needs fts, tracker — NOT search_mgr)
         #    get_vectors/set_vectors use late-binding lambdas that capture
         #    self._search_mgr; they are only called at runtime after all

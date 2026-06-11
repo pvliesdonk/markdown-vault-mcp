@@ -13,9 +13,13 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING
 
-from markdown_vault_mcp.utils import validate_path
+from markdown_vault_mcp.utils import (
+    effective_attachment_extensions,
+    validate_history_path,
+)
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
     from pathlib import Path
 
     from markdown_vault_mcp.git import GitWriteStrategy
@@ -30,11 +34,24 @@ class GitQueryManager:
             source directory is not inside a git repository (queries then
             return empty results rather than raising).
         source_dir: Absolute path to the vault root directory.
+        attachment_extensions: Allowed attachment file extensions (lowercase,
+            without leading dot, e.g. ``["png", "pdf"]``).  ``None`` uses the
+            default set from :data:`~markdown_vault_mcp.types.DEFAULT_ATTACHMENT_EXTENSIONS`.
+            Passed to :func:`~markdown_vault_mcp.utils.validate_history_path`
+            so that history/diff queries accept attachments as well as notes.
     """
 
-    def __init__(self, git_strategy: GitWriteStrategy | None, source_dir: Path) -> None:
+    def __init__(
+        self,
+        git_strategy: GitWriteStrategy | None,
+        source_dir: Path,
+        attachment_extensions: Sequence[str] | None = None,
+    ) -> None:
         self._git_strategy = git_strategy
         self._source_dir = source_dir
+        self._attachment_extensions = effective_attachment_extensions(
+            attachment_extensions
+        )
 
     def get_history(
         self,
@@ -50,9 +67,10 @@ class GitQueryManager:
         repository.
 
         Args:
-            path: Vault-relative path of the note to filter on (e.g.
-                ``"notes/alpha.md"``).  Must end with ``.md``.  ``None``
-                returns vault-wide history.
+            path: Vault-relative path of the note or attachment to filter on
+                (e.g. ``"notes/alpha.md"`` or ``"assets/x.png"``).  A ``.md``
+                note or a configured attachment (e.g. ``assets/x.png``).
+                ``None`` returns vault-wide history.
             since: ISO 8601 datetime string or git date expression (e.g.
                 ``"1 week ago"``).  Passed as ``--since`` to ``git log``.
                 ``None`` disables the filter.
@@ -75,13 +93,16 @@ class GitQueryManager:
             needing it echoed back.
 
         Raises:
-            ValueError: If *path* is provided but fails path validation.
+            ValueError: If *path* is provided but fails path validation
+                (unknown extension or path traversal).
         """
         if self._git_strategy is None:
             return []
         abs_path: Path | None = None
         if path is not None:
-            abs_path = validate_path(path, self._source_dir)
+            abs_path = validate_history_path(
+                path, self._source_dir, self._attachment_extensions
+            )
         return self._git_strategy.get_file_history(
             self._source_dir, abs_path, since, limit, until=until
         )
@@ -99,8 +120,9 @@ class GitQueryManager:
         Exactly one of *since_sha* or *since_timestamp* must be supplied.
 
         Args:
-            path: Vault-relative path of the note to diff.  Must end with
-                ``.md``.
+            path: Vault-relative path of the note or attachment to diff.
+                A ``.md`` note or a configured attachment (e.g.
+                ``assets/x.png``).  Unknown extensions raise ``ValueError``.
             since_sha: A commit SHA (full or abbreviated, at least 4 hex
                 digits) to diff from.  Mutually exclusive with
                 *since_timestamp*.
@@ -123,14 +145,18 @@ class GitQueryManager:
         Returns:
             A unified diff string when *per_commit* is ``False``, or a list of
             :class:`~markdown_vault_mcp.types.CommitDiff` when *per_commit* is
-            ``True``.  Returns an empty string / empty list when the note has
-            no changes in the given range, or when the vault's source
-            directory is not inside a git repository.
+            ``True``.  For binary attachments (any non-``.md`` path),
+            ``--stat`` summary lines are returned instead of a unified patch.
+            Returns an empty string / empty list when the file has no changes
+            in the given range, or when the vault's source directory is not
+            inside a git repository.
 
         Raises:
             ValueError: If exactly one of *since_sha* / *since_timestamp* is
-                not supplied, *since_sha* contains invalid characters, or the
-                resolved ref is not found in history.
+                not supplied, *since_sha* contains invalid characters, the
+                resolved ref is not found in history, or *path* has an
+                extension that is neither ``.md`` nor a configured attachment
+                type.
         """
         if self._git_strategy is None:
             return [] if per_commit else ""
@@ -140,7 +166,9 @@ class GitQueryManager:
                 "Exactly one of 'since_sha' or 'since_timestamp' must be provided"
             )
 
-        abs_path = validate_path(path, self._source_dir)
+        abs_path = validate_history_path(
+            path, self._source_dir, self._attachment_extensions
+        )
 
         if since_sha is not None and not re.fullmatch(r"[0-9a-f]{4,40}", since_sha):
             raise ValueError(
@@ -154,4 +182,5 @@ class GitQueryManager:
             per_commit=per_commit,
             since_timestamp=since_timestamp,
             limit=limit if per_commit else None,
+            summarize_binary=not path.endswith(".md"),
         )

@@ -24,6 +24,7 @@ class _RecordingStrategy:
     def __init__(self) -> None:
         self.history_calls: list[tuple[Any, ...]] = []
         self.diff_calls: list[tuple[Any, ...]] = []
+        self.diff_kwargs: list[dict[str, Any]] = []
 
     def get_file_history(
         self,
@@ -44,10 +45,13 @@ class _RecordingStrategy:
         per_commit: bool,
         since_timestamp: str | None = None,
         limit: int | None = None,
+        *,
+        summarize_binary: bool = False,
     ) -> str | list[str]:
         self.diff_calls.append(
             (source_dir, abs_path, ref, per_commit, since_timestamp, limit)
         )
+        self.diff_kwargs.append({"summarize_binary": summarize_binary})
         return ["CD"] if per_commit else "DIFF"
 
 
@@ -121,3 +125,72 @@ class TestForwarding:
             "2026-01-01",
             5,
         )
+
+
+class TestAttachmentExtensions:
+    """Verify that GitQueryManager validates paths with attachment_extensions."""
+
+    def test_get_diff_rejects_unknown_extension(self, tmp_path: Path) -> None:
+        """Manager built with png (not exe) must reject .exe paths."""
+        mgr = GitQueryManager(
+            _RecordingStrategy(),  # type: ignore[arg-type]
+            tmp_path,
+            attachment_extensions=["png"],
+        )
+        with pytest.raises(ValueError, match=r"\.md note or a configured attachment"):
+            mgr.get_diff("evil.exe", since_sha="abcd1234")
+
+    def test_get_diff_attachment_passes_summarize_binary_true(
+        self, tmp_path: Path
+    ) -> None:
+        """get_diff on an attachment path must forward summarize_binary=True."""
+        strat = _RecordingStrategy()
+        mgr = GitQueryManager(
+            strat,  # type: ignore[arg-type]
+            tmp_path,
+            attachment_extensions=["png"],
+        )
+        mgr.get_diff("assets/diagram.png", since_sha="abcd1234")
+        assert strat.diff_kwargs[0]["summarize_binary"] is True
+
+    def test_get_diff_md_passes_summarize_binary_false(self, tmp_path: Path) -> None:
+        """get_diff on a .md path must forward summarize_binary=False."""
+        strat = _RecordingStrategy()
+        mgr = GitQueryManager(
+            strat,  # type: ignore[arg-type]
+            tmp_path,
+            attachment_extensions=["png"],
+        )
+        mgr.get_diff("note.md", since_sha="abcd1234")
+        assert strat.diff_kwargs[0]["summarize_binary"] is False
+
+    def test_get_history_attachment_does_not_raise(self, tmp_path: Path) -> None:
+        """get_history on a known attachment extension must succeed."""
+        strat = _RecordingStrategy()
+        mgr = GitQueryManager(
+            strat,  # type: ignore[arg-type]
+            tmp_path,
+            attachment_extensions=["png"],
+        )
+        result = mgr.get_history("assets/photo.png")
+        assert result == ["HIST"]
+
+    def test_get_diff_no_extensions_rejects_attachment(self, tmp_path: Path) -> None:
+        """Manager with empty attachment_extensions must reject any non-.md path."""
+        mgr = GitQueryManager(
+            _RecordingStrategy(),  # type: ignore[arg-type]
+            tmp_path,
+            attachment_extensions=[],
+        )
+        with pytest.raises(ValueError, match=r"\.md note or a configured attachment"):
+            mgr.get_diff("image.png", since_sha="abcd1234")
+
+    def test_get_history_no_extensions_rejects_attachment(self, tmp_path: Path) -> None:
+        """get_history with empty attachment_extensions must reject non-.md path."""
+        mgr = GitQueryManager(
+            _RecordingStrategy(),  # type: ignore[arg-type]
+            tmp_path,
+            attachment_extensions=[],
+        )
+        with pytest.raises(ValueError, match=r"\.md note or a configured attachment"):
+            mgr.get_history("image.png")
