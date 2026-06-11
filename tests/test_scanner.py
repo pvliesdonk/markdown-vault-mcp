@@ -616,3 +616,23 @@ def test_unsplittable_token_emitted_intact_over_budget() -> None:
     # Every other chunk respects the budget; only the giant token may exceed.
     for c in chunks:
         assert c.content == giant or not chunker._over_budget(c.content)
+
+
+# ---------------------------------------------------------------------------
+# UTF-8 BOM normalization (#673)
+# ---------------------------------------------------------------------------
+
+
+def test_parse_note_strips_bom_so_frontmatter_parses(tmp_path: Path) -> None:
+    """A UTF-8 BOM before the frontmatter fence must not prevent parsing (#673)."""
+    p = tmp_path / "bom.md"
+    p.write_bytes(b"\xef\xbb\xbf---\ntitle: BOM Note\ntags: [x]\n---\n\n# Body\n")
+
+    note = parse_note(p, tmp_path)
+
+    # BOM must not swallow the frontmatter — title and tags must be parsed.
+    assert note.frontmatter.get("title") == "BOM Note"
+    assert note.frontmatter.get("tags") == ["x"]
+    # The YAML block must not appear in any body chunk.
+    all_body = "".join(c.content for c in note.chunks)
+    assert "title:" not in all_body

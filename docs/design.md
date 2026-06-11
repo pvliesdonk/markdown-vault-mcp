@@ -1653,6 +1653,15 @@ matched against relative paths from `source_dir` using `pathlib.Path.match()`.
 a `WARNING` log message. `scan_directory()` is fault-tolerant; a single bad
 file does not abort the scan.
 
+**UTF-8 BOM normalization (#673).** All vault-markdown reads strip a leading
+UTF-8 BOM via `utils.text.read_text_utf8` (path → str) and `decode_utf8`
+(bytes → str), both using the `utf-8-sig` codec. The scanner hashes the raw
+on-disk bytes (BOM included) but decodes the text without the BOM, so a
+BOM-prefixed file's frontmatter parses and is indexed correctly. Writes are
+plain `utf-8` (no BOM), so the vault normalizes to no-BOM: a BOM-prefixed file
+loses its BOM the next time it is rewritten. A genuinely non-UTF-8 file still
+raises `UnicodeDecodeError`.
+
 ### `fts_index.py` -- SQLite FTS5
 
 ```python

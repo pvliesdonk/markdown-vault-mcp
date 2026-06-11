@@ -297,3 +297,41 @@ def test_edit_rename_delete_fire_callbacks_while_holding_file_write_lock(
     assert not lock_free_during_callback.is_set(), (
         "delete callback fired outside _file_write_lock"
     )
+
+
+# ---------------------------------------------------------------------------
+# UTF-8 BOM normalization (#673)
+# ---------------------------------------------------------------------------
+
+
+def test_read_and_rewrite_normalizes_bom(tmp_path: Path) -> None:
+    """read() returns BOM-free content; a rewrite drops the BOM on disk (#673)."""
+    src = tmp_path / "vault"
+    src.mkdir()
+    (src / "note.md").write_bytes(b"\xef\xbb\xbf# Title\n\noriginal body\n")
+
+    fts = FTSIndex(db_path=":memory:")
+    chunker = HeadingChunker()
+    mgr = DocumentManager(
+        fts=fts,
+        source_dir=src,
+        write_lock=threading.RLock(),
+        chunk_strategy=chunker,
+        read_only=False,
+    )
+
+    # Seed FTS so read() can locate the document.
+    for note in scan_directory(src, chunk_strategy=chunker):
+        fts.upsert_note(note)
+
+    nc = mgr.read("note.md")
+    assert nc is not None
+    # BOM must be stripped on read — content must not start with the BOM char.
+    assert not nc.content.startswith("﻿"), "read() returned BOM-prefixed content"
+    assert nc.content.startswith("# Title")
+
+    # Rewrite via edit(); the on-disk file must also lose the BOM.
+    mgr.edit("note.md", old_text="original body", new_text="new body")
+    raw = (src / "note.md").read_bytes()
+    assert not raw.startswith(b"\xef\xbb\xbf"), "rewritten file still has BOM"
+    assert b"new body" in raw
