@@ -873,6 +873,12 @@ class GitWriteStrategy:
         round-trip; that is acceptable for the interactive ``git_sync``
         tool and mirrors what :meth:`sync_once` already does.
 
+        Before the merge it self-quiesces via :meth:`_quiesce_writes`: new
+        writes are paused and the deferred-commit queue is drained (best-effort,
+        time-bounded) so a write that landed just before the pull is committed
+        first and the merge runs on a clean tree (#571). Skipped under
+        ``dry_run`` (which only fetches and never touches the working tree).
+
         On ``ff-only`` failure (divergent history) the implementation
         falls through to the same rebase + Syncthing-style sibling write
         path used by :meth:`sync_once` (see :meth:`_resolve_rebase_conflicts`
@@ -1326,6 +1332,11 @@ class GitWriteStrategy:
         Tries fast-forward first; falls back to rebase when the local
         and upstream branches have diverged (e.g. Obsidian and MCP both
         committed on different files).  Aborts on true conflicts.
+
+        Self-quiesces before the merge via :meth:`_quiesce_writes` (pause new
+        writes + drain the deferred-commit queue, best-effort/time-bounded) so a
+        write racing the periodic pull is committed first and the merge runs on
+        a clean tree (#571).
         """
         if self._closed or not self._enable_pull:
             return False
@@ -1537,6 +1548,14 @@ class GitWriteStrategy:
         case is the pre-fix dirty-tree churn for the still-pending commit. No-op
         when ``skip`` is set (e.g. a dry-run pull) or when no quiescer was wired
         (standalone / tests).
+
+        DEADLOCK INVARIANT: the drain runs *before* the caller acquires
+        ``self._lock`` (callers use ``with self._quiesce_writes(...), self._lock:``,
+        which enters this context manager first). The drain blocks on the
+        dispatcher worker, whose commit path acquires ``self._lock`` — so the
+        caller must NOT already hold ``self._lock`` here, and the write callback
+        must NEVER acquire the file-write lock that ``pause_writes`` holds.
+        Reverse either and a pull with a pending commit deadlocks.
         """
         if skip or self._pause_writes is None or self._drain_writes is None:
             yield
