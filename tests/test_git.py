@@ -406,45 +406,62 @@ class TestGitWriteStrategyClass:
         strategy.close()
 
     def test_multiple_writes_single_push(
-        self, git_repo_with_remote: tuple[Path, Path]
+        self,
+        git_repo_with_remote: tuple[Path, Path],
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Multiple rapid writes result in a single deferred push."""
+        """Multiple rapid writes coalesce into a single deferred push (#430).
+
+        Verified deterministically rather than by racing the debounce timer: a
+        long ``push_delay_s`` guarantees the timer never fires during the
+        synchronous body, the pending state is asserted directly, and the push
+        is then forced via ``flush()`` while counting the underlying ``_push``
+        calls. (The earlier "assert not-yet-in-the-bare-log right after the
+        writes" approach raced the 0.3 s timer and was flaky on Python 3.14.)
+        """
+        import markdown_vault_mcp.git.strategy as git_strategy
 
         work, bare = git_repo_with_remote
 
-        strategy = GitWriteStrategy(token=None, push_delay_s=0.3)
+        push_calls: list[tuple[object, ...]] = []
+        real_push = git_strategy._push
 
-        for i in range(5):
-            md_file = work / f"note_{i}.md"
-            md_file.write_text(f"# Note {i}\n")
-            strategy(md_file, f"# Note {i}\n", "write")
+        def counting_push(*args: object, **kwargs: object) -> None:
+            push_calls.append(args)
+            real_push(*args, **kwargs)  # type: ignore[arg-type]
 
-        # Not pushed yet.
-        result = subprocess.run(
-            ["git", "-C", str(bare), "log", "--oneline"],
-            capture_output=True,
-            text=True,
-        )
-        assert "note_4.md" not in result.stdout
+        monkeypatch.setattr(git_strategy, "_push", counting_push)
 
-        # Poll until push lands (max 3s).
-        for _ in range(30):
-            time.sleep(0.1)
+        # 30 s delay: the idle timer cannot fire during the writes below, so
+        # there is no timer race to lose.
+        strategy = GitWriteStrategy(token=None, push_delay_s=30.0)
+        try:
+            for i in range(5):
+                md_file = work / f"note_{i}.md"
+                md_file.write_text(f"# Note {i}\n")
+                strategy(md_file, f"# Note {i}\n", "write")
+
+            # The 5 rapid writes coalesced into exactly one pending push (each
+            # write cancelled + rescheduled the single idle timer), and nothing
+            # has been pushed yet — deterministic, not timer-dependent.
+            assert strategy._push_pending is True
+            assert strategy._timer is not None
+            assert push_calls == []
+
+            # Force the single deferred push.
+            strategy.flush()
+
+            # One push call delivered all 5 commits — coalesced, not 5 pushes.
+            assert len(push_calls) == 1
             result = subprocess.run(
                 ["git", "-C", str(bare), "log", "--oneline"],
                 capture_output=True,
                 text=True,
             )
-            if "note_4.md" in result.stdout:
-                break
-        else:
-            pytest.fail("Deferred push did not fire within 3 seconds")
-
-        # All 5 commits pushed in a single push.
-        for i in range(5):
-            assert f"write: note_{i}.md" in result.stdout
-
-        strategy.close()
+            for i in range(5):
+                assert f"write: note_{i}.md" in result.stdout
+        finally:
+            strategy.close()
 
     def test_push_with_token_to_bare_remote(
         self, git_repo_with_remote: tuple[Path, Path]
