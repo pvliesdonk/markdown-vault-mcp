@@ -767,7 +767,10 @@ class GitWriteStrategy:
         1. Write the MCP version as ``<stem>.conflict-mcp-<timestamp><ext>``
            with ``conflict_with`` and ``conflict_date`` frontmatter.
         2. Merge ``conflict_with`` and ``conflict_date`` into the original
-           file's existing frontmatter.
+           file's existing frontmatter.  If the original cannot be read or
+           rewritten (removed/inaccessible after the existence check, or not
+           valid UTF-8), its update is skipped with a logged warning — the
+           conflict sibling is still written and counted.
 
         Returns:
             List of conflict file relative paths that were written and

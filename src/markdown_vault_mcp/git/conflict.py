@@ -336,7 +336,10 @@ def write_conflict_files(
     1. Write the MCP version as ``<stem>.conflict-mcp-<timestamp><ext>``
        with ``conflict_with`` and ``conflict_date`` frontmatter.
     2. Merge ``conflict_with`` and ``conflict_date`` into the original
-       file's existing frontmatter.
+       file's existing frontmatter.  If the original cannot be read or
+       rewritten (removed/inaccessible after the existence check, or not
+       valid UTF-8), its update is skipped with a logged warning — the
+       conflict sibling is still written and counted.
 
     Returns:
         List of conflict file relative paths that were written and
@@ -380,17 +383,39 @@ def write_conflict_files(
         original_abs = git_root / rel_path
         if original_abs.exists():
             try:
-                orig_post = frontmatter.loads(original_abs.read_text(encoding="utf-8"))
-            except Exception:
+                # Read once and reuse this content for the parse-failure
+                # fallback below (the prior version re-read the file there). The
+                # read_text and write_text both sit inside this try, so if the
+                # original was removed/became inaccessible after the exists()
+                # check (TOCTOU) or is not valid UTF-8, the error is caught below
+                # and skips just this original's update instead of crashing the
+                # whole pull.
+                content = original_abs.read_text(encoding="utf-8")
+                try:
+                    orig_post = frontmatter.loads(content)
+                except Exception:
+                    logger.warning(
+                        "Git pull: failed to parse frontmatter for original file %s; treating as plain content",
+                        rel_path,
+                        exc_info=True,
+                    )
+                    orig_post = frontmatter.Post(content)
+                orig_post.metadata["conflict_with"] = conflict_rel
+                orig_post.metadata["conflict_date"] = conflict_date
+                original_abs.write_text(frontmatter.dumps(orig_post), encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                # OSError: removed/inaccessible after exists() (TOCTOU), permission,
+                # or a write-back failure. UnicodeDecodeError (a ValueError, not an
+                # OSError): the original is not valid UTF-8, so we cannot read it as
+                # text to merge frontmatter. Either way, skip just this original's
+                # update; the conflict sibling is already written.
                 logger.warning(
-                    "Git pull: failed to parse frontmatter for original file %s; treating as plain content",
+                    "Git pull: could not read or update original file %s with "
+                    "conflict frontmatter (inaccessible, removed, or not UTF-8); "
+                    "skipping its update",
                     rel_path,
                     exc_info=True,
                 )
-                orig_post = frontmatter.Post(original_abs.read_text(encoding="utf-8"))
-            orig_post.metadata["conflict_with"] = conflict_rel
-            orig_post.metadata["conflict_date"] = conflict_date
-            original_abs.write_text(frontmatter.dumps(orig_post), encoding="utf-8")
 
         written.append(conflict_rel)
 

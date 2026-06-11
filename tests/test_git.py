@@ -2130,6 +2130,106 @@ class TestGitSyncOnce:
         warnings = [r for r in caplog.records if "frontmatter" in r.message]
         assert len(warnings) >= 1
 
+    def test_write_conflict_files_reads_original_once(
+        self,
+        git_repo: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The original file is read exactly once when updating its frontmatter,
+        even if the parse fails — no double read_text (#662)."""
+        from pathlib import Path
+
+        strategy = GitWriteStrategy(token=None, push_delay_s=0)
+        (git_repo / "note.md").write_text("# original body\n")
+        saved = [("note.md", "# mcp body\n")]
+
+        reads = {"n": 0}
+        real_read_text = Path.read_text
+
+        def counting_read_text(self_path: Path, *a: object, **k: object) -> str:
+            if self_path.name == "note.md":
+                reads["n"] += 1
+            return real_read_text(self_path, *a, **k)  # type: ignore[arg-type]
+
+        def _raise(*_a: object, **_k: object) -> object:
+            raise ValueError("parse error")
+
+        monkeypatch.setattr(Path, "read_text", counting_read_text)
+        # Force the original-file frontmatter parse to fail so the fallback runs;
+        # the old code re-read the file in that branch.
+        monkeypatch.setattr("markdown_vault_mcp.git.conflict.frontmatter.loads", _raise)
+
+        written = strategy._write_conflict_files(git_repo, saved, env=None)
+
+        assert len(written) == 1
+        assert reads["n"] == 1, f"original file read {reads['n']} times, expected 1"
+
+    def test_write_conflict_files_skips_original_on_read_error(
+        self,
+        git_repo: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """If the original file becomes unreadable (TOCTOU delete / permission)
+        after the exists() check, the update is skipped with a WARNING rather
+        than crashing, and the conflict sibling is still written (#662)."""
+        from pathlib import Path
+
+        strategy = GitWriteStrategy(token=None, push_delay_s=0)
+        (git_repo / "note.md").write_text("# original body\n")
+        saved = [("note.md", "# mcp body\n")]
+
+        # A narrow read_text substitution (gated on the original's name, falling
+        # through otherwise) to exercise the observable skip-on-read-error
+        # behaviour — not an attempt to reproduce the TOCTOU race itself.
+        real_read_text = Path.read_text
+
+        def failing_read_text(self_path: Path, *a: object, **k: object) -> str:
+            if self_path.name == "note.md":
+                raise OSError("simulated read failure")
+            return real_read_text(self_path, *a, **k)  # type: ignore[arg-type]
+
+        monkeypatch.setattr(Path, "read_text", failing_read_text)
+
+        with caplog.at_level(logging.WARNING, logger="markdown_vault_mcp.git"):
+            written = strategy._write_conflict_files(git_repo, saved, env=None)
+
+        # No crash; the conflict sibling was still written.
+        assert len(written) == 1
+        assert (git_repo / written[0]).exists()
+        # The original-file update was skipped with a warning naming the file.
+        assert any(
+            "note.md" in r.message and "skip" in r.message.lower()
+            for r in caplog.records
+        ), [r.message for r in caplog.records]
+
+    def test_write_conflict_files_skips_non_utf8_original(
+        self,
+        git_repo: Path,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """A non-UTF-8 original is skipped, not crashed on (#662).
+
+        The original is read as UTF-8; non-UTF-8 bytes raise ``UnicodeDecodeError``
+        (a ``ValueError``, NOT an ``OSError``), so the guard must catch it too —
+        otherwise it bypasses the handler and crashes the whole pull. Uses a real
+        non-UTF-8 file (no mocking), exercising the actual decode path.
+        """
+        strategy = GitWriteStrategy(token=None, push_delay_s=0)
+        (git_repo / "note.md").write_bytes(b"\xff\xfe not valid utf-8 \x80\n")
+        saved = [("note.md", "# mcp body\n")]
+
+        with caplog.at_level(logging.WARNING, logger="markdown_vault_mcp.git"):
+            written = strategy._write_conflict_files(git_repo, saved, env=None)
+
+        # No crash; the conflict sibling was still written.
+        assert len(written) == 1
+        assert (git_repo / written[0]).exists()
+        assert any(
+            "note.md" in r.message and "skip" in r.message.lower()
+            for r in caplog.records
+        ), [r.message for r in caplog.records]
+
 
 class TestRebaseInProgress:
     """Tests for the _rebase_in_progress helper (refs #466)."""
