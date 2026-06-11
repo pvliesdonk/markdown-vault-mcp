@@ -1660,7 +1660,10 @@ on-disk bytes (BOM included) but decodes the text without the BOM, so a
 BOM-prefixed file's frontmatter parses and is indexed correctly. Writes are
 plain `utf-8` (no BOM), so the vault normalizes to no-BOM: a BOM-prefixed file
 loses its BOM the next time it is rewritten. A genuinely non-UTF-8 file still
-raises `UnicodeDecodeError`.
+raises `UnicodeDecodeError`. The same `decode_utf8` is applied on **ingress**
+(#681) — the `fetch` tool and the transfer-upload route decode externally
+supplied markdown bodies through it, so a fetched/uploaded file is written
+BOM-free rather than carrying its BOM until the next rewrite.
 
 ### `fts_index.py` -- SQLite FTS5
 

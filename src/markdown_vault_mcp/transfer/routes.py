@@ -14,6 +14,7 @@ from starlette.background import BackgroundTask
 from starlette.responses import JSONResponse, Response
 
 from markdown_vault_mcp._server_deps import get_vault_singleton
+from markdown_vault_mcp.utils.text import decode_utf8
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -152,7 +153,7 @@ async def _handle_upload(
             await asyncio.to_thread(vault.writer.write_attachment, record.path, body)
         else:
             try:
-                text = body.decode("utf-8")
+                text = decode_utf8(body)  # strips a leading BOM (#681)
             except UnicodeDecodeError:
                 store.release(token)
                 return Response(status_code=415)

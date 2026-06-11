@@ -23,6 +23,7 @@ from fastmcp.tools import ToolResult
 
 from markdown_vault_mcp.exceptions import EditConflictError
 from markdown_vault_mcp.git import GitWriteStrategy, PullResult, PushResult
+from markdown_vault_mcp.utils.text import decode_utf8
 from markdown_vault_mcp.vault import Vault
 
 if TYPE_CHECKING:
@@ -2333,7 +2334,7 @@ def register_tools(mcp: FastMCP) -> None:
         # Dispatch to the appropriate write method.
         if is_markdown:
             try:
-                text = raw_bytes.decode("utf-8")
+                text = decode_utf8(raw_bytes)  # strips a leading BOM (#681)
             except UnicodeDecodeError as exc:
                 ct = content_type or "unknown"
                 raise ValueError(

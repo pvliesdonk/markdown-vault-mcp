@@ -1022,6 +1022,35 @@ class TestFetchTool:
         )
         assert "# Fetched" in written
 
+    async def test_fetch_markdown_note_strips_bom(
+        self, _mcp_env_writable_with_attachments: Path
+    ) -> None:
+        """A fetched markdown body with a leading UTF-8 BOM is normalized on write (#681).
+
+        Asserts the on-disk bytes: the #673 read path already strips a BOM, so
+        only inspecting disk proves the *ingress* write dropped it.
+        """
+        from unittest.mock import patch
+
+        import httpx
+
+        body = b"\xef\xbb\xbf# Fetched\n\nContent from remote.\n"
+        mock_client = self._mock_httpx_stream(
+            body, {"content-type": "text/markdown; charset=utf-8"}
+        )
+
+        with patch.object(httpx, "AsyncClient", return_value=mock_client):
+            server = make_server()
+            async with Client(server) as client:
+                result = await client.call_tool(
+                    "fetch",
+                    {"url": "https://example.com/bom.md", "path": "fetched-bom.md"},
+                )
+        assert result.data["path"] == "fetched-bom.md"
+        on_disk = (_mcp_env_writable_with_attachments / "fetched-bom.md").read_bytes()
+        assert not on_disk.startswith(b"\xef\xbb\xbf"), "ingested BOM not stripped"
+        assert on_disk.startswith(b"# Fetched")
+
     async def test_fetch_attachment(
         self, _mcp_env_writable_with_attachments: Path
     ) -> None:

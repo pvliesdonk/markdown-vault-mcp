@@ -125,6 +125,24 @@ def test_upload_note_commits_201(vault):
     assert vault.reader.read("out.md") is not None
 
 
+def test_upload_note_strips_bom(vault, tmp_path):
+    """An uploaded note body with a leading UTF-8 BOM is normalized away on write (#681).
+
+    Asserts the on-disk bytes (not the read-back content): the #673 read path
+    already strips a BOM, so only inspecting disk proves the *ingress* write
+    dropped it.
+    """
+    store = TransferStore()
+    rec = store.create("upload", "bom.md", False, 60, max_upload_bytes=1000)
+    resp = _client(store, vault).post(
+        f"/transfer/{rec.token}", content=b"\xef\xbb\xbf# New\n\nx\n"
+    )
+    assert resp.status_code == 201
+    on_disk = (tmp_path / "vault" / "bom.md").read_bytes()
+    assert not on_disk.startswith(b"\xef\xbb\xbf"), "ingested BOM not stripped on write"
+    assert on_disk.startswith(b"# New")
+
+
 def test_upload_attachment_via_put_alias(vault):
     """PUT is accepted as an upload alias and writes an attachment."""
     store = TransferStore()
