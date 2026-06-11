@@ -598,7 +598,11 @@ The contract is:
   `.conflict-mcp-*` sibling on the eventual reconcile). The write callback now
   fires *inside* `_file_write_lock`, so once the puller holds that lock no
   landed write can still be unqueued; `WriteCallbackDispatcher.drain()` then
-  blocks until the queue is empty before the merge takes the git lock.
+  blocks until the queue is empty before the merge takes the git lock. The
+  drain is **best-effort and bounded**: if it does not finish within the
+  timeout (or the dispatcher worker has died), the pull logs a WARNING and
+  proceeds anyway, accepting the pre-fix dirty-tree behavior for the
+  still-pending commit rather than blocking the pull indefinitely.
 - The `on_write` callback fires in a **background thread** — it must not
   itself call write methods on the same Vault instance (deadlock).
 - Callbacks must not raise; exceptions are logged and swallowed.

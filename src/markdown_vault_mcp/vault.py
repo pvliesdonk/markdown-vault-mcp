@@ -459,15 +459,12 @@ class Vault:
         Thin public facade over :meth:`GitWriteStrategy.force_pull` used by
         the GitHub webhook handler so the strategy stays an implementation detail.
 
-        Acquires :meth:`pause_writes` for the duration of the pull so that new
-        MCP writes cannot write to disk while git is modifying the working tree
-        (``git merge --ff-only`` or ``git rebase`` overwrites files in-place).
-        This prevents the race where a write hits disk during the merge and
-        the git checkout then silently discards it.
-
-        Note: writes that have *already* completed (file on disk, callback
-        queued but not yet processed by the background worker) are still subject
-        to a narrower race — see issue #571 for the full fix.
+        The strategy self-quiesces around its own merge: it pauses new writes
+        (via the :meth:`pause_writes` callable wired in :meth:`__init__` through
+        ``set_write_quiescer``) and drains the deferred-commit queue before the
+        merge, so a write that landed just before the pull is committed first
+        and the merge runs on a clean tree (#571). This facade therefore no
+        longer wraps ``pause_writes`` itself.
 
         Returns:
             :class:`~markdown_vault_mcp.git.PullResult` from the strategy, or

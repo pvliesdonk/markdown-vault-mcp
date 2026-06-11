@@ -1545,8 +1545,11 @@ class GitWriteStrategy:
             if not self._drain_writes():
                 logger.warning(
                     "Git pull: write-callback queue did not fully drain before "
-                    "the merge; proceeding anyway (a still-pending commit may "
-                    "cause the pre-fix dirty-tree churn)."
+                    "the merge; proceeding anyway. A still-pending commit may "
+                    "cause the pre-fix dirty-tree churn for this one merge. If "
+                    "this recurs on every pull, the dispatcher worker may be "
+                    "dead (see the prior 'dead worker' ERROR) and pending "
+                    "commits will never land."
                 )
             yield
 

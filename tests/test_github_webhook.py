@@ -423,7 +423,8 @@ def test_vault_wires_pause_writes_into_git_strategy(tmp_path: Path) -> None:
     mock_strategy.set_write_quiescer.assert_called_once()
     kwargs = mock_strategy.set_write_quiescer.call_args.kwargs
     assert kwargs["pause_writes"] == col.pause_writes
-    assert callable(kwargs["drain_writes"])
+    # Wired to the dispatcher's drain specifically (not just any callable).
+    assert kwargs["drain_writes"] == col._write_callback.drain
 
     # The facade delegates straight to the strategy (no Vault-level pause wrap).
     pull_result = PullResult(

@@ -4370,3 +4370,32 @@ class TestDrainBeforePull:
         finally:
             dispatcher.close()
             strategy.close()
+
+    def test_sync_once_quiesces_dirty_write_upstream_touched_same_file(
+        self, git_repo_with_remote: tuple[Path, Path]
+    ) -> None:
+        """The PERIODIC pull path (sync_once) also quiesces (#571): a dirty write
+        racing the periodic sync is committed first, so the same-file divergence
+        rebases with a .conflict-mcp sibling instead of aborting on the dirty tree
+        (pre-fix: sync_once would return False with HEAD unchanged)."""
+        import contextlib
+
+        work, bare = git_repo_with_remote
+        self._advance_upstream(bare, work, "local.md", "# upstream version\n")
+        (work / "local.md").write_text("# local mcp write\n")  # dirty (uncommitted)
+
+        strategy = GitWriteStrategy(
+            token=None, enable_push=False, push_delay_s=0, repo_path=work
+        )
+        strategy.set_write_quiescer(
+            pause_writes=contextlib.nullcontext,
+            drain_writes=lambda: self._commit_dirty(work),
+        )
+        try:
+            advanced = strategy.sync_once(work)
+            assert advanced is True  # HEAD moved (rebased) — not a dirty-tree abort
+            siblings = list(work.glob("local.conflict-mcp-*.md"))
+            assert siblings, "MCP write was not preserved as a conflict sibling"
+            assert any("# local mcp write" in s.read_text() for s in siblings)
+        finally:
+            strategy.close()

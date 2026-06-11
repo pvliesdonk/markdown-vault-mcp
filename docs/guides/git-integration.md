@@ -80,12 +80,16 @@ dry-run push always returns `applied=false` with
 
 !!! note "Writes landing during a pull"
     A write whose deferred git commit has not yet run when a pull starts is
-    **not** lost and does not abort the pull. Before every pull (periodic or
-    `git_sync`), the server pauses new writes and drains the deferred-commit
-    queue, so the just-written file is committed first and the merge runs on a
-    clean tree ([#571](https://github.com/pvliesdonk/markdown-vault-mcp/issues/571)).
-    If that write and the remote touched the same file, it flows through the
-    Syncthing-style sibling resolution above rather than failing.
+    never lost. Before every pull (periodic or `git_sync`), the server pauses
+    new writes and drains the deferred-commit queue, so in the normal case the
+    just-written file is committed first and the merge runs on a clean tree
+    ([#571](https://github.com/pvliesdonk/markdown-vault-mcp/issues/571)). If
+    that write and the remote touched the same file, it flows through the
+    Syncthing-style sibling resolution above rather than failing. The drain is
+    best-effort and time-bounded: if it cannot finish in time, the pull logs a
+    warning and proceeds anyway — the write is still safely on disk and is
+    committed on the next opportunity, at worst reverting to the pre-#571
+    behavior (a non-fast-forward push that the next reconcile resolves).
 
 The full enumeration of `pull.reason` and `push.reason` values lives in
 the [`git_sync` tool reference](../tools/index.md#git_sync).
