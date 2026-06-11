@@ -473,7 +473,6 @@ def test_lifespan_cold_start_with_embeddings_submits_both_jobs(
     gate is needed at the lifespan layer.
     """
     import logging
-    import time as time_mod
 
     from markdown_vault_mcp.server import make_server
     from tests.conftest import MockEmbeddingProvider
@@ -492,9 +491,19 @@ def test_lifespan_cold_start_with_embeddings_submits_both_jobs(
 
     original_to_kwargs = config_mod.VaultConfig.to_vault_kwargs
 
+    # Gate the embeddings build on the writer thread so it provably cannot
+    # complete during the handshake — the deterministic replacement for the
+    # old wall-clock `< 2.0s` assertion (#674).
+    release = threading.Event()
+
+    class _GatedProvider(MockEmbeddingProvider):
+        def embed(self, texts: list[str]) -> list[list[float]]:
+            assert release.wait(10), "embed gate was never released — test bug"
+            return super().embed(texts)
+
     def patched_to_kwargs(self):  # type: ignore[no-untyped-def]
         kw = original_to_kwargs(self)
-        kw["embedding_provider"] = MockEmbeddingProvider()
+        kw["embedding_provider"] = _GatedProvider()
         if kw.get("embeddings_path") is None:
             kw["embeddings_path"] = tmp_path / "vectors"
         return kw
@@ -504,19 +513,44 @@ def test_lifespan_cold_start_with_embeddings_submits_both_jobs(
     server = make_server()
     caplog.set_level(logging.INFO)
 
-    async def _run() -> float:
-        start = time_mod.perf_counter()
-        async with Client(server):
-            handshake_elapsed = time_mod.perf_counter() - start
-            return handshake_elapsed
+    from markdown_vault_mcp._server_deps import get_vault_singleton
 
-    handshake_elapsed = asyncio.run(_run())
-    # The lifespan must NOT block on the index/embeddings build.
-    assert handshake_elapsed < 2.0, (
-        f"lifespan handshake took {handshake_elapsed:.3f}s; expected < 2.0s"
+    async def _run() -> tuple[bool, list[str]]:
+        async with Client(server):
+            try:
+                # Handshake completed. `release` is set in the finally below
+                # (still inside the context, before shutdown), and
+                # BuildEmbeddings is gated on it, so a non-blocking lifespan
+                # reaches here with the writer still non-drained — the
+                # deterministic signal. A regression that awaited the build
+                # would instead block in startup on the gate and never reach
+                # here; embed() would time out (~10 s), the build job would
+                # error out and be swallowed, and only then would the handshake
+                # complete — observing a now-drained writer and failing the
+                # assertion below (slowly, but it does fail).
+                drained_at_handshake = get_vault_singleton().index.is_drained()
+                captured = [record.message for record in caplog.records]
+            finally:
+                # Always unblock the writer — even if the read above raises — so
+                # lifespan shutdown can drain. Setting it here (inside the
+                # context) rather than in a finally *outside* the `async with`
+                # is deliberate: shutdown drains on context exit, so a release
+                # deferred past exit would stall teardown on the gate for the
+                # full ~10 s timeout on every successful run.
+                release.set()
+            return drained_at_handshake, captured
+
+    drained_at_handshake, messages = asyncio.run(_run())
+
+    # Deterministic proof the lifespan did NOT await the build (#674, replacing
+    # the flaky wall-clock `< 2.0s` assertion): with embeddings gated, a
+    # non-blocking lifespan reaches the handshake while the writer is still
+    # non-drained.
+    assert drained_at_handshake is False, (
+        "lifespan appears to have blocked on the build: the writer drained "
+        "before the handshake completed despite the embeddings build being gated"
     )
-    # Both submission log entries must be present.
-    messages = [record.message for record in caplog.records]
+    # Both build jobs were submitted during startup.
     assert any("Submitted BuildIndex job" in m for m in messages), (
         f"expected 'Submitted BuildIndex job' log; got: {messages}"
     )
