@@ -14,6 +14,7 @@ import yaml
 from markdown_vault_mcp.hashing import compute_etag
 from markdown_vault_mcp.types import Chunk, LinkInfo, ParsedNote
 from markdown_vault_mcp.utils.fs import GLOB_SYMLINK_KWARGS
+from markdown_vault_mcp.utils.text import decode_utf8
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -848,8 +849,10 @@ def parse_note(
     content_hash = compute_etag(raw_bytes)
     modified_at = path.stat().st_mtime
 
-    # May raise UnicodeDecodeError — propagated to caller.
-    text = raw_bytes.decode("utf-8")
+    # Decode for frontmatter parsing, stripping a leading BOM (#673). The hash
+    # above is over the raw on-disk bytes (BOM included). May raise
+    # UnicodeDecodeError — propagated to caller.
+    text = decode_utf8(raw_bytes)
 
     # python-frontmatter strips the YAML block and returns the body separately.
     post = frontmatter.loads(text)

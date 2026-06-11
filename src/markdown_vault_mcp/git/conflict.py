@@ -23,6 +23,7 @@ from markdown_vault_mcp.git.types import (
     PULL_REASON_CONFLICT_RESOLUTION_FAILED,
     PullResult,
 )
+from markdown_vault_mcp.utils.text import read_text_utf8
 
 if TYPE_CHECKING:
     import collections.abc
@@ -394,7 +395,7 @@ def write_conflict_files(
                 # check (TOCTOU) or is not valid UTF-8, the error is caught below
                 # and skips just this original's update instead of crashing the
                 # whole pull.
-                content = original_abs.read_text(encoding="utf-8")
+                content = read_text_utf8(original_abs)
                 try:
                     orig_post = frontmatter.loads(content)
                 except Exception:

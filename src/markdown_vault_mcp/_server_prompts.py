@@ -19,6 +19,7 @@ import frontmatter
 from fastmcp import FastMCP
 
 from ._icons import _TOOL_ICONS
+from .utils.text import read_text_utf8
 
 _BUILTIN_PROMPTS_DIR = importlib.resources.files("markdown_vault_mcp").joinpath(
     "static/prompts"
@@ -64,7 +65,7 @@ def _load_user_prompt_defs(prompts_folder: str | None) -> dict[str, dict[str, An
     for md_file in sorted(folder.glob("*.md")):
         name = md_file.stem
         try:
-            post = frontmatter.loads(md_file.read_text(encoding="utf-8"))
+            post = frontmatter.loads(read_text_utf8(md_file))
         except Exception:
             logger.warning(
                 "Failed to parse user prompt file %r — skipping",
@@ -191,7 +192,12 @@ def _register_one_user_prompt(mcp: FastMCP, name: str, defn: dict[str, Any]) -> 
 def _load_builtin_prompt(name: str) -> dict[str, Any] | None:
     """Load a built-in prompt definition from ``static/prompts/{name}.md``."""
     try:
-        text = _BUILTIN_PROMPTS_DIR.joinpath(f"{name}.md").read_text(encoding="utf-8")
+        # Built-in prompts are importlib.resources Traversables (not Path), so
+        # read directly with the same BOM-stripping codec rather than the
+        # Path-typed read_text_utf8 helper (#673).
+        text = _BUILTIN_PROMPTS_DIR.joinpath(f"{name}.md").read_text(
+            encoding="utf-8-sig"
+        )
     except FileNotFoundError:
         logger.warning("Built-in prompt file %s.md not found — skipping", name)
         return None

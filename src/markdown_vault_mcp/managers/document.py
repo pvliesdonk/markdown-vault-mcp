@@ -57,6 +57,9 @@ from markdown_vault_mcp.utils.text import (
 from markdown_vault_mcp.utils.text import (
     normalize_text as _normalize_text,
 )
+from markdown_vault_mcp.utils.text import (
+    read_text_utf8 as _read_text_utf8,
+)
 
 if TYPE_CHECKING:
     import threading
@@ -292,7 +295,7 @@ class DocumentManager:
             logger.warning("read(%s): could not parse file — %s", path, exc)
             return None
 
-        raw_content = abs_path.read_text(encoding="utf-8")
+        raw_content = _read_text_utf8(abs_path)
         etag = note.content_hash
         folder = str(Path(path).parent)
         if folder == ".":
@@ -694,7 +697,7 @@ class DocumentManager:
                         path, expected=if_match, actual=current_hash
                     )
 
-            file_content = abs_path.read_text(encoding="utf-8")
+            file_content = _read_text_utf8(abs_path)
 
             if has_lines:
                 assert line_start is not None and line_end is not None
@@ -973,7 +976,7 @@ class DocumentManager:
 
                 note = parse_note(new_abs, self._source_dir, self._chunk_strategy)
 
-                callback_content = new_abs.read_text(encoding="utf-8")
+                callback_content = _read_text_utf8(new_abs)
 
                 backlink_callbacks, backlink_paths = self._update_backlinks(
                     old_path, new_path, backlinks
@@ -1069,7 +1072,7 @@ class DocumentManager:
                         source_path,
                     )
                     continue
-                content = source_abs.read_text(encoding="utf-8")
+                content = _read_text_utf8(source_abs)
                 for row in rows:
                     new_raw = _compute_new_raw_target(
                         row["link_type"],
