@@ -14,6 +14,8 @@ import logging
 import threading
 from pathlib import Path
 
+import pytest
+
 from markdown_vault_mcp.write_callback import WriteCallbackDispatcher
 
 
@@ -182,7 +184,7 @@ class TestDrain:
         dispatcher = WriteCallbackDispatcher(cb)
         for i in range(5):
             dispatcher.fire(Path(f"{i}.md"), str(i), "write")
-        dispatcher.drain()  # must block until all 5 have run
+        assert dispatcher.drain() is True  # must block until all 5 have run
         assert [content for _, content, _ in calls] == ["0", "1", "2", "3", "4"]
         dispatcher.close()
 
@@ -201,7 +203,9 @@ class TestDrain:
     def test_drain_noop_when_worker_never_started(self) -> None:
         _calls, cb = _recorder()
         dispatcher = WriteCallbackDispatcher(cb)
-        dispatcher.drain()  # no fire -> no worker; must return immediately, not hang
+        assert (
+            dispatcher.drain() is True
+        )  # no fire -> no worker; must return immediately, not hang
         assert dispatcher._worker is None
         dispatcher.close()
 
@@ -210,12 +214,12 @@ class TestDrain:
         dispatcher = WriteCallbackDispatcher(cb)
         dispatcher.fire(Path("a.md"), "a", "write")
         dispatcher.close()
-        dispatcher.drain()  # after close: immediate no-op, no hang
+        assert dispatcher.drain() is True  # after close: immediate no-op, no hang
         assert calls == [(Path("a.md"), "a", "write")]
 
     def test_drain_noop_when_on_write_none(self) -> None:
         dispatcher = WriteCallbackDispatcher(None)
-        dispatcher.drain()  # no callback configured -> immediate no-op
+        assert dispatcher.drain() is True  # no callback configured -> immediate no-op
         assert dispatcher._worker is None
 
     def test_drain_timeout_warns(self, caplog) -> None:
@@ -231,7 +235,38 @@ class TestDrain:
         assert started.wait(2)  # worker blocked on the in-flight item
         dispatcher.fire(Path("b.md"), "second", "write")  # queued behind the block
         with caplog.at_level(logging.WARNING):
-            dispatcher.drain(timeout=0.05)  # cannot drain -> warn, return
-        assert any("drain did not finish" in r.getMessage() for r in caplog.records)
+            drained = dispatcher.drain(
+                timeout=0.05
+            )  # cannot drain -> warn, return False
+        assert drained is False
+        warning = next(
+            r.getMessage()
+            for r in caplog.records
+            if "drain did not finish" in r.getMessage()
+        )
+        assert "2 pending" in warning, warning
         release.set()
+        dispatcher.close()
+
+    @pytest.mark.filterwarnings(
+        # The SystemExit intentionally terminates the write-callback worker.
+        "ignore::pytest.PytestUnhandledThreadExceptionWarning"
+    )
+    def test_drain_returns_false_when_worker_died(self, caplog) -> None:
+        """If the worker thread dies on a BaseException, drain() must report
+        False (not silently succeed) and the death must have been logged (#571)."""
+
+        def cb(_abs_path: Path, _content: str, _operation: str) -> None:
+            raise SystemExit("worker dies")  # BaseException kills the thread
+
+        dispatcher = WriteCallbackDispatcher(cb)
+        with caplog.at_level(logging.ERROR):
+            dispatcher.fire(Path("a.md"), "x", "write")
+            assert dispatcher._worker is not None
+            dispatcher._worker.join(timeout=2)  # wait for the worker to die
+        assert not dispatcher._worker.is_alive()
+        assert dispatcher.drain(timeout=0.5) is False
+        assert any(
+            "write_callback_worker_died" in r.getMessage() for r in caplog.records
+        ), [r.getMessage() for r in caplog.records]
         dispatcher.close()
