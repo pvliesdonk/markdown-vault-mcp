@@ -4205,3 +4205,168 @@ class TestWriteQuiescer:
         assert any("did not fully drain" in r.getMessage() for r in caplog.records), [
             r.getMessage() for r in caplog.records
         ]
+
+
+class TestDrainBeforePull:
+    """#571: a write that lands on disk just before a pull is drained (committed)
+    by the quiescer so the merge runs on a clean tree — no dirty-tree abort, no
+    spurious conflict-sibling churn."""
+
+    @staticmethod
+    def _advance_upstream(bare: Path, work: Path, rel: str, content: str) -> None:
+        """Make the bare remote one commit ahead on *rel*, leaving *work* behind."""
+        import subprocess
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmp:
+            subprocess.run(
+                ["git", "clone", str(bare), tmp], check=True, capture_output=True
+            )
+            (Path(tmp) / rel).write_text(content)
+            subprocess.run(
+                ["git", "-C", tmp, "add", "-A"], check=True, capture_output=True
+            )
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    tmp,
+                    "-c",
+                    "user.email=up@e",
+                    "-c",
+                    "user.name=up",
+                    "commit",
+                    "-m",
+                    f"upstream: {rel}",
+                ],
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                ["git", "-C", tmp, "push", "origin", "HEAD"],
+                check=True,
+                capture_output=True,
+            )
+        subprocess.run(
+            ["git", "-C", str(work), "fetch", "origin"], check=True, capture_output=True
+        )
+
+    @staticmethod
+    def _commit_dirty(work: Path) -> bool:
+        """Stand-in for the dispatcher worker: commit whatever is on disk in *work*.
+        Returns True so the quiescer treats the drain as complete."""
+        import subprocess
+
+        subprocess.run(
+            ["git", "-C", str(work), "add", "-A"], check=True, capture_output=True
+        )
+        subprocess.run(
+            ["git", "-C", str(work), "commit", "-m", "write: deferred"],
+            check=True,
+            capture_output=True,
+        )
+        return True
+
+    def test_force_pull_quiesces_dirty_write_upstream_untouched(
+        self, git_repo_with_remote: tuple[Path, Path]
+    ) -> None:
+        """Write lands uncommitted; upstream advanced a DIFFERENT file. The drain
+        commits the local write first, so the pull applies cleanly, the write
+        survives, and no conflict sibling is produced."""
+        import contextlib
+
+        work, bare = git_repo_with_remote
+        self._advance_upstream(bare, work, "upstream.md", "# upstream\n")
+        (work / "local.md").write_text("# local mcp write\n")  # dirty (uncommitted)
+
+        strategy = GitWriteStrategy(
+            token=None, enable_push=False, push_delay_s=0, repo_path=work
+        )
+        strategy.set_write_quiescer(
+            pause_writes=contextlib.nullcontext,
+            drain_writes=lambda: self._commit_dirty(work),
+        )
+        try:
+            result = strategy.force_pull()
+            assert result.applied is True
+            assert result.reason != "conflict_resolution_failed"
+            assert (work / "local.md").read_text() == "# local mcp write\n"
+            assert not list(work.glob("*.conflict-mcp-*.md"))
+        finally:
+            strategy.close()
+
+    def test_force_pull_quiesces_dirty_write_upstream_touched_same_file(
+        self, git_repo_with_remote: tuple[Path, Path]
+    ) -> None:
+        """Same race but upstream touched the SAME file. Pre-fix this aborted the
+        pull on the dirty tree (conflict_resolution_failed). With drain-before-pull
+        the write is committed first, so the divergence is handled by rebase + the
+        Syncthing-style sibling machinery (#232): HEAD advances and the MCP write
+        is preserved as a .conflict-mcp sibling."""
+        import contextlib
+
+        work, bare = git_repo_with_remote
+        self._advance_upstream(bare, work, "local.md", "# upstream version\n")
+        (work / "local.md").write_text("# local mcp write\n")  # dirty (uncommitted)
+
+        strategy = GitWriteStrategy(
+            token=None, enable_push=False, push_delay_s=0, repo_path=work
+        )
+        strategy.set_write_quiescer(
+            pause_writes=contextlib.nullcontext,
+            drain_writes=lambda: self._commit_dirty(work),
+        )
+        try:
+            result = strategy.force_pull()
+            # NOT a dirty-tree abort (the pre-fix failure mode).
+            assert result.reason != "conflict_resolution_failed"
+            assert result.applied is True
+            # The MCP write is preserved as a conflict sibling.
+            siblings = list(work.glob("local.conflict-mcp-*.md"))
+            assert siblings, "MCP write was not preserved as a conflict sibling"
+            assert any("# local mcp write" in s.read_text() for s in siblings)
+        finally:
+            strategy.close()
+
+    def test_force_pull_drains_real_dispatcher_via_strategy_no_deadlock(
+        self, git_repo_with_remote: tuple[Path, Path]
+    ) -> None:
+        """End-to-end lock-order guard: the real WriteCallbackDispatcher worker
+        commits via the strategy (taking _lock) while force_pull drains BEFORE
+        acquiring _lock for the merge — so the worker commits freely during the
+        drain. force_pull completes (no deadlock) and the queued write lands."""
+        import contextlib
+        import subprocess
+
+        from markdown_vault_mcp.write_callback import WriteCallbackDispatcher
+
+        work, bare = git_repo_with_remote
+        self._advance_upstream(bare, work, "upstream.md", "# upstream\n")
+
+        strategy = GitWriteStrategy(
+            token=None, enable_push=False, push_delay_s=0, repo_path=work
+        )
+        # The dispatcher's callback IS the strategy: the worker thread commits via
+        # strategy.__call__ -> _stage_and_commit, which takes strategy._lock.
+        dispatcher = WriteCallbackDispatcher(strategy)
+        (work / "local.md").write_text("# local mcp write\n")
+        dispatcher.fire(work / "local.md", "# local mcp write\n", "write")
+        strategy.set_write_quiescer(
+            pause_writes=contextlib.nullcontext,
+            drain_writes=lambda: dispatcher.drain(timeout=10.0),
+        )
+        try:
+            result = strategy.force_pull()  # drains (worker commits) THEN merges
+            assert result.applied is True
+            assert (work / "local.md").exists()
+            log = subprocess.run(
+                ["git", "-C", str(work), "log", "--oneline"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            assert "write: local.md" in log.stdout
+        finally:
+            dispatcher.close()
+            strategy.close()
