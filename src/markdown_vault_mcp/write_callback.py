@@ -169,12 +169,16 @@ class WriteCallbackDispatcher:
                 # Worker exits only via the None sentinel (close, which sets
                 # _closed -- handled above) or a BaseException death (logged in
                 # _run). Reaching here means it died; do NOT report success.
-                # No item is in-flight (the worker is gone), so qsize() is the
-                # exact stranded-commit backlog.
+                # It typically died on an in-flight commit that was already
+                # dequeued (so NOT counted by qsize()), so the stranded backlog
+                # is the queued items plus that one: qsize() + 1. (If it instead
+                # died while idle this over-reports by one -- acceptable for an
+                # alert; do NOT "simplify" it back to qsize(), which undercounts
+                # the common case.)
                 logger.error(
-                    "Write-callback drain found a dead worker; "
-                    "%d pending git commit(s) will never be committed.",
-                    self._queue.qsize(),
+                    "Write-callback drain found a dead worker; ~%d pending git "
+                    "commit(s) will never be committed.",
+                    self._queue.qsize() + 1,
                 )
                 return False
             marker = _DrainMarker()

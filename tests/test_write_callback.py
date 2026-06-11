@@ -264,9 +264,13 @@ class TestDrain:
             dispatcher.fire(Path("a.md"), "x", "write")
             assert dispatcher._worker is not None
             dispatcher._worker.join(timeout=2)  # wait for the worker to die
-        assert not dispatcher._worker.is_alive()
-        assert dispatcher.drain(timeout=0.5) is False
-        assert any(
-            "write_callback_worker_died" in r.getMessage() for r in caplog.records
-        ), [r.getMessage() for r in caplog.records]
+            assert not dispatcher._worker.is_alive()
+            assert dispatcher.drain(timeout=0.5) is False
+        messages = [r.getMessage() for r in caplog.records]
+        assert any("write_callback_worker_died" in m for m in messages), messages
+        # The dead-worker drain reports the stranded backlog including the
+        # in-flight commit the worker died on (already dequeued, so qsize()+1).
+        assert any("found a dead worker" in m and "1 pending" in m for m in messages), (
+            messages
+        )
         dispatcher.close()

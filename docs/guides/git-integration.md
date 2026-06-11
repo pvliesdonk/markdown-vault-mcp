@@ -80,8 +80,9 @@ dry-run push always returns `applied=false` with
 
 !!! note "Writes landing during a pull"
     A write whose deferred git commit has not yet run when a pull starts is
-    never lost. Before every pull (periodic or `git_sync`), the server pauses
-    new writes and drains the deferred-commit queue, so in the normal case the
+    never lost. Before every real (non-dry-run) pull (periodic or `git_sync`),
+    the server pauses new writes and drains the deferred-commit queue (a
+    `dry_run` preview only fetches and never quiesces), so in the normal case the
     just-written file is committed first and the merge runs on a clean tree
     ([#571](https://github.com/pvliesdonk/markdown-vault-mcp/issues/571)). If
     that write and the remote touched the same file, it flows through the

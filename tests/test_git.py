@@ -4399,3 +4399,35 @@ class TestDrainBeforePull:
             assert any("# local mcp write" in s.read_text() for s in siblings)
         finally:
             strategy.close()
+
+    def test_force_pull_dry_run_skips_quiesce(
+        self, git_repo_with_remote: tuple[Path, Path]
+    ) -> None:
+        """A dry-run pull inspects only and must NOT pause writes or drain (#571);
+        otherwise a read-only `is there anything new?` probe would needlessly
+        block writers."""
+        import contextlib
+
+        work, _bare = git_repo_with_remote
+        calls = {"pause": 0, "drain": 0}
+
+        @contextlib.contextmanager
+        def counting_pause():
+            calls["pause"] += 1
+            yield
+
+        def counting_drain() -> bool:
+            calls["drain"] += 1
+            return True
+
+        strategy = GitWriteStrategy(
+            token=None, enable_push=False, push_delay_s=0, repo_path=work
+        )
+        strategy.set_write_quiescer(
+            pause_writes=counting_pause, drain_writes=counting_drain
+        )
+        try:
+            strategy.force_pull(dry_run=True)
+            assert calls == {"pause": 0, "drain": 0}
+        finally:
+            strategy.close()
