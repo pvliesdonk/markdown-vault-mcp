@@ -2230,6 +2230,101 @@ class TestGitSyncOnce:
             for r in caplog.records
         ), [r.message for r in caplog.records]
 
+    @staticmethod
+    def _head_commit_files(git_repo: Path) -> list[str]:
+        import subprocess
+
+        result = subprocess.run(
+            ["git", "-C", str(git_repo), "show", "--name-only", "--format=", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return [line for line in result.stdout.strip().splitlines() if line]
+
+    def test_write_conflict_files_does_not_stage_skipped_original(
+        self, git_repo: Path
+    ) -> None:
+        """A skipped original (non-UTF-8) must NOT be staged into the conflict
+        commit — only its sibling is (#675). Staging it would commit a spurious
+        change (or a deletion, for a TOCTOU-removed original)."""
+        strategy = GitWriteStrategy(token=None, push_delay_s=0)
+        (git_repo / "note.md").write_bytes(b"\xff\xfe not valid utf-8 \x80\n")
+        saved = [("note.md", "# mcp body\n")]
+
+        written = strategy._write_conflict_files(git_repo, saved, env=None)
+
+        assert len(written) == 1
+        files = self._head_commit_files(git_repo)
+        assert written[0] in files, files  # sibling committed
+        assert "note.md" not in files, files  # skipped original NOT staged
+
+    def test_write_conflict_files_stages_updated_original(self, git_repo: Path) -> None:
+        """A successfully-updated original (conflict_with frontmatter written) IS
+        staged into the conflict commit alongside its sibling (#675 regression
+        guard — the fix must not stop staging originals it actually rewrote)."""
+        strategy = GitWriteStrategy(token=None, push_delay_s=0)
+        (git_repo / "note.md").write_text("# original\n", encoding="utf-8")
+        saved = [("note.md", "# mcp body\n")]
+
+        written = strategy._write_conflict_files(git_repo, saved, env=None)
+
+        assert len(written) == 1
+        files = self._head_commit_files(git_repo)
+        assert "note.md" in files, files  # updated original staged
+        assert written[0] in files, files  # sibling staged
+        # The original actually received the conflict_with frontmatter.
+        assert "conflict_with" in (git_repo / "note.md").read_text(encoding="utf-8")
+
+    def test_write_conflict_files_mixed_batch_stages_only_updated(
+        self, git_repo: Path
+    ) -> None:
+        """With a batch of one updatable + one skipped original, only the updated
+        one is staged — the conflict commit must partition per-element, not stage
+        all-or-nothing (#675). This pins the selective-staging contract that the
+        single-original tests cannot (a 'stage every saved original' regression
+        would still pass those)."""
+        strategy = GitWriteStrategy(token=None, push_delay_s=0)
+        (git_repo / "good.md").write_text("# good original\n", encoding="utf-8")
+        (git_repo / "bad.md").write_bytes(b"\xff\xfe not valid utf-8 \x80\n")
+        saved = [("good.md", "# good mcp\n"), ("bad.md", "# bad mcp\n")]
+
+        written = strategy._write_conflict_files(git_repo, saved, env=None)
+
+        assert len(written) == 2
+        files = self._head_commit_files(git_repo)
+        assert "good.md" in files, files  # updatable original staged
+        assert "bad.md" not in files, files  # skipped (non-UTF-8) original NOT staged
+        for sibling in written:  # both siblings always staged
+            assert sibling in files, files
+
+    def test_write_conflict_files_does_not_stage_removed_original(
+        self, git_repo: Path
+    ) -> None:
+        """A tracked original removed before write_conflict_files reads it (TOCTOU)
+        must NOT be staged — otherwise the conflict commit records a *deletion* of
+        the upstream file (the motivating data-loss shape in #675), distinct from
+        the non-UTF-8 spurious-change case."""
+        strategy = GitWriteStrategy(token=None, push_delay_s=0)
+        note = git_repo / "note.md"
+        note.write_text("# tracked original\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(git_repo), "add", "note.md"], check=True)
+        subprocess.run(
+            ["git", "-C", str(git_repo), "commit", "-m", "add note"],
+            check=True,
+            capture_output=True,
+        )
+        note.unlink()  # removed after it was committed/tracked
+        saved = [("note.md", "# mcp body\n")]
+
+        written = strategy._write_conflict_files(git_repo, saved, env=None)
+
+        assert len(written) == 1
+        files = self._head_commit_files(git_repo)
+        assert written[0] in files, files  # sibling committed
+        # The removed original is NOT staged — no spurious deletion in the commit.
+        assert "note.md" not in files, files
+
 
 class TestRebaseInProgress:
     """Tests for the _rebase_in_progress helper (refs #466)."""

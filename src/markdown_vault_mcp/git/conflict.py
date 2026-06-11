@@ -354,6 +354,10 @@ def write_conflict_files(
     timestamp = now.strftime("%Y%m%d-%H%M%S")
     conflict_date = now.isoformat(timespec="seconds")
     written: list[str] = []
+    # Originals we actually rewrote with conflict_with frontmatter. Only these
+    # get staged into the conflict commit — an original whose update was skipped
+    # (#662 OSError/UnicodeDecodeError guard) must NOT be re-staged here (#675).
+    updated_originals: list[str] = []
 
     for rel_path, mcp_content in saved:
         original = Path(rel_path)
@@ -403,6 +407,7 @@ def write_conflict_files(
                 orig_post.metadata["conflict_with"] = conflict_rel
                 orig_post.metadata["conflict_date"] = conflict_date
                 original_abs.write_text(frontmatter.dumps(orig_post), encoding="utf-8")
+                updated_originals.append(rel_path)
             except (OSError, UnicodeDecodeError):
                 # OSError: removed/inaccessible after exists() (TOCTOU), permission,
                 # or a write-back failure. UnicodeDecodeError (a ValueError, not an
@@ -422,9 +427,14 @@ def write_conflict_files(
     if not written:
         return written
 
-    # Stage only the files we touched — the original files (updated with
-    # conflict_with frontmatter) and the new conflict files.
-    paths_to_add = [rel_path for rel_path, _ in saved] + written
+    # Stage only the files we actually touched: originals we rewrote with
+    # conflict_with frontmatter (NOT ones whose update was skipped — #675;
+    # re-staging a skipped original here would needlessly re-add an untouched
+    # file, or stage a *deletion* for a TOCTOU-removed one) plus the new
+    # conflict siblings. A skipped original keeps whatever the rebase already
+    # staged for it (the upstream version), which the pathspec-less commit
+    # below still captures.
+    paths_to_add = updated_originals + written
     subprocess.run(
         ["git", "-C", root, "add", "--", *paths_to_add],
         capture_output=True,
@@ -438,6 +448,11 @@ def write_conflict_files(
     # Conflict resolution runs on the pull background thread, not inside a
     # request context, so _extract_claim would return None.  Use the static
     # server identity directly — per-user attribution does not apply here.
+    # NOTE: this commit is pathspec-less — it commits the whole staged index,
+    # not just ``paths_to_add``. That is intentional: it also captures upstream
+    # content already staged during conflict resolution (by the rebase's merge,
+    # or by the ``checkout @{upstream}`` restore on the rebase-abort path). It
+    # relies on the caller holding ``_lock`` so no unrelated change is staged.
     commit_result = subprocess.run(
         [
             "git",
