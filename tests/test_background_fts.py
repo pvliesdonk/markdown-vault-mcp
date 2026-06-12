@@ -879,11 +879,11 @@ def test_foreground_write_during_background_scan_on_disk(tmp_path: Path) -> None
 
 
 def test_reindex_after_pull_handler_handles_not_ready(tmp_path: Path) -> None:
-    """_reindex_after_pull in _server_tools.py catches IndexUnavailableError
+    """_reindex_after_pull in _server_tools.git catches IndexUnavailableError
     and sets reindex_failed=True on the pull payload — does NOT block."""
     import time as time_mod
 
-    from markdown_vault_mcp._server_tools import _reindex_after_pull
+    from markdown_vault_mcp._server_tools.git import _reindex_after_pull
     from markdown_vault_mcp.managers import index as index_mod
 
     vault = _vault(tmp_path)

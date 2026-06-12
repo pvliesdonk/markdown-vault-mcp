@@ -390,7 +390,8 @@ class TestGitSync:
           post-sync state.
 
         This exercises the ``direction == 'both' and not pull_result.applied
-        and not dry_run`` short-circuit (lines 1471-1475 of ``_server_tools``).
+        and not dry_run`` short-circuit in the ``git_sync`` tool
+        (``markdown_vault_mcp._server_tools.git``).
         """
         from markdown_vault_mcp.git import PullResult
 
