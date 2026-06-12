@@ -4,11 +4,12 @@ on:
   workflow_dispatch:
     inputs:
       force:
-        description: 'Force version bump (leave empty for auto)'
+        description: 'Force version bump (empty = auto; "prerelease" advances the rc revision e.g. rc.1 → rc.2 — keep the pre-release box below checked)'
         type: choice
         default: ''
         options:
           - ''
+          - prerelease
           - patch
           - minor
           - major
@@ -32,6 +33,12 @@ jobs:
       id-token: write
 
     steps:
+      - name: Reject contradictory dispatch inputs
+        if: inputs.force == 'prerelease' && inputs.prerelease == false
+        run: |
+          echo "::error::force=prerelease advances the rc revision and requires the pre-release box to stay checked"
+          exit 1
+
       - name: Checkout repository
         uses: actions/checkout@v6
         with:

@@ -221,3 +221,72 @@ jobs:
         uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e  # v3.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  vale:
+    name: Docs Prose (Vale)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # vale-cli/vale-action posts findings as PR annotations via reviewdog.
+      # The default reporter (`github-pr-annotations`) uses the GitHub Checks
+      # API — `checks: write` is sufficient. If a downstream switches the
+      # reporter to `github-pr-review` (inline PR review comments), they
+      # need to add `pull-requests: write` here too.
+      checks: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Cache Vale style packages
+        # Vale style packs are ~30 MB total and re-downloaded on every run
+        # without caching. Cache key invalidates when .vale.ini changes
+        # (Packages line edited, ai-tells URL bumped, etc.) OR when any
+        # vocab file under .vale/styles/config/ changes (added/removed
+        # accepted terms). Without the config/** hash, cache restore would
+        # silently clobber a newly-added vocab term on disk with the stale
+        # snapshot, making Vale flag the new term as unknown in CI even
+        # though the file is checked in. The `v1-` prefix is a manual
+        # escape hatch: bump it to force re-sync if Vale ever changes
+        # pack format backward-incompatibly.
+        uses: actions/cache@v4
+        with:
+          path: .vale/styles
+          key: vale-styles-v1-${{ hashFiles('.vale.ini', '.vale/styles/config/**') }}
+          # Fallback to any prior `vale-styles-v1-*` cache as a warm start
+          # when the exact key misses. `vale sync` will then only fetch the
+          # packs that actually changed instead of re-downloading all four.
+          restore-keys: vale-styles-v1-
+
+      - name: Run Vale
+        # SHA pin matches the gitleaks-action pattern earlier in this file.
+        # The current release is named "v2.1.2" in the GitHub UI but the
+        # underlying git tag is `2.1.2` (no `v` prefix) — pinning to the
+        # SHA sidesteps that mismatch and provides supply-chain hygiene.
+        uses: vale-cli/vale-action@85f9f7f2c5f449ac0ae5b66662961bae3f77ca6a  # v2.1.2
+        with:
+          # Pin Vale CLI version explicitly. Bump in lockstep with the
+          # pre-commit hook `rev:` in .pre-commit-config.yaml — template-ci
+          # asserts the two stay synchronized.
+          version: "3.14.2"
+          files: docs
+          # Working specs follow internal conventions, not user-facing prose
+          # style — exclude from linting. NO inner single quotes around the
+          # glob value: vale-action splits `vale_flags` on whitespace and
+          # passes argv elements directly (no shell), so literal quotes here
+          # would be passed through to Vale, the glob would match no files,
+          # and CI would silently exit 0. Verified empirically.
+          vale_flags: "--glob=!docs/superpowers/**"
+          # Failure gating is controlled by MinAlertLevel = error in
+          # .vale.ini (governs both what Vale prints AND its exit code)
+          # combined with fail_on_error below — only error-severity
+          # findings fail CI; warnings and suggestions surface as advisory
+          # annotations. (The action also accepts a `level:` input, but at
+          # the pinned SHA that input is declared but never read — the
+          # reviewdog level is derived from Vale's exit code and
+          # fail_on_error. Setting it here would be a no-op.)
+          fail_on_error: true
+          # filter_mode defaults to `added` — only findings on lines this PR
+          # adds or modifies fail the build. Pre-existing prose debt isn't a
+          # blocker for new contributions; downstream's own untouched docs
+          # don't gate PRs that don't touch them. To enforce repo-wide
+          # cleanliness, set this to `nofilter`.
+          filter_mode: added

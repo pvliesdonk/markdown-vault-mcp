@@ -39,3 +39,8 @@ site/
 .claude/worktrees/
 .claude/settings.local.json
 docs/superpowers/
+
+# Vale-synced style packages (downloaded by `vale sync`). Custom config
+# (vocabularies, ini overrides) under .vale/styles/config/ stays tracked.
+.vale/styles/*
+!.vale/styles/config/

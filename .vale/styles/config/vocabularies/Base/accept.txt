@@ -1,0 +1,43 @@
+# Project vocabulary — accepted tech terms that Vale's default spell-check
+# would otherwise flag as unknown words. One term per line. Vale matches
+# case-insensitively by default. See https://vale.sh/docs/topics/vocab.
+#
+# Add new accepted terms below as your docs corpus grows. Keep entries
+# alphabetical within their category for easy review.
+
+# --- Identity providers and auth-stack tooling ---
+Authelia
+Keycloak
+OAuth
+OIDC
+Traefik
+
+# --- HTTP / URL terminology ---
+hostname
+subpath
+URIs
+
+# --- OAuth / OIDC token fields ---
+access_token
+id_token
+
+# --- Python / runtime ecosystem ---
+debugpy
+mypy
+namespace
+namespaced
+pytest
+ruff
+
+# --- Operational / config jargon ---
+config
+deployer
+env
+truthy
+uncommented
+uncommenting
+unprefixed
+validators
+
+# --- Diagnostics / observability ---
+traceback

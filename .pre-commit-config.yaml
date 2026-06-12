@@ -38,3 +38,62 @@ repos:
       - id: check-yaml
       - id: check-added-large-files
       - id: check-json
+
+  # Vale prose lint for docs/**. Requires Vale on PATH (`brew install vale`,
+  # `apt install vale`, or download from https://vale.sh/docs/install).
+  # First commit touching docs/ or .vale.ini auto-runs `vale sync` because
+  # the style-pack dirs are missing; subsequent commits are no-ops. Adding a
+  # new package to .vale.ini's `Packages =` line, or bumping a pinned URL
+  # version, does NOT re-sync automatically — the four hard-coded pack-dir
+  # checks below don't see the new package, and bumped-version dirs still
+  # exist on disk. After such .vale.ini edits, run `vale sync` manually
+  # (or `rm -rf .vale/styles/<pack>` to force re-sync via the hook).
+  - repo: local
+    hooks:
+      - id: vale-sync
+        name: vale sync (download style packages if missing)
+        # Loud-fail if Vale isn't on PATH OR if `vale sync` fails (network,
+        # bad URL, etc.). Both error modes silently exited 0 in earlier
+        # iterations: bash's brace-group returns the exit status of its
+        # LAST command, which was `break` (always 0), masking sync failures
+        # and "vale: command not found". `command -v vale` plus `exit 1` on
+        # sync failure plug both holes — without them the next hook (`vale`)
+        # would run against un-synced packs, where Vale prints E201 config
+        # errors and itself exits 0, the exact silent-pass this hook exists
+        # to prevent.
+        language: system
+        entry: |
+          bash -c '
+            command -v vale >/dev/null 2>&1 || {
+              echo "vale not on PATH — install: https://vale.sh/docs/install" >&2
+              exit 1
+            }
+            for p in Google proselint write-good ai-tells; do
+              if [ ! -d ".vale/styles/$p" ]; then
+                vale sync || exit 1
+                break
+              fi
+            done
+          '
+        pass_filenames: false
+        files: ^(docs/|\.vale\.ini$)
+        # Align trigger scope with the `vale` lint hook below — no point
+        # checking sync state on commits that only touch the excluded
+        # working-specs subtree.
+        exclude: ^docs/superpowers/
+
+  - repo: https://github.com/vale-cli/vale
+    rev: v3.14.2
+    hooks:
+      - id: vale
+        # MUST run after `vale-sync` above. Pre-commit runs hooks in
+        # declaration order; if vale precedes vale-sync on a fresh clone
+        # the packs aren't populated, Vale prints E201 config errors and
+        # exits 0 — silent pass.
+        # Upstream hook has `types: [text]`; this `files:` scopes to docs/.
+        # Together: any text file under docs/ except the working-specs
+        # subtree. Matches the CI step's `vale ... --glob='!docs/superpowers/**' docs/`
+        # scope exactly (both lint markdown + asciidoc + rst + plain
+        # text — every format Vale supports — under docs/).
+        files: ^docs/
+        exclude: ^docs/superpowers/

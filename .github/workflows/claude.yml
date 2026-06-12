@@ -12,11 +12,17 @@ on:
 
 jobs:
   claude:
+    # Trigger only on @claude mentions, AND on the two PR-context events
+    # (`pull_request_review*`) only when the PR head is in this repo. Those
+    # events run in PR context for fork PRs, where GitHub withholds repository
+    # secrets (incl. CLAUDE_CODE_OAUTH_TOKEN) and the action would auth-fail.
+    # `issues` and `issue_comment` always run in base-repo context, so secrets
+    # are available — no fork check needed there.
     if: |
       (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
-      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
-      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
-      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude'))) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude') && github.event.pull_request.head.repo.full_name == github.repository) ||
+      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude') && github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     permissions:
       contents: read
