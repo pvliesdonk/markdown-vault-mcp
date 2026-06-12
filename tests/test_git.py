@@ -3883,6 +3883,170 @@ class TestGetFileDiff:
         ):
             strategy.get_file_history(repo, path=None, since=None, limit=20)
 
+    def test_get_file_diff_per_commit_pure_rename_emits_marker(
+        self, tmp_path: Path
+    ) -> None:
+        """A pure rename with no content change shows a rename marker, not an empty
+        diff (the two-blob diff of identical blobs is empty) (#683)."""
+        repo = tmp_path / "r"
+        repo.mkdir()
+        for a in (
+            ["init"],
+            ["config", "user.email", "t@t"],
+            ["config", "user.name", "t"],
+        ):
+            subprocess.run(
+                ["git", "-C", str(repo), *a], check=True, capture_output=True
+            )
+        assets = repo / "assets"
+        assets.mkdir()
+        (assets / "a.txt").write_text("stable content, never edited\n" * 5)
+        subprocess.run(
+            ["git", "-C", str(repo), "add", "."], check=True, capture_output=True
+        )
+        subprocess.run(
+            ["git", "-C", str(repo), "commit", "-m", "add a"],
+            check=True,
+            capture_output=True,
+        )
+        first = subprocess.run(
+            ["git", "-C", str(repo), "rev-parse", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        subprocess.run(
+            ["git", "-C", str(repo), "mv", "assets/a.txt", "assets/b.txt"],
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(repo), "commit", "-m", "pure rename"],
+            check=True,
+            capture_output=True,
+        )
+        strategy = GitWriteStrategy()
+        out = strategy.get_file_diff(
+            repo,
+            repo / "assets" / "b.txt",
+            ref=first,
+            per_commit=True,
+            summarize_binary=True,
+        )
+        assert isinstance(out, list) and out
+        # The rename commit must NOT be an empty diff; it shows the rename marker.
+        assert any(cd.diff.strip() for cd in out)
+        assert any("=>" in cd.diff and "renamed" in cd.diff for cd in out)
+
+    def test_get_file_diff_per_commit_root_binary_classification_fires(
+        self, tmp_path: Path
+    ) -> None:
+        """parent-less + summarize_binary=True classifies the file against the empty
+        tree so a root binary commit gets a Bin --stat rather than a raw patch (#683).
+
+        The mock forces the primary diff to fail and the parent-probe to return
+        non-zero (orphan), then presents the empty-tree numstat as binary and the
+        fallback git-show --stat as a Bin line.
+        """
+        from unittest.mock import patch
+
+        repo = tmp_path / "r"
+        repo.mkdir()
+        for a in (
+            ["init"],
+            ["config", "user.email", "t@t"],
+            ["config", "user.name", "t"],
+        ):
+            subprocess.run(
+                ["git", "-C", str(repo), *a], check=True, capture_output=True
+            )
+        (repo / "seed.txt").write_text("seed\n")
+        subprocess.run(
+            ["git", "-C", str(repo), "add", "."], check=True, capture_output=True
+        )
+        subprocess.run(
+            ["git", "-C", str(repo), "commit", "-m", "seed"],
+            check=True,
+            capture_output=True,
+        )
+        first = subprocess.run(
+            ["git", "-C", str(repo), "rev-parse", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        assets = repo / "assets"
+        assets.mkdir()
+        (assets / "z.bin").write_bytes(b"BIN\x00DATA")
+        subprocess.run(
+            ["git", "-C", str(repo), "add", "."], check=True, capture_output=True
+        )
+        subprocess.run(
+            ["git", "-C", str(repo), "commit", "-m", "add z.bin"],
+            check=True,
+            capture_output=True,
+        )
+
+        real_run = subprocess.run
+        empty_tree_numstat_seen: list[bool] = []
+
+        def fake_run(cmd, *args, **kwargs):  # type: ignore[no-untyped-def]
+            # 1. Force the primary per-commit diff (--stat or -p, not --numstat) to fail.
+            if isinstance(cmd, list) and "diff" in cmd and "--numstat" not in cmd:
+                raise subprocess.CalledProcessError(128, cmd)
+            # 2. Make the parent-probe return non-zero so the code treats it as orphan.
+            if (
+                isinstance(cmd, list)
+                and "rev-parse" in cmd
+                and "--verify" in cmd
+                and any(a.endswith("^") for a in cmd)
+            ):
+                import subprocess as _sp
+
+                return _sp.CompletedProcess(
+                    args=cmd, returncode=1, stdout=b"", stderr=b""
+                )
+            # 3. Make the empty-tree numstat classify the file as binary.
+            from markdown_vault_mcp.git.query import _EMPTY_TREE_SHA
+
+            if (
+                isinstance(cmd, list)
+                and "diff" in cmd
+                and "--numstat" in cmd
+                and _EMPTY_TREE_SHA in cmd
+            ):
+                empty_tree_numstat_seen.append(True)
+                import subprocess as _sp
+
+                return _sp.CompletedProcess(
+                    args=cmd, returncode=0, stdout="-\t-\tassets/z.bin\n", stderr=""
+                )
+            # 4. The fallback git-show --stat returns a Bin line.
+            if isinstance(cmd, list) and "show" in cmd and "--stat" in cmd:
+                import subprocess as _sp
+
+                return _sp.CompletedProcess(
+                    args=cmd,
+                    returncode=0,
+                    stdout=" assets/z.bin | Bin 0 -> 8 bytes\n",
+                    stderr="",
+                )
+            return real_run(cmd, *args, **kwargs)
+
+        strategy = GitWriteStrategy()
+        with patch("markdown_vault_mcp.git.subprocess.run", side_effect=fake_run):
+            out = strategy.get_file_diff(
+                repo,
+                repo / "assets" / "z.bin",
+                ref=first,
+                per_commit=True,
+                summarize_binary=True,
+            )
+        # The empty-tree numstat probe fired (load-bearing: classifies the root binary).
+        assert empty_tree_numstat_seen
+        assert isinstance(out, list) and out
+        assert any("Bin" in cd.diff for cd in out)
+
 
 def test_resolve_path_at_ref_to_ref_resolves_single_commit_rename(
     tmp_path: Path,

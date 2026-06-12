@@ -2250,7 +2250,14 @@ to_ref=sha)`) and diffs the two blobs (`git diff {sha}^:old {sha}:new`),
 classifying binariness per commit — so a renamed binary pairs into
 `{old => new} | Bin OLD -> NEW` instead of an add/text stat. Non-rename commits
 use `git diff {sha}^..{sha} -- path` (behaviour-preserving), and a parent-less
-(root) commit falls back to the add-form `git show`.
+(root) commit falls back to the add-form `git show`. A pure rename with
+byte-identical content produces an empty two-blob diff; the per-commit path
+synthesizes a `{old} => {new} (renamed, no content change)` marker in that case
+(#683). Known bounds: per-commit rename pairing relies on git's
+`--find-renames=30` similarity threshold (a binary rename with a very large edit
+may render as separate add/delete rather than a paired `{old => new}` stat), and
+a per-commit diff of a merge commit renders the first-parent diff rather than a
+combined diff.
 
 ### Release channels
 

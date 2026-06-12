@@ -37,10 +37,12 @@ def _diff_is_binary(
     """True if git reports the diff target as binary.
 
     *diff_args* is the ref/path portion of a ``git diff`` invocation — either
-    ``[f"{ref}..HEAD", "--", path_str]`` (no rename) or
-    ``[f"{ref}:{old_path}", f"HEAD:{cur_rel}"]`` (rename-recovered). ``git diff
-    --numstat`` prints ``-\\t-\\t<path>`` for binary and real counts for text;
-    empty output (no change) → non-binary.
+    a range/path form (``["<from>..<to>", "--", path_str]``) or a two-endpoint
+    blob/tree-spec form (``[f"{a}:{old}", f"{b}:{new}"]``, or a tree SHA such as
+    the empty-tree constant).  The endpoints may be a ref and ``HEAD``, two
+    commit SHAs (e.g. a commit and its parent), or a commit and the empty tree.
+    ``git diff --numstat`` prints ``-\\t-\\t<path>`` for binary and real counts
+    for text; empty output (no change) → non-binary.
     A non-zero git exit (e.g. a bad ref) yields empty stdout, so it is classified
     non-binary; the error is then surfaced by the subsequent checked ``git diff``
     call. This is a detection probe, not the final word.
@@ -530,6 +532,17 @@ def get_file_diff(
                         f"Could not retrieve diff for commit {sha!r}"
                     ) from exc2
             commit_diff = show_result.stdout.lstrip("\n")
+            if (
+                not commit_diff
+                and old_at_parent is not None
+                and old_at_parent != commit_path
+            ):
+                # Pure rename/copy with byte-identical content: the two-blob diff
+                # of identical blobs is empty, so the rename would otherwise be
+                # invisible. Synthesize a marker rather than emit an empty diff (#683).
+                commit_diff = (
+                    f"{old_at_parent} => {commit_path} (renamed, no content change)\n"
+                )
             if len(commit_diff.encode()) > _DIFF_MAX_BYTES:
                 omitted = len(commit_diff.encode()) - _DIFF_MAX_BYTES
                 commit_diff = commit_diff.encode()[:_DIFF_MAX_BYTES].decode(
