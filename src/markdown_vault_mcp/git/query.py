@@ -443,6 +443,15 @@ def get_file_diff(
         except subprocess.CalledProcessError as exc:
             raise ValueError(f"Commit {ref!r} not found in history") from exc
 
+        # Repo-relative posix path — the correct fallback when a --name-only
+        # block has no path line (git returns posix-relative paths, so the
+        # absolute platform-native path_str would break rename resolution on
+        # Windows).
+        try:
+            rel_fallback = path.resolve().relative_to(git_root).as_posix()
+        except ValueError:
+            rel_fallback = path_str
+
         diffs: list[CommitDiff] = []
         for block in log_result.stdout.split(_PC_SENTINEL):
             block = block.strip()
@@ -457,7 +466,9 @@ def get_file_diff(
             sha, short_sha, timestamp, message = parts[:4]
             # Recover the path the file had at this specific commit.
             # With --follow, this will be the old name for pre-rename commits.
-            commit_path = next((ln.strip() for ln in lines[1:] if ln.strip()), path_str)
+            commit_path = next(
+                (ln.strip() for ln in lines[1:] if ln.strip()), rel_fallback
+            )
 
             # Build a rename-aware diff target for THIS commit vs its parent,
             # mirroring the non-per-commit branch, so a renamed binary pairs into
@@ -513,8 +524,32 @@ def get_file_diff(
                     ) from exc
                 # Genuinely parent-less: classify against the empty tree (so a root
                 # binary still gets --stat) and render the add-form.
+                # Resolve the empty-tree object for this repo's hash algorithm
+                # (the hardcoded SHA-1 constant is invalid in SHA-256 repos);
+                # fall back to the SHA-1 constant if resolution fails.
+                empty_tree = _EMPTY_TREE_SHA
+                try:
+                    res = subprocess.run(
+                        [
+                            "git",
+                            "-C",
+                            str(git_root),
+                            "hash-object",
+                            "-t",
+                            "tree",
+                            "--stdin",
+                        ],
+                        input="",
+                        capture_output=True,
+                        text=True,
+                        env=env,
+                        check=True,
+                    )
+                    empty_tree = res.stdout.strip() or _EMPTY_TREE_SHA
+                except subprocess.CalledProcessError:
+                    pass
                 root_binary = summarize_binary and _diff_is_binary(
-                    git_root, [_EMPTY_TREE_SHA, sha, "--", commit_path], env
+                    git_root, [empty_tree, sha, "--", commit_path], env
                 )
                 fallback_cmd = [
                     "git",

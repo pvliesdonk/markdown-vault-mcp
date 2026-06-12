@@ -4163,6 +4163,57 @@ class TestGetFileDiff:
         assert isinstance(out, list) and out
         assert any("Bin" in cd.diff for cd in out)
 
+    def test_empty_tree_resolution_matches_repo_object_format(
+        self, tmp_path: Path
+    ) -> None:
+        """The empty-tree object resolved via ``git hash-object`` matches the repo's
+        hash algorithm: the SHA-1 constant for a sha1 repo, a distinct 64-hex SHA for
+        a sha256 repo (the hardcoded SHA-1 constant is invalid there) (#683).
+
+        This pins the load-bearing change behind FIX 2: the parent-less root-binary
+        fallback now classifies against the dynamically-resolved empty tree instead of
+        the hardcoded SHA-1 constant, so SHA-256 repos no longer fail ``git diff``.
+        """
+        from markdown_vault_mcp.git.query import _EMPTY_TREE_SHA
+
+        sha1_repo = tmp_path / "sha1"
+        sha1_repo.mkdir()
+        subprocess.run(
+            ["git", "-C", str(sha1_repo), "init"], check=True, capture_output=True
+        )
+        sha1_empty = subprocess.run(
+            ["git", "-C", str(sha1_repo), "hash-object", "-t", "tree", "--stdin"],
+            input="",
+            text=True,
+            capture_output=True,
+            check=True,
+        ).stdout.strip()
+        assert sha1_empty == _EMPTY_TREE_SHA
+
+        sha256_repo = tmp_path / "sha256"
+        sha256_repo.mkdir()
+        init = subprocess.run(
+            ["git", "-C", str(sha256_repo), "init", "--object-format=sha256"],
+            capture_output=True,
+            text=True,
+        )
+        if init.returncode != 0:
+            pytest.skip(
+                "local git does not support --object-format=sha256: "
+                f"{(init.stderr or '').strip()}"
+            )
+        sha256_empty = subprocess.run(
+            ["git", "-C", str(sha256_repo), "hash-object", "-t", "tree", "--stdin"],
+            input="",
+            text=True,
+            capture_output=True,
+            check=True,
+        ).stdout.strip()
+        # A 64-hex SHA, distinct from the SHA-1 constant — proving the hardcoded
+        # constant would be the wrong object to diff against in a sha256 repo.
+        assert len(sha256_empty) == 64
+        assert sha256_empty != _EMPTY_TREE_SHA
+
     def test_get_file_diff_per_commit_copy_renders_as_add(self, tmp_path: Path) -> None:
         """A copied binary renders as a plain ``Bin`` add, not a mislabelled rename (#683).
 
