@@ -26,6 +26,10 @@ from markdown_vault_mcp.types import CommitDiff, HistoryEntry
 
 logger = logging.getLogger(__name__)
 
+# Git's well-known empty-tree SHA: a real object in every repository.
+# Used to diff a parent-less (root/orphan) commit against "nothing".
+_EMPTY_TREE_SHA = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+
 
 def _diff_is_binary(
     git_root: Path, diff_args: list[str], env: dict[str, str] | None
@@ -212,7 +216,7 @@ def resolve_path_at_ref(
                 "--name-status",
                 # 30% threshold: catch rename-with-edits per #338, avoid template false-positives.
                 "--find-renames=30",
-                # Enable copy detection at the same threshold.
+                # --find-copies (not -harder): only detects copies whose source was modified in the same commit; an unchanged-source copy appears as a plain add.
                 "--find-copies=30",
                 # -z: NUL-terminated fields, tolerates tabs/newlines in paths.
                 "-z",
@@ -472,16 +476,43 @@ def get_file_diff(
                 show_result = subprocess.run(
                     diff_cmd, capture_output=True, text=True, check=True, env=env
                 )
-            except subprocess.CalledProcessError:
-                # Parent-less (root) commit: {sha}^ does not resolve. Fall back to
-                # the add-form `git show` (the original behaviour for this case).
+            except subprocess.CalledProcessError as exc:
+                # A failure here is expected ONLY for a parent-less (root/orphan)
+                # commit, where `{sha}^` can't resolve. Any other failure is real
+                # and must surface rather than silently degrade to an add-form,
+                # rename-unaware diff.
+                parent_exists = (
+                    subprocess.run(
+                        [
+                            "git",
+                            "-C",
+                            str(git_root),
+                            "rev-parse",
+                            "--verify",
+                            "--quiet",
+                            f"{sha}^",
+                        ],
+                        capture_output=True,
+                        env=env,
+                    ).returncode
+                    == 0
+                )
+                if parent_exists:
+                    raise ValueError(
+                        f"Could not retrieve diff for commit {sha!r}"
+                    ) from exc
+                # Genuinely parent-less: classify against the empty tree (so a root
+                # binary still gets --stat) and render the add-form.
+                root_binary = summarize_binary and _diff_is_binary(
+                    git_root, [_EMPTY_TREE_SHA, sha, "--", commit_path], env
+                )
                 fallback_cmd = [
                     "git",
                     "-C",
                     str(git_root),
                     "show",
                     "--format=",
-                    "--stat" if commit_binary else "-p",
+                    "--stat" if root_binary else "-p",
                     sha,
                     "--",
                     commit_path,
@@ -494,10 +525,10 @@ def get_file_diff(
                         check=True,
                         env=env,
                     )
-                except subprocess.CalledProcessError as exc:
+                except subprocess.CalledProcessError as exc2:
                     raise ValueError(
                         f"Could not retrieve diff for commit {sha!r}"
-                    ) from exc
+                    ) from exc2
             commit_diff = show_result.stdout.lstrip("\n")
             if len(commit_diff.encode()) > _DIFF_MAX_BYTES:
                 omitted = len(commit_diff.encode()) - _DIFF_MAX_BYTES

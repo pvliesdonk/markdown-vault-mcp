@@ -3451,7 +3451,9 @@ class TestGetFileDiff:
         )
         assert isinstance(out, list) and out
         rename_entry = out[0]  # newest-first = the rename+edit commit
-        assert " -> " in rename_entry.diff and "=>" in rename_entry.diff
+        # `{x.png => y.png}` (the => rename-pair marker) appears ONLY in the paired
+        # form; the old broken `Bin 0 -> N bytes` add-stat does not contain it.
+        assert "=>" in rename_entry.diff and "Bin" in rename_entry.diff
         assert "@@" not in rename_entry.diff
 
     def test_get_file_diff_per_commit_classifies_binariness_per_commit(
@@ -3514,8 +3516,8 @@ class TestGetFileDiff:
     def test_get_file_diff_per_commit_binary_added_in_first_in_range_commit(
         self, tmp_path: Path
     ) -> None:
-        """A binary added in the first in-range commit still produces a Bin stat
-        (no {sha}^ crash when the parent resolution / two-blob form can't apply).
+        """A plain binary add (no rename) in an in-range commit still yields a
+        ``Bin`` stat via the non-rename ``git diff {sha}^..{sha} -- path`` form.
         """
         repo = tmp_path / "r"
         repo.mkdir()
@@ -3564,12 +3566,16 @@ class TestGetFileDiff:
         assert isinstance(out, list) and out
         assert any("Bin" in cd.diff for cd in out)
 
-    def test_get_file_diff_per_commit_falls_back_to_git_show_when_parent_diff_fails(
+    def test_get_file_diff_per_commit_parent_less_falls_back_to_git_show(
         self, tmp_path: Path
     ) -> None:
-        """When the parent-relative ``git diff`` can't run (e.g. a parent-less
-        commit whose ``{sha}^`` does not resolve), the per-commit branch falls
-        back to the add-form ``git show`` rather than crashing (#683)."""
+        """For a genuinely parent-less (root/orphan) commit the per-commit branch
+        falls back to the add-form ``git show`` rather than crashing (#683).
+
+        The ``rev-parse --verify {sha}^`` probe returns non-zero (no parent),
+        so the code classifies this as an orphan commit and uses the fallback
+        instead of surfacing the diff failure as a ``ValueError``.
+        """
         from unittest.mock import patch
 
         repo = tmp_path / "r"
@@ -3611,10 +3617,10 @@ class TestGetFileDiff:
         show_seen: list[bool] = []
 
         def fake_run(cmd, *args, **kwargs):  # type: ignore[no-untyped-def]
-            # Force ONLY the parent-relative per-commit diff to fail (the
-            # `git diff -p <parent>..<sha> -- <path>` / blob-pair command), so
-            # the fallback `git show` branch is exercised.  The `git diff
-            # --numstat` binariness probe runs check=False and must pass through.
+            # Simulate a parent-less commit by:
+            # 1. Forcing the parent-relative per-commit diff (-p, not --numstat) to fail.
+            # 2. Returning non-zero for the `rev-parse --verify {sha}^` parent probe,
+            #    so the code classifies the commit as parent-less and uses the fallback.
             if (
                 isinstance(cmd, list)
                 and "diff" in cmd
@@ -3622,6 +3628,17 @@ class TestGetFileDiff:
                 and "--numstat" not in cmd
             ):
                 raise subprocess.CalledProcessError(128, cmd)
+            if (
+                isinstance(cmd, list)
+                and "rev-parse" in cmd
+                and "--verify" in cmd
+                and any(a.endswith("^") for a in cmd)
+            ):
+                import subprocess as _sp
+
+                return _sp.CompletedProcess(
+                    args=cmd, returncode=1, stdout=b"", stderr=b""
+                )
             if isinstance(cmd, list) and "show" in cmd:
                 show_seen.append(True)
             return real_run(cmd, *args, **kwargs)
@@ -3640,11 +3657,16 @@ class TestGetFileDiff:
         assert show_seen
         assert any("+hello" in cd.diff for cd in out)
 
-    def test_get_file_diff_per_commit_falls_back_then_raises_on_show_failure(
+    def test_get_file_diff_per_commit_non_parent_less_diff_failure_raises(
         self, tmp_path: Path
     ) -> None:
-        """If both the parent-relative diff AND the fallback ``git show`` fail,
-        the per-commit branch raises a ValueError naming the commit (#683)."""
+        """A per-commit diff failure on a commit that HAS a parent raises
+        ``ValueError`` immediately (not a silent fallback to an add-form diff).
+
+        This is the scoping introduced by #683: the old broad ``except`` silently
+        degraded any diff failure; the new code checks whether the commit is
+        parent-less and only falls back for genuine root/orphan commits.  Any
+        other diff failure is a real error and must surface."""
         from unittest.mock import patch
 
         repo = tmp_path / "r"
@@ -3685,11 +3707,11 @@ class TestGetFileDiff:
         real_run = subprocess.run
 
         def fake_run(cmd, *args, **kwargs):  # type: ignore[no-untyped-def]
-            # Fail both the per-commit diff (-p, not the --numstat probe) and the
-            # fallback `git show`; let log enumeration / numstat pass through.
+            # Fail the per-commit diff (-p, not the --numstat probe); let everything
+            # else including `rev-parse --verify` pass through so the code sees a
+            # commit that HAS a parent → ValueError rather than fallback.
             if isinstance(cmd, list) and (
-                ("diff" in cmd and "-p" in cmd and "--numstat" not in cmd)
-                or "show" in cmd
+                "diff" in cmd and "-p" in cmd and "--numstat" not in cmd
             ):
                 raise subprocess.CalledProcessError(128, cmd)
             return real_run(cmd, *args, **kwargs)
@@ -3926,6 +3948,93 @@ def test_resolve_path_at_ref_recovers_copy_source(
 
     monkeypatch.setattr("markdown_vault_mcp.git.query.subprocess.run", fake_run)
     assert resolve_path_at_ref(tmp_path, "deadbeef", "dst.txt", None) == "src.txt"
+
+
+def test_resolve_path_at_ref_real_git_copy(tmp_path: Path) -> None:
+    """resolve_path_at_ref resolves a C* entry using a real git repo.
+
+    --find-copies=30 (not -harder) only emits a C record when the copy source
+    was ALSO MODIFIED in the same commit.  This test builds exactly that
+    shape: commit 1 adds ``src.txt``; commit 2 both modifies ``src.txt`` and
+    adds an identical-content ``dst.txt`` so that git detects the copy.
+
+    If the local git version does not emit a ``C`` record (returns ``None``
+    instead of ``"src.txt"``), the test is skipped with a note about what git
+    actually emitted, so the synthetic test above remains the primary
+    behavioural guard.
+    """
+    import subprocess as _sp
+
+    from markdown_vault_mcp.git.query import resolve_path_at_ref
+
+    repo = tmp_path / "r"
+    repo.mkdir()
+    for a in (
+        ["init"],
+        ["config", "user.email", "t@t"],
+        ["config", "user.name", "t"],
+    ):
+        _sp.run(["git", "-C", str(repo), *a], check=True, capture_output=True)
+    (repo / "src.txt").write_text("hello world this is the source\n")
+    _sp.run(["git", "-C", str(repo), "add", "."], check=True, capture_output=True)
+    _sp.run(
+        ["git", "-C", str(repo), "commit", "-m", "c1 add src"],
+        check=True,
+        capture_output=True,
+    )
+    c1 = _sp.run(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    # Modify src.txt AND add dst.txt as a copy of its pre-modification content.
+    # For copy detection we need dst.txt to be similar-enough to the original
+    # src.txt content; appending to src gives git the modified-source signal.
+    (repo / "dst.txt").write_text("hello world this is the source\n")
+    (repo / "src.txt").write_text("hello world this is the source\nmodified\n")
+    _sp.run(["git", "-C", str(repo), "add", "."], check=True, capture_output=True)
+    _sp.run(
+        ["git", "-C", str(repo), "commit", "-m", "c2 modify src copy to dst"],
+        check=True,
+        capture_output=True,
+    )
+    c2 = _sp.run(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+    # Verify what git actually emits — if no C record is emitted on this git
+    # version, skip rather than assert a wrong outcome.
+    probe = _sp.run(
+        [
+            "git",
+            "-C",
+            str(repo),
+            "diff",
+            "--name-status",
+            "--find-renames=30",
+            "--find-copies=30",
+            c1,
+            c2,
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    has_copy_record = any(line.startswith("C") for line in probe.stdout.splitlines())
+    if not has_copy_record:
+        pytest.skip(
+            f"git did not emit a C record for this copy shape on this version; "
+            f"git output: {probe.stdout.strip()!r}"
+        )
+
+    result = resolve_path_at_ref(repo, c1, "dst.txt", None, to_ref=c2)
+    assert result == "src.txt", (
+        f"Expected 'src.txt' but got {result!r}; git output: {probe.stdout.strip()!r}"
+    )
 
 
 class TestGetFileHistoryVaultScope:
