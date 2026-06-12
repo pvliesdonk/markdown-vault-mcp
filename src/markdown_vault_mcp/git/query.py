@@ -191,8 +191,14 @@ def resolve_path_at_ref(
     ref: str,
     cur_rel: str,
     env: dict[str, str] | None,
+    *,
+    to_ref: str = "HEAD",
 ) -> str | None:
-    """Return the path *cur_rel* had at *ref* via rename detection, else None."""
+    """Return the path *cur_rel* had at *ref* via rename/copy detection, else None.
+
+    Diffs ``ref..to_ref`` (``to_ref`` defaults to ``HEAD``).  Pass a specific
+    commit as *to_ref* to resolve a rename/copy a single commit introduced.
+    """
     try:
         result = subprocess.run(
             [
@@ -203,10 +209,12 @@ def resolve_path_at_ref(
                 "--name-status",
                 # 30% threshold: catch rename-with-edits per #338, avoid template false-positives.
                 "--find-renames=30",
+                # Enable copy detection at the same threshold.
+                "--find-copies=30",
                 # -z: NUL-terminated fields, tolerates tabs/newlines in paths.
                 "-z",
                 ref,
-                "HEAD",
+                to_ref,
             ],
             capture_output=True,
             text=True,
@@ -220,15 +228,11 @@ def resolve_path_at_ref(
     i = 0
     while i < len(items):
         status = items[i]
-        if status.startswith("R"):
+        if status.startswith(("R", "C")):
             if i + 2 >= len(items):
                 break
             if items[i + 2] == cur_rel:
                 return items[i + 1]
-            i += 3
-        elif status.startswith("C"):
-            if i + 2 >= len(items):
-                break
             i += 3
         else:
             if i + 1 >= len(items):

@@ -3528,10 +3528,10 @@ class TestGetFileDiff:
             is None
         )
 
-    def test_resolve_path_at_ref_skips_copy_entries(
+    def test_resolve_path_at_ref_resolves_copy_entries(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """C<score> entries (copies) are skipped, never returned as a rename match."""
+        """C<score> entries (copies) resolve to the copy source, same as renames."""
         fake_stdout = "C092\0source.md\0target.md\0"
 
         def fake_run(*_args: object, **_kw: object) -> subprocess.CompletedProcess[str]:
@@ -3544,7 +3544,7 @@ class TestGetFileDiff:
             GitWriteStrategy._resolve_path_at_ref(
                 tmp_path, "deadbeef", "target.md", env=None
             )
-            is None
+            == "source.md"
         )
 
     def test_resolve_path_at_ref_handles_truncated_rename_output(
@@ -3602,6 +3602,72 @@ class TestGetFileDiff:
             pytest.raises(ValueError, match="git log failed"),
         ):
             strategy.get_file_history(repo, path=None, since=None, limit=20)
+
+
+def test_resolve_path_at_ref_to_ref_resolves_single_commit_rename(
+    tmp_path: Path,
+) -> None:
+    """resolve_path_at_ref with to_ref resolves a rename a single commit made."""
+    import subprocess as _sp
+
+    from markdown_vault_mcp.git.query import resolve_path_at_ref
+
+    repo = tmp_path / "r"
+    repo.mkdir()
+    for a in (
+        ["init"],
+        ["config", "user.email", "t@t"],
+        ["config", "user.name", "t"],
+    ):
+        _sp.run(["git", "-C", str(repo), *a], check=True, capture_output=True)
+    (repo / "x.txt").write_text("hello\n")
+    _sp.run(["git", "-C", str(repo), "add", "."], check=True, capture_output=True)
+    _sp.run(
+        ["git", "-C", str(repo), "commit", "-m", "c1"],
+        check=True,
+        capture_output=True,
+    )
+    _sp.run(
+        ["git", "-C", str(repo), "mv", "x.txt", "y.txt"],
+        check=True,
+        capture_output=True,
+    )
+    _sp.run(
+        ["git", "-C", str(repo), "commit", "-m", "c2"],
+        check=True,
+        capture_output=True,
+    )
+    sha = _sp.run(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert resolve_path_at_ref(repo, f"{sha}^", "y.txt", None, to_ref=sha) == "x.txt"
+
+
+def test_resolve_path_at_ref_recovers_copy_source(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A git-detected copy (C*) resolves its source path (not skipped).
+
+    Git copy detection is heuristic and requires --find-copies, which may not
+    emit a C record for identical files on all platforms/versions.  This test
+    drives the parse branch directly via a monkeypatched subprocess.run that
+    returns a synthetic C100\\0src.txt\\0dst.txt\\0 stdout, ensuring the C*
+    branch actually returns the source rather than skipping the record.
+    """
+    from markdown_vault_mcp.git.query import resolve_path_at_ref
+
+    fake_stdout = "C100\0src.txt\0dst.txt\0"
+
+    def fake_run(*_args: object, **_kw: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(
+            args=[], returncode=0, stdout=fake_stdout, stderr=""
+        )
+
+    monkeypatch.setattr("markdown_vault_mcp.git.query.subprocess.run", fake_run)
+    assert resolve_path_at_ref(tmp_path, "deadbeef", "dst.txt", None) == "src.txt"
 
 
 class TestGetFileHistoryVaultScope:
