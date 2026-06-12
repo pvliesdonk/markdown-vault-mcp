@@ -2243,13 +2243,15 @@ Both methods use the existing `_git_env()` / `_cleanup_git_env()` pattern for cr
 use). `get_diff` lets git classify each attachment: a binary file (git
 `--numstat` reports `-\t-`) returns a `git diff --stat` size/rename summary,
 while a text attachment (`.svg`, `.csv`, …) returns a full unified diff. `.md`
-notes are unchanged. The per-commit path (`per_commit=True`) is rename/copy-aware
-per commit (#683): for each commit it resolves the path's rename/copy against
+notes are unchanged. The per-commit path (`per_commit=True`) is rename-aware
+per commit (#683): for each commit it resolves the path's rename against
 that commit's parent (`resolve_path_at_ref(git_root, "{sha}^", commit_path, …,
 to_ref=sha)`) and diffs the two blobs (`git diff {sha}^:old {sha}:new`),
 classifying binariness per commit — so a renamed binary pairs into
-`{old => new} | Bin OLD -> NEW` instead of an add/text stat. Non-rename commits
-use `git diff {sha}^..{sha} -- path` (behaviour-preserving), and a parent-less
+`{old => new} | Bin OLD -> NEW` instead of an add/text stat. A copied file
+renders as a plain add (binary classification still correct; copy records are
+skipped by `resolve_path_at_ref`). Non-rename commits use
+`git diff {sha}^..{sha} -- path` (behaviour-preserving), and a parent-less
 (root) commit falls back to the add-form `git show`. A pure rename with
 byte-identical content produces an empty two-blob diff; the per-commit path
 synthesizes a `{old} => {new} (renamed, no content change)` marker in that case

@@ -36,11 +36,12 @@ def _diff_is_binary(
 ) -> bool:
     """True if git reports the diff target as binary.
 
-    *diff_args* is the ref/path portion of a ``git diff`` invocation — either
-    a range/path form (``["<from>..<to>", "--", path_str]``) or a two-endpoint
-    blob/tree-spec form (``[f"{a}:{old}", f"{b}:{new}"]``, or a tree SHA such as
-    the empty-tree constant).  The endpoints may be a ref and ``HEAD``, two
-    commit SHAs (e.g. a commit and its parent), or a commit and the empty tree.
+    *diff_args* is the ref/path portion of a ``git diff`` invocation — such as
+    a range/path form (``["<from>..<to>", "--", path_str]``), a two-endpoint
+    blob/tree-spec form (``[f"{a}:{old}", f"{b}:{new}"]``), or two revs followed
+    by a pathspec (e.g. the empty-tree SHA and a commit SHA followed by
+    ``["--", commit_path]``, used for parent-less commits).  The endpoints may
+    be refs, commit SHAs, blob specs, or the empty-tree constant.
     ``git diff --numstat`` prints ``-\\t-\\t<path>`` for binary and real counts
     for text; empty output (no change) → non-binary.
     A non-zero git exit (e.g. a bad ref) yields empty stdout, so it is classified
@@ -203,10 +204,10 @@ def resolve_path_at_ref(
     *,
     to_ref: str = "HEAD",
 ) -> str | None:
-    """Return the path *cur_rel* had at *ref* via rename/copy detection, else None.
+    """Return the path *cur_rel* had at *ref* via rename detection, else None.
 
     Diffs ``ref..to_ref`` (``to_ref`` defaults to ``HEAD``).  Pass a specific
-    commit as *to_ref* to resolve a rename/copy a single commit introduced.
+    commit as *to_ref* to resolve a rename a single commit introduced.
     """
     try:
         result = subprocess.run(
@@ -218,8 +219,6 @@ def resolve_path_at_ref(
                 "--name-status",
                 # 30% threshold: catch rename-with-edits per #338, avoid template false-positives.
                 "--find-renames=30",
-                # --find-copies (not -harder): only detects copies whose source was modified in the same commit; an unchanged-source copy appears as a plain add.
-                "--find-copies=30",
                 # -z: NUL-terminated fields, tolerates tabs/newlines in paths.
                 "-z",
                 ref,
@@ -232,16 +231,20 @@ def resolve_path_at_ref(
         )
     except subprocess.CalledProcessError:
         return None
-    # Stream: <status>\0<path>\0  (R*/C* add a second path before the closing NUL).
+    # Stream: <status>\0<path>\0  (R* adds a second path before the closing NUL).
     items = result.stdout.split("\0")[:-1]
     i = 0
     while i < len(items):
         status = items[i]
-        if status.startswith(("R", "C")):
+        if status.startswith("R"):
             if i + 2 >= len(items):
                 break
             if items[i + 2] == cur_rel:
                 return items[i + 1]
+            i += 3
+        elif status.startswith("C"):
+            if i + 2 >= len(items):
+                break
             i += 3
         else:
             if i + 1 >= len(items):
@@ -451,7 +454,7 @@ def get_file_diff(
             # With --follow, this will be the old name for pre-rename commits.
             commit_path = next((ln.strip() for ln in lines[1:] if ln.strip()), path_str)
 
-            # Build a rename/copy-aware diff target for THIS commit vs its parent,
+            # Build a rename-aware diff target for THIS commit vs its parent,
             # mirroring the non-per-commit branch, so a renamed binary pairs into
             # `{old => new} | Bin OLD -> NEW` instead of an add/text stat (#683).
             parent = f"{sha}^"
@@ -537,7 +540,7 @@ def get_file_diff(
                 and old_at_parent is not None
                 and old_at_parent != commit_path
             ):
-                # Pure rename/copy with byte-identical content: the two-blob diff
+                # Pure rename with byte-identical content: the two-blob diff
                 # of identical blobs is empty, so the rename would otherwise be
                 # invisible. Synthesize a marker rather than emit an empty diff (#683).
                 commit_diff = (

@@ -3657,6 +3657,96 @@ class TestGetFileDiff:
         assert show_seen
         assert any("+hello" in cd.diff for cd in out)
 
+    def test_get_file_diff_per_commit_parent_less_fallback_show_also_fails_raises(
+        self, tmp_path: Path
+    ) -> None:
+        """When the primary per-commit diff fails AND the parent-less ``git show``
+        fallback also fails, ``ValueError("Could not retrieve diff for commit …")``
+        is raised (the nested ``exc2`` path).
+
+        Setup mirrors ``test_get_file_diff_per_commit_parent_less_falls_back_to_git_show``:
+        ``rev-parse --verify {sha}^`` returns non-zero (parent-less), so the
+        code takes the fallback branch — but then the fallback ``git show`` also
+        raises, triggering the inner ``except CalledProcessError as exc2`` re-raise.
+        """
+        from unittest.mock import patch
+
+        repo = tmp_path / "r"
+        repo.mkdir()
+        for a in (
+            ["init"],
+            ["config", "user.email", "t@t"],
+            ["config", "user.name", "t"],
+        ):
+            subprocess.run(
+                ["git", "-C", str(repo), *a], check=True, capture_output=True
+            )
+        (repo / "seed.txt").write_text("seed\n")
+        subprocess.run(
+            ["git", "-C", str(repo), "add", "."], check=True, capture_output=True
+        )
+        subprocess.run(
+            ["git", "-C", str(repo), "commit", "-m", "seed"],
+            check=True,
+            capture_output=True,
+        )
+        first = subprocess.run(
+            ["git", "-C", str(repo), "rev-parse", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        (repo / "note.md").write_text("# added\nhello\n")
+        subprocess.run(
+            ["git", "-C", str(repo), "add", "."], check=True, capture_output=True
+        )
+        subprocess.run(
+            ["git", "-C", str(repo), "commit", "-m", "add note"],
+            check=True,
+            capture_output=True,
+        )
+
+        real_run = subprocess.run
+
+        def fake_run(cmd, *args, **kwargs):  # type: ignore[no-untyped-def]
+            # Force the primary per-commit diff (-p) to fail.
+            if (
+                isinstance(cmd, list)
+                and "diff" in cmd
+                and "-p" in cmd
+                and "--numstat" not in cmd
+            ):
+                raise subprocess.CalledProcessError(128, cmd)
+            # Return non-zero for `rev-parse --verify {sha}^` → parent-less.
+            if (
+                isinstance(cmd, list)
+                and "rev-parse" in cmd
+                and "--verify" in cmd
+                and any(a.endswith("^") for a in cmd)
+            ):
+                import subprocess as _sp
+
+                return _sp.CompletedProcess(
+                    args=cmd, returncode=1, stdout=b"", stderr=b""
+                )
+            # Force the fallback `git show` to also fail.
+            if isinstance(cmd, list) and "show" in cmd:
+                raise subprocess.CalledProcessError(128, cmd)
+            return real_run(cmd, *args, **kwargs)
+
+        strategy = GitWriteStrategy()
+        with (
+            patch("markdown_vault_mcp.git.subprocess.run", side_effect=fake_run),
+            pytest.raises(ValueError, match="Could not retrieve diff for commit"),
+        ):
+            strategy.get_file_diff(
+                repo,
+                repo / "note.md",
+                ref=first,
+                per_commit=True,
+                summarize_binary=False,
+            )
+
     def test_get_file_diff_per_commit_non_parent_less_diff_failure_raises(
         self, tmp_path: Path
     ) -> None:
@@ -3808,10 +3898,15 @@ class TestGetFileDiff:
             is None
         )
 
-    def test_resolve_path_at_ref_resolves_copy_entries(
+    def test_resolve_path_at_ref_skips_copy_entries(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """C<score> entries (copies) resolve to the copy source, same as renames."""
+        """C<score> entries (copies) are skipped — a copy is not a rename.
+
+        A copied file renders as a plain add in git's numstat output, so its
+        source path is not recovered.  The parser must advance past the
+        three-token C* record (status + old + new) without returning a result.
+        """
         fake_stdout = "C092\0source.md\0target.md\0"
 
         def fake_run(*_args: object, **_kw: object) -> subprocess.CompletedProcess[str]:
@@ -3824,7 +3919,7 @@ class TestGetFileDiff:
             GitWriteStrategy._resolve_path_at_ref(
                 tmp_path, "deadbeef", "target.md", env=None
             )
-            == "source.md"
+            is None
         )
 
     def test_resolve_path_at_ref_handles_truncated_rename_output(
@@ -4088,117 +4183,6 @@ def test_resolve_path_at_ref_to_ref_resolves_single_commit_rename(
         text=True,
     ).stdout.strip()
     assert resolve_path_at_ref(repo, f"{sha}^", "y.txt", None, to_ref=sha) == "x.txt"
-
-
-def test_resolve_path_at_ref_recovers_copy_source(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A git-detected copy (C*) resolves its source path (not skipped).
-
-    Git copy detection is heuristic and requires --find-copies, which may not
-    emit a C record for identical files on all platforms/versions.  This test
-    drives the parse branch directly via a monkeypatched subprocess.run that
-    returns a synthetic C100\\0src.txt\\0dst.txt\\0 stdout, ensuring the C*
-    branch actually returns the source rather than skipping the record.
-    """
-    from markdown_vault_mcp.git.query import resolve_path_at_ref
-
-    fake_stdout = "C100\0src.txt\0dst.txt\0"
-
-    def fake_run(*_args: object, **_kw: object) -> subprocess.CompletedProcess[str]:
-        return subprocess.CompletedProcess(
-            args=[], returncode=0, stdout=fake_stdout, stderr=""
-        )
-
-    monkeypatch.setattr("markdown_vault_mcp.git.query.subprocess.run", fake_run)
-    assert resolve_path_at_ref(tmp_path, "deadbeef", "dst.txt", None) == "src.txt"
-
-
-def test_resolve_path_at_ref_real_git_copy(tmp_path: Path) -> None:
-    """resolve_path_at_ref resolves a C* entry using a real git repo.
-
-    --find-copies=30 (not -harder) only emits a C record when the copy source
-    was ALSO MODIFIED in the same commit.  This test builds exactly that
-    shape: commit 1 adds ``src.txt``; commit 2 both modifies ``src.txt`` and
-    adds an identical-content ``dst.txt`` so that git detects the copy.
-
-    If the local git version does not emit a ``C`` record (returns ``None``
-    instead of ``"src.txt"``), the test is skipped with a note about what git
-    actually emitted, so the synthetic test above remains the primary
-    behavioural guard.
-    """
-    import subprocess as _sp
-
-    from markdown_vault_mcp.git.query import resolve_path_at_ref
-
-    repo = tmp_path / "r"
-    repo.mkdir()
-    for a in (
-        ["init"],
-        ["config", "user.email", "t@t"],
-        ["config", "user.name", "t"],
-    ):
-        _sp.run(["git", "-C", str(repo), *a], check=True, capture_output=True)
-    (repo / "src.txt").write_text("hello world this is the source\n")
-    _sp.run(["git", "-C", str(repo), "add", "."], check=True, capture_output=True)
-    _sp.run(
-        ["git", "-C", str(repo), "commit", "-m", "c1 add src"],
-        check=True,
-        capture_output=True,
-    )
-    c1 = _sp.run(
-        ["git", "-C", str(repo), "rev-parse", "HEAD"],
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
-    # Modify src.txt AND add dst.txt as a copy of its pre-modification content.
-    # For copy detection we need dst.txt to be similar-enough to the original
-    # src.txt content; appending to src gives git the modified-source signal.
-    (repo / "dst.txt").write_text("hello world this is the source\n")
-    (repo / "src.txt").write_text("hello world this is the source\nmodified\n")
-    _sp.run(["git", "-C", str(repo), "add", "."], check=True, capture_output=True)
-    _sp.run(
-        ["git", "-C", str(repo), "commit", "-m", "c2 modify src copy to dst"],
-        check=True,
-        capture_output=True,
-    )
-    c2 = _sp.run(
-        ["git", "-C", str(repo), "rev-parse", "HEAD"],
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
-
-    # Verify what git actually emits — if no C record is emitted on this git
-    # version, skip rather than assert a wrong outcome.
-    probe = _sp.run(
-        [
-            "git",
-            "-C",
-            str(repo),
-            "diff",
-            "--name-status",
-            "--find-renames=30",
-            "--find-copies=30",
-            c1,
-            c2,
-        ],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    has_copy_record = any(line.startswith("C") for line in probe.stdout.splitlines())
-    if not has_copy_record:
-        pytest.skip(
-            f"git did not emit a C record for this copy shape on this version; "
-            f"git output: {probe.stdout.strip()!r}"
-        )
-
-    result = resolve_path_at_ref(repo, c1, "dst.txt", None, to_ref=c2)
-    assert result == "src.txt", (
-        f"Expected 'src.txt' but got {result!r}; git output: {probe.stdout.strip()!r}"
-    )
 
 
 class TestGetFileHistoryVaultScope:

@@ -362,7 +362,8 @@ class ReaderFacet:
             unchanged.  Returns an empty string / empty list when the file has
             no changes in the given range, or when the vault's source
             directory is not inside a git repository.  Per-commit
-            (``per_commit=True``) attachment diffs are rename/copy-aware.
+            (``per_commit=True``) attachment diffs are rename-aware (a copied
+            file renders as an add).
 
         Raises:
             ValueError: If exactly one of *since_sha* / *since_timestamp* is
