@@ -361,11 +361,8 @@ class ReaderFacet:
             attachment returns a full unified diff, and ``.md`` notes are
             unchanged.  Returns an empty string / empty list when the file has
             no changes in the given range, or when the vault's source
-            directory is not inside a git repository.
-
-            Per-commit (``per_commit=True``) diff of a *renamed* binary
-            attachment currently shows a text-style stat for the rename commit
-            rather than a ``Bin`` summary (#683).
+            directory is not inside a git repository.  Per-commit
+            (``per_commit=True``) attachment diffs are rename/copy-aware.
 
         Raises:
             ValueError: If exactly one of *since_sha* / *since_timestamp* is

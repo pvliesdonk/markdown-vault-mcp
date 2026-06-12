@@ -37,6 +37,9 @@ def _diff_is_binary(
     ``[f"{ref}:{old_path}", f"HEAD:{cur_rel}"]`` (rename-recovered). ``git diff
     --numstat`` prints ``-\\t-\\t<path>`` for binary and real counts for text;
     empty output (no change) → non-binary.
+    A non-zero git exit (e.g. a bad ref) yields empty stdout, so it is classified
+    non-binary; the error is then surfaced by the subsequent checked ``git diff``
+    call. This is a detection probe, not the final word.
     """
     result = subprocess.run(
         ["git", "-C", str(git_root), "diff", "--numstat", *diff_args],

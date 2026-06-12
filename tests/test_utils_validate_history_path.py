@@ -45,3 +45,9 @@ def test_accepts_any_attachment_under_wildcard(tmp_path):
         validate_history_path("assets/photo.heic", tmp_path, frozenset({"*"}))
         == (tmp_path / "assets/photo.heic").resolve()
     )
+
+
+def test_rejects_extensionless_path(tmp_path):
+    """A path with no extension (suffix '') is rejected without a wildcard."""
+    with pytest.raises(ValueError, match="\\.md note or a configured attachment"):
+        validate_history_path("README", tmp_path, frozenset({"png"}))
