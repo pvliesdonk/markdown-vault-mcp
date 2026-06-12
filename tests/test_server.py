@@ -181,6 +181,58 @@ class TestToolListing:
         assert "rename" in names
 
 
+class TestToolManifest:
+    """Pin the exact set of tools register_tools() registers.
+
+    Safety net for the _server_tools package decomposition (#578): builds a
+    bare FastMCP, calls register_tools, and asserts the full tool set — so a
+    tool accidentally dropped or renamed during the refactor fails loudly.
+    Uses register_tools directly (not make_server) to bypass the tag-based
+    disable passes, so disabled-by-default tools like git_sync are still
+    asserted.
+    """
+
+    async def test_register_tools_registers_exact_manifest(self) -> None:
+        from fastmcp import FastMCP
+
+        from markdown_vault_mcp._server_tools import register_tools
+
+        mcp = FastMCP("manifest-test")
+        register_tools(mcp)
+        tools = await mcp.list_tools()
+        names = sorted(t.name for t in tools)
+
+        assert names == [
+            "build_embeddings",
+            "delete",
+            "edit",
+            "embeddings_status",
+            "fetch",
+            "get_backlinks",
+            "get_broken_links",
+            "get_connection_path",
+            "get_context",
+            "get_diff",
+            "get_history",
+            "get_index_status",
+            "get_most_linked",
+            "get_orphan_notes",
+            "get_outlinks",
+            "get_recent",
+            "get_similar",
+            "git_sync",
+            "list_documents",
+            "list_folders",
+            "list_tags",
+            "read",
+            "reindex",
+            "rename",
+            "search",
+            "stats",
+            "write",
+        ]
+
+
 class TestToolAnnotations:
     """Verify ToolAnnotations are set correctly per tool."""
 
