@@ -396,24 +396,6 @@ def get_file_diff(
                 diff += f"\n[diff truncated: {omitted} bytes omitted]"
             return diff
 
-        # Binary attachments: per-commit patches are equally meaningless, so
-        # detect binariness once up front (rename-aware, mirroring the
-        # non-per-commit branch) and emit a --stat per commit below.
-        try:
-            cur_rel = path.resolve().relative_to(git_root).as_posix()
-        except ValueError:
-            cur_rel = None
-        old_path = (
-            resolve_path_at_ref(git_root, ref, cur_rel, env)
-            if cur_rel is not None
-            else None
-        )
-        if old_path is None or cur_rel is None or old_path == cur_rel:
-            detect_args = [f"{ref}..HEAD", "--", path_str]
-        else:
-            detect_args = [f"{ref}:{old_path}", f"HEAD:{cur_rel}"]
-        binary = summarize_binary and _diff_is_binary(git_root, detect_args, env)
-
         # per_commit=True: enumerate commits in range then show each.
         # Use --name-only with a sentinel so we can recover the path the
         # file had at each commit — critical for correct diffs across
@@ -459,31 +441,60 @@ def get_file_diff(
             # Recover the path the file had at this specific commit.
             # With --follow, this will be the old name for pre-rename commits.
             commit_path = next((ln.strip() for ln in lines[1:] if ln.strip()), path_str)
-            # NOTE: for a renamed binary the per-commit `git show --stat
-            # -- commit_path` pathspec defeats git's rename pairing and renders a
-            # text-style stat instead of `Bin … bytes` — known limitation, see #683.
-            # The non-per-commit path is rename-aware.
-            show_cmd = [
+
+            # Build a rename/copy-aware diff target for THIS commit vs its parent,
+            # mirroring the non-per-commit branch, so a renamed binary pairs into
+            # `{old => new} | Bin OLD -> NEW` instead of an add/text stat (#683).
+            parent = f"{sha}^"
+            old_at_parent = resolve_path_at_ref(
+                git_root, parent, commit_path, env, to_ref=sha
+            )
+            if old_at_parent is not None and old_at_parent != commit_path:
+                commit_args = [f"{parent}:{old_at_parent}", f"{sha}:{commit_path}"]
+            else:
+                commit_args = [f"{parent}..{sha}", "--", commit_path]
+            # Classify binariness for THIS commit (not the whole range).
+            commit_binary = summarize_binary and _diff_is_binary(
+                git_root, commit_args, env
+            )
+            diff_cmd = [
                 "git",
                 "-C",
                 str(git_root),
-                "show",
-                "--format=",
-                "--stat" if binary else "-p",
-                sha,
-                "--",
-                commit_path,
+                "diff",
+                "--stat" if commit_binary else "-p",
+                *commit_args,
             ]
             try:
                 show_result = subprocess.run(
-                    show_cmd,
-                    capture_output=True,
-                    text=True,
-                    check=True,
-                    env=env,
+                    diff_cmd, capture_output=True, text=True, check=True, env=env
                 )
-            except subprocess.CalledProcessError as exc:
-                raise ValueError(f"Could not retrieve diff for commit {sha!r}") from exc
+            except subprocess.CalledProcessError:
+                # Parent-less (root) commit: {sha}^ does not resolve. Fall back to
+                # the add-form `git show` (the original behaviour for this case).
+                fallback_cmd = [
+                    "git",
+                    "-C",
+                    str(git_root),
+                    "show",
+                    "--format=",
+                    "--stat" if commit_binary else "-p",
+                    sha,
+                    "--",
+                    commit_path,
+                ]
+                try:
+                    show_result = subprocess.run(
+                        fallback_cmd,
+                        capture_output=True,
+                        text=True,
+                        check=True,
+                        env=env,
+                    )
+                except subprocess.CalledProcessError as exc:
+                    raise ValueError(
+                        f"Could not retrieve diff for commit {sha!r}"
+                    ) from exc
             commit_diff = show_result.stdout.lstrip("\n")
             if len(commit_diff.encode()) > _DIFF_MAX_BYTES:
                 omitted = len(commit_diff.encode()) - _DIFF_MAX_BYTES
