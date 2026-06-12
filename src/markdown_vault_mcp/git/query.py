@@ -231,7 +231,12 @@ def resolve_path_at_ref(
         )
     except subprocess.CalledProcessError:
         return None
-    # Stream: <status>\0<path>\0  (R* adds a second path before the closing NUL).
+    # Stream: <status>\0<path>\0 — R*/C* records add a second path
+    # (\0<old>\0<new>\0).  Copies (C*) are skipped, not resolved (a copy is
+    # an add, not a rename); the branch keeps the parser in sync if git ever
+    # emits one (e.g. if ``--find-copies`` were added in future).  Without
+    # ``--find-copies`` / ``--find-copies-harder`` git does not emit C* records,
+    # so this branch is defensive dead-code today.
     items = result.stdout.split("\0")[:-1]
     i = 0
     while i < len(items):

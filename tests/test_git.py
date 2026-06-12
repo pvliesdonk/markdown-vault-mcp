@@ -3901,13 +3901,25 @@ class TestGetFileDiff:
     def test_resolve_path_at_ref_skips_copy_entries(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """C<score> entries (copies) are skipped — a copy is not a rename.
+        """C<score> entries (copies) are skipped and the parser stays in sync.
 
-        A copied file renders as a plain add in git's numstat output, so its
-        source path is not recovered.  The parser must advance past the
-        three-token C* record (status + old + new) without returning a result.
+        A copied file renders as a plain add (git does not emit C* records
+        without ``--find-copies``), so its source path is not recovered.
+        The parser must advance past the three-token C* record (status + old +
+        new) with ``i += 3``, NOT ``i += 2``.
+
+        A single-entry fixture is insufficient: a lone C* record returns None
+        regardless of whether the C-branch exists (the loop just ends).  This
+        two-record fixture — a copy followed by a DIFFERENT rename — requires
+        the correct three-field advance to land on and parse the following R*
+        record.  With a wrong ``i += 2`` advance the loop desyncs and returns
+        None instead of the expected "old.md".
         """
-        fake_stdout = "C092\0source.md\0target.md\0"
+        # C* (3 fields) followed immediately by R* (3 fields).
+        # The C* copy must be skipped with i += 3 so the R* is reached.
+        fake_stdout = (
+            "C092\x00copied_src.md\x00copied_dst.md\x00R100\x00old.md\x00wanted.md\x00"
+        )
 
         def fake_run(*_args: object, **_kw: object) -> subprocess.CompletedProcess[str]:
             return subprocess.CompletedProcess(
@@ -3915,11 +3927,20 @@ class TestGetFileDiff:
             )
 
         monkeypatch.setattr("markdown_vault_mcp.git.subprocess.run", fake_run)
+        # The copy target ("copied_dst.md") must NOT be resolved.
         assert (
             GitWriteStrategy._resolve_path_at_ref(
-                tmp_path, "deadbeef", "target.md", env=None
+                tmp_path, "deadbeef", "copied_dst.md", env=None
             )
             is None
+        )
+        # The rename target ("wanted.md") MUST be resolved — only reachable if
+        # the C* record was consumed with the correct i += 3 advance.
+        assert (
+            GitWriteStrategy._resolve_path_at_ref(
+                tmp_path, "deadbeef", "wanted.md", env=None
+            )
+            == "old.md"
         )
 
     def test_resolve_path_at_ref_handles_truncated_rename_output(
@@ -4141,6 +4162,66 @@ class TestGetFileDiff:
         assert empty_tree_numstat_seen
         assert isinstance(out, list) and out
         assert any("Bin" in cd.diff for cd in out)
+
+    def test_get_file_diff_per_commit_copy_renders_as_add(self, tmp_path: Path) -> None:
+        """A copied binary renders as a plain ``Bin`` add, not a mislabelled rename (#683).
+
+        Without ``--find-copies`` git reports a ``cp``-based copy as ``A``
+        (add), so ``resolve_path_at_ref`` sees no rename and falls back to the
+        plain ``{sha}^..{sha} -- path`` diff form.  The ``--stat`` output must
+        contain ``Bin`` (binary add) and must NOT contain ``=>`` (which would
+        indicate a spurious rename pairing).
+        """
+        repo = tmp_path / "r"
+        repo.mkdir()
+        for a in (
+            ["init"],
+            ["config", "user.email", "t@t"],
+            ["config", "user.name", "t"],
+        ):
+            subprocess.run(
+                ["git", "-C", str(repo), *a], check=True, capture_output=True
+            )
+        assets = repo / "assets"
+        assets.mkdir()
+        (assets / "orig.png").write_bytes(b"PNG\x00" + b"\xaa" * 300)
+        subprocess.run(
+            ["git", "-C", str(repo), "add", "."], check=True, capture_output=True
+        )
+        subprocess.run(
+            ["git", "-C", str(repo), "commit", "-m", "add orig"],
+            check=True,
+            capture_output=True,
+        )
+        first = subprocess.run(
+            ["git", "-C", str(repo), "rev-parse", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        import shutil
+
+        shutil.copyfile(assets / "orig.png", assets / "copy.png")  # source unchanged
+        subprocess.run(
+            ["git", "-C", str(repo), "add", "."], check=True, capture_output=True
+        )
+        subprocess.run(
+            ["git", "-C", str(repo), "commit", "-m", "add copy.png"],
+            check=True,
+            capture_output=True,
+        )
+        strategy = GitWriteStrategy(token=None, push_delay_s=0)
+        out = strategy.get_file_diff(
+            repo,
+            repo / "assets" / "copy.png",
+            ref=first,
+            per_commit=True,
+            summarize_binary=True,
+        )
+        assert isinstance(out, list) and out
+        copy_entry = out[0]  # newest = the copy-add commit
+        assert "Bin" in copy_entry.diff
+        assert "=>" not in copy_entry.diff  # plain add, NOT a mislabelled rename
 
 
 def test_resolve_path_at_ref_to_ref_resolves_single_commit_rename(
