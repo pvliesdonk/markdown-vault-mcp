@@ -20,8 +20,10 @@ from markdown_vault_mcp import config_sections
 
 PREFIX = "MARKDOWN_VAULT_MCP"
 
-# Helper call names whose 2nd positional arg is a prefixed suffix literal.
-_PREFIXED_HELPERS = {"env", "env_int", "env_float", "opt_int"}
+# Base names of the env-reading helpers (as defined in
+# config_sections/_helpers.py). Files may import them under an alias
+# (config.py uses ``env as _env``), so matching resolves aliases per file.
+_HELPER_BASENAMES = {"env", "env_int", "env_float", "opt_int"}
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -41,14 +43,31 @@ def _server_config_source_file() -> Path:
     return Path(src)
 
 
+def _helper_alias_map(tree: ast.AST) -> dict[str, str]:
+    """Map each locally-bound name to its helper base name for this source.
+
+    Handles ``from ... import env`` (binds ``env``) and
+    ``from ... import env as _env`` (binds ``_env``). Imports inside function
+    bodies are included (``ast.walk`` is exhaustive).
+    """
+    aliases: dict[str, str] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            for alias in node.names:
+                if alias.name in _HELPER_BASENAMES:
+                    aliases[alias.asname or alias.name] = alias.name
+    return aliases
+
+
 def extract_env_vars_from_source(source: str) -> set[str]:
     """Extract env-var names referenced in a Python source string.
 
     Recognizes ``env(prefix, "SUFFIX")`` / ``env_int|env_float|opt_int`` calls
-    (prefixed -> ``MARKDOWN_VAULT_MCP_SUFFIX``) and ``os.environ.get("NAME")``
-    literals (bare names).
+    (prefixed -> ``MARKDOWN_VAULT_MCP_SUFFIX``), resolving any import alias such
+    as ``env as _env``, and ``os.environ.get("NAME")`` literals (bare names).
     """
     tree = ast.parse(source)
+    helper_names = set(_helper_alias_map(tree))
     found: set[str] = set()
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
@@ -57,7 +76,7 @@ def extract_env_vars_from_source(source: str) -> set[str]:
         # env(prefix, "SUFFIX", ...) family - 2nd positional arg is the suffix.
         if (
             isinstance(func, ast.Name)
-            and func.id in _PREFIXED_HELPERS
+            and func.id in helper_names
             and len(node.args) >= 2
             and isinstance(node.args[1], ast.Constant)
         ):
@@ -99,6 +118,13 @@ def test_domain_inventory_includes_bare_name_var() -> None:
     inv = domain_inventory()
     assert "OLLAMA_HOST" in inv
     assert "OPENAI_API_KEY" in inv
+
+
+def test_domain_inventory_includes_aliased_helper_var() -> None:
+    # config.py reads these via the aliased helper ``env as _env`` -> ``_env``.
+    inv = domain_inventory()
+    assert f"{PREFIX}_SOURCE_DIR" in inv
+    assert f"{PREFIX}_READ_ONLY" in inv
 
 
 def test_server_inventory_includes_oidc_var() -> None:
