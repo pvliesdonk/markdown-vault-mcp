@@ -1,5 +1,10 @@
 [
   {
+    "version": "unstable",
+    "title": "unstable (2.0.0-rc.3)",
+    "aliases": []
+  },
+  {
     "version": "1.28",
     "title": "1.28.0",
     "aliases": [

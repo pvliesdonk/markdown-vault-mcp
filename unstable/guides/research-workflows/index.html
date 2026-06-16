@@ -1,0 +1,2822 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Generic markdown vault MCP server with FTS5 + semantic search">
+      
+      
+      
+        <link rel="canonical" href="https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/research-workflows/">
+      
+      
+        <link rel="prev" href="../obsidian-everywhere/">
+      
+      
+        <link rel="next" href="../zettelkasten/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Research Workflows - markdown-vault-mcp</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+      <link rel="stylesheet" href="../../stylesheets/config-wizard.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#research-workflows-with-markdown-vault-mcp" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="markdown-vault-mcp" class="md-header__button md-logo" aria-label="markdown-vault-mcp" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            markdown-vault-mcp
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Research Workflows
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/pvliesdonk/markdown-vault-mcp" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    pvliesdonk/markdown-vault-mcp
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../installation/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../" class="md-tabs__link">
+          
+  
+  
+  Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../tools/" class="md-tabs__link">
+          
+  
+  
+  MCP Interface
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../deployment/" class="md-tabs__link">
+          
+  
+  
+  Deployment
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../api/vault/" class="md-tabs__link">
+          
+  
+  
+  Python API
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="markdown-vault-mcp" class="md-nav__button md-logo" aria-label="markdown-vault-mcp" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    markdown-vault-mcp
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/pvliesdonk/markdown-vault-mcp" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    pvliesdonk/markdown-vault-mcp
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration-generator/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration Generator
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../git-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Git Integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../claude-desktop/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Claude Desktop
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../docker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Docker
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../embeddings/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Embeddings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../authentication/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Authentication
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../oidc-providers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OIDC Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../obsidian-everywhere/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Obsidian Everywhere
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Research Workflows
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Research Workflows
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Setup
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Setup">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#adding-scholar-mcp-optional" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adding scholar-mcp (optional)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-the-phases-compose" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How the phases compose
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-1-seeding-notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 1: Seeding notes
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 1: Seeding notes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#baseline-flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Baseline flow
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#with-scholar-mcp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        With scholar-mcp
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#common-failure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Common failure
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-2-literature-grounding" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 2: Literature grounding
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 2: Literature grounding">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#baseline-flow_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Baseline flow
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#with-scholar-mcp_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        With scholar-mcp
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#common-failure_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Common failure
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-3-absorbing-sources" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 3: Absorbing sources
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 3: Absorbing sources">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#baseline-flow_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Baseline flow
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#with-scholar-mcp_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        With scholar-mcp
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#common-failure_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Common failure
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-4-interconnection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 4: Interconnection
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 4: Interconnection">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#baseline-flow_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Baseline flow
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#with-scholar-mcp_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        With scholar-mcp
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#common-failure_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Common failure
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-5-writing-a-paper-from-notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 5: Writing a paper from notes
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 5: Writing a paper from notes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#baseline-flow_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Baseline flow
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#with-scholar-mcp_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        With scholar-mcp
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#common-failure_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Common failure
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pitfalls" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pitfalls
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Pitfalls">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#false-confidence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        False confidence
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#make-uncertainty-explicit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Make uncertainty explicit
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#verify-before-polishing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Verify before polishing
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#a-worked-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A worked example
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#next-steps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Next steps
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../zettelkasten/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Zettelkasten
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../para/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PARA
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../mcp-apps/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Apps
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../transfer-links/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Transfer Links
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../claude-code-plugin/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Claude Code Plugin
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Interface
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    MCP Interface
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tools/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tools
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../resources/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Resources
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../prompts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Prompts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deployment
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Deployment
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deployment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deployment/docker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Docker
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deployment/systemd/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    systemd
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deployment/claude-desktop/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Claude Desktop
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deployment/oidc/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OIDC Authentication
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Python API
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Python API
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/vault/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Vault
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/facets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Facets
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/git/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Git Integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/providers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Embedding Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/exceptions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Exceptions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Setup
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Setup">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#adding-scholar-mcp-optional" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adding scholar-mcp (optional)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-the-phases-compose" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How the phases compose
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-1-seeding-notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 1: Seeding notes
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 1: Seeding notes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#baseline-flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Baseline flow
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#with-scholar-mcp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        With scholar-mcp
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#common-failure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Common failure
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-2-literature-grounding" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 2: Literature grounding
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 2: Literature grounding">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#baseline-flow_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Baseline flow
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#with-scholar-mcp_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        With scholar-mcp
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#common-failure_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Common failure
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-3-absorbing-sources" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 3: Absorbing sources
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 3: Absorbing sources">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#baseline-flow_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Baseline flow
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#with-scholar-mcp_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        With scholar-mcp
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#common-failure_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Common failure
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-4-interconnection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 4: Interconnection
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 4: Interconnection">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#baseline-flow_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Baseline flow
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#with-scholar-mcp_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        With scholar-mcp
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#common-failure_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Common failure
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-5-writing-a-paper-from-notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 5: Writing a paper from notes
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 5: Writing a paper from notes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#baseline-flow_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Baseline flow
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#with-scholar-mcp_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        With scholar-mcp
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#common-failure_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Common failure
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pitfalls" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pitfalls
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Pitfalls">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#false-confidence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        False confidence
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#make-uncertainty-explicit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Make uncertainty explicit
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#verify-before-polishing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Verify before polishing
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#a-worked-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A worked example
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#next-steps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Next steps
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="research-workflows-with-markdown-vault-mcp">Research workflows with markdown-vault-mcp<a class="headerlink" href="#research-workflows-with-markdown-vault-mcp" title="Permanent link">&para;</a></h1>
+<p>Research in a vault treats Claude as a persistent sparring partner. The vault is the durable workspace that outlives any single session — notes, links, literature, drafts — and Claude is the reasoning agent you rent by the conversation. Claude's memory doesn't persist; the vault's does. The workflow is to keep pushing what matters into notes, so the next session starts where the previous one stopped.</p>
+<p>This guide describes a five-phase research loop: <strong>seed → ground → absorb → interconnect → produce</strong>. It is a loop, not a pipeline — most sessions touch two or three phases and cycle. You seed a note, ground one of its claims against the literature, bounce back to interconnection when Claude notices a similar note you'd forgotten, and end up back in seeding because a new question fell out of what you read. The phases give you a shared vocabulary; they do not prescribe a fixed order.</p>
+<p>This guide's baseline works with just Claude, markdown-vault-mcp, and web search. <a href="https://github.com/pvliesdonk/scholar-mcp">scholar-mcp</a> is a separate MCP server that adds rigour — citation graphs, BibTeX export, PDF-to-Markdown conversion — optional but recommended when you need real paper IDs and don't trust the model's memory for citations. Every phase below shows the baseline flow first; the scholar-mcp callouts describe the correctness gain, not a different workflow.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>This guide is organising-scheme-agnostic. It works with <a href="../zettelkasten/">Zettelkasten</a>, <a href="../para/">PARA</a>, or no opinionated structure at all. The phase model in this guide composes the vault's generic search, linking, and write tools; it doesn't assume a particular folder layout.</p>
+</div>
+<h2 id="setup">Setup<a class="headerlink" href="#setup" title="Permanent link">&para;</a></h2>
+<p>Install and configure markdown-vault-mcp per the <a href="../claude-desktop/">Claude Desktop guide</a> or <a href="../obsidian-everywhere/">Obsidian Everywhere</a> for the full multi-device setup. This guide assumes your vault is already connected to Claude and that you can invoke vault tools (<code>search</code>, <code>read</code>, <code>write</code>, <code>get_similar</code>, <code>get_context</code>) from a conversation.</p>
+<h3 id="adding-scholar-mcp-optional">Adding scholar-mcp (optional)<a class="headerlink" href="#adding-scholar-mcp-optional" title="Permanent link">&para;</a></h3>
+<p>Skip this section for the baseline. Every flow below works without scholar-mcp; you can add it later once you've decided the power-ups are worth the setup.</p>
+<p><strong>Claude.ai:</strong> add scholar-mcp as a connector from the settings page. See the <a href="https://github.com/pvliesdonk/scholar-mcp">scholar-mcp repository</a> for the connector URL and auth details.</p>
+<p><strong>Claude Desktop:</strong> add a second entry to <code>mcpServers</code> in your config. The vault entry stays as it was; scholar-mcp lives alongside:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;mcpServers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;vault&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;command&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;uvx&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;--from&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;markdown-vault-mcp&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;markdown-vault-mcp&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;serve&quot;</span><span class="p">]</span>
+<span class="w">    </span><span class="p">},</span>
+<span class="w">    </span><span class="nt">&quot;scholar&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;command&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;uvx&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;--from&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;pvliesdonk-scholar-mcp&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;scholar-mcp&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;serve&quot;</span><span class="p">],</span>
+<span class="w">      </span><span class="nt">&quot;env&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;SCHOLAR_MCP_S2_API_KEY&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;your-key-optional&quot;</span>
+<span class="w">      </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p><strong>Claude Code:</strong> add scholar-mcp via <code>claude mcp add</code> or in the MCP settings UI, following the same pattern — a second server entry alongside the vault.</p>
+<p>scholar-mcp's own documentation covers API keys, OIDC auth, transport options, and tool details. This guide only references the tools by name. See <a href="https://pvliesdonk.github.io/scholar-mcp/">https://pvliesdonk.github.io/scholar-mcp/</a> for setup specifics.</p>
+<p><strong>Web-search caveat.</strong> The baseline flows assume Claude has web-search tools available. Claude.ai and Claude Desktop do by default; other clients vary. Without web search, fall back to scholar-mcp for the grounding phase or skip straight to manual source collection — paste a URL into the conversation and let Claude extract from there.</p>
+<h2 id="how-the-phases-compose">How the phases compose<a class="headerlink" href="#how-the-phases-compose" title="Permanent link">&para;</a></h2>
+<p>The five phases are not a linear pipeline. A typical session starts in one phase, spends most of its time in another, and ends in a third. Some common session shapes:</p>
+<ul>
+<li><strong>Seed + ground.</strong> You have a new idea. You write the seed, mark the load-bearing claims, and start grounding one or two of them. The session ends with the seed half-grounded; remaining markers wait for next time.</li>
+<li><strong>Absorb + interconnect.</strong> You read a paper and want to capture it. You write the literature note, then immediately run <code>get_similar</code> against it to see which existing research notes it connects to. You add links in both directions before closing the session.</li>
+<li><strong>Produce + all four predecessors.</strong> You're writing a draft. Every paragraph touches an earlier phase — you reseed when a new question appears, ground when a claim gets challenged, absorb when you realise a source is underdeveloped, interconnect when Claude surfaces a forgotten note.</li>
+</ul>
+<p>The phases are vocabulary for the shape of what you're doing in the moment. When stuck, ask: which phase am I in, and which phase should I be in? The answer usually shifts the next ten minutes of work productively.</p>
+<h2 id="phase-1-seeding-notes">Phase 1: Seeding notes<a class="headerlink" href="#phase-1-seeding-notes" title="Permanent link">&para;</a></h2>
+<p><strong>Intent.</strong> Get a new note into the vault quickly without worrying about its final shape.</p>
+<h3 id="baseline-flow">Baseline flow<a class="headerlink" href="#baseline-flow" title="Permanent link">&para;</a></h3>
+<p>Seeding covers three common entry points, each corresponding to a different origin story for a research idea:</p>
+<ul>
+<li><strong>From a conversation.</strong> If your client exposes chat history (Claude.ai has <code>conversation_search</code> and <code>recent_chats</code>), the <a href="../para/#para-capture-chats"><code>para-capture-chats</code></a> prompt distils recent chats into Inbox-shaped notes ready for later triage. The vault doesn't need to be a PARA vault — the prompt produces plain notes with titles and bodies; you choose where they land.</li>
+<li><strong>From a research question.</strong> The <a href="../../prompts/#research"><code>research</code></a> builtin prompt takes a topic and produces a single synthesis note with a topic slug. Good for "I want to know what's out there on X" before you have a thesis.</li>
+<li><strong>From a raw thesis.</strong> Just write it. Prose to Claude: "Create a note at <code>research/consent-dynamics.md</code> with this thesis: <em>Informed consent in platform terms of service is structurally impossible because…</em> Tag it <code>draft</code>."</li>
+</ul>
+<p>All three paths end at the same place: a new note in the vault with a title, a rough body, and at least one <code>[citation needed]</code> or <code>[verify]</code> marker on anything that isn't yet grounded. You are not trying to produce polished prose. You are trying to produce something you can come back to.</p>
+<p>Claude composes <code>write(path="research/consent-dynamics.md", content=..., frontmatter={"tags": ["draft"], "created": "2026-04-19"})</code> and you have a seed. A reasonable seed looks like this:</p>
+<div class="highlight"><pre><span></span><code>---
+title: &quot;Consent dynamics in platform terms of service&quot;
+tags: [draft]
+<span class="gu">created: 2026-04-19</span>
+<span class="gu">---</span>
+
+<span class="gh"># Consent dynamics in platform terms of service</span>
+
+Informed consent in platform terms of service is structurally impossible:
+users face a take-it-or-leave-it offer, the text is unreadable at scale,
+and the cost of reading is asymmetric with the benefit. [citation needed]
+
+<span class="gu">## Open claims</span>
+
+<span class="k">-</span><span class="w"> </span>Cost asymmetry claim above
+<span class="k">-</span><span class="w"> </span>Are there empirical studies on the &quot;unreadable at scale&quot; assertion?
+</code></pre></div>
+<h3 id="with-scholar-mcp">With scholar-mcp<a class="headerlink" href="#with-scholar-mcp" title="Permanent link">&para;</a></h3>
+<p>Not meaningfully different. scholar-mcp doesn't participate in capture — it enters the picture during grounding, when you need to verify what's true, not when you need to get a thought into the vault. The seeding phase is the same with or without it.</p>
+<h3 id="common-failure">Common failure<a class="headerlink" href="#common-failure" title="Permanent link">&para;</a></h3>
+<p>Waiting to polish before committing a note. The seed should land rough and be revised across multiple sessions. If you find yourself editing the seed for twenty minutes before saving, you've skipped phase 1 and jumped to phase 5 without the evidence.</p>
+<p>The reverse failure mode is also common: committing too many seeds and never returning to any of them. If your <code>research/</code> folder is accumulating seeds faster than you're grounding them, that's a signal to stop seeding and start phase 2 on what you already have. Seeding is cheap; that's its strength and its trap.</p>
+<p>Write the shape; leave the <code>[citation needed]</code> markers. Come back.</p>
+<div class="admonition tip">
+<p class="admonition-title">Signals you're in phase 1</p>
+<ul>
+<li>You're writing prose you don't fully believe yet.</li>
+<li>Claude is proposing structure; you're pushing back on detail.</li>
+<li>The only verifiable thing in the note is the frontmatter.</li>
+</ul>
+<p>All three are fine. None are signals to polish.</p>
+</div>
+<p>The <code>## Open claims</code> section at the bottom is the secondary tracker. Inline markers flag a specific sentence; the bottom list captures claims too big to fit in a sentence — methodological questions, unresolved scope, "I need to decide whether this is about platforms-as-a-category or just the large ones." Both forms compose; neither is mandatory. Pick what you'll revisit.</p>
+<p>A final point on frontmatter: keep it minimal at the seeding stage. A seed doesn't need a <code>type</code> field, a <code>status</code> field, or a rigid tag taxonomy. It needs a title, a <code>draft</code> tag, and a <code>created</code> date. If your vault follows a scheme like <a href="../zettelkasten/">Zettelkasten</a> or <a href="../para/">PARA</a>, the triage step — not the seed step — is where a note acquires its typed frontmatter.</p>
+<p><strong>Finding seeds later.</strong> Seeds are easy to lose track of. A simple convention is to tag all seeds <code>draft</code> and periodically run <code>list_documents()</code>, then filter on <code>frontmatter.tags</code> containing <code>"draft"</code>, to see what's still unresolved. (The keyword-search path won't work for pure tag filtering — <code>search</code> requires a non-empty query string; <code>list_documents</code> returns the full tag-bearing metadata without requiring a query.) Anything that's been a draft for more than a month is either worth grounding or worth deleting; the middle path — a permanent pile of unresolved seeds — is where vault rot starts.</p>
+<h2 id="phase-2-literature-grounding">Phase 2: Literature grounding<a class="headerlink" href="#phase-2-literature-grounding" title="Permanent link">&para;</a></h2>
+<p><strong>Intent.</strong> Back a claim in a note with real sources; prevent fabricated citations.</p>
+<h3 id="baseline-flow_1">Baseline flow<a class="headerlink" href="#baseline-flow_1" title="Permanent link">&para;</a></h3>
+<p>Grounding converts a seed's confident-but-unsourced claims into claims with sources attached — or flags them clearly as unresolved. Claude + web search does most of the work when web search is available.</p>
+<p>Ask template:</p>
+<blockquote>
+<p>For each claim in <code>research/consent-dynamics.md</code> marked <code>[citation needed]</code>, search the web for supporting or refuting literature. Update the marker with a linked source and a one-line summary of what the source says. If you can't find anything solid, leave the marker in place and add a line explaining what you looked for.</p>
+</blockquote>
+<p>Claude reads the note, runs web searches, and updates the body via <code>edit(path=..., old_text="...", new_text="...")</code>. You review the diff — don't skip this; see <a href="#pitfalls">Pitfalls</a> — and keep or reject each update. Rejecting is just as valuable as accepting: a claim that web search couldn't ground should stay marked, not be quietly deleted.</p>
+<p>The claim-tracking convention. Both forms are recommendations, not requirements:</p>
+<ul>
+<li><strong>Inline markers</strong> — <code>[citation needed]</code> in prose, searchable by grep and familiar from other research contexts. Variants like <code>[verify]</code>, <code>[my guess]</code>, or <code>[check]</code> are fine; pick what you'll actually use.</li>
+<li><strong>Note-level aggregation</strong> — a <code>## Open claims</code> or <code>## Evidence gaps</code> section where outstanding items accumulate. As literature fills in, you move items out of this section and into the body as sourced prose.</li>
+</ul>
+<p>You can combine them — inline markers for claims that live inside paragraphs, a bottom section for claims that are too big for a single sentence. The section becomes a checklist the next session can pick up without re-reading the whole note.</p>
+<p>The discipline is what matters, not the syntax. Name every unverified claim so you can come back to it. A note without markers is either fully sourced (rare early on) or hiding fabrication (common). Pick a convention you'll remember and stick to it; switching midway through a project fragments the vault's grep-ability.</p>
+<h3 id="with-scholar-mcp_1">With scholar-mcp<a class="headerlink" href="#with-scholar-mcp_1" title="Permanent link">&para;</a></h3>
+<p><code>search_papers</code> returns real paper IDs and metadata — no hallucinated DOIs, no confidently wrong authors. You ask Claude to search for literature on a topic; scholar-mcp returns titles, authors, years, and stable identifiers you can cite. <code>get_references</code> walks what a seminal paper cites (backward through the literature graph); <code>get_citations</code> finds who cites a paper (forward through the graph). Together they let you traverse the argument a field has had with itself rather than guess at it.</p>
+<p><code>get_paper(doi=...)</code> returns structured metadata including BibTeX, so the literature notes you produce in the next phase start with a frontmatter source that resolves. When citation rigour matters — a paper, a grant proposal, a blog post that people will check — scholar-mcp is where it earns its keep.</p>
+<p>A typical scholar-mcp grounding flow: Claude runs <code>search_papers(query="adhesion contracts platform terms of service", limit=10)</code> for each marked claim, filters to the most relevant results based on titles and venues, calls <code>get_paper(doi=...)</code> on the shortlist to get structured metadata, and updates the note with links to the real DOIs. You still review — fabrication risk is lower but not zero when the model is summarising what a paper says — but the identifiers are now anchored to real objects.</p>
+<h3 id="common-failure_1">Common failure<a class="headerlink" href="#common-failure_1" title="Permanent link">&para;</a></h3>
+<p>Trusting the first plausible-sounding paper without verifying. Always verify the DOI resolves, the authors exist, and the title matches what Claude reports. Claude sometimes writes a confident paragraph citing a paper that does not exist; see the <a href="#pitfalls">Pitfalls</a> section. Web search reduces this but does not eliminate it — Claude can still summarise a search result incorrectly or mis-attribute a claim to the wrong paper from the same page of results.</p>
+<p>A secondary failure: grounding stops at the first source that supports the claim. One paper is a lead, not evidence. Push for at least one corroborating source and at least a quick check for dissent. Claude will happily fetch a second paper if you ask; it rarely volunteers one.</p>
+<div class="admonition tip">
+<p class="admonition-title">Grounding checklist</p>
+<p>Before you remove a <code>[citation needed]</code> marker:</p>
+<ul>
+<li>The source exists (DOI resolves, paper is findable).</li>
+<li>The source actually supports the claim, not a tangentially related claim.</li>
+<li>You have at least one corroborating source or have actively looked for dissent.</li>
+<li>The source is linked from the note (URL or DOI in frontmatter or body).</li>
+</ul>
+</div>
+<h2 id="phase-3-absorbing-sources">Phase 3: Absorbing sources<a class="headerlink" href="#phase-3-absorbing-sources" title="Permanent link">&para;</a></h2>
+<p><strong>Intent.</strong> Turn a retrieved source into a durable literature note; decide when a summary suffices versus full text.</p>
+<h3 id="baseline-flow_2">Baseline flow<a class="headerlink" href="#baseline-flow_2" title="Permanent link">&para;</a></h3>
+<p>Once a source is identified, you write a literature note against it. The shape follows the existing Zettelkasten <a href="../../examples/zettelkasten/"><code>literature.md</code> template</a> (under <code>templates/</code>), adapted to the research-specific concerns of relevance and open questions:</p>
+<div class="highlight"><pre><span></span><code>---
+title: &quot;Platform terms of service as adhesion contracts&quot;
+type: literature
+tags: [literature]
+source: &quot;https://doi.org/10.XXXX/example&quot;
+<span class="gu">created: 2026-04-19</span>
+<span class="gu">---</span>
+
+<span class="gh"># Platform terms of service as adhesion contracts</span>
+
+<span class="gs">**Authors:**</span> Smith, Jones · 2023
+<span class="gs">**Source:**</span> https://doi.org/10.XXXX/example
+
+<span class="gu">## Key Ideas</span>
+
+<span class="k">-</span><span class="w"> </span>Terms of service operate as contracts of adhesion: one party drafts, the
+  other accepts without negotiation.
+<span class="k">-</span><span class="w"> </span>Empirically, over 90% of users accept ToS without reading any portion.
+<span class="k">-</span><span class="w"> </span>The authors argue adhesion-contract doctrine has evolved to tolerate
+  asymmetric drafting as long as the terms are not &quot;unconscionable.&quot;
+
+<span class="gu">## Relevance</span>
+
+Supports the &quot;structural impossibility&quot; framing in
+[[consent-dynamics]]. The 90% statistic is the number I was after.
+
+<span class="gu">## Open Questions</span>
+
+<span class="k">-</span><span class="w"> </span>Is the 90% figure replicated in subsequent studies?
+<span class="k">-</span><span class="w"> </span>Does the adhesion-contract framing predate the platform era, or was it
+  reshaped by it?
+</code></pre></div>
+<p>Claude composes this from the abstract, web snippets, and whatever you've told it about the paper. The output is a vault note linked from the originating research note via <code>[[wikilink]]</code>.</p>
+<p>The "Relevance" section is the part you cannot skip. A literature note without a relevance paragraph is a bookmark, not a note — it captures what the paper says but not why you care. Six months later, when <code>get_similar</code> surfaces the note against a new research question, the relevance paragraph is what tells future-you whether to open it.</p>
+<h3 id="with-scholar-mcp_2">With scholar-mcp<a class="headerlink" href="#with-scholar-mcp_2" title="Permanent link">&para;</a></h3>
+<p>For open-access papers, <code>convert_pdf_to_markdown</code> returns the full paper as Markdown text; Claude then <code>write</code>s it into the vault at a path like <code>research/lit/full/smith-2023.md</code>, creating a Markdown companion to the literature note you're composing. You then write the literature note against the full text rather than just the abstract — the "Key Ideas" section gets the actual argument, not a press-release summary. <code>get_paper(doi=...)</code> returns structured metadata (authors, venue, year, BibTeX) for the frontmatter, so you don't guess at how a name is spelled or what year the paper came out.</p>
+<p>When the paper is central to your research and you're going to cite it multiple times, converting the full text pays for itself — the vault becomes searchable against the paper's actual claims, and <code>get_similar</code> can surface it against future notes. For tangential papers, skip the conversion.</p>
+<p>A middle path: convert the PDF to markdown but keep it outside the main note tree, linked from the literature note. The literature note stays short (summary + relevance + open questions); the full text lives as a companion under <code>research/lit/full/</code> and is there when you need to verify a direct quote or check a footnote. <code>read(path="research/lit/full/smith-2023.md")</code> pulls the full text when you need it; otherwise the lighter literature note is what surfaces in search results.</p>
+<h3 id="common-failure_2">Common failure<a class="headerlink" href="#common-failure_2" title="Permanent link">&para;</a></h3>
+<p>Reflexively fetching the full PDF. Most of the time the abstract plus the argument you're trying to support is enough, and the literature note stays short. Saving PDF conversion for when you need to dive deep keeps the vault from drowning in attachments and keeps your own reading time honest. Rule of thumb: convert the full text when the paper is the spine of an argument; summarise from the abstract when it's a supporting reference.</p>
+<p>A related failure is producing a literature note that is a disguised abstract — same content, same voice, no synthesis. If the note could be generated by the abstract alone, it doesn't belong in the vault; bookmark the paper and move on. The literature notes worth keeping have at least one sentence that the abstract doesn't: a connection to your own thinking, a methodological caveat, a question the paper raises. That sentence is the reason the note exists.</p>
+<div class="admonition tip">
+<p class="admonition-title">When to convert full text</p>
+<table>
+<thead>
+<tr>
+<th>Signal</th>
+<th>Convert?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Paper is the central source for an argument</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>You've quoted from it twice</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>You need to verify a specific claim's context</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Paper is a supporting reference only</td>
+<td>No (abstract suffices)</td>
+</tr>
+<tr>
+<td>You already have 3+ notes about the paper</td>
+<td>Yes (it's spine, not support)</td>
+</tr>
+<tr>
+<td>The abstract answers the question you had</td>
+<td>No</td>
+</tr>
+</tbody>
+</table>
+</div>
+<h2 id="phase-4-interconnection">Phase 4: Interconnection<a class="headerlink" href="#phase-4-interconnection" title="Permanent link">&para;</a></h2>
+<p><strong>Intent.</strong> Surface existing vault notes semantically close to the one you're working on; find forgotten work.</p>
+<h3 id="baseline-flow_3">Baseline flow<a class="headerlink" href="#baseline-flow_3" title="Permanent link">&para;</a></h3>
+<p>Your vault has notes you've forgotten you wrote. The tangent you chased six months ago is probably already a note — named something you'd never think to search for. <code>get_similar</code> catches these.</p>
+<p>Ask template:</p>
+<blockquote>
+<p>I'm working on <code>research/incentive-misalignment.md</code>. Run <code>get_similar(path="research/incentive-misalignment.md")</code> and tell me which of the top 5 candidates should be linked. For each one you think is a link, read it briefly and explain why it connects.</p>
+</blockquote>
+<p>Claude runs the tool, reads the candidates, and proposes links with one-line rationales. You confirm; Claude adds wikilinks via <code>edit</code>. The rationale is the important part — a raw <code>get_similar</code> score tells you two notes share vocabulary, not that linking them serves the reader. Ask Claude to name the connection in a sentence; reject candidates where the best available rationale is "both notes talk about X."</p>
+<p>For a vault-wide sweep — "find every note that should probably be linked but isn't" — invoke <a href="../../prompts/#propose-links"><code>propose-links</code></a> from Claude.ai's <code>+</code> menu (or as a prompt in any MCP client). It walks recent notes, runs <code>get_similar</code> per note, filters out pairs that are already linked via <code>get_outlinks</code>, applies LLM judgment on the remainder, and produces a batch preview. You approve in bulk; Claude applies the edits.</p>
+<p>For examining a specific note's neighborhood without committing to edits, ask Claude to run <code>get_context(path="research/incentive-misalignment.md")</code>. It returns backlinks, outlinks, similar notes, folder peers, and tags in one call — the full dossier for deciding what to link and what to write next. Use it before starting a writing session on an existing note: it is cheap, it is comprehensive, and it often surfaces a link you were about to miss.</p>
+<p>A useful ancillary is <code>get_backlinks(path=&lt;note&gt;)</code> on its own when you specifically want to know "who cites this?" without the rest of <code>get_context</code>'s payload. Backlinks are the measure of how load-bearing a note is in the rest of the vault; a literature note with many backlinks is spine for multiple arguments and deserves care. <code>get_most_linked</code> surfaces these globally if you want to find the vault's hubs.</p>
+<h3 id="with-scholar-mcp_3">With scholar-mcp<a class="headerlink" href="#with-scholar-mcp_3" title="Permanent link">&para;</a></h3>
+<p>Cross-referencing papers. Your literature notes have DOIs. <code>get_paper(doi=...)</code> followed by <code>get_references</code> or <code>get_citations</code> sometimes reveals that two strands you've been researching separately share a seminal paper — one literature note cites it directly, another cites a paper that cites it. Your literature graph is richer than your note graph; scholar-mcp exposes it.</p>
+<p>This is how you notice that a 2018 paper on platform governance and a 2022 paper on AI alignment both build on the same 1997 essay. The vault wouldn't have surfaced this — you hadn't written a note on the 1997 essay. scholar-mcp walked the citation graph and found the common ancestor.</p>
+<p>The workflow: for each literature note's DOI, ask Claude to pull <code>get_references(doi=...)</code> and compare against the DOIs in other literature notes. Overlap above a threshold is a signal that the notes are closer than their vault topology suggests. You then decide whether to write a note on the shared ancestor, link the two notes directly, or both.</p>
+<p><code>get_citations</code> (forward direction) is the complementary tool. When a paper in your vault has been cited a lot since you wrote the literature note, some of those citations may have replied to the original argument. Running <code>get_citations(doi=&lt;paper&gt;)</code> a few months after absorbing a paper sometimes surfaces a newer paper that moved the argument forward — grounds for an updated literature note or a new one.</p>
+<h3 id="common-failure_3">Common failure<a class="headerlink" href="#common-failure_3" title="Permanent link">&para;</a></h3>
+<p>Missing an existing note because you'd forgotten what you called it. Memory alone fails: you remember you had a thought about consent and autonomy, but you titled the note "user-agency-and-dark-patterns" and haven't looked at it since. <code>get_similar</code> catches these; <code>propose-links</code> catches them at scale. The failure mode isn't "I don't have the note" — it's "I have the note and can't recall the search term that would surface it."</p>
+<p>A second failure: the opposite — over-linking noise. <code>get_similar</code> will return five candidates every time, and at least one is usually a stretch. Keep the rationale bar high. A link that exists only because both notes mention "platforms" dilutes the link graph; three weeks later when you're running <code>get_context</code> to orient yourself, that spurious link is a false signal you have to read past. Link when the connection is specific; reject when the connection is vocabulary.</p>
+<div class="admonition tip">
+<p class="admonition-title">Link rationale heuristics</p>
+<p>Accept a proposed link when at least one of these holds:</p>
+<ul>
+<li>The linked note would change what you write in the current note.</li>
+<li>The current note answers a question the linked note raises.</li>
+<li>The two notes share a source, mechanism, or methodological concern.</li>
+</ul>
+<p>Reject when:</p>
+<ul>
+<li>The rationale is "both discuss X" with no further specificity.</li>
+<li>The linked note is a hub note you'd link to by default anyway.</li>
+<li>The connection is a category label, not a substantive claim.</li>
+</ul>
+</div>
+<h2 id="phase-5-writing-a-paper-from-notes">Phase 5: Writing a paper from notes<a class="headerlink" href="#phase-5-writing-a-paper-from-notes" title="Permanent link">&para;</a></h2>
+<p><strong>Intent.</strong> Draft a paper from the vault, fact-check as you go, and let the paper and source notes co-evolve.</p>
+<h3 id="baseline-flow_4">Baseline flow<a class="headerlink" href="#baseline-flow_4" title="Permanent link">&para;</a></h3>
+<p>Start a <code>Draft/consent-essay.md</code> note. Ask Claude to pull paragraphs from the research notes you've built up — "Draft section 2 by composing from <code>[[consent-dynamics]]</code>, <code>[[platform-adhesion-contracts]]</code>, and <code>[[unreadable-at-scale]]</code>." Claude reads each note, composes prose, and writes the draft.</p>
+<p>This is also a good moment to run <code>get_outlinks(path="Draft/consent-essay.md")</code> after the first compose, to see which source notes the draft depends on. Any source note that appears here without a prior link <em>from</em> the draft's earlier sections is a potential gap — either the new section needs to be linked from the intro, or the source note needs to be foregrounded earlier.</p>
+<p>The <code>list_documents(folder="research/lit")</code> call also helps at this stage: it enumerates every literature note, and you can ask Claude "which of these isn't linked from the draft yet, and should be?" The answer is sometimes "none, you've used everything relevant"; sometimes it's "these three, and their absence is a gap in section 4."</p>
+<p>Then run the grounding loop in reverse. Ask Claude to flag every unsourced or weakly-sourced claim in the draft against <code>[citation needed]</code> markers, and for each marker, check whether the originating source note has a citation that fills the gap. If it does, pull the citation into both the draft and the source note (so future readers of the source note see the same grounded version). If it doesn't, you've discovered a gap in the underlying research — flag it, decide whether to go find literature or to soften the claim, and repeat.</p>
+<p>Tangents will appear. A paragraph you're writing for the paper wants to veer into a related question that isn't central to the paper's argument. Don't discard it and don't let it dilute the draft. Triage it: capture the tangent as a new note in the vault (PARA Inbox, Zettelkasten Fleeting, or just a standalone file) at the moment it appears, then return to the paper. The note is cheap; the diluted paragraph is expensive.</p>
+<p>Claude is good at this triage in flow. Prose to Claude: "That paragraph on signalling is a tangent. Pull it into a new note at <code>research/signalling-in-platform-design.md</code> with a link back to this draft, then continue section 3." The draft stays tight; the tangent lives on. You don't have to stop writing to manage the split.</p>
+<h3 id="with-scholar-mcp_4">With scholar-mcp<a class="headerlink" href="#with-scholar-mcp_4" title="Permanent link">&para;</a></h3>
+<p>Generate the references file in the author's preferred format. For every literature note linked from the draft, <code>get_paper(doi=...)</code> produces a BibTeX entry; Claude composes these into a single file via <code>write(path="Draft/consent-essay.bib", content=...)</code>. Ask template:</p>
+<blockquote>
+<p>For every literature note linked from <code>Draft/consent-essay.md</code>, fetch the paper's BibTeX via scholar-mcp and append to <code>Draft/consent-essay.bib</code>. Skip any that are already in the file.</p>
+</blockquote>
+<p>For CSL-JSON (Pandoc, Zotero) or other formats, the same pattern applies — scholar-mcp returns structured metadata; Claude writes the format you specify. This eliminates the hand-curation step that usually accumulates errors at submission time.</p>
+<p>An end-to-end scholar-mcp-assisted flow for a paper submission:</p>
+<ol>
+<li>Literature notes accumulate throughout research, each with a verified DOI in frontmatter (<code>source: "https://doi.org/..."</code>).</li>
+<li>Draft composes via wikilinks to literature notes.</li>
+<li><code>get_outlinks(path="Draft/paper.md")</code> enumerates the draft's literature dependencies.</li>
+<li>For each outlink with a literature note, Claude calls <code>get_paper(doi=&lt;source&gt;)</code> and appends BibTeX to <code>Draft/paper.bib</code>.</li>
+<li>Pandoc (or your build chain) renders the final paper with <code>--bibliography=Draft/paper.bib</code>.</li>
+</ol>
+<p>The human step is reviewing the BibTeX — not typing it.</p>
+<h3 id="common-failure_4">Common failure<a class="headerlink" href="#common-failure_4" title="Permanent link">&para;</a></h3>
+<p>Letting tangents dilute the paper. The failure mode is believing that you'll come back to the tangent later if you just keep it in the draft. You won't. The tangent is interesting precisely because it isn't the paper's core argument; keeping it in the draft means the core argument gets less attention. Fix: capture the tangent as a separate note <em>at the moment it appears</em>, not at the end of the session. The interrupt is two minutes; the cleanup is an hour.</p>
+<p>A related failure is the paper and its source notes drifting out of sync. You strengthen a claim in the draft based on something Claude re-read during composition, but you don't push that strengthening back into the source note. Two months later the source note still says what it said before. Fix: at the end of every writing session, ask Claude to diff the draft against the source notes — "For each note linked from the draft, has anything in the draft added to what the source note says? If so, propose the additions back into the source." Co-evolution only works if both sides evolve.</p>
+<div class="admonition tip">
+<p class="admonition-title">End-of-session checklist for a draft</p>
+<ul>
+<li>Every <code>[citation needed]</code> either resolved or explicitly carried forward.</li>
+<li>Tangent notes captured (and linked from the draft's <code>## Related tangents</code> section, if you keep one).</li>
+<li>Source notes updated with anything the draft discovered that they didn't have.</li>
+<li><code>get_outlinks(path=&lt;draft&gt;)</code> reviewed; every linked source has a reciprocal backlink (or is an intentional one-way pointer).</li>
+</ul>
+</div>
+<h2 id="pitfalls">Pitfalls<a class="headerlink" href="#pitfalls" title="Permanent link">&para;</a></h2>
+<p>Research with Claude is fast. Fluency is not evidence of correctness. Most of what follows is how to catch the model before it convinces both of you that an incorrect answer is settled.</p>
+<h3 id="false-confidence">False confidence<a class="headerlink" href="#false-confidence" title="Permanent link">&para;</a></h3>
+<p>Claude writes confidently, even when wrong. The confidence is in the prose, not the content — the same sentence structure that makes a verified claim read clearly makes a fabricated claim read clearly.</p>
+<p>A session produced a confident assertion backed by a plausible-sounding paper. The title read like something that should exist, the DOI was formatted correctly, the authors were prominent in the field. The paper did not exist. Only a targeted follow-up — search for the paper, verify authors, check the DOI — caught it. The paragraph around the citation had been convincing enough that the first read didn't flag anything.</p>
+<p>Treat every citation as unverified until you've resolved the DOI or found the paper via scholar-mcp or web search. Verification is cheap; unrolling a paper draft that cites a non-existent source six weeks later is not.</p>
+<p>A minimal verification protocol:</p>
+<ol>
+<li>Copy the DOI (or canonical identifier) into a browser or into <code>get_paper</code> via scholar-mcp.</li>
+<li>Confirm the paper resolves and the title matches what Claude reported.</li>
+<li>Confirm the authors exist and are plausibly the authors of that paper (look for the same names on a citation database).</li>
+<li>Spot-check one claim the note attributes to the paper against the abstract.</li>
+</ol>
+<p>If any step fails, the citation is fabricated — or, more charitably, confused with a different paper. Either way the note is lying to you until you fix it.</p>
+<h3 id="make-uncertainty-explicit">Make uncertainty explicit<a class="headerlink" href="#make-uncertainty-explicit" title="Permanent link">&para;</a></h3>
+<p>AI-written text looks like a finished deliverable even when it's a first draft. Colleagues who read the note assume it's been verified. Future Claude sessions read the note back and treat confident prose as settled fact. The same fluency that makes Claude useful for drafting makes Claude dangerous as a reader of its own prior work.</p>
+<p>Fix: mark uncertainty in the note, not just in your head. <code>[citation needed]</code>, <code>[verify]</code>, <code>[my guess]</code> — any convention you'll actually use. The marker is a signal to both future-you and future-Claude that the surrounding prose has not cleared the verification bar yet. Without the marker, the note reads as done. With the marker, the note reads as in-progress, which is the truth.</p>
+<p>Claude reads its own output as authoritative when it surfaces again in a future session. This is the mechanism by which confidence compounds: session 1 writes a confident-but-unverified claim, session 2 reads the same claim back through <code>read</code> or <code>get_similar</code>, treats it as prior work, and cites it in a new note. The fabrication propagates without anyone noticing. Markers break this chain — a future Claude session seeing <code>[citation needed]</code> knows the claim is not yet load-bearing.</p>
+<h3 id="verify-before-polishing">Verify before polishing<a class="headerlink" href="#verify-before-polishing" title="Permanent link">&para;</a></h3>
+<p>If a note reads like a deliverable but its claims aren't verified, it's premature polish. The verification loop is the workflow, not a step to skip when you're in flow. The temptation to keep writing while the momentum is there is real; the cost of skipping verification is that the polish compounds the confidence problem. A rough note with markers is safer than a polished note without them.</p>
+<p>Order of operations matters. Do the grounding pass first; polish second. If you polish first, the prose reads as finished to both you and to future Claude, and the grounding pass becomes a formality — you tick boxes instead of actually reading sources. If you ground first, the prose is ugly until it's right, which keeps you honest about what still needs work.</p>
+<p>A practical rule: a note is only allowed to lose its <code>[citation needed]</code> markers when the claim is backed by a specific source you have actually checked. Not "Claude said this paper supports it" — actually checked. The verification step is the workflow's load-bearing element. Every other step is optional; this one is not.</p>
+<p>If you're short on time and can't verify a claim in the current session, the honest move is to leave the marker in place and write a brief note next to it explaining what you looked at and what was inconclusive. A marker with context is more useful in the next session than a marker with no trail; a note that deletes the marker without verification is actively misleading.</p>
+<h2 id="a-worked-example">A worked example<a class="headerlink" href="#a-worked-example" title="Permanent link">&para;</a></h2>
+<p>Here's how the five phases thread together across a month of intermittent work. The scenario: abandoned software dependencies — open-source libraries that stop receiving maintenance while still being depended on by live systems. The goal: a short blog post summarising early-warning signals.</p>
+<p><em>Seed.</em> You start with a thesis: abandoned dependencies usually show warning signs 6–12 months before the final commit — slowing commit cadence, unanswered issues, a shrinking maintainer pool. You write it as a seed note at <code>research/abandoned-deps.md</code> with the thesis in the body and a <code>[citation needed]</code> marker on the 6–12 month claim. Tags: <code>[draft, supply-chain]</code>. Five minutes, total.</p>
+<p><em>Grounding.</em> A week later you come back. The 6–12 month claim is still marked. You ask Claude to run web searches for empirical work on maintainer attrition and dependency abandonment, with specific attention to timing. Claude returns three candidates: a 2021 paper on open-source project mortality, a 2023 blog post with ecosystem-wide metrics, and a 2020 empirical study on commit cadence as a leading indicator. You skim the blog; one of the papers has a DOI you can verify. You tell Claude to go ahead and write literature notes for the two papers and to drop the blog (interesting, but not a citable source for the claim you're making).</p>
+<p><em>Absorbing.</em> Claude produces two literature notes. The 2020 empirical study becomes <code>research/lit/xie-2020-commit-cadence.md</code> — full key-ideas section, a relevance paragraph tying it to the seed note, and open questions about sample selection. The 2021 project-mortality paper becomes a shorter summary note: one paragraph of key ideas, one of relevance, no open questions because the paper is peripheral. You don't convert either PDF; the abstracts plus what Claude retrieved are enough.</p>
+<p>At the end of the absorbing session, you ask Claude to add reciprocal links from the seed note into each literature note, using <code>edit</code> to insert <code>[[xie-2020-commit-cadence]]</code> and <code>[[fritz-2021-project-mortality]]</code> into the relevant paragraphs. The vault now has a small interconnected cluster where a week ago there was one seed.</p>
+<p><em>Interconnection.</em> You ask Claude to run <code>get_similar</code> on the seed note. The top result is a note from six months ago titled <code>maintainer-burnout-signals.md</code> — you'd completely forgotten about it. You open it; it's directly relevant. Claude adds <code>[[maintainer-burnout-signals]]</code> to the seed note and a reciprocal link in the burnout note. The vault graph just got richer without you having to remember anything.</p>
+<p>A second <code>get_similar</code> candidate is a note on supply-chain attacks from last year; the rationale Claude offers is "both concern open-source library lifecycles," which is vocabulary-level, not substantive. You reject it. Over-linking would have dragged the supply-chain note into every future <code>get_context</code> call on this cluster, for no gain.</p>
+<p><em>Producing.</em> A month later you write a short blog draft on the topic. You ask Claude to compose from the seed note, the two literature notes, and the burnout note. The draft has one tangent — a paragraph on how package managers could surface abandonment signals programmatically — that doesn't fit the blog's scope. Instead of deleting it, you capture it as a new standalone note, <code>research/package-manager-abandonment-signals.md</code>, and return to the blog. The blog ships tight; the tangent lives in the vault, ready for the next session to pick up.</p>
+<p>The whole loop took four sessions across a month: seed (5 minutes), ground (20 minutes), absorb (30 minutes), interconnect (10 minutes), produce (90 minutes). Each session picked up where the previous one left off. Claude didn't remember any of it — the vault did. That's the point.</p>
+<h2 id="next-steps">Next steps<a class="headerlink" href="#next-steps" title="Permanent link">&para;</a></h2>
+<ul>
+<li><a href="../zettelkasten/">Zettelkasten</a> — idea-centric organisation; pairs well with literature notes and atomic permanent notes.</li>
+<li><a href="../para/">PARA</a> — action-oriented organisation; research fits under Resources (reference material) and Projects (active research outputs).</li>
+<li><a href="../obsidian-everywhere/">Obsidian Everywhere</a> — multi-device setup for phone-first capture between sessions.</li>
+<li><a href="../../prompts/">MCP Prompts reference</a> — especially the <a href="../../prompts/#ambient-patterns-without-prompts">ambient patterns</a> and <a href="../../prompts/#propose-links"><code>propose-links</code></a>.</li>
+<li><a href="https://github.com/pvliesdonk/scholar-mcp">scholar-mcp</a> — when citation rigour matters: citation graphs, BibTeX, full-text PDF conversion.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.suggest", "search.highlight", "content.code.copy", "content.tabs.link"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+        <script src="../../javascripts/config-wizard/wizard.js" type="module"></script>
+      
+    
+  </body>
+</html>
