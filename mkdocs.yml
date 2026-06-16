@@ -62,6 +62,7 @@ plugins:
           - index.md: Overview — features, quick start, and project links
           - installation.md: Installation from PyPI, uv, source, or Docker
           - configuration.md: All environment variables with types and defaults
+          - configuration-generator.md: In-browser generator for config, Docker, and systemd artifacts
         Guides:
           - guides/index.md: Guide overview — which guide to read
           - guides/git-integration.md: Git modes — managed, unmanaged (commit-only), and no-git
@@ -127,6 +128,13 @@ markdown_extensions:
   - attr_list
   - md_in_html
 
+extra_javascript:
+  - path: javascripts/config-wizard/wizard.js
+    type: module
+
+extra_css:
+  - stylesheets/config-wizard.css
+
 nav:
   # PROJECT-NAV-START — replace with your real navigation; kept across copier
   # update. Keep aligned with the `llmstxt` plugin's sentinel-protected
@@ -135,6 +143,7 @@ nav:
   - Getting Started:
       - Installation: installation.md
       - Configuration: configuration.md
+      - Configuration Generator: configuration-generator.md
   - Guides:
       - Overview: guides/index.md
       - Git Integration: guides/git-integration.md
