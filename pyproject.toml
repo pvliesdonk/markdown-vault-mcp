@@ -71,6 +71,9 @@ docs = [
     "mkdocs-llmstxt>=0.5",
     "pygments>=2,<2.21",
 ]
+browser = [
+    "pytest-playwright>=0.5",
+]
 
 [project.scripts]
 markdown-vault-mcp = "markdown_vault_mcp.cli:main"
@@ -147,6 +150,9 @@ indent-style = "space"
 testpaths = ["tests"]
 addopts = ["--strict-markers", "-ra"]
 asyncio_mode = "auto"
+markers = [
+    "browser: end-to-end test that drives a headless browser (requires the 'browser' dependency group + 'playwright install chromium')",
+]
 
 [tool.coverage.run]
 source = ["src/markdown_vault_mcp"]
