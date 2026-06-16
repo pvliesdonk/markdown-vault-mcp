@@ -1780,6 +1780,12 @@ This also hides any prompts sharing the ``write`` tag (e.g. ``research``,
 ``discuss``, ``create_from_template``). The Vault still raises ``ReadOnlyError`` as a defence-in-depth
 guard if a write method is somehow called on a read-only instance.
 
+The MCP-Apps UI tools ``browse_vault`` and ``show_context`` are tagged with
+``tags={"apps-ui"}``. When ``MARKDOWN_VAULT_MCP_DISABLE_APPS_UI=true``, the
+server calls ``mcp.disable(tags={"apps-ui"})`` to hide them from the tool
+listing for clients that don't render MCP Apps panels. This composes as a
+set-union with the ``write`` and ``git-managed`` disable passes.
+
 **Dynamic instructions**: the server's MCP `instructions` string varies with
 `read_only` mode. When `read_only=True`, the instructions state this is a
 read-only instance; when `read_only=False`, they describe write tool semantics.
@@ -1875,6 +1881,7 @@ For MCP server deployment:
 |----------|-------------|---------|
 | `MARKDOWN_VAULT_MCP_SERVER_NAME` | MCP server name shown to clients | `markdown-vault-mcp` |
 | `MARKDOWN_VAULT_MCP_INSTRUCTIONS` | System-level instructions for LLM context | generic description |
+| `MARKDOWN_VAULT_MCP_DISABLE_APPS_UI` | Hide MCP-Apps UI tools (`browse_vault`, `show_context`) from the listing | `false` |
 | `MARKDOWN_VAULT_MCP_SOURCE_DIR` | Path to markdown files | required |
 | `MARKDOWN_VAULT_MCP_READ_ONLY` | Disable write tools | `true` |
 | `MARKDOWN_VAULT_MCP_INDEX_PATH` | SQLite index path | in-memory |
