@@ -55,6 +55,15 @@ jobs:
       - name: Build documentation
         run: uv run mkdocs build --strict
 
+      - name: Install browser test deps
+        run: uv sync --no-default-groups --group docs --group browser
+
+      - name: Install Chromium
+        run: uv run playwright install --with-deps chromium
+
+      - name: Run config-wizard smoke test
+        run: uv run pytest tests/test_config_wizard_smoke.py -v -m browser
+
       - name: Upload artifact
         if: github.event_name == 'release' || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
         uses: actions/upload-pages-artifact@v5
