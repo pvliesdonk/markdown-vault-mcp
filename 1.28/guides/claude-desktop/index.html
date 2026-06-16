@@ -1,0 +1,2460 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Generic markdown collection MCP server with FTS5 + semantic search">
+      
+      
+      
+        <link rel="canonical" href="https://pvliesdonk.github.io/markdown-vault-mcp/1.28/guides/claude-desktop/">
+      
+      
+        <link rel="prev" href="../git-integration/">
+      
+      
+        <link rel="next" href="../docker/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.5">
+    
+    
+      
+        <title>Claude Desktop - markdown-vault-mcp</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#claude-desktop" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="markdown-vault-mcp" class="md-header__button md-logo" aria-label="markdown-vault-mcp" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            markdown-vault-mcp
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Claude Desktop
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/pvliesdonk/markdown-vault-mcp" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    pvliesdonk/markdown-vault-mcp
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../installation/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../" class="md-tabs__link">
+          
+  
+  
+  Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../tools/" class="md-tabs__link">
+          
+  
+  
+  MCP Interface
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../deployment/" class="md-tabs__link">
+          
+  
+  
+  Deployment
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../api/collection/" class="md-tabs__link">
+          
+  
+  
+  Python API
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="markdown-vault-mcp" class="md-nav__button md-logo" aria-label="markdown-vault-mcp" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    markdown-vault-mcp
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/pvliesdonk/markdown-vault-mcp" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    pvliesdonk/markdown-vault-mcp
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../git-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Git Integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Claude Desktop
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Claude Desktop
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#step-0-install-via-mcpb-bundle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 0: Install via .mcpb bundle
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 0: Install via .mcpb bundle">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#install" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Install
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-1-basic-read-only-setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 1: Basic read-only setup
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 1: Basic read-only setup">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#install_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Install
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#configure-claude-desktop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configure Claude Desktop
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#restart-claude-desktop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Restart Claude Desktop
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#verify-it-works" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Verify it works
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-2-enable-git-write-support" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 2: Enable git write support
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 2: Enable git write support">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#create-a-github-personal-access-token" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Create a GitHub Personal Access Token
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#update-the-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Update the configuration
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#restart-and-verify" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Restart and verify
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-3-add-semantic-search" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 3: Add semantic search
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 3: Add semantic search">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#install-and-configure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Install and configure
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pre-build-embeddings-before-first-launch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pre-build embeddings before first launch
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#restart-and-verify_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Restart and verify
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-4-use-mcp-apps-views" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 4: Use MCP Apps views
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 4: Use MCP Apps views">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#try-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Try it
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#firing-prompts-from-claudeais-menu" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Firing prompts from Claude.ai's + menu
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../docker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Docker
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../embeddings/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Embeddings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../authentication/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Authentication
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../oidc-providers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OIDC Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../obsidian-everywhere/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Obsidian Everywhere
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../research-workflows/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Research Workflows
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../zettelkasten/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Zettelkasten
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../para/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PARA
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../mcp-apps/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Apps
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../claude-code-plugin/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Claude Code Plugin
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Interface
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    MCP Interface
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tools/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tools
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../resources/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Resources
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../prompts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Prompts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deployment
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Deployment
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deployment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deployment/docker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Docker
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deployment/systemd/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    systemd
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deployment/claude-desktop/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Claude Desktop
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deployment/oidc/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OIDC Authentication
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Python API
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Python API
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/collection/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Collection
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/git/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Git Integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/providers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Embedding Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/exceptions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Exceptions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#step-0-install-via-mcpb-bundle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 0: Install via .mcpb bundle
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 0: Install via .mcpb bundle">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#install" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Install
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-1-basic-read-only-setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 1: Basic read-only setup
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 1: Basic read-only setup">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#install_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Install
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#configure-claude-desktop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configure Claude Desktop
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#restart-claude-desktop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Restart Claude Desktop
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#verify-it-works" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Verify it works
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-2-enable-git-write-support" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 2: Enable git write support
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 2: Enable git write support">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#create-a-github-personal-access-token" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Create a GitHub Personal Access Token
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#update-the-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Update the configuration
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#restart-and-verify" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Restart and verify
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-3-add-semantic-search" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 3: Add semantic search
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 3: Add semantic search">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#install-and-configure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Install and configure
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pre-build-embeddings-before-first-launch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pre-build embeddings before first launch
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#restart-and-verify_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Restart and verify
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-4-use-mcp-apps-views" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 4: Use MCP Apps views
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 4: Use MCP Apps views">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#try-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Try it
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#firing-prompts-from-claudeais-menu" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Firing prompts from Claude.ai's + menu
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="claude-desktop">Claude Desktop<a class="headerlink" href="#claude-desktop" title="Permanent link">&para;</a></h1>
+<p>This guide walks through four progressive setups for using markdown-vault-mcp with <a href="https://claude.ai/download">Claude Desktop</a>:</p>
+<ol>
+<li><strong>Basic</strong> — read-only keyword search, no external services</li>
+<li><strong>Git write support</strong> — enable write/edit/delete with auto-commit</li>
+<li><strong>Semantic search</strong> — add embedding-based search for better results</li>
+<li><strong>MCP Apps views</strong> — browse your vault visually with Context Card, Graph Explorer, and more</li>
+</ol>
+<p>Each step builds on the previous one. Start with Step 0 (easiest) or Step 1 (full control) and add features as needed.</p>
+<h2 id="step-0-install-via-mcpb-bundle">Step 0: Install via .mcpb bundle<a class="headerlink" href="#step-0-install-via-mcpb-bundle" title="Permanent link">&para;</a></h2>
+<p><strong>Goal:</strong> Install markdown-vault-mcp in Claude Desktop with a guided wizard — no JSON editing required.</p>
+<p><strong>Prerequisites:</strong> Claude Desktop &gt;= 0.10.0.</p>
+<p>This is the easiest option for non-technical users.</p>
+<h3 id="install">Install<a class="headerlink" href="#install" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Download the <code>.mcpb</code> file from the <a href="https://github.com/pvliesdonk/markdown-vault-mcp/releases">GitHub Releases</a> page.</li>
+<li>
+<p>Double-click the downloaded <code>.mcpb</code> file, or run:</p>
+<div class="highlight"><pre><span></span><code>mcpb<span class="w"> </span>install<span class="w"> </span>&lt;file&gt;.mcpb
+</code></pre></div>
+</li>
+<li>
+<p>Claude Desktop opens a GUI wizard that prompts for the required env vars. No manual JSON editing needed.</p>
+</li>
+</ol>
+<div class="admonition note">
+<p class="admonition-title">Fewer configurable env vars</p>
+<p>The <code>.mcpb</code> bundle exposes a curated set of env vars (vault path, read-only mode, embedding provider, and exclude patterns). For full control over all configuration options, use Step 1 instead.</p>
+</div>
+<hr />
+<h2 id="step-1-basic-read-only-setup">Step 1: Basic read-only setup<a class="headerlink" href="#step-1-basic-read-only-setup" title="Permanent link">&para;</a></h2>
+<p><strong>Goal:</strong> Connect a local Obsidian vault to Claude Desktop with keyword search.</p>
+<p><strong>Prerequisites:</strong> Python 3.10+, Claude Desktop installed.</p>
+<h3 id="install_1">Install<a class="headerlink" href="#install_1" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>markdown-vault-mcp<span class="o">[</span>all<span class="o">]</span>
+</code></pre></div>
+<p>Or with uv:</p>
+<div class="highlight"><pre><span></span><code>uv<span class="w"> </span>tool<span class="w"> </span>install<span class="w"> </span>markdown-vault-mcp<span class="o">[</span>all<span class="o">]</span>
+</code></pre></div>
+<h3 id="configure-claude-desktop">Configure Claude Desktop<a class="headerlink" href="#configure-claude-desktop" title="Permanent link">&para;</a></h3>
+<p>Edit your Claude Desktop configuration file:</p>
+<div class="tabbed-set tabbed-alternate" data-tabs="1:5"><input checked="checked" id="__tabbed_1_1" name="__tabbed_1" type="radio" /><input id="__tabbed_1_2" name="__tabbed_1" type="radio" /><input id="__tabbed_1_3" name="__tabbed_1" type="radio" /><input id="__tabbed_1_4" name="__tabbed_1" type="radio" /><input id="__tabbed_1_5" name="__tabbed_1" type="radio" /><div class="tabbed-labels"><label for="__tabbed_1_1">macOS</label><label for="__tabbed_1_2">Windows</label><label for="__tabbed_1_3">Linux</label><label for="__tabbed_1_4">macOS / Linux</label><label for="__tabbed_1_5">Windows</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<p><code>~/Library/Application Support/Claude/claude_desktop_config.json</code></p>
+</div>
+<div class="tabbed-block">
+<p><code>%APPDATA%\Claude\claude_desktop_config.json</code></p>
+</div>
+<div class="tabbed-block">
+<p><code>~/.config/Claude/claude_desktop_config.json</code></p>
+</div>
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;mcpServers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;my-vault&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;command&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;markdown-vault-mcp&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;serve&quot;</span><span class="p">],</span>
+<span class="w">      </span><span class="nt">&quot;env&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;MARKDOWN_VAULT_MCP_SOURCE_DIR&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;/path/to/your/ObsidianVault&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;MARKDOWN_VAULT_MCP_SERVER_NAME&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;my-vault&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;MARKDOWN_VAULT_MCP_EXCLUDE&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;.obsidian/**,.trash/**&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;MARKDOWN_VAULT_MCP_INDEX_PATH&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;/path/to/store/index.db&quot;</span>
+<span class="w">      </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+</div>
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;mcpServers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;my-vault&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;command&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;markdown-vault-mcp&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;serve&quot;</span><span class="p">],</span>
+<span class="w">      </span><span class="nt">&quot;env&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;MARKDOWN_VAULT_MCP_SOURCE_DIR&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;C:\\Users\\YourName\\Documents\\ObsidianVault&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;MARKDOWN_VAULT_MCP_SERVER_NAME&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;my-vault&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;MARKDOWN_VAULT_MCP_EXCLUDE&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;.obsidian/**,.trash/**&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;MARKDOWN_VAULT_MCP_INDEX_PATH&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;C:\\Users\\YourName\\vault_index.db&quot;</span>
+<span class="w">      </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+</div>
+</div>
+</div>
+<p>Replace the paths with the actual locations on your machine.</p>
+<div class="admonition tip">
+<p class="admonition-title">Persist the index</p>
+<p>Setting <code>MARKDOWN_VAULT_MCP_INDEX_PATH</code> stores the FTS5 index on disk. Without it, the index is built in memory on every startup. With it, only changed files are reindexed.</p>
+</div>
+<div class="admonition tip">
+<p class="admonition-title">Exclude Obsidian internals</p>
+<p><code>MARKDOWN_VAULT_MCP_EXCLUDE</code> keeps <code>.obsidian/</code> config files and <code>.trash/</code> out of search results. Add any other directories you want to skip (e.g., <code>_templates/**</code>).</p>
+</div>
+<h3 id="restart-claude-desktop">Restart Claude Desktop<a class="headerlink" href="#restart-claude-desktop" title="Permanent link">&para;</a></h3>
+<p>Quit and reopen Claude Desktop. The server tools should appear in Claude's tool list.</p>
+<h3 id="verify-it-works">Verify it works<a class="headerlink" href="#verify-it-works" title="Permanent link">&para;</a></h3>
+<p>In a Claude Desktop conversation, ask:</p>
+<blockquote>
+<p>Search my vault for "meeting notes"</p>
+</blockquote>
+<p>Claude should use the <code>search</code> tool and return matching documents from your vault. If you get no results, verify that <code>MARKDOWN_VAULT_MCP_SOURCE_DIR</code> points to a directory containing <code>.md</code> files.</p>
+<hr />
+<h2 id="step-2-enable-git-write-support">Step 2: Enable git write support<a class="headerlink" href="#step-2-enable-git-write-support" title="Permanent link">&para;</a></h2>
+<p><strong>Goal:</strong> Allow Claude to create, edit, delete, and rename notes in managed git mode — with every change auto-committed and pushed.</p>
+<p><strong>Prerequisites:</strong> Step 1 complete. Your vault directory must be a git repository with an HTTPS remote configured.</p>
+<h3 id="create-a-github-personal-access-token">Create a GitHub Personal Access Token<a class="headerlink" href="#create-a-github-personal-access-token" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Go to <a href="https://github.com/settings/personal-access-tokens/new">GitHub Settings &gt; Developer settings &gt; Fine-grained tokens</a></li>
+<li>Set repository access to your vault repository only</li>
+<li>Grant <strong>Contents: Read and write</strong> permission</li>
+<li>Copy the token (starts with <code>github_pat_</code>)</li>
+</ol>
+<h3 id="update-the-configuration">Update the configuration<a class="headerlink" href="#update-the-configuration" title="Permanent link">&para;</a></h3>
+<p>Add the highlighted lines to your existing config:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;mcpServers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;my-vault&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;command&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;markdown-vault-mcp&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;serve&quot;</span><span class="p">],</span>
+<span class="w">      </span><span class="nt">&quot;env&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;MARKDOWN_VAULT_MCP_SOURCE_DIR&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;/path/to/your/ObsidianVault&quot;</span><span class="p">,</span>
+<span class="hll"><span class="w">        </span><span class="nt">&quot;MARKDOWN_VAULT_MCP_READ_ONLY&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;false&quot;</span><span class="p">,</span>
+</span><span class="hll"><span class="w">        </span><span class="nt">&quot;MARKDOWN_VAULT_MCP_GIT_REPO_URL&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;https://github.com/your-org/your-vault.git&quot;</span><span class="p">,</span>
+</span><span class="hll"><span class="w">        </span><span class="nt">&quot;MARKDOWN_VAULT_MCP_GIT_USERNAME&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;x-access-token&quot;</span><span class="p">,</span>
+</span><span class="hll"><span class="w">        </span><span class="nt">&quot;MARKDOWN_VAULT_MCP_GIT_TOKEN&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;github_pat_your_token_here&quot;</span><span class="p">,</span>
+</span><span class="hll"><span class="w">        </span><span class="nt">&quot;MARKDOWN_VAULT_MCP_GIT_PUSH_DELAY_S&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;60&quot;</span><span class="p">,</span>
+</span><span class="w">        </span><span class="nt">&quot;MARKDOWN_VAULT_MCP_SERVER_NAME&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;my-vault&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;MARKDOWN_VAULT_MCP_EXCLUDE&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;.obsidian/**,.trash/**&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;MARKDOWN_VAULT_MCP_INDEX_PATH&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;/path/to/store/index.db&quot;</span>
+<span class="w">      </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p><strong>What these do:</strong></p>
+<ul>
+<li><code>READ_ONLY=false</code> — enables the write, edit, delete, and rename tools</li>
+<li><code>GIT_REPO_URL</code> — enables managed mode (clone/remote validation)</li>
+<li><code>GIT_USERNAME</code> / <code>GIT_TOKEN</code> — HTTPS auth for pull/push</li>
+<li><code>GIT_PUSH_DELAY_S=60</code> — batches rapid writes, pushing after 60 seconds of idle time</li>
+</ul>
+<div class="admonition warning">
+<p class="admonition-title">Token security</p>
+<p>The token is stored in plain text in your Claude Desktop config. Use a fine-grained token scoped to the single vault repository with minimal permissions.</p>
+</div>
+<h3 id="restart-and-verify">Restart and verify<a class="headerlink" href="#restart-and-verify" title="Permanent link">&para;</a></h3>
+<p>Restart Claude Desktop, then ask:</p>
+<blockquote>
+<p>Create a new note at "test/hello.md" with the content "Hello from Claude!"</p>
+</blockquote>
+<p>Claude should use the <code>write</code> tool. Check your git log to confirm the commit:</p>
+<div class="highlight"><pre><span></span><code><span class="nb">cd</span><span class="w"> </span>/path/to/your/ObsidianVault
+git<span class="w"> </span>log<span class="w"> </span>--oneline<span class="w"> </span>-3
+</code></pre></div>
+<p>You should see a commit from <code>markdown-vault-mcp</code>. Delete the test note when done:</p>
+<blockquote>
+<p>Delete the note at "test/hello.md"</p>
+</blockquote>
+<hr />
+<h2 id="step-3-add-semantic-search">Step 3: Add semantic search<a class="headerlink" href="#step-3-add-semantic-search" title="Permanent link">&para;</a></h2>
+<p><strong>Goal:</strong> Enable embedding-based search alongside keyword search for better recall on conceptual queries.</p>
+<p><strong>Prerequisites:</strong> Step 1 complete. Choose an embedding backend:</p>
+<ul>
+<li><strong>FastEmbed</strong> (recommended for Windows and offline use) — local inference, no external service</li>
+<li><strong>Ollama</strong> (macOS/Linux) — local inference via <a href="https://ollama.com">Ollama</a></li>
+<li><strong>OpenAI</strong> — cloud-based, requires API key (see <a href="../embeddings/">Embeddings guide</a>)</li>
+</ul>
+<h3 id="install-and-configure">Install and configure<a class="headerlink" href="#install-and-configure" title="Permanent link">&para;</a></h3>
+<div class="tabbed-set tabbed-alternate" data-tabs="2:2"><input checked="checked" id="__tabbed_2_1" name="__tabbed_2" type="radio" /><input id="__tabbed_2_2" name="__tabbed_2" type="radio" /><div class="tabbed-labels"><label for="__tabbed_2_1">FastEmbed (Windows / offline)</label><label for="__tabbed_2_2">Ollama (macOS / Linux)</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<p>Install the embeddings extra:</p>
+<div class="highlight"><pre><span></span><code><span class="n">pip</span> <span class="n">install</span> <span class="s2">&quot;markdown-vault-mcp[embeddings]&quot;</span>
+<span class="c"># or:</span>
+<span class="n">uv</span> <span class="n">tool</span> <span class="n">install</span> <span class="s2">&quot;markdown-vault-mcp[embeddings]&quot;</span>
+</code></pre></div>
+<p>Update your <code>claude_desktop_config.json</code>:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;mcpServers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;my-vault&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;command&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;markdown-vault-mcp&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;serve&quot;</span><span class="p">],</span>
+<span class="w">      </span><span class="nt">&quot;env&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;MARKDOWN_VAULT_MCP_SOURCE_DIR&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;C:\\Users\\YourName\\Documents\\ObsidianVault&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;MARKDOWN_VAULT_MCP_SERVER_NAME&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;my-vault&quot;</span><span class="p">,</span>
+<span class="hll"><span class="w">        </span><span class="nt">&quot;MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;C:\\Users\\YourName\\vault_embeddings&quot;</span><span class="p">,</span>
+</span><span class="hll"><span class="w">        </span><span class="nt">&quot;MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;fastembed&quot;</span><span class="p">,</span>
+</span><span class="hll"><span class="w">        </span><span class="nt">&quot;MARKDOWN_VAULT_MCP_FASTEMBED_MODEL&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;BAAI/bge-small-en-v1.5&quot;</span><span class="p">,</span>
+</span><span class="hll"><span class="w">        </span><span class="nt">&quot;MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;C:\\Users\\YourName\\fastembed_cache&quot;</span><span class="p">,</span>
+</span><span class="hll"><span class="w">        </span><span class="nt">&quot;MARKDOWN_VAULT_MCP_INDEX_PATH&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;C:\\Users\\YourName\\vault_index.db&quot;</span><span class="p">,</span>
+</span><span class="w">        </span><span class="nt">&quot;MARKDOWN_VAULT_MCP_EXCLUDE&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;.obsidian/**,.trash/**&quot;</span>
+<span class="w">      </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+</div>
+<div class="tabbed-block">
+<p>Install and start Ollama:</p>
+<div class="highlight"><pre><span></span><code>brew<span class="w"> </span>install<span class="w"> </span>ollama<span class="w">        </span><span class="c1"># macOS</span>
+ollama<span class="w"> </span>pull<span class="w"> </span>nomic-embed-text
+</code></pre></div>
+<p>Update your config:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;mcpServers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;my-vault&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;command&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;markdown-vault-mcp&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;serve&quot;</span><span class="p">],</span>
+<span class="w">      </span><span class="nt">&quot;env&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;MARKDOWN_VAULT_MCP_SOURCE_DIR&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;/path/to/your/ObsidianVault&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;MARKDOWN_VAULT_MCP_SERVER_NAME&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;my-vault&quot;</span><span class="p">,</span>
+<span class="hll"><span class="w">        </span><span class="nt">&quot;MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;/path/to/store/embeddings&quot;</span><span class="p">,</span>
+</span><span class="hll"><span class="w">        </span><span class="nt">&quot;MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;ollama&quot;</span><span class="p">,</span>
+</span><span class="hll"><span class="w">        </span><span class="nt">&quot;OLLAMA_HOST&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;http://localhost:11434&quot;</span><span class="p">,</span>
+</span><span class="hll"><span class="w">        </span><span class="nt">&quot;MARKDOWN_VAULT_MCP_OLLAMA_MODEL&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;nomic-embed-text&quot;</span><span class="p">,</span>
+</span><span class="w">        </span><span class="nt">&quot;MARKDOWN_VAULT_MCP_EXCLUDE&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;.obsidian/**,.trash/**&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;MARKDOWN_VAULT_MCP_INDEX_PATH&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;/path/to/store/index.db&quot;</span>
+<span class="w">      </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+</div>
+</div>
+</div>
+<p><strong>Key env vars:</strong></p>
+<ul>
+<li><code>MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH</code> — where to persist embedding vectors on disk (required to enable semantic search)</li>
+<li><code>MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER</code> — <code>fastembed</code>, <code>ollama</code>, or <code>openai</code></li>
+<li><code>MARKDOWN_VAULT_MCP_FASTEMBED_MODEL</code> / <code>MARKDOWN_VAULT_MCP_OLLAMA_MODEL</code> — which model to use</li>
+</ul>
+<h3 id="pre-build-embeddings-before-first-launch">Pre-build embeddings before first launch<a class="headerlink" href="#pre-build-embeddings-before-first-launch" title="Permanent link">&para;</a></h3>
+<p>For large vaults, building embeddings on first startup can take several minutes — long enough for Claude Desktop to time out the connection. Pre-build from the command line instead:</p>
+<div class="tabbed-set tabbed-alternate" data-tabs="3:2"><input checked="checked" id="__tabbed_3_1" name="__tabbed_3" type="radio" /><input id="__tabbed_3_2" name="__tabbed_3" type="radio" /><div class="tabbed-labels"><label for="__tabbed_3_1">macOS / Linux</label><label for="__tabbed_3_2">Windows (PowerShell)</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">MARKDOWN_VAULT_MCP_SOURCE_DIR</span><span class="o">=</span><span class="s2">&quot;/path/to/your/ObsidianVault&quot;</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">MARKDOWN_VAULT_MCP_INDEX_PATH</span><span class="o">=</span><span class="s2">&quot;/path/to/store/index.db&quot;</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH</span><span class="o">=</span><span class="s2">&quot;/path/to/store/embeddings&quot;</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER</span><span class="o">=</span><span class="s2">&quot;ollama&quot;</span>
+
+markdown-vault-mcp<span class="w"> </span>reindex
+</code></pre></div>
+</div>
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code><span class="nv">$env:MARKDOWN_VAULT_MCP_SOURCE_DIR</span> <span class="p">=</span> <span class="s2">&quot;C:\Users\YourName\Documents\ObsidianVault&quot;</span>
+<span class="nv">$env:MARKDOWN_VAULT_MCP_INDEX_PATH</span> <span class="p">=</span> <span class="s2">&quot;C:\Users\YourName\vault_index.db&quot;</span>
+<span class="nv">$env:MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH</span> <span class="p">=</span> <span class="s2">&quot;C:\Users\YourName\vault_embeddings&quot;</span>
+<span class="nv">$env:MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER</span> <span class="p">=</span> <span class="s2">&quot;fastembed&quot;</span>
+<span class="nv">$env:MARKDOWN_VAULT_MCP_FASTEMBED_MODEL</span> <span class="p">=</span> <span class="s2">&quot;BAAI/bge-small-en-v1.5&quot;</span>
+<span class="nv">$env:MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR</span> <span class="p">=</span> <span class="s2">&quot;C:\Users\YourName\fastembed_cache&quot;</span>
+
+<span class="n">markdown-vault-mcp</span> <span class="n">reindex</span>
+</code></pre></div>
+</div>
+</div>
+</div>
+<p><code>reindex</code> builds (or updates) both the FTS index and the embedding vectors. Once complete, Claude Desktop will load the pre-built index on startup without needing to re-embed anything.</p>
+<div class="admonition note">
+<p class="admonition-title">Subsequent startups are fast</p>
+<p>After the initial build, only new or changed files are reindexed. You can run <code>reindex</code> again any time to catch up if you edited files outside Claude.</p>
+</div>
+<h3 id="restart-and-verify_1">Restart and verify<a class="headerlink" href="#restart-and-verify_1" title="Permanent link">&para;</a></h3>
+<p>Restart Claude Desktop, then ask:</p>
+<blockquote>
+<p>Search my vault for notes about "project planning and task management" using hybrid mode</p>
+</blockquote>
+<p>Claude should use the <code>search</code> tool with <code>mode="hybrid"</code>. Hybrid search combines keyword (BM25) and semantic (cosine similarity) results using Reciprocal Rank Fusion, giving better results for conceptual queries.</p>
+<p>Compare with keyword-only:</p>
+<blockquote>
+<p>Search my vault for "project planning" using keyword mode</p>
+</blockquote>
+<p>Hybrid mode should return more conceptually related notes, even if they don't contain the exact phrase.</p>
+<hr />
+<h2 id="step-4-use-mcp-apps-views">Step 4: Use MCP Apps views<a class="headerlink" href="#step-4-use-mcp-apps-views" title="Permanent link">&para;</a></h2>
+<p><strong>Goal:</strong> Browse your vault visually with the Context Card, Graph Explorer, Vault Browser, and Note Preview views.</p>
+<p><strong>Prerequisites:</strong> Step 1 complete. A Claude client that supports the <a href="https://modelcontextprotocol.io/specification/2025-06-18/server/apps">MCP Apps protocol</a> (e.g., Claude on claude.ai).</p>
+<p>MCP Apps views are automatically available — no extra configuration needed for stdio transport. The server registers two tools (<code>browse_vault</code> and <code>show_context</code>) that open interactive views in supporting clients.</p>
+<h3 id="try-it">Try it<a class="headerlink" href="#try-it" title="Permanent link">&para;</a></h3>
+<p>In a Claude conversation, ask:</p>
+<blockquote>
+<p>Browse my vault</p>
+</blockquote>
+<p>Claude should use the <code>browse_vault</code> tool. In an Apps-capable client, this opens an interactive SPA with four tabs:</p>
+<ul>
+<li><strong>Context Card</strong> — note dossier with backlinks, outlinks, similar notes, and tags</li>
+<li><strong>Graph Explorer</strong> — interactive force-directed link graph</li>
+<li><strong>Vault Browser</strong> — searchable file tree</li>
+<li><strong>Note Preview</strong> — rendered markdown with a "Send to Claude" button</li>
+</ul>
+<p>You can also ask for a specific note's context:</p>
+<blockquote>
+<p>Show me the context for "Projects/roadmap.md"</p>
+</blockquote>
+<p>Claude uses the <code>show_context</code> tool to open the Context Card for that note.</p>
+<div class="admonition note">
+<p class="admonition-title">Non-Apps clients</p>
+<p>Clients that don't support MCP Apps (e.g., Claude Code) receive a text-only summary instead of the interactive view. All the underlying data is still accessible via the <code>get_context</code>, <code>get_backlinks</code>, and other link graph tools.</p>
+</div>
+<p>For full details on views, configuration, and architecture, see the <a href="../mcp-apps/">MCP Apps guide</a>.</p>
+<h3 id="firing-prompts-from-claudeais-menu">Firing prompts from Claude.ai's <code>+</code> menu<a class="headerlink" href="#firing-prompts-from-claudeais-menu" title="Permanent link">&para;</a></h3>
+<p>This guide covers Claude Desktop. If you also use Claude.ai with the same server, its prompts can be fired from the compose area's <code>+</code> menu once the server is added as a connector. Click <code>+</code>, select <strong>connectors</strong>, pick the server, pick a prompt — Claude opens with the prompt scaffolded. See <a href="../../prompts/#how-to-invoke-prompts">How to invoke prompts</a>.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.suggest", "search.highlight", "content.code.copy", "content.tabs.link"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
