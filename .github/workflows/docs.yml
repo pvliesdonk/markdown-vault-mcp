@@ -106,6 +106,6 @@ jobs:
             uv run mike deploy --push --update-aliases unstable --title "unstable (${version})"
           else
             minor="$(echo "$version" | cut -d. -f1-2)"
-            uv run mike deploy --push --update-aliases "$minor" latest
+            uv run mike deploy --push --update-aliases --title "$version" "$minor" latest
             uv run mike set-default --push latest
           fi
