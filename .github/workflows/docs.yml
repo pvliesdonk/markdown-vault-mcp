@@ -56,7 +56,7 @@ jobs:
         run: uv run mkdocs build --strict
 
       - name: Install browser test deps
-        run: uv sync --no-default-groups --group docs --group browser
+        run: uv sync --no-default-groups --group docs --group browser --frozen
 
       - name: Install Chromium
         run: uv run playwright install --with-deps chromium

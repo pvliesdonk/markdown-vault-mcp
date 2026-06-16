@@ -29,6 +29,7 @@ from __future__ import annotations
 import ast
 import inspect
 import json
+import re
 from pathlib import Path
 
 from fastmcp_pvl_core import ServerConfig
@@ -55,6 +56,13 @@ _BARE_NAMES = {
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SPEC_PATH = REPO_ROOT / "docs/javascripts/config-wizard/wizard-spec.json"
+GENERATORS_JS_PATH = REPO_ROOT / "docs/javascripts/config-wizard/generators.js"
+
+# Env-var names hardcoded in generators.js that are NOT part of the config
+# inventory: FASTMCP_HOME is injected into the Docker container's environment to
+# point FastMCP's state at the mounted volume; it is owned by FastMCP, not read
+# by any config code here.
+GENERATOR_INJECTED = {"FASTMCP_HOME"}
 
 # FASTMCP_* runtime/logging vars: read by FastMCP itself, not by any config code
 # we own. The only hand-listed framework tier; kept tiny on purpose.
@@ -230,7 +238,7 @@ NOT_IN_WIZARD = {
     "OPENAI_EMBEDDING_MODEL": "bare fallback; wizard emits MARKDOWN_VAULT_MCP_OPENAI_EMBEDDING_MODEL",
     # Deprecated alias / auto-computed / alternate auth mode.
     f"{PREFIX}_EVENT_STORE_URL": "deprecated alias for KV_STORE_URL",
-    f"{PREFIX}_APP_DOMAIN": "auto-computed from BASE_URL",
+    f"{PREFIX}_APP_DOMAIN": "optional override; auto-computed from BASE_URL when unset",
     f"{PREFIX}_BEARER_TOKENS_FILE": "multi-token file auth; wizard covers single BEARER_TOKEN",
     f"{PREFIX}_BEARER_DEFAULT_SUBJECT": "multi-token file auth; wizard covers single BEARER_TOKEN",
 }
@@ -330,4 +338,33 @@ def test_not_in_wizard_allowlist_has_no_stale_entries() -> None:
     stale = set(NOT_IN_WIZARD) - inventory
     assert not stale, (
         f"NOT_IN_WIZARD references vars no longer in code: {sorted(stale)}"
+    )
+
+
+def test_generators_js_vars_are_known() -> None:
+    """Env-var names hardcoded in generators.js must be real config vars.
+
+    Extends the drift guarantee to the output generators: a typo'd or renamed
+    container-path key (or a stale FASTMCP_HOME) fails here.
+    """
+    source = GENERATORS_JS_PATH.read_text(encoding="utf-8")
+    tokens = set(re.findall(r"\b(?:MARKDOWN_VAULT_MCP|FASTMCP)_[A-Z_]+\b", source))
+    known = full_inventory() | GENERATOR_INJECTED
+    unknown = tokens - known
+    assert not unknown, f"generators.js references unknown env vars: {sorted(unknown)}"
+
+
+def test_framework_vars_stays_small() -> None:
+    """FRAMEWORK_VARS is a hand-maintained escape hatch; keep it tiny."""
+    assert len(FRAMEWORK_VARS) <= 5, (
+        f"FRAMEWORK_VARS grew unexpectedly: {FRAMEWORK_VARS}"
+    )
+
+
+def test_framework_vars_are_emitted_by_spec() -> None:
+    """Each framework var must be wired into the wizard (else why list it?)."""
+    emitted = spec_emitted_vars(load_spec())
+    unused = FRAMEWORK_VARS - emitted
+    assert not unused, (
+        f"FRAMEWORK_VARS entries not emitted by the wizard: {sorted(unused)}"
     )

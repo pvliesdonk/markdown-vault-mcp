@@ -40,16 +40,24 @@ def site_url():
 
 
 @pytest.fixture(scope="module")
-def page(site_url):
+def browser():
     from playwright.sync_api import sync_playwright
 
     with sync_playwright() as p:
-        browser = p.chromium.launch()
-        pg = browser.new_page()
-        pg.goto(f"{site_url}/configuration-generator/")
-        pg.wait_for_selector("#cfg-wizard select")
-        yield pg
-        browser.close()
+        b = p.chromium.launch()
+        yield b
+        b.close()
+
+
+@pytest.fixture
+def page(browser, site_url):
+    # Fresh page per test: the wizard keeps answer state in a module-level JS
+    # object, so each test must start from a clean load to stay order-independent.
+    pg = browser.new_page()
+    pg.goto(f"{site_url}/configuration-generator/")
+    pg.wait_for_selector("#cfg-wizard select")
+    yield pg
+    pg.close()
 
 
 def test_local_path_emits_claude_json(page):

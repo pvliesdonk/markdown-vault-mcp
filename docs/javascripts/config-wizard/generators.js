@@ -98,6 +98,9 @@ export function generateDockerRun(map, hostVaultPath) {
 export function generateCompose(map, hostVaultPath) {
   const env = dockerEnvMap(map);
   const envLines = Object.entries(env).map(([k, v]) => `      ${k}: ${yamlScalar(v)}`).join("\n");
+  // Quote the whole "host:/data/vault" mount when the host path needs it.
+  const mount = `${hostVaultPath || "/path/to/vault"}:/data/vault`;
+  const mountLine = /[\s"#]/.test(mount) ? `      - ${JSON.stringify(mount)}` : `      - ${mount}`;
   return [
     "services:",
     "  markdown-vault-mcp:",
@@ -105,7 +108,7 @@ export function generateCompose(map, hostVaultPath) {
     "    ports:",
     '      - "8000:8000"',
     "    volumes:",
-    `      - ${hostVaultPath || "/path/to/vault"}:/data/vault`,
+    mountLine,
     "      - state-data:/data/state",
     "    environment:",
     envLines,
@@ -123,6 +126,8 @@ export function generateSystemd(map) {
     "",
     "[Service]",
     "Type=simple",
+    "# Create this user first: sudo useradd --system --no-create-home markdown-vault-mcp",
+    "User=markdown-vault-mcp",
     "ExecStart=/opt/markdown-vault-mcp/venv/bin/markdown-vault-mcp serve --transport http",
     envLines,
     "Restart=on-failure",
