@@ -23,7 +23,8 @@ function writeUrlState(spec) {
     if (secrets.has(q.var)) continue;
     if (answers[q.id] !== undefined && answers[q.id] !== "") params.set(q.id, answers[q.id]);
   }
-  history.replaceState(null, "", `#${params.toString()}`);
+  const qs = params.toString();
+  history.replaceState(null, "", qs ? `#${qs}` : location.pathname + location.search);
 }
 
 function field(q, secrets) {
@@ -81,6 +82,19 @@ let ROOT = null;
 function render() {
   const spec = SPEC;
   const secrets = new Set(spec.secretKeys);
+  // Capture focus + caret so a full re-render (replaceChildren) doesn't drop
+  // the user mid-keystroke in a text field.
+  const active = document.activeElement;
+  const activeQid =
+    active && active.closest ? active.closest(".cfg-field")?.dataset.qid : null;
+  let selStart = null;
+  let selEnd = null;
+  try {
+    selStart = active.selectionStart;
+    selEnd = active.selectionEnd;
+  } catch {
+    // selects / number inputs do not expose a text selection
+  }
   const core = document.createElement("div");
   core.className = "cfg-core";
   const advanced = {};
@@ -106,7 +120,7 @@ function render() {
   }
 
   const map = buildEnvMap(spec, answers);
-  const hostVault = answers.source_dir;
+  const hostVault = map["MARKDOWN_VAULT_MCP_SOURCE_DIR"];
   const local = answers.deployment !== "server";
   const tabs = local
     ? [["Claude config", generateClaudeJson(map)], [".env", generateDotenv(map)]]
@@ -124,15 +138,26 @@ function render() {
     const head = document.createElement("div");
     head.className = "cfg-tab-head";
     head.textContent = name;
+    const pre = document.createElement("pre");
+    pre.className = "cfg-pre";
+    pre.textContent = text;
     const copy = document.createElement("button");
     copy.type = "button";
     copy.className = "cfg-copy";
     copy.textContent = "Copy";
-    copy.addEventListener("click", () => navigator.clipboard.writeText(text));
+    copy.addEventListener("click", () => {
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(text).catch(() => {});
+      } else {
+        // Fallback for non-secure contexts: select the block so Ctrl/Cmd-C works.
+        const range = document.createRange();
+        range.selectNodeContents(pre);
+        const sel = getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+    });
     head.appendChild(copy);
-    const pre = document.createElement("pre");
-    pre.className = "cfg-pre";
-    pre.textContent = text;
     block.appendChild(head);
     block.appendChild(pre);
     out.appendChild(block);
@@ -151,13 +176,37 @@ function render() {
 
   ROOT.replaceChildren(core, drawer, warnings, out);
   writeUrlState(spec);
+
+  // Restore focus + caret to the field the user was editing.
+  if (activeQid) {
+    const restored = ROOT.querySelector(
+      `.cfg-field[data-qid="${activeQid}"] input, .cfg-field[data-qid="${activeQid}"] select`,
+    );
+    if (restored) {
+      restored.focus();
+      if (selStart !== null && restored.tagName === "INPUT" && restored.type !== "number") {
+        try {
+          restored.setSelectionRange(selStart, selEnd);
+        } catch {
+          // input type does not support text selection
+        }
+      }
+    }
+  }
 }
 
 async function init() {
   ROOT = document.getElementById(MOUNT_ID);
   if (!ROOT) return;
   const specUrl = ROOT.dataset.specUrl;
-  SPEC = await fetch(specUrl).then((r) => r.json());
+  try {
+    const resp = await fetch(specUrl);
+    if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
+    SPEC = await resp.json();
+  } catch (e) {
+    ROOT.textContent = `Failed to load the configuration generator: ${e.message}`;
+    return;
+  }
   readUrlState(SPEC);
   render();
 }

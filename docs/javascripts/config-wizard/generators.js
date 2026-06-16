@@ -11,10 +11,30 @@ const CONTAINER_PATHS = {
   MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR: "/data/state/fastembed",
 };
 
-const SECRET_PLACEHOLDER = (key) => `<YOUR_${key.replace(/^.*?_?([A-Z_]+)$/, "$1")}>`;
+const SECRET_PLACEHOLDER = (key) => `<YOUR_${key.replace(/^MARKDOWN_VAULT_MCP_/, "")}>`;
 
-// Build {VAR: value} from the spec + answers. Empty answers are dropped; empty
-// secrets become placeholders so the artifact is still complete.
+// Single-quote a value for a POSIX shell `-e KEY=value` argument, but only when
+// it contains characters outside the shell-safe set (keeps clean output tidy).
+const shellQuote = (v) => {
+  const s = String(v);
+  return /^[A-Za-z0-9_@%+=:,./-]+$/.test(s) ? s : `'${s.replace(/'/g, "'\\''")}'`;
+};
+
+// Quote a YAML scalar only when it contains characters that would otherwise
+// break parsing (or has surrounding whitespace, or is empty).
+const yamlScalar = (v) => {
+  const s = String(v);
+  return /[:#[\]{}&*?|<>=!%@,`"']|^\s|\s$|^$/.test(s) ? JSON.stringify(s) : s;
+};
+
+// A systemd `Environment=` line; quote the whole assignment when the value
+// contains whitespace (systemd otherwise splits it into multiple assignments).
+const systemdLine = (k, v) =>
+  /\s/.test(String(v)) ? `Environment="${k}=${String(v).replace(/"/g, '\\"')}"` : `Environment=${k}=${v}`;
+
+// Build {VAR: value} from the spec + answers. Empty non-secret answers are
+// dropped; a visible secret left empty becomes a placeholder so the artifact is
+// still complete and signals "replace me".
 export function buildEnvMap(spec, answers) {
   const secrets = new Set(spec.secretKeys);
   const map = {};
@@ -27,7 +47,7 @@ export function buildEnvMap(spec, answers) {
     if (q.var) {
       const raw = answers[q.id];
       if (raw !== undefined && raw !== "") map[q.var] = raw;
-      else if (secrets.has(q.var) && answers[q.id] === "") map[q.var] = SECRET_PLACEHOLDER(q.var);
+      else if (secrets.has(q.var)) map[q.var] = SECRET_PLACEHOLDER(q.var);
     }
   }
   return map;
@@ -40,8 +60,12 @@ export function isVisible(q, answers) {
 
 function dockerEnvMap(map) {
   const out = { ...map };
+  // SOURCE_DIR is always forced to its container path; the remaining container
+  // paths override only when the user supplied a value (else the server default
+  // under /data applies).
+  out.MARKDOWN_VAULT_MCP_SOURCE_DIR = CONTAINER_PATHS.MARKDOWN_VAULT_MCP_SOURCE_DIR;
   for (const [k, v] of Object.entries(CONTAINER_PATHS)) {
-    if (k in out || k === "MARKDOWN_VAULT_MCP_SOURCE_DIR") out[k] = v;
+    if (k !== "MARKDOWN_VAULT_MCP_SOURCE_DIR" && k in out) out[k] = v;
   }
   out.FASTMCP_HOME = "/data/state/fastmcp";
   return out;
@@ -63,17 +87,17 @@ export function generateDockerRun(map, hostVaultPath) {
   const lines = [
     "docker run -d --name markdown-vault-mcp",
     "  -p 8000:8000",
-    `  -v ${hostVaultPath || "/path/to/vault"}:/data/vault`,
+    `  -v ${shellQuote(hostVaultPath || "/path/to/vault")}:/data/vault`,
     "  -v state-data:/data/state",
   ];
-  for (const [k, v] of Object.entries(env)) lines.push(`  -e ${k}=${v}`);
+  for (const [k, v] of Object.entries(env)) lines.push(`  -e ${k}=${shellQuote(v)}`);
   lines.push(`  ${IMAGE}`);
   return lines.join(" \\\n");
 }
 
 export function generateCompose(map, hostVaultPath) {
   const env = dockerEnvMap(map);
-  const envLines = Object.entries(env).map(([k, v]) => `      ${k}: ${v}`).join("\n");
+  const envLines = Object.entries(env).map(([k, v]) => `      ${k}: ${yamlScalar(v)}`).join("\n");
   return [
     "services:",
     "  markdown-vault-mcp:",
@@ -91,7 +115,7 @@ export function generateCompose(map, hostVaultPath) {
 }
 
 export function generateSystemd(map) {
-  const envLines = Object.entries(map).map(([k, v]) => `Environment=${k}=${v}`).join("\n");
+  const envLines = Object.entries(map).map(([k, v]) => systemdLine(k, v)).join("\n");
   return [
     "[Unit]",
     "Description=markdown-vault-mcp",
