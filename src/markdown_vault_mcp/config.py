@@ -86,6 +86,10 @@ class VaultConfig:
         sync: File-watcher and GitHub-webhook settings.
         content: Attachment/note-read limits and template/prompt folder paths.
         transfer: One-time upload/download transfer-link TTL and size settings.
+        disable_apps_ui: When ``True``, hides MCP-Apps UI tools
+            (``browse_vault``, ``show_context``) from the tool listing so
+            clients that don't render MCP Apps panels don't see them
+            (default ``False``).
         server: Shared server-level configuration (transport, host/port,
             auth, base URL, event store URL, MCP App domain) populated
             from ``MARKDOWN_VAULT_MCP_*`` env vars by
@@ -109,6 +113,7 @@ class VaultConfig:
     sync: SyncConfig = field(default_factory=SyncConfig)
     content: ContentConfig = field(default_factory=ContentConfig)
     transfer: TransferConfig = field(default_factory=TransferConfig)
+    disable_apps_ui: bool = False
     # CONFIG-FIELDS-END
 
     # Universal server fields delegated to fastmcp_pvl_core.ServerConfig.
@@ -391,6 +396,18 @@ class VaultConfig:
         read_only = _parse_bool(raw_read_only) if raw_read_only is not None else True
         logger.debug("from_env: read_only=%s (raw=%r)", read_only, raw_read_only)
 
+        raw_disable_apps_ui = _env(prefix, "DISABLE_APPS_UI")
+        disable_apps_ui = (
+            _parse_bool(raw_disable_apps_ui)
+            if raw_disable_apps_ui is not None
+            else False
+        )
+        logger.debug(
+            "from_env: disable_apps_ui=%s (raw=%r)",
+            disable_apps_ui,
+            raw_disable_apps_ui,
+        )
+
         raw_server_name = (_env(prefix, "SERVER_NAME") or "").strip()
         server_name = raw_server_name or "markdown-vault-mcp"
         logger.debug("from_env: server_name=%s", server_name)
@@ -428,6 +445,7 @@ class VaultConfig:
             sync=sync,
             content=content,
             transfer=transfer,
+            disable_apps_ui=disable_apps_ui,
             # CONFIG-FROM-ENV-END
             server=server,
         )

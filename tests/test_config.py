@@ -145,6 +145,30 @@ class TestParseHelpers:
             assert config.read_only is False, f"Expected False for {val!r}"
 
 
+class TestDisableAppsUi:
+    """Cover the MARKDOWN_VAULT_MCP_DISABLE_APPS_UI env-var path."""
+
+    def test_default_is_false(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
+        monkeypatch.delenv("MARKDOWN_VAULT_MCP_DISABLE_APPS_UI", raising=False)
+        config = VaultConfig.from_env()
+        assert config.disable_apps_ui is False
+
+    def test_true_variants(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        for val in ("true", "1", "yes", "on", "TRUE"):
+            monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
+            monkeypatch.setenv("MARKDOWN_VAULT_MCP_DISABLE_APPS_UI", val)
+            config = VaultConfig.from_env()
+            assert config.disable_apps_ui is True, f"Expected True for {val!r}"
+
+    def test_false_variants(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        for val in ("false", "0", "no", ""):
+            monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
+            monkeypatch.setenv("MARKDOWN_VAULT_MCP_DISABLE_APPS_UI", val)
+            config = VaultConfig.from_env()
+            assert config.disable_apps_ui is False, f"Expected False for {val!r}"
+
+
 class TestLoadConfig:
     def test_missing_source_dir_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", raising=False)

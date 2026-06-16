@@ -280,4 +280,11 @@ def make_server(transport: str = "stdio") -> FastMCP:
     if config.git.repo_url is None:
         mcp.disable(tags={"git-managed"})
 
+    # Hide MCP-Apps UI tools (browse_vault, show_context) when the client
+    # does not render the MCP Apps panels. Set
+    # MARKDOWN_VAULT_MCP_DISABLE_APPS_UI=true to remove them from the tool
+    # listing (saves a few tokens; the LLM cannot call them anyway).
+    if config.disable_apps_ui:
+        mcp.disable(tags={"apps-ui"})
+
     return mcp

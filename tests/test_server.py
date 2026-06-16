@@ -181,6 +181,34 @@ class TestToolListing:
         assert "rename" in names
 
 
+class TestDisableAppsUi:
+    """Cover the MARKDOWN_VAULT_MCP_DISABLE_APPS_UI gate in make_server."""
+
+    @pytest.mark.usefixtures("_mcp_env")
+    async def test_apps_ui_tools_present_by_default(self) -> None:
+        server = make_server()
+        async with Client(server) as client:
+            tools = await client.list_tools()
+            names = {t.name for t in tools}
+        assert "browse_vault" in names
+        assert "show_context" in names
+
+    @pytest.mark.usefixtures("_mcp_env")
+    async def test_apps_ui_tools_hidden_when_disabled(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_DISABLE_APPS_UI", "true")
+        server = make_server()
+        async with Client(server) as client:
+            tools = await client.list_tools()
+            names = {t.name for t in tools}
+        assert "browse_vault" not in names
+        assert "show_context" not in names
+        # Non-apps-ui tools must remain available.
+        assert "search" in names
+        assert "read" in names
+
+
 class TestToolManifest:
     """Pin the exact set of tools register_tools() registers.
 
