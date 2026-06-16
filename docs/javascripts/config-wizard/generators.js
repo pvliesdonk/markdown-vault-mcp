@@ -79,8 +79,17 @@ function dockerEnvMap(map) {
   return out;
 }
 
+// Quote a .env value when it contains characters that common dotenv parsers
+// treat specially (notably `#`, which starts an inline comment in an unquoted
+// value and would silently truncate the value on load).
+const dotenvQuote = (v) => {
+  const s = String(v);
+  if (!/[#"'\\\s]/.test(s)) return s;
+  return `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+};
+
 export function generateDotenv(map) {
-  return Object.entries(map).map(([k, v]) => `${k}=${v}`).join("\n") + "\n";
+  return Object.entries(map).map(([k, v]) => `${k}=${dotenvQuote(v)}`).join("\n") + "\n";
 }
 
 export function generateClaudeJson(map) {
