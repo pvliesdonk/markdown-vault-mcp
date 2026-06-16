@@ -27,10 +27,18 @@ const yamlScalar = (v) => {
   return /[:#[\]{}&*?|<>=!%@,`"']|^\s|\s$|^$/.test(s) ? JSON.stringify(s) : s;
 };
 
-// A systemd `Environment=` line; quote the whole assignment when the value
-// contains whitespace (systemd otherwise splits it into multiple assignments).
-const systemdLine = (k, v) =>
-  /\s/.test(String(v)) ? `Environment="${k}=${String(v).replace(/"/g, '\\"')}"` : `Environment=${k}=${v}`;
+// A systemd `Environment=` line. systemd does NOT expand `$` in Environment=
+// values (expansion only happens in ExecXYZ= directives), so `$` is left
+// literal. It DOES resolve `%` specifiers (escaped as `%%`) and process
+// C-style `\`/`"` escapes (systemd/systemd#36488), so those are escaped, and
+// the assignment is wrapped in quotes when it contains whitespace, a quote, or
+// a backslash.
+const systemdLine = (k, v) => {
+  const s = String(v).replace(/%/g, "%%");
+  if (!/[\s"\\]/.test(s)) return `Environment=${k}=${s}`;
+  const escaped = s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  return `Environment="${k}=${escaped}"`;
+};
 
 // Build {VAR: value} from the spec + answers. Empty non-secret answers are
 // dropped; a visible secret left empty becomes a placeholder so the artifact is

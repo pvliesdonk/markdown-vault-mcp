@@ -64,11 +64,11 @@ function field(q, secrets) {
   }
   if (secrets.has(q.var)) wrap.classList.add("cfg-secret");
   if (answers[q.id] !== undefined) input.value = answers[q.id];
-  input.addEventListener("input", () => {
-    answers[q.id] = input.value;
-    render();
-  });
-  input.addEventListener("change", () => {
+  // One listener per control: selects/bools settle on "change"; text/number
+  // fields update live on "input". Avoids the double render + double
+  // history.replaceState that "input"+"change" both firing on <select> causes.
+  const evt = q.type === "select" || q.type === "bool" ? "change" : "input";
+  input.addEventListener(evt, () => {
     answers[q.id] = input.value;
     render();
   });
