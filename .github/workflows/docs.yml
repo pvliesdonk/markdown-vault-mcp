@@ -56,7 +56,9 @@ jobs:
         run: uv run mkdocs build --strict
 
       - name: Install browser test deps
-        run: uv sync --no-default-groups --group docs --group browser --frozen
+        # --all-extras so the shared tests/conftest.py imports (numpy, etc.)
+        # resolve; the smoke test loads the package conftest like any pytest run.
+        run: uv sync --no-default-groups --all-extras --group docs --group browser --frozen
 
       - name: Install Chromium
         run: uv run playwright install --with-deps chromium

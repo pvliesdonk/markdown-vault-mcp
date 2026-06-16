@@ -40,7 +40,10 @@ def site_url():
 
 
 @pytest.fixture(scope="module")
-def browser():
+def browser(site_url):  # noqa: ARG001 — depended on only for fixture ordering
+    # Depend on site_url so its "site not built" skip runs BEFORE we try to
+    # launch Chromium. In the main CI test lane (no built site, no installed
+    # browser) this makes the smoke tests skip cleanly instead of erroring.
     from playwright.sync_api import sync_playwright
 
     with sync_playwright() as p:
