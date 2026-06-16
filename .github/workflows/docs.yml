@@ -64,6 +64,12 @@ jobs:
     #   2. Repo Settings -> Pages -> Deploy from a branch -> gh-pages / (root).
     if: github.event_name == 'release'
     needs: build
+    # Serialize all release deploys (no cancellation) so two releases close
+    # together never push to gh-pages concurrently, and an in-flight mike push
+    # is never cancelled mid-sequence.
+    concurrency:
+      group: ${{ github.workflow }}-deploy
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -92,6 +98,7 @@ jobs:
       - name: Publish versioned docs
         env:
           TAG: ${{ github.event.release.tag_name }}
+          # GitHub renders the JSON boolean as the string "true"/"false".
           PRERELEASE: ${{ github.event.release.prerelease }}
         run: |
           version="${TAG#v}"
