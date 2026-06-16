@@ -3,13 +3,6 @@ name: Documentation
 on:
   push:
     branches: [main]
-    # Tag-push also deploys: whichever event fires first (tag-push or
-    # release:published) wins the concurrency group below and performs
-    # the full build+upload+deploy.  The release-event path can race
-    # against tag availability (deploy-pages fetch fails), so tag-push
-    # gives a deterministic second path.  Gates on the `upload-artifact`
-    # step and `deploy` job below accept either event.
-    tags: ["v*"]
   pull_request:
     branches: [main]
   release:
@@ -19,26 +12,20 @@ on:
 permissions:
   contents: read
 
-# Include github.event_name so tag-push and release runs don't share a
-# concurrency key — without this, the tag-push run fired by ``git push``
-# and the release run fired by ``release:published`` collide on the same
-# ref+workflow key and ``cancel-in-progress: true`` cancels whichever
-# arrived first (usually the one carrying the deployment).
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:
   build:
+    # Validation only: strict docs build + config-wizard browser smoke test.
+    # Never deploys; publishing happens in `deploy` on release.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
         with:
           # On release events the triggering tag may move after the workflow is
-          # queued (the release workflow pushes a version-bump commit and
-          # updates the tag). Checkout main explicitly on releases to avoid the
-          # "ref does not point to the expected commit" error from
-          # actions/checkout's SHA-verification.
+          # queued (semantic-release pushes a version-bump commit); build main.
           ref: ${{ github.event_name == 'release' && 'main' || github.ref }}
 
       - name: Install uv
@@ -55,23 +42,70 @@ jobs:
       - name: Build documentation
         run: uv run mkdocs build --strict
 
-      - name: Upload artifact
-        if: github.event_name == 'release' || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
-        uses: actions/upload-pages-artifact@v5
-        with:
-          path: site/
+      - name: Install browser test deps
+        # --all-extras so the shared tests/conftest.py imports (numpy, etc.)
+        # resolve; the smoke test loads the package conftest like any pytest run.
+        run: uv sync --no-default-groups --all-extras --group docs --group browser --frozen
+
+      - name: Install Chromium
+        run: uv run playwright install --with-deps chromium
+
+      - name: Run config-wizard smoke test
+        run: uv run pytest tests/test_config_wizard_smoke.py -v -m browser
 
   deploy:
-    if: github.event_name == 'release' || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
+    # Publish versioned docs with mike, serving from the gh-pages branch:
+    #   stable release (prerelease=false) -> version <major.minor> + `latest` alias (default)
+    #   rc prerelease  (prerelease=true)  -> single rolling `unstable` version
+    #
+    # One-time setup before the first release deploy takes effect:
+    #   1. Seed gh-pages locally:
+    #        uv run mike deploy --push --update-aliases unstable --title "unstable (<ver>)"
+    #   2. Repo Settings -> Pages -> Deploy from a branch -> gh-pages / (root).
+    if: github.event_name == 'release'
     needs: build
+    # Serialize all release deploys (no cancellation) so two releases close
+    # together never push to gh-pages concurrently, and an in-flight mike push
+    # is never cancelled mid-sequence.
+    concurrency:
+      group: ${{ github.workflow }}-deploy
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v5
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.2.0
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --no-default-groups --group docs --frozen
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Publish versioned docs
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+          # GitHub renders the JSON boolean as the string "true"/"false".
+          PRERELEASE: ${{ github.event.release.prerelease }}
+        run: |
+          version="${TAG#v}"
+          if [ "$PRERELEASE" = "true" ]; then
+            uv run mike deploy --push --update-aliases unstable --title "unstable (${version})"
+          else
+            minor="$(echo "$version" | cut -d. -f1-2)"
+            uv run mike deploy --push --update-aliases --title "$version" "$minor" latest
+            uv run mike set-default --push latest
+          fi

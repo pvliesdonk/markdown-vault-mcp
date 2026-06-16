@@ -1,6 +1,6 @@
 [project]
 name = "markdown-vault-mcp"
-version = "2.0.0-rc.2"
+version = "2.0.0-rc.3"
 description = "Generic markdown vault MCP server with FTS5 + semantic search"
 readme = "README.md"
 license = "MIT"  # project-owned — keep across copier updates
@@ -70,6 +70,10 @@ docs = [
     "mkdocstrings[python]>=0.28",
     "mkdocs-llmstxt>=0.5",
     "pygments>=2,<2.21",
+    "mike>=2.1",
+]
+browser = [
+    "pytest-playwright>=0.5",
 ]
 
 [project.scripts]
@@ -147,6 +151,9 @@ indent-style = "space"
 testpaths = ["tests"]
 addopts = ["--strict-markers", "-ra"]
 asyncio_mode = "auto"
+markers = [
+    "browser: end-to-end test that drives a headless browser (requires the 'browser' dependency group + 'playwright install chromium')",
+]
 
 [tool.coverage.run]
 source = ["src/markdown_vault_mcp"]

@@ -1,5 +1,9 @@
 # Configuration
 
+!!! tip "Prefer a guided setup?"
+    Use the [Configuration Generator](configuration-generator.md) to answer a few
+    questions and copy a ready-made `.env`, Docker, or Claude config.
+
 All configuration is via environment variables. Most use the `MARKDOWN_VAULT_MCP_` prefix. `OLLAMA_HOST` and `OPENAI_API_KEY` are bare ecosystem-standard names; all other variables use the `MARKDOWN_VAULT_MCP_` prefix.
 
 !!! note "Configuration is validated at startup"

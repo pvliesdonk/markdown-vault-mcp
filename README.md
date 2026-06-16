@@ -172,6 +172,8 @@ The server registers a built-in `get_server_info` tool (via `fastmcp_pvl_core.re
 
 All configuration is via environment variables with the `MARKDOWN_VAULT_MCP_` prefix (except embedding provider settings, which use their own conventions).
 
+- [Configuration Generator](https://pvliesdonk.github.io/markdown-vault-mcp/configuration-generator/): in-browser config / Docker / systemd builder
+
 ### Core
 
 | Variable | Default | Required | Description |
