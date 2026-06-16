@@ -8,27 +8,27 @@ The server ships four browser-based views that MCP clients supporting the [MCP A
 
 Displays a note dossier for the note currently in focus. Includes:
 
-- **Backlinks** — other notes that link to this note
-- **Outlinks** — notes this document links to, with existence check
-- **Similar notes** — semantically similar documents (requires embeddings)
-- **Tags** — frontmatter tag values
-- **Folder peers** — other notes in the same folder
-- **Modification time** — last modified timestamp
+- **Backlinks**: other notes that link to this note
+- **Outlinks**: notes this document links to, with existence check
+- **Similar notes**: semantically similar documents (requires embeddings)
+- **Tags**: frontmatter tag values
+- **Folder peers**: other notes in the same folder
+- **Modification time**: last modified timestamp
 
-Click any linked note to navigate to its context card.
+Click any linked note to open its context card.
 
 ### Graph Explorer
 
 Interactive force-directed link graph of the vault, powered by vis-network. Two modes:
 
-- **Neighborhood** — shows a note and its direct connections (configurable depth, soft-capped at `max_nodes=200` by default; the response carries `truncated=true` when the BFS hit the cap so the SPA can warn the user)
-- **Hubs** — shows the most-linked notes in the vault and their connections
+- **Neighborhood**: shows a note and its direct connections (configurable depth, soft-capped at `max_nodes=200` by default; the response carries `truncated=true` when the BFS hit the cap so the SPA can warn the user)
+- **Hubs**: shows the most-linked notes in the vault and their connections
 
 Click a node to view that note's context card. Toggle semantic similarity edges when embeddings are available.
 
 ### Vault Browser
 
-Searchable, filterable file tree for navigating the vault without issuing tool calls. Features:
+Searchable, filterable file tree for browsing the vault without issuing tool calls. Features:
 
 - Expandable folder tree
 - Real-time search filtering
@@ -40,7 +40,7 @@ Full-width markdown preview with:
 
 - Rendered markdown (via marked.js, sanitized with DOMPurify)
 - Frontmatter table
-- **Send to Claude** button — sends the note content to the LLM conversation
+- **Send to Claude** button: sends the note content to the LLM conversation
 - Navigation to Context Card or Graph Explorer for the same note
 
 ## Tools
@@ -60,7 +60,7 @@ Six additional app-only tools (prefixed with `_vault_`) handle data fetching for
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MARKDOWN_VAULT_MCP_BASE_URL` | — | Public base URL of the server. Required for auto-computing the app domain. |
+| `MARKDOWN_VAULT_MCP_BASE_URL` | (none) | Public base URL of the server. Required for auto-computing the app domain. |
 | `MARKDOWN_VAULT_MCP_APP_DOMAIN` | (auto) | Override the Claude app domain used for iframe sandboxing. Auto-computed from `BASE_URL` when not set. |
 
 ### Domain auto-computation
@@ -86,11 +86,11 @@ The SPA is a self-contained HTML file with all dependencies vendored at build ti
 
 The app integrates with the host client via the ext-apps SDK:
 
-- **`app.callServerTool()`** — calls app-only tools to fetch data
-- **`app.sendMessage()`** — sends note content to the LLM conversation
-- **`app.updateModelContext()`** — keeps the LLM aware of which note the user is viewing
-- **`app.requestDisplayMode()`** — requests fullscreen or inline display
-- **Theme sync** — automatically adapts to the host's light/dark theme and CSS variables
+- **`app.callServerTool()`**: calls app-only tools to fetch data
+- **`app.sendMessage()`**: sends note content to the LLM conversation
+- **`app.updateModelContext()`**: keeps the LLM aware of which note the user is viewing
+- **`app.requestDisplayMode()`**: requests fullscreen or inline display
+- **Theme sync**: automatically adapts to the host's light/dark theme and CSS variables
 
 ## Client support
 
@@ -100,4 +100,4 @@ To hide `browse_vault` and `show_context` from the tool listing entirely (for cl
 
 ### Firing prompts from Claude.ai's `+` menu
 
-MCP Apps surface interactive views, but this server also ships MCP *prompts* — `summarize`, `research`, `propose-links`, and the workflow prompts from the PARA and Zettelkasten packs. On Claude.ai, every prompt appears in the compose area's `+` menu once the server is added as a connector. Click `+`, select **connectors**, pick the server, pick a prompt — Claude opens with the invocation scaffolded. See [How to invoke prompts](../prompts.md#how-to-invoke-prompts).
+MCP Apps surface interactive views, but this server also ships MCP *prompts* (`summarize`, `research`, `propose-links`, and the workflow prompts from the PARA and Zettelkasten packs). On Claude.ai, every prompt appears in the compose area's `+` menu once the server is added as a connector. Click `+`, select **connectors**, pick the server, pick a prompt, and Claude opens with the invocation scaffolded. See [How to invoke prompts](../prompts.md#how-to-invoke-prompts).

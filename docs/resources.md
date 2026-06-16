@@ -1,9 +1,9 @@
 # MCP Resources
 
-MCP resources expose vault metadata that clients can read directly without invoking tools. Most resources return `application/json`; `ui://vault/app.html` is an exception — it returns a self-contained HTML SPA for MCP Apps clients.
+MCP resources expose vault metadata that clients can read directly without invoking tools. Most resources return `application/json`; `ui://vault/app.html` is an exception that returns a self-contained HTML SPA for MCP Apps clients.
 
 !!! note "Index freshness (`_meta.index_stale`)"
-    The index-querying resources — `config://vault`, `stats://vault`, `tags://vault`, `tags://vault/{field}`, `folders://vault`, `toc://vault/{path}`, `similar://vault/{path}`, and `recent://vault` — keep their bare JSON contents unchanged and report index freshness out-of-band in the resource read's **`_meta.index_stale`** field (read it via `read_resource_mcp(uri).meta`). It is `true` when a write landed during the read or the IndexWriter was non-idle at response time. Resources carry no `wait_for_pending_writes` parameter — they signal only; use the equivalent MCP tool with `wait_for_pending_writes=true` when you need to block for a fresh read.
+    The index-querying resources (`config://vault`, `stats://vault`, `tags://vault`, `tags://vault/{field}`, `folders://vault`, `toc://vault/{path}`, `similar://vault/{path}`, and `recent://vault`) keep their bare JSON contents unchanged and report index freshness out-of-band in the resource read's **`_meta.index_stale`** field (read it via `read_resource_mcp(uri).meta`). It is `true` when a write landed during the read or the IndexWriter was non-idle at response time. Resources carry no `wait_for_pending_writes` parameter (they signal only); use the equivalent MCP tool with `wait_for_pending_writes=true` when you need to block for a fresh read.
 
 ## Quick Reference
 
@@ -41,7 +41,7 @@ Current vault configuration and runtime state.
 
 ## `stats://vault`
 
-Vault statistics — document count, chunk count, and capabilities.
+Vault statistics including document count, chunk count, and index capabilities.
 
 **Response:**
 
@@ -71,7 +71,7 @@ All frontmatter tag values grouped by indexed field.
 
 ## `tags://vault/{field}`
 
-Tag values for a specific indexed frontmatter field. This is a URI template — replace `{field}` with the field name.
+Tag values for a specific indexed frontmatter field. This is a URI template: replace `{field}` with the field name.
 
 **Example:** `tags://vault/tags`
 
@@ -95,10 +95,10 @@ The empty string `""` represents the root folder (top-level documents).
 
 ## `toc://vault/{path}`
 
-Table of contents (heading outline) for a specific document. This is a URI template — replace `{path}` with the document's relative path.
+Table of contents (heading outline) for a specific document. This is a URI template: replace `{path}` with the document's relative path.
 
 !!! note "Cold-start blocking"
-    Calls during a cold-start background FTS build block via the tool-layer `needs_queryable` decorator and may surface `IndexUnavailableError(reason="build_failed")` if a scheduled background build ran and failed (the captured error message is available via `get_index_status`'s `error` field), or `IndexUnavailableError(reason="timeout")` if the decorator's bounded wait elapsed first. The decorator additionally remaps a SQLite `OperationalError` from the resource handler to `IndexUnavailableError(reason="broken")` (corruption / I/O failure / unknown codes) or `reason="busy"` (SQLITE_BUSY/LOCKED — lock contention); inspect the exception's `__cause__` for the underlying SQLite error. Poll `get_index_status` to observe build state without blocking.
+    Calls during a cold-start background FTS build block via the tool-layer `needs_queryable` decorator and may surface `IndexUnavailableError(reason="build_failed")` if a scheduled background build ran and failed (the captured error message is available via `get_index_status`'s `error` field), or `IndexUnavailableError(reason="timeout")` if the decorator's bounded wait elapsed first. The decorator also remaps a SQLite `OperationalError` from the resource handler to `IndexUnavailableError(reason="broken")` (corruption / I/O failure / unknown codes) or `reason="busy"` (SQLITE_BUSY/LOCKED, lock contention); inspect the exception's `__cause__` for the underlying SQLite error. Poll `get_index_status` to observe build state without blocking.
 
 **Example:** `toc://vault/Journal/note.md`
 
@@ -118,15 +118,15 @@ The TOC prepends a synthetic H1 from the document title and deduplicates if the 
 
 ## `similar://vault/{path}`
 
-Top 10 semantically similar notes for a document. Requires embeddings to be built. This is a URI template — replace `{path}` with the document's relative path.
+Top 10 semantically similar notes for a document. Requires embeddings to be built. This is a URI template: replace `{path}` with the document's relative path.
 
 !!! note "Cold-start blocking"
-    Calls during a cold-start background FTS build block via the tool-layer `needs_queryable` decorator and may surface `IndexUnavailableError(reason="build_failed")` if a scheduled background build ran and failed (the captured error message is available via `get_index_status`'s `error` field), or `IndexUnavailableError(reason="timeout")` if the decorator's bounded wait elapsed first. The decorator additionally remaps a SQLite `OperationalError` from the resource handler to `IndexUnavailableError(reason="broken")` (corruption / I/O failure / unknown codes) or `reason="busy"` (SQLITE_BUSY/LOCKED — lock contention); inspect the exception's `__cause__` for the underlying SQLite error. Poll `get_index_status` to observe build state without blocking.
+    Calls during a cold-start background FTS build block via the tool-layer `needs_queryable` decorator and may surface `IndexUnavailableError(reason="build_failed")` if a scheduled background build ran and failed (the captured error message is available via `get_index_status`'s `error` field), or `IndexUnavailableError(reason="timeout")` if the decorator's bounded wait elapsed first. The decorator also remaps a SQLite `OperationalError` from the resource handler to `IndexUnavailableError(reason="broken")` (corruption / I/O failure / unknown codes) or `reason="busy"` (SQLITE_BUSY/LOCKED, lock contention); inspect the exception's `__cause__` for the underlying SQLite error. Poll `get_index_status` to observe build state without blocking.
 
-Results are **grouped per file** — each file appears at most once, with up to `chunks_per_file` (server default `2`) best-matching sections in a `sections` array. Each entry is a `GroupedResult` dict with `path`, `title`, `folder`, `score` (max section score), `search_type` (`"semantic"`), `frontmatter`, and `sections` — a list of `{heading, content, score}` dicts sorted by score then document order.
+Results are **grouped per file**: each file appears at most once, with up to `chunks_per_file` (server default `2`) best-matching sections in a `sections` array. Each entry is a `GroupedResult` dict with `path`, `title`, `folder`, `score` (max section score), `search_type` (`"semantic"`), `frontmatter`, and `sections` (a list of `{heading, content, score}` dicts sorted by score then document order).
 
 !!! note "Index freshness via `_meta.index_stale`"
-    This resource returns a flat JSON array as its contents, and reports index freshness out-of-band in the read's `_meta.index_stale` field — the same mechanism the `get_similar` MCP tool uses (#534, #645). Resources carry no `wait_for_pending_writes` parameter (a resource URI template binds only address path segments, not ad-hoc control parameters), so they signal only: read `_meta.index_stale` and re-read or fall back to the `get_similar` tool with `wait_for_pending_writes=true` if you need a fresh-read guarantee.
+    This resource returns a flat JSON array as its contents, and reports index freshness out-of-band in the read's `_meta.index_stale` field (the same mechanism the `get_similar` MCP tool uses; see #534, #645). Resources carry no `wait_for_pending_writes` parameter (a resource URI template binds only address path segments, not ad-hoc control parameters), so they signal only: read `_meta.index_stale` and re-read or fall back to the `get_similar` tool with `wait_for_pending_writes=true` if you need a fresh-read guarantee.
 
 **Example:** `similar://vault/Journal/note.md`
 
@@ -175,4 +175,4 @@ The 20 most recently modified notes. Each entry is a full `NoteInfo` object with
 
 ## `ui://vault/app.html`
 
-Interactive vault explorer delivered as a single self-contained HTML resource. This is an [MCP Apps](https://modelcontextprotocol.io/specification/2025-06-18/server/apps) resource — clients that support the MCP Apps protocol render it as an interactive iframe. See the [MCP Apps guide](guides/mcp-apps.md) for details on the four views (Context Card, Graph Explorer, Vault Browser, Note Preview).
+Interactive vault explorer delivered as a single self-contained HTML resource. This is an [MCP Apps](https://modelcontextprotocol.io/specification/2025-06-18/server/apps) resource; clients that support the MCP Apps protocol render it as an interactive iframe. See the [MCP Apps guide](guides/mcp-apps.md) for details on the four views (Context Card, Graph Explorer, Vault Browser, Note Preview).

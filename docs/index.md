@@ -2,37 +2,37 @@
 
 A generic markdown vault [MCP](https://modelcontextprotocol.io/) server with FTS5 full-text search, semantic vector search, frontmatter-aware indexing, incremental reindexing, and non-markdown attachment support.
 
-Point it at a directory of Markdown files — an Obsidian vault, a docs folder, a Zettelkasten, a PARA vault — and it exposes search, read, write, and edit tools over the [Model Context Protocol](https://modelcontextprotocol.io/).
+Point it at a directory of Markdown files (an Obsidian vault, a docs folder, a Zettelkasten, a PARA vault) and it exposes search, read, write, and edit tools over the [Model Context Protocol](https://modelcontextprotocol.io/).
 
 <!-- DOMAIN-INDEX-FEATURES-START -->
 ## Features
 
-- **Full-text search** — SQLite FTS5 with BM25 scoring, porter stemming
-- **Semantic search** — cosine similarity over embedding vectors (FastEmbed, Ollama, or OpenAI)
-- **Hybrid search** — Reciprocal Rank Fusion combining FTS5 and vector results
-- **Frontmatter-aware** — indexes YAML frontmatter fields, supports required field enforcement
-- **Incremental reindexing** — hash-based change detection, only re-processes modified files
-- **Write operations** — create, edit, delete, rename documents with automatic index updates
-- **Attachment support** — read, write, delete, and list non-markdown files (PDFs, images, etc.)
-- **Git integration** — optional auto-commit and push on every write via `GIT_ASKPASS`
-- **OIDC authentication** — optional token-based auth for HTTP deployments
-- **MCP tools** — search, read, write, edit, delete, rename, link graph analysis, and admin operations
-- **MCP resources** — vault configuration, statistics, tags, folders, document outlines, similar notes, and recent notes
-- **MCP prompts** — summarize, research, discuss, create from template, compare, and find related notes
-- **MCP Apps** — four browser-based views (Context Card, Graph Explorer, Vault Browser, Note Preview) for clients supporting the MCP Apps protocol
-- **One-time transfer links** — mint short-lived capability URLs to move files into or out of the vault out-of-band over HTTP (`create_download_link` / `create_upload_link`; HTTP/SSE transports only)
+- **Full-text search**: SQLite FTS5 with BM25 scoring, porter stemming
+- **Semantic search**: cosine similarity over embedding vectors (FastEmbed, Ollama, or OpenAI)
+- **Hybrid search**: Reciprocal Rank Fusion combining FTS5 and vector results
+- **Frontmatter-aware**: indexes YAML frontmatter fields, supports required field enforcement
+- **Incremental reindexing**: hash-based change detection, only re-processes modified files
+- **Write operations**: create, edit, delete, rename documents with automatic index updates
+- **Attachment support**: read, write, delete, and list non-markdown files (PDFs, images, and so on)
+- **Git integration**: optional auto-commit and push on every write via `GIT_ASKPASS`
+- **OIDC authentication**: optional token-based auth for HTTP deployments
+- **MCP tools**: search, read, write, edit, delete, rename, link graph analysis, and admin operations
+- **MCP resources**: vault configuration, statistics, tags, folders, document outlines, similar notes, and recent notes
+- **MCP prompts**: summarize, research, discuss, create from template, compare, and find related notes
+- **MCP Apps**: browser-based views (Context Card, Graph Explorer, Vault Browser, and Note Preview) for clients supporting the MCP Apps protocol
+- **One-time transfer links**: mint short-lived capability URLs to move files into or out of the vault out-of-band over HTTP (`create_download_link` / `create_upload_link`; HTTP/SSE transports only)
 - **[Configuration Generator](configuration-generator.md)**: build a working config, Docker command, or systemd unit in your browser.
 <!-- DOMAIN-INDEX-FEATURES-END -->
 
 <!-- DOMAIN-INDEX-USE-CASES-START -->
 ## What you can do with it
 
-A few flows the server enables with an LLM on top — none of these require a bespoke prompt:
+A few flows the server enables with an LLM on top (none of these require a bespoke prompt):
 
 - **"Fetch <url> and summarize into a Resource note."** Claude composes `fetch` + `search` + `write`.
 - **"Research <topic> and create a set of interlinked notes."** Claude composes web tools + `write` with wikilinks. See the [Research workflows guide](guides/research-workflows.md) for the full loop.
 - **"Summarize today's conversations into Inbox notes."** Claude.ai composes `conversation_search` + `recent_chats` + `write`; the [`para-capture-chats`](guides/para.md#using-the-para-prompts) prompt is the one-click version.
-- **Find missing links.** The [`propose-links`](prompts.md) builtin prompt scans recently-modified notes and proposes meaningful connections.
+- **Find missing links.** The [`propose-links`](prompts.md) builtin prompt scans recently modified notes and proposes useful connections.
 
 See [MCP Prompts](prompts.md) for the codified workflows and the ambient-pattern reference.
 
@@ -75,7 +75,7 @@ See [Installation](installation.md) for all installation methods (PyPI, uv, Dock
 
 ## Architecture
 
-The library is fully synchronous — no asyncio in core modules. The MCP server layer uses `asyncio.to_thread()` to bridge to the async FastMCP framework.
+The library is fully synchronous, with no asyncio in core modules. The MCP server layer uses `asyncio.to_thread()` to bridge to the async FastMCP layer.
 
 ```
 ┌──────────────┐

@@ -68,8 +68,8 @@ volumes:
 
 **Volume mounts:**
 
-- `/data/vault` — your Markdown vault (bind mount or named volume; pre-created in the image for managed repo mode)
-- `/data/state` — all server-managed internal state (Docker-managed named volume): SQLite FTS index, embedding vectors, FastEmbed model cache, and OIDC proxy state
+- `/data/vault`: your Markdown vault (bind mount or named volume; pre-created in the image for managed repo mode)
+- `/data/state`: all server-managed internal state (Docker-managed named volume). Contents: the SQLite FTS index, embedding vectors and model cache, and OIDC proxy state
 
 All `/data/*` directories are pre-created and owned by the runtime user in the image. The first startup triggers a full index build; subsequent starts only reindex changed files.
 
@@ -84,9 +84,9 @@ automatically.
 
 **What the labels do:**
 
-- `traefik.enable=true` — opt this service in to Traefik discovery
-- `traefik.http.routers.markdown-vault-mcp.rule` — defines the `Host` rule; defaults to `markdown-vault-mcp.local`
-- `traefik.http.services.markdown-vault-mcp.loadbalancer.server.port` — tells Traefik the container listens on port 8000
+- `traefik.enable=true`: opts this service in to Traefik discovery
+- `traefik.http.routers.markdown-vault-mcp.rule`: defines the `Host` rule; defaults to `markdown-vault-mcp.local`
+- `traefik.http.services.markdown-vault-mcp.loadbalancer.server.port`: tells Traefik the container listens on port 8000
 
 **Prerequisites:**
 
@@ -134,7 +134,7 @@ labels:
 ```
 
 !!! note "OIDC subpath deployments use a different pattern"
-    When OIDC is enabled, do **not** include the subpath in `HTTP_PATH`. Instead, put the subpath in `BASE_URL` and configure the reverse proxy to strip the prefix. See the [OIDC subpath deployment guide](deployment/oidc.md#subpath-deployments) for details.
+    When OIDC is enabled, omit the subpath from `HTTP_PATH`. Instead, put the subpath in `BASE_URL` and configure the reverse proxy to strip the prefix. See the [OIDC subpath deployment guide](deployment/oidc.md#subpath-deployments) for details.
 
 **Example Traefik static config** (`traefik.yml`):
 
@@ -267,8 +267,8 @@ Git integration has three modes:
 2. For unmanaged/commit-only mode, omit `GIT_REPO_URL` and `GIT_TOKEN`.
    If `SOURCE_DIR` is a git repo, writes are committed locally.
 
-3. Mount the vault so the `.git` directory is accessible inside the container —
-   the default bind mount covers this:
+3. Mount the vault so the `.git` directory is accessible inside the container
+   (the default bind mount covers this):
 
    ```yaml
    volumes:
@@ -292,7 +292,7 @@ OLLAMA_HOST=http://host.docker.internal:11434  # use host.docker.internal inside
 MARKDOWN_VAULT_MCP_OLLAMA_MODEL=nomic-embed-text
 ```
 
-**Note:** On Linux without Docker Desktop, you may need to add
+On Linux without Docker Desktop, you may need to add
 `extra_hosts: ["host.docker.internal:host-gateway"]` to the service in
 `compose.yml` for `host.docker.internal` to resolve.
 
@@ -304,11 +304,11 @@ Writes are still committed locally (when `SOURCE_DIR` is a git repo); run
 
 **Permission denied on vault directory**
 
-Named volumes are handled automatically — the entrypoint fixes ownership on
+Named volumes are handled automatically: the entrypoint fixes ownership on
 startup. For **bind-mounted vaults** where the host user doesn't match the
 container user (UID 1000 / GID 1000 by default), use one of these options:
 
-**Option 1: Set PUID/PGID** (recommended — no rebuild needed):
+**Option 1: Set PUID/PGID** (recommended, no rebuild needed):
 
 ```yaml
 services:
@@ -354,11 +354,11 @@ docker compose logs markdown-vault-mcp
 
 Git errors are logged at ERROR level. Common causes:
 
-- Token lacks `repo` scope — regenerate with the right permissions.
-- Remote URL is SSH-based — the PAT strategy only works with HTTPS remotes.
+- Token lacks `repo` scope. Regenerate with the right permissions.
+- Remote URL is SSH-based. The PAT strategy only works with HTTPS remotes.
   Convert: `git remote set-url origin https://github.com/user/repo.git`
-- In unmanaged/commit-only mode, the vault directory is not a git repo —
-  run `git init` on the host first.
+- In unmanaged/commit-only mode, the vault directory is not a git repo.
+  Run `git init` on the host first.
 
 **Index feels stale after adding files outside the server**
 

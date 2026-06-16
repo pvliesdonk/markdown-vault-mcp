@@ -8,6 +8,7 @@ from markdown_vault_mcp import NoteContent, GroupedResult, SectionHit, NoteConte
 
 ## Document Types
 
+<!-- vale off -->
 ::: markdown_vault_mcp.types.NoteContent
 
 ::: markdown_vault_mcp.types.NoteInfo
@@ -15,9 +16,11 @@ from markdown_vault_mcp import NoteContent, GroupedResult, SectionHit, NoteConte
 ::: markdown_vault_mcp.types.ParsedNote
 
 ::: markdown_vault_mcp.types.Chunk
+<!-- vale on -->
 
 ## Search & Link Types
 
+<!-- vale off -->
 ::: markdown_vault_mcp.types.SearchResult
 
 ::: markdown_vault_mcp.types.SectionHit
@@ -37,9 +40,11 @@ from markdown_vault_mcp import NoteContent, GroupedResult, SectionHit, NoteConte
 ::: markdown_vault_mcp.types.NoteContext
 
 ::: markdown_vault_mcp.types.MostLinkedNote
+<!-- vale on -->
 
 ## Operation Results
 
+<!-- vale off -->
 ::: markdown_vault_mcp.types.WriteResult
 
 ::: markdown_vault_mcp.types.EditResult
@@ -55,18 +60,23 @@ from markdown_vault_mcp import NoteContent, GroupedResult, SectionHit, NoteConte
 ::: markdown_vault_mcp.types.VaultStats
 
 ::: markdown_vault_mcp.types.ChangeSet
+<!-- vale on -->
 
 ## Attachment Types
 
+<!-- vale off -->
 ::: markdown_vault_mcp.types.AttachmentContent
 
 ::: markdown_vault_mcp.types.AttachmentInfo
+<!-- vale on -->
 
 ## Git Types
 
+<!-- vale off -->
 ::: markdown_vault_mcp.types.HistoryEntry
 
 ::: markdown_vault_mcp.types.CommitDiff
+<!-- vale on -->
 
 ## Callbacks
 
