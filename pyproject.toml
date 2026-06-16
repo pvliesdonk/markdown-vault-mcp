@@ -70,6 +70,7 @@ docs = [
     "mkdocstrings[python]>=0.28",
     "mkdocs-llmstxt>=0.5",
     "pygments>=2,<2.21",
+    "mike>=2.1",
 ]
 browser = [
     "pytest-playwright>=0.5",
