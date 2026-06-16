@@ -15,26 +15,27 @@ vault = Vault(**config.to_vault_kwargs())
 
 ## API Reference
 
-## `VaultConfig(source_dir, read_only=True, server_name='markdown-vault-mcp', instructions=None, git=GitConfig(), indexing=IndexingConfig(), embeddings=EmbeddingsConfig(), search=SearchConfig(), sync=SyncConfig(), content=ContentConfig(), transfer=TransferConfig(), server=ServerConfig())`
+## `VaultConfig(source_dir, read_only=True, server_name='markdown-vault-mcp', instructions=None, git=GitConfig(), indexing=IndexingConfig(), embeddings=EmbeddingsConfig(), search=SearchConfig(), sync=SyncConfig(), content=ContentConfig(), transfer=TransferConfig(), disable_apps_ui=False, server=ServerConfig())`
 
 Configuration for a :class:`~markdown_vault_mcp.vault.Vault`.
 
 Attributes:
 
-| Name           | Type               | Description                                                                                                                                                                                               |
-| -------------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `source_dir`   | `Path`             | Root directory of the markdown vault.                                                                                                                                                                     |
-| `read_only`    | `bool`             | When True (default), write operations raise :exc:~markdown_vault_mcp.exceptions.ReadOnlyError.                                                                                                            |
-| `server_name`  | `str`              | Display name for the MCP server (default "markdown-vault-mcp").                                                                                                                                           |
-| `instructions` | \`str              | None\`                                                                                                                                                                                                    |
-| `git`          | `GitConfig`        | Git auth, identity, and sync cadence settings.                                                                                                                                                            |
-| `indexing`     | `IndexingConfig`   | SQLite/vector index paths and frontmatter/exclusion settings.                                                                                                                                             |
-| `embeddings`   | `EmbeddingsConfig` | Embedding provider selection and per-provider settings.                                                                                                                                                   |
-| `search`       | `SearchConfig`     | Search ranking and snippet-truncation knobs.                                                                                                                                                              |
-| `sync`         | `SyncConfig`       | File-watcher and GitHub-webhook settings.                                                                                                                                                                 |
-| `content`      | `ContentConfig`    | Attachment/note-read limits and template/prompt folder paths.                                                                                                                                             |
-| `transfer`     | `TransferConfig`   | One-time upload/download transfer-link TTL and size settings.                                                                                                                                             |
-| `server`       | `ServerConfig`     | Shared server-level configuration (transport, host/port, auth, base URL, event store URL, MCP App domain) populated from MARKDOWN_VAULT_MCP\_\* env vars by :meth:fastmcp_pvl_core.ServerConfig.from_env. |
+| Name              | Type               | Description                                                                                                                                                                                               |
+| ----------------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `source_dir`      | `Path`             | Root directory of the markdown vault.                                                                                                                                                                     |
+| `read_only`       | `bool`             | When True (default), write operations raise :exc:~markdown_vault_mcp.exceptions.ReadOnlyError.                                                                                                            |
+| `server_name`     | `str`              | Display name for the MCP server (default "markdown-vault-mcp").                                                                                                                                           |
+| `instructions`    | \`str              | None\`                                                                                                                                                                                                    |
+| `git`             | `GitConfig`        | Git auth, identity, and sync cadence settings.                                                                                                                                                            |
+| `indexing`        | `IndexingConfig`   | SQLite/vector index paths and frontmatter/exclusion settings.                                                                                                                                             |
+| `embeddings`      | `EmbeddingsConfig` | Embedding provider selection and per-provider settings.                                                                                                                                                   |
+| `search`          | `SearchConfig`     | Search ranking and snippet-truncation knobs.                                                                                                                                                              |
+| `sync`            | `SyncConfig`       | File-watcher and GitHub-webhook settings.                                                                                                                                                                 |
+| `content`         | `ContentConfig`    | Attachment/note-read limits and template/prompt folder paths.                                                                                                                                             |
+| `transfer`        | `TransferConfig`   | One-time upload/download transfer-link TTL and size settings.                                                                                                                                             |
+| `disable_apps_ui` | `bool`             | When True, hides MCP-Apps UI tools (browse_vault, show_context) from the tool listing so clients that don't render MCP Apps panels don't see them (default False).                                        |
+| `server`          | `ServerConfig`     | Shared server-level configuration (transport, host/port, auth, base URL, event store URL, MCP App domain) populated from MARKDOWN_VAULT_MCP\_\* env vars by :meth:fastmcp_pvl_core.ServerConfig.from_env. |
 
 Example::
 

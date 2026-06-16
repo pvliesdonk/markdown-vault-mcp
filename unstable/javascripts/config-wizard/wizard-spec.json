@@ -489,6 +489,14 @@
       "advancedGroup": "Server identity"
     },
     {
+      "id": "disable_apps_ui",
+      "label": "Hide MCP-Apps UI tools",
+      "help": "Hide browse_vault and show_context from the tool listing for clients that don't render MCP Apps panels.",
+      "type": "bool",
+      "var": "MARKDOWN_VAULT_MCP_DISABLE_APPS_UI",
+      "advancedGroup": "Server identity"
+    },
+    {
       "id": "log_level",
       "label": "Log level",
       "type": "text",

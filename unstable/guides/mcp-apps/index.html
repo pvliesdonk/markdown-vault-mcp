@@ -2121,6 +2121,7 @@
 </ul>
 <h2 id="client-support">Client support<a class="headerlink" href="#client-support" title="Permanent link">&para;</a></h2>
 <p>MCP Apps views require a client that supports the MCP Apps protocol. Currently supported by Claude on claude.ai. Clients without Apps support receive a text-only fallback from <code>browse_vault</code> and <code>show_context</code>.</p>
+<p>To hide <code>browse_vault</code> and <code>show_context</code> from the tool listing entirely (for clients that never render Apps panels), set <code>MARKDOWN_VAULT_MCP_DISABLE_APPS_UI=true</code>. See <a href="../../configuration/">Configuration</a>.</p>
 <h3 id="firing-prompts-from-claudeais-menu">Firing prompts from Claude.ai's <code>+</code> menu<a class="headerlink" href="#firing-prompts-from-claudeais-menu" title="Permanent link">&para;</a></h3>
 <p>MCP Apps surface interactive views, but this server also ships MCP <em>prompts</em> — <code>summarize</code>, <code>research</code>, <code>propose-links</code>, and the workflow prompts from the PARA and Zettelkasten packs. On Claude.ai, every prompt appears in the compose area's <code>+</code> menu once the server is added as a connector. Click <code>+</code>, select <strong>connectors</strong>, pick the server, pick a prompt — Claude opens with the invocation scaffolded. See <a href="../../prompts/#how-to-invoke-prompts">How to invoke prompts</a>.</p>
 

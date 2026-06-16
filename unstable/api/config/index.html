@@ -1857,7 +1857,7 @@
 
 
 <h2 id="markdown_vault_mcp.config.VaultConfig" class="doc doc-heading">
-              <code class="highlight language-python"><span class="n">VaultConfig</span><span class="p">(</span><span class="n">source_dir</span><span class="p">,</span> <span class="n">read_only</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">server_name</span><span class="o">=</span><span class="s1">&#39;markdown-vault-mcp&#39;</span><span class="p">,</span> <span class="n">instructions</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">git</span><span class="o">=</span><span class="n">GitConfig</span><span class="p">(),</span> <span class="n">indexing</span><span class="o">=</span><span class="n">IndexingConfig</span><span class="p">(),</span> <span class="n">embeddings</span><span class="o">=</span><span class="n">EmbeddingsConfig</span><span class="p">(),</span> <span class="n">search</span><span class="o">=</span><span class="n">SearchConfig</span><span class="p">(),</span> <span class="n">sync</span><span class="o">=</span><span class="n">SyncConfig</span><span class="p">(),</span> <span class="n">content</span><span class="o">=</span><span class="n">ContentConfig</span><span class="p">(),</span> <span class="n">transfer</span><span class="o">=</span><span class="n">TransferConfig</span><span class="p">(),</span> <span class="n">server</span><span class="o">=</span><span class="n">ServerConfig</span><span class="p">())</span></code>
+              <code class="highlight language-python"><span class="n">VaultConfig</span><span class="p">(</span><span class="n">source_dir</span><span class="p">,</span> <span class="n">read_only</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">server_name</span><span class="o">=</span><span class="s1">&#39;markdown-vault-mcp&#39;</span><span class="p">,</span> <span class="n">instructions</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">git</span><span class="o">=</span><span class="n">GitConfig</span><span class="p">(),</span> <span class="n">indexing</span><span class="o">=</span><span class="n">IndexingConfig</span><span class="p">(),</span> <span class="n">embeddings</span><span class="o">=</span><span class="n">EmbeddingsConfig</span><span class="p">(),</span> <span class="n">search</span><span class="o">=</span><span class="n">SearchConfig</span><span class="p">(),</span> <span class="n">sync</span><span class="o">=</span><span class="n">SyncConfig</span><span class="p">(),</span> <span class="n">content</span><span class="o">=</span><span class="n">ContentConfig</span><span class="p">(),</span> <span class="n">transfer</span><span class="o">=</span><span class="n">TransferConfig</span><span class="p">(),</span> <span class="n">disable_apps_ui</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">server</span><span class="o">=</span><span class="n">ServerConfig</span><span class="p">())</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
@@ -2003,6 +2003,20 @@
             <td>
               <div class="doc-md-description">
                 <p>One-time upload/download transfer-link TTL and size settings.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.config.VaultConfig.disable_apps_ui">disable_apps_ui</span></code></td>
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>When <code>True</code>, hides MCP-Apps UI tools
+(<code>browse_vault</code>, <code>show_context</code>) from the tool listing so
+clients that don't render MCP Apps panels don't see them
+(default <code>False</code>).</p>
               </div>
             </td>
           </tr>
@@ -2265,7 +2279,7 @@ into <code>config.server</code> by
       <tbody>
           <tr class="doc-section-item">
             <td>
-                  <code><a class="autorefs autorefs-internal" title="VaultConfig(source_dir, read_only=True, server_name='markdown-vault-mcp', instructions=None, git=GitConfig(), indexing=IndexingConfig(), embeddings=EmbeddingsConfig(), search=SearchConfig(), sync=SyncConfig(), content=ContentConfig(), transfer=TransferConfig(), server=ServerConfig())
+                  <code><a class="autorefs autorefs-internal" title="VaultConfig(source_dir, read_only=True, server_name='markdown-vault-mcp', instructions=None, git=GitConfig(), indexing=IndexingConfig(), embeddings=EmbeddingsConfig(), search=SearchConfig(), sync=SyncConfig(), content=ContentConfig(), transfer=TransferConfig(), disable_apps_ui=False, server=ServerConfig())
 
   
       dataclass
