@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from markdown_vault_mcp.exceptions import IndexUnavailableError
-from markdown_vault_mcp.indexing.readiness import ReadinessState
+from markdown_vault_mcp.indexing.readiness import ReadinessState, _Verdict
 
 
 def test_fresh_state_not_built_but_done_preset() -> None:
@@ -31,7 +31,7 @@ def test_begin_sync_build_clears_built_error_and_done() -> None:
     # the active build instead of prematurely raising never_built.
     r = ReadinessState()
     r.mark_built()  # built=True, done set, error None
-    r._error = RuntimeError("stale")  # leftover error from a prior failure
+    r.record_error(RuntimeError("stale"))  # leftover error from a prior failure
     r.begin_sync_build()
     assert r.is_built is False
     assert r.error is None  # stale error cleared
@@ -53,7 +53,7 @@ def test_status_building_after_begin_sync_build_with_stale_error() -> None:
 def test_begin_async_build_clears_built_error_and_done() -> None:
     r = ReadinessState()
     r.mark_built()
-    r._error = RuntimeError("kept?")
+    r.record_error(RuntimeError("kept?"))
     r.begin_async_build()
     assert r.is_built is False
     assert r.error is None
@@ -75,7 +75,7 @@ def test_captured_error_is_diagnostic_not_a_gate_when_built() -> None:
     # demote queryability — it is diagnostic state only.
     r = ReadinessState()
     r.mark_built()
-    r._error = RuntimeError("late diagnostic")
+    r.record_error(RuntimeError("late diagnostic"))
     assert r.is_queryable() is True
     assert r.status_fields()["status"] == "queryable"
     assert "late diagnostic" in r.status_fields()["error"]
@@ -127,3 +127,101 @@ def test_require_built_passes_when_built() -> None:
     r = ReadinessState()
     r.mark_built()
     r.require_built()  # no raise
+
+
+# -- #598: (built, error) read as one atomic snapshot -------------------------
+
+
+def test_mark_built_publishes_verdict_atomically() -> None:
+    # mark_built publishes (True, None) as ONE immutable verdict object, so a
+    # reader can never observe built=True paired with a stale error (#598).
+    r = ReadinessState()
+    r.fail_build(RuntimeError("old"))
+    r.mark_built()
+    v = r._snapshot()
+    assert v.built is True
+    assert v.error is None
+
+
+def test_fail_build_preserves_built_in_published_verdict() -> None:
+    # fail_build only records an error; it must leave the built flag untouched
+    # and publish the pair as one verdict (#598).
+    r = ReadinessState()
+    r.mark_built()  # (True, None)
+    exc = RuntimeError("late failure")
+    r.fail_build(exc)
+    v = r._snapshot()
+    assert v.built is True  # preserved
+    assert v.error is exc
+
+
+def test_begin_background_build_preserves_built_clears_error() -> None:
+    # begin_background_build clears the error but does not reset built — the
+    # published verdict must reflect both in one object (#598).
+    r = ReadinessState()
+    r.mark_built()
+    r.record_error(RuntimeError("stale"))  # (True, exc)
+    r.begin_background_build()
+    v = r._snapshot()
+    assert v.built is True  # preserved
+    assert v.error is None  # cleared
+
+
+def test_require_built_decision_uses_single_snapshot_not_live_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # #598: require_built must derive (built, error) from ONE snapshot. If a
+    # concurrent failure transition lands immediately after the snapshot is
+    # captured, the already-captured verdict governs the decision — there is
+    # no torn re-read of the newer error.
+    r = ReadinessState()
+    r.begin_async_build()  # live: (False, None) — building
+    captured = _Verdict(built=True, error=None)
+
+    def snapshot_then_concurrent_failure() -> _Verdict:
+        # A failure lands right after we capture the snapshot.
+        r._verdict = _Verdict(built=False, error=RuntimeError("late"))
+        return captured
+
+    monkeypatch.setattr(r, "_snapshot", snapshot_then_concurrent_failure)
+    r.require_built()  # must NOT raise: the captured snapshot said built=True
+
+
+def test_require_built_build_failed_from_snapshot_not_live_built(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # #598 mirror: a captured failed verdict yields build_failed even if a
+    # concurrent success lands right after the snapshot — the decision never
+    # re-reads live built/error.
+    r = ReadinessState()
+    r.mark_built()  # live: (True, None)
+    captured = _Verdict(built=False, error=RuntimeError("boom"))
+
+    def snapshot_then_concurrent_success() -> _Verdict:
+        r._verdict = _Verdict(built=True, error=None)
+        return captured
+
+    monkeypatch.setattr(r, "_snapshot", snapshot_then_concurrent_success)
+    with pytest.raises(IndexUnavailableError) as ei:
+        r.require_built()
+    assert ei.value.reason == "build_failed"
+    assert "boom" in str(ei.value)
+
+
+def test_status_fields_uses_single_verdict_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # #598: status_fields derives status from one (built, error) snapshot, not
+    # from live state re-read mid-call.
+    r = ReadinessState()
+    r.mark_built()  # live: (True, None), done set
+    captured = _Verdict(built=False, error=RuntimeError("scan failed"))
+
+    def snapshot_then_mutate() -> _Verdict:
+        r._verdict = _Verdict(built=True, error=None)
+        return captured
+
+    monkeypatch.setattr(r, "_snapshot", snapshot_then_mutate)
+    fields = r.status_fields()
+    assert fields["status"] == "failed"  # from the snapshot, not live state
+    assert "scan failed" in str(fields["error"])

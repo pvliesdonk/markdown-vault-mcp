@@ -1,6 +1,6 @@
 """Build-readiness state machine for the index coordinator.
 
-Encapsulates the (_index_built, done-event, error) triple that was
+Encapsulates the (built, done-event, error) triple that was
 formerly scattered across Vault. Sole owner: IndexWriteCoordinator.
 
 Invariant: a captured build error never gates queryability —
@@ -8,64 +8,98 @@ Invariant: a captured build error never gates queryability —
 ``status_fields`` surfaces it as diagnostic state. ``require_built``
 reads it only to label its raise (``build_failed`` vs ``never_built``,
 #586), never to decide *whether* it raises. (See issue #531's lesson.)
+
+The ``built`` flag and ``error`` are stored together in a single immutable
+``_Verdict`` published as one atomic reference (#598). Compound readers
+(``require_built``, ``status_fields``) capture the verdict once via
+``_snapshot`` and decide from that snapshot, so a build transition landing
+between two field reads can never produce a torn ``(built, error)`` pair —
+e.g. a direct (non-waiting) ``require_built`` caller is never told
+``never_built`` because it read a pre-build ``built`` and a post-build
+``error``. The done-event stays a separate primitive (its own synchronisation
+object); only the ``(built, error)`` pair is snapshotted.
 """
 
 from __future__ import annotations
 
 import threading
+from dataclasses import dataclass
 from typing import Any
 
 from markdown_vault_mcp.exceptions import IndexUnavailableError
+
+
+@dataclass(frozen=True, slots=True)
+class _Verdict:
+    """Immutable ``(built, error)`` pair, published as one atomic reference.
+
+    Frozen so a published verdict can never be mutated in place: every
+    transition assigns a brand-new instance to ``ReadinessState._verdict``,
+    and every compound read captures the current instance once. This is what
+    makes the pair tear-free under concurrent reads (#598).
+    """
+
+    built: bool
+    error: BaseException | None
 
 
 class ReadinessState:
     """Tracks whether the FTS index is built and queryable."""
 
     def __init__(self) -> None:
-        self._index_built = False
+        self._verdict = _Verdict(built=False, error=None)
         # Pre-set: a freshly constructed vault that never called
         # build_index() must not look "building" forever to waiters.
         self._done = threading.Event()
         self._done.set()
-        self._error: BaseException | None = None
 
     # -- transitions (each mirrors one former Vault mutation set) --
+    #
+    # Writes are serialised in time by the coordinator within a single build
+    # lifecycle (begin -> mark_built/fail_build -> mark_done), so the
+    # read-modify-write transitions below (which preserve the untouched field)
+    # are safe; readers never write. Each transition publishes a complete new
+    # ``_Verdict`` with a single attribute store.
 
     def begin_sync_build(self) -> None:
         """Sync build_index cold path: clears built + error + done (#587)."""
-        self._index_built = False
-        self._error = None
+        self._verdict = _Verdict(built=False, error=None)
         self._done.clear()
 
     def begin_async_build(self) -> None:
         """Async build_index_async cold path: clears built + error + done."""
-        self._index_built = False
-        self._error = None
+        self._verdict = _Verdict(built=False, error=None)
         self._done.clear()
 
     def begin_background_build(self) -> None:
-        """Deprecated start_background_build_index: clears error + done."""
-        self._error = None
+        """Deprecated start_background_build_index: clears error + done.
+
+        Preserves the ``built`` flag (this path never resets it).
+        """
+        self._verdict = _Verdict(built=self._verdict.built, error=None)
         self._done.clear()
 
     def mark_built(self) -> None:
         """Warm short-circuit / sync success / async-done success."""
-        self._index_built = True
-        self._error = None
+        self._verdict = _Verdict(built=True, error=None)
         self._done.set()
 
     def fail_build(self, exc: BaseException) -> None:
-        """Submit failure / async-done failure / background failure."""
-        self._error = exc
+        """Submit failure / async-done failure / background failure.
+
+        Records the error and leaves the ``built`` flag untouched.
+        """
+        self._verdict = _Verdict(built=self._verdict.built, error=exc)
         self._done.set()
 
     def record_error(self, exc: BaseException) -> None:
         """Record an error WITHOUT touching the done-event.
 
         For the deprecated background worker, whose ``except`` records the
-        error and whose ``finally`` sets the done-event regardless.
+        error and whose ``finally`` sets the done-event regardless. Leaves the
+        ``built`` flag untouched.
         """
-        self._error = exc
+        self._verdict = _Verdict(built=self._verdict.built, error=exc)
 
     def mark_done(self) -> None:
         """Idempotently set the done-event so waiters unblock (any liveness finally)."""
@@ -73,16 +107,24 @@ class ReadinessState:
 
     # -- queries --
 
+    def _snapshot(self) -> _Verdict:
+        """Capture the current ``(built, error)`` verdict as one atomic read.
+
+        A single attribute load is atomic under the GIL, so compound readers
+        that go through this method observe a self-consistent pair (#598).
+        """
+        return self._verdict
+
     @property
     def is_built(self) -> bool:
-        return self._index_built
+        return self._verdict.built
 
     @property
     def error(self) -> BaseException | None:
-        return self._error
+        return self._verdict.error
 
     def is_queryable(self) -> bool:
-        if not self._index_built:
+        if not self._verdict.built:
             return False
         return self._done.is_set()
 
@@ -90,12 +132,18 @@ class ReadinessState:
         return self._done.wait(timeout=timeout)
 
     def require_built(self) -> None:
-        """Raise if not built, distinguishing build_failed from never_built (#586)."""
-        if self._index_built:
+        """Raise if not built, distinguishing build_failed from never_built (#586).
+
+        Reads ``(built, error)`` from a single snapshot so a concurrent build
+        completion can never split the pair into a spurious ``never_built``
+        (#598).
+        """
+        verdict = self._snapshot()
+        if verdict.built:
             return
-        if self._error is not None:
+        if verdict.error is not None:
             raise IndexUnavailableError(
-                f"Index build failed: {self._error}. "
+                f"Index build failed: {verdict.error}. "
                 "Inspect get_index_status() for the captured error.",
                 reason="build_failed",
             )
@@ -105,12 +153,14 @@ class ReadinessState:
         )
 
     def status_fields(self) -> dict[str, Any]:
-        if self.is_queryable():
+        verdict = self._snapshot()
+        done = self._done.is_set()
+        if verdict.built and done:
             status = "queryable"
-            error = str(self._error) if self._error is not None else None
-        elif self._done.is_set() and self._error is not None:
+            error = str(verdict.error) if verdict.error is not None else None
+        elif done and verdict.error is not None:
             status = "failed"
-            error = str(self._error)
+            error = str(verdict.error)
         else:
             status = "building"
             error = None
