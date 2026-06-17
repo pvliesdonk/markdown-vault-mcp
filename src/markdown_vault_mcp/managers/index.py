@@ -354,8 +354,12 @@ class IndexManager:
             :class:`~markdown_vault_mcp.types.ReindexResult` with counts
             of changes applied.
         """
-        # Phase 1: scan filesystem (read-only walk + hashing).
-        changes = self._tracker.detect_changes(self._source_dir)
+        # Phase 1: scan filesystem (read-only walk + hashing). Excluded
+        # subtrees are filtered before hashing so they neither churn the
+        # tracker nor get reported as changes (#257).
+        changes = self._tracker.detect_changes(
+            self._source_dir, exclude_patterns=self._exclude_patterns
+        )
         logger.info(
             "reindex: %d added, %d modified, %d deleted, %d unchanged, %d skipped",
             len(changes.added),
@@ -381,13 +385,11 @@ class IndexManager:
 
         # Pre-parse notes outside the lock to minimise lock hold time.
         parsed: list[tuple[str, ParsedNote]] = []
+        # Excluded paths are filtered inside detect_changes (before hashing,
+        # #257), so they never reach this loop; the only skips recorded here
+        # are parse/decode failures and missing-frontmatter files below.
         for path in changes.added + changes.modified:
             abs_path = self._source_dir / path
-
-            if self._is_path_excluded(path):
-                logger.debug("reindex: excluding %s (matched exclude pattern)", path)
-                _record_skip(path, abs_path)
-                continue
 
             try:
                 note = parse_note(abs_path, self._source_dir, self._chunk_strategy)

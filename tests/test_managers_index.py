@@ -321,25 +321,25 @@ class TestSkipStateMemory:
         paths = {n["path"] for n in fts.list_notes()}
         assert "skip.md" in paths
 
-    def test_excluded_file_recorded_as_skip(self, tmp_path: Path) -> None:
-        """A file matching exclude_patterns is skipped once, then remembered."""
+    def test_excluded_file_not_hashed_or_reported(self, tmp_path: Path) -> None:
+        """A file matching exclude_patterns is filtered before hashing (#257):
+        it is neither indexed nor surfaced as a change, so it is not even
+        skip-counted (detect_changes drops it entirely)."""
         vault = tmp_path / "vault"
         vault.mkdir()
         (vault / "good.md").write_text("# Good\n\nbody\n", encoding="utf-8")
-        mgr, _fts, _ = _make_index_mgr(vault, tmp_path, exclude_patterns=["drafts/**"])
+        mgr, fts, _ = _make_index_mgr(vault, tmp_path, exclude_patterns=["drafts/**"])
         mgr.build_index()
 
         drafts = vault / "drafts"
         drafts.mkdir()
         (drafts / "wip.md").write_text("# WIP\n", encoding="utf-8")
 
-        first = mgr.reindex()
-        assert first.added == 0
-        assert first.skipped == 1
-
-        second = mgr.reindex()
-        assert second.added == 0
-        assert second.skipped == 1
+        result = mgr.reindex()
+        assert result.added == 0
+        assert result.skipped == 0  # excluded files are invisible, not skip-counted
+        indexed = {row["path"] for row in fts.list_notes()}
+        assert "drafts/wip.md" not in indexed
 
     def test_transient_oserror_skip_is_retried(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -414,15 +414,22 @@ class TestSkipStateMemory:
     def test_record_skip_hash_oserror_is_swallowed(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """An OSError while hashing a skip leaves it unrecorded (retry later)."""
+        """An OSError while hashing a deterministically-skipped file (a parse
+        error) leaves it unrecorded, so it retries on the next scan."""
         vault = tmp_path / "vault"
         vault.mkdir()
-        drafts = vault / "drafts"
-        drafts.mkdir()
-        (drafts / "wip.md").write_text("# WIP\n", encoding="utf-8")
-        mgr, _fts, _ = _make_index_mgr(vault, tmp_path, exclude_patterns=["drafts/**"])
+        (vault / "bad.md").write_text("# Bad\n", encoding="utf-8")
+        mgr, _fts, _ = _make_index_mgr(vault, tmp_path)
 
         import markdown_vault_mcp.managers.index as index_module
+
+        # A non-OSError parse failure is a deterministic skip recorded via
+        # _record_skip (the path that hashes the file).
+        def failing_parse(abs_path, source_dir, chunk_strategy):  # noqa: ARG001
+            raise ValueError("unparseable")
+
+        monkeypatch.setattr(index_module, "parse_note", failing_parse)
+        real_hash = index_module.compute_file_hash
 
         def failing_hash(path):  # noqa: ARG001
             raise OSError("unreadable")
@@ -432,7 +439,7 @@ class TestSkipStateMemory:
         assert first.added == 0
         assert first.skipped == 0  # hash failed → skip not recorded
 
-        monkeypatch.undo()
+        monkeypatch.setattr(index_module, "compute_file_hash", real_hash)
         second = mgr.reindex()
         assert second.skipped == 1  # retried and recorded this time
 

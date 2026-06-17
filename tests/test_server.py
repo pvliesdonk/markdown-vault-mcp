@@ -3545,3 +3545,33 @@ async def test_transfer_download_present_upload_hidden_in_readonly():
         names = {t.name for t in await client.list_tools()}
     assert "create_download_link" in names
     assert "create_upload_link" not in names
+
+
+# ---------------------------------------------------------------------------
+# #609: make_server reuses a provided config instead of re-reading env
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.usefixtures("_mcp_env")
+def test_make_server_reuses_provided_config_without_re_reading_env() -> None:
+    """make_server(config=...) must not call VaultConfig.from_env again (#609)."""
+    from unittest.mock import patch
+
+    from markdown_vault_mcp.config import VaultConfig
+
+    config = VaultConfig.from_env()
+    with patch.object(VaultConfig, "from_env", wraps=VaultConfig.from_env) as spy:
+        make_server(config=config)
+    spy.assert_not_called()
+
+
+@pytest.mark.usefixtures("_mcp_env")
+def test_make_server_reads_config_from_env_once_when_not_provided() -> None:
+    """make_server() with no config reads env exactly once."""
+    from unittest.mock import patch
+
+    from markdown_vault_mcp.config import VaultConfig
+
+    with patch.object(VaultConfig, "from_env", wraps=VaultConfig.from_env) as spy:
+        make_server()
+    spy.assert_called_once()

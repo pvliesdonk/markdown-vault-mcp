@@ -117,7 +117,7 @@ def _build_default_instructions(*, read_only: bool) -> str:
     )
 
 
-def make_server(transport: str = "stdio") -> FastMCP:
+def make_server(transport: str = "stdio", config: VaultConfig | None = None) -> FastMCP:
     """Create and configure the FastMCP server.
 
     Reads configuration from environment variables via
@@ -139,11 +139,17 @@ def make_server(transport: str = "stdio") -> FastMCP:
         transport: ``"stdio"`` / ``"http"`` / ``"sse"`` / ``"streamable-http"``.
             Used to gate HTTP-only wiring (e.g. the GitHub webhook route) and
             as ``transport=%s`` in the startup log.
+        config: A pre-built :class:`~markdown_vault_mcp.config.VaultConfig`.
+            When ``None`` (the default) the config is read from the environment
+            via ``from_env``. Callers that already hold a config (e.g. the HTTP
+            serve path, which also needs ``config.server`` for the event store)
+            pass it here to avoid parsing the environment twice (#609).
 
     Returns:
         A fully configured :class:`~fastmcp.FastMCP` instance ready to run.
     """
-    config = VaultConfig.from_env()
+    if config is None:
+        config = VaultConfig.from_env()
     is_read_only = config.read_only
 
     server_name = config.server_name

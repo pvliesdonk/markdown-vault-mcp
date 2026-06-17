@@ -7,10 +7,15 @@ import logging
 import os
 import tempfile
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from markdown_vault_mcp.hashing import compute_file_hash
 from markdown_vault_mcp.types import ChangeSet, ParsedNote
+from markdown_vault_mcp.utils import is_path_excluded
 from markdown_vault_mcp.utils.fs import GLOB_SYMLINK_KWARGS
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +64,7 @@ class ChangeTracker:
         self,
         source_dir: Path,
         glob_pattern: str = "**/*.md",
+        exclude_patterns: Sequence[str] | None = None,
     ) -> ChangeSet:
         """Compare files on disk against stored state and return the delta.
 
@@ -86,6 +92,10 @@ class ChangeTracker:
             source_dir: Root directory of the markdown vault.
             glob_pattern: Glob pattern used to discover files, relative to
                 *source_dir*. Defaults to ``"**/*.md"``.
+            exclude_patterns: Glob patterns (matched against the relative POSIX
+                path) whose files are skipped before hashing, so excluded
+                subtrees (e.g. ``.obsidian/**``) are neither hashed nor
+                reported as changes (#257). ``None`` excludes nothing.
 
         Returns:
             A :class:`~markdown_vault_mcp.types.ChangeSet` describing the delta.
@@ -101,6 +111,10 @@ class ChangeTracker:
                 rel_str = abs_path.relative_to(source_dir).as_posix()
             except ValueError:
                 logger.warning("File outside source_dir, skipping: %s", abs_path)
+                continue
+            # Skip excluded subtrees before hashing — saves the I/O and keeps
+            # them out of the ChangeSet (#257).
+            if is_path_excluded(rel_str, exclude_patterns):
                 continue
             try:
                 content_hash = self._compute_hash(abs_path)
@@ -131,8 +145,17 @@ class ChangeTracker:
             else:
                 added.append(rel_path)
 
+        # An excluded path that was previously indexed is filtered out of
+        # disk_state above, so it would otherwise look "deleted". It is not
+        # deleted — it is excluded — and the reindex stale-purge (#255) is the
+        # designated remover (it lazy-loads vectors before purging). Reporting
+        # it as deleted instead would route it through the delete loop, which
+        # does not load vectors, leaking its embedding (#257).
         deleted: list[str] = [
-            rel_path for rel_path in indexed_state if rel_path not in disk_state
+            rel_path
+            for rel_path in indexed_state
+            if rel_path not in disk_state
+            and not is_path_excluded(rel_path, exclude_patterns)
         ]
 
         logger.debug(

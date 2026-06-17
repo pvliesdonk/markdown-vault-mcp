@@ -84,7 +84,11 @@ def _cmd_serve(args: argparse.Namespace) -> None:
     maybe_start_debugpy(_ENV_PREFIX)
 
     transport = args.transport
-    server = make_server(transport=transport)
+    # The HTTP path needs config.server for the event store, and make_server
+    # needs the full config — read it once and share it so the environment is
+    # parsed a single time (#609). stdio lets make_server own the single read.
+    config = VaultConfig.from_env() if transport == "http" else None
+    server = make_server(transport=transport, config=config)
     env_http_path = os.environ.get(f"{_ENV_PREFIX}_HTTP_PATH")
     http_path = normalise_http_path(args.http_path or env_http_path)
     if transport != "http" and (
@@ -96,7 +100,7 @@ def _cmd_serve(args: argparse.Namespace) -> None:
     if transport == "http":
         import uvicorn
 
-        config = VaultConfig.from_env()
+        assert config is not None  # built above for the http transport
         event_store = build_event_store(config.server)
         # FastMCP's run() doesn't pass event_store through to http_app(),
         # so we build the ASGI app and run uvicorn directly.

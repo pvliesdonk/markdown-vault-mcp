@@ -579,3 +579,71 @@ class TestLegacyStateFormat:
         tracker = ChangeTracker(state_path)
         changes = tracker.detect_changes(vault)
         assert "a.md" in changes.added
+
+
+class TestExcludePatterns:
+    """#257: detect_changes filters paths matching exclude_patterns."""
+
+    def test_excluded_paths_not_reported(self, tmp_path: Path) -> None:
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        _write_md(vault, "note.md")
+        _write_md(vault, ".claude/test.md")
+
+        tracker = ChangeTracker(tmp_path / "state.json")
+        changes = tracker.detect_changes(vault, exclude_patterns=[".claude/**"])
+
+        assert "note.md" in changes.added
+        assert ".claude/test.md" not in changes.added
+
+    def test_default_none_includes_all(self, tmp_path: Path) -> None:
+        # Back-compat: callers that pass no exclude_patterns see every file.
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        _write_md(vault, "note.md")
+        _write_md(vault, ".claude/test.md")
+
+        tracker = ChangeTracker(tmp_path / "state.json")
+        changes = tracker.detect_changes(vault)
+
+        assert ".claude/test.md" in changes.added
+
+    def test_excluded_paths_not_hashed(self, tmp_path: Path) -> None:
+        # The perf win: excluded files are skipped BEFORE hashing.
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        _write_md(vault, "note.md")
+        _write_md(vault, ".obsidian/cache.md")
+
+        tracker = ChangeTracker(tmp_path / "state.json")
+        hashed: list[str] = []
+        original = tracker._compute_hash
+
+        def spy(path: Path) -> str:
+            hashed.append(path.name)
+            return original(path)
+
+        with patch.object(tracker, "_compute_hash", side_effect=spy):
+            tracker.detect_changes(vault, exclude_patterns=[".obsidian/**"])
+
+        assert "note.md" in hashed
+        assert "cache.md" not in hashed
+
+    def test_excluded_path_in_state_not_reported_deleted(self, tmp_path: Path) -> None:
+        # A previously-indexed path that is now excluded is filtered, not
+        # "deleted" — the reindex stale-purge (#255) removes it (and its
+        # vectors). Reporting it as deleted would leak its embedding (#257).
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        _write_md(vault, "note.md")
+        _write_md(vault, ".claude/old.md")
+
+        tracker = ChangeTracker(tmp_path / "state.json")
+        tracker.update_state(
+            [_make_note("note.md", "h1"), _make_note(".claude/old.md", "h2")]
+        )
+
+        changes = tracker.detect_changes(vault, exclude_patterns=[".claude/**"])
+        assert ".claude/old.md" not in changes.deleted
+        assert ".claude/old.md" not in changes.added
+        assert ".claude/old.md" not in changes.modified
