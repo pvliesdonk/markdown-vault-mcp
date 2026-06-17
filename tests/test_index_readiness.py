@@ -225,3 +225,30 @@ def test_status_fields_uses_single_verdict_snapshot(
     fields = r.status_fields()
     assert fields["status"] == "failed"  # from the snapshot, not live state
     assert "scan failed" in str(fields["error"])
+
+
+def test_status_fields_reads_done_before_verdict_so_failure_is_consistent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # #598/#706: status_fields reads the done-event BEFORE the verdict. If a
+    # build failure lands between the two reads, reading done first means a
+    # True done is paired with the already-published failure verdict — so the
+    # failure is reported as "failed", never misreported as "building" from a
+    # stale error=None verdict. (Read-verdict-first would yield "building".)
+    r = ReadinessState()
+    r.begin_async_build()  # building: (False, None), done cleared
+
+    real_is_set = r._done.is_set
+
+    def is_set_landing_failure() -> bool:
+        # A build failure completes exactly here, honouring the transition
+        # write order (verdict published, then done set).
+        r.fail_build(RuntimeError("boom"))
+        return real_is_set()
+
+    monkeypatch.setattr(r._done, "is_set", is_set_landing_failure)
+    fields = r.status_fields()
+    monkeypatch.setattr(r._done, "is_set", real_is_set)
+
+    assert fields["status"] == "failed"
+    assert "boom" in str(fields["error"])

@@ -153,8 +153,16 @@ class ReadinessState:
         )
 
     def status_fields(self) -> dict[str, Any]:
-        verdict = self._snapshot()
+        # Read the done-event BEFORE the verdict. Every transition that sets
+        # the done-event publishes its terminal verdict first (see the
+        # transition methods: ``self._verdict = ...`` precedes
+        # ``self._done.set()``). So observing ``done`` True here guarantees the
+        # verdict read next reflects that done-setting transition (or a newer
+        # one) — the pair is consistent without a lock, and a just-failed build
+        # can never be misreported as "building" from a stale ``error=None``
+        # verdict (#598/#706).
         done = self._done.is_set()
+        verdict = self._snapshot()
         if verdict.built and done:
             status = "queryable"
             error = str(verdict.error) if verdict.error is not None else None
