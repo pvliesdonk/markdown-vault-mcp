@@ -166,7 +166,7 @@ For reverse proxy (Traefik) and deployment setup, see [`docs/deployment.md`](doc
 
 ### Server info
 
-The server registers a built-in `get_server_info` tool (via `fastmcp_pvl_core.register_server_info_tool`) so operators can confirm the deployed version with a single MCP call. The response carries `server_name`, `server_version`, and `core_version`. Wire upstream version reporting (when applicable) inside the `DOMAIN-UPSTREAM-START` / `DOMAIN-UPSTREAM-END` sentinel in `src/markdown_vault_mcp/server.py`.
+The server registers a built-in `get_server_info` tool (via `fastmcp_pvl_core.register_server_info_tool`) so operators can confirm the deployed version with a single MCP call. The response carries `server_name`, `server_version`, and `core_version`.
 
 ## Configuration
 
