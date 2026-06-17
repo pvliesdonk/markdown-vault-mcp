@@ -1,0 +1,319 @@
+# OIDC Providers
+
+This guide covers configuring markdown-vault-mcp with specific OIDC providers. For general OIDC setup and architecture, see [OIDC Authentication](https://pvliesdonk.github.io/markdown-vault-mcp/3.0/deployment/oidc/index.md).
+
+Transport requirement
+
+OIDC requires HTTP transport (`--transport http`). It has no effect with stdio transport.
+
+Subpath deployments
+
+If your reverse proxy mounts the server under a prefix such as `https://mcp.example.com/vault`, set `MARKDOWN_VAULT_MCP_BASE_URL` to that prefixed URL and register callback URI `https://mcp.example.com/vault/auth/callback`.
+
+## Authelia
+
+Use Authelia as your OIDC identity provider to authenticate users with local users, LDAP, or upstream providers.
+
+Note
+
+Authelia does not support Dynamic Client Registration (RFC 7591). Register clients manually in `configuration.yml`.
+
+Opaque access tokens
+
+Authelia issues opaque (non-JWT) access tokens. markdown-vault-mcp handles this automatically by verifying the `id_token` instead, which is always a standard JWT. No extra configuration is needed.
+
+For architecture details and a full Docker Compose deployment, see [OIDC Authentication](https://pvliesdonk.github.io/markdown-vault-mcp/3.0/deployment/oidc/index.md).
+
+### 1. Register client in `configuration.yml`
+
+Add the client and a custom lifespan under `identity_providers.oidc` in your Authelia config:
+
+```
+identity_providers:
+  oidc:
+    # Custom lifespan for long-running MCP sessions.
+    # Default Authelia lifespans: access_token=1h, id_token=1h, refresh_token=90m.
+    # MCP clients do not reliably refresh tokens (see Known Limitations in
+    # the authentication guide), so all lifetimes must cover a full workday.
+    # IMPORTANT: id_token must match access_token — when verify_id_token=true
+    # (the default for Authelia), the id_token exp claim gates session validity.
+    lifespans:
+      custom:
+        mcp_long_lived:
+          access_token: '8h'
+          id_token: '8h'
+          refresh_token: '30d'
+    clients:
+      - client_id: markdown-vault-mcp
+        client_name: markdown-vault-mcp
+        client_secret: '$pbkdf2-sha512$...'  # generated in step 2
+        public: false
+        authorization_policy: two_factor
+        lifespan: 'mcp_long_lived'
+        redirect_uris:
+          - https://mcp.example.com/auth/callback
+        grant_types:
+          - authorization_code
+          - refresh_token
+        response_types:
+          - code
+        scopes:
+          - openid
+          - profile
+          - email
+          - offline_access
+        userinfo_signed_response_alg: none
+        token_endpoint_auth_method: client_secret_post  # required by FastMCP's OIDCProxy
+        pkce_challenge_method: S256
+```
+
+Token lifetimes
+
+MCP clients (Claude.ai, Claude Code) do not reliably refresh tokens (see [Known Limitations](https://pvliesdonk.github.io/markdown-vault-mcp/3.0/guides/authentication/#known-limitations-mcp-oauth-token-refresh)). The `mcp_long_lived` custom lifespan sets both `access_token` and `id_token` to 8 hours so tokens outlast a typical work session. The `id_token` lifetime is critical when using `verify_id_token` mode (the default for Authelia): if omitted, Authelia defaults it to 1 hour regardless of the `access_token` setting. See [Authelia OIDC Provider: Lifespans](https://www.authelia.com/configuration/identity-providers/openid-connect/provider/#lifespans) for the full reference.
+
+### 2. Generate and hash a client secret
+
+Generate a secret (example):
+
+```
+openssl rand -base64 32
+```
+
+Hash the secret for Authelia:
+
+```
+authelia crypto hash generate pbkdf2
+```
+
+Enter the secret at the prompt. Set the hashed value in `configuration.yml` as `client_secret`. Keep the plain-text secret for `MARKDOWN_VAULT_MCP_OIDC_CLIENT_SECRET`.
+
+### 3. Generate JWT signing key
+
+```
+openssl rand -hex 32
+```
+
+### 4. Configure environment variables
+
+```
+MARKDOWN_VAULT_MCP_BASE_URL=https://mcp.example.com
+MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL=https://auth.example.com/.well-known/openid-configuration
+MARKDOWN_VAULT_MCP_OIDC_CLIENT_ID=markdown-vault-mcp
+MARKDOWN_VAULT_MCP_OIDC_CLIENT_SECRET=your-client-secret
+MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY=your-64-char-hex-key
+MARKDOWN_VAULT_MCP_OIDC_REQUIRED_SCOPES=openid,profile,email,offline_access
+```
+
+### 5. Start the server
+
+```
+markdown-vault-mcp serve --transport http --port 8000
+```
+
+Or in Docker, see [Docker OIDC setup](https://pvliesdonk.github.io/markdown-vault-mcp/3.0/guides/docker/#step-4-add-oidc-authentication).
+
+### Verify
+
+1. Open `https://mcp.example.com` in a browser
+1. Confirm redirect to Authelia login
+1. Sign in and confirm redirect back to markdown-vault-mcp
+1. Confirm authenticated requests succeed from your MCP client
+
+If login fails:
+
+- **"invalid_client"**: Check client ID/secret values and confirm the Authelia hash was generated from the same plain-text secret.
+- **Redirect mismatch**: Ensure redirect URI matches exactly (`BASE_URL` + `/auth/callback`).
+- **Session drops after hours**: Check that the `mcp_long_lived` lifespan is configured and referenced by the client. See the [token lifetime troubleshooting](https://pvliesdonk.github.io/markdown-vault-mcp/3.0/guides/authentication/#session-drops-after-token-expiry).
+
+______________________________________________________________________
+
+## Keycloak
+
+Use Keycloak directly as your OIDC provider for username/password (or federated) authentication.
+
+Remote mode (simpler alternative)
+
+If your reverse proxy already handles OIDC authentication (such as Traefik with ForwardAuth), you can use **remote mode** instead. Set only `BASE_URL` and `OIDC_CONFIG_URL`, omitting `OIDC_CLIENT_ID` and `OIDC_CLIENT_SECRET`. The server auto-detects remote mode and trusts the proxy's authentication. See [Authentication: Remote mode](https://pvliesdonk.github.io/markdown-vault-mcp/3.0/guides/authentication/#remote-mode) for details.
+
+### 1. Create a realm
+
+1. Open the Keycloak admin console
+1. Create a new realm (such as `vault`)
+1. Switch to the new realm before creating clients
+
+### 2. Create a client with redirect URI
+
+1. Go to **Clients** and click **Create client**
+1. Set **Client ID** to `markdown-vault-mcp`
+1. Set **Valid redirect URIs** to `https://mcp.example.com/auth/callback`
+1. Enable **Client authentication** for a confidential client
+1. Save and copy the client secret from the **Credentials** tab
+
+Keycloak discovery URL format:
+
+```
+https://auth.example.com/realms/{realm}/.well-known/openid-configuration
+```
+
+### 3. Configure environment variables
+
+```
+MARKDOWN_VAULT_MCP_BASE_URL=https://mcp.example.com
+MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL=https://auth.example.com/realms/vault/.well-known/openid-configuration
+MARKDOWN_VAULT_MCP_OIDC_CLIENT_ID=markdown-vault-mcp
+MARKDOWN_VAULT_MCP_OIDC_CLIENT_SECRET=your-keycloak-client-secret
+MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY=your-64-char-hex-key
+MARKDOWN_VAULT_MCP_OIDC_REQUIRED_SCOPES=openid,profile,email
+```
+
+Generate the JWT signing key:
+
+```
+openssl rand -hex 32
+```
+
+### 4. Start the server
+
+```
+markdown-vault-mcp serve --transport http --port 8000
+```
+
+Or in Docker, see [Docker OIDC setup](https://pvliesdonk.github.io/markdown-vault-mcp/3.0/guides/docker/#step-4-add-oidc-authentication).
+
+### Verify
+
+1. Open `https://mcp.example.com` in a browser
+1. Confirm redirect to the Keycloak login page
+1. Sign in and confirm redirect back to markdown-vault-mcp
+1. Confirm your MCP client can access tools after login
+
+If login fails:
+
+- **"invalid_client"**: Verify Client ID/secret from the Keycloak client.
+- **Redirect mismatch**: Ensure `BASE_URL` + `/auth/callback` exactly matches Keycloak client settings.
+
+______________________________________________________________________
+
+## Google
+
+Use Google as your OIDC identity provider to authenticate users with their Google accounts.
+
+Remote mode (simpler alternative)
+
+If your reverse proxy already handles Google OIDC authentication, you can use **remote mode** instead: set only `BASE_URL` and `OIDC_CONFIG_URL`, omitting client credentials. See [Authentication: Remote mode](https://pvliesdonk.github.io/markdown-vault-mcp/3.0/guides/authentication/#remote-mode).
+
+### 1. Create OAuth credentials
+
+1. Go to the [Google Cloud Console](https://console.cloud.google.com/apis/credentials)
+
+1. Select or create a project
+
+1. Click **Create Credentials** > **OAuth client ID**
+
+1. Choose **Web application**
+
+1. Set the **Authorized redirect URI** to:
+
+   ```
+   https://mcp.example.com/auth/callback
+   ```
+
+   Replace `mcp.example.com` with your server's public domain.
+
+1. Click **Create** and note the **Client ID** and **Client Secret**
+
+Consent screen
+
+If this is a new project, Google will prompt you to configure the OAuth consent screen first. For internal use, choose **Internal** (Google Workspace) or **External** with test users.
+
+### 2. Configure environment variables
+
+```
+MARKDOWN_VAULT_MCP_BASE_URL=https://mcp.example.com
+MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL=https://accounts.google.com/.well-known/openid-configuration
+MARKDOWN_VAULT_MCP_OIDC_CLIENT_ID=123456789-abcdef.apps.googleusercontent.com
+MARKDOWN_VAULT_MCP_OIDC_CLIENT_SECRET=GOCSPX-your-client-secret
+MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY=your-64-char-hex-key
+MARKDOWN_VAULT_MCP_OIDC_REQUIRED_SCOPES=openid,email
+```
+
+Generate the JWT signing key:
+
+```
+openssl rand -hex 32
+```
+
+### 3. Start the server
+
+```
+markdown-vault-mcp serve --transport http --port 8000
+```
+
+Or in Docker, see [Docker OIDC setup](https://pvliesdonk.github.io/markdown-vault-mcp/3.0/guides/docker/#step-4-add-oidc-authentication).
+
+### Verify
+
+1. Open `https://mcp.example.com` in a browser
+1. You should be redirected to Google's sign-in page
+1. After signing in, you should be redirected back to the server
+
+Check server logs for successful OIDC initialization. If you see errors:
+
+- **"invalid_client"**: verify the Client ID and Client Secret match the Google console
+- **"redirect_uri_mismatch"**: the `BASE_URL` + `/auth/callback` must exactly match the authorized redirect URI in Google console (including the scheme and trailing path)
+- For prefixed deployments, `BASE_URL` should include the prefix, such as `https://mcp.example.com/vault`.
+
+______________________________________________________________________
+
+## GitHub
+
+Use GitHub as an authentication backend through an OIDC-compliant broker.
+
+GitHub OAuth is not standard OIDC
+
+GitHub OAuth Apps use OAuth 2.0 but do not provide a standard OIDC discovery endpoint (`.well-known/openid-configuration`). GitHub cannot be used directly with markdown-vault-mcp's OIDC integration.
+
+Remote mode also works
+
+If you use Keycloak (or another broker) with GitHub social login, the remote mode alternative described in the [Keycloak section](#keycloak) above also applies here.
+
+### Recommended approach
+
+Use Keycloak as the OIDC broker and GitHub as a social login provider:
+
+1. Complete [Keycloak](#keycloak) setup first (realm, client, env vars, server startup)
+1. In Keycloak, add **Identity Providers** > **GitHub** with your GitHub OAuth App credentials
+1. Login at Keycloak and choose GitHub as the upstream identity provider
+
+This keeps Keycloak as the OIDC provider for markdown-vault-mcp while delegating user auth to GitHub.
+
+Other compatible brokers also work, including [Authelia](https://www.authelia.com/) and [Authentik](https://goauthentik.io/). Keycloak is shown here because the setup flow is already documented in this guide.
+
+### Verify
+
+1. Open `https://mcp.example.com` in a browser
+1. You should be redirected to Keycloak's login page with a GitHub option
+1. Click GitHub, authorize, and confirm redirect back to markdown-vault-mcp
+
+______________________________________________________________________
+
+## General tips
+
+These apply to all OIDC providers:
+
+- **Always set `OIDC_JWT_SIGNING_KEY`** on Linux/Docker. The default ephemeral key invalidates all tokens on restart.
+- **Test with a browser first.** The OIDC flow is easiest to debug in a browser where you can see redirects and error pages.
+- **Check the discovery URL.** Visit `OIDC_CONFIG_URL` in a browser. It should return a JSON document with `authorization_endpoint`, `token_endpoint`, and other fields.
+- **Redirect URI must match exactly.** The `BASE_URL` + `/auth/callback` must match the redirect URI registered with the provider, including scheme (`https://`), domain, port, and path.
+
+### JWT vs opaque access tokens
+
+OIDC providers issue two tokens after login: an **access token** and an **id token**. The id token is always a standard JWT. The access token may be a JWT (Keycloak, Google) or an opaque string (Authelia).
+
+By default, markdown-vault-mcp verifies the **id token**, which works with all providers. If your provider issues JWT access tokens and you need audience-claim validation on that token, set:
+
+```
+MARKDOWN_VAULT_MCP_OIDC_VERIFY_ACCESS_TOKEN=true
+```
+
+Most deployments should leave this unset.
