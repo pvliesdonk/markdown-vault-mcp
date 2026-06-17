@@ -4,6 +4,7 @@ import asyncio
 import base64
 import ipaddress
 import logging
+import socket
 from dataclasses import asdict
 from typing import Any
 from urllib.parse import urlparse, urlunparse
@@ -30,30 +31,86 @@ _FETCH_BLOCKED_HOSTNAMES = frozenset(
 )
 
 
-def _is_private_url(url: str) -> bool:
-    """Return True if *url* targets a private, loopback, or link-local address.
+_BLOCKED_ADDR_MSG = (
+    "URLs targeting private, loopback, link-local, or reserved addresses "
+    "are not allowed."
+)
 
-    Uses :mod:`ipaddress` for IP-based hosts and a hostname blocklist for
-    well-known internal names. This is a best-effort SSRF guard — it does
-    **not** prevent DNS rebinding attacks.
+
+def _ip_is_blocked(ip: str) -> bool:
+    """Return True if *ip* (an IP literal) is in a non-public range.
+
+    Covers private, loopback, link-local, unspecified (``0.0.0.0`` — which
+    ``is_private`` misses on older Pythons), reserved, and multicast space,
+    for both IPv4 and IPv6.
     """
-    parsed = urlparse(url)
-    hostname = parsed.hostname or ""
+    addr = ipaddress.ip_address(ip)
+    return (
+        addr.is_private
+        or addr.is_loopback
+        or addr.is_link_local
+        or addr.is_unspecified
+        or addr.is_reserved
+        or addr.is_multicast
+    )
 
+
+async def _resolve_pinned_ip(hostname: str, port: int) -> str:
+    """Resolve *hostname* and return one validated public IP to pin to.
+
+    SSRF guard that also closes the DNS-rebinding (TOCTOU) window: the caller
+    connects to the returned IP literal rather than the hostname, so the
+    address validated here is the address actually connected to — there is no
+    second resolution at connect time for an attacker's DNS to swap.
+
+    Fails **closed**: raises :class:`ValueError` if resolution errors, returns
+    no records, or **any** resolved address is non-public. An IP-literal
+    *hostname* is validated directly without a DNS lookup.
+
+    Args:
+        hostname: The URL host (an IP literal or a domain name).
+        port: The target port, used for the ``getaddrinfo`` service hint.
+
+    Returns:
+        A validated, public IP literal to connect to.
+
+    Raises:
+        ValueError: If the host is blocklisted, resolves to a non-public
+            address, or cannot be resolved.
+    """
     if hostname in _FETCH_BLOCKED_HOSTNAMES:
-        return True
+        raise ValueError(_BLOCKED_ADDR_MSG)
 
+    # IP-literal fast path: validate directly, no DNS lookup.
     try:
-        addr = ipaddress.ip_address(hostname)
-        return (
-            addr.is_private
-            or addr.is_loopback
-            or addr.is_link_local
-            or addr.is_unspecified  # 0.0.0.0 — is_private misses this on Python 3.10
-        )
+        ipaddress.ip_address(hostname)
     except ValueError:
-        # Not an IP literal — allow (could be a public hostname).
-        return False
+        pass
+    else:
+        if _ip_is_blocked(hostname):
+            raise ValueError(_BLOCKED_ADDR_MSG)
+        return hostname
+
+    # Domain name: resolve and validate every returned address. Fail closed on
+    # any resolution error so a DNS hiccup can never become an SSRF bypass.
+    loop = asyncio.get_running_loop()
+    try:
+        infos = await loop.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)
+    except OSError as exc:  # socket.gaierror is an OSError subclass
+        raise ValueError(
+            f"Could not resolve host {hostname!r} for the fetch URL: {exc}"
+        ) from exc
+
+    resolved = [str(info[4][0]) for info in infos]
+    if not resolved:
+        raise ValueError(f"Host {hostname!r} did not resolve to any address.")
+    for ip in resolved:
+        if _ip_is_blocked(ip):
+            raise ValueError(
+                f"Host {hostname!r} resolves to a non-public address ({ip}); "
+                "refusing to fetch."
+            )
+    return resolved[0]
 
 
 def register(mcp: FastMCP) -> None:
@@ -384,8 +441,10 @@ def register(mcp: FastMCP) -> None:
 
         Args:
             url: Source URL to download from. Only http:// and https://
-                schemes are allowed. Private/loopback IPs are blocked.
-                Redirects are NOT followed (SSRF protection).
+                schemes are allowed. SSRF protection: the host is resolved and
+                rejected if any address is private, loopback, link-local, or
+                reserved, and the validated IP is pinned for the connection
+                (closing DNS rebinding). Redirects are NOT followed.
             path: Destination path in the vault (e.g. "notes/report.md"
                 or "assets/diagram.png"). Extension determines handling:
                 .md for notes, anything else for attachments.
@@ -419,11 +478,14 @@ def register(mcp: FastMCP) -> None:
             raise ValueError(
                 f"Only http and https URLs are allowed, got {parsed.scheme!r}"
             )
-        if _is_private_url(url):
-            raise ValueError(
-                "URLs targeting private, loopback, or link-local addresses "
-                "are not allowed."
-            )
+        hostname = parsed.hostname
+        if not hostname:
+            raise ValueError("The fetch URL has no host.")
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        # Resolve + validate the host now, and pin the resulting IP into the
+        # connection below: the address validated here is the one actually
+        # dialled, which closes the DNS-rebinding TOCTOU window. Fails closed.
+        pinned_ip = await _resolve_pinned_ip(hostname, port)
 
         # Conditional import — httpx is an optional dependency.
         try:
@@ -445,12 +507,25 @@ def register(mcp: FastMCP) -> None:
             else int(vault.max_attachment_size_mb * 1024 * 1024)
         )
 
+        # Connect to the validated IP, but keep the original Host header and TLS
+        # SNI so vhost routing and certificate verification still use the real
+        # hostname. httpx then dials the pinned IP without re-resolving.
+        ip_host = f"[{pinned_ip}]" if ":" in pinned_ip else pinned_ip
+        pinned_netloc = f"{ip_host}:{parsed.port}" if parsed.port else ip_host
+        pinned_url = urlunparse(parsed._replace(netloc=pinned_netloc))
+        host_header = hostname if parsed.port is None else f"{hostname}:{parsed.port}"
+
         # Stream download — enforce size limit as chunks arrive.
         chunks: list[bytes] = []
         downloaded = 0
         async with (
             httpx.AsyncClient(timeout=timeout_s, follow_redirects=False) as client,
-            client.stream("GET", url) as response,
+            client.stream(
+                "GET",
+                pinned_url,
+                headers={"Host": host_header},
+                extensions={"sni_hostname": hostname},
+            ) as response,
         ):
             response.raise_for_status()
             content_type = response.headers.get("content-type")

@@ -358,7 +358,7 @@ Download a file from a URL and save it to the vault as a note or attachment. Des
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `url` | string | required | Source URL to download. Only `http`/`https` schemes allowed; private/loopback IPs are blocked; redirects are not followed (SSRF protection) |
+| `url` | string | required | Source URL to download. Only `http`/`https` schemes allowed; the host is resolved and private or internal addresses are blocked; the validated IP is pinned for the connection; redirects are not followed (SSRF protection) |
 | `path` | string | required | Destination path in vault. Extension determines handling: `.md` for notes, anything else for attachments |
 | `frontmatter` | object | `null` | Optional YAML frontmatter dict for `.md` files. Ignored for attachments |
 | `if_match` | string | `null` | Optional etag from a previous `read` call for optimistic concurrency |
