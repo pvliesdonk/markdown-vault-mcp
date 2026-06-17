@@ -2118,7 +2118,7 @@
 
 
 <h1 id="embedding-providers">Embedding Providers<a class="headerlink" href="#embedding-providers" title="Permanent link">&para;</a></h1>
-<p>This guide covers configuring each supported embedding provider for semantic search. You only need one provider — choose based on your requirements:</p>
+<p>This guide covers configuring each supported embedding provider for semantic search. You only need one provider; choose based on your requirements:</p>
 <table>
 <thead>
 <tr>
@@ -2137,7 +2137,7 @@
 <td>No (CPU works fine)</td>
 <td>No</td>
 <td>~2 GB (model)</td>
-<td>~2–4 GB (separate process)</td>
+<td>~2-4 GB (separate process)</td>
 </tr>
 <tr>
 <td><a href="#fastembed">FastEmbed</a></td>
@@ -2145,7 +2145,7 @@
 <td>No</td>
 <td>First run only (model download)</td>
 <td>Small runtime + model</td>
-<td>~1–2 GB (in-process)</td>
+<td>~1-2 GB (in-process)</td>
 </tr>
 <tr>
 <td><a href="#openai">OpenAI</a></td>
@@ -2159,7 +2159,7 @@
 </table>
 <p>All three providers produce embeddings that enable the <code>semantic</code> and <code>hybrid</code> search modes in the <code>search</code> tool.</p>
 <h2 id="ollama">Ollama<a class="headerlink" href="#ollama" title="Permanent link">&para;</a></h2>
-<p><a href="https://ollama.com">Ollama</a> runs embedding models locally. It's the recommended option for local, private embeddings — easy to set up and works well on CPU.</p>
+<p><a href="https://ollama.com">Ollama</a> runs embedding models locally. It's the recommended option for local, private embeddings: easy to set up and works well on CPU.</p>
 <h3 id="install-ollama">Install Ollama<a class="headerlink" href="#install-ollama" title="Permanent link">&para;</a></h3>
 <div class="tabbed-set tabbed-alternate" data-tabs="1:3"><input checked="checked" id="__tabbed_1_1" name="__tabbed_1" type="radio" /><input id="__tabbed_1_2" name="__tabbed_1" type="radio" /><input id="__tabbed_1_3" name="__tabbed_1" type="radio" /><div class="tabbed-labels"><label for="__tabbed_1_1">macOS</label><label for="__tabbed_1_2">Linux</label><label for="__tabbed_1_3">Docker</label></div>
 <div class="tabbed-content">
@@ -2189,10 +2189,10 @@
 <span class="nv">MARKDOWN_VAULT_MCP_OLLAMA_MODEL</span><span class="o">=</span>nomic-embed-text
 <span class="nv">MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH</span><span class="o">=</span>/path/to/store/embeddings
 </code></pre></div>
-<p><strong>CPU-only mode</strong> — if you have a GPU but want to force CPU-only (e.g., to reserve the GPU for inference):</p>
+<p><strong>CPU-only mode:</strong> if you have a GPU but want to force CPU-only (such as to reserve the GPU for inference):</p>
 <div class="highlight"><pre><span></span><code><span class="nv">MARKDOWN_VAULT_MCP_OLLAMA_CPU_ONLY</span><span class="o">=</span><span class="nb">true</span>
 </code></pre></div>
-<p><strong>Docker-to-host networking</strong> — if Ollama runs on the host and the vault server runs in Docker:</p>
+<p><strong>Docker-to-host networking:</strong> if Ollama runs on the host and the vault server runs in Docker:</p>
 <div class="tabbed-set tabbed-alternate" data-tabs="2:2"><input checked="checked" id="__tabbed_2_1" name="__tabbed_2" type="radio" /><input id="__tabbed_2_2" name="__tabbed_2" type="radio" /><div class="tabbed-labels"><label for="__tabbed_2_1">Docker Desktop (macOS/Windows)</label><label for="__tabbed_2_2">Linux (without Docker Desktop)</label></div>
 <div class="tabbed-content">
 <div class="tabbed-block">
@@ -2229,7 +2229,7 @@ curl<span class="w"> </span>http://localhost:11434/api/embeddings<span class="w"
 <p>If embeddings are working, hybrid and semantic search modes will return results ranked by conceptual similarity.</p>
 <hr />
 <h2 id="fastembed">FastEmbed<a class="headerlink" href="#fastembed" title="Permanent link">&para;</a></h2>
-<p><a href="https://github.com/qdrant/fastembed">FastEmbed</a> runs ONNX embedding models directly in Python — no separate server needed.</p>
+<p><a href="https://github.com/qdrant/fastembed">FastEmbed</a> runs ONNX embedding models directly in Python, with no separate server needed.</p>
 <h3 id="install">Install<a class="headerlink" href="#install" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>markdown-vault-mcp<span class="o">[</span>embeddings<span class="o">]</span>
 </code></pre></div>
@@ -2243,15 +2243,15 @@ curl<span class="w"> </span>http://localhost:11434/api/embeddings<span class="w"
 <span class="nv">MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR</span><span class="o">=</span>/path/to/store/fastembed-cache
 <span class="nv">MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH</span><span class="o">=</span>/path/to/store/embeddings
 </code></pre></div>
-<p>That's it — no host URL or API key needed. The model downloads automatically on first use and is reused from cache after that.</p>
+<p>No host URL or API key needed. The model downloads automatically on first use and is reused from cache after that.</p>
 <div class="admonition note">
 <p class="admonition-title">First startup downloads the model</p>
 <p>Set <code>MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR</code> to a persistent location. In Docker, the default compose layout stores this under <code>/data/state/fastembed</code> on the <code>state-data</code> named volume to avoid re-downloading on container recreation.</p>
 </div>
 <div class="admonition info">
-<p class="admonition-title">Memory usage — in-process vs out-of-process</p>
-<p>FastEmbed runs the ONNX model <strong>inside the Python process</strong>, so the container itself bears the full inference memory cost. The default model (<code>BAAI/bge-small-en-v1.5</code>, 512-token context) keeps this manageable. If you switch to a long-context model such as <code>nomic-ai/nomic-embed-text-v1.5</code> (8192-token context), you should reduce <code>_FASTEMBED_ONNX_BATCH_SIZE</code> in <code>providers.py</code> significantly — see issue <a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/306">#306</a>.</p>
-<p>By contrast, Ollama runs inference in a <strong>separate server process</strong> — the Python container only sends HTTP requests and receives float vectors, so its own memory footprint stays low. If memory is tight (e.g., a small VPS), Ollama may be a better fit since its memory is isolated from the MCP server.</p>
+<p class="admonition-title">Memory usage: in-process vs out-of-process</p>
+<p>FastEmbed runs the ONNX model <strong>inside the Python process</strong>, so the container itself bears the full inference memory cost. The default model (<code>BAAI/bge-small-en-v1.5</code>, 512-token context) keeps this manageable. If you switch to a long-context model such as <code>nomic-ai/nomic-embed-text-v1.5</code> (8192-token context), you should reduce <code>_FASTEMBED_ONNX_BATCH_SIZE</code> in <code>providers.py</code> by a large amount; see issue <a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/306">#306</a>.</p>
+<p>By contrast, Ollama runs inference in a <strong>separate server process</strong>; the Python container only sends HTTP requests and receives float vectors, so its own memory footprint stays low. If memory is tight (such as on a small VPS), Ollama may be a better fit since its memory is isolated from the MCP server.</p>
 </div>
 <h3 id="verify_1">Verify<a class="headerlink" href="#verify_1" title="Permanent link">&para;</a></h3>
 <p>Start the server and test with a search:</p>
@@ -2309,17 +2309,17 @@ curl<span class="w"> </span>https://api.openai.com/v1/embeddings<span class="w">
 <h2 id="auto-detection">Auto-detection<a class="headerlink" href="#auto-detection" title="Permanent link">&para;</a></h2>
 <p>If you don't set <code>MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER</code>, the server tries providers in this order:</p>
 <ol>
-<li><strong>OpenAI</strong> — if <code>OPENAI_API_KEY</code> is set</li>
-<li><strong>Ollama</strong> — if <code>OLLAMA_HOST</code> is reachable</li>
-<li><strong>FastEmbed</strong> — if the package is installed</li>
+<li><strong>OpenAI:</strong> if <code>OPENAI_API_KEY</code> is set</li>
+<li><strong>Ollama:</strong> if <code>OLLAMA_HOST</code> is reachable</li>
+<li><strong>FastEmbed:</strong> if the package is installed</li>
 </ol>
-<p>Set <code>MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER</code> explicitly to avoid surprises when your environment changes (e.g., setting <code>OPENAI_API_KEY</code> for another tool will cause the server to switch from Ollama to OpenAI).</p>
+<p>Set <code>MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER</code> explicitly to avoid surprises when your environment changes (setting <code>OPENAI_API_KEY</code> for another tool will cause the server to switch from Ollama to OpenAI).</p>
 <h2 id="common-to-all-providers">Common to all providers<a class="headerlink" href="#common-to-all-providers" title="Permanent link">&para;</a></h2>
 <p>Regardless of which provider you choose:</p>
 <ul>
 <li><strong><code>MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH</code> is required</strong> to enable semantic search. Without it, only keyword search is available.</li>
 <li>Embeddings are built automatically on first startup when a provider is configured. Subsequent starts load the persisted index from disk and only process changed files.</li>
-<li>Use <code>mode="hybrid"</code> in search for best results — it combines keyword (BM25) and semantic (cosine similarity) scores using Reciprocal Rank Fusion.</li>
+<li>Use <code>mode="hybrid"</code> in search for best results; it combines keyword (BM25) and semantic (cosine similarity) scores using Reciprocal Rank Fusion.</li>
 </ul>
 <div class="admonition note">
 <p class="admonition-title">Large vaults</p>
@@ -2332,8 +2332,8 @@ curl<span class="w"> </span>https://api.openai.com/v1/embeddings<span class="w">
 <p>For very large vaults (thousands of notes), the first startup may take several minutes. If the process is interrupted mid-build, it will rebuild from scratch on the next startup — partial indices are never persisted.</p>
 </div>
 <h3 id="chunk-sizing-and-the-embedding-context">Chunk sizing and the embedding context<a class="headerlink" href="#chunk-sizing-and-the-embedding-context" title="Permanent link">&para;</a></h3>
-<p>The chunker (shared by keyword and semantic search) bounds every chunk by <strong>both</strong> a word cap (<code>MARKDOWN_VAULT_MCP_MAX_CHUNK_WORDS</code>, default <code>400</code>) <strong>and</strong> a character cap (<code>MARKDOWN_VAULT_MCP_MAX_CHUNK_CHARS</code>). The character cap exists because a chunk that fits the word cap can still exceed the embedding model's <strong>token</strong> limit — token-dense content (tables, code, CJK) packs far more tokens per word. Without it, such a chunk would abort the build (Ollama returns HTTP 400) or be silently truncated (FastEmbed), producing degraded embeddings.</p>
-<p><code>MAX_CHUNK_CHARS</code> is <strong>derived from the embedding model's token context</strong> when you don't set it explicitly: <code>round(context_length × 2.8)</code> (deliberately conservative for dense content). For example:</p>
+<p>The chunker (shared by keyword and semantic search) bounds every chunk by a word cap (<code>MARKDOWN_VAULT_MCP_MAX_CHUNK_WORDS</code>, default <code>400</code>) and a character cap (<code>MARKDOWN_VAULT_MCP_MAX_CHUNK_CHARS</code>). The character cap exists because a chunk that fits the word cap can still exceed the embedding model's <strong>token</strong> limit; token-dense content (tables, code, CJK) packs far more tokens per word. Without it, such a chunk would abort the build (Ollama returns HTTP 400) or be silently truncated (FastEmbed), producing degraded embeddings.</p>
+<p><code>MAX_CHUNK_CHARS</code> is derived from the embedding model's token context when you don't set it explicitly: <code>round(context_length × 2.8)</code> (deliberately conservative for dense content):</p>
 <ul>
 <li><code>bge-small-en-v1.5</code> (512-token context) → ~1,434 chars</li>
 <li><code>nomic-embed-text</code> (Ollama default, 2048-token context) → ~5,734 chars</li>
@@ -2342,11 +2342,11 @@ curl<span class="w"> </span>https://api.openai.com/v1/embeddings<span class="w">
 </ul>
 <div class="admonition note">
 <p class="admonition-title">Changing the embedding model triggers a one-time cold rebuild</p>
-<p>Because the char cap is derived from the model's context, the chunk boundaries themselves depend on the embedding model. Changing the embedding model (or setting/changing <code>MAX_CHUNK_CHARS</code>) re-chunks the <strong>FTS index</strong>, not just the embeddings — so on the next startup the server automatically rejects the warm-restart short-circuit and does a background cold rebuild (keyword search returns first, semantic search once embeddings finish). No manual <code>reindex</code> is needed. The same one-time rebuild happens when an embedding-enabled vault is upgraded from a release before this behavior existed.</p>
+<p>Because the char cap is derived from the model's context, the chunk boundaries themselves depend on the embedding model. Changing the embedding model (or setting/changing <code>MAX_CHUNK_CHARS</code>) re-chunks the <strong>FTS index</strong>, not just the embeddings, so on the next startup the server automatically rejects the warm-restart short-circuit and does a background cold rebuild (keyword search returns first, semantic search once embeddings finish). No manual <code>reindex</code> is needed. The same one-time rebuild happens when an embedding-enabled vault is upgraded from a release before this behavior existed.</p>
 </div>
 <div class="admonition warning">
 <p class="admonition-title">Long-context models are opt-in</p>
-<p>The defaults (<code>BAAI/bge-small-en-v1.5</code> for FastEmbed, <code>nomic-embed-text</code> for Ollama) are memory-light. Long-context models — <code>nomic-ai/nomic-embed-text-v1.5</code> (8192 tokens) for FastEmbed, or <code>bge-m3:latest</code> for Ollama (note the <code>name:tag</code> form Ollama uses) — give larger chunks but cost substantially more memory: FastEmbed runs ONNX in-process and its self-attention is <code>O(batch × seq_len²)</code> in RAM (see the memory note under <a href="#fastembed">FastEmbed</a> and issue <a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/306">#306</a>); Ollama needs the model to fit GPU VRAM at the larger context. Prefer the defaults unless you have the headroom.</p>
+<p>The defaults (<code>BAAI/bge-small-en-v1.5</code> for FastEmbed, <code>nomic-embed-text</code> for Ollama) are memory-light. Long-context models (<code>nomic-ai/nomic-embed-text-v1.5</code> at 8192 tokens for FastEmbed, or <code>bge-m3:latest</code> for Ollama, using the <code>name:tag</code> form Ollama requires) give larger chunks but cost more memory: FastEmbed runs ONNX in-process and its self-attention is <code>O(batch × seq_len²)</code> in RAM (see the memory note under <a href="#fastembed">FastEmbed</a> and issue <a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/306">#306</a>); Ollama needs the model to fit GPU VRAM at the larger context. Prefer the defaults unless you have the headroom.</p>
 </div>
 
 

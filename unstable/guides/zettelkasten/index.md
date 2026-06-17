@@ -1,10 +1,10 @@
 # Zettelkasten with markdown-vault-mcp
 
-A Zettelkasten is a personal knowledge management system based on atomic notes, cross-linking, and emergent discovery. This guide shows how to use markdown-vault-mcp as your Zettelkasten backend, leveraging its search, linking, and graph navigation tools to build a connected knowledge base.
+A Zettelkasten is a personal knowledge management system based on atomic notes, cross-linking, and emergent discovery. This guide shows how to use markdown-vault-mcp as your Zettelkasten backend, using its search, linking, and graph navigation tools to build a connected knowledge base.
 
 Note
 
-This is one of many ways to organize a vault with markdown-vault-mcp. The server is a generic markdown vault backend — Zettelkasten conventions are applied in this guide but not required or enforced by the server.
+This is one of many ways to organize a vault with markdown-vault-mcp. The server is a generic markdown vault backend; Zettelkasten conventions are applied in this guide but not required or enforced by the server.
 
 ## Vault Setup
 
@@ -43,7 +43,7 @@ vault/
     diagram.pdf
 ```
 
-Organize by workflow stage or topic, but **rely on links, not folders, for knowledge structure.** Folders are convenience — the graph is the system.
+Organize by workflow stage or topic, but **rely on links, not folders, for knowledge structure.** Folders are convenience; the graph is the system.
 
 ### Frontmatter schema
 
@@ -61,11 +61,11 @@ created: YYYY-MM-DD
 
 **Field meanings:**
 
-- `title` — The note's heading. Used for display in lists and searches.
-- `type` — Note category: `fleeting` (quick capture), `literature` (extracted from source), `permanent` (your own synthesis), `moc` (map of content / hub note). Helps you review notes by stage.
-- `tags` — List of keywords. Searchable via `filters={"tags": "value"}`.
-- `source` — Full URL or bibliographic citation. Used to credit the original source for literature notes.
-- `created` — ISO 8601 date when the note was written. Useful for reviewing note age.
+- `title`: The note's heading. Used for display in lists and searches.
+- `type`: Note category: `fleeting` (quick capture), `literature` (extracted from source), `permanent` (your own synthesis), `moc` (map of content / hub note). Helps you review notes by stage.
+- `tags`: List of keywords. Searchable via `filters={"tags": "value"}`.
+- `source`: Full URL or bibliographic citation. Used to credit the original source for literature notes.
+- `created`: ISO 8601 date when the note was written. Useful for reviewing note age.
 
 ### Make frontmatter fields searchable
 
@@ -92,9 +92,9 @@ markdown-vault-mcp search "query" --folder Notes
 
 The server uses file paths as note identity. Choose any naming scheme:
 
-- **Timestamp-based:** `YYYYMMDDHHMM-distributed-consensus.md` — sorts chronologically, no collisions
-- **Title-based:** `distributed-consensus.md` — human-readable, easier to read in logs
-- **Luhmann-style IDs:** `1a.2b.3c.md` — mimics paper ZK, encodes hierarchy (rarely needed)
+- **Timestamp-based:** `YYYYMMDDHHMM-distributed-consensus.md` (sorts chronologically, no collisions)
+- **Title-based:** `distributed-consensus.md` (human-readable, easier to read in logs)
+- **Luhmann-style IDs:** `1a.2b.3c.md` (mimics paper ZK, encodes hierarchy; rarely needed)
 
 Pick one and stick to it. The server handles all three equally well.
 
@@ -140,7 +140,7 @@ markdown-vault-mcp search "*" --folder Inbox
 
 ### 2. Develop (Literature → Permanent)
 
-Expand fleeting notes into permanent knowledge. Two paths:
+Expand inbox notes into permanent knowledge. Two paths:
 
 **From external sources (literature notes):**
 
@@ -188,12 +188,12 @@ context = vault.reader.get_context("Notes/consensus.md")
 
 Returns:
 
-- `backlinks` — notes that link here (who cites this idea?)
-- `outlinks` — notes this links to (what does this build on?)
-- `similar` — semantically related notes not yet linked
-- `folder_notes` — other notes in the same folder
-- `tags` — frontmatter tags for grouping
-- `modified_at` — last modification timestamp
+- `backlinks`: notes that link here (who cites this idea?)
+- `outlinks`: notes this links to (what does this build on?)
+- `similar`: semantically related notes not yet linked
+- `folder_notes`: other notes in the same folder
+- `tags`: frontmatter tags for grouping
+- `modified_at`: last modification timestamp
 
 **Find related notes you haven't linked yet:**
 
@@ -232,9 +232,9 @@ vault.writer.edit(
 
 All three link formats work:
 
-- `[[wikilinks]]` — shortest, preferred for internal links
-- `[Markdown links](path.md)` — standard markdown
-- `[Reference-style][1]\n\n[1]: path.md` — separates link text from destination
+- `[[wikilinks]]`: shortest, preferred for internal links
+- `[Markdown links](path.md)`: standard markdown
+- `[Reference-style][1]\n\n[1]: path.md`: separates link text from destination
 
 **Rename safely with link updates:**
 
@@ -299,7 +299,7 @@ A **MOC** (Map of Content) is a curated hub note that aggregates links to relate
 
 **How to build one:**
 
-1. Identify the theme — e.g., "Distributed Systems"
+1. Identify the theme (such as "Distributed Systems")
 
 1. Search for related notes:
 
@@ -404,23 +404,23 @@ The prompt will:
 
 **Invoke via MCP prompt:**
 
-`create_from_template` is an MCP prompt, not a Python API method. Invoke it through your MCP client (e.g., Claude):
+`create_from_template` is an MCP prompt, not a Python API method. Invoke it through your MCP client (such as Claude):
 
 ```
 Use the create_from_template prompt with template_name="literature"
 ```
 
-The prompt will call `list_documents(folder=<templates_folder>)` to enumerate templates, then `read` the chosen one, then `write` the filled note — all through vault tools.
+The prompt calls `list_documents(folder=<templates_folder>)` to enumerate templates, `read` to fetch the chosen one, and `write` to create the filled note. All operations go through vault tools.
 
 ## Using the Zettelkasten Prompt
 
 The `examples/zettelkasten/prompts/zettelkasten.md` prompt guides you through connecting a note to your vault in five steps:
 
-1. **Read and understand** — extract the central claim
-1. **Survey the neighborhood** — see existing backlinks and similar notes
-1. **Discover broader connections** — search for related permanent notes
-1. **Suggest links** — present new connections with context
-1. **Check for MOC opportunity** — flag if a new MOC would help
+1. **Read and understand**: extract the central claim
+1. **Survey the neighborhood**: see existing backlinks and similar notes
+1. **Discover broader connections**: search for related permanent notes
+1. **Suggest links**: present new connections with context
+1. **Check for MOC opportunity**: flag if a new MOC would help
 
 **Configure prompt mounting:**
 
@@ -433,7 +433,7 @@ markdown-vault-mcp serve
 
 Then in Claude, the `zettelkasten` prompt is available for use.
 
-**Fire the prompt from Claude.ai's `+` menu.** Once the server is added as a connector on Claude.ai, every MCP prompt — including `zettelkasten` — appears in the compose area's `+` menu. Click `+`, select **connectors**, pick the server, pick the prompt. Claude opens with the invocation scaffolded, so you don't need to remember the arguments. See [How to invoke prompts](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/prompts/#how-to-invoke-prompts) for other clients.
+**Fire the prompt from Claude.ai's `+` menu.** Once the server is added as a connector on Claude.ai, every MCP prompt (including `zettelkasten`) appears in the compose area's `+` menu. Click `+`, select **connectors**, pick the server, pick the prompt. Claude opens with the invocation scaffolded, so you don't need to remember the arguments. See [How to invoke prompts](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/prompts/#how-to-invoke-prompts) for other clients.
 
 **Use the prompt:**
 
@@ -441,7 +441,7 @@ Then in Claude, the `zettelkasten` prompt is available for use.
 In Claude, call: zettelkasten(path='Notes/my-idea.md')
 ```
 
-The prompt will walk you through connecting the note, discovering related ideas, and optionally creating a MOC.
+The prompt guides you through connecting the note to related ideas and flags when a new MOC would help.
 
 ## Tips and Best Practices
 
@@ -456,7 +456,7 @@ print(f"Broken links: {stats.broken_link_count}")
 print(f"Orphaned notes: {stats.orphan_count}")
 ```
 
-This gives you a baseline for the monthly review.
+Run it again each month to track how your vault grows.
 
 ### Use `get_context()` before every edit
 
@@ -511,7 +511,7 @@ This reveals unexpected bridges between domains.
 
 ### Link aggressively, prune minimally
 
-Don't agonize over link relevance. If two notes touch on similar ideas, link them. The search tools and `get_context()` will help you rediscover connections. Over-linking is better than under-linking — the network gets richer as you explore.
+Don't agonize over link relevance. If two notes touch on similar ideas, link them. The search tools and `get_context()` will help you rediscover connections. Over-linking is better than under-linking; the network gets richer as you explore.
 
 Exception: Delete broken links immediately. `get_broken_links()` makes this easy.
 
@@ -529,12 +529,12 @@ tags: [system-type-1, category-a-variant-b]
 
 Use search and links for discovery. Tags are just shortcuts.
 
-### Let Claude split or merge fleeting notes
+### Let Claude split or merge quick-capture notes
 
 Two shape operations that an LLM handles cleanly but manual workflows usually skip:
 
-- **Split.** When a fleeting note contains two ideas — one literature reference and one nascent permanent claim — ask Claude to split it into two notes. Each is then developed independently.
-- **Merge.** When a fleeting note restates or extends an existing permanent note, ask Claude to merge it (add as a new paragraph or `## Extension` section) rather than letting near-duplicates accumulate. The [`search`](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/tools/#search) + `read` + `write` + `delete` composition handles this in a single prompt turn.
+- **Split.** When a quick-capture note contains two ideas (one literature reference and one early permanent claim), ask Claude to split it into two notes. Each is then developed independently.
+- **Merge.** When a quick-capture note restates or extends an existing permanent note, ask Claude to merge it (add as a new paragraph or `## Extension` section) rather than letting near-duplicates accumulate. The [`search`](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/tools/#search) + `read` + `write` + `delete` composition handles this in a single prompt turn.
 
 Resist pre-splitting or pre-merging before review. Claude does both in one pass.
 
@@ -543,6 +543,6 @@ Resist pre-splitting or pre-merging before review. Claude does both in one pass.
 - **Read the design document** for details on the linking system and search algorithms: [`docs/design.md`](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/design/index.md)
 - **Explore the MCP tools** to understand the full API: [`tools/index.md`](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/tools/index.md)
 - **Review the examples** for templates and prompts: [`examples/zettelkasten/`](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/examples/zettelkasten/index.md)
-- **Prefer an action-oriented workflow?** Try the [PARA guide](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/para/index.md) — Projects, Areas, Resources, Archive with triage, kickoff, and weekly review prompts
-- **Ambient patterns**: [`docs/prompts.md`](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/prompts/#ambient-patterns-without-prompts) — flows the LLM handles from prose alone (URL capture, research, split/merge, ad-hoc link proposal)
-- **Research workflows**: [research-workflows.md](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/research-workflows/index.md) — literature grounding, fact-checking, and writing papers from notes
+- **Prefer an action-oriented workflow?** Try the [PARA guide](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/para/index.md): Projects, Areas, Resources, Archive with triage, kickoff, and weekly review prompts
+- **Ambient patterns**: [`docs/prompts.md`](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/prompts/#ambient-patterns-without-prompts): flows the LLM handles from prose alone (URL capture, research, split/merge, ad-hoc link proposal)
+- **Research workflows**: [research-workflows.md](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/research-workflows/index.md): literature grounding, fact-checking, and writing papers from notes

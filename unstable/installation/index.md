@@ -118,4 +118,4 @@ markdown-vault-mcp search "hello world"
 
 ## Project-specific notes
 
-*Add domain-specific install notes here, e.g. system dependencies, optional extras, or custom configuration steps.*
+*Add domain-specific install notes here, such as system dependencies, optional extras, or custom configuration steps.*

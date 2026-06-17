@@ -1894,7 +1894,7 @@
 
 
 <h1 id="claude-code-plugin">Claude Code Plugin<a class="headerlink" href="#claude-code-plugin" title="Permanent link">&para;</a></h1>
-<p>This guide walks through installing markdown-vault-mcp as a <a href="https://claude.ai/claude-code">Claude Code</a> plugin — either for the current project or globally.</p>
+<p>This guide walks through installing markdown-vault-mcp as a <a href="https://claude.ai/claude-code">Claude Code</a> plugin, either for the current project or globally.</p>
 <h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
 <p>The Claude Code plugin installs markdown-vault-mcp directly into your Claude Code environment. It wires up the most commonly needed env vars with sensible defaults, and also installs a <code>vault-workflow</code> skill that gives Claude guidance on search strategy, reading patterns, link tools, and write semantics.</p>
 <h2 id="prerequisites">Prerequisites<a class="headerlink" href="#prerequisites" title="Permanent link">&para;</a></h2>
@@ -1915,7 +1915,7 @@
 </code></pre></div>
 </div>
 <h2 id="configure">Configure<a class="headerlink" href="#configure" title="Permanent link">&para;</a></h2>
-<p>The only required env var is <code>MARKDOWN_VAULT_MCP_SOURCE_DIR</code> — set it to the path of your vault:</p>
+<p>The only required env var is <code>MARKDOWN_VAULT_MCP_SOURCE_DIR</code>. Set it to the path of your vault:</p>
 <div class="tabbed-set tabbed-alternate" data-tabs="1:2"><input checked="checked" id="__tabbed_1_1" name="__tabbed_1" type="radio" /><input id="__tabbed_1_2" name="__tabbed_1" type="radio" /><div class="tabbed-labels"><label for="__tabbed_1_1">Shell (current session)</label><label for="__tabbed_1_2">Shell profile (persistent)</label></div>
 <div class="tabbed-content">
 <div class="tabbed-block">
@@ -1988,12 +1988,12 @@
 </tr>
 </tbody>
 </table>
-<p>In addition to the MCP server, the plugin installs the <strong><code>vault-workflow</code> skill</strong>, which gives Claude guidance on:</p>
+<p>The plugin also installs the <strong><code>vault-workflow</code> skill</strong>, which gives Claude guidance on:</p>
 <ul>
-<li><strong>Search strategy</strong> — when to use keyword vs. semantic vs. hybrid search</li>
-<li><strong>Reading patterns</strong> — how to read notes efficiently, follow links, and use <code>get_context</code></li>
-<li><strong>Link tools</strong> — how to use <code>get_backlinks</code>, <code>get_outlinks</code>, <code>get_connection_path</code>, and the graph tools</li>
-<li><strong>Write semantics</strong> — how to create, edit, rename, and delete notes safely</li>
+<li><strong>Search strategy</strong>: when to use keyword vs. semantic vs. hybrid search</li>
+<li><strong>Reading patterns</strong>: note reading, link traversal, <code>get_context</code> usage, and efficient navigation</li>
+<li><strong>Link tools</strong>: <code>get_backlinks</code>, <code>get_outlinks</code>, <code>get_connection_path</code>, and the graph tools</li>
+<li><strong>Write semantics</strong>: creating, editing, renaming, and deleting notes safely</li>
 </ul>
 <h2 id="update">Update<a class="headerlink" href="#update" title="Permanent link">&para;</a></h2>
 <p>To update the plugin to the latest version:</p>

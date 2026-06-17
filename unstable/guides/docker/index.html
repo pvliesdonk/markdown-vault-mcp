@@ -2186,11 +2186,11 @@
 <h1 id="docker">Docker<a class="headerlink" href="#docker" title="Permanent link">&para;</a></h1>
 <p>This guide walks through five progressive Docker deployments:</p>
 <ol>
-<li><strong>Basic</strong> — read-only container with keyword search via HTTP</li>
-<li><strong>Git write support</strong> — enable write operations with auto-commit and push</li>
-<li><strong>Bearer token authentication</strong> — simple static token auth</li>
-<li><strong>OIDC authentication</strong> — protect HTTP access with an OIDC provider</li>
-<li><strong>MCP Apps</strong> — enable browser-based vault views for Apps-capable clients</li>
+<li><strong>Basic</strong>: read-only container with keyword search via HTTP</li>
+<li><strong>Git write support</strong>: enable write operations with auto-commit and push</li>
+<li><strong>Bearer token authentication</strong>: simple static token auth</li>
+<li><strong>OIDC authentication</strong>: protect HTTP access with an OIDC provider</li>
+<li><strong>MCP Apps</strong>: enable browser-based vault views for Apps-capable clients</li>
 </ol>
 <p>Each step builds on the previous one.</p>
 <h2 id="step-1-basic-container-via-http">Step 1: Basic container via HTTP<a class="headerlink" href="#step-1-basic-container-via-http" title="Permanent link">&para;</a></h2>
@@ -2207,7 +2207,7 @@
 <span class="nv">MARKDOWN_VAULT_MCP_SERVER_NAME</span><span class="o">=</span>my-vault
 <span class="nv">MARKDOWN_VAULT_MCP_EXCLUDE</span><span class="o">=</span>.obsidian/**,.trash/**
 </code></pre></div>
-<p>Replace <code>/home/user/ObsidianVault</code> with the path to your vault <strong>on the host</strong>. Inside the container, the vault is always mounted at <code>/data/vault</code> — the <code>compose.yml</code> handles this mapping automatically.</p>
+<p>Replace <code>/home/user/ObsidianVault</code> with the path to your vault <strong>on the host</strong>. Inside the container, the vault is always mounted at <code>/data/vault</code> (the <code>compose.yml</code> handles this mapping automatically).</p>
 <h3 id="start-with-docker-compose">Start with Docker Compose<a class="headerlink" href="#start-with-docker-compose" title="Permanent link">&para;</a></h3>
 <p>The repository includes a <code>compose.yml</code>. If you cloned the repo, just run:</p>
 <div class="highlight"><pre><span></span><code>docker<span class="w"> </span>compose<span class="w"> </span>up<span class="w"> </span>-d
@@ -2225,10 +2225,10 @@ docker<span class="w"> </span>compose<span class="w"> </span>ps
 <span class="c1"># Check logs for successful startup</span>
 docker<span class="w"> </span>compose<span class="w"> </span>logs<span class="w"> </span>markdown-vault-mcp
 </code></pre></div>
-<p>You should see log output indicating the index was built successfully (e.g., number of documents indexed). If you see permission errors, check the UID/GID tip below.</p>
+<p>You should see log output with the number of documents indexed. If you see permission errors, check the UID/GID tip below.</p>
 <div class="admonition tip">
 <p class="admonition-title">UID/GID handling</p>
-<p>Named volumes work out of the box — the entrypoint automatically fixes ownership on startup. For <strong>bind-mounted vaults</strong> where the host user doesn't match the container user (UID 1000), either set <code>PUID</code>/<code>PGID</code> environment variables or rebuild:</p>
+<p>Named volumes work out of the box; the entrypoint automatically fixes ownership on startup. For <strong>bind-mounted vaults</strong> where the host user doesn't match the container user (UID 1000), either set <code>PUID</code>/<code>PGID</code> environment variables or rebuild:</p>
 <div class="highlight"><pre><span></span><code>docker<span class="w"> </span>compose<span class="w"> </span>build<span class="w"> </span>--build-arg<span class="w"> </span><span class="nv">APP_UID</span><span class="o">=</span><span class="k">$(</span>id<span class="w"> </span>-u<span class="k">)</span><span class="w"> </span>--build-arg<span class="w"> </span><span class="nv">APP_GID</span><span class="o">=</span><span class="k">$(</span>id<span class="w"> </span>-g<span class="k">)</span>
 </code></pre></div>
 <p>See <a href="../../deployment/docker/#uidgid-configuration">Docker deployment</a> for more options.</p>
@@ -2259,11 +2259,11 @@ docker<span class="w"> </span>compose<span class="w"> </span>logs<span class="w"
 </code></pre></div>
 <p><strong>What these do:</strong></p>
 <ul>
-<li><code>READ_ONLY=false</code> — enables write, edit, delete, rename tools</li>
-<li><code>GIT_REPO_URL</code> — enables managed mode (clone/remote validation)</li>
-<li><code>GIT_USERNAME</code> / <code>GIT_TOKEN</code> — HTTPS auth for pull/push</li>
-<li><code>GIT_PUSH_DELAY_S=30</code> — push after 30 seconds of write-idle time</li>
-<li><code>GIT_COMMIT_NAME</code> / <code>GIT_COMMIT_EMAIL</code> — required in Docker where <code>git config user.name</code> is unset</li>
+<li><code>READ_ONLY=false</code>: enables write, edit, delete, rename tools</li>
+<li><code>GIT_REPO_URL</code>: enables managed mode (clone/remote validation)</li>
+<li><code>GIT_USERNAME</code> / <code>GIT_TOKEN</code>: HTTPS auth for pull/push</li>
+<li><code>GIT_PUSH_DELAY_S=30</code>: push after 30 seconds of write-idle time</li>
+<li><code>GIT_COMMIT_NAME</code> / <code>GIT_COMMIT_EMAIL</code>: required in Docker where <code>git config user.name</code> is unset</li>
 </ul>
 <div class="admonition warning">
 <p class="admonition-title">HTTPS remotes only</p>
@@ -2294,7 +2294,7 @@ docker<span class="w"> </span>compose<span class="w"> </span>logs<span class="w"
 <p>For more details on bearer token auth (client usage, when to use it), see the <a href="../authentication/#bearer-token">Authentication guide</a>.</p>
 <hr />
 <h2 id="step-4-add-oidc-authentication">Step 4: Add OIDC authentication<a class="headerlink" href="#step-4-add-oidc-authentication" title="Permanent link">&para;</a></h2>
-<p><strong>Goal:</strong> Protect the HTTP endpoint with OIDC authentication (e.g., Authelia, Keycloak).</p>
+<p><strong>Goal:</strong> Protect the HTTP endpoint with OIDC authentication (such as Authelia or Keycloak).</p>
 <p><strong>Prerequisites:</strong> Step 1 (or Step 2) complete. An OIDC provider running and accessible. A domain name with TLS (OIDC requires HTTPS).</p>
 <h3 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h3>
 <p>OIDC requires four environment variables added to your <code>.env</code>:</p>
@@ -2312,34 +2312,34 @@ docker<span class="w"> </span>compose<span class="w"> </span>logs<span class="w"
 <h3 id="detailed-setup">Detailed setup<a class="headerlink" href="#detailed-setup" title="Permanent link">&para;</a></h3>
 <p>For the full OIDC setup including provider registration, Traefik configuration, subpath deployments, and troubleshooting:</p>
 <ul>
-<li><a href="../authentication/#oidc">Authentication guide — OIDC section</a> — overview and variable reference</li>
-<li><a href="../oidc-providers/">OIDC provider setup</a> — step-by-step for Authelia, Keycloak, Google, GitHub</li>
-<li><a href="../../deployment/oidc/">OIDC deployment reference</a> — Docker Compose, subpath config, architecture</li>
+<li><a href="../authentication/#oidc">Authentication guide: OIDC section</a>: overview and variable reference</li>
+<li><a href="../oidc-providers/">OIDC provider setup</a>: step-by-step for Authelia, Keycloak, Google, GitHub</li>
+<li><a href="../../deployment/oidc/">OIDC deployment reference</a>: Docker Compose, subpath config, architecture</li>
 </ul>
 <h3 id="verify">Verify<a class="headerlink" href="#verify" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code>docker<span class="w"> </span>compose<span class="w"> </span>up<span class="w"> </span>-d
 docker<span class="w"> </span>compose<span class="w"> </span>logs<span class="w"> </span>markdown-vault-mcp<span class="w"> </span>--tail<span class="w"> </span><span class="m">20</span>
 </code></pre></div>
-<p>You should see no OIDC-related errors. Navigate to your server URL in a browser — you should be redirected to your OIDC provider's login page.</p>
+<p>You should see no OIDC-related errors. Navigate to your server URL in a browser; you should be redirected to your OIDC provider's login page.</p>
 <hr />
 <h2 id="step-5-enable-mcp-apps-views">Step 5: Enable MCP Apps views<a class="headerlink" href="#step-5-enable-mcp-apps-views" title="Permanent link">&para;</a></h2>
-<p><strong>Goal:</strong> Allow Apps-capable MCP clients (e.g., Claude on claude.ai) to render the interactive vault explorer (Context Card, Graph Explorer, Vault Browser, Note Preview).</p>
+<p><strong>Goal:</strong> Allow Apps-capable MCP clients (such as Claude on claude.ai) to render the interactive vault explorer (Context Card, Graph Explorer, Vault Browser, Note Preview).</p>
 <p><strong>Prerequisites:</strong> Step 1 complete. The server must be reachable via HTTP (which Docker deployments already use).</p>
 <h3 id="configure-the-app-domain">Configure the app domain<a class="headerlink" href="#configure-the-app-domain" title="Permanent link">&para;</a></h3>
-<p>MCP Apps views are served as an HTML resource sandboxed to a specific domain. The domain is auto-computed from <code>BASE_URL</code>, but you can override it if needed.</p>
+<p>MCP Apps views are HTML resources sandboxed to a specific domain. The domain is auto-computed from <code>BASE_URL</code>, but you can override it if needed.</p>
 <p>Add to your <code>.env</code>:</p>
 <div class="highlight"><pre><span></span><code><span class="c1"># .env (add to your existing config)</span>
 <span class="hll"><span class="nv">MARKDOWN_VAULT_MCP_BASE_URL</span><span class="o">=</span>https://mcp.example.com
 </span><span class="hll"><span class="c1"># MARKDOWN_VAULT_MCP_APP_DOMAIN=  # override only if auto-computed domain doesn&#39;t work</span>
 </span></code></pre></div>
-<p>If <code>BASE_URL</code> is already set (e.g., for OIDC), no additional configuration is needed — the app domain is auto-computed.</p>
+<p>If <code>BASE_URL</code> is already set (as it would be for OIDC), no additional configuration is needed; the app domain is auto-computed.</p>
 <h3 id="configure-session-persistence">Configure session persistence<a class="headerlink" href="#configure-session-persistence" title="Permanent link">&para;</a></h3>
 <p>For long-running HTTP sessions (especially with MCP Apps), configure the event store so sessions survive container restarts:</p>
 <div class="highlight"><pre><span></span><code><span class="nv">MARKDOWN_VAULT_MCP_KV_STORE_URL</span><span class="o">=</span>file:///data/state
 </code></pre></div>
 <p>This is the default when using the Docker image with the <code>state-data</code> volume (the <code>events</code> keyspace is namespaced inside the directory). The legacy <code>MARKDOWN_VAULT_MCP_EVENT_STORE_URL</code> still works but logs a one-shot deprecation warning. For development, use <code>memory://</code> (sessions lost on restart).</p>
 <h3 id="verify_1">Verify<a class="headerlink" href="#verify_1" title="Permanent link">&para;</a></h3>
-<p>Restart the container and connect from an Apps-capable MCP client. Ask Claude to "browse my vault" — you should see the interactive SPA with four tabs.</p>
+<p>Restart the container and connect from an Apps-capable MCP client. Ask Claude to "browse my vault"; you should see the interactive SPA with four tabs.</p>
 <p>For full details on the views and architecture, see the <a href="../mcp-apps/">MCP Apps guide</a>.</p>
 
 

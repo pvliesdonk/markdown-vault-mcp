@@ -1924,36 +1924,36 @@
 
 <h1 id="markdown-vault-mcp">markdown-vault-mcp<a class="headerlink" href="#markdown-vault-mcp" title="Permanent link">&para;</a></h1>
 <p>A generic markdown vault <a href="https://modelcontextprotocol.io/">MCP</a> server with FTS5 full-text search, semantic vector search, frontmatter-aware indexing, incremental reindexing, and non-markdown attachment support.</p>
-<p>Point it at a directory of Markdown files — an Obsidian vault, a docs folder, a Zettelkasten, a PARA vault — and it exposes search, read, write, and edit tools over the <a href="https://modelcontextprotocol.io/">Model Context Protocol</a>.</p>
+<p>Point it at a directory of Markdown files (an Obsidian vault, a docs folder, a Zettelkasten, a PARA vault) and it exposes search, read, write, and edit tools over the <a href="https://modelcontextprotocol.io/">Model Context Protocol</a>.</p>
 <!-- DOMAIN-INDEX-FEATURES-START -->
 <h2 id="features">Features<a class="headerlink" href="#features" title="Permanent link">&para;</a></h2>
 <ul>
-<li><strong>Full-text search</strong> — SQLite FTS5 with BM25 scoring, porter stemming</li>
-<li><strong>Semantic search</strong> — cosine similarity over embedding vectors (FastEmbed, Ollama, or OpenAI)</li>
-<li><strong>Hybrid search</strong> — Reciprocal Rank Fusion combining FTS5 and vector results</li>
-<li><strong>Frontmatter-aware</strong> — indexes YAML frontmatter fields, supports required field enforcement</li>
-<li><strong>Incremental reindexing</strong> — hash-based change detection, only re-processes modified files</li>
-<li><strong>Write operations</strong> — create, edit, delete, rename documents with automatic index updates</li>
-<li><strong>Attachment support</strong> — read, write, delete, and list non-markdown files (PDFs, images, etc.)</li>
-<li><strong>Git integration</strong> — optional auto-commit and push on every write via <code>GIT_ASKPASS</code></li>
-<li><strong>OIDC authentication</strong> — optional token-based auth for HTTP deployments</li>
-<li><strong>MCP tools</strong> — search, read, write, edit, delete, rename, link graph analysis, and admin operations</li>
-<li><strong>MCP resources</strong> — vault configuration, statistics, tags, folders, document outlines, similar notes, and recent notes</li>
-<li><strong>MCP prompts</strong> — summarize, research, discuss, create from template, compare, and find related notes</li>
-<li><strong>MCP Apps</strong> — four browser-based views (Context Card, Graph Explorer, Vault Browser, Note Preview) for clients supporting the MCP Apps protocol</li>
-<li><strong>One-time transfer links</strong> — mint short-lived capability URLs to move files into or out of the vault out-of-band over HTTP (<code>create_download_link</code> / <code>create_upload_link</code>; HTTP/SSE transports only)</li>
+<li><strong>Full-text search</strong>: SQLite FTS5 with BM25 scoring, porter stemming</li>
+<li><strong>Semantic search</strong>: cosine similarity over embedding vectors (FastEmbed, Ollama, or OpenAI)</li>
+<li><strong>Hybrid search</strong>: Reciprocal Rank Fusion combining FTS5 and vector results</li>
+<li><strong>Frontmatter-aware</strong>: indexes YAML frontmatter fields, supports required field enforcement</li>
+<li><strong>Incremental reindexing</strong>: hash-based change detection, only re-processes modified files</li>
+<li><strong>Write operations</strong>: create, edit, delete, rename documents with automatic index updates</li>
+<li><strong>Attachment support</strong>: read, write, delete, and list non-markdown files (PDFs, images, and so on)</li>
+<li><strong>Git integration</strong>: optional auto-commit and push on every write via <code>GIT_ASKPASS</code></li>
+<li><strong>OIDC authentication</strong>: optional token-based auth for HTTP deployments</li>
+<li><strong>MCP tools</strong>: search, read, write, edit, delete, rename, link graph analysis, and admin operations</li>
+<li><strong>MCP resources</strong>: vault configuration, statistics, tags, folders, document outlines, similar notes, and recent notes</li>
+<li><strong>MCP prompts</strong>: summarize, research, discuss, create from template, compare, and find related notes</li>
+<li><strong>MCP Apps</strong>: browser-based views (Context Card, Graph Explorer, Vault Browser, and Note Preview) for clients supporting the MCP Apps protocol</li>
+<li><strong>One-time transfer links</strong>: mint short-lived capability URLs to move files into or out of the vault out-of-band over HTTP (<code>create_download_link</code> / <code>create_upload_link</code>; HTTP/SSE transports only)</li>
 <li><strong><a href="configuration-generator/">Configuration Generator</a></strong>: build a working config, Docker command, or systemd unit in your browser.</li>
 </ul>
 <!-- DOMAIN-INDEX-FEATURES-END -->
 
 <!-- DOMAIN-INDEX-USE-CASES-START -->
 <h2 id="what-you-can-do-with-it">What you can do with it<a class="headerlink" href="#what-you-can-do-with-it" title="Permanent link">&para;</a></h2>
-<p>A few flows the server enables with an LLM on top — none of these require a bespoke prompt:</p>
+<p>A few flows the server enables with an LLM on top (none of these require a bespoke prompt):</p>
 <ul>
 <li><strong>"Fetch <url> and summarize into a Resource note."</strong> Claude composes <code>fetch</code> + <code>search</code> + <code>write</code>.</li>
 <li><strong>"Research <topic> and create a set of interlinked notes."</strong> Claude composes web tools + <code>write</code> with wikilinks. See the <a href="guides/research-workflows/">Research workflows guide</a> for the full loop.</li>
 <li><strong>"Summarize today's conversations into Inbox notes."</strong> Claude.ai composes <code>conversation_search</code> + <code>recent_chats</code> + <code>write</code>; the <a href="guides/para/#using-the-para-prompts"><code>para-capture-chats</code></a> prompt is the one-click version.</li>
-<li><strong>Find missing links.</strong> The <a href="prompts/"><code>propose-links</code></a> builtin prompt scans recently-modified notes and proposes meaningful connections.</li>
+<li><strong>Find missing links.</strong> The <a href="prompts/"><code>propose-links</code></a> builtin prompt scans recently modified notes and proposes useful connections.</li>
 </ul>
 <p>See <a href="prompts/">MCP Prompts</a> for the codified workflows and the ambient-pattern reference.</p>
 <h2 id="quick-start">Quick Start<a class="headerlink" href="#quick-start" title="Permanent link">&para;</a></h2>
@@ -1980,7 +1980,7 @@ docker<span class="w"> </span>compose<span class="w"> </span>up<span class="w"> 
 </code></pre></div>
 <p>See <a href="installation/">Installation</a> for all installation methods (PyPI, uv, Docker, Linux packages, Claude Code plugin) and <a href="configuration/">Configuration</a> for all available options.</p>
 <h2 id="architecture">Architecture<a class="headerlink" href="#architecture" title="Permanent link">&para;</a></h2>
-<p>The library is fully synchronous — no asyncio in core modules. The MCP server layer uses <code>asyncio.to_thread()</code> to bridge to the async FastMCP framework.</p>
+<p>The library is fully synchronous, with no asyncio in core modules. The MCP server layer uses <code>asyncio.to_thread()</code> to bridge to the async FastMCP layer.</p>
 <div class="highlight"><pre><span></span><code>┌──────────────┐
 │  MCP Server   │  ← FastMCP, asyncio.to_thread()
 ├──────────────┤

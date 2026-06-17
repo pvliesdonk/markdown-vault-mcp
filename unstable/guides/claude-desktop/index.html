@@ -2176,14 +2176,14 @@
 <h1 id="claude-desktop">Claude Desktop<a class="headerlink" href="#claude-desktop" title="Permanent link">&para;</a></h1>
 <p>This guide walks through four progressive setups for using markdown-vault-mcp with <a href="https://claude.ai/download">Claude Desktop</a>:</p>
 <ol>
-<li><strong>Basic</strong> — read-only keyword search, no external services</li>
-<li><strong>Git write support</strong> — enable write/edit/delete with auto-commit</li>
-<li><strong>Semantic search</strong> — add embedding-based search for better results</li>
-<li><strong>MCP Apps views</strong> — browse your vault visually with Context Card, Graph Explorer, and more</li>
+<li><strong>Basic</strong>: read-only keyword search, no external services</li>
+<li><strong>Git write support</strong>: enable write/edit/delete with auto-commit</li>
+<li><strong>Semantic search</strong>: add embedding-based search for better results</li>
+<li><strong>MCP Apps views</strong>: interactive visual interface for your vault</li>
 </ol>
 <p>Each step builds on the previous one. Start with Step 0 (easiest) or Step 1 (full control) and add features as needed.</p>
 <h2 id="step-0-install-via-mcpb-bundle">Step 0: Install via .mcpb bundle<a class="headerlink" href="#step-0-install-via-mcpb-bundle" title="Permanent link">&para;</a></h2>
-<p><strong>Goal:</strong> Install markdown-vault-mcp in Claude Desktop with a guided wizard — no JSON editing required.</p>
+<p><strong>Goal:</strong> Install markdown-vault-mcp in Claude Desktop with a guided wizard (no JSON editing required).</p>
 <p><strong>Prerequisites:</strong> Claude Desktop &gt;= 0.10.0.</p>
 <p>This is the easiest option for non-technical users.</p>
 <h3 id="install">Install<a class="headerlink" href="#install" title="Permanent link">&para;</a></h3>
@@ -2200,7 +2200,7 @@
 </ol>
 <div class="admonition note">
 <p class="admonition-title">Configured through the GUI wizard</p>
-<p>The <code>.mcpb</code> bundle surfaces a broad set of env vars in Claude Desktop's wizard — vault path, read-only mode, state/index/embedding paths, the embedding provider and its per-provider model settings, git configuration, and auth (bearer / OIDC), among others. If you need to set an option the wizard doesn't expose, use Step 1 (manual config) instead.</p>
+<p>The <code>.mcpb</code> bundle surfaces a broad set of env vars in Claude Desktop's wizard: vault path, read-only mode, state/index/embedding paths, the embedding provider and its per-provider model settings, git configuration, and auth (bearer / OIDC), among others. If you need to set an option the wizard doesn't expose, use Step 1 (manual config) instead.</p>
 </div>
 <hr />
 <h2 id="step-1-basic-read-only-setup">Step 1: Basic read-only setup<a class="headerlink" href="#step-1-basic-read-only-setup" title="Permanent link">&para;</a></h2>
@@ -2268,7 +2268,7 @@
 </div>
 <div class="admonition tip">
 <p class="admonition-title">Exclude Obsidian internals</p>
-<p><code>MARKDOWN_VAULT_MCP_EXCLUDE</code> keeps <code>.obsidian/</code> config files and <code>.trash/</code> out of search results. Add any other directories you want to skip (e.g., <code>_templates/**</code>).</p>
+<p><code>MARKDOWN_VAULT_MCP_EXCLUDE</code> keeps <code>.obsidian/</code> config files and <code>.trash/</code> out of search results. Add any other directories you want to skip, such as <code>_templates/**</code>.</p>
 </div>
 <h3 id="restart-claude-desktop">Restart Claude Desktop<a class="headerlink" href="#restart-claude-desktop" title="Permanent link">&para;</a></h3>
 <p>Quit and reopen Claude Desktop. The server tools should appear in Claude's tool list.</p>
@@ -2280,7 +2280,7 @@
 <p>Claude should use the <code>search</code> tool and return matching documents from your vault. If you get no results, verify that <code>MARKDOWN_VAULT_MCP_SOURCE_DIR</code> points to a directory containing <code>.md</code> files.</p>
 <hr />
 <h2 id="step-2-enable-git-write-support">Step 2: Enable git write support<a class="headerlink" href="#step-2-enable-git-write-support" title="Permanent link">&para;</a></h2>
-<p><strong>Goal:</strong> Allow Claude to create, edit, delete, and rename notes in managed git mode — with every change auto-committed and pushed.</p>
+<p><strong>Goal:</strong> Allow Claude to create, edit, delete, and rename notes in managed git mode, with every change auto-committed and pushed.</p>
 <p><strong>Prerequisites:</strong> Step 1 complete. Your vault directory must be a git repository with an HTTPS remote configured.</p>
 <h3 id="create-a-github-personal-access-token">Create a GitHub Personal Access Token<a class="headerlink" href="#create-a-github-personal-access-token" title="Permanent link">&para;</a></h3>
 <ol>
@@ -2313,10 +2313,10 @@
 </code></pre></div>
 <p><strong>What these do:</strong></p>
 <ul>
-<li><code>READ_ONLY=false</code> — enables the write, edit, delete, and rename tools</li>
-<li><code>GIT_REPO_URL</code> — enables managed mode (clone/remote validation)</li>
-<li><code>GIT_USERNAME</code> / <code>GIT_TOKEN</code> — HTTPS auth for pull/push</li>
-<li><code>GIT_PUSH_DELAY_S=60</code> — batches rapid writes, pushing after 60 seconds of idle time</li>
+<li><code>READ_ONLY=false</code>: enables the write, edit, delete, and rename tools</li>
+<li><code>GIT_REPO_URL</code>: enables managed mode (clone/remote validation)</li>
+<li><code>GIT_USERNAME</code> / <code>GIT_TOKEN</code>: HTTPS auth for pull/push</li>
+<li><code>GIT_PUSH_DELAY_S=60</code>: batches rapid writes, pushing after 60 seconds of idle time</li>
 </ul>
 <div class="admonition warning">
 <p class="admonition-title">Token security</p>
@@ -2340,9 +2340,9 @@ git<span class="w"> </span>log<span class="w"> </span>--oneline<span class="w"> 
 <p><strong>Goal:</strong> Enable embedding-based search alongside keyword search for better recall on conceptual queries.</p>
 <p><strong>Prerequisites:</strong> Step 1 complete. Choose an embedding backend:</p>
 <ul>
-<li><strong>FastEmbed</strong> (recommended for Windows and offline use) — local inference, no external service</li>
-<li><strong>Ollama</strong> (macOS/Linux) — local inference via <a href="https://ollama.com">Ollama</a></li>
-<li><strong>OpenAI</strong> — cloud-based, requires API key (see <a href="../embeddings/">Embeddings guide</a>)</li>
+<li><strong>FastEmbed</strong> (recommended for Windows and offline use): local inference, no external service</li>
+<li><strong>Ollama</strong> (macOS/Linux): local inference via <a href="https://ollama.com">Ollama</a></li>
+<li><strong>OpenAI</strong>: cloud-based, requires API key (see <a href="../embeddings/">Embeddings guide</a>)</li>
 </ul>
 <h3 id="install-and-configure">Install and configure<a class="headerlink" href="#install-and-configure" title="Permanent link">&para;</a></h3>
 <div class="tabbed-set tabbed-alternate" data-tabs="2:2"><input checked="checked" id="__tabbed_2_1" name="__tabbed_2" type="radio" /><input id="__tabbed_2_2" name="__tabbed_2" type="radio" /><div class="tabbed-labels"><label for="__tabbed_2_1">FastEmbed (Windows / offline)</label><label for="__tabbed_2_2">Ollama (macOS / Linux)</label></div>
@@ -2404,12 +2404,12 @@ ollama<span class="w"> </span>pull<span class="w"> </span>nomic-embed-text
 </div>
 <p><strong>Key env vars:</strong></p>
 <ul>
-<li><code>MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH</code> — where to persist embedding vectors on disk (required to enable semantic search)</li>
-<li><code>MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER</code> — <code>fastembed</code>, <code>ollama</code>, or <code>openai</code></li>
-<li><code>MARKDOWN_VAULT_MCP_FASTEMBED_MODEL</code> / <code>MARKDOWN_VAULT_MCP_OLLAMA_MODEL</code> — which model to use</li>
+<li><code>MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH</code>: where to persist embedding vectors on disk (required to enable semantic search)</li>
+<li><code>MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER</code>: <code>fastembed</code>, <code>ollama</code>, or <code>openai</code></li>
+<li><code>MARKDOWN_VAULT_MCP_FASTEMBED_MODEL</code> / <code>MARKDOWN_VAULT_MCP_OLLAMA_MODEL</code>: which model to use</li>
 </ul>
 <h3 id="pre-build-embeddings-before-first-launch">Pre-build embeddings before first launch<a class="headerlink" href="#pre-build-embeddings-before-first-launch" title="Permanent link">&para;</a></h3>
-<p>For large vaults, building embeddings on first startup can take several minutes — long enough for Claude Desktop to time out the connection. Pre-build from the command line instead:</p>
+<p>For large vaults, building embeddings on first startup can take several minutes, long enough for Claude Desktop to time out the connection. Pre-build from the command line instead:</p>
 <div class="tabbed-set tabbed-alternate" data-tabs="3:2"><input checked="checked" id="__tabbed_3_1" name="__tabbed_3" type="radio" /><input id="__tabbed_3_2" name="__tabbed_3" type="radio" /><div class="tabbed-labels"><label for="__tabbed_3_1">macOS / Linux</label><label for="__tabbed_3_2">Windows (PowerShell)</label></div>
 <div class="tabbed-content">
 <div class="tabbed-block">
@@ -2452,9 +2452,9 @@ markdown-vault-mcp<span class="w"> </span>reindex
 <p>Hybrid mode should return more conceptually related notes, even if they don't contain the exact phrase.</p>
 <hr />
 <h2 id="step-4-use-mcp-apps-views">Step 4: Use MCP Apps views<a class="headerlink" href="#step-4-use-mcp-apps-views" title="Permanent link">&para;</a></h2>
-<p><strong>Goal:</strong> Browse your vault visually with the Context Card, Graph Explorer, Vault Browser, and Note Preview views.</p>
-<p><strong>Prerequisites:</strong> Step 1 complete. A Claude client that supports the <a href="https://modelcontextprotocol.io/specification/2025-06-18/server/apps">MCP Apps protocol</a> (e.g., Claude on claude.ai).</p>
-<p>MCP Apps views are automatically available — no extra configuration needed for stdio transport. The server registers two tools (<code>browse_vault</code> and <code>show_context</code>) that open interactive views in supporting clients.</p>
+<p><strong>Goal:</strong> Browse your vault visually using the interactive SPA views described below.</p>
+<p><strong>Prerequisites:</strong> Step 1 complete. A Claude client that supports the <a href="https://modelcontextprotocol.io/specification/2025-06-18/server/apps">MCP Apps protocol</a> (such as Claude on claude.ai).</p>
+<p>MCP Apps views are automatically available with no extra configuration needed for stdio transport. The server registers two tools (<code>browse_vault</code> and <code>show_context</code>) that open interactive views in supporting clients.</p>
 <h3 id="try-it">Try it<a class="headerlink" href="#try-it" title="Permanent link">&para;</a></h3>
 <p>In a Claude conversation, ask:</p>
 <blockquote>
@@ -2462,10 +2462,10 @@ markdown-vault-mcp<span class="w"> </span>reindex
 </blockquote>
 <p>Claude should use the <code>browse_vault</code> tool. In an Apps-capable client, this opens an interactive SPA with four tabs:</p>
 <ul>
-<li><strong>Context Card</strong> — note dossier with backlinks, outlinks, similar notes, and tags</li>
-<li><strong>Graph Explorer</strong> — interactive force-directed link graph</li>
-<li><strong>Vault Browser</strong> — searchable file tree</li>
-<li><strong>Note Preview</strong> — rendered markdown with a "Send to Claude" button</li>
+<li><strong>Context Card</strong>: note dossier with backlinks, outlinks, similar notes, and tags</li>
+<li><strong>Graph Explorer</strong>: interactive force-directed link graph</li>
+<li><strong>Vault Browser</strong>: searchable file tree</li>
+<li><strong>Note Preview</strong>: rendered markdown with a "Send to Claude" button</li>
 </ul>
 <p>You can also ask for a specific note's context:</p>
 <blockquote>
@@ -2474,11 +2474,11 @@ markdown-vault-mcp<span class="w"> </span>reindex
 <p>Claude uses the <code>show_context</code> tool to open the Context Card for that note.</p>
 <div class="admonition note">
 <p class="admonition-title">Non-Apps clients</p>
-<p>Clients that don't support MCP Apps (e.g., Claude Code) receive a text-only summary instead of the interactive view. All the underlying data is still accessible via the <code>get_context</code>, <code>get_backlinks</code>, and other link graph tools.</p>
+<p>Clients that don't support MCP Apps (such as Claude Code) receive a text-only summary instead of the interactive view. All the underlying data is still accessible via the <code>get_context</code>, <code>get_backlinks</code>, and other link graph tools.</p>
 </div>
 <p>For full details on views, configuration, and architecture, see the <a href="../mcp-apps/">MCP Apps guide</a>.</p>
 <h3 id="firing-prompts-from-claudeais-menu">Firing prompts from Claude.ai's <code>+</code> menu<a class="headerlink" href="#firing-prompts-from-claudeais-menu" title="Permanent link">&para;</a></h3>
-<p>This guide covers Claude Desktop. If you also use Claude.ai with the same server, its prompts can be fired from the compose area's <code>+</code> menu once the server is added as a connector. Click <code>+</code>, select <strong>connectors</strong>, pick the server, pick a prompt — Claude opens with the prompt scaffolded. See <a href="../../prompts/#how-to-invoke-prompts">How to invoke prompts</a>.</p>
+<p>This guide covers Claude Desktop. If you also use Claude.ai with the same server, its prompts can be fired from the compose area's <code>+</code> menu once the server is added as a connector. Click <code>+</code>, select <strong>connectors</strong>, pick the server, pick a prompt, and Claude opens with the prompt scaffolded. See <a href="../../prompts/#how-to-invoke-prompts">How to invoke prompts</a>.</p>
 
 
 

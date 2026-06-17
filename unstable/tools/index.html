@@ -2629,7 +2629,7 @@
 <p>markdown-vault-mcp exposes MCP tools across several categories. Write tools are only available when <code>MARKDOWN_VAULT_MCP_READ_ONLY=false</code>.</p>
 <div class="admonition note">
 <p class="admonition-title">Index freshness on read tools (<code>wait_for_pending_writes</code> + <code>_meta.index_stale</code>)</p>
-<p>Every read tool that queries the FTS index — <code>search</code>, <code>list_documents</code>, <code>list_folders</code>, <code>list_tags</code>, <code>stats</code>, <code>get_recent</code>, <code>get_backlinks</code>, <code>get_outlinks</code>, <code>get_broken_links</code>, <code>get_similar</code>, <code>get_context</code>, <code>get_orphan_notes</code>, <code>get_most_linked</code>, and <code>get_connection_path</code> — accepts an optional <strong><code>wait_for_pending_writes</code></strong> (<code>bool</code>, default <code>false</code>) parameter and reports index freshness <strong>out-of-band in the MCP response's <code>_meta.index_stale</code> field</strong> rather than wrapping the payload in a <code>{stale, data}</code> envelope. The data payload is a <strong>bare list/dict, identical whether the index is fresh or stale</strong> — clients that do not care about drift ignore <code>_meta</code> entirely. Clients that need a fresh-read guarantee either inspect <code>result._meta.index_stale</code>, or pass <code>wait_for_pending_writes=true</code> to block until the writer drains (bounded by <code>MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S</code>, default 60s; on timeout it answers from the current index rather than raising). <code>index_stale</code> is <code>true</code> when the IndexWriter had pending or in-flight work at any of three observation points: the optional <code>wait_for_pending_writes</code> timed out, a write completed inside the read window, or the writer was non-idle at response time. The same <code>_meta.index_stale</code> field rides on the index-querying MCP <strong>resources</strong> (<code>config://</code>, <code>stats://</code>, <code>folders://</code>, <code>tags://</code>, <code>recent://</code>, <code>toc://</code>, <code>similar://</code>), readable via the resource read's <code>_meta</code> (resources carry no <code>wait_for_pending_writes</code> parameter — they signal only).</p>
+<p>Every read tool that queries the FTS index (<code>search</code>, <code>list_documents</code>, <code>list_folders</code>, <code>list_tags</code>, <code>stats</code>, <code>get_recent</code>, <code>get_backlinks</code>, <code>get_outlinks</code>, <code>get_broken_links</code>, <code>get_similar</code>, <code>get_context</code>, <code>get_orphan_notes</code>, <code>get_most_linked</code>, and <code>get_connection_path</code>) accepts an optional <strong><code>wait_for_pending_writes</code></strong> (<code>bool</code>, default <code>false</code>) parameter and reports index freshness <strong>out-of-band in the MCP response's <code>_meta.index_stale</code> field</strong> rather than wrapping the payload in a <code>{stale, data}</code> envelope. The data payload is a <strong>bare list/dict, identical whether the index is fresh or stale</strong>; clients that do not care about drift ignore <code>_meta</code> entirely. Clients that need a fresh-read guarantee either inspect <code>result._meta.index_stale</code>, or pass <code>wait_for_pending_writes=true</code> to block until the writer drains (bounded by <code>MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S</code>, default 60&nbsp;s; on timeout it answers from the current index rather than raising). <code>index_stale</code> is <code>true</code> when the IndexWriter had pending or in-flight work. The relevant conditions are: the optional <code>wait_for_pending_writes</code> timed out; a write completed inside the read window; the writer was non-idle at response time. The same <code>_meta.index_stale</code> field rides on the index-querying MCP <strong>resources</strong> (<code>config://</code>, <code>stats://</code>, <code>folders://</code>, <code>tags://</code>, <code>recent://</code>, <code>toc://</code>, <code>similar://</code>), readable via the resource read's <code>_meta</code> (resources carry no <code>wait_for_pending_writes</code> parameter; they signal only).</p>
 </div>
 <!-- DOMAIN-TOOLS-LIST-START -->
 
@@ -2843,7 +2843,7 @@
 <td><code>filters</code></td>
 <td>object</td>
 <td><code>null</code></td>
-<td>Filter by indexed frontmatter field values (e.g. <code>{"tags": "pacing"}</code>)</td>
+<td>Filter by indexed frontmatter field values (such as <code>{"tags": "pacing"}</code>)</td>
 </tr>
 <tr>
 <td><code>chunks_per_file</code></td>
@@ -2859,19 +2859,19 @@
 </tr>
 </tbody>
 </table>
-<p><strong>Returns:</strong> List of grouped result dicts ranked by relevance, one entry per file with up to <code>chunks_per_file</code> best-matching sections. Each entry contains: <code>path</code>, <code>title</code>, <code>folder</code>, <code>score</code> (max section score), <code>search_type</code>, <code>frontmatter</code>, and <code>sections</code> — a list of <code>{heading, content, score}</code> dicts sorted by score then document order.</p>
+<p><strong>Returns:</strong> List of grouped result dicts ranked by relevance, one entry per file with up to <code>chunks_per_file</code> best-matching sections. Each entry contains: <code>path</code>, <code>title</code>, <code>folder</code>, <code>score</code> (max section score), <code>search_type</code>, <code>frontmatter</code>, and <code>sections</code> (a list of <code>{heading, content, score}</code> dicts sorted by score then document order).</p>
 <div class="admonition note">
 <p class="admonition-title">Grouped result shape</p>
 <p>Each file appears at most once in results, with up to <code>chunks_per_file</code> sections nested under <code>sections</code>. The top-level <code>score</code> is the maximum of the section scores (MaxP aggregation). Iterate <code>sections</code> to drill into individual matches.</p>
 </div>
 <div class="admonition note">
 <p class="admonition-title">Snippet content and full-chunk recovery</p>
-<p>By default, each section's <code>content</code> is a snippet of approximately 200 words centered on the query terms — not the full chunk. Pass <code>snippet_words=0</code> to receive the complete chunk. To read the full section after receiving a search result, call <code>read(path=result["path"], section=result["sections"][0]["heading"])</code> — this returns the entire chunk from the index without re-reading the whole document.</p>
+<p>By default, each section's <code>content</code> is a snippet of approximately 200 words centered on the query terms (not the full chunk). Pass <code>snippet_words=0</code> to receive the complete chunk. To read the full section after receiving a search result, call <code>read(path=result["path"], section=result["sections"][0]["heading"])</code>; this returns the entire chunk from the index without re-reading the whole document.</p>
 </div>
 <div class="admonition tip">
 <p class="admonition-title">Choosing a search mode</p>
 <ul>
-<li>Use <code>mode="hybrid"</code> when semantic search is available — it combines keyword precision with semantic understanding</li>
+<li>Use <code>mode="hybrid"</code> when semantic search is available, combining keyword precision with semantic understanding</li>
 <li>Use <code>mode="keyword"</code> for exact term matches</li>
 <li>Use <code>mode="semantic"</code> for meaning-based similarity</li>
 <li>Check <code>stats</code> to see if <code>semantic_search_available</code> is true</li>
@@ -2902,13 +2902,13 @@
 <td><code>path</code></td>
 <td>string</td>
 <td>required</td>
-<td>Relative path to the document or attachment (e.g. <code>"Journal/note.md"</code> or <code>"assets/diagram.pdf"</code>)</td>
+<td>Relative path to the document or attachment (such as <code>"Journal/note.md"</code> or <code>"assets/diagram.pdf"</code>)</td>
 </tr>
 <tr>
 <td><code>section</code></td>
 <td>string</td>
 <td><code>null</code></td>
-<td>Optional heading to select a single section chunk. Pass the <code>heading</code> field from a <code>search</code> result to retrieve the full chunk content. Matching collapses internal whitespace on both sides — <code>"1.3.  Reducing..."</code> (two spaces) matches a stored <code>"1.3. Reducing..."</code> (one space) and vice versa. On miss, the error lists the document's actual stored headings so callers can recover. Raises an error if the heading is not found or is empty.</td>
+<td>Optional heading to select a single section chunk. Pass the <code>heading</code> field from a <code>search</code> result to retrieve the full chunk content. Matching collapses internal whitespace on both sides: <code>"1.3.  Reducing..."</code> (two spaces) matches a stored <code>"1.3. Reducing..."</code> (one space) and vice versa. On miss, the error lists the document's actual stored headings so callers can recover. Raises an error if the heading is not found or is empty.</td>
 </tr>
 </tbody>
 </table>
@@ -2918,12 +2918,12 @@
 </div>
 <div class="admonition note">
 <p class="admonition-title">Heading matching tolerates whitespace differences</p>
-<p>The <code>section</code> lookup compares heading strings after collapsing all whitespace runs to single spaces (and stripping leading/trailing whitespace). This handles the common case where an LLM caller infers a heading from a rendered TOC that normalises whitespace differently from the source markdown. Markdown emphasis (<code>**bold**</code>, <code>_italic_</code>) and case are still significant — pass the heading as it would appear in the document source.</p>
+<p>The <code>section</code> lookup compares heading strings after collapsing all whitespace runs to single spaces (and stripping leading/trailing whitespace). This handles the common case where an LLM caller infers a heading from a rendered TOC that normalises whitespace differently from the source markdown. Markdown emphasis (<code>**bold**</code>, <code>_italic_</code>) and case still matter; pass the heading as it would appear in the document source.</p>
 </div>
 <p><strong>Context cost:</strong> every byte returned counts against the LLM's context
 budget. Reads above <code>MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES</code> (default
 256 KB for <code>.md</code>) or <code>MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB</code> (default
-1 MB for binaries) raise an error — use <code>section=result["heading"]</code> for
+1 MB for binaries) raise an error; use <code>section=result["heading"]</code> for
 partial markdown reads (see the tip above).</p>
 <p><strong>Returns:</strong></p>
 <div class="tabbed-set tabbed-alternate" data-tabs="1:2"><input checked="checked" id="__tabbed_1_1" name="__tabbed_1" type="radio" /><input id="__tabbed_1_2" name="__tabbed_1" type="radio" /><div class="tabbed-labels"><label for="__tabbed_1_1">Markdown document</label><label for="__tabbed_1_2">Attachment</label></div>
@@ -2974,7 +2974,7 @@ partial markdown reads (see the tip above).</p>
 <td><code>pattern</code></td>
 <td>string</td>
 <td><code>null</code></td>
-<td>Unix glob matched against relative paths (e.g. <code>"Journal/*.md"</code>)</td>
+<td>Unix glob matched against relative paths (such as <code>"Journal/*.md"</code>)</td>
 </tr>
 <tr>
 <td><code>include_attachments</code></td>
@@ -2984,10 +2984,10 @@ partial markdown reads (see the tip above).</p>
 </tr>
 </tbody>
 </table>
-<p><strong>Returns:</strong> List of info dicts. Every entry has a <code>kind</code> field (<code>"note"</code> or <code>"attachment"</code>). Body content is not included — call <code>read</code> for full text.</p>
+<p><strong>Returns:</strong> List of info dicts. Every entry has a <code>kind</code> field (<code>"note"</code> or <code>"attachment"</code>). Body content is not included; call <code>read</code> for full text.</p>
 <h3 id="list_folders"><code>list_folders</code><a class="headerlink" href="#list_folders" title="Permanent link">&para;</a></h3>
-<p>List all folder paths that contain documents. Use this to discover valid folder names for filtering <code>search</code> or <code>list_documents</code>. The root folder (top-level documents) is represented as an empty string <code>""</code>.</p>
-<p><strong>Returns:</strong> Sorted list of folder paths, e.g. <code>["", "Journal", "Projects"]</code>.</p>
+<p>List all folder paths that contain documents. Use this to discover valid folder names for filtering <code>search</code> or <code>list_documents</code>. The root folder (top-level documents) is represented as the empty string <code>""</code>.</p>
+<p><strong>Returns:</strong> Sorted list of folder paths, such as <code>["", "Journal", "Projects"]</code>.</p>
 <h3 id="list_tags"><code>list_tags</code><a class="headerlink" href="#list_tags" title="Permanent link">&para;</a></h3>
 <p>List all distinct values for a frontmatter field across the vault.</p>
 <p><strong>Parameters:</strong></p>
@@ -3009,7 +3009,7 @@ partial markdown reads (see the tip above).</p>
 </tr>
 </tbody>
 </table>
-<p><strong>Returns:</strong> Sorted list of distinct string values, e.g. <code>["craft", "pacing", "worldbuilding"]</code>.</p>
+<p><strong>Returns:</strong> Sorted list of distinct string values, such as <code>["craft", "pacing", "worldbuilding"]</code>.</p>
 <h3 id="stats"><code>stats</code><a class="headerlink" href="#stats" title="Permanent link">&para;</a></h3>
 <p>Get an overview of the vault's size, capabilities, and configuration. Call this at the start of a session to understand what the vault contains and what search modes are available.</p>
 <p><strong>Returns:</strong></p>
@@ -3036,7 +3036,7 @@ partial markdown reads (see the tip above).</p>
 <p>Returns background-build state of the FTS index. Use this when
 <code>initialize</code> returned but bucket-3/4 calls block longer than expected
 or surface <code>IndexUnavailableError</code> (with <code>reason</code> of <code>"never_built"</code>,
-<code>"build_failed"</code>, <code>"timeout"</code>, <code>"broken"</code>, or <code>"busy"</code>) — the <code>status</code> field
+<code>"build_failed"</code>, <code>"timeout"</code>, <code>"broken"</code>, or <code>"busy"</code>). The <code>status</code> field
 distinguishes "still building" from "build failed," and the <code>error</code>
 field carries the diagnostic message from the last failed background
 build attempt.</p>
@@ -3044,10 +3044,10 @@ build attempt.</p>
 - <code>status</code>: <code>"queryable"</code>, <code>"building"</code>, or <code>"failed"</code>.
 - <code>documents_indexed</code>: count of documents committed to the FTS index
   right now (rises during <code>"building"</code>). <code>0</code> both for an empty index
-  and when the count could not be read — check <code>documents_indexed_error</code>
+  and when the count could not be read; check <code>documents_indexed_error</code>
   to tell them apart.
 - <code>documents_indexed_error</code>: <code>null</code> on a normal read; the SQLite error
-  message when the document count could not be read (e.g. a locked or
+  message when the document count could not be read (such as a locked or
   closed database), in which case <code>documents_indexed</code> is <code>0</code>.
 - <code>error</code>: <code>null</code> unless the background build raised; otherwise the
   exception message.</p>
@@ -3056,10 +3056,10 @@ build attempt.</p>
 <h2 id="index-management">Index Management<a class="headerlink" href="#index-management" title="Permanent link">&para;</a></h2>
 <div class="admonition note">
 <p class="admonition-title">Cold-start blocking</p>
-<p>Calls to <code>reindex</code> and <code>build_embeddings</code> during a cold-start background FTS build block via the tool-layer <code>needs_queryable</code> decorator. If the build takes longer than <code>MARKDOWN_VAULT_MCP_BUILD_TIMEOUT_S</code> (default 60s), the tool returns <code>IndexUnavailableError(reason="timeout")</code>. The same exception fires with <code>reason="build_failed"</code> if a scheduled background build ran and failed — read <code>get_index_status</code>'s <code>error</code> field for the captured diagnostic. The decorator additionally remaps a SQLite <code>OperationalError</code> from the handler call to <code>IndexUnavailableError(reason="broken")</code> (corruption / I/O failure / unknown codes) or <code>reason="busy"</code> (SQLITE_BUSY/LOCKED — lock contention); inspect the exception's <code>__cause__</code> for the underlying SQLite error. Poll <code>get_index_status</code> to observe build state without blocking.</p>
+<p>Calls to <code>reindex</code> and <code>build_embeddings</code> during a cold-start background FTS build block via the tool-layer <code>needs_queryable</code> decorator. If the build takes longer than <code>MARKDOWN_VAULT_MCP_BUILD_TIMEOUT_S</code> (default 60&nbsp;s), the tool returns <code>IndexUnavailableError(reason="timeout")</code>. The same exception fires with <code>reason="build_failed"</code> if a scheduled background build ran and failed; read <code>get_index_status</code>'s <code>error</code> field for the captured diagnostic. The decorator also remaps a SQLite <code>OperationalError</code> from the handler call to <code>IndexUnavailableError(reason="broken")</code> (corruption / I/O failure / unknown codes) or <code>reason="busy"</code> (SQLITE_BUSY/LOCKED, lock contention); inspect the exception's <code>__cause__</code> for the underlying SQLite error. Poll <code>get_index_status</code> to observe build state without blocking.</p>
 </div>
 <h3 id="reindex"><code>reindex</code><a class="headerlink" href="#reindex" title="Permanent link">&para;</a></h3>
-<p>Incrementally update the full-text search index to reflect file changes made outside this server. Only processes changed files — unchanged documents are skipped, and files deliberately excluded from the index (missing required frontmatter, exclude-pattern matches, unparseable content) are remembered across scans so they are not re-parsed or re-reported until their content changes (#665).</p>
+<p>Incrementally update the full-text search index to reflect file changes made outside this server. Only changed files are processed; unchanged documents are skipped, and files deliberately excluded from the index (missing required frontmatter, exclude-pattern matches, unparseable content) are remembered across scans so they are not re-parsed or re-reported until their content changes (#665).</p>
 <p>If semantic search is configured, the queued reindex job re-embeds the changed documents on the writer thread. Poll <code>get_index_status</code> and watch the <code>dirty_embeddings</code> counter to observe completion.</p>
 <div class="admonition note">
 <p class="admonition-title">Boot reconciliation</p>
@@ -3068,7 +3068,7 @@ build attempt.</p>
 <p><strong>Returns:</strong> <code>{"status": "queued"}</code>. The reindex runs asynchronously on the single-owner :class:<code>IndexWriter</code> thread (#559); poll <code>get_server_info</code> or <code>get_index_status</code> for completion. <code>get_index_status</code> exposes <code>queue_depth</code>, <code>in_flight</code>, <code>dirty_paths</code>, and <code>dirty_embeddings</code> so you can observe progress without blocking.</p>
 <h3 id="build_embeddings"><code>build_embeddings</code><a class="headerlink" href="#build_embeddings" title="Permanent link">&para;</a></h3>
 <p>Build vector embeddings to enable semantic and hybrid search. This can be slow for large vaults.</p>
-<p>Without <code>force</code>, an existing vector index is <strong>converged</strong> to the FTS chunk set (#665): documents missing from it are embedded, documents whose indexed content changed are re-embedded, and vectors for deleted or excluded documents are dropped. Work scales with the size of the drift, not the size of the vault — an already-converged index does no embedding work.</p>
+<p>Without <code>force</code>, an existing vector index is <strong>converged</strong> to the FTS chunk set (#665). The operation embeds missing documents, re-embeds those whose indexed content changed, and drops vectors for deleted or excluded documents. Work scales with the size of the drift, not the size of the vault; an already-converged index does no embedding work.</p>
 <p><strong>Parameters:</strong></p>
 <table>
 <thead>
@@ -3091,7 +3091,7 @@ build attempt.</p>
 <p><strong>Returns:</strong> <code>{"status": "queued"}</code>. The build runs asynchronously on the single-owner :class:<code>IndexWriter</code> thread (#559); poll <code>get_server_info</code> or <code>get_index_status</code> for completion.</p>
 <div class="admonition note">
 <p class="admonition-title">When to use</p>
-<p>Normally never: the server queues a <code>build_embeddings</code> job at every startup, which converges the vector index to whatever the boot reconciliation reindex found (#665). Call it manually only to embed a vault for the first time without restarting, to retry after a provider outage, or with <code>force=true</code> after changing the embedding model.</p>
+<p>Normally never: the server queues a <code>build_embeddings</code> job at every startup, which converges the vector index to whatever the boot reconciliation reindex found (#665). Manual calls are needed in three cases: embedding a vault for the first time without restarting; retrying after a provider outage; or rebuilding from scratch after an embedding-model change (pass <code>force=true</code>).</p>
 </div>
 <hr />
 <h2 id="write-operations">Write Operations<a class="headerlink" href="#write-operations" title="Permanent link">&para;</a></h2>
@@ -3134,19 +3134,19 @@ build attempt.</p>
 </tbody>
 </table>
 <p><strong>Context cost:</strong> the <code>content</code> parameter (text) is bounded only by the
-LLM's own output budget.  The <code>content_base64</code> parameter (binary) inflates
+LLM's own output budget. The <code>content_base64</code> parameter (binary) inflates
 by ~33%.</p>
 <p><strong>Returns:</strong> <code>{"path": "Journal/note.md", "created": true}</code></p>
 <div class="admonition warning">
 <p class="admonition-title">Warning</p>
-<p><code>write</code> replaces the entire file — use <code>edit</code> for targeted changes to existing documents.</p>
+<p><code>write</code> replaces the entire file. Use <code>edit</code> for targeted changes to existing documents.</p>
 </div>
 <h3 id="edit"><code>edit</code><a class="headerlink" href="#edit" title="Permanent link">&para;</a></h3>
 <p>Make a targeted text replacement in an existing document. Supports three modes:</p>
 <ul>
-<li><strong>Exact match</strong> (<code>old_text</code> only) — must appear exactly once in the document.</li>
-<li><strong>Line-range</strong> (<code>line_start</code> + <code>line_end</code>, no <code>old_text</code>) — replaces the specified lines. Pass <code>if_match</code> for safety.</li>
-<li><strong>Scoped match</strong> (<code>old_text</code> + <code>line_start</code>/<code>line_end</code>) — searches for <code>old_text</code> within the specified line range only.</li>
+<li><strong>Exact match</strong> (<code>old_text</code> only): must appear exactly once in the document.</li>
+<li><strong>Line-range</strong> (<code>line_start</code> + <code>line_end</code>, no <code>old_text</code>): replaces the specified lines. Pass <code>if_match</code> for safety.</li>
+<li><strong>Scoped match</strong> (<code>old_text</code> + <code>line_start</code>/<code>line_end</code>): searches for <code>old_text</code> within the specified line range only.</li>
 </ul>
 <p><strong>Parameters:</strong></p>
 <table>
@@ -3201,15 +3201,15 @@ by ~33%.</p>
 <p><code>match_type</code> is <code>"exact"</code> when the text matched byte-for-byte, or <code>"normalized"</code> when it matched after Unicode/whitespace normalization.</p>
 <div class="admonition tip">
 <p class="admonition-title">Usage pattern</p>
-<p>Always call <code>read</code> first to get the exact current text and line numbers. For small edits, use <code>old_text</code> (exact match). For large block replacements, use <code>line_start</code>/<code>line_end</code> with the line numbers shown by <code>read</code>. Frontmatter can be edited — <code>old_text</code> may span the YAML block.</p>
+<p>Always call <code>read</code> first to get the exact current text and line numbers. For small edits, use <code>old_text</code> (exact match). For large block replacements, use <code>line_start</code>/<code>line_end</code> with the line numbers shown by <code>read</code>. Frontmatter can be edited; <code>old_text</code> may span the YAML block.</p>
 </div>
 <div class="admonition info">
 <p class="admonition-title">Normalized matching</p>
-<p>When exact match fails, the tool automatically tries a normalized comparison: Unicode NFC, dash normalization (en-dash/em-dash → hyphen), smart quote normalization, whitespace collapsing. If a unique match is found, it proceeds and returns <code>match_type: "normalized"</code>.</p>
+<p>When exact match fails, the tool automatically tries a normalized comparison. Normalization covers Unicode NFC, whitespace collapsing, and smart quote conversion (en-dash/em-dash to hyphen). If a unique match is found, it proceeds and returns <code>match_type: "normalized"</code>.</p>
 </div>
 <div class="admonition warning">
 <p class="admonition-title">Diagnostic errors</p>
-<p>When no match is found, the error message includes diagnostic info: the closest matching line number, the character position of the first difference, and short snippets showing what was expected vs. what was found. This helps identify the exact mismatch.</p>
+<p>When no match is found, the error message reports the closest matching line number and the character position of the first difference, along with short snippets showing what was expected vs. what was found. This helps identify the exact mismatch.</p>
 </div>
 <h3 id="delete"><code>delete</code><a class="headerlink" href="#delete" title="Permanent link">&para;</a></h3>
 <p>Permanently delete a document or attachment. For <code>.md</code> documents, also removes from all search indices.</p>
@@ -3277,7 +3277,7 @@ by ~33%.</p>
 <td><code>url</code></td>
 <td>string</td>
 <td>required</td>
-<td>Source URL to download. Only <code>http</code>/<code>https</code> schemes allowed; private/loopback IPs are blocked; redirects are not followed (SSRF protection)</td>
+<td>Source URL to download. Only <code>http</code>/<code>https</code> schemes allowed; the host is resolved and private or internal addresses are blocked; the validated IP is pinned for the connection; redirects are not followed (SSRF protection)</td>
 </tr>
 <tr>
 <td><code>path</code></td>
@@ -3305,7 +3305,7 @@ by ~33%.</p>
 </tr>
 </tbody>
 </table>
-<p><strong>Context cost:</strong> zero — the file is downloaded server-side.  Reference
+<p><strong>Context cost:</strong> zero. The file is downloaded server-side. Reference
 the saved file by <code>path</code> for downstream tools rather than <code>read()</code>-ing it
 back into context.</p>
 <p><strong>Returns:</strong> <code>{"path": "notes/report.md", "created": true, "content_length": 4096, "content_type": "text/markdown"}</code></p>
@@ -3334,36 +3334,36 @@ history before continuing the conversation.</p>
 <td><code>direction</code></td>
 <td><code>"pull"</code> | <code>"push"</code> | <code>"both"</code></td>
 <td><code>"both"</code></td>
-<td>Which leg(s) to run. <code>"both"</code> runs pull first, then push; if pull fails (<code>pull.applied=false</code>) the push leg is skipped and <code>push</code> stays <code>null</code> so a callable can inspect <code>pull.reason</code> before retrying.</td>
+<td>Which legs to run. <code>"both"</code> runs pull first, then push; if pull fails (<code>pull.applied=false</code>) the push leg is skipped and <code>push</code> stays <code>null</code> so a callable can inspect <code>pull.reason</code> before retrying.</td>
 </tr>
 <tr>
 <td><code>dry_run</code></td>
 <td>bool</td>
 <td><code>false</code></td>
-<td>When <code>true</code>, the pull leg runs <code>git fetch</code> and reports what <em>would</em> happen (<code>would_apply: bool</code>, projected <code>to_sha</code>) without moving HEAD. The push leg has no safe local probe for "would the remote accept this", so a dry-run push is a no-op that returns <code>applied=false</code> with <code>reason="dry_run_unsupported"</code>.</td>
+<td>When <code>true</code>, the pull leg runs <code>git fetch</code> and reports what <em>would</em> happen (<code>would_apply: bool</code>, projected <code>to_sha</code>) without moving HEAD. The push leg has no safe local probe for "would the remote accept this," so a dry-run push is a no-op that returns <code>applied=false</code> with <code>reason="dry_run_unsupported"</code>.</td>
 </tr>
 </tbody>
 </table>
 <p><strong>Returns:</strong> Dict with the following fields:</p>
 <ul>
-<li><code>direction</code> (str) — the requested direction, echoed back.</li>
-<li><code>head_sha</code> (str) — local HEAD SHA after the operation. Differs from
+<li><code>direction</code> (str): the requested direction, echoed back.</li>
+<li><code>head_sha</code> (str): local HEAD SHA after the operation. Differs from
   the pre-call HEAD when the pull leg advanced the branch.</li>
-<li><code>branch</code> (str) — current branch name (or <code>"HEAD"</code> on detached HEAD).</li>
-<li><code>pull</code> (dict | null) — payload from the pull leg, or <code>null</code> when
+<li><code>branch</code> (str): current branch name (or <code>"HEAD"</code> on detached HEAD).</li>
+<li><code>pull</code> (dict | null): payload from the pull leg, or <code>null</code> when
   <code>direction="push"</code>. Fields: <code>applied</code>, <code>fast_forward</code>,
   <code>commits_pulled</code>, <code>from_sha</code>, <code>to_sha</code>; optional <code>reason</code>,
   <code>conflict_files</code>; <code>would_apply</code> (only in <code>dry_run</code> mode).
   <code>commits_pulled</code> is reliable on the fast-forward path. On
   <code>reason="rebased"</code> and <code>reason="conflicts_resolved_with_siblings"</code> it
-  is <code>0</code> even when HEAD advanced — the rebase replays local commits <em>on
-  top of</em> the upstream rather than fast-forwarding, so inspect
+  is <code>0</code> even when HEAD advanced (the rebase replays local commits <em>on
+  top of</em> the upstream rather than fast-forwarding); inspect
   <code>from_sha != to_sha</code> to detect the actual change.</li>
-<li><code>push</code> (dict | null) — payload from the push leg, or <code>null</code> when
+<li><code>push</code> (dict | null): payload from the push leg, or <code>null</code> when
   <code>direction="pull"</code> or when the pull leg failed in
   <code>direction="both"</code>. Fields: <code>applied</code>, <code>commits_pushed</code>,
   <code>remote_sha_before</code>, <code>remote_sha_after</code>; optional <code>reason</code>, <code>hint</code>.</li>
-<li><code>dry_run</code> (bool) — present only when <code>dry_run=true</code> was passed.</li>
+<li><code>dry_run</code> (bool): present only when <code>dry_run=true</code> was passed.</li>
 </ul>
 <p><strong>Examples:</strong></p>
 <p>Successful both-direction sync (clean fast-forward + clean push):</p>
@@ -3408,10 +3408,10 @@ history before continuing the conversation.</p>
 and the local edits that conflicted with the remote were preserved as
 <code>.conflict-mcp-&lt;timestamp&gt;.md</code> siblings on the same path. The remote
 version wins on the canonical path; the LLM should read the listed
-sibling(s) and propose how to merge the local content back in.
+each sibling and propose how to merge the local content back in.
 <code>commits_pulled</code> is <code>0</code> on this path because the rebase replays local
-commits <em>on top of</em> the remote — the remote commits are reconciled, not
-"pulled forward" in the linear-history sense.</p>
+commits <em>on top of</em> the remote (the remote commits are reconciled, not
+"pulled forward" in the linear-history sense).</p>
 <p>Push rejected as non-fast-forward:</p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
 <span class="w">  </span><span class="nt">&quot;direction&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;push&quot;</span><span class="p">,</span>
@@ -3483,7 +3483,7 @@ already-up-to-date no-op):</p>
 <tbody>
 <tr>
 <td><code>"dry_run_unsupported"</code></td>
-<td>Caller passed <code>dry_run=true</code>. Git has no safe local probe for "would the remote accept this", so the push leg is a deliberate no-op.</td>
+<td>Caller passed <code>dry_run=true</code>. Git has no safe local probe for "would the remote accept this," so the push leg is a deliberate no-op.</td>
 <td><code>false</code></td>
 </tr>
 <tr>
@@ -3503,14 +3503,14 @@ already-up-to-date no-op):</p>
 </tr>
 </tbody>
 </table>
-<p><strong>Context cost:</strong> small — structured dict only, no file bytes.</p>
+<p><strong>Context cost:</strong> small (structured dict only, no file bytes).</p>
 <p><strong>Tag:</strong> <code>{write, git-managed}</code>. Hidden when
 <code>MARKDOWN_VAULT_MCP_READ_ONLY=true</code> or when the deployment is not in
 managed git mode (<code>MARKDOWN_VAULT_MCP_GIT_REPO_URL</code> not set).</p>
 <p><strong>Errors:</strong></p>
 <ul>
-<li><code>ValueError</code> — raised at call time when the underlying strategy is
-  not a managed <code>GitWriteStrategy</code> (i.e. <code>MARKDOWN_VAULT_MCP_GIT_REPO_URL</code>
+<li><code>ValueError</code>: raised at call time when the underlying strategy is
+  not a managed <code>GitWriteStrategy</code> (that is, <code>MARKDOWN_VAULT_MCP_GIT_REPO_URL</code>
   is unset). The visibility tag normally hides the tool in that case;
   this error guards the path where a client invokes the tool by name
   despite it not being advertised.</li>
@@ -3520,14 +3520,14 @@ managed git mode (<code>MARKDOWN_VAULT_MCP_GIT_REPO_URL</code> not set).</p>
 <p>Only available in managed git mode. Set
 <code>MARKDOWN_VAULT_MCP_GIT_REPO_URL</code> and a working
 <code>MARKDOWN_VAULT_MCP_GIT_TOKEN</code> (with the
-<code>MARKDOWN_VAULT_MCP_GIT_USERNAME</code> appropriate for your provider —
+<code>MARKDOWN_VAULT_MCP_GIT_USERNAME</code> appropriate for your provider;
 see the <a href="../guides/git-integration/#provider-username-reference">Git Integration guide</a>).</p>
 </div>
 <hr />
 <h2 id="link-graph">Link Graph<a class="headerlink" href="#link-graph" title="Permanent link">&para;</a></h2>
 <div class="admonition note">
 <p class="admonition-title">Cold-start blocking</p>
-<p>Calls to <code>get_backlinks</code>, <code>get_outlinks</code>, <code>get_similar</code>, <code>get_context</code>, and <code>get_connection_path</code> during a cold-start background FTS build block via the tool-layer <code>needs_queryable</code> decorator. If the build takes longer than <code>MARKDOWN_VAULT_MCP_BUILD_TIMEOUT_S</code> (default 60s), the tool returns <code>IndexUnavailableError(reason="timeout")</code>. The same exception fires with <code>reason="build_failed"</code> if a scheduled background build ran and failed — read <code>get_index_status</code>'s <code>error</code> field for the captured diagnostic. The decorator additionally remaps a SQLite <code>OperationalError</code> from the handler call to <code>IndexUnavailableError(reason="broken")</code> (corruption / I/O failure / unknown codes) or <code>reason="busy"</code> (SQLITE_BUSY/LOCKED — lock contention); inspect the exception's <code>__cause__</code> for the underlying SQLite error. Poll <code>get_index_status</code> to observe build state without blocking.</p>
+<p>Calls to <code>get_backlinks</code>, <code>get_outlinks</code>, <code>get_similar</code>, <code>get_context</code>, and <code>get_connection_path</code> during a cold-start background FTS build block via the tool-layer <code>needs_queryable</code> decorator. If the build takes longer than <code>MARKDOWN_VAULT_MCP_BUILD_TIMEOUT_S</code> (default 60&nbsp;s), the tool returns <code>IndexUnavailableError(reason="timeout")</code>. The same exception fires with <code>reason="build_failed"</code> if a scheduled background build ran and failed; read <code>get_index_status</code>'s <code>error</code> field for the captured diagnostic. The decorator also remaps a SQLite <code>OperationalError</code> from the handler call to <code>IndexUnavailableError(reason="broken")</code> (corruption / I/O failure / unknown codes) or <code>reason="busy"</code> (SQLITE_BUSY/LOCKED, lock contention); inspect the exception's <code>__cause__</code> for the underlying SQLite error. Poll <code>get_index_status</code> to observe build state without blocking.</p>
 </div>
 <h3 id="get_backlinks"><code>get_backlinks</code><a class="headerlink" href="#get_backlinks" title="Permanent link">&para;</a></h3>
 <p>Find all documents that link to a given document.</p>
@@ -3658,7 +3658,7 @@ see the <a href="../guides/git-integration/#provider-username-reference">Git Int
 </tr>
 </tbody>
 </table>
-<p><strong>Returns:</strong> List of grouped similar-document dicts ranked by cosine similarity, one entry per file with up to <code>chunks_per_file</code> best-matching sections. Each entry contains: <code>path</code>, <code>title</code>, <code>folder</code>, <code>score</code> (max section score), <code>search_type</code> (<code>"semantic"</code>), <code>frontmatter</code>, and <code>sections</code> — a list of <code>{heading, content, score}</code> dicts sorted by score then document order. Index freshness is reported in <code>_meta.index_stale</code> (see the freshness note at the top of this page).</p>
+<p><strong>Returns:</strong> List of grouped similar-document dicts ranked by cosine similarity, one entry per file with up to <code>chunks_per_file</code> best-matching sections. Each entry contains: <code>path</code>, <code>title</code>, <code>folder</code>, <code>score</code> (max section score), <code>search_type</code> (<code>"semantic"</code>), <code>frontmatter</code>, and <code>sections</code> (a list of <code>{heading, content, score}</code> dicts sorted by score then document order). Index freshness is reported in <code>_meta.index_stale</code> (see the freshness note at the top of this page).</p>
 <div class="admonition note">
 <p class="admonition-title">Grouped result shape</p>
 <p>Returns one entry per file with up to <code>chunks_per_file</code> best-matching sections. Default is 2 sections per file; pass <code>chunks_per_file=1</code> for compact dossiers.</p>
@@ -3686,7 +3686,7 @@ see the <a href="../guides/git-integration/#provider-username-reference">Git Int
 <td><code>folder</code></td>
 <td>string</td>
 <td><code>null</code></td>
-<td>Optional folder filter; only returns notes from this folder (e.g. <code>"Journal"</code>)</td>
+<td>Optional folder filter; only returns notes from this folder (such as <code>"Journal"</code>)</td>
 </tr>
 </tbody>
 </table>
@@ -3714,7 +3714,7 @@ see the <a href="../guides/git-integration/#provider-username-reference">Git Int
 <td><code>similar_limit</code></td>
 <td>int</td>
 <td><code>5</code></td>
-<td>Max similar files to include. Pass <code>0</code> to skip the similarity lookup (e.g. when <code>stats</code> shows <code>semantic_search_available=false</code>)</td>
+<td>Max similar files to include. Pass <code>0</code> to skip the similarity lookup (such as when <code>stats</code> shows <code>semantic_search_available=false</code>)</td>
 </tr>
 <tr>
 <td><code>link_limit</code></td>
@@ -3730,14 +3730,14 @@ see the <a href="../guides/git-integration/#provider-username-reference">Git Int
 </tr>
 </tbody>
 </table>
-<p><strong>Returns:</strong> Object with <code>path</code>, <code>title</code>, <code>folder</code>, <code>frontmatter</code>, <code>modified_at</code>, <code>backlinks</code>, <code>outlinks</code>, <code>similar</code>, <code>folder_notes</code>, and <code>tags</code> fields. The <code>similar</code> list contains grouped result dicts — one entry per file with up to <code>chunks_per_file</code> best-matching sections (default 1 for <code>get_context</code> to keep dossiers compact). Index freshness is reported in <code>_meta.index_stale</code> (see the freshness note at the top of this page).</p>
+<p><strong>Returns:</strong> Object with <code>path</code>, <code>title</code>, <code>folder</code>, <code>frontmatter</code>, <code>modified_at</code>, <code>backlinks</code>, <code>outlinks</code>, <code>similar</code>, <code>folder_notes</code>, and <code>tags</code> fields. The <code>similar</code> list contains grouped result dicts, one entry per file with up to <code>chunks_per_file</code> best-matching sections (default 1 for <code>get_context</code> to keep dossiers compact). Index freshness is reported in <code>_meta.index_stale</code> (see the freshness note at the top of this page).</p>
 <div class="admonition note">
 <p class="admonition-title">Grouped similar shape</p>
-<p>Each <code>similar</code> entry contains <code>path</code>, <code>title</code>, <code>folder</code>, <code>score</code>, <code>search_type</code>, <code>frontmatter</code>, and <code>sections</code> — a list of <code>{heading, content, score}</code> dicts. <code>get_context</code> defaults to one section per file for compact dossiers; <code>search</code> and <code>get_similar</code> default to 2.</p>
+<p>Each <code>similar</code> entry contains <code>path</code>, <code>title</code>, <code>folder</code>, <code>score</code>, <code>search_type</code>, <code>frontmatter</code>, and <code>sections</code> (a list of <code>{heading, content, score}</code> dicts). <code>get_context</code> defaults to one section per file for compact dossiers; <code>search</code> and <code>get_similar</code> default to 2.</p>
 </div>
 <h3 id="get_orphan_notes"><code>get_orphan_notes</code><a class="headerlink" href="#get_orphan_notes" title="Permanent link">&para;</a></h3>
-<p>Find all notes with no inbound or outbound links — isolated documents that may need cross-referencing.</p>
-<p><strong>Returns:</strong> List of <code>NoteInfo</code> objects (<code>path</code>, <code>title</code>, <code>folder</code>, <code>frontmatter</code>, <code>modified_at</code>, <code>kind</code>), ordered by path. Returns ALL orphans with no limit — check <code>stats.orphan_count</code> before calling on large vaults.</p>
+<p>Find all notes with no inbound or outbound links (isolated documents that may need cross-referencing).</p>
+<p><strong>Returns:</strong> List of <code>NoteInfo</code> objects (<code>path</code>, <code>title</code>, <code>folder</code>, <code>frontmatter</code>, <code>modified_at</code>, <code>kind</code>), ordered by path. Returns ALL orphans with no limit; check <code>stats.orphan_count</code> before calling on large vaults.</p>
 <h3 id="get_most_linked"><code>get_most_linked</code><a class="headerlink" href="#get_most_linked" title="Permanent link">&para;</a></h3>
 <p>Find the most-linked-to notes in the vault, ranked by backlink count.</p>
 <p><strong>Parameters:</strong></p>
@@ -3799,7 +3799,7 @@ see the <a href="../guides/git-integration/#provider-username-reference">Git Int
 </tr>
 </tbody>
 </table>
-<p><strong>Returns:</strong> Object with <code>found</code> (bool), <code>path</code> (ordered list of note paths from source to target), and <code>hops</code> (number of edges, or <code>-1</code> if not found). Index freshness is reported in <code>_meta.index_stale</code> (see the freshness note at the top of this page).</p>
+<p><strong>Returns:</strong> Object with <code>found</code> (bool), <code>path</code> (ordered list of document paths from source to target), and <code>hops</code> (number of edges, or <code>-1</code> if not found). Index freshness is reported in <code>_meta.index_stale</code> (see the <em>Index freshness on read tools</em> admonition at the top of this page).</p>
 <h3 id="get_history"><code>get_history</code><a class="headerlink" href="#get_history" title="Permanent link">&para;</a></h3>
 <p>List commits that touched a note or attachment (or the whole vault) within an optional time window, up to a maximum count. Only available for git-backed vaults.</p>
 <p><strong>Parameters:</strong></p>
@@ -3817,7 +3817,7 @@ see the <a href="../guides/git-integration/#provider-username-reference">Git Int
 <td><code>path</code></td>
 <td>string</td>
 <td><code>null</code></td>
-<td>Relative vault path (e.g. <code>"notes/alpha.md"</code> or <code>"assets/diagram.png"</code>). May be a <code>.md</code> note or a configured attachment extension (png, pdf, svg, …). Omit for vault-wide history. An unsupported extension is rejected.</td>
+<td>Relative vault path (such as <code>"notes/alpha.md"</code> or <code>"assets/diagram.png"</code>). May be a <code>.md</code> note or a configured attachment extension (png, pdf, svg, …). Omit for vault-wide history. An unsupported extension is rejected.</td>
 </tr>
 <tr>
 <td><code>since</code></td>
@@ -3839,7 +3839,7 @@ see the <a href="../guides/git-integration/#provider-username-reference">Git Int
 </tr>
 </tbody>
 </table>
-<p><strong>Returns:</strong> Object with <code>commits</code> (list of commit entries, newest-first) and <code>total</code> (count — always equals <code>len(commits)</code>; does NOT indicate how many commits exist beyond the <code>limit</code> cap). The envelope keeps the structured payload self-describing on the wire instead of relying on FastMCP's auto-wrapping <code>result</code> key. Each entry in <code>commits</code> contains:</p>
+<p><strong>Returns:</strong> Object with <code>commits</code> (list of commit entries, newest-first) and <code>total</code> (count; always equals <code>len(commits)</code> and does NOT indicate how many commits exist beyond the <code>limit</code> cap). The envelope keeps the structured payload self-describing on the wire instead of relying on FastMCP's auto-wrapping <code>result</code> key. Each entry in <code>commits</code> contains:</p>
 <table>
 <thead>
 <tr>
@@ -3877,7 +3877,7 @@ see the <a href="../guides/git-integration/#provider-username-reference">Git Int
 <tr>
 <td><code>paths_changed</code></td>
 <td>list[string]</td>
-<td>Files touched by the commit. Populated for vault-wide queries (<code>path=null</code>); always empty for single-note queries, since the path is already determined by the query arguments — callers know which file the commit touched without needing it echoed back.</td>
+<td>Files touched by the commit. Populated for vault-wide queries (<code>path=null</code>); always empty for single-note queries, since the path is already determined by the query arguments (callers know which file the commit touched without needing it echoed back).</td>
 </tr>
 </tbody>
 </table>
@@ -3899,7 +3899,7 @@ see the <a href="../guides/git-integration/#provider-username-reference">Git Int
 <td><code>path</code></td>
 <td>string</td>
 <td>required</td>
-<td>Relative vault path (e.g. <code>"notes/alpha.md"</code> or <code>"assets/diagram.png"</code>). May be a <code>.md</code> note or a configured attachment extension (png, pdf, svg, …). An unsupported extension is rejected.</td>
+<td>Relative vault path (such as <code>"notes/alpha.md"</code> or <code>"assets/diagram.png"</code>). May be a <code>.md</code> note or a configured attachment extension (png, pdf, svg, …). An unsupported extension is rejected.</td>
 </tr>
 <tr>
 <td><code>since_sha</code></td>
@@ -3923,20 +3923,20 @@ see the <a href="../guides/git-integration/#provider-username-reference">Git Int
 <td><code>limit</code></td>
 <td>int</td>
 <td><code>null</code></td>
-<td>Only meaningful when <code>per_commit=true</code>. Caps the number of commits returned to the <code>limit</code> most recent ones. Clamped to <code>[1, 100]</code>. <code>null</code> = unbounded (still bounded by the <code>since..HEAD</code> range). Silently ignored when <code>per_commit=false</code>.</td>
+<td>Applies only when <code>per_commit=true</code>. Caps the number of commits returned to the <code>limit</code> most recent ones. Clamped to <code>[1, 100]</code>. <code>null</code> = unbounded (still bounded by the <code>since..HEAD</code> range). Silently ignored when <code>per_commit=false</code>.</td>
 </tr>
 </tbody>
 </table>
 <p>Exactly one of <code>since_sha</code> / <code>since_timestamp</code> must be supplied.</p>
 <p><strong>Returns:</strong></p>
 <ul>
-<li><code>per_commit=false</code>: object with <code>diff</code> (string) — unified diff from reference to HEAD. For a <strong>binary attachment</strong>, this is a <code>git diff --stat</code> size/rename summary (e.g. <code>assets/x.png | Bin 1234 -&gt; 5678 bytes</code>); for a <strong>text attachment</strong> (<code>.svg</code>, <code>.csv</code>, …) or <code>.md</code> note, it is a full unified patch. May include <code>[diff truncated: N bytes omitted]</code> if output exceeds 50 KB.</li>
-<li><code>per_commit=true</code>: object with <code>commits</code> (list of per-commit entries, newest-first — each containing <code>sha</code>, <code>short_sha</code>, <code>timestamp</code>, <code>message</code>, and <code>diff</code>) and <code>total</code> (count — always equals <code>len(commits)</code>; does NOT indicate how many commits exist beyond the <code>limit</code> cap). The envelope keeps the structured payload self-describing on the wire instead of relying on FastMCP's auto-wrapping <code>result</code> key.</li>
+<li><code>per_commit=false</code>: object with <code>diff</code> (string), the unified diff from reference to HEAD. For a <strong>binary attachment</strong>, this is a <code>git diff --stat</code> size/rename summary (such as <code>assets/x.png | Bin 1234 -&gt; 5678 bytes</code>); for a <strong>text attachment</strong> (<code>.svg</code>, <code>.csv</code>, …) or <code>.md</code> note, it is a full unified patch. May include <code>[diff truncated: N bytes omitted]</code> if output exceeds 50 KB.</li>
+<li><code>per_commit=true</code>: object with <code>commits</code> (list of per-commit entries, newest-first, each containing <code>sha</code>, <code>short_sha</code>, <code>timestamp</code>, <code>message</code>, and <code>diff</code>) and <code>total</code> (count; always equals <code>len(commits)</code> and does NOT indicate how many commits exist beyond the <code>limit</code> cap). The envelope keeps the structured payload self-describing on the wire instead of relying on FastMCP's auto-wrapping <code>result</code> key.</li>
 </ul>
 <p><strong>Raises:</strong> <code>ToolError</code> if parameters are invalid, the reference commit is not found, or the path uses an unsupported extension.</p>
 <hr />
 <h2 id="one-time-transfer-links">One-Time Transfer Links<a class="headerlink" href="#one-time-transfer-links" title="Permanent link">&para;</a></h2>
-<p>Transfer tools mint short-lived capability URLs so large files can move between the vault and a browser or another service without inflating the LLM context window. The unguessable token in the URL is the authorization — no separate <code>Authorization</code> header is needed.</p>
+<p>Transfer tools mint short-lived capability URLs so large files can move between the vault and a browser or another service without inflating the LLM context window. The unguessable token in the URL is the authorization; no separate <code>Authorization</code> header is needed.</p>
 <div class="admonition note">
 <p class="admonition-title">HTTP/SSE transport only</p>
 <p>Transfer tools require a running HTTP or SSE server with <code>MARKDOWN_VAULT_MCP_BASE_URL</code> set. They are not available on stdio transport.</p>
@@ -3946,7 +3946,7 @@ see the <a href="../guides/git-integration/#provider-username-reference">Git Int
 <p><code>create_download_link</code> is available in read-only mode. <code>create_upload_link</code> is a write tool and is hidden when <code>MARKDOWN_VAULT_MCP_READ_ONLY=true</code>.</p>
 </div>
 <h3 id="create_download_link"><code>create_download_link</code><a class="headerlink" href="#create_download_link" title="Permanent link">&para;</a></h3>
-<p>Mint a one-time capability URL to download a vault note or attachment. The file must exist at link-creation time. The URL can be fetched exactly once — after a successful download the token is consumed. A failed or interrupted download does not consume the token.</p>
+<p>Mint a one-time capability URL to download a vault note or attachment. The file must exist at link-creation time. The URL can be fetched exactly once; after a successful download the token is consumed. A failed or interrupted download does not consume the token.</p>
 <p><strong>Parameters:</strong></p>
 <table>
 <thead>
@@ -4033,12 +4033,12 @@ see the <a href="../guides/git-integration/#provider-username-reference">Git Int
 <span class="w">     </span><span class="s2">&quot;https://mcp.example.com/transfer/&lt;token&gt;&quot;</span>
 </code></pre></div>
 <div class="admonition note">
-<p class="admonition-title">Raw body — not multipart</p>
+<p class="admonition-title">Raw body, not multipart</p>
 <p>The upload endpoint expects the raw file bytes as the request body. Do not use <code>multipart/form-data</code>; send the content directly (curl's <code>--data-binary</code> flag does this correctly).</p>
 </div>
 <div class="admonition note">
 <p class="admonition-title">One-time</p>
-<p>The token is consumed on the first successful upload. A transient failure (network error, size limit exceeded) does not consume the token — retry is permitted until the TTL expires.</p>
+<p>The token is consumed on the first successful upload. A transient failure (network error, size limit exceeded) does not consume the token; retry is permitted until the TTL expires.</p>
 </div>
 <hr />
 <h2 id="mcp-apps">MCP Apps<a class="headerlink" href="#mcp-apps" title="Permanent link">&para;</a></h2>

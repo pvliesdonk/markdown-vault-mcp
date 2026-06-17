@@ -742,7 +742,7 @@
   <a href="#manual-sync-git_sync-tool" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Manual sync — git_sync tool
+        Manual sync: git_sync tool
       
     </span>
   </a>
@@ -1811,7 +1811,7 @@
   <a href="#manual-sync-git_sync-tool" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Manual sync — git_sync tool
+        Manual sync: git_sync tool
       
     </span>
   </a>
@@ -1921,27 +1921,27 @@
 <li>Writes are committed and pushed after the configured idle delay.</li>
 <li>Periodic pull uses fast-forward-only updates.</li>
 </ul>
-<h2 id="manual-sync-git_sync-tool">Manual sync — <code>git_sync</code> tool<a class="headerlink" href="#manual-sync-git_sync-tool" title="Permanent link">&para;</a></h2>
+<h2 id="manual-sync-git_sync-tool">Manual sync: <code>git_sync</code> tool<a class="headerlink" href="#manual-sync-git_sync-tool" title="Permanent link">&para;</a></h2>
 <p>The periodic loops are time-based: pull every
 <code>MARKDOWN_VAULT_MCP_GIT_PULL_INTERVAL_S</code> seconds (default 600), push
 <code>MARKDOWN_VAULT_MCP_GIT_PUSH_DELAY_S</code> seconds after the last write
 (default 30). For workflows where the LLM needs to confirm "your changes
-are now on the remote" before telling the user to check another device —
+are now on the remote" before telling the user to check another device,
 or wants to pull in remote edits <em>right now</em> before continuing the
-conversation — call <code>git_sync</code> directly:</p>
+conversation, call <code>git_sync</code> directly:</p>
 <div class="highlight"><pre><span></span><code>git_sync(direction=&quot;both&quot;)
 </code></pre></div>
 <p>Use <code>direction="pull"</code> or <code>direction="push"</code> to skip a leg. In
 <code>direction="both"</code> mode the push leg only runs when the pull leg
 succeeded; otherwise <code>push</code> stays <code>null</code> and the LLM should inspect
 <code>pull.reason</code> (and <code>pull.conflict_files</code>) before retrying.</p>
-<p><code>dry_run=true</code> previews what a pull <em>would</em> do — useful for "is there
-anything new on origin?" without risking an in-conversation conflict.
+<p><code>dry_run=true</code> previews what a pull <em>would</em> do (useful for "is there
+anything new on origin?") without risking an in-conversation conflict.
 The push leg has no safe local "would this be accepted" probe, so a
 dry-run push always returns <code>applied=false</code> with
 <code>reason="dry_run_unsupported"</code>.</p>
 <div class="admonition info">
-<p class="admonition-title">Conflict outcome — Syncthing-style sibling resolution</p>
+<p class="admonition-title">Conflict outcome: Syncthing-style sibling resolution</p>
 <p>When the pull would otherwise need an interactive merge, the server
 follows the <a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/232">#232</a>
 Syncthing-style flow:</p>
@@ -1973,7 +1973,7 @@ just-written file is committed first and the merge runs on a clean tree
 that write and the remote touched the same file, it flows through the
 Syncthing-style sibling resolution above rather than failing. The drain is
 best-effort and time-bounded: if it cannot finish in time, the pull logs a
-warning and proceeds anyway — the write is still safely on disk and is
+warning and proceeds anyway; the write is still safely on disk and is
 committed on the next opportunity, at worst reverting to the pre-#571
 behavior (a non-fast-forward push that the next reconcile resolves).</p>
 </div>
@@ -2017,7 +2017,7 @@ the <a href="../../tools/#git_sync"><code>git_sync</code> tool reference</a>.</p
 </ul>
 <h2 id="git-lfs">Git LFS<a class="headerlink" href="#git-lfs" title="Permanent link">&para;</a></h2>
 <p>If your vault tracks large files (PDFs, images) with <a href="https://git-lfs.com">Git LFS</a>, the server runs <code>git lfs pull</code> on startup to resolve LFS pointers into actual file content. This is enabled by default.</p>
-<p>Set <code>MARKDOWN_VAULT_MCP_GIT_LFS=false</code> to skip the LFS pull — use this when:</p>
+<p>Set <code>MARKDOWN_VAULT_MCP_GIT_LFS=false</code> to skip the LFS pull. Use this when:</p>
 <ul>
 <li>Your vault does not use Git LFS</li>
 <li><code>git-lfs</code> is not installed in your environment</li>

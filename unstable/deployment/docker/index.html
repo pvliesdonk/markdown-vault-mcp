@@ -2225,7 +2225,7 @@ docker<span class="w"> </span>pull<span class="w"> </span>ghcr.io/pvliesdonk/mar
 <span class="c1"># Copy an example env file</span>
 cp<span class="w"> </span>examples/obsidian-readonly.env<span class="w"> </span>.env
 
-<span class="c1"># Edit .env — set MARKDOWN_VAULT_MCP_SOURCE_DIR to the vault path on the host</span>
+<span class="c1"># Edit .env (set MARKDOWN_VAULT_MCP_SOURCE_DIR to the vault path on the host)</span>
 <span class="c1"># Then start the service</span>
 docker<span class="w"> </span>compose<span class="w"> </span>up<span class="w"> </span>-d
 
@@ -2275,22 +2275,22 @@ curl<span class="w"> </span>http://localhost:8000/health
 <tr>
 <td><code>/data/state</code></td>
 <td>Named volume</td>
-<td>All server-managed internal state: SQLite FTS index, embedding vectors, FastEmbed model cache, OIDC proxy state, and HTTP session event store</td>
+<td>All server-managed internal state (SQLite FTS index, embedding vectors, FastEmbed model cache, OIDC proxy state, HTTP session event store)</td>
 </tr>
 </tbody>
 </table>
-<p>All <code>/data/*</code> directories are pre-created and owned by the runtime user in the image. For managed repo mode (where the server clones a git repo on first start), <code>/data/vault</code> must be writable — this works automatically with named volumes or when UID/GID match the bind-mount owner. The first startup triggers a full index build; subsequent starts only reindex changed files.</p>
+<p>All <code>/data/*</code> directories are pre-created and owned by the runtime user in the image. For managed repo mode (where the server clones a git repo on first start), <code>/data/vault</code> must be writable (this works automatically with named volumes or when UID/GID match the bind-mount owner). The first startup triggers a full index build; subsequent starts only reindex changed files.</p>
 <div class="admonition warning">
 <p class="admonition-title">Upgrading from v1.8.x</p>
-<p>Versions before v1.9.0 used three separate state volumes (<code>index-data</code>, <code>embeddings-data</code>, <code>fastembed-data</code>). These have been consolidated into a single <code>state-data</code> volume mounted at <code>/data/state</code>. Existing state is <strong>not</strong> migrated automatically — the index and embeddings will be rebuilt on first startup (the index rebuild is incremental; the embeddings rebuild may take several minutes for large vaults). The FastEmbed model cache will be re-downloaded (~100 MB). To avoid the rebuild, copy data from the old volumes into <code>state-data</code> before starting the new container.</p>
+<p>Versions before v1.9.0 used three separate state volumes (<code>index-data</code>, <code>embeddings-data</code>, <code>fastembed-data</code>). These have been consolidated into a single <code>state-data</code> volume mounted at <code>/data/state</code>. Existing state is <strong>not automatically migrated</strong>: the index and embeddings will be rebuilt on first startup (the index rebuild is incremental; the embeddings rebuild may take several minutes for large vaults). The FastEmbed model cache will be re-downloaded (~100 MB). To avoid the rebuild, copy data from the old volumes into <code>state-data</code> before starting the new container.</p>
 </div>
 <h2 id="traefik-reverse-proxy">Traefik Reverse Proxy<a class="headerlink" href="#traefik-reverse-proxy" title="Permanent link">&para;</a></h2>
 <p>The <code>compose.yml</code> includes Traefik labels out of the box. When Traefik is running and watching Docker, it picks up these labels and routes traffic automatically.</p>
 <p><strong>What the labels do:</strong></p>
 <ul>
-<li><code>traefik.enable=true</code> — opt this service in to Traefik discovery</li>
-<li><code>traefik.http.routers.markdown-vault-mcp.rule</code> — defines the <code>Host</code> rule; defaults to <code>markdown-vault-mcp.local</code></li>
-<li><code>traefik.http.services.markdown-vault-mcp.loadbalancer.server.port</code> — tells Traefik the container listens on port 8000</li>
+<li><code>traefik.enable=true</code>: opts this service in to Traefik discovery</li>
+<li><code>traefik.http.routers.markdown-vault-mcp.rule</code>: defines the <code>Host</code> rule; defaults to <code>markdown-vault-mcp.local</code></li>
+<li><code>traefik.http.services.markdown-vault-mcp.loadbalancer.server.port</code>: tells Traefik the container listens on port 8000</li>
 </ul>
 <h3 id="prerequisites">Prerequisites<a class="headerlink" href="#prerequisites" title="Permanent link">&para;</a></h3>
 <ol>
@@ -2326,7 +2326,7 @@ curl<span class="w"> </span>http://localhost:8000/health
 </code></pre></div>
 <div class="admonition note">
 <p class="admonition-title">OIDC subpath deployments use a different pattern</p>
-<p>When OIDC is enabled, do <strong>not</strong> include the subpath in <code>HTTP_PATH</code>. Instead, put the subpath in <code>BASE_URL</code> and configure the reverse proxy to strip the prefix. See the <a href="../oidc/#subpath-deployments">OIDC subpath deployment guide</a> for details.</p>
+<p>When OIDC is enabled, omit the subpath from <code>HTTP_PATH</code>. Put the subpath in <code>BASE_URL</code> instead and configure the reverse proxy to strip the prefix. See the <a href="../oidc/#subpath-deployments">OIDC subpath deployment guide</a> for details.</p>
 </div>
 <h3 id="tls-with-lets-encrypt">TLS with Let's Encrypt<a class="headerlink" href="#tls-with-lets-encrypt" title="Permanent link">&para;</a></h3>
 <p>Add a <code>certificatesResolvers</code> block to your Traefik static config and these labels to the service:</p>
@@ -2368,17 +2368,17 @@ curl<span class="w"> </span>http://localhost:8000/health
 Writes are committed locally; run <code>git pull</code>/<code>git push</code> externally.</p>
 </div>
 <h2 id="uidgid-configuration">UID/GID Configuration<a class="headerlink" href="#uidgid-configuration" title="Permanent link">&para;</a></h2>
-<p>The container runs as a non-root <code>appuser</code> (UID 1000 / GID 1000 by default). On startup, the entrypoint automatically fixes ownership of all <code>/data/*</code> directories before dropping privileges — so <strong>named volumes work out of the box</strong> regardless of how Docker initialised them.</p>
+<p>The container runs as a non-root <code>appuser</code> (UID 1000 / GID 1000 by default). On startup, the entrypoint automatically fixes ownership of all <code>/data/*</code> directories before dropping privileges, so <strong>named volumes work out of the box</strong> regardless of how Docker initialised them.</p>
 <p>This is the same entrypoint + <code>gosu</code> pattern used by the official PostgreSQL, Redis, and MySQL Docker images.</p>
 <h3 id="runtime-uidgid-override">Runtime UID/GID override<a class="headerlink" href="#runtime-uidgid-override" title="Permanent link">&para;</a></h3>
-<p>To match a specific host user (e.g. for bind-mounted vaults), set <code>PUID</code> and <code>PGID</code>:</p>
+<p>To match a specific host user (such as for bind-mounted vaults), set <code>PUID</code> and <code>PGID</code>:</p>
 <div class="highlight"><pre><span></span><code><span class="nt">services</span><span class="p">:</span>
 <span class="w">  </span><span class="nt">markdown-vault-mcp</span><span class="p">:</span>
 <span class="w">    </span><span class="nt">environment</span><span class="p">:</span>
 <span class="w">      </span><span class="nt">PUID</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1001</span>
 <span class="w">      </span><span class="nt">PGID</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1001</span>
 </code></pre></div>
-<p>The entrypoint updates <code>appuser</code>'s UID/GID to the specified values and chowns <code>/data</code> accordingly.</p>
+<p>The entrypoint updates <code>appuser</code>'s UID/GID to the specified values and chowns <code>/data</code> to match.</p>
 <h3 id="build-time-uidgid-alternative-for-bind-mounts">Build-time UID/GID (alternative for bind mounts)<a class="headerlink" href="#build-time-uidgid-alternative-for-bind-mounts" title="Permanent link">&para;</a></h3>
 <p>If you prefer to bake the UID/GID into the image:</p>
 <div class="highlight"><pre><span></span><code>docker<span class="w"> </span>compose<span class="w"> </span>build<span class="w"> </span>--build-arg<span class="w"> </span><span class="nv">APP_UID</span><span class="o">=</span><span class="k">$(</span>id<span class="w"> </span>-u<span class="k">)</span><span class="w"> </span>--build-arg<span class="w"> </span><span class="nv">APP_GID</span><span class="o">=</span><span class="k">$(</span>id<span class="w"> </span>-g<span class="k">)</span>
@@ -2396,9 +2396,9 @@ Writes are committed locally; run <code>git pull</code>/<code>git push</code> ex
 <p>Check logs: <code>docker compose logs markdown-vault-mcp</code></p>
 <p>Common causes:</p>
 <ul>
-<li>Token lacks <code>repo</code> scope — regenerate with the right permissions</li>
-<li>Remote URL is SSH-based — the PAT strategy only works with HTTPS remotes. Convert: <code>git remote set-url origin https://github.com/user/repo.git</code></li>
-<li>In unmanaged/commit-only mode, the vault directory is not a git repo — run <code>git init</code> on the host first</li>
+<li>Token lacks <code>repo</code> scope: regenerate with the right permissions</li>
+<li>Remote URL is SSH-based: the PAT strategy only works with HTTPS remotes. Convert: <code>git remote set-url origin https://github.com/user/repo.git</code></li>
+<li>In unmanaged/commit-only mode, the vault directory is not a git repo: run <code>git init</code> on the host first</li>
 </ul>
 <h3 id="stale-index-after-adding-files-outside-the-server">Stale index after adding files outside the server<a class="headerlink" href="#stale-index-after-adding-files-outside-the-server" title="Permanent link">&para;</a></h3>
 <p>The server reindexes on startup. Restart the container:</p>
@@ -2413,13 +2413,13 @@ Writes are committed locally; run <code>git pull</code>/<code>git push</code> ex
 <span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;host.docker.internal:host-gateway&quot;</span>
 </code></pre></div>
 <h2 id="remote-debugging">Remote debugging<a class="headerlink" href="#remote-debugging" title="Permanent link">&para;</a></h2>
-<p>Production images ship without <code>debugpy</code> to keep the image lean.  To attach a remote Python debugger from VS Code or PyCharm:</p>
+<p>Production images ship without <code>debugpy</code> to keep the image lean. To attach a remote Python debugger from VS Code or PyCharm:</p>
 <ol>
 <li>
 <p><strong>Build with the debug extra:</strong></p>
 <div class="highlight"><pre><span></span><code>docker<span class="w"> </span>build<span class="w"> </span>--build-arg<span class="w"> </span><span class="nv">DEBUG</span><span class="o">=</span><span class="nb">true</span><span class="w"> </span>-t<span class="w"> </span>markdown-vault-mcp:debug<span class="w"> </span>.
 </code></pre></div>
-<p>This installs the <code>[debug]</code> optional-dependency group (which pulls <code>debugpy</code> transitively from <code>fastmcp-pvl-core</code>).  Default builds (<code>DEBUG=false</code>) skip it.</p>
+<p>This installs the <code>[debug]</code> optional-dependency group (which pulls <code>debugpy</code> transitively from <code>fastmcp-pvl-core</code>). Default builds (<code>DEBUG=false</code>) skip it.</p>
 </li>
 <li>
 <p><strong>Run with the debug env vars set and the port mapped:</strong></p>
@@ -2444,13 +2444,13 @@ Writes are committed locally; run <code>git pull</code>/<code>git push</code> ex
 </tr>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_DEBUG_WAIT</code></td>
-<td>When truthy (<code>1</code>/<code>true</code>/<code>yes</code>/<code>on</code>), block startup until the IDE attaches.  Default is non-blocking.</td>
+<td>When truthy (<code>1</code>/<code>true</code>/<code>yes</code>/<code>on</code>), block startup until the IDE attaches. Default is non-blocking.</td>
 </tr>
 </tbody>
 </table>
 </li>
 <li>
-<p><strong>Attach from VS Code</strong> — add a launch config:</p>
+<p><strong>Attach from VS Code:</strong> add a launch config:</p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
 <span class="w">  </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Attach to markdown-vault-mcp&quot;</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;debugpy&quot;</span><span class="p">,</span>
@@ -2463,9 +2463,9 @@ Writes are committed locally; run <code>git pull</code>/<code>git push</code> ex
 </ol>
 <div class="admonition danger">
 <p class="admonition-title">Never publish the debug port on a public network</p>
-<p>The debug listener binds <code>0.0.0.0</code> inside the container so the IDE can reach it from the host, but <strong>debugpy's DAP protocol is unauthenticated</strong> — any peer that can reach the port has arbitrary code execution as the server process.  Always bind the port mapping to localhost (<code>-p 127.0.0.1:5678:5678</code>) or tunnel via <code>kubectl port-forward</code> / SSH.  Production images should be built with default <code>DEBUG=false</code>.</p>
+<p>The debug listener binds <code>0.0.0.0</code> inside the container so the IDE can reach it from the host, but <strong>debugpy's DAP protocol is unauthenticated</strong>: any peer that can reach the port has arbitrary code execution as the server process. Always bind the port mapping to localhost (<code>-p 127.0.0.1:5678:5678</code>) or tunnel via <code>kubectl port-forward</code> / SSH. Production images should be built with default <code>DEBUG=false</code>.</p>
 </div>
-<p>When the helper is invoked but <code>debugpy</code> isn't installed (e.g. someone sets <code>DEBUG_PORT</code> on a non-debug image), it logs a WARNING and continues — safe failure mode.</p>
+<p>When the helper is invoked but <code>debugpy</code> isn't installed (such as when <code>DEBUG_PORT</code> is set on a non-debug image), it logs a WARNING and continues: safe failure mode.</p>
 <!-- DOMAIN-DOCKER-EXTRA-START -->
 <!-- DOMAIN-DOCKER-EXTRA-END -->
 

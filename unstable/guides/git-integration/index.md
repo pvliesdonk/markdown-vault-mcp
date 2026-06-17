@@ -29,9 +29,9 @@ Behavior:
 - Writes are committed and pushed after the configured idle delay.
 - Periodic pull uses fast-forward-only updates.
 
-## Manual sync — `git_sync` tool
+## Manual sync: `git_sync` tool
 
-The periodic loops are time-based: pull every `MARKDOWN_VAULT_MCP_GIT_PULL_INTERVAL_S` seconds (default 600), push `MARKDOWN_VAULT_MCP_GIT_PUSH_DELAY_S` seconds after the last write (default 30). For workflows where the LLM needs to confirm "your changes are now on the remote" before telling the user to check another device — or wants to pull in remote edits *right now* before continuing the conversation — call `git_sync` directly:
+The periodic loops are time-based: pull every `MARKDOWN_VAULT_MCP_GIT_PULL_INTERVAL_S` seconds (default 600), push `MARKDOWN_VAULT_MCP_GIT_PUSH_DELAY_S` seconds after the last write (default 30). For workflows where the LLM needs to confirm "your changes are now on the remote" before telling the user to check another device, or wants to pull in remote edits *right now* before continuing the conversation, call `git_sync` directly:
 
 ```
 git_sync(direction="both")
@@ -39,9 +39,9 @@ git_sync(direction="both")
 
 Use `direction="pull"` or `direction="push"` to skip a leg. In `direction="both"` mode the push leg only runs when the pull leg succeeded; otherwise `push` stays `null` and the LLM should inspect `pull.reason` (and `pull.conflict_files`) before retrying.
 
-`dry_run=true` previews what a pull *would* do — useful for "is there anything new on origin?" without risking an in-conversation conflict. The push leg has no safe local "would this be accepted" probe, so a dry-run push always returns `applied=false` with `reason="dry_run_unsupported"`.
+`dry_run=true` previews what a pull *would* do (useful for "is there anything new on origin?") without risking an in-conversation conflict. The push leg has no safe local "would this be accepted" probe, so a dry-run push always returns `applied=false` with `reason="dry_run_unsupported"`.
 
-Conflict outcome — Syncthing-style sibling resolution
+Conflict outcome: Syncthing-style sibling resolution
 
 When the pull would otherwise need an interactive merge, the server follows the [#232](https://github.com/pvliesdonk/markdown-vault-mcp/issues/232) Syncthing-style flow:
 
@@ -54,7 +54,7 @@ The LLM (or a downstream agent) is expected to read the listed sibling(s), recon
 
 Writes landing during a pull
 
-A write whose deferred git commit has not yet run when a pull starts is never lost. Before every real (non-dry-run) pull (periodic or `git_sync`), the server pauses new writes and drains the deferred-commit queue (a `dry_run` preview only fetches and never quiesces), so in the normal case the just-written file is committed first and the merge runs on a clean tree ([#571](https://github.com/pvliesdonk/markdown-vault-mcp/issues/571)). If that write and the remote touched the same file, it flows through the Syncthing-style sibling resolution above rather than failing. The drain is best-effort and time-bounded: if it cannot finish in time, the pull logs a warning and proceeds anyway — the write is still safely on disk and is committed on the next opportunity, at worst reverting to the pre-#571 behavior (a non-fast-forward push that the next reconcile resolves).
+A write whose deferred git commit has not yet run when a pull starts is never lost. Before every real (non-dry-run) pull (periodic or `git_sync`), the server pauses new writes and drains the deferred-commit queue (a `dry_run` preview only fetches and never quiesces), so in the normal case the just-written file is committed first and the merge runs on a clean tree ([#571](https://github.com/pvliesdonk/markdown-vault-mcp/issues/571)). If that write and the remote touched the same file, it flows through the Syncthing-style sibling resolution above rather than failing. The drain is best-effort and time-bounded: if it cannot finish in time, the pull logs a warning and proceeds anyway; the write is still safely on disk and is committed on the next opportunity, at worst reverting to the pre-#571 behavior (a non-fast-forward push that the next reconcile resolves).
 
 The full enumeration of `pull.reason` and `push.reason` values lives in the [`git_sync` tool reference](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/tools/#git_sync).
 
@@ -106,7 +106,7 @@ Behavior:
 
 If your vault tracks large files (PDFs, images) with [Git LFS](https://git-lfs.com), the server runs `git lfs pull` on startup to resolve LFS pointers into actual file content. This is enabled by default.
 
-Set `MARKDOWN_VAULT_MCP_GIT_LFS=false` to skip the LFS pull — use this when:
+Set `MARKDOWN_VAULT_MCP_GIT_LFS=false` to skip the LFS pull. Use this when:
 
 - Your vault does not use Git LFS
 - `git-lfs` is not installed in your environment

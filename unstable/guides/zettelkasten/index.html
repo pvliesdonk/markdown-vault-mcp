@@ -1185,10 +1185,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#let-claude-split-or-merge-fleeting-notes" class="md-nav__link">
+  <a href="#let-claude-split-or-merge-quick-capture-notes" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Let Claude split or merge fleeting notes
+        Let Claude split or merge quick-capture notes
       
     </span>
   </a>
@@ -2213,10 +2213,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#let-claude-split-or-merge-fleeting-notes" class="md-nav__link">
+  <a href="#let-claude-split-or-merge-quick-capture-notes" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Let Claude split or merge fleeting notes
+        Let Claude split or merge quick-capture notes
       
     </span>
   </a>
@@ -2260,10 +2260,10 @@
 
 
 <h1 id="zettelkasten-with-markdown-vault-mcp">Zettelkasten with markdown-vault-mcp<a class="headerlink" href="#zettelkasten-with-markdown-vault-mcp" title="Permanent link">&para;</a></h1>
-<p>A Zettelkasten is a personal knowledge management system based on atomic notes, cross-linking, and emergent discovery. This guide shows how to use markdown-vault-mcp as your Zettelkasten backend, leveraging its search, linking, and graph navigation tools to build a connected knowledge base.</p>
+<p>A Zettelkasten is a personal knowledge management system based on atomic notes, cross-linking, and emergent discovery. This guide shows how to use markdown-vault-mcp as your Zettelkasten backend, using its search, linking, and graph navigation tools to build a connected knowledge base.</p>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
-<p>This is one of many ways to organize a vault with markdown-vault-mcp. The server is a generic markdown vault backend — Zettelkasten conventions are applied in this guide but not required or enforced by the server.</p>
+<p>This is one of many ways to organize a vault with markdown-vault-mcp. The server is a generic markdown vault backend; Zettelkasten conventions are applied in this guide but not required or enforced by the server.</p>
 </div>
 <h2 id="vault-setup">Vault Setup<a class="headerlink" href="#vault-setup" title="Permanent link">&para;</a></h2>
 <h3 id="recommended-folder-structure">Recommended folder structure<a class="headerlink" href="#recommended-folder-structure" title="Permanent link">&para;</a></h3>
@@ -2292,7 +2292,7 @@
   assets/
     diagram.pdf
 </code></pre></div></p>
-<p>Organize by workflow stage or topic, but <strong>rely on links, not folders, for knowledge structure.</strong> Folders are convenience — the graph is the system.</p>
+<p>Organize by workflow stage or topic, but <strong>rely on links, not folders, for knowledge structure.</strong> Folders are convenience; the graph is the system.</p>
 <h3 id="frontmatter-schema">Frontmatter schema<a class="headerlink" href="#frontmatter-schema" title="Permanent link">&para;</a></h3>
 <p>Recommend this structure for all notes:</p>
 <div class="highlight"><pre><span></span><code><span class="nn">---</span>
@@ -2305,11 +2305,11 @@
 </code></pre></div>
 <p><strong>Field meanings:</strong></p>
 <ul>
-<li><code>title</code> — The note's heading. Used for display in lists and searches.</li>
-<li><code>type</code> — Note category: <code>fleeting</code> (quick capture), <code>literature</code> (extracted from source), <code>permanent</code> (your own synthesis), <code>moc</code> (map of content / hub note). Helps you review notes by stage.</li>
-<li><code>tags</code> — List of keywords. Searchable via <code>filters={"tags": "value"}</code>.</li>
-<li><code>source</code> — Full URL or bibliographic citation. Used to credit the original source for literature notes.</li>
-<li><code>created</code> — ISO 8601 date when the note was written. Useful for reviewing note age.</li>
+<li><code>title</code>: The note's heading. Used for display in lists and searches.</li>
+<li><code>type</code>: Note category: <code>fleeting</code> (quick capture), <code>literature</code> (extracted from source), <code>permanent</code> (your own synthesis), <code>moc</code> (map of content / hub note). Helps you review notes by stage.</li>
+<li><code>tags</code>: List of keywords. Searchable via <code>filters={"tags": "value"}</code>.</li>
+<li><code>source</code>: Full URL or bibliographic citation. Used to credit the original source for literature notes.</li>
+<li><code>created</code>: ISO 8601 date when the note was written. Useful for reviewing note age.</li>
 </ul>
 <h3 id="make-frontmatter-fields-searchable">Make frontmatter fields searchable<a class="headerlink" href="#make-frontmatter-fields-searchable" title="Permanent link">&para;</a></h3>
 <p>Configure <code>MARKDOWN_VAULT_MCP_INDEXED_FIELDS</code> to make <code>type</code> and <code>tags</code> structured filters in search:</p>
@@ -2325,9 +2325,9 @@
 <h3 id="filename-conventions">Filename conventions<a class="headerlink" href="#filename-conventions" title="Permanent link">&para;</a></h3>
 <p>The server uses file paths as note identity. Choose any naming scheme:</p>
 <ul>
-<li><strong>Timestamp-based:</strong> <code>YYYYMMDDHHMM-distributed-consensus.md</code> — sorts chronologically, no collisions</li>
-<li><strong>Title-based:</strong> <code>distributed-consensus.md</code> — human-readable, easier to read in logs</li>
-<li><strong>Luhmann-style IDs:</strong> <code>1a.2b.3c.md</code> — mimics paper ZK, encodes hierarchy (rarely needed)</li>
+<li><strong>Timestamp-based:</strong> <code>YYYYMMDDHHMM-distributed-consensus.md</code> (sorts chronologically, no collisions)</li>
+<li><strong>Title-based:</strong> <code>distributed-consensus.md</code> (human-readable, easier to read in logs)</li>
+<li><strong>Luhmann-style IDs:</strong> <code>1a.2b.3c.md</code> (mimics paper ZK, encodes hierarchy; rarely needed)</li>
 </ul>
 <p>Pick one and stick to it. The server handles all three equally well.</p>
 <h2 id="workflow">Workflow<a class="headerlink" href="#workflow" title="Permanent link">&para;</a></h2>
@@ -2357,7 +2357,7 @@ markdown-vault-mcp<span class="w"> </span>serve<span class="w"> </span><span cla
 <div class="highlight"><pre><span></span><code>markdown-vault-mcp<span class="w"> </span>search<span class="w"> </span><span class="s2">&quot;*&quot;</span><span class="w"> </span>--folder<span class="w"> </span>Inbox
 </code></pre></div>
 <h3 id="2-develop-literature-permanent">2. Develop (Literature → Permanent)<a class="headerlink" href="#2-develop-literature-permanent" title="Permanent link">&para;</a></h3>
-<p>Expand fleeting notes into permanent knowledge. Two paths:</p>
+<p>Expand inbox notes into permanent knowledge. Two paths:</p>
 <p><strong>From external sources (literature notes):</strong>
 1. Read an article, book section, or paper
 2. Create a <code>literature</code> note with key extracts and your interpretation
@@ -2391,12 +2391,12 @@ markdown-vault-mcp<span class="w"> </span>serve<span class="w"> </span><span cla
 <span class="n">context</span> <span class="o">=</span> <span class="n">vault</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">get_context</span><span class="p">(</span><span class="s2">&quot;Notes/consensus.md&quot;</span><span class="p">)</span>
 </code></pre></div>
 <p>Returns:
-- <code>backlinks</code> — notes that link here (who cites this idea?)
-- <code>outlinks</code> — notes this links to (what does this build on?)
-- <code>similar</code> — semantically related notes not yet linked
-- <code>folder_notes</code> — other notes in the same folder
-- <code>tags</code> — frontmatter tags for grouping
-- <code>modified_at</code> — last modification timestamp</p>
+- <code>backlinks</code>: notes that link here (who cites this idea?)
+- <code>outlinks</code>: notes this links to (what does this build on?)
+- <code>similar</code>: semantically related notes not yet linked
+- <code>folder_notes</code>: other notes in the same folder
+- <code>tags</code>: frontmatter tags for grouping
+- <code>modified_at</code>: last modification timestamp</p>
 <p><strong>Find related notes you haven't linked yet:</strong></p>
 <div class="highlight"><pre><span></span><code><span class="n">similar</span> <span class="o">=</span> <span class="n">vault</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">get_similar</span><span class="p">(</span><span class="s2">&quot;Notes/consensus.md&quot;</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
 <span class="k">for</span> <span class="n">note</span> <span class="ow">in</span> <span class="n">similar</span><span class="p">:</span>
@@ -2423,9 +2423,9 @@ markdown-vault-mcp<span class="w"> </span>serve<span class="w"> </span><span cla
 <span class="p">)</span>
 </code></pre></div>
 <p>All three link formats work:
-- <code>[[wikilinks]]</code> — shortest, preferred for internal links
-- <code>[Markdown links](path.md)</code> — standard markdown
-- <code>[Reference-style][1]\n\n[1]: path.md</code> — separates link text from destination</p>
+- <code>[[wikilinks]]</code>: shortest, preferred for internal links
+- <code>[Markdown links](path.md)</code>: standard markdown
+- <code>[Reference-style][1]\n\n[1]: path.md</code>: separates link text from destination</p>
 <p><strong>Rename safely with link updates:</strong></p>
 <p>When a note title changes, rename it and update all backlinks automatically:</p>
 <div class="highlight"><pre><span></span><code><span class="n">vault</span><span class="o">.</span><span class="n">writer</span><span class="o">.</span><span class="n">rename</span><span class="p">(</span>
@@ -2469,7 +2469,7 @@ markdown-vault-mcp<span class="w"> </span>serve<span class="w"> </span><span cla
 </ul>
 <p><strong>How to build one:</strong></p>
 <ol>
-<li>Identify the theme — e.g., "Distributed Systems"</li>
+<li>Identify the theme (such as "Distributed Systems")</li>
 <li>Search for related notes:
    <div class="highlight"><pre><span></span><code><span class="n">results</span> <span class="o">=</span> <span class="n">vault</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="s2">&quot;distributed systems&quot;</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;hybrid&quot;</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="mi">30</span><span class="p">)</span>
 </code></pre></div></li>
@@ -2549,18 +2549,18 @@ markdown-vault-mcp<span class="w"> </span>serve
 3. Gather required values (title, source, etc.)
 4. Create the note with filled-in frontmatter</p>
 <p><strong>Invoke via MCP prompt:</strong></p>
-<p><code>create_from_template</code> is an MCP prompt, not a Python API method. Invoke it through your MCP client (e.g., Claude):</p>
+<p><code>create_from_template</code> is an MCP prompt, not a Python API method. Invoke it through your MCP client (such as Claude):</p>
 <div class="highlight"><pre><span></span><code>Use the create_from_template prompt with template_name=&quot;literature&quot;
 </code></pre></div>
-<p>The prompt will call <code>list_documents(folder=&lt;templates_folder&gt;)</code> to enumerate templates, then <code>read</code> the chosen one, then <code>write</code> the filled note — all through vault tools.</p>
+<p>The prompt calls <code>list_documents(folder=&lt;templates_folder&gt;)</code> to enumerate templates, <code>read</code> to fetch the chosen one, and <code>write</code> to create the filled note. All operations go through vault tools.</p>
 <h2 id="using-the-zettelkasten-prompt">Using the Zettelkasten Prompt<a class="headerlink" href="#using-the-zettelkasten-prompt" title="Permanent link">&para;</a></h2>
 <p>The <code>examples/zettelkasten/prompts/zettelkasten.md</code> prompt guides you through connecting a note to your vault in five steps:</p>
 <ol>
-<li><strong>Read and understand</strong> — extract the central claim</li>
-<li><strong>Survey the neighborhood</strong> — see existing backlinks and similar notes</li>
-<li><strong>Discover broader connections</strong> — search for related permanent notes</li>
-<li><strong>Suggest links</strong> — present new connections with context</li>
-<li><strong>Check for MOC opportunity</strong> — flag if a new MOC would help</li>
+<li><strong>Read and understand</strong>: extract the central claim</li>
+<li><strong>Survey the neighborhood</strong>: see existing backlinks and similar notes</li>
+<li><strong>Discover broader connections</strong>: search for related permanent notes</li>
+<li><strong>Suggest links</strong>: present new connections with context</li>
+<li><strong>Check for MOC opportunity</strong>: flag if a new MOC would help</li>
 </ol>
 <p><strong>Configure prompt mounting:</strong></p>
 <p>If your MCP server supports <code>PROMPTS_FOLDER</code>:</p>
@@ -2568,11 +2568,11 @@ markdown-vault-mcp<span class="w"> </span>serve
 markdown-vault-mcp<span class="w"> </span>serve
 </code></pre></div>
 <p>Then in Claude, the <code>zettelkasten</code> prompt is available for use.</p>
-<p><strong>Fire the prompt from Claude.ai's <code>+</code> menu.</strong> Once the server is added as a connector on Claude.ai, every MCP prompt — including <code>zettelkasten</code> — appears in the compose area's <code>+</code> menu. Click <code>+</code>, select <strong>connectors</strong>, pick the server, pick the prompt. Claude opens with the invocation scaffolded, so you don't need to remember the arguments. See <a href="../../prompts/#how-to-invoke-prompts">How to invoke prompts</a> for other clients.</p>
+<p><strong>Fire the prompt from Claude.ai's <code>+</code> menu.</strong> Once the server is added as a connector on Claude.ai, every MCP prompt (including <code>zettelkasten</code>) appears in the compose area's <code>+</code> menu. Click <code>+</code>, select <strong>connectors</strong>, pick the server, pick the prompt. Claude opens with the invocation scaffolded, so you don't need to remember the arguments. See <a href="../../prompts/#how-to-invoke-prompts">How to invoke prompts</a> for other clients.</p>
 <p><strong>Use the prompt:</strong></p>
 <div class="highlight"><pre><span></span><code>In Claude, call: zettelkasten(path=&#39;Notes/my-idea.md&#39;)
 </code></pre></div>
-<p>The prompt will walk you through connecting the note, discovering related ideas, and optionally creating a MOC.</p>
+<p>The prompt guides you through connecting the note to related ideas and flags when a new MOC would help.</p>
 <h2 id="tips-and-best-practices">Tips and Best Practices<a class="headerlink" href="#tips-and-best-practices" title="Permanent link">&para;</a></h2>
 <h3 id="start-with-statistics">Start with statistics<a class="headerlink" href="#start-with-statistics" title="Permanent link">&para;</a></h3>
 <p>Before writing your first note, run <code>stats()</code> to understand your vault's shape:</p>
@@ -2581,7 +2581,7 @@ markdown-vault-mcp<span class="w"> </span>serve
 <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Broken links: </span><span class="si">{</span><span class="n">stats</span><span class="o">.</span><span class="n">broken_link_count</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Orphaned notes: </span><span class="si">{</span><span class="n">stats</span><span class="o">.</span><span class="n">orphan_count</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 </code></pre></div>
-<p>This gives you a baseline for the monthly review.</p>
+<p>Run it again each month to track how your vault grows.</p>
 <h3 id="use-get_context-before-every-edit">Use <code>get_context()</code> before every edit<a class="headerlink" href="#use-get_context-before-every-edit" title="Permanent link">&para;</a></h3>
 <p><code>get_context(path)</code> is your primary navigation tool. Before editing any note, call it to see:</p>
 <ul>
@@ -2618,7 +2618,7 @@ markdown-vault-mcp<span class="w"> </span>serve
 </code></pre></div>
 <p>This reveals unexpected bridges between domains.</p>
 <h3 id="link-aggressively-prune-minimally">Link aggressively, prune minimally<a class="headerlink" href="#link-aggressively-prune-minimally" title="Permanent link">&para;</a></h3>
-<p>Don't agonize over link relevance. If two notes touch on similar ideas, link them. The search tools and <code>get_context()</code> will help you rediscover connections. Over-linking is better than under-linking — the network gets richer as you explore.</p>
+<p>Don't agonize over link relevance. If two notes touch on similar ideas, link them. The search tools and <code>get_context()</code> will help you rediscover connections. Over-linking is better than under-linking; the network gets richer as you explore.</p>
 <p>Exception: Delete broken links immediately. <code>get_broken_links()</code> makes this easy.</p>
 <h3 id="tag-for-grouping-not-taxonomy">Tag for grouping, not taxonomy<a class="headerlink" href="#tag-for-grouping-not-taxonomy" title="Permanent link">&para;</a></h3>
 <p>Tags are not a rigid classification system. Use them for grouping and quick filtering:</p>
@@ -2629,11 +2629,11 @@ markdown-vault-mcp<span class="w"> </span>serve
 <span class="n">tags</span><span class="p">:</span> <span class="p">[</span><span class="n">system</span><span class="o">-</span><span class="nb">type</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">category</span><span class="o">-</span><span class="n">a</span><span class="o">-</span><span class="n">variant</span><span class="o">-</span><span class="n">b</span><span class="p">]</span>
 </code></pre></div>
 <p>Use search and links for discovery. Tags are just shortcuts.</p>
-<h3 id="let-claude-split-or-merge-fleeting-notes">Let Claude split or merge fleeting notes<a class="headerlink" href="#let-claude-split-or-merge-fleeting-notes" title="Permanent link">&para;</a></h3>
+<h3 id="let-claude-split-or-merge-quick-capture-notes">Let Claude split or merge quick-capture notes<a class="headerlink" href="#let-claude-split-or-merge-quick-capture-notes" title="Permanent link">&para;</a></h3>
 <p>Two shape operations that an LLM handles cleanly but manual workflows usually skip:</p>
 <ul>
-<li><strong>Split.</strong> When a fleeting note contains two ideas — one literature reference and one nascent permanent claim — ask Claude to split it into two notes. Each is then developed independently.</li>
-<li><strong>Merge.</strong> When a fleeting note restates or extends an existing permanent note, ask Claude to merge it (add as a new paragraph or <code>## Extension</code> section) rather than letting near-duplicates accumulate. The <a href="../../tools/#search"><code>search</code></a> + <code>read</code> + <code>write</code> + <code>delete</code> composition handles this in a single prompt turn.</li>
+<li><strong>Split.</strong> When a quick-capture note contains two ideas (one literature reference and one early permanent claim), ask Claude to split it into two notes. Each is then developed independently.</li>
+<li><strong>Merge.</strong> When a quick-capture note restates or extends an existing permanent note, ask Claude to merge it (add as a new paragraph or <code>## Extension</code> section) rather than letting near-duplicates accumulate. The <a href="../../tools/#search"><code>search</code></a> + <code>read</code> + <code>write</code> + <code>delete</code> composition handles this in a single prompt turn.</li>
 </ul>
 <p>Resist pre-splitting or pre-merging before review. Claude does both in one pass.</p>
 <h2 id="next-steps">Next Steps<a class="headerlink" href="#next-steps" title="Permanent link">&para;</a></h2>
@@ -2641,9 +2641,9 @@ markdown-vault-mcp<span class="w"> </span>serve
 <li><strong>Read the design document</strong> for details on the linking system and search algorithms: <a href="../../design/"><code>docs/design.md</code></a></li>
 <li><strong>Explore the MCP tools</strong> to understand the full API: <a href="../../tools/"><code>tools/index.md</code></a></li>
 <li><strong>Review the examples</strong> for templates and prompts: <a href="../../examples/zettelkasten/"><code>examples/zettelkasten/</code></a></li>
-<li><strong>Prefer an action-oriented workflow?</strong> Try the <a href="../para/">PARA guide</a> — Projects, Areas, Resources, Archive with triage, kickoff, and weekly review prompts</li>
-<li><strong>Ambient patterns</strong>: <a href="../../prompts/#ambient-patterns-without-prompts"><code>docs/prompts.md</code></a> — flows the LLM handles from prose alone (URL capture, research, split/merge, ad-hoc link proposal)</li>
-<li><strong>Research workflows</strong>: <a href="../research-workflows/">research-workflows.md</a> — literature grounding, fact-checking, and writing papers from notes</li>
+<li><strong>Prefer an action-oriented workflow?</strong> Try the <a href="../para/">PARA guide</a>: Projects, Areas, Resources, Archive with triage, kickoff, and weekly review prompts</li>
+<li><strong>Ambient patterns</strong>: <a href="../../prompts/#ambient-patterns-without-prompts"><code>docs/prompts.md</code></a>: flows the LLM handles from prose alone (URL capture, research, split/merge, ad-hoc link proposal)</li>
+<li><strong>Research workflows</strong>: <a href="../research-workflows/">research-workflows.md</a>: literature grounding, fact-checking, and writing papers from notes</li>
 </ul>
 
 

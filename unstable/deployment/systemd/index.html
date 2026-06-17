@@ -2280,7 +2280,7 @@ sudo<span class="w"> </span>chown<span class="w"> </span>-R<span class="w"> </sp
 sudo<span class="w"> </span>systemctl<span class="w"> </span>daemon-reload
 </code></pre></div>
 <h2 id="configuration">Configuration<a class="headerlink" href="#configuration" title="Permanent link">&para;</a></h2>
-<p>Edit <code>/etc/markdown-vault-mcp/env</code> — this is the <code>EnvironmentFile</code> loaded by the systemd unit.
+<p>Edit <code>/etc/markdown-vault-mcp/env</code> (the <code>EnvironmentFile</code> loaded by the systemd unit).
 The example file at <code>/etc/markdown-vault-mcp/env.example</code> documents all available variables.</p>
 <h3 id="minimum-required">Minimum required<a class="headerlink" href="#minimum-required" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><span class="c1"># /etc/markdown-vault-mcp/env</span>
@@ -2432,15 +2432,15 @@ minimum required access. Key directives:</p>
 </tr>
 <tr>
 <td><code>MemoryDenyWriteExecute=no</code></td>
-<td>Allowed — required for Python/numpy JIT</td>
+<td>Allowed (required for Python/numpy JIT)</td>
 </tr>
 </tbody>
 </table>
 <h3 id="relaxing-restrictions">Relaxing restrictions<a class="headerlink" href="#relaxing-restrictions" title="Permanent link">&para;</a></h3>
 <p>If your vault is outside <code>/var/lib/markdown-vault-mcp</code>, add <code>ReadWritePaths</code>
 via a systemd override (see <a href="#vault-location">Vault Location</a> above).</p>
-<p>If you need network access to additional services (e.g., Ollama on a remote host),
-no changes are needed — outbound TCP connections are allowed by default.</p>
+<p>If you need network access to additional services (such as Ollama on a remote host),
+no changes are needed; outbound TCP connections are allowed by default.</p>
 <h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link">&para;</a></h2>
 <h3 id="permission-denied-errors">Permission denied errors<a class="headerlink" href="#permission-denied-errors" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><span class="c1"># Check the service user can access the vault</span>

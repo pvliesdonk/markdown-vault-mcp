@@ -2,11 +2,11 @@
 
 This guide walks through five progressive Docker deployments:
 
-1. **Basic** — read-only container with keyword search via HTTP
-1. **Git write support** — enable write operations with auto-commit and push
-1. **Bearer token authentication** — simple static token auth
-1. **OIDC authentication** — protect HTTP access with an OIDC provider
-1. **MCP Apps** — enable browser-based vault views for Apps-capable clients
+1. **Basic**: read-only container with keyword search via HTTP
+1. **Git write support**: enable write operations with auto-commit and push
+1. **Bearer token authentication**: simple static token auth
+1. **OIDC authentication**: protect HTTP access with an OIDC provider
+1. **MCP Apps**: enable browser-based vault views for Apps-capable clients
 
 Each step builds on the previous one.
 
@@ -34,7 +34,7 @@ MARKDOWN_VAULT_MCP_SERVER_NAME=my-vault
 MARKDOWN_VAULT_MCP_EXCLUDE=.obsidian/**,.trash/**
 ```
 
-Replace `/home/user/ObsidianVault` with the path to your vault **on the host**. Inside the container, the vault is always mounted at `/data/vault` — the `compose.yml` handles this mapping automatically.
+Replace `/home/user/ObsidianVault` with the path to your vault **on the host**. Inside the container, the vault is always mounted at `/data/vault` (the `compose.yml` handles this mapping automatically).
 
 ### Start with Docker Compose
 
@@ -66,11 +66,11 @@ docker compose ps
 docker compose logs markdown-vault-mcp
 ```
 
-You should see log output indicating the index was built successfully (e.g., number of documents indexed). If you see permission errors, check the UID/GID tip below.
+You should see log output with the number of documents indexed. If you see permission errors, check the UID/GID tip below.
 
 UID/GID handling
 
-Named volumes work out of the box — the entrypoint automatically fixes ownership on startup. For **bind-mounted vaults** where the host user doesn't match the container user (UID 1000), either set `PUID`/`PGID` environment variables or rebuild:
+Named volumes work out of the box; the entrypoint automatically fixes ownership on startup. For **bind-mounted vaults** where the host user doesn't match the container user (UID 1000), either set `PUID`/`PGID` environment variables or rebuild:
 
 ```
 docker compose build --build-arg APP_UID=$(id -u) --build-arg APP_GID=$(id -g)
@@ -111,11 +111,11 @@ MARKDOWN_VAULT_MCP_EXCLUDE=.obsidian/**,.trash/**
 
 **What these do:**
 
-- `READ_ONLY=false` — enables write, edit, delete, rename tools
-- `GIT_REPO_URL` — enables managed mode (clone/remote validation)
-- `GIT_USERNAME` / `GIT_TOKEN` — HTTPS auth for pull/push
-- `GIT_PUSH_DELAY_S=30` — push after 30 seconds of write-idle time
-- `GIT_COMMIT_NAME` / `GIT_COMMIT_EMAIL` — required in Docker where `git config user.name` is unset
+- `READ_ONLY=false`: enables write, edit, delete, rename tools
+- `GIT_REPO_URL`: enables managed mode (clone/remote validation)
+- `GIT_USERNAME` / `GIT_TOKEN`: HTTPS auth for pull/push
+- `GIT_PUSH_DELAY_S=30`: push after 30 seconds of write-idle time
+- `GIT_COMMIT_NAME` / `GIT_COMMIT_EMAIL`: required in Docker where `git config user.name` is unset
 
 HTTPS remotes only
 
@@ -167,7 +167,7 @@ ______________________________________________________________________
 
 ## Step 4: Add OIDC authentication
 
-**Goal:** Protect the HTTP endpoint with OIDC authentication (e.g., Authelia, Keycloak).
+**Goal:** Protect the HTTP endpoint with OIDC authentication (such as Authelia or Keycloak).
 
 **Prerequisites:** Step 1 (or Step 2) complete. An OIDC provider running and accessible. A domain name with TLS (OIDC requires HTTPS).
 
@@ -192,9 +192,9 @@ Without `OIDC_JWT_SIGNING_KEY`, FastMCP generates an ephemeral key that invalida
 
 For the full OIDC setup including provider registration, Traefik configuration, subpath deployments, and troubleshooting:
 
-- [Authentication guide — OIDC section](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/authentication/#oidc) — overview and variable reference
-- [OIDC provider setup](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/oidc-providers/index.md) — step-by-step for Authelia, Keycloak, Google, GitHub
-- [OIDC deployment reference](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deployment/oidc/index.md) — Docker Compose, subpath config, architecture
+- [Authentication guide: OIDC section](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/authentication/#oidc): overview and variable reference
+- [OIDC provider setup](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/oidc-providers/index.md): step-by-step for Authelia, Keycloak, Google, GitHub
+- [OIDC deployment reference](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deployment/oidc/index.md): Docker Compose, subpath config, architecture
 
 ### Verify
 
@@ -203,19 +203,19 @@ docker compose up -d
 docker compose logs markdown-vault-mcp --tail 20
 ```
 
-You should see no OIDC-related errors. Navigate to your server URL in a browser — you should be redirected to your OIDC provider's login page.
+You should see no OIDC-related errors. Navigate to your server URL in a browser; you should be redirected to your OIDC provider's login page.
 
 ______________________________________________________________________
 
 ## Step 5: Enable MCP Apps views
 
-**Goal:** Allow Apps-capable MCP clients (e.g., Claude on claude.ai) to render the interactive vault explorer (Context Card, Graph Explorer, Vault Browser, Note Preview).
+**Goal:** Allow Apps-capable MCP clients (such as Claude on claude.ai) to render the interactive vault explorer (Context Card, Graph Explorer, Vault Browser, Note Preview).
 
 **Prerequisites:** Step 1 complete. The server must be reachable via HTTP (which Docker deployments already use).
 
 ### Configure the app domain
 
-MCP Apps views are served as an HTML resource sandboxed to a specific domain. The domain is auto-computed from `BASE_URL`, but you can override it if needed.
+MCP Apps views are HTML resources sandboxed to a specific domain. The domain is auto-computed from `BASE_URL`, but you can override it if needed.
 
 Add to your `.env`:
 
@@ -225,7 +225,7 @@ MARKDOWN_VAULT_MCP_BASE_URL=https://mcp.example.com
 # MARKDOWN_VAULT_MCP_APP_DOMAIN=  # override only if auto-computed domain doesn't work
 ```
 
-If `BASE_URL` is already set (e.g., for OIDC), no additional configuration is needed — the app domain is auto-computed.
+If `BASE_URL` is already set (as it would be for OIDC), no additional configuration is needed; the app domain is auto-computed.
 
 ### Configure session persistence
 
@@ -239,6 +239,6 @@ This is the default when using the Docker image with the `state-data` volume (th
 
 ### Verify
 
-Restart the container and connect from an Apps-capable MCP client. Ask Claude to "browse my vault" — you should see the interactive SPA with four tabs.
+Restart the container and connect from an Apps-capable MCP client. Ask Claude to "browse my vault"; you should see the interactive SPA with four tabs.
 
 For full details on the views and architecture, see the [MCP Apps guide](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/mcp-apps/index.md).

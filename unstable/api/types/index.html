@@ -2426,6 +2426,7 @@
 <div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">markdown_vault_mcp</span><span class="w"> </span><span class="kn">import</span> <span class="n">NoteContent</span><span class="p">,</span> <span class="n">GroupedResult</span><span class="p">,</span> <span class="n">SectionHit</span><span class="p">,</span> <span class="n">NoteContext</span>
 </code></pre></div>
 <h2 id="document-types">Document Types<a class="headerlink" href="#document-types" title="Permanent link">&para;</a></h2>
+<!-- vale off -->
 
 
 <div class="doc doc-object doc-class">
@@ -2950,7 +2951,10 @@
 
     </div>
 
-</div><h2 id="search-link-types">Search &amp; Link Types<a class="headerlink" href="#search-link-types" title="Permanent link">&para;</a></h2>
+</div><!-- vale on -->
+
+<h2 id="search-link-types">Search &amp; Link Types<a class="headerlink" href="#search-link-types" title="Permanent link">&para;</a></h2>
+<!-- vale off -->
 
 
 <div class="doc doc-object doc-class">
@@ -4336,7 +4340,10 @@ exactly one section (chunks_per_file=1 by default).</p>
 
     </div>
 
-</div><h2 id="operation-results">Operation Results<a class="headerlink" href="#operation-results" title="Permanent link">&para;</a></h2>
+</div><!-- vale on -->
+
+<h2 id="operation-results">Operation Results<a class="headerlink" href="#operation-results" title="Permanent link">&para;</a></h2>
+<!-- vale off -->
 
 
 <div class="doc doc-object doc-class">
@@ -5187,7 +5194,10 @@ in no other bucket and need no re-evaluation (#665).</p>
 
     </div>
 
-</div><h2 id="attachment-types">Attachment Types<a class="headerlink" href="#attachment-types" title="Permanent link">&para;</a></h2>
+</div><!-- vale on -->
+
+<h2 id="attachment-types">Attachment Types<a class="headerlink" href="#attachment-types" title="Permanent link">&para;</a></h2>
+<!-- vale off -->
 
 
 <div class="doc doc-object doc-class">
@@ -5446,7 +5456,10 @@ in no other bucket and need no re-evaluation (#665).</p>
 
     </div>
 
-</div><h2 id="git-types">Git Types<a class="headerlink" href="#git-types" title="Permanent link">&para;</a></h2>
+</div><!-- vale on -->
+
+<h2 id="git-types">Git Types<a class="headerlink" href="#git-types" title="Permanent link">&para;</a></h2>
+<!-- vale off -->
 
 
 <div class="doc doc-object doc-class">
@@ -5698,7 +5711,9 @@ echoed back.</p>
 
     </div>
 
-</div><h2 id="callbacks">Callbacks<a class="headerlink" href="#callbacks" title="Permanent link">&para;</a></h2>
+</div><!-- vale on -->
+
+<h2 id="callbacks">Callbacks<a class="headerlink" href="#callbacks" title="Permanent link">&para;</a></h2>
 <p><strong><code>WriteCallback</code></strong></p>
 <p>Type alias for the <code>on_write</code> callback passed to <code>Vault</code>. Called after each successful write operation (write, edit, delete, rename).</p>
 <div class="highlight"><pre><span></span><code><span class="n">WriteCallback</span> <span class="o">=</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">Path</span><span class="p">,</span> <span class="nb">str</span><span class="p">,</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;write&quot;</span><span class="p">,</span> <span class="s2">&quot;edit&quot;</span><span class="p">,</span> <span class="s2">&quot;delete&quot;</span><span class="p">,</span> <span class="s2">&quot;rename&quot;</span><span class="p">]],</span> <span class="kc">None</span><span class="p">]</span>

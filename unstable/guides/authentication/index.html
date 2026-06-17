@@ -2356,7 +2356,7 @@
 <tbody>
 <tr>
 <td><strong>Multi-auth</strong></td>
-<td>Mixed clients — e.g. Claude web (OIDC) + Claude Code (bearer token) on the same server</td>
+<td>Mixed clients (such as Claude web with OIDC and Claude Code with bearer token) on the same server</td>
 <td>Set both <code>MARKDOWN_VAULT_MCP_BEARER_TOKEN</code> and OIDC variables</td>
 </tr>
 <tr>
@@ -2366,7 +2366,7 @@
 </tr>
 <tr>
 <td><strong>OIDC (remote)</strong></td>
-<td>Production — recommended over oidc-proxy. Local JWKS validation, no token re-validation</td>
+<td>Production, recommended over oidc-proxy: local JWKS validation, no token re-validation</td>
 <td>Set <code>MARKDOWN_VAULT_MCP_BASE_URL</code> + <code>MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL</code> only</td>
 </tr>
 <tr>
@@ -2381,7 +2381,7 @@
 </tr>
 </tbody>
 </table>
-<p>When both bearer token and OIDC are configured, the server accepts <strong>either</strong> credential — a valid bearer token or a valid OIDC session. This is useful when different clients require different authentication flows against the same vault instance.</p>
+<p>When both bearer token and OIDC are configured, the server accepts <strong>either</strong> credential: a valid bearer token or a valid OIDC session. This is useful when different clients require different authentication flows against the same vault instance.</p>
 <hr />
 <h2 id="bearer-token">Bearer token<a class="headerlink" href="#bearer-token" title="Permanent link">&para;</a></h2>
 <p>The simplest way to protect your server. A single static token shared between server and clients.</p>
@@ -2416,13 +2416,13 @@
 </ul>
 <p>See also: <a href="https://github.com/pvliesdonk/markdown-vault-mcp/blob/main/examples/bearer-auth.env"><code>examples/bearer-auth.env</code></a> for a ready-to-use example.</p>
 <h3 id="mapped-bearer-tokens-multi-subject">Mapped bearer tokens (multi-subject)<a class="headerlink" href="#mapped-bearer-tokens-multi-subject" title="Permanent link">&para;</a></h3>
-<p>The bearer-token mode above shares one subject across every authenticated caller — by default the library's <code>bearer-anon</code>, override with <code>MARKDOWN_VAULT_MCP_BEARER_DEFAULT_SUBJECT</code>.  For audit logs and authorization that distinguish callers, switch to mapped-token mode by pointing <code>MARKDOWN_VAULT_MCP_BEARER_TOKENS_FILE</code> at a TOML file:</p>
+<p>The bearer-token mode above shares one subject across every authenticated caller (by default the library's <code>bearer-anon</code>, override with <code>MARKDOWN_VAULT_MCP_BEARER_DEFAULT_SUBJECT</code>). For audit logs and authorization that distinguish callers, switch to mapped-token mode by pointing <code>MARKDOWN_VAULT_MCP_BEARER_TOKENS_FILE</code> at a TOML file:</p>
 <div class="highlight"><pre><span></span><code><span class="c1"># tokens.toml</span>
 <span class="k">[tokens]</span>
 <span class="s2">&quot;ghp_alice_xxxxxxxx&quot;</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;user:alice@example.com&quot;</span>
 <span class="s2">&quot;sk_ci_yyyyyyyy&quot;</span><span class="w">     </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;service:ci-bot&quot;</span>
 </code></pre></div>
-<p>Each token resolves to a distinct subject string for downstream attribution.  Subject strings are opaque — the <code>&lt;kind&gt;:&lt;id&gt;</code> convention (<code>user:</code>, <code>service:</code>, <code>token:</code>) is documentation only.  When <code>BEARER_TOKENS_FILE</code> is set it overrides <code>BEARER_TOKEN</code> (a <code>WARNING</code> is logged if both are present).  A missing or malformed file aborts startup with <code>ConfigurationError</code> rather than silently denying every request.</p>
+<p>Each token resolves to a distinct subject string for downstream attribution. Subject strings are opaque: the <code>&lt;kind&gt;:&lt;id&gt;</code> convention (<code>user:</code>, <code>service:</code>, <code>token:</code>) is documentation only. When <code>BEARER_TOKENS_FILE</code> is set it overrides <code>BEARER_TOKEN</code> (a <code>WARNING</code> is logged if both are present). A missing or malformed file aborts startup with <code>ConfigurationError</code> rather than silently denying every request.</p>
 <p>For the per-tool authorization that consumes these subjects, see <a href="https://github.com/pvliesdonk/markdown-vault-mcp/blob/main/README.md#authorization-opt-in">Authorization (opt-in)</a> in the project README.</p>
 <hr />
 <h2 id="oidc">OIDC<a class="headerlink" href="#oidc" title="Permanent link">&para;</a></h2>
@@ -2445,7 +2445,7 @@
 </tr>
 <tr>
 <td><strong>oidc-proxy</strong></td>
-<td>Acts as an OAuth proxy — exchanges codes for tokens, stores sessions, re-validates upstream tokens on every request.</td>
+<td>Acts as an OAuth proxy: exchanges codes for tokens, stores sessions, re-validates upstream tokens on every request.</td>
 <td>When your provider requires Dynamic Client Registration (DCR) emulation or you need the proxy's session management.</td>
 </tr>
 </tbody>
@@ -2460,12 +2460,12 @@
 <p>Remove <code>OIDC_CLIENT_ID</code> and <code>OIDC_CLIENT_SECRET</code> from your env. The server will auto-detect remote mode. Or set <code>AUTH_MODE=remote</code> explicitly.</p>
 </div>
 <h3 id="remote-mode">How it works (remote mode)<a class="headerlink" href="#remote-mode" title="Permanent link">&para;</a></h3>
-<p>The server validates tokens locally using JWKS — no upstream token calls after startup:</p>
+<p>The server validates tokens locally using JWKS, with no upstream token calls after startup:</p>
 <div class="highlight"><pre><span></span><code>Client → IdP (authenticate + get JWT)
 Client → markdown-vault-mcp (present JWT → validate via JWKS)
 </code></pre></div>
 <h3 id="how-it-works-oidc-proxy-mode">How it works (oidc-proxy mode)<a class="headerlink" href="#how-it-works-oidc-proxy-mode" title="Permanent link">&para;</a></h3>
-<p>The server uses FastMCP's built-in <code>OIDCProxy</code> — no external auth sidecar needed:</p>
+<p>The server uses FastMCP's built-in <code>OIDCProxy</code> (no external auth sidecar needed):</p>
 <div class="highlight"><pre><span></span><code>Client → markdown-vault-mcp (OIDCProxy) → OIDC Provider
 </code></pre></div>
 <ol>
@@ -2486,7 +2486,7 @@ Client → markdown-vault-mcp (present JWT → validate via JWKS)
 <tbody>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_BASE_URL</code></td>
-<td>Public base URL (e.g. <code>https://mcp.example.com</code>). Also required for MCP Apps domain computation.</td>
+<td>Public base URL (such as <code>https://mcp.example.com</code>). Also required for MCP Apps domain computation.</td>
 </tr>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL</code></td>
@@ -2520,11 +2520,11 @@ Client → markdown-vault-mcp (present JWT → validate via JWKS)
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY</code></td>
 <td>ephemeral</td>
-<td>JWT signing key — <strong>required on Linux/Docker</strong> (oidc-proxy mode only)</td>
+<td>JWT signing key, <strong>required on Linux/Docker</strong> (oidc-proxy mode only)</td>
 </tr>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_OIDC_AUDIENCE</code></td>
-<td>—</td>
+<td>(none)</td>
 <td>Expected JWT audience claim; leave unset if your provider does not set one</td>
 </tr>
 <tr>
@@ -2547,7 +2547,7 @@ Client → markdown-vault-mcp (present JWT → validate via JWKS)
 </div>
 <div class="admonition tip">
 <p class="admonition-title">Long-running sessions</p>
-<p>Current MCP clients do not reliably refresh tokens — see <a href="#known-limitations-mcp-oauth-token-refresh">Known Limitations</a>. Configure <strong>all</strong> token lifetimes (access, id, refresh) on your identity provider to cover a full workday (8h+). For simpler deployments, bearer token auth is unaffected by these limitations.</p>
+<p>Current MCP clients do not reliably refresh tokens; see <a href="#known-limitations-mcp-oauth-token-refresh">Known Limitations</a>. Configure <strong>all</strong> token lifetimes (access, id, refresh) on your identity provider to cover a full workday (8&nbsp;h or more). For simpler deployments, bearer token auth is unaffected by these limitations.</p>
 </div>
 <h3 id="provider-guides">Provider guides<a class="headerlink" href="#provider-guides" title="Permanent link">&para;</a></h3>
 <p>For step-by-step setup with specific providers:</p>
@@ -2575,26 +2575,26 @@ Client → markdown-vault-mcp (present JWT → validate via JWKS)
 <ul>
 <li>Verify the env var is set and non-empty (whitespace-only values are ignored)</li>
 <li>Check that clients send <code>Authorization: Bearer &lt;token&gt;</code> (not <code>Basic</code> or other schemes)</li>
-<li>If OIDC is also configured, multi-auth is active — both bearer and OIDC are accepted simultaneously</li>
+<li>If OIDC is also configured, multi-auth is active: both bearer and OIDC are accepted simultaneously</li>
 </ul>
 <h3 id="oidc-redirect-fails">OIDC redirect fails<a class="headerlink" href="#oidc-redirect-fails" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Verify <code>BASE_URL</code> matches your public URL exactly (including any subpath prefix)</li>
-<li>For subpath deployments, see the <a href="../../deployment/oidc/#subpath-deployments">subpath deployment guide</a> — <code>BASE_URL</code> must include the prefix, <code>HTTP_PATH</code> must not</li>
-<li>Check that <code>redirect_uris</code> in your provider config includes your callback URL (e.g., <code>https://mcp.example.com/auth/callback</code>)</li>
+<li>For subpath deployments, see the <a href="../../deployment/oidc/#subpath-deployments">subpath deployment guide</a>: <code>BASE_URL</code> must include the prefix, <code>HTTP_PATH</code> must not</li>
+<li>Check that <code>redirect_uris</code> in your provider config includes your callback URL (such as <code>https://mcp.example.com/auth/callback</code>)</li>
 </ul>
 <h3 id="session-drops-after-token-expiry">Session drops after token expiry<a class="headerlink" href="#session-drops-after-token-expiry" title="Permanent link">&para;</a></h3>
 <p><strong>Symptom:</strong> the MCP client works for a period (often ~1 hour), then starts returning 401 errors or stops responding. Restarting the client fixes it temporarily.</p>
 <p><strong>Root cause:</strong> this is almost always a token lifetime issue, not a server bug. Check three things:</p>
 <ol>
 <li>
-<p><strong>id_token lifetime</strong> (most common): When using <code>verify_id_token</code> mode (the default for Authelia), the server re-validates the upstream <code>id_token</code> on every request. If your provider's <code>id_token</code> lifetime is shorter than the <code>access_token</code> lifetime, the session dies at the <code>id_token</code> expiry — even though the access token is still valid. Authelia defaults <code>id_token</code> to 1 hour. <strong>Fix: set <code>id_token</code> lifetime to match <code>access_token</code></strong> in your provider config.</p>
+<p><strong>id_token lifetime</strong> (most common): When using <code>verify_id_token</code> mode (the default for Authelia), the server re-validates the upstream <code>id_token</code> on every request. If your provider's <code>id_token</code> lifetime is shorter than the <code>access_token</code> lifetime, the session dies at the <code>id_token</code> expiry, even though the access token is still valid. Authelia defaults <code>id_token</code> to 1 hour. <strong>Fix: set <code>id_token</code> lifetime to match <code>access_token</code></strong> in your provider config.</p>
 </li>
 <li>
 <p><strong>access_token lifetime</strong>: If both <code>id_token</code> and <code>access_token</code> are set correctly but sessions still drop, check that the provider's <code>expires_in</code> response matches your configured lifetime.</p>
 </li>
 <li>
-<p><strong>No refresh token</strong>: See <a href="#known-limitations-mcp-oauth-token-refresh">Known Limitations</a> below — current MCP clients cannot refresh tokens, so sessions are limited to the token lifetime.</p>
+<p><strong>No refresh token</strong>: See <a href="#known-limitations-mcp-oauth-token-refresh">Known Limitations</a> below. Current MCP clients cannot refresh tokens, so sessions are limited to the token lifetime.</p>
 </li>
 </ol>
 <p><strong>Workaround:</strong> configure <strong>all</strong> token lifetimes on your identity provider to cover a full workday:</p>
@@ -2608,7 +2608,7 @@ Client → markdown-vault-mcp (present JWT → validate via JWKS)
 </code></pre></div>
 <p>See the <a href="../oidc-providers/#authelia">Authelia provider guide</a> for the full configuration.</p>
 <h3 id="opaque-access-tokens-authelia">Opaque access tokens (Authelia)<a class="headerlink" href="#opaque-access-tokens-authelia" title="Permanent link">&para;</a></h3>
-<p>Authelia issues opaque (non-JWT) access tokens. This is handled automatically — the server verifies the <code>id_token</code> instead. No extra configuration needed. See the <a href="../oidc-providers/#authelia">Authelia guide</a> for details.</p>
+<p>Authelia issues opaque (non-JWT) access tokens. This is handled automatically: the server verifies the <code>id_token</code> instead. No extra configuration needed. See the <a href="../oidc-providers/#authelia">Authelia guide</a> for details.</p>
 <hr />
 <h2 id="known-limitations-mcp-oauth-token-refresh">Known Limitations: MCP OAuth token refresh<a class="headerlink" href="#known-limitations-mcp-oauth-token-refresh" title="Permanent link">&para;</a></h2>
 <div class="admonition warning">
@@ -2616,7 +2616,7 @@ Client → markdown-vault-mcp (present JWT → validate via JWKS)
 <p>The limitations below affect <strong>all</strong> OAuth-protected MCP servers, not just markdown-vault-mcp. They are caused by issues in the MCP client implementations (Claude Code, Claude.ai, Claude Desktop) and the MCP Python SDK. Check the linked tracking issues for current status.</p>
 </div>
 <h3 id="the-problem">The problem<a class="headerlink" href="#the-problem" title="Permanent link">&para;</a></h3>
-<p>MCP clients cannot maintain sessions beyond the token lifetime because token refresh does not work. When tokens expire, the session drops and requires manual re-authentication. This affects every provider — Authelia, Keycloak, Google, Slack, Notion, Atlassian, and others.</p>
+<p>MCP clients cannot maintain sessions beyond the token lifetime because token refresh does not work. When tokens expire, the session drops and requires manual re-authentication. This affects every provider: Authelia, Keycloak, Google, Slack, Notion, Atlassian, and others.</p>
 <h3 id="why-refresh-doesnt-work">Why refresh doesn't work<a class="headerlink" href="#why-refresh-doesnt-work" title="Permanent link">&para;</a></h3>
 <p>Three independent issues prevent token refresh:</p>
 <table>
@@ -2645,23 +2645,23 @@ Client → markdown-vault-mcp (present JWT → validate via JWKS)
 </tr>
 </tbody>
 </table>
-<p>The server-side refresh architecture (FastMCP's <code>OAuthProxy.exchange_refresh_token()</code>) is correctly implemented and would work — but it requires the client to initiate the refresh, which none of the current clients do reliably.</p>
+<p>The server-side refresh architecture (FastMCP's <code>OAuthProxy.exchange_refresh_token()</code>) is correctly implemented and would work, but it requires the client to initiate the refresh, which none of the current clients do reliably.</p>
 <h3 id="what-works-today">What works today<a class="headerlink" href="#what-works-today" title="Permanent link">&para;</a></h3>
-<p><strong>Remote auth mode</strong> (<code>AUTH_MODE=remote</code> or auto-detected) avoids the double-validation problem entirely. The server validates tokens locally via JWKS — it never stores or re-validates upstream tokens. This is the recommended mode for new deployments.</p>
-<p><strong>Bearer token auth</strong> is unaffected by all of the above. If your deployment allows it (e.g., Claude Code with env vars, or API clients), bearer tokens are the simplest and most reliable option.</p>
+<p><strong>Remote auth mode</strong> (<code>AUTH_MODE=remote</code> or auto-detected) avoids the double-validation problem entirely. The server validates tokens locally via JWKS and never stores or re-validates upstream tokens. This is the recommended mode for new deployments.</p>
+<p><strong>Bearer token auth</strong> is unaffected by all of the above. If your deployment allows it (such as Claude Code with env vars, or API clients), bearer tokens are the simplest and most reliable option.</p>
 <p><strong>Long token lifetimes</strong> are the only viable workaround for OIDC in oidc-proxy mode. Set all three lifetimes (access, id, refresh) to cover your typical session duration:</p>
 <ul>
-<li><code>access_token: '8h'</code> — covers a workday</li>
-<li><code>id_token: '8h'</code> — <strong>must match access_token</strong> when using <code>verify_id_token</code> mode (critical for Authelia)</li>
-<li><code>refresh_token: '30d'</code> — ready for when clients support refresh</li>
-<li>Include <code>offline_access</code> in provider-side scopes — no effect today, but will enable refresh when clients are fixed</li>
+<li><code>access_token: '8h'</code> (covers a workday)</li>
+<li><code>id_token: '8h'</code> (<strong>must match access_token</strong> when using <code>verify_id_token</code> mode, critical for Authelia)</li>
+<li><code>refresh_token: '30d'</code> (ready for when clients support refresh)</li>
+<li>Include <code>offline_access</code> in provider-side scopes (no effect today, but will enable refresh when clients are fixed)</li>
 </ul>
 <h3 id="tracking">Tracking<a class="headerlink" href="#tracking" title="Permanent link">&para;</a></h3>
 <p>These upstream issues are actively tracked:</p>
 <ul>
-<li><a href="https://github.com/anthropics/claude-code/issues/21333">anthropics/claude-code#21333</a> — refresh tokens stored but never used</li>
-<li><a href="https://github.com/anthropics/claude-code/issues/7744">anthropics/claude-code#7744</a> — <code>offline_access</code> scope never requested</li>
-<li><a href="https://github.com/modelcontextprotocol/python-sdk/issues/1326">modelcontextprotocol/python-sdk#1326</a> — SSE refresh deadlock</li>
+<li><a href="https://github.com/anthropics/claude-code/issues/21333">anthropics/claude-code#21333</a>: refresh tokens stored but never used</li>
+<li><a href="https://github.com/anthropics/claude-code/issues/7744">anthropics/claude-code#7744</a>: <code>offline_access</code> scope never requested</li>
+<li><a href="https://github.com/modelcontextprotocol/python-sdk/issues/1326">modelcontextprotocol/python-sdk#1326</a>: SSE refresh deadlock</li>
 </ul>
 <p>When these are resolved, OIDC sessions should persist indefinitely via automatic token refresh with no changes needed to markdown-vault-mcp.</p>
 <!-- DOMAIN-AUTH-EXTRA-START -->

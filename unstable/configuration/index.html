@@ -2102,7 +2102,7 @@ questions and copy a ready-made <code>.env</code>, Docker, or Claude config.</p>
 <p>All configuration is via environment variables. Most use the <code>MARKDOWN_VAULT_MCP_</code> prefix. <code>OLLAMA_HOST</code> and <code>OPENAI_API_KEY</code> are bare ecosystem-standard names; all other variables use the <code>MARKDOWN_VAULT_MCP_</code> prefix.</p>
 <div class="admonition note">
 <p class="admonition-title">Configuration is validated at startup</p>
-<p>Numeric variables are validated against the <strong>Type</strong> column below (e.g. <code>int ≥ 1</code>). A non-numeric or out-of-range value makes the server <strong>fail fast</strong> at startup with a <code>ConfigurationError</code> naming the offending setting, rather than silently falling back to a default — so a typo in an env var surfaces immediately instead of producing surprising behavior later.</p>
+<p>Numeric variables are validated against the <strong>Type</strong> column below (such as <code>int ≥ 1</code>). A non-numeric or out-of-range value makes the server <strong>fail fast</strong> at startup with a <code>ConfigurationError</code> naming the offending setting, rather than silently falling back to a default. A typo in an env var surfaces immediately instead of producing surprising behavior later.</p>
 </div>
 <h2 id="core">Core<a class="headerlink" href="#core" title="Permanent link">&para;</a></h2>
 <table>
@@ -2119,7 +2119,7 @@ questions and copy a ready-made <code>.env</code>, Docker, or Claude config.</p>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_SOURCE_DIR</code></td>
 <td>path</td>
-<td>—</td>
+<td>(none)</td>
 <td><strong>Yes</strong></td>
 <td>Path to the markdown vault directory. Symbolic links inside the vault are followed on Python 3.13+ (3.11/3.12 do not follow symlinks); cyclic links hang the scan, so symlink-farm layouts must be acyclic</td>
 </tr>
@@ -2154,23 +2154,23 @@ questions and copy a ready-made <code>.env</code>, Docker, or Claude config.</p>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_INDEXED_FIELDS</code></td>
 <td>csv</td>
-<td>—</td>
+<td>(none)</td>
 <td>No</td>
 <td>Comma-separated frontmatter fields to promote to the tag index for structured filtering</td>
 </tr>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_REQUIRED_FIELDS</code></td>
 <td>csv</td>
-<td>—</td>
+<td>(none)</td>
 <td>No</td>
 <td>Comma-separated frontmatter fields required on every document; documents missing any are excluded from the index</td>
 </tr>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_EXCLUDE</code></td>
 <td>csv</td>
-<td>—</td>
+<td>(none)</td>
 <td>No</td>
-<td>Comma-separated glob patterns to exclude from scanning (e.g. <code>.obsidian/**,.trash/**</code>)</td>
+<td>Comma-separated glob patterns to exclude from scanning (such as <code>.obsidian/**,.trash/**</code>)</td>
 </tr>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER</code></td>
@@ -2182,7 +2182,7 @@ questions and copy a ready-made <code>.env</code>, Docker, or Claude config.</p>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_PROMPTS_FOLDER</code></td>
 <td>path</td>
-<td>—</td>
+<td>(none)</td>
 <td>No</td>
 <td>Path to a directory of <code>.md</code> prompt files that extend or override built-in prompts</td>
 </tr>
@@ -2194,7 +2194,7 @@ questions and copy a ready-made <code>.env</code>, Docker, or Claude config.</p>
 <p>Maximum time the MCP-layer <code>needs_queryable</code> decorator waits for
 the FTS index to become queryable before raising
 <code>IndexUnavailableError(reason="timeout")</code> to the client. Applied to bucket-3/4 tool and resource calls during
-a cold-start background FTS build. Increase for very large vaults
+a cold-start background FTS build. Increase for large vaults
 where the initial scan takes longer; decrease for tighter feedback
 on stuck builds.</p>
 <h3 id="markdown_vault_mcp_drain_timeout_s"><code>MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S</code><a class="headerlink" href="#markdown_vault_mcp_drain_timeout_s" title="Permanent link">&para;</a></h3>
@@ -2204,9 +2204,9 @@ on stuck builds.</p>
 <code>get_outlinks</code>, <code>get_broken_links</code>, <code>get_similar</code>, <code>get_context</code>,
 <code>get_orphan_notes</code>, <code>get_most_linked</code>, <code>get_connection_path</code>) waits for
 the IndexWriter to drain when called with <code>wait_for_pending_writes=true</code>. On
-timeout the tool answers from the current index rather than raising —
-best-effort fresh read — and reports <code>index_stale=true</code> in the response's
-<code>_meta</code>. Increase for very large vaults where reindex / build_embeddings
+timeout the tool answers from the current index rather than raising
+(best-effort fresh read) and reports <code>index_stale=true</code> in the response's
+<code>_meta</code>. Increase for large vaults where reindex / build_embeddings
 jobs take longer; decrease for faster client feedback when the index has
 chronic backlog.</p>
 <!-- DOMAIN-CONFIG-VARS-START -->
@@ -2248,8 +2248,8 @@ chronic backlog.</p>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_BASE_URL</code></td>
 <td>url</td>
-<td>—</td>
-<td>Public base URL of the server (e.g. <code>https://mcp.example.com</code>). Required for OIDC auth, MCP Apps domain computation, and the one-time transfer link tools</td>
+<td>(none)</td>
+<td>Public base URL of the server (such as <code>https://mcp.example.com</code>). Required for OIDC auth, MCP Apps domain computation, and the one-time transfer link tools</td>
 </tr>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_KV_STORE_URL</code></td>
@@ -2279,7 +2279,7 @@ chronic backlog.</p>
 <td><code>FASTMCP_ENABLE_RICH_LOGGING</code></td>
 <td>bool</td>
 <td><code>true</code></td>
-<td>Rich <code>key=value</code> text by default. Set to <code>false</code> for one-JSON-object-per-record output — recommended for production / log-aggregator deployments</td>
+<td>Rich <code>key=value</code> text by default. Set to <code>false</code> for one-JSON-object-per-record output, recommended for production / log-aggregator deployments</td>
 </tr>
 </tbody>
 </table>
@@ -2316,17 +2316,17 @@ chronic backlog.</p>
 <td><code>MARKDOWN_VAULT_MCP_MAX_CHUNK_WORDS</code></td>
 <td><code>400</code></td>
 <td>int ≥ 1</td>
-<td>Hard cap on chunk word count. The adaptive chunker first recursively re-splits at deeper heading levels (H1 → H6); anything still oversize, plus preambles and no-headings documents, is then fragmented on paragraph and word boundaries so every emitted chunk respects the budget. Match this to the embedding model's context window. The default FastEmbed model <code>BAAI/bge-small-en-v1.5</code> has only a 512-token context, so the default <code>400</code> words (≈ 600 tokens) <strong>could exceed it</strong> — but <code>MAX_CHUNK_CHARS</code> (derived as ~1434 chars for this 512-token model) now bounds every chunk to the model's context automatically, so lowering this manually is usually unnecessary. For long-context models such as <code>nomic-embed-text-v1.5</code> (8192 tokens natively; Ollama serves it with <code>n_ctx_train=2048</code> by default, see <code>OLLAMA_HOST</code>) the default <code>400</code> is comfortable. Setting very large (e.g. <code>100000</code>) effectively disables the cap.</td>
+<td>Hard cap on chunk word count. The adaptive chunker recursively re-splits at deeper heading levels (H1 → H6); anything still oversize (preambles and no-headings documents included) is further fragmented on paragraph and word boundaries. Match this to the embedding model's context window. The default FastEmbed model <code>BAAI/bge-small-en-v1.5</code> has only a 512-token context, so the default <code>400</code> words (≈ 600 tokens) <strong>could exceed it</strong>; <code>MAX_CHUNK_CHARS</code> (derived as ~1434 chars for this 512-token model) caps each chunk to the model's context, so manual adjustment is not needed. For long-context models such as <code>nomic-embed-text-v1.5</code> (8192 tokens natively; Ollama serves it with <code>n_ctx_train=2048</code> by default, see <code>OLLAMA_HOST</code>) the default <code>400</code> is comfortable. Setting a high value (such as <code>100000</code>) effectively disables the cap.</td>
 </tr>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_MAX_CHUNK_CHARS</code></td>
 <td><em>(derived)</em></td>
 <td>int ≥ 1</td>
-<td>Hard cap on chunk <strong>character</strong> count, enforced by the same chunker alongside the word cap (whichever budget is hit first triggers a split). Bounds token-dense content — CJK, code, tables — that fits the word cap yet exceeds the embedding model's token context. When unset, the cap is <strong>derived from the embedding model's context length</strong> as <code>round(context_length × 2.8)</code> (e.g. an 8192-token model → 22938 chars; the default <code>BAAI/bge-small-en-v1.5</code> model, 512-token context → ~1434 chars); if the model's context length is unknown (no provider, or an unreachable Ollama instance) a conservative fixed fallback of <code>6000</code> chars is used. Set this to override the derived value. Like <code>MAX_CHUNK_WORDS</code>, it changes the chunk <em>index</em>, so a reindex is required for a new value to take effect.</td>
+<td>Hard cap on chunk <strong>character</strong> count, enforced by the same chunker alongside the word cap (whichever budget is hit first triggers a split). Applies to token-dense content (CJK, code, tables) that fits the word cap yet exceeds the embedding model's token context. When unset, the cap is <strong>derived from the embedding model's context length</strong> as <code>round(context_length × 2.8)</code> (an 8192-token model yields 22938 chars; the default <code>BAAI/bge-small-en-v1.5</code> model, 512-token context, yields ~1434 chars); if the model's context length is unknown (no provider, or an unreachable Ollama instance) a conservative fixed fallback of <code>6000</code> chars is used. Set this to override the derived value. Like <code>MAX_CHUNK_WORDS</code>, it changes the chunk <em>index</em>, so a reindex is required for a new value to take effect.</td>
 </tr>
 </tbody>
 </table>
-<p>The first three knobs adjust <em>ranking and rendering</em> — they take effect immediately. <code>MAX_CHUNK_WORDS</code> and <code>MAX_CHUNK_CHARS</code> change the chunk <em>index</em>; a reindex is required for a new value to take effect. Because the char cap is <strong>derived from the embedding model</strong>, changing the embedding model also changes the effective chunk boundaries — the FTS index is re-chunked, not just the embeddings. Changing the embedding model (or the explicit <code>MAX_CHUNK_CHARS</code> override) rejects the warm-restart short-circuit and triggers an automatic cold rebuild of the index on the next startup — no manual <code>reindex</code> is needed. <strong>One-time rebuild on upgrade:</strong> an existing <em>embedding-enabled</em> vault upgrading from a release before this one will also cold-rebuild once on next startup, because builds now record chunking provenance (embedding model + override) that older builds did not track. No action is required; subsequent restarts warm-restart as normal. FTS-only vaults (no embedding provider) are unaffected. <strong>Upgrading note:</strong> <code>search</code> now returns snippets (≤ ~200 words) by default — set <code>snippet_words=0</code> per call or <code>MARKDOWN_VAULT_MCP_SNIPPET_WORDS=0</code> globally to restore full-chunk output. Existing vaults are also re-chunked on the next <code>reindex</code> when <code>MAX_CHUNK_WORDS</code> is set.</p>
+<p>The first three knobs adjust <em>ranking and rendering</em> and take effect immediately. <code>MAX_CHUNK_WORDS</code> and <code>MAX_CHUNK_CHARS</code> change the chunk <em>index</em>; a reindex is required for a new value to take effect. Because the char cap is <strong>derived from the embedding model</strong>, changing the embedding model also changes the effective chunk boundaries: the FTS index is re-chunked, not just the embeddings. Changing the embedding model (or the explicit <code>MAX_CHUNK_CHARS</code> override) rejects the warm-restart short-circuit and triggers an automatic cold rebuild of the index on the next startup. No manual <code>reindex</code> is needed. <strong>One-time rebuild on upgrade:</strong> an existing <em>embedding-enabled</em> vault upgrading from a release before this one will also cold-rebuild once on next startup, because builds now record chunking provenance (embedding model + override) that older builds did not track. No action is required; subsequent restarts warm-restart as normal. FTS-only vaults (no embedding provider) are unaffected. <strong>Upgrading note:</strong> <code>search</code> now returns snippets (≤ ~200 words) by default. Set <code>snippet_words=0</code> per call or <code>MARKDOWN_VAULT_MCP_SNIPPET_WORDS=0</code> globally to restore full-chunk output. Existing vaults are also re-chunked on the next <code>reindex</code> when <code>MAX_CHUNK_WORDS</code> is set.</p>
 <h2 id="search-and-embeddings">Search and Embeddings<a class="headerlink" href="#search-and-embeddings" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -2353,7 +2353,7 @@ chronic backlog.</p>
 <tr>
 <td><code>OPENAI_API_KEY</code></td>
 <td>string</td>
-<td>—</td>
+<td>(none)</td>
 <td>OpenAI API key for the OpenAI embedding provider. <strong>Not</strong> <code>MARKDOWN_VAULT_MCP_</code>-prefixed</td>
 </tr>
 <tr>
@@ -2425,7 +2425,7 @@ chronic backlog.</p>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_GIT_REPO_URL</code></td>
 <td>string</td>
-<td>—</td>
+<td>(none)</td>
 <td>HTTPS repo URL for managed mode. On startup, empty <code>SOURCE_DIR</code> is cloned from this URL</td>
 </tr>
 <tr>
@@ -2437,7 +2437,7 @@ chronic backlog.</p>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_GIT_TOKEN</code></td>
 <td>string</td>
-<td>—</td>
+<td>(none)</td>
 <td>Token/password for HTTPS auth via <code>GIT_ASKPASS</code></td>
 </tr>
 <tr>
@@ -2467,14 +2467,14 @@ chronic backlog.</p>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_GIT_COMMIT_NAME_CLAIM</code></td>
 <td>string</td>
-<td>—</td>
-<td>OIDC claim key to use as the commit author name when a token is present (e.g. <code>name</code>); falls back to <code>GIT_COMMIT_NAME</code> when absent</td>
+<td>(none)</td>
+<td>OIDC claim key to use as the commit author name when a token is present (such as <code>name</code>); falls back to <code>GIT_COMMIT_NAME</code> when absent</td>
 </tr>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_GIT_COMMIT_EMAIL_CLAIM</code></td>
 <td>string</td>
-<td>—</td>
-<td>OIDC claim key to use as the commit author e-mail when a token is present (e.g. <code>email</code>); falls back to <code>GIT_COMMIT_EMAIL</code> when absent</td>
+<td>(none)</td>
+<td>OIDC claim key to use as the commit author e-mail when a token is present (such as <code>email</code>); falls back to <code>GIT_COMMIT_EMAIL</code> when absent</td>
 </tr>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_GIT_LFS</code></td>
@@ -2486,7 +2486,7 @@ chronic backlog.</p>
 </table>
 <div class="admonition tip">
 <p class="admonition-title">Push delay</p>
-<p>The push delay batches rapid writes into a single push. Set to <code>0</code> to disable automatic pushing — the server will push only on shutdown via <code>close()</code>.</p>
+<p>The push delay batches rapid writes into a single push. Set to <code>0</code> to disable automatic pushing; the server will then push only on shutdown via <code>close()</code>.</p>
 </div>
 <div class="admonition warning">
 <p class="admonition-title">HTTPS remotes only with token auth</p>
@@ -2507,14 +2507,14 @@ chronic backlog.</p>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_GITHUB_WEBHOOK_SECRET</code></td>
 <td>string</td>
-<td>—</td>
+<td>(none)</td>
 <td>Shared secret for GitHub HMAC-SHA256 signature verification; when unset the endpoint is not mounted</td>
 </tr>
 </tbody>
 </table>
 <p>The endpoint is only available on HTTP/SSE transports. To set up:</p>
 <ol>
-<li>Set <code>MARKDOWN_VAULT_MCP_GITHUB_WEBHOOK_SECRET</code> to a random secret (e.g. <code>openssl rand -hex 32</code>).</li>
+<li>Set <code>MARKDOWN_VAULT_MCP_GITHUB_WEBHOOK_SECRET</code> to a random secret (run <code>openssl rand -hex 32</code> to generate one).</li>
 <li>In your GitHub repository, add a webhook pointing at <code>https://&lt;your-host&gt;/github-webhook</code> with content type <code>application/json</code> and the same secret.</li>
 <li>Select the <code>push</code> event (other events are acknowledged with 200 and ignored).</li>
 </ol>
@@ -2566,7 +2566,7 @@ chronic backlog.</p>
 <td><code>MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS</code></td>
 <td>csv</td>
 <td>(built-in list)</td>
-<td>Comma-separated allowed extensions without dot (e.g. <code>pdf,png,jpg</code>); use <code>*</code> to allow all non-<code>.md</code> files</td>
+<td>Comma-separated allowed extensions without dot (such as <code>pdf,png,jpg</code>); use <code>*</code> to allow all non-<code>.md</code> files</td>
 </tr>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB</code></td>
@@ -2589,11 +2589,11 @@ chronic backlog.</p>
 </div>
 <div class="admonition note">
 <p class="admonition-title">Upgrading</p>
-<p><code>MAX_ATTACHMENT_SIZE_MB</code> default lowered from <strong>10 MB</strong> to <strong>1 MB</strong> — most LLM contexts can't survive a 10 MB base64-encoded attachment; the old default was a silent context-blow-up. If non-LLM consumers (scripts, CI) need the old behaviour, set <code>MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB=10</code> explicitly.</p>
+<p><code>MAX_ATTACHMENT_SIZE_MB</code> default lowered from <strong>10 MB</strong> to <strong>1 MB</strong>. Most LLM contexts can't survive a 10 MB base64-encoded attachment; the old default was a silent context-blow-up. If non-LLM consumers (scripts, CI) need the old behaviour, set <code>MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB=10</code> explicitly.</p>
 <p><code>MAX_NOTE_READ_BYTES</code> is a <strong>new</strong> env var (default 256 KB). Whole-document <code>.md</code> reads above this raise <code>ValueError</code>. Partial reads via <code>read(path, section=heading)</code> bypass the cap.</p>
 </div>
 <h2 id="bearer-token-authentication">Bearer Token Authentication<a class="headerlink" href="#bearer-token-authentication" title="Permanent link">&para;</a></h2>
-<p>Simple static token auth for HTTP deployments. Set a single env var — clients must send <code>Authorization: Bearer &lt;token&gt;</code>.</p>
+<p>Simple static token auth for HTTP deployments. Set a single env var; clients must send <code>Authorization: Bearer &lt;token&gt;</code>.</p>
 <table>
 <thead>
 <tr>
@@ -2614,10 +2614,10 @@ chronic backlog.</p>
 </table>
 <div class="admonition tip">
 <p class="admonition-title">Multi-auth</p>
-<p>If both <code>BEARER_TOKEN</code> and all OIDC variables are set, the server accepts <strong>either</strong> credential. Useful when different clients use different auth flows (e.g. Claude web via OIDC + Claude Code via bearer token).</p>
+<p>If both <code>BEARER_TOKEN</code> and all OIDC variables are set, the server accepts <strong>either</strong> credential. Useful when different clients use different auth flows (Claude web via OIDC, Claude Code via bearer token).</p>
 </div>
 <h2 id="one-time-transfer-links">One-Time Transfer Links<a class="headerlink" href="#one-time-transfer-links" title="Permanent link">&para;</a></h2>
-<p>Short-lived capability URLs for transferring vault files out-of-band (browser download or third-party service upload) without inflating the LLM context window. The <code>GET /transfer/{token}</code> route is mounted outside the auth middleware — the unguessable token is the authorization.</p>
+<p>Short-lived capability URLs for transferring vault files out-of-band (browser download or third-party service upload) without inflating the LLM context window. The <code>GET /transfer/{token}</code> route is mounted outside the auth middleware; the unguessable token is the authorization.</p>
 <p><code>MARKDOWN_VAULT_MCP_BASE_URL</code> is required for the transfer tools to function; it is used to construct the capability URL returned to the LLM. If <code>BASE_URL</code> is not set, calling <code>create_download_link</code> or <code>create_upload_link</code> raises an error.</p>
 <table>
 <thead>
@@ -2675,7 +2675,7 @@ chronic backlog.</p>
 <td><code>MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL</code></td>
 <td>url</td>
 <td>Yes</td>
-<td>OIDC discovery endpoint (e.g. <code>https://auth.example.com/.well-known/openid-configuration</code>)</td>
+<td>OIDC discovery endpoint (such as <code>https://auth.example.com/.well-known/openid-configuration</code>)</td>
 </tr>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_OIDC_CLIENT_ID</code></td>
@@ -2693,7 +2693,7 @@ chronic backlog.</p>
 <td><code>MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY</code></td>
 <td>string</td>
 <td>No</td>
-<td>JWT signing key; <strong>required on Linux/Docker</strong> — the default is ephemeral and invalidates tokens on restart. Generate with <code>openssl rand -hex 32</code></td>
+<td>JWT signing key; <strong>required on Linux/Docker</strong> (the default is ephemeral and invalidates tokens on restart). Generate with <code>openssl rand -hex 32</code></td>
 </tr>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_OIDC_AUDIENCE</code></td>

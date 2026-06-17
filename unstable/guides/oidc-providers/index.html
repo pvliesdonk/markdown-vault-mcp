@@ -2291,7 +2291,7 @@
 </div>
 <div class="admonition note">
 <p class="admonition-title">Subpath deployments</p>
-<p>If your reverse proxy mounts the server under a prefix (for example <code>https://mcp.example.com/vault</code>), set <code>MARKDOWN_VAULT_MCP_BASE_URL</code> to that prefixed URL and register callback URI <code>https://mcp.example.com/vault/auth/callback</code>.</p>
+<p>If your reverse proxy mounts the server under a prefix such as <code>https://mcp.example.com/vault</code>, set <code>MARKDOWN_VAULT_MCP_BASE_URL</code> to that prefixed URL and register callback URI <code>https://mcp.example.com/vault/auth/callback</code>.</p>
 </div>
 <h2 id="authelia">Authelia<a class="headerlink" href="#authelia" title="Permanent link">&para;</a></h2>
 <p>Use Authelia as your OIDC identity provider to authenticate users with local users, LDAP, or upstream providers.</p>
@@ -2345,7 +2345,7 @@
 </code></pre></div>
 <div class="admonition tip">
 <p class="admonition-title">Token lifetimes</p>
-<p>MCP clients (Claude.ai, Claude Code) do not reliably refresh tokens — see <a href="../authentication/#known-limitations-mcp-oauth-token-refresh">Known Limitations</a>. The <code>mcp_long_lived</code> custom lifespan sets both <code>access_token</code> and <code>id_token</code> to 8 hours so tokens outlast a typical work session. The <code>id_token</code> lifetime is critical when using <code>verify_id_token</code> mode (the default for Authelia) — if omitted, Authelia defaults it to 1 hour regardless of the <code>access_token</code> setting. See <a href="https://www.authelia.com/configuration/identity-providers/openid-connect/provider/#lifespans">Authelia OIDC Provider — Lifespans</a> for the full reference.</p>
+<p>MCP clients (Claude.ai, Claude Code) do not reliably refresh tokens (see <a href="../authentication/#known-limitations-mcp-oauth-token-refresh">Known Limitations</a>). The <code>mcp_long_lived</code> custom lifespan sets both <code>access_token</code> and <code>id_token</code> to 8 hours so tokens outlast a typical work session. The <code>id_token</code> lifetime is critical when using <code>verify_id_token</code> mode (the default for Authelia): if omitted, Authelia defaults it to 1 hour regardless of the <code>access_token</code> setting. See <a href="https://www.authelia.com/configuration/identity-providers/openid-connect/provider/#lifespans">Authelia OIDC Provider: Lifespans</a> for the full reference.</p>
 </div>
 <h3 id="2-generate-and-hash-a-client-secret">2. Generate and hash a client secret<a class="headerlink" href="#2-generate-and-hash-a-client-secret" title="Permanent link">&para;</a></h3>
 <p>Generate a secret (example):</p>
@@ -2369,7 +2369,7 @@
 <h3 id="5-start-the-server">5. Start the server<a class="headerlink" href="#5-start-the-server" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code>markdown-vault-mcp<span class="w"> </span>serve<span class="w"> </span>--transport<span class="w"> </span>http<span class="w"> </span>--port<span class="w"> </span><span class="m">8000</span>
 </code></pre></div>
-<p>Or in Docker — see <a href="../docker/#step-4-add-oidc-authentication">Docker OIDC setup</a>.</p>
+<p>Or in Docker, see <a href="../docker/#step-4-add-oidc-authentication">Docker OIDC setup</a>.</p>
 <h3 id="verify">Verify<a class="headerlink" href="#verify" title="Permanent link">&para;</a></h3>
 <ol>
 <li>Open <code>https://mcp.example.com</code> in a browser</li>
@@ -2388,12 +2388,12 @@
 <p>Use Keycloak directly as your OIDC provider for username/password (or federated) authentication.</p>
 <div class="admonition tip">
 <p class="admonition-title">Remote mode (simpler alternative)</p>
-<p>If your reverse proxy already handles OIDC authentication (e.g., Traefik with ForwardAuth), you can use <strong>remote mode</strong> instead. Set only <code>BASE_URL</code> and <code>OIDC_CONFIG_URL</code> — omit <code>OIDC_CLIENT_ID</code> and <code>OIDC_CLIENT_SECRET</code>. The server auto-detects remote mode and trusts the proxy's authentication. See <a href="../authentication/#remote-mode">Authentication — Remote mode</a> for details.</p>
+<p>If your reverse proxy already handles OIDC authentication (such as Traefik with ForwardAuth), you can use <strong>remote mode</strong> instead. Set only <code>BASE_URL</code> and <code>OIDC_CONFIG_URL</code>, omitting <code>OIDC_CLIENT_ID</code> and <code>OIDC_CLIENT_SECRET</code>. The server auto-detects remote mode and trusts the proxy's authentication. See <a href="../authentication/#remote-mode">Authentication: Remote mode</a> for details.</p>
 </div>
 <h3 id="1-create-a-realm">1. Create a realm<a class="headerlink" href="#1-create-a-realm" title="Permanent link">&para;</a></h3>
 <ol>
 <li>Open the Keycloak admin console</li>
-<li>Create a new realm (for example <code>vault</code>)</li>
+<li>Create a new realm (such as <code>vault</code>)</li>
 <li>Switch to the new realm before creating clients</li>
 </ol>
 <h3 id="2-create-a-client-with-redirect-uri">2. Create a client with redirect URI<a class="headerlink" href="#2-create-a-client-with-redirect-uri" title="Permanent link">&para;</a></h3>
@@ -2421,7 +2421,7 @@
 <h3 id="4-start-the-server">4. Start the server<a class="headerlink" href="#4-start-the-server" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code>markdown-vault-mcp<span class="w"> </span>serve<span class="w"> </span>--transport<span class="w"> </span>http<span class="w"> </span>--port<span class="w"> </span><span class="m">8000</span>
 </code></pre></div>
-<p>Or in Docker — see <a href="../docker/#step-4-add-oidc-authentication">Docker OIDC setup</a>.</p>
+<p>Or in Docker, see <a href="../docker/#step-4-add-oidc-authentication">Docker OIDC setup</a>.</p>
 <h3 id="verify_1">Verify<a class="headerlink" href="#verify_1" title="Permanent link">&para;</a></h3>
 <ol>
 <li>Open <code>https://mcp.example.com</code> in a browser</li>
@@ -2439,7 +2439,7 @@
 <p>Use Google as your OIDC identity provider to authenticate users with their Google accounts.</p>
 <div class="admonition tip">
 <p class="admonition-title">Remote mode (simpler alternative)</p>
-<p>If your reverse proxy already handles Google OIDC authentication, you can use <strong>remote mode</strong> instead — set only <code>BASE_URL</code> and <code>OIDC_CONFIG_URL</code>, omitting client credentials. See <a href="../authentication/#remote-mode">Authentication — Remote mode</a>.</p>
+<p>If your reverse proxy already handles Google OIDC authentication, you can use <strong>remote mode</strong> instead: set only <code>BASE_URL</code> and <code>OIDC_CONFIG_URL</code>, omitting client credentials. See <a href="../authentication/#remote-mode">Authentication: Remote mode</a>.</p>
 </div>
 <h3 id="1-create-oauth-credentials">1. Create OAuth credentials<a class="headerlink" href="#1-create-oauth-credentials" title="Permanent link">&para;</a></h3>
 <ol>
@@ -2475,7 +2475,7 @@
 <h3 id="3-start-the-server">3. Start the server<a class="headerlink" href="#3-start-the-server" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code>markdown-vault-mcp<span class="w"> </span>serve<span class="w"> </span>--transport<span class="w"> </span>http<span class="w"> </span>--port<span class="w"> </span><span class="m">8000</span>
 </code></pre></div>
-<p>Or in Docker — see <a href="../docker/#step-4-add-oidc-authentication">Docker OIDC setup</a>.</p>
+<p>Or in Docker, see <a href="../docker/#step-4-add-oidc-authentication">Docker OIDC setup</a>.</p>
 <h3 id="verify_2">Verify<a class="headerlink" href="#verify_2" title="Permanent link">&para;</a></h3>
 <ol>
 <li>Open <code>https://mcp.example.com</code> in a browser</li>
@@ -2484,16 +2484,16 @@
 </ol>
 <p>Check server logs for successful OIDC initialization. If you see errors:</p>
 <ul>
-<li><strong>"invalid_client"</strong> — verify the Client ID and Client Secret match the Google console</li>
-<li><strong>"redirect_uri_mismatch"</strong> — the <code>BASE_URL</code> + <code>/auth/callback</code> must exactly match the authorized redirect URI in Google console (including the scheme and trailing path)</li>
-<li>For prefixed deployments, this means <code>BASE_URL</code> should include the prefix, e.g. <code>https://mcp.example.com/vault</code>.</li>
+<li><strong>"invalid_client"</strong>: verify the Client ID and Client Secret match the Google console</li>
+<li><strong>"redirect_uri_mismatch"</strong>: the <code>BASE_URL</code> + <code>/auth/callback</code> must exactly match the authorized redirect URI in Google console (including the scheme and trailing path)</li>
+<li>For prefixed deployments, <code>BASE_URL</code> should include the prefix, such as <code>https://mcp.example.com/vault</code>.</li>
 </ul>
 <hr />
 <h2 id="github">GitHub<a class="headerlink" href="#github" title="Permanent link">&para;</a></h2>
 <p>Use GitHub as an authentication backend through an OIDC-compliant broker.</p>
 <div class="admonition warning">
 <p class="admonition-title">GitHub OAuth is not standard OIDC</p>
-<p>GitHub OAuth Apps implement OAuth 2.0 but do <strong>not</strong> provide a standard OIDC discovery endpoint (<code>.well-known/openid-configuration</code>). GitHub cannot be used directly with markdown-vault-mcp's OIDC integration.</p>
+<p>GitHub OAuth Apps use OAuth 2.0 but do not provide a standard OIDC discovery endpoint (<code>.well-known/openid-configuration</code>). GitHub cannot be used directly with markdown-vault-mcp's OIDC integration.</p>
 </div>
 <div class="admonition tip">
 <p class="admonition-title">Remote mode also works</p>
@@ -2520,7 +2520,7 @@
 <ul>
 <li><strong>Always set <code>OIDC_JWT_SIGNING_KEY</code></strong> on Linux/Docker. The default ephemeral key invalidates all tokens on restart.</li>
 <li><strong>Test with a browser first.</strong> The OIDC flow is easiest to debug in a browser where you can see redirects and error pages.</li>
-<li><strong>Check the discovery URL.</strong> Visit <code>OIDC_CONFIG_URL</code> in a browser — it should return a JSON document with <code>authorization_endpoint</code>, <code>token_endpoint</code>, and other fields.</li>
+<li><strong>Check the discovery URL.</strong> Visit <code>OIDC_CONFIG_URL</code> in a browser. It should return a JSON document with <code>authorization_endpoint</code>, <code>token_endpoint</code>, and other fields.</li>
 <li><strong>Redirect URI must match exactly.</strong> The <code>BASE_URL</code> + <code>/auth/callback</code> must match the redirect URI registered with the provider, including scheme (<code>https://</code>), domain, port, and path.</li>
 </ul>
 <h3 id="jwt-vs-opaque-access-tokens">JWT vs opaque access tokens<a class="headerlink" href="#jwt-vs-opaque-access-tokens" title="Permanent link">&para;</a></h3>

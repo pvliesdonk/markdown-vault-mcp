@@ -2001,23 +2001,23 @@
 <h3 id="context-card">Context Card<a class="headerlink" href="#context-card" title="Permanent link">&para;</a></h3>
 <p>Displays a note dossier for the note currently in focus. Includes:</p>
 <ul>
-<li><strong>Backlinks</strong> — other notes that link to this note</li>
-<li><strong>Outlinks</strong> — notes this document links to, with existence check</li>
-<li><strong>Similar notes</strong> — semantically similar documents (requires embeddings)</li>
-<li><strong>Tags</strong> — frontmatter tag values</li>
-<li><strong>Folder peers</strong> — other notes in the same folder</li>
-<li><strong>Modification time</strong> — last modified timestamp</li>
+<li><strong>Backlinks</strong>: other notes that link to this note</li>
+<li><strong>Outlinks</strong>: notes this document links to, with existence check</li>
+<li><strong>Similar notes</strong>: semantically similar documents (requires embeddings)</li>
+<li><strong>Tags</strong>: frontmatter tag values</li>
+<li><strong>Folder peers</strong>: other notes in the same folder</li>
+<li><strong>Modification time</strong>: last modified timestamp</li>
 </ul>
-<p>Click any linked note to navigate to its context card.</p>
+<p>Click any linked note to open its context card.</p>
 <h3 id="graph-explorer">Graph Explorer<a class="headerlink" href="#graph-explorer" title="Permanent link">&para;</a></h3>
 <p>Interactive force-directed link graph of the vault, powered by vis-network. Two modes:</p>
 <ul>
-<li><strong>Neighborhood</strong> — shows a note and its direct connections (configurable depth, soft-capped at <code>max_nodes=200</code> by default; the response carries <code>truncated=true</code> when the BFS hit the cap so the SPA can warn the user)</li>
-<li><strong>Hubs</strong> — shows the most-linked notes in the vault and their connections</li>
+<li><strong>Neighborhood</strong>: shows a note and its direct connections (configurable depth, soft-capped at <code>max_nodes=200</code> by default; the response carries <code>truncated=true</code> when the BFS hit the cap so the SPA can warn the user)</li>
+<li><strong>Hubs</strong>: shows the most-linked notes in the vault and their connections</li>
 </ul>
 <p>Click a node to view that note's context card. Toggle semantic similarity edges when embeddings are available.</p>
 <h3 id="vault-browser">Vault Browser<a class="headerlink" href="#vault-browser" title="Permanent link">&para;</a></h3>
-<p>Searchable, filterable file tree for navigating the vault without issuing tool calls. Features:</p>
+<p>Searchable, filterable file tree for browsing the vault without issuing tool calls. Features:</p>
 <ul>
 <li>Expandable folder tree</li>
 <li>Real-time search filtering</li>
@@ -2028,7 +2028,7 @@
 <ul>
 <li>Rendered markdown (via marked.js, sanitized with DOMPurify)</li>
 <li>Frontmatter table</li>
-<li><strong>Send to Claude</strong> button — sends the note content to the LLM conversation</li>
+<li><strong>Send to Claude</strong> button: sends the note content to the LLM conversation</li>
 <li>Navigation to Context Card or Graph Explorer for the same note</li>
 </ul>
 <h2 id="tools">Tools<a class="headerlink" href="#tools" title="Permanent link">&para;</a></h2>
@@ -2065,7 +2065,7 @@
 <tbody>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_BASE_URL</code></td>
-<td>—</td>
+<td>(none)</td>
 <td>Public base URL of the server. Required for auto-computing the app domain.</td>
 </tr>
 <tr>
@@ -2113,17 +2113,17 @@
 </table>
 <p>The app integrates with the host client via the ext-apps SDK:</p>
 <ul>
-<li><strong><code>app.callServerTool()</code></strong> — calls app-only tools to fetch data</li>
-<li><strong><code>app.sendMessage()</code></strong> — sends note content to the LLM conversation</li>
-<li><strong><code>app.updateModelContext()</code></strong> — keeps the LLM aware of which note the user is viewing</li>
-<li><strong><code>app.requestDisplayMode()</code></strong> — requests fullscreen or inline display</li>
-<li><strong>Theme sync</strong> — automatically adapts to the host's light/dark theme and CSS variables</li>
+<li><strong><code>app.callServerTool()</code></strong>: calls app-only tools to fetch data</li>
+<li><strong><code>app.sendMessage()</code></strong>: sends note content to the LLM conversation</li>
+<li><strong><code>app.updateModelContext()</code></strong>: keeps the LLM aware of which note the user is viewing</li>
+<li><strong><code>app.requestDisplayMode()</code></strong>: requests fullscreen or inline display</li>
+<li><strong>Theme sync</strong>: automatically adapts to the host's light/dark theme and CSS variables</li>
 </ul>
 <h2 id="client-support">Client support<a class="headerlink" href="#client-support" title="Permanent link">&para;</a></h2>
 <p>MCP Apps views require a client that supports the MCP Apps protocol. Currently supported by Claude on claude.ai. Clients without Apps support receive a text-only fallback from <code>browse_vault</code> and <code>show_context</code>.</p>
 <p>To hide <code>browse_vault</code> and <code>show_context</code> from the tool listing entirely (for clients that never render Apps panels), set <code>MARKDOWN_VAULT_MCP_DISABLE_APPS_UI=true</code>. See <a href="../../configuration/">Configuration</a>.</p>
 <h3 id="firing-prompts-from-claudeais-menu">Firing prompts from Claude.ai's <code>+</code> menu<a class="headerlink" href="#firing-prompts-from-claudeais-menu" title="Permanent link">&para;</a></h3>
-<p>MCP Apps surface interactive views, but this server also ships MCP <em>prompts</em> — <code>summarize</code>, <code>research</code>, <code>propose-links</code>, and the workflow prompts from the PARA and Zettelkasten packs. On Claude.ai, every prompt appears in the compose area's <code>+</code> menu once the server is added as a connector. Click <code>+</code>, select <strong>connectors</strong>, pick the server, pick a prompt — Claude opens with the invocation scaffolded. See <a href="../../prompts/#how-to-invoke-prompts">How to invoke prompts</a>.</p>
+<p>MCP Apps surface interactive views, but this server also ships MCP <em>prompts</em> (<code>summarize</code>, <code>research</code>, <code>propose-links</code>, and the workflow prompts from the PARA and Zettelkasten packs). On Claude.ai, every prompt appears in the compose area's <code>+</code> menu once the server is added as a connector. Click <code>+</code>, select <strong>connectors</strong>, pick the server, pick a prompt, and Claude opens with the invocation scaffolded. See <a href="../../prompts/#how-to-invoke-prompts">How to invoke prompts</a>.</p>
 
 
 

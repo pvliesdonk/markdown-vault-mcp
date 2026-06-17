@@ -2264,9 +2264,9 @@
 <h2 id="provider-selection">Provider Selection<a class="headerlink" href="#provider-selection" title="Permanent link">&para;</a></h2>
 <p>The <code>get_embedding_provider()</code> function auto-detects the best available provider:</p>
 <ol>
-<li><strong>OpenAI</strong> — if <code>OPENAI_API_KEY</code> is set</li>
-<li><strong>Ollama</strong> — if <code>OLLAMA_HOST</code> is reachable</li>
-<li><strong>FastEmbed</strong> — if the package is installed</li>
+<li><strong>OpenAI</strong> (if <code>OPENAI_API_KEY</code> is set)</li>
+<li><strong>Ollama</strong> (if <code>OLLAMA_HOST</code> is reachable)</li>
+<li><strong>FastEmbed</strong> (if the package is installed)</li>
 </ol>
 <p>Override with <code>MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER=openai|ollama|fastembed</code>.
 For OpenAI-compatible APIs, set <code>OPENAI_BASE_URL</code> and
@@ -2274,6 +2274,7 @@ For OpenAI-compatible APIs, set <code>OPENAI_BASE_URL</code> and
 <code>MARKDOWN_VAULT_MCP_OPENAI_BASE_URL</code> and
 <code>MARKDOWN_VAULT_MCP_OPENAI_EMBEDDING_MODEL</code>.</p>
 <h2 id="api-reference">API Reference<a class="headerlink" href="#api-reference" title="Permanent link">&para;</a></h2>
+<!-- vale off -->
 
 
 <div class="doc doc-object doc-class">
@@ -3640,7 +3641,7 @@ unrecognised value.</p>
 
     </div>
 
-</div>
+</div><!-- vale on -->
 
 
 

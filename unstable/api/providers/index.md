@@ -19,9 +19,9 @@ print(f"Dimension: {provider.dimension}")
 
 The `get_embedding_provider()` function auto-detects the best available provider:
 
-1. **OpenAI** — if `OPENAI_API_KEY` is set
-1. **Ollama** — if `OLLAMA_HOST` is reachable
-1. **FastEmbed** — if the package is installed
+1. **OpenAI** (if `OPENAI_API_KEY` is set)
+1. **Ollama** (if `OLLAMA_HOST` is reachable)
+1. **FastEmbed** (if the package is installed)
 
 Override with `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER=openai|ollama|fastembed`. For OpenAI-compatible APIs, set `OPENAI_BASE_URL` and `OPENAI_EMBEDDING_MODEL`, or the prefixed equivalents `MARKDOWN_VAULT_MCP_OPENAI_BASE_URL` and `MARKDOWN_VAULT_MCP_OPENAI_EMBEDDING_MODEL`.
 
