@@ -26,7 +26,7 @@ The MCP server supports three transport modes:
 |-----------|------|----------|
 | `stdio` | `--transport stdio` (default) | Claude Desktop and other stdio-based clients |
 | `sse` | `--transport sse` | Server-Sent Events for web clients |
-| `http` | `--transport http` | Streamable HTTP — required for Docker and OIDC |
+| `http` | `--transport http` | Streamable HTTP (required for Docker and OIDC) |
 
 ```bash
 # Default (stdio) — for Claude Desktop

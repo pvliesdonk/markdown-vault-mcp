@@ -4,7 +4,7 @@ Step-by-step walkthroughs for common deployment scenarios. Each guide takes you 
 
 ## Which guide do I need?
 
-| I want to... | Guide |
+| I want to… | Guide |
 |---|---|
 | Understand git modes (managed, commit-only, no-git) | [Git Integration](git-integration.md) |
 | Connect my Obsidian vault to Claude Desktop | [Claude Desktop](claude-desktop.md) |
@@ -31,7 +31,7 @@ Step-by-step walkthroughs for common deployment scenarios. Each guide takes you 
 
 All guides assume you have:
 
-- A directory of markdown files (e.g., an Obsidian vault)
+- A directory of markdown files (such as an Obsidian vault)
 - Python 3.11+ installed (for local installs) or Docker (for container deployments)
 
 For installation instructions, see [Installation](../installation.md). For the full environment variable reference, see [Configuration](../configuration.md).

@@ -23,14 +23,14 @@ Set `MARKDOWN_VAULT_MCP_AUTH_MODE` to force a mode, or let the server auto-detec
 
 Optional: `OIDC_AUDIENCE`, `OIDC_REQUIRED_SCOPES` (same as OIDCProxy mode).
 
-No `CLIENT_ID` or `CLIENT_SECRET` needed — tokens are validated locally via JWKS.
+No `CLIENT_ID` or `CLIENT_SECRET` needed. Tokens are validated locally via JWKS.
 
 ## OIDCProxy Required Variables
 
 | Variable | Description |
 |----------|-------------|
-| `MARKDOWN_VAULT_MCP_BASE_URL` | Public base URL of the server (e.g. `https://mcp.example.com`; include prefix when mounted under subpath, e.g. `https://mcp.example.com/vault`) |
-| `MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL` | OIDC discovery endpoint (e.g. `https://auth.example.com/.well-known/openid-configuration`) |
+| `MARKDOWN_VAULT_MCP_BASE_URL` | Public base URL of the server (such as `https://mcp.example.com`; include prefix when mounted under subpath, such as `https://mcp.example.com/vault`) |
+| `MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL` | OIDC discovery endpoint (such as `https://auth.example.com/.well-known/openid-configuration`) |
 | `MARKDOWN_VAULT_MCP_OIDC_CLIENT_ID` | OIDC client ID registered with your provider |
 | `MARKDOWN_VAULT_MCP_OIDC_CLIENT_SECRET` | OIDC client secret |
 
@@ -38,8 +38,8 @@ No `CLIENT_ID` or `CLIENT_SECRET` needed — tokens are validated locally via JW
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY` | ephemeral | JWT signing key. **Required on Linux/Docker** — the default is ephemeral and invalidates tokens on restart |
-| `MARKDOWN_VAULT_MCP_OIDC_AUDIENCE` | — | Expected JWT audience claim; leave unset if your provider does not set one |
+| `MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY` | ephemeral | JWT signing key. **Required on Linux/Docker** (the default is ephemeral and invalidates tokens on restart) |
+| `MARKDOWN_VAULT_MCP_OIDC_AUDIENCE` | (none) | Expected JWT audience claim; leave unset if your provider does not set one |
 | `MARKDOWN_VAULT_MCP_OIDC_REQUIRED_SCOPES` | `openid` | Comma-separated required scopes |
 | `MARKDOWN_VAULT_MCP_OIDC_VERIFY_ACCESS_TOKEN` | `false` | Set `true` to verify the upstream access token as JWT instead of the id token. Only needed when your provider issues JWT access tokens and you require audience-claim validation on that token |
 
@@ -61,7 +61,7 @@ openssl rand -hex 32
     Authelia does not support Dynamic Client Registration (RFC 7591). Clients must be registered manually in `configuration.yml`.
 
 !!! warning "Opaque vs JWT access tokens"
-    Authelia issues opaque (non-JWT) access tokens by default. **Remote mode requires JWT access tokens** — add `access_token_signed_response_alg: 'RS256'` to the Authelia client config. OIDCProxy mode works with opaque tokens (it verifies the `id_token` instead).
+    Authelia issues opaque (non-JWT) access tokens by default. **Remote mode requires JWT access tokens**: add `access_token_signed_response_alg: 'RS256'` to the Authelia client config. OIDCProxy mode works with opaque tokens (it verifies the `id_token` instead).
 
 ### Remote mode (recommended)
 
@@ -90,7 +90,7 @@ MARKDOWN_VAULT_MCP_BASE_URL=https://mcp.example.com
 MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL=https://auth.example.com/.well-known/openid-configuration
 ```
 
-Note: `CLIENT_ID` and `CLIENT_SECRET` are configured in Authelia only — they are not needed as MCP server env vars in remote mode.
+Note: `CLIENT_ID` and `CLIENT_SECRET` are configured in Authelia only. They are not needed as MCP server env vars in remote mode.
 
 #### 3. Start with HTTP transport
 
@@ -101,7 +101,7 @@ markdown-vault-mcp serve --transport http --port 8000
 ### OIDCProxy mode (fallback)
 
 !!! note "Opaque access tokens"
-    Authelia issues opaque (non-JWT) access tokens. This is handled automatically — the server verifies the `id_token` (always a standard JWT) instead. No extra configuration is needed.
+    Authelia issues opaque (non-JWT) access tokens. This is handled automatically: the server verifies the `id_token` (always a standard JWT) instead. No extra configuration is needed.
 
 ### 1. Register the client in Authelia
 
@@ -129,7 +129,7 @@ MARKDOWN_VAULT_MCP_OIDC_CLIENT_SECRET=your-client-secret
 MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY=$(openssl rand -hex 32)
 ```
 
-For subpath deployments (e.g., public URL `https://mcp.example.com/vault/mcp`), see [Subpath Deployments](#subpath-deployments) below.
+For subpath deployments (such as public URL `https://mcp.example.com/vault/mcp`), see [Subpath Deployments](#subpath-deployments) below.
 
 See also `examples/obsidian-oidc.env`.
 
@@ -143,7 +143,7 @@ markdown-vault-mcp serve --transport http --port 8000
 
 ### Remote mode
 
-The server validates tokens locally using JWKS — no upstream token calls after startup:
+The server validates tokens locally using JWKS, with no upstream token calls after startup:
 
 ```
 Client → IdP (authenticate + get JWT)
@@ -153,7 +153,7 @@ Client → markdown-vault-mcp (present JWT → validate via JWKS)
 1. Client authenticates directly with the OIDC provider
 2. Client presents the JWT access token to the MCP server
 3. Server validates the token locally using the provider's JWKS keys
-4. No upstream calls — token refresh is between client and IdP
+4. No upstream calls. Token refresh is between client and IdP.
 
 ### OIDCProxy mode
 
@@ -213,7 +213,7 @@ MARKDOWN_VAULT_MCP_OIDC_CLIENT_SECRET=your-client-secret
 MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY=your-stable-hex-key
 ```
 
-For a prefixed deployment (e.g., `https://mcp.example.com/vault/mcp`), see [Subpath Deployments](#subpath-deployments) below.
+For a prefixed deployment (such as `https://mcp.example.com/vault/mcp`), see [Subpath Deployments](#subpath-deployments) below.
 
 ## Subpath Deployments
 
@@ -222,12 +222,12 @@ When OIDC is enabled behind a reverse-proxy subpath, `BASE_URL` and `HTTP_PATH` 
 | Variable | Purpose | Example |
 |----------|---------|---------|
 | `BASE_URL` | Public URL of the server, **including the subpath prefix** | `https://mcp.example.com/vault` |
-| `HTTP_PATH` | Internal MCP endpoint mount point — **no subpath prefix** | `/mcp` |
+| `HTTP_PATH` | Internal MCP endpoint mount point (**no subpath prefix**) | `/mcp` |
 
 The reverse proxy strips the subpath prefix before forwarding to the application. FastMCP concatenates `BASE_URL + HTTP_PATH` to build the public resource URL, so including the prefix in both produces broken URLs with duplicated path segments.
 
 !!! danger "Do not duplicate the subpath"
-    Setting `BASE_URL=https://mcp.example.com/vault` **and** `HTTP_PATH=/vault/mcp` produces a duplicated resource URL: `https://mcp.example.com/vault/vault/mcp`. The subpath belongs in `BASE_URL` only.
+    Setting `BASE_URL=https://mcp.example.com/vault` and `HTTP_PATH=/vault/mcp` produces a duplicated resource URL: `https://mcp.example.com/vault/vault/mcp`. The subpath belongs in `BASE_URL` only.
 
 ### Configuration
 
@@ -250,8 +250,8 @@ The reverse proxy must:
 
 1. **Strip the prefix** (`/vault`) from operational routes before forwarding to the app
 2. **Forward OAuth discovery routes** to this service (without stripping prefixes):
-    - `/.well-known/oauth-authorization-server` — authorization server metadata
-    - `/.well-known/oauth-protected-resource/vault/mcp` — protected resource metadata
+    - `/.well-known/oauth-authorization-server` (authorization server metadata)
+    - `/.well-known/oauth-protected-resource/vault/mcp` (protected resource metadata)
 
 Example Traefik configuration:
 
@@ -273,17 +273,17 @@ labels:
 ### Shared-hostname limitation
 
 !!! warning "Shared-hostname subpath with native OIDC is not supported"
-    When multiple OAuth-capable services share a hostname (e.g., `mcp-auth-proxy` at the root and `markdown-vault-mcp` at `/vault`), native OIDC on a subpath does not work.
+    When multiple OAuth-capable services share a hostname (such as `mcp-auth-proxy` at the root and `markdown-vault-mcp` at `/vault`), native OIDC on a subpath does not work.
 
     **Why:** FastMCP serves the OAuth authorization-server metadata at `/.well-known/oauth-authorization-server` (host root), regardless of the subpath in `BASE_URL`. The FastMCP codebase contains an RFC 8414 path-aware override (`OIDCProxy.get_well_known_routes()`) that would serve it at `/.well-known/oauth-authorization-server/vault`. However, this method is not wired into the route mounting flow and is effectively dead code.
 
     The protected-resource metadata (`/.well-known/oauth-protected-resource/vault/mcp`) is correctly path-namespaced and does not collide. Only the authorization-server discovery route is the problem.
 
-    This works when `markdown-vault-mcp` is the **only** OAuth service on the hostname — the host-root `/.well-known/oauth-authorization-server` does not collide with anything. It breaks when another service already owns that route.
+    This works when `markdown-vault-mcp` is the **only** OAuth service on the hostname (the host-root `/.well-known/oauth-authorization-server` does not collide with anything). It breaks when another service already owns that route.
 
 **Recommendations for shared-hostname scenarios:**
 
-- **Dedicated hostname** (preferred): give `markdown-vault-mcp` its own hostname (e.g., `vault.example.com`) so discovery routes do not collide.
+- **Dedicated hostname** (preferred): give `markdown-vault-mcp` its own hostname (such as `vault.example.com`) so discovery routes do not collide.
 - **External auth gateway**: use `mcp-auth-proxy` as a sidecar instead of native OIDC. The MCP server runs unauthenticated behind the proxy, and the proxy handles OAuth discovery at its own routes.
 
 

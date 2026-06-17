@@ -31,6 +31,8 @@ vault.close()
 
 ## API Reference
 
+<!-- vale off -->
 ::: markdown_vault_mcp.git.GitWriteStrategy
 
 ::: markdown_vault_mcp.git.git_write_strategy
+<!-- vale on -->

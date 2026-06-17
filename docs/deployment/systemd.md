@@ -70,7 +70,7 @@ sudo systemctl daemon-reload
 
 ## Configuration
 
-Edit `/etc/markdown-vault-mcp/env` — this is the `EnvironmentFile` loaded by the systemd unit.
+Edit `/etc/markdown-vault-mcp/env` (the `EnvironmentFile` loaded by the systemd unit).
 The example file at `/etc/markdown-vault-mcp/env.example` documents all available variables.
 
 ### Minimum required
@@ -194,15 +194,15 @@ minimum required access. Key directives:
 | `ProtectKernelTunables=yes` | Cannot modify `/proc/sys`, `/sys` |
 | `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6` | Only Unix, IPv4, IPv6 sockets |
 | `SystemCallFilter=@system-service` | Restricted to standard service syscalls |
-| `MemoryDenyWriteExecute=no` | Allowed — required for Python/numpy JIT |
+| `MemoryDenyWriteExecute=no` | Allowed (required for Python/numpy JIT) |
 
 ### Relaxing restrictions
 
 If your vault is outside `/var/lib/markdown-vault-mcp`, add `ReadWritePaths`
 via a systemd override (see [Vault Location](#vault-location) above).
 
-If you need network access to additional services (e.g., Ollama on a remote host),
-no changes are needed — outbound TCP connections are allowed by default.
+If you need network access to additional services (such as Ollama on a remote host),
+no changes are needed; outbound TCP connections are allowed by default.
 
 ## Troubleshooting
 

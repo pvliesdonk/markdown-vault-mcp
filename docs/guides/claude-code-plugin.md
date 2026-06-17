@@ -1,6 +1,6 @@
 # Claude Code Plugin
 
-This guide walks through installing markdown-vault-mcp as a [Claude Code](https://claude.ai/claude-code) plugin — either for the current project or globally.
+This guide walks through installing markdown-vault-mcp as a [Claude Code](https://claude.ai/claude-code) plugin, either for the current project or globally.
 
 ## Overview
 
@@ -31,7 +31,7 @@ The first command adds the `pvliesdonk/claude-plugins` marketplace to your Claud
 
 ## Configure
 
-The only required env var is `MARKDOWN_VAULT_MCP_SOURCE_DIR` — set it to the path of your vault:
+The only required env var is `MARKDOWN_VAULT_MCP_SOURCE_DIR`. Set it to the path of your vault:
 
 === "Shell (current session)"
 
@@ -65,12 +65,12 @@ The plugin wires up the following env vars. Vars with a default are filled in wh
 | `MARKDOWN_VAULT_MCP_INDEX_PATH` | _(empty)_ | Override the FTS5 SQLite index file path; leave empty to use an in-memory index (rebuilt on every startup) |
 | `OLLAMA_HOST` | `http://localhost:11434` | Base URL for the Ollama API; only used when `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER=ollama` |
 
-In addition to the MCP server, the plugin installs the **`vault-workflow` skill**, which gives Claude guidance on:
+The plugin also installs the **`vault-workflow` skill**, which gives Claude guidance on:
 
-- **Search strategy** — when to use keyword vs. semantic vs. hybrid search
-- **Reading patterns** — how to read notes efficiently, follow links, and use `get_context`
-- **Link tools** — how to use `get_backlinks`, `get_outlinks`, `get_connection_path`, and the graph tools
-- **Write semantics** — how to create, edit, rename, and delete notes safely
+- **Search strategy**: when to use keyword vs. semantic vs. hybrid search
+- **Reading patterns**: note reading, link traversal, `get_context` usage, and efficient navigation
+- **Link tools**: `get_backlinks`, `get_outlinks`, `get_connection_path`, and the graph tools
+- **Write semantics**: creating, editing, renaming, and deleting notes safely
 
 ## Update
 

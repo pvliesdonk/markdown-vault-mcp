@@ -9,7 +9,7 @@ docker pull ghcr.io/pvliesdonk/markdown-vault-mcp:latest
 # Copy an example env file
 cp examples/obsidian-readonly.env .env
 
-# Edit .env — set MARKDOWN_VAULT_MCP_SOURCE_DIR to the vault path on the host
+# Edit .env (set MARKDOWN_VAULT_MCP_SOURCE_DIR to the vault path on the host)
 # Then start the service
 docker compose up -d
 
@@ -51,12 +51,12 @@ volumes:
 | Container Path | Type | Purpose |
 |---------------|------|---------|
 | `/data/vault` | Bind mount or named volume | Your Markdown vault; pre-created in the image for managed repo mode |
-| `/data/state` | Named volume | All server-managed internal state: SQLite FTS index, embedding vectors, FastEmbed model cache, OIDC proxy state, and HTTP session event store |
+| `/data/state` | Named volume | All server-managed internal state (SQLite FTS index, embedding vectors, FastEmbed model cache, OIDC proxy state, HTTP session event store) |
 
-All `/data/*` directories are pre-created and owned by the runtime user in the image. For managed repo mode (where the server clones a git repo on first start), `/data/vault` must be writable — this works automatically with named volumes or when UID/GID match the bind-mount owner. The first startup triggers a full index build; subsequent starts only reindex changed files.
+All `/data/*` directories are pre-created and owned by the runtime user in the image. For managed repo mode (where the server clones a git repo on first start), `/data/vault` must be writable (this works automatically with named volumes or when UID/GID match the bind-mount owner). The first startup triggers a full index build; subsequent starts only reindex changed files.
 
 !!! warning "Upgrading from v1.8.x"
-    Versions before v1.9.0 used three separate state volumes (`index-data`, `embeddings-data`, `fastembed-data`). These have been consolidated into a single `state-data` volume mounted at `/data/state`. Existing state is **not** migrated automatically — the index and embeddings will be rebuilt on first startup (the index rebuild is incremental; the embeddings rebuild may take several minutes for large vaults). The FastEmbed model cache will be re-downloaded (~100 MB). To avoid the rebuild, copy data from the old volumes into `state-data` before starting the new container.
+    Versions before v1.9.0 used three separate state volumes (`index-data`, `embeddings-data`, `fastembed-data`). These have been consolidated into a single `state-data` volume mounted at `/data/state`. Existing state is **not automatically migrated**: the index and embeddings will be rebuilt on first startup (the index rebuild is incremental; the embeddings rebuild may take several minutes for large vaults). The FastEmbed model cache will be re-downloaded (~100 MB). To avoid the rebuild, copy data from the old volumes into `state-data` before starting the new container.
 
 ## Traefik Reverse Proxy
 
@@ -64,9 +64,9 @@ The `compose.yml` includes Traefik labels out of the box. When Traefik is runnin
 
 **What the labels do:**
 
-- `traefik.enable=true` — opt this service in to Traefik discovery
-- `traefik.http.routers.markdown-vault-mcp.rule` — defines the `Host` rule; defaults to `markdown-vault-mcp.local`
-- `traefik.http.services.markdown-vault-mcp.loadbalancer.server.port` — tells Traefik the container listens on port 8000
+- `traefik.enable=true`: opts this service in to Traefik discovery
+- `traefik.http.routers.markdown-vault-mcp.rule`: defines the `Host` rule; defaults to `markdown-vault-mcp.local`
+- `traefik.http.services.markdown-vault-mcp.loadbalancer.server.port`: tells Traefik the container listens on port 8000
 
 ### Prerequisites
 
@@ -111,7 +111,7 @@ labels:
 ```
 
 !!! note "OIDC subpath deployments use a different pattern"
-    When OIDC is enabled, do **not** include the subpath in `HTTP_PATH`. Instead, put the subpath in `BASE_URL` and configure the reverse proxy to strip the prefix. See the [OIDC subpath deployment guide](oidc.md#subpath-deployments) for details.
+    When OIDC is enabled, omit the subpath from `HTTP_PATH`. Put the subpath in `BASE_URL` instead and configure the reverse proxy to strip the prefix. See the [OIDC subpath deployment guide](oidc.md#subpath-deployments) for details.
 
 ### TLS with Let's Encrypt
 
@@ -160,13 +160,13 @@ For managed mode, the token needs `repo` scope (or `contents: write` for fine-gr
 
 ## UID/GID Configuration
 
-The container runs as a non-root `appuser` (UID 1000 / GID 1000 by default). On startup, the entrypoint automatically fixes ownership of all `/data/*` directories before dropping privileges — so **named volumes work out of the box** regardless of how Docker initialised them.
+The container runs as a non-root `appuser` (UID 1000 / GID 1000 by default). On startup, the entrypoint automatically fixes ownership of all `/data/*` directories before dropping privileges, so **named volumes work out of the box** regardless of how Docker initialised them.
 
 This is the same entrypoint + `gosu` pattern used by the official PostgreSQL, Redis, and MySQL Docker images.
 
 ### Runtime UID/GID override
 
-To match a specific host user (e.g. for bind-mounted vaults), set `PUID` and `PGID`:
+To match a specific host user (such as for bind-mounted vaults), set `PUID` and `PGID`:
 
 ```yaml
 services:
@@ -176,7 +176,7 @@ services:
       PGID: 1001
 ```
 
-The entrypoint updates `appuser`'s UID/GID to the specified values and chowns `/data` accordingly.
+The entrypoint updates `appuser`'s UID/GID to the specified values and chowns `/data` to match.
 
 ### Build-time UID/GID (alternative for bind mounts)
 
@@ -210,9 +210,9 @@ Check logs: `docker compose logs markdown-vault-mcp`
 
 Common causes:
 
-- Token lacks `repo` scope — regenerate with the right permissions
-- Remote URL is SSH-based — the PAT strategy only works with HTTPS remotes. Convert: `git remote set-url origin https://github.com/user/repo.git`
-- In unmanaged/commit-only mode, the vault directory is not a git repo — run `git init` on the host first
+- Token lacks `repo` scope: regenerate with the right permissions
+- Remote URL is SSH-based: the PAT strategy only works with HTTPS remotes. Convert: `git remote set-url origin https://github.com/user/repo.git`
+- In unmanaged/commit-only mode, the vault directory is not a git repo: run `git init` on the host first
 
 ### Stale index after adding files outside the server
 
@@ -237,7 +237,7 @@ services:
 
 ## Remote debugging
 
-Production images ship without `debugpy` to keep the image lean.  To attach a remote Python debugger from VS Code or PyCharm:
+Production images ship without `debugpy` to keep the image lean. To attach a remote Python debugger from VS Code or PyCharm:
 
 1. **Build with the debug extra:**
 
@@ -245,7 +245,7 @@ Production images ship without `debugpy` to keep the image lean.  To attach a re
     docker build --build-arg DEBUG=true -t markdown-vault-mcp:debug .
     ```
 
-    This installs the `[debug]` optional-dependency group (which pulls `debugpy` transitively from `fastmcp-pvl-core`).  Default builds (`DEBUG=false`) skip it.
+    This installs the `[debug]` optional-dependency group (which pulls `debugpy` transitively from `fastmcp-pvl-core`). Default builds (`DEBUG=false`) skip it.
 
 2. **Run with the debug env vars set and the port mapped:**
 
@@ -261,9 +261,9 @@ Production images ship without `debugpy` to keep the image lean.  To attach a re
     | Env var | Effect |
     |---------|--------|
     | `MARKDOWN_VAULT_MCP_DEBUG_PORT` | TCP port the debugger listens on (any value parsing to ``0`` disables; non-numeric or out-of-range values log a WARNING and the listener stays off) |
-    | `MARKDOWN_VAULT_MCP_DEBUG_WAIT` | When truthy (``1``/``true``/``yes``/``on``), block startup until the IDE attaches.  Default is non-blocking. |
+    | `MARKDOWN_VAULT_MCP_DEBUG_WAIT` | When truthy (``1``/``true``/``yes``/``on``), block startup until the IDE attaches. Default is non-blocking. |
 
-3. **Attach from VS Code** — add a launch config:
+3. **Attach from VS Code:** add a launch config:
 
     ```json
     {
@@ -277,9 +277,9 @@ Production images ship without `debugpy` to keep the image lean.  To attach a re
     PyCharm uses *Run → Edit Configurations → Python Debug Server* with the same host/port.
 
 !!! danger "Never publish the debug port on a public network"
-    The debug listener binds `0.0.0.0` inside the container so the IDE can reach it from the host, but **debugpy's DAP protocol is unauthenticated** — any peer that can reach the port has arbitrary code execution as the server process.  Always bind the port mapping to localhost (`-p 127.0.0.1:5678:5678`) or tunnel via `kubectl port-forward` / SSH.  Production images should be built with default `DEBUG=false`.
+    The debug listener binds `0.0.0.0` inside the container so the IDE can reach it from the host, but **debugpy's DAP protocol is unauthenticated**: any peer that can reach the port has arbitrary code execution as the server process. Always bind the port mapping to localhost (`-p 127.0.0.1:5678:5678`) or tunnel via `kubectl port-forward` / SSH. Production images should be built with default `DEBUG=false`.
 
-When the helper is invoked but `debugpy` isn't installed (e.g. someone sets `DEBUG_PORT` on a non-debug image), it logs a WARNING and continues — safe failure mode.
+When the helper is invoked but `debugpy` isn't installed (such as when `DEBUG_PORT` is set on a non-debug image), it logs a WARNING and continues: safe failure mode.
 
 <!-- DOMAIN-DOCKER-EXTRA-START -->
 <!-- DOMAIN-DOCKER-EXTRA-END -->

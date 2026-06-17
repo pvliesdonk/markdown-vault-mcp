@@ -6,7 +6,7 @@ This guide covers configuring markdown-vault-mcp with specific OIDC providers. F
     OIDC requires HTTP transport (`--transport http`). It has no effect with stdio transport.
 
 !!! note "Subpath deployments"
-    If your reverse proxy mounts the server under a prefix (for example `https://mcp.example.com/vault`), set `MARKDOWN_VAULT_MCP_BASE_URL` to that prefixed URL and register callback URI `https://mcp.example.com/vault/auth/callback`.
+    If your reverse proxy mounts the server under a prefix such as `https://mcp.example.com/vault`, set `MARKDOWN_VAULT_MCP_BASE_URL` to that prefixed URL and register callback URI `https://mcp.example.com/vault/auth/callback`.
 
 ## Authelia
 
@@ -64,7 +64,7 @@ identity_providers:
 ```
 
 !!! tip "Token lifetimes"
-    MCP clients (Claude.ai, Claude Code) do not reliably refresh tokens — see [Known Limitations](authentication.md#known-limitations-mcp-oauth-token-refresh). The `mcp_long_lived` custom lifespan sets both `access_token` and `id_token` to 8 hours so tokens outlast a typical work session. The `id_token` lifetime is critical when using `verify_id_token` mode (the default for Authelia) — if omitted, Authelia defaults it to 1 hour regardless of the `access_token` setting. See [Authelia OIDC Provider — Lifespans](https://www.authelia.com/configuration/identity-providers/openid-connect/provider/#lifespans) for the full reference.
+    MCP clients (Claude.ai, Claude Code) do not reliably refresh tokens (see [Known Limitations](authentication.md#known-limitations-mcp-oauth-token-refresh)). The `mcp_long_lived` custom lifespan sets both `access_token` and `id_token` to 8 hours so tokens outlast a typical work session. The `id_token` lifetime is critical when using `verify_id_token` mode (the default for Authelia): if omitted, Authelia defaults it to 1 hour regardless of the `access_token` setting. See [Authelia OIDC Provider: Lifespans](https://www.authelia.com/configuration/identity-providers/openid-connect/provider/#lifespans) for the full reference.
 
 ### 2. Generate and hash a client secret
 
@@ -105,7 +105,7 @@ MARKDOWN_VAULT_MCP_OIDC_REQUIRED_SCOPES=openid,profile,email,offline_access
 markdown-vault-mcp serve --transport http --port 8000
 ```
 
-Or in Docker — see [Docker OIDC setup](docker.md#step-4-add-oidc-authentication).
+Or in Docker, see [Docker OIDC setup](docker.md#step-4-add-oidc-authentication).
 
 ### Verify
 
@@ -127,12 +127,12 @@ If login fails:
 Use Keycloak directly as your OIDC provider for username/password (or federated) authentication.
 
 !!! tip "Remote mode (simpler alternative)"
-    If your reverse proxy already handles OIDC authentication (e.g., Traefik with ForwardAuth), you can use **remote mode** instead. Set only `BASE_URL` and `OIDC_CONFIG_URL` — omit `OIDC_CLIENT_ID` and `OIDC_CLIENT_SECRET`. The server auto-detects remote mode and trusts the proxy's authentication. See [Authentication — Remote mode](authentication.md#remote-mode) for details.
+    If your reverse proxy already handles OIDC authentication (such as Traefik with ForwardAuth), you can use **remote mode** instead. Set only `BASE_URL` and `OIDC_CONFIG_URL`, omitting `OIDC_CLIENT_ID` and `OIDC_CLIENT_SECRET`. The server auto-detects remote mode and trusts the proxy's authentication. See [Authentication: Remote mode](authentication.md#remote-mode) for details.
 
 ### 1. Create a realm
 
 1. Open the Keycloak admin console
-2. Create a new realm (for example `vault`)
+2. Create a new realm (such as `vault`)
 3. Switch to the new realm before creating clients
 
 ### 2. Create a client with redirect URI
@@ -172,7 +172,7 @@ openssl rand -hex 32
 markdown-vault-mcp serve --transport http --port 8000
 ```
 
-Or in Docker — see [Docker OIDC setup](docker.md#step-4-add-oidc-authentication).
+Or in Docker, see [Docker OIDC setup](docker.md#step-4-add-oidc-authentication).
 
 ### Verify
 
@@ -193,7 +193,7 @@ If login fails:
 Use Google as your OIDC identity provider to authenticate users with their Google accounts.
 
 !!! tip "Remote mode (simpler alternative)"
-    If your reverse proxy already handles Google OIDC authentication, you can use **remote mode** instead — set only `BASE_URL` and `OIDC_CONFIG_URL`, omitting client credentials. See [Authentication — Remote mode](authentication.md#remote-mode).
+    If your reverse proxy already handles Google OIDC authentication, you can use **remote mode** instead: set only `BASE_URL` and `OIDC_CONFIG_URL`, omitting client credentials. See [Authentication: Remote mode](authentication.md#remote-mode).
 
 ### 1. Create OAuth credentials
 
@@ -237,7 +237,7 @@ openssl rand -hex 32
 markdown-vault-mcp serve --transport http --port 8000
 ```
 
-Or in Docker — see [Docker OIDC setup](docker.md#step-4-add-oidc-authentication).
+Or in Docker, see [Docker OIDC setup](docker.md#step-4-add-oidc-authentication).
 
 ### Verify
 
@@ -247,9 +247,9 @@ Or in Docker — see [Docker OIDC setup](docker.md#step-4-add-oidc-authenticatio
 
 Check server logs for successful OIDC initialization. If you see errors:
 
-- **"invalid_client"** — verify the Client ID and Client Secret match the Google console
-- **"redirect_uri_mismatch"** — the `BASE_URL` + `/auth/callback` must exactly match the authorized redirect URI in Google console (including the scheme and trailing path)
-- For prefixed deployments, this means `BASE_URL` should include the prefix, e.g. `https://mcp.example.com/vault`.
+- **"invalid_client"**: verify the Client ID and Client Secret match the Google console
+- **"redirect_uri_mismatch"**: the `BASE_URL` + `/auth/callback` must exactly match the authorized redirect URI in Google console (including the scheme and trailing path)
+- For prefixed deployments, `BASE_URL` should include the prefix, such as `https://mcp.example.com/vault`.
 
 ---
 
@@ -258,7 +258,7 @@ Check server logs for successful OIDC initialization. If you see errors:
 Use GitHub as an authentication backend through an OIDC-compliant broker.
 
 !!! warning "GitHub OAuth is not standard OIDC"
-    GitHub OAuth Apps implement OAuth 2.0 but do **not** provide a standard OIDC discovery endpoint (`.well-known/openid-configuration`). GitHub cannot be used directly with markdown-vault-mcp's OIDC integration.
+    GitHub OAuth Apps use OAuth 2.0 but do not provide a standard OIDC discovery endpoint (`.well-known/openid-configuration`). GitHub cannot be used directly with markdown-vault-mcp's OIDC integration.
 
 !!! tip "Remote mode also works"
     If you use Keycloak (or another broker) with GitHub social login, the remote mode alternative described in the [Keycloak section](#keycloak) above also applies here.
@@ -289,7 +289,7 @@ These apply to all OIDC providers:
 
 - **Always set `OIDC_JWT_SIGNING_KEY`** on Linux/Docker. The default ephemeral key invalidates all tokens on restart.
 - **Test with a browser first.** The OIDC flow is easiest to debug in a browser where you can see redirects and error pages.
-- **Check the discovery URL.** Visit `OIDC_CONFIG_URL` in a browser — it should return a JSON document with `authorization_endpoint`, `token_endpoint`, and other fields.
+- **Check the discovery URL.** Visit `OIDC_CONFIG_URL` in a browser. It should return a JSON document with `authorization_endpoint`, `token_endpoint`, and other fields.
 - **Redirect URI must match exactly.** The `BASE_URL` + `/auth/callback` must match the redirect URI registered with the provider, including scheme (`https://`), domain, port, and path.
 
 ### JWT vs opaque access tokens

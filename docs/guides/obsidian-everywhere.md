@@ -125,11 +125,11 @@ Verification checklist:
 
 ### Firing prompts from Claude.ai's `+` menu
 
-When Claude.ai is part of your setup, every MCP prompt this server exposes can be fired from the compose area's `+` menu once the server is added as a connector. Click `+`, select **connectors**, pick the server, pick a prompt — Claude opens with the invocation scaffolded. This is the recommended way to invoke multi-step prompts like `propose-links` or the PARA / Zettelkasten workflow prompts. See [How to invoke prompts](../prompts.md#how-to-invoke-prompts) for the full invocation reference.
+When Claude.ai is part of your setup, every MCP prompt this server exposes can be fired from the compose area's `+` menu once the server is added as a connector. Click `+`, select **connectors**, pick the server, pick a prompt; Claude opens with the invocation scaffolded. This is the recommended way to invoke multi-step prompts like `propose-links` or the PARA / Zettelkasten workflow prompts. See [How to invoke prompts](../prompts.md#how-to-invoke-prompts) for the full invocation reference.
 
 ## Limitations & troubleshooting
 
-- Diverged branches: when both Obsidian and MCP commit on different files, the server rebases local commits onto upstream automatically. When the same file is edited on both sides, the server resolves the conflict by accepting the upstream version and saving the MCP version as a `*.conflict-mcp-YYYYMMDD-HHMMSS.md` file with `conflict_with` frontmatter on both files. Neither version is authoritative — reconcile manually or let the AI merge them.
+- Diverged branches: when both Obsidian and MCP commit on different files, the server rebases local commits onto upstream automatically. When the same file is edited on both sides, the server resolves the conflict by accepting the upstream version and saving the MCP version as a `*.conflict-mcp-YYYYMMDD-HHMMSS.md` file with `conflict_with` frontmatter on both files. Neither version is authoritative; reconcile manually or let the AI merge them.
 - Squash/cherry-pick detection limitation: rewritten commit history may not map cleanly for duplicate detection.
 - Git LFS: large binary attachments may need explicit LFS setup on every client and server.
 - iOS: no equivalent GitSync workflow is documented here for private repositories.

@@ -184,4 +184,4 @@ Ensure `markdown-vault-mcp` is on your PATH. If installed in a virtualenv, use t
 
 ### Slow startup
 
-The first startup builds the full-text index. Set `MARKDOWN_VAULT_MCP_INDEX_PATH` to persist the index between restarts — subsequent starts will only process changed files.
+The first startup builds the full-text index. Set `MARKDOWN_VAULT_MCP_INDEX_PATH` to persist the index between restarts; subsequent starts will only process changed files.

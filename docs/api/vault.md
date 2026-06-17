@@ -25,4 +25,6 @@ print(note.content)
 
 ## API Reference
 
+<!-- vale off -->
 ::: markdown_vault_mcp.vault.Vault
+<!-- vale on -->

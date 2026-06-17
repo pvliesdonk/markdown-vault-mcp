@@ -15,4 +15,6 @@ vault = Vault(**config.to_vault_kwargs())
 
 ## API Reference
 
+<!-- vale off -->
 ::: markdown_vault_mcp.config.VaultConfig
+<!-- vale on -->

@@ -30,24 +30,32 @@ vault.index.reindex()
 Search, read, listing, table-of-contents, similarity, context, history/diff,
 and attachment reads.
 
+<!-- vale off -->
 ::: markdown_vault_mcp.facets.reader.ReaderFacet
+<!-- vale on -->
 
 ## WriterFacet
 
 Create, edit, delete, rename, and attachment writes.
 
+<!-- vale off -->
 ::: markdown_vault_mcp.facets.writer.WriterFacet
+<!-- vale on -->
 
 ## GraphFacet
 
 Backlinks, outlinks, broken links, orphans, most-linked notes, and connection
 paths.
 
+<!-- vale off -->
 ::: markdown_vault_mcp.facets.graph.GraphFacet
+<!-- vale on -->
 
 ## IndexFacet
 
 Index build / reindex / embeddings (sync + async), readiness, and writer
 status.
 
+<!-- vale off -->
 ::: markdown_vault_mcp.facets.index.IndexFacet
+<!-- vale on -->
