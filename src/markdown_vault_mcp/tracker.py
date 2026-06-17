@@ -85,6 +85,13 @@ class ChangeTracker:
            - in indexed state but absent from disk → **deleted**
            - in skipped state but absent from disk → dropped silently (it
              was never indexed, so nothing needs deleting)
+           - matches *exclude_patterns* → **filtered before hashing**: absent
+             from every result list, including **deleted**. A path that was
+             previously indexed and is now excluded is *withheld* from
+             ``deleted`` (it is excluded, not removed) so the reindex
+             stale-purge (#255) — which loads vectors before purging — remains
+             its sole remover; reporting it as deleted would leak its
+             embedding (#257).
 
         5. Return a :class:`~markdown_vault_mcp.types.ChangeSet`.
 
@@ -93,9 +100,11 @@ class ChangeTracker:
             glob_pattern: Glob pattern used to discover files, relative to
                 *source_dir*. Defaults to ``"**/*.md"``.
             exclude_patterns: Glob patterns (matched against the relative POSIX
-                path) whose files are skipped before hashing, so excluded
-                subtrees (e.g. ``.obsidian/**``) are neither hashed nor
-                reported as changes (#257). ``None`` excludes nothing.
+                path via :func:`~markdown_vault_mcp.utils.is_path_excluded`,
+                which uses :func:`fnmatch.fnmatch` — use a ``**`` suffix such as
+                ``.obsidian/**`` to match a whole subtree). Matching files are
+                skipped before hashing, so excluded subtrees are neither hashed
+                nor reported as changes (#257). ``None`` excludes nothing.
 
         Returns:
             A :class:`~markdown_vault_mcp.types.ChangeSet` describing the delta.
