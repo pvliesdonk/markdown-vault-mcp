@@ -192,6 +192,48 @@ class TestGraphDataTools:
             f"hub documents should not be read directly; read={read_paths}"
         )
 
+    async def test_hubs_reads_each_backlink_source_once(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """#285: the parallelized hub fetch still de-duplicates note reads — a
+        source backlinking several hubs is read at most once."""
+        from markdown_vault_mcp.facets.reader import ReaderFacet
+
+        original_read = ReaderFacet.read
+        read_paths: list[str] = []
+
+        def _spy(self: ReaderFacet, path: str) -> Any:
+            read_paths.append(path)
+            return original_read(self, path)
+
+        monkeypatch.setattr(ReaderFacet, "read", _spy)
+        server = make_server()
+        async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
+            await client.call_tool(_hashed("vault_graph_hubs"), {})
+        assert len(read_paths) == len(set(read_paths)), (
+            f"backlink sources should be read once each; reads={read_paths}"
+        )
+
+    async def test_hubs_tolerates_backlinks_valueerror(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """#285: a hub whose get_backlinks raises ValueError degrades to no
+        connections rather than failing the whole graph."""
+        from markdown_vault_mcp.facets.graph import GraphFacet
+
+        def _boom(self: GraphFacet, path: str) -> Any:  # noqa: ARG001
+            raise ValueError("no such note")
+
+        monkeypatch.setattr(GraphFacet, "get_backlinks", _boom)
+        server = make_server()
+        async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
+            result = await client.call_tool(_hashed("vault_graph_hubs"), {})
+            data = _parse_tool_data(result)
+        assert "nodes" in data  # hubs still returned
+        assert data["edges"] == []  # no backlinks resolved → no edges
+
     async def test_edges_have_type(self) -> None:
         server = make_server()
         async with Client(server) as client:

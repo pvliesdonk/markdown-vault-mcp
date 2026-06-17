@@ -644,14 +644,39 @@ def register_apps(mcp: FastMCP) -> None:
                 "folder": hub.folder,
             }
 
-            # Get immediate connections for each hub
+        # Fetch every hub's backlinks concurrently. Each call is an independent
+        # read and FTS uses per-thread sqlite connections, so the to_thread
+        # calls run in parallel safely instead of one-at-a-time (#285).
+        async def _backlinks(path: str) -> list[Any]:
             try:
-                backlinks = await asyncio.to_thread(vault.graph.get_backlinks, hub.path)
+                return await asyncio.to_thread(vault.graph.get_backlinks, path)
             except ValueError:
-                backlinks = []
+                return []
+
+        backlinks_per_hub = await asyncio.gather(*(_backlinks(h.path) for h in hubs))
+
+        # Collect the non-hub source paths that need a note read, preserving
+        # first-seen order so labels/folders are assigned deterministically,
+        # then read them all concurrently (deduplicated — a source linking
+        # several hubs is read once).
+        to_read: list[str] = []
+        seen_read: set[str] = set()
+        for backlinks in backlinks_per_hub:
+            for bl in backlinks:
+                if bl.source_path not in nodes and bl.source_path not in seen_read:
+                    seen_read.add(bl.source_path)
+                    to_read.append(bl.source_path)
+        read_results = await asyncio.gather(
+            *(asyncio.to_thread(vault.reader.read, p) for p in to_read)
+        )
+        notes_by_path = dict(zip(to_read, read_results, strict=True))
+
+        # Build nodes + edges in the original (hub, backlink) order so the
+        # output is identical to the sequential version.
+        for hub, backlinks in zip(hubs, backlinks_per_hub, strict=True):
             for bl in backlinks:
                 if bl.source_path not in nodes:
-                    note = await asyncio.to_thread(vault.reader.read, bl.source_path)
+                    note = notes_by_path.get(bl.source_path)
                     label = (
                         note.title
                         if note
