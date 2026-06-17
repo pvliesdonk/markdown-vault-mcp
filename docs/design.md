@@ -11,7 +11,7 @@ This spec uses the following terms consistently:
 - **Document**: a single `.md` file in the vault. The primary term used
   throughout this spec.
 - **Folder**: a subdirectory within `source_dir`, represented as a
-  `/`-separated relative path (e.g., `Journal/2024`). The root of `source_dir`
+  `/`-separated relative path (such as `Journal/2024`). The root of `source_dir`
   is represented as an empty string `""`.
 - **Chunk**: a portion of a document, typically a section under a heading.
   Stored in the `sections` database table.
@@ -36,10 +36,10 @@ vault becomes another.
    base served over MCP with read/write support and optional git-backed sync.
 2. **IF Craft Corpus** (`pvliesdonk/if-craft-corpus`): read-only curated
    vault with domain-specific tools, strict frontmatter requirements.
-3. **Python library**: direct use as a search API (e.g., wrapped as a LangChain
+3. **Python library**: direct use as a search API (such as wrapping as a LangChain
    tool by downstream projects like QuestFoundry). The `Vault` class is
    the primary interface; MCP is one consumer, not the only one. Other
-   frameworks (LangChain, LlamaIndex, etc.) may wrap `Vault` directly.
+   Libraries (LangChain, LlamaIndex, and so on) may wrap `Vault` directly.
 
 ## Shared Infrastructure
 
@@ -47,7 +47,7 @@ Generic FastMCP infrastructure (auth providers, middleware stack, logging
 bootstrap, server-factory helpers, artifact store, CLI helpers) lives in the
 `fastmcp-pvl-core` PyPI package. markdown-vault-mcp composes this library
 via `ServerConfig` (never inheritance) and imports the building blocks
-directly — see `make_server()` in `src/markdown_vault_mcp/server.py` for the
+directly. See `make_server()` in `src/markdown_vault_mcp/server.py` for the
 assembled call graph.
 
 Design spec: `docs/superpowers/specs/2026-04-20-fastmcp-core-and-copier-template-design.md`.
@@ -103,13 +103,13 @@ the existing package until a complete refactor after markdown-vault-mcp is stabl
 ## Reference Code
 
 All code below lives in `pvliesdonk/if-craft-corpus`. Read these files for
-implementation patterns:
+patterns to follow:
 
 | File | Reuse Strategy | Notes |
-|------|----------------|-------|
+|-|-|-|
 | `providers.py` | **Copy + adapt** | Rename env var prefix `IFCRAFTCORPUS_` to `MARKDOWN_VAULT_MCP_`. Fix hardcoded imports. |
-| `embeddings.py` | **Copy + adapt** | Rename to `vector_index.py`. The `load()` classmethod contains a hardcoded `from ifcraftcorpus.providers import get_embedding_provider` -- this **must** be changed to `from markdown_vault_mcp.providers import get_embedding_provider` or it will raise `ImportError` at runtime. |
-| `search.py` | **Adapt** | Pattern for `Vault` facade. Replace domain methods with generic API. |
+| `embeddings.py` | **Copy + adapt** | Rename to `vector_index.py`. The `load()` classmethod contains a hardcoded `from ifcraftcorpus.providers import get_embedding_provider`; change it to `from markdown_vault_mcp.providers import get_embedding_provider` or it will raise `ImportError` at runtime. |
+| `search.py` | **Adapt** | Pattern for `Vault` façade. Replace domain methods with generic API. |
 | `index.py` | **Adapt** | Pattern for `fts_index.py`. Replace corpus-specific schema. Fix hybrid score bug (see RRF section). |
 | `parser.py` | **Replace** | Replace with generic frontmatter + heading-based chunking using `python-frontmatter`. |
 | `server.py` | **Adapt** | Replace domain tools with generic tools. Use lifespan hooks instead of lazy global singleton. |
@@ -119,7 +119,7 @@ implementation patterns:
 - **Copy + adapt**: copy the file as a starting point, then modify for the new
   package. Temporary code duplication accepted until ifcraftcorpus refactor.
 - **Adapt**: use as a design reference; rewrite for the new package.
-- **Replace**: discard and write new implementation.
+- **Replace**: discard and write from scratch.
 
 ## Core Design Decisions
 
@@ -129,7 +129,7 @@ Documents are identified by their **relative path from the vault root**,
 including the `.md` extension. Example: `Journal/2024-01-15.md`.
 
 This avoids collisions between files with the same stem in different
-directories (e.g., `Journal/2024-01-15.md` vs `Archive/2024-01-15.md`).
+directories (such as `Journal/2024-01-15.md` vs `Archive/2024-01-15.md`).
 
 ### Folder Derivation
 
@@ -171,10 +171,10 @@ Hybrid approach:
    get promoted into `(tag_key, tag_value)` rows. Each unique
    `(document_id, tag_key, tag_value)` tuple produces one row (duplicates in
    source lists are deduplicated). Complex types (nested dicts, objects) in
-   frontmatter are stored in the JSON blob but are **not** indexed -- only
+   frontmatter are stored in the JSON blob but are not indexed; only
    scalar and simple list values are indexed.
 2. **Raw frontmatter JSON blob** stored in the `documents` table for display
-   and retrieval only -- not queried via index.
+   and retrieval only (not queried via index).
 
 The `filters` parameter on `search()` generates
 `document_id IN (SELECT ... FROM document_tags WHERE ...)` subqueries. This
@@ -228,25 +228,25 @@ Four complementary mechanisms improve result diversity and bound LLM context cos
    no-headings document), the chunker falls back to a paragraph- and word-boundary
    split so the budget is a **hard** invariant for every emitted chunk. Default
    threshold: 400 words. This matters for embedding providers with context limits
-   (e.g. the default FastEmbed model `BAAI/bge-small-en-v1.5` exposes a 512-token
+   (the default FastEmbed model `BAAI/bge-small-en-v1.5` exposes a 512-token
    context; `nomic-embed-text-v1.5` has 8192 tokens natively but Ollama serves it
-   with `n_ctx_train=2048` by default — both silently truncate beyond their cap).
+   with `n_ctx_train=2048` by default, and both silently truncate beyond their cap).
 
 **Config knobs:**
 
 | Env var | Default | Description |
-|---|---|---|
+|-|-|-|
 | `MARKDOWN_VAULT_MCP_CHUNKS_PER_FILE` | `2` | Per-document cap on result slots. |
 | `MARKDOWN_VAULT_MCP_SNIPPET_WORDS` | `200` | Approximate word budget for `SectionHit.content`. `0` = no truncation. |
 | `MARKDOWN_VAULT_MCP_LENGTH_DOWNWEIGHT_ALPHA` | `0.25` | Strength of length downweight. `0` disables. |
-| `MARKDOWN_VAULT_MCP_MAX_CHUNK_WORDS` | `400` | Adaptive chunker threshold. Set very high to disable. |
+| `MARKDOWN_VAULT_MCP_MAX_CHUNK_WORDS` | `400` | Adaptive chunker threshold. Set to a large value to disable. |
 
 **Pipeline order:** Per-channel length downweight → fuse (RRF for hybrid) → cap per path → snippet projection → return `limit` results. See **Field collapsing** below for the post-433 grouping step.
 
 ### Field collapsing
 
 Adaptive chunking can produce multiple high-scoring rows from the same
-document, which would otherwise dominate top-K results.  The final
+document, which would otherwise dominate top-K results. The final
 shaping stage of every search mode (keyword, semantic, hybrid) collapses
 chunks under their parent document via `_group_by_path`:
 
@@ -258,13 +258,13 @@ chunks under their parent document via `_group_by_path`:
 3. Sections within a group are sorted `(score DESC, start_line ASC,
    section_id ASC)` so ties surface in document order. The `section_id`
    key (the `sections` rowid) makes the order fully deterministic even
-   when chunks share a `start_line` — e.g. word-split fragments of one
+   when chunks share a `start_line`, such as word-split fragments of one
    oversize source line, which the adaptive chunker emits with identical
    `start_line` values.
 
 The returned shape is `list[GroupedResult]` where each result wraps one
-file with a `sections: list[SectionHit]` sub-list (length 1..N).  File
-score = `max(section.score)` — the MaxP aggregation established by
+file with a `sections: list[SectionHit]` sub-list (length 1..N). File
+score = `max(section.score)`, the MaxP aggregation established by
 [PARADE](https://ar5iv.labs.arxiv.org/html/2008.09093) and used by
 Elasticsearch's `collapse`, Vespa grouping, and Qdrant's
 `query_points_groups` primitive.
@@ -275,10 +275,10 @@ defaults to `chunks_per_file=1` for compact dossiers; `search` and
 `get_similar` default to `chunks_per_file=2`.
 
 **Length-downweight is skipped in `get_similar` / `get_context.similar`** (issue
-#472).  Grouping already collapses multi-chunk dominators to one entry per file;
-compounding the downweight on top buries legitimately-long authoritative
-documents — e.g. a reference book scored highest by raw cosine for a similarity
-query whose reference doc is a summary of that book.  The three `search` modes
+#472). Grouping already collapses multi-chunk dominators to one entry per file;
+compounding the downweight on top buries legitimately long authoritative
+documents, such as a reference book scored highest by raw cosine for a similarity
+query whose reference doc is a summary of that book. The three `search` modes
 (keyword/semantic/hybrid) keep the downweight because their use case (query →
 focused result) still benefits from biasing toward short focused docs.
 
@@ -321,9 +321,9 @@ class ChunkStrategy(Protocol):
 
 **Adaptive heading-level chunking**: When `max_chunk_words` is set, oversize
 chunks are recursively re-split at deeper heading levels (H1 → H6). Any chunk
-that still exceeds the budget after the H6 pass — or that never had a deeper
-heading to split on (e.g. a preamble, a no-headings document, a long flat H6
-section) — is then fragmented on paragraph and word boundaries by an internal
+that still exceeds the budget after the H6 pass, or that never had a deeper
+heading to split on (such as a preamble, a no-headings document, or a long flat H6
+section), is then fragmented on paragraph and word boundaries by an internal
 `_budget_split` helper. The result is a **hard cap**: every emitted chunk
 satisfies `words(chunk) <= max_chunk_words` regardless of source structure,
 so embedding providers with context-window limits don't silently truncate.
@@ -334,7 +334,7 @@ word-budget enforcement.
 - `SlidingWindowChunker`: fixed-size overlapping windows with configurable
   tokenizer.
 
-The `Vault` config accepts `chunk_strategy: str | ChunkStrategy` -- string
+The `Vault` config accepts `chunk_strategy: str | ChunkStrategy`: string
 for built-in names, or pass a custom instance.
 
 ### Change Tracking
@@ -344,8 +344,8 @@ for built-in names, or pass a custom instance.
 - **State file** (the JSON persistence layer for hash-based change detection):
   versioned format `{"version": 2, "indexed": {relative_path: sha256_hash},
   "skipped": {relative_path: sha256_hash}}` as JSON (#665). The legacy flat
-  `{relative_path: sha256_hash}` format still loads — every entry is treated
-  as indexed — so upgrades need no migration step.
+  `{relative_path: sha256_hash}` format still loads (every entry is treated
+  as indexed), so upgrades need no migration step.
 - **Default path**: `{source_dir}/.markdown_vault_mcp/state.json` (when
   `state_path=None`).
 - On `reindex()`: scan all files, compare hashes to stored state, re-parse and
@@ -353,15 +353,15 @@ for built-in names, or pass a custom instance.
   `exclude_patterns` are skipped during re-parsing (mirroring `scan_directory`
   behaviour). Any previously indexed documents that now match `exclude_patterns`
   are purged from the FTS and vector indexes.
-- **Skipped-file memory (#665)**: deterministic skips — missing required
-  frontmatter, exclude-pattern matches, decode/parse errors — are recorded in
+- **Skipped-file memory (#665)**: deterministic skips (missing required
+  frontmatter, exclude-pattern matches, decode/parse errors) are recorded in
   the `skipped` map with the file's content hash, during both full builds and
   incremental reindexes. An unchanged skipped file is neither re-parsed nor
   re-logged on later scans and is reported in the `skipped` count of
   `ReindexResult` instead of `added`; it is re-evaluated (and indexed, if it
   gained valid frontmatter) only when its content hash changes. Transient
-  `OSError` skips are deliberately *not* recorded, so those files retry on
-  every scan. A skipped file deleted from disk is dropped silently — it was
+  `OSError` skips are deliberately not recorded, so those files retry on
+  every scan. A skipped file deleted from disk is dropped silently; it was
   never indexed, so it is not counted as `deleted`.
 
 **Trigger model**: boot reconciliation reindex (submitted by the server
@@ -374,7 +374,7 @@ without refactoring.
 
 Full numpy array rebuild on every reindex (filter unchanged rows + append new).
 Only changed files are re-embedded (the expensive API call part). This is
-correct and simple at vault scale (even 10k chunks at 768 dimensions is ~60MB).
+correct and simple at vault scale (even 10k chunks at 768 dimensions is ~60 MB).
 
 The `VectorIndex` maintains a sidecar metadata list mapping each row index to
 its source document path, enabling bulk deletion when a document is reindexed.
@@ -385,58 +385,58 @@ Two methods manage the index:
 
 - **`build_index(force=False)`**: initial population. Scans `source_dir` and
   builds the FTS index. Short-circuits as a no-op when the persisted FTS
-  database contains documents **and** carries the completeness sentinel
+  database contains documents and carries the completeness sentinel
   written by a prior clean build (warm restart on the same `index_path`).
-  A database with rows but no sentinel — residue of a process that
+  A database with rows but no sentinel (residue of a process that
   crashed mid-build, since `IndexManager.build_index` commits per-document
-  in its own transaction — is treated as cold and triggers a full
+  in its own transaction) is treated as cold and triggers a full
   rebuild. The sentinel is the `build_completed_at` row in the FTS
   `meta` table, cleared by `IndexFacet.build_index` before any
   destructive rebuild and written only after `_index_mgr.build_index`
   returns cleanly. `force=True` drops and rebuilds from scratch. When a
   persistent `index_path` contains documents that now match
   `exclude_patterns`, they are purged from the FTS and vector indexes
-  after the scan — but only when a scan actually runs (i.e. on a cold
+  after the scan, but only when a scan actually runs (that is, on a cold
   index or with `force=True`); a warm-restart short-circuit does not
   apply config changes.
 
   **Chunking-provenance invalidation (issue #649)**: the chunker is shared
   by FTS and embeddings, and its per-chunk character cap is derived from the
-  embedding model — so a change to the embedding model (or to an explicit
+  embedding model, so a change to the embedding model (or to an explicit
   `max_chunk_chars` override) changes FTS chunk boundaries, not just
   embeddings. Each clean build records the two **stable inputs** to the
-  derived cap — the embedding `model_name` and the explicit operator
-  `max_chunk_chars` override (`None` when the cap was derived from the model
-  context) — in the FTS `meta` table (`embed_model_name` /
+  derived cap (the embedding `model_name` and the explicit operator
+  `max_chunk_chars` override, `None` when the cap was derived from the model
+  context) in the FTS `meta` table (`embed_model_name` /
   `max_chunk_chars_override` rows). The runtime-derived cap itself is
-  deliberately **not** recorded. On restart the warm-restart short-circuit
-  additionally requires these stored values to match the current config
+  deliberately not recorded. On restart the warm-restart short-circuit
+  also requires these stored values to match the current config
   (`IndexWriteCoordinator._chunking_meta_matches`); a model or override
   change rejects the short-circuit, so the existing #513 cold-start path
-  runs a full background FTS rebuild followed by embeddings — no manual
+  runs a full background FTS rebuild followed by embeddings and no manual
   `reindex` is needed. Because only the stable inputs are compared, a
-  *transient* model-context read (e.g. the Ollama instance briefly
+  *transient* model-context read (such as the Ollama instance being briefly
   unreachable at startup, so its context length reads as `None` and the cap
   falls back to a conservative default) changes neither key and so does
-  **not** force a rebuild, avoiding flap.
+  not force a rebuild, avoiding flap.
 - **`reindex()`**: incremental update. Uses `ChangeTracker` to detect
   adds/modifies/deletes since the last scan and applies only the delta.
   Applies `exclude_patterns` filtering and purges stale excluded documents.
 
 **FTS5 segment hygiene after bulk purges**: deleting rows from an FTS5 table
-only marks their tokens as deleted — the dead entries remain in the on-disk
+only marks their tokens as deleted; the dead entries remain in the on-disk
 inverted-index segments until FTS5's lazy merge gets around to them, which it
-may never do. A bulk purge (e.g. newly-configured `exclude_patterns` expelling
-previously indexed documents, issue #255) can therefore leave large dead
+may never do. A bulk purge (newly configured `exclude_patterns` expelling
+previously indexed documents, issue #255) can leave large dead
 segments that bloat the index file and slow keyword queries. When a single
 purge pass removes ≥ 25 documents or ≥ 10% of the pre-purge corpus
 (`should_optimize()` in `fts_index.py`), the purge call sites in
 `IndexManager.build_index()` and `IndexManager.reindex()` run
-`FTSIndex.optimize()` — `INSERT INTO notes_fts(notes_fts)
-VALUES('optimize')` — which merges all segments and drops the dead entries.
+`FTSIndex.optimize()` (`INSERT INTO notes_fts(notes_fts)
+VALUES('optimize')`), which merges all segments and drops the dead entries.
 The merge frees pages inside the file; the file itself only shrinks after a
 `VACUUM`, which is never run automatically because it takes an exclusive lock
-and multiple server processes may share one index file — `optimize()` logs
+and multiple server processes may share one index file. `optimize()` logs
 the reclaimable size (freelist × page size) at INFO so operators can decide
 whether a manual `VACUUM` is worthwhile. Both call sites run on the
 single-owner IndexWriter thread, like all other index mutations; lock
@@ -456,7 +456,7 @@ operations (`read`, `write`, `edit`, `delete`, `rename`,
 `write_attachment`) and bucket-2 aggregate queries (`search`, `list`,
 `stats`, `list_folders`, `list_tags`, `get_recent`,
 `get_orphan_notes`, `get_most_linked`, `get_broken_links`) work on an
-unbuilt index — bucket-1 hits disk directly; bucket-2 queries
+unbuilt index: bucket-1 hits disk directly; bucket-2 queries
 whatever is currently in the index (empty on cold start).
 `wait_until_queryable(timeout=None)` is the readiness primitive: it
 blocks on the background-build completion event with a bounded
@@ -466,7 +466,7 @@ ran and failed (the captured error is read via `get_index_status`),
 or `IndexUnavailableError(reason="never_built")` when no build was
 ever scheduled. The worker resets `_index_built=False` before the
 destructive rebuild, so a failed build leaves `_index_built=False`
-with a captured error — `wait_until_queryable` reports that as
+with a captured error; `wait_until_queryable` reports that as
 `build_failed`, distinct from a never-scheduled `never_built` (#586).
 
 **Cold-start background FTS (issue #513 PR1, tool-layer wait
@@ -478,7 +478,7 @@ arriving at the MCP layer go through the
 `needs_queryable` decorator (in
 `src/markdown_vault_mcp/_server_queryable.py`), which blocks via
 `IndexFacet.wait_until_queryable(timeout)` with a configurable
-default (env `MARKDOWN_VAULT_MCP_BUILD_TIMEOUT_S`, default 60s).
+default (env `MARKDOWN_VAULT_MCP_BUILD_TIMEOUT_S`, default 60 s).
 A failed background build surfaces to operators as
 `get_index_status` reporting
 `{"status": "failed", "error": "..."}`. MCP clients see
@@ -498,32 +498,32 @@ SQLite operation raises, the decorator classifies by errorname:
 malformed schema, I/O failure, disk full, unknown codes) remaps to
 `reason="broken"`. The original exception is preserved as
 `__cause__`. Library callers (direct Vault method use) see
-the raw `sqlite3.OperationalError` — the catch is MCP-layer only,
+the raw `sqlite3.OperationalError`; the catch is MCP-layer only,
 to keep the library boundary thin and let internal callers
 classify on their own. Sibling SQLite exceptions
 (`ProgrammingError`, `IntegrityError`, etc.) bubble unwrapped from
-the decorator — they signify caller bugs or constraint violations,
+the decorator; they signify caller bugs or constraint violations,
 not index unavailability. Embeddings stay on the
-synchronous lifespan path in PR1 — on cold start
+synchronous lifespan path in PR1: on cold start
 `build_embeddings()` is skipped with a log entry and semantic
 search returns empty until PR2 backgrounds embeddings or the
 operator runs CLI `index`. Warm starts continue to use PR #526's
 O(1) sentinel short-circuit and never spawn the background thread.
-The library's `_require_built()` is unchanged from PR #525
-— it raises immediately on not-ready, which is what lets the git
+The library's `_require_built()` is unchanged from PR #525:
+it raises immediately on not-ready, which is what lets the git
 pull loop and lifespan's embeddings path handle "not ready"
 without deadlocking on internal blocking.
 
 The `MARKDOWN_VAULT_MCP_BUILD_TIMEOUT_S` env var bounds the
 `@needs_queryable` decorator's wait, which calls
 `IndexFacet.wait_until_queryable`. The env var and the method name
-describe the same wait from different angles — operators tune the
+describe the same wait from different angles: operators tune the
 timeout in seconds; the method describes what predicate the wait
 resolves to.
 
-To apply a configuration change (e.g. new `exclude_patterns`,
+To apply a configuration change (such as new `exclude_patterns` or
 `required_frontmatter`) to a pre-existing index, call
-`build_index(force=True)` — the short-circuit is keyed on FTS contents
+`build_index(force=True)`: the short-circuit is keyed on FTS contents
 alone and does not detect config drift. When embeddings are configured, a
 follow-up plain `build_embeddings()` converges the vector index to the
 rebuilt chunk set (see Embedding Convergence below); `force=True` remains
@@ -535,7 +535,7 @@ at load time and forces the rebuild automatically).
 ### Embedding Convergence (#665)
 
 `build_embeddings(force=False)` over a **non-empty** vector index does not
-skip and does not rebuild — it diffs the FTS `sections` table (the
+skip and does not rebuild: it diffs the FTS `sections` table (the
 canonical chunk set, via `FTSIndex.list_chunks()`) against the stored
 vector metadata grouped by path (`VectorIndex.chunks_by_path()`) and
 reconciles:
@@ -544,8 +544,8 @@ reconciles:
 - Documents whose per-path `(title, heading, content)` chunk multiset
   differs in any way (modified content, changed title, re-chunked
   boundaries) are re-embedded in full. The multiset is the chunk identity
-  — `VectorIndex` has no per-chunk keys, only a parallel metadata list
-  with path-level deletion.
+  (`VectorIndex` has no per-chunk keys, only a parallel metadata list
+  with path-level deletion).
 - Vectors for documents no longer in the FTS index (deleted, or newly
   excluded) are removed.
 - Unchanged documents are untouched; the sidecar is saved only when
@@ -555,15 +555,15 @@ reconciles:
 This closes the FTS-vs-vector gap that the boot reconciliation reindex
 would otherwise widen: the boot `ReindexAll` job runs before the vector
 index is loaded, so offline document changes reach the FTS index but not
-the vectors — the boot `BuildEmbeddings` job that follows it (writer FIFO
+the vectors; the boot `BuildEmbeddings` job that follows it (writer FIFO
 order) now converges the difference instead of skipping because vectors
 exist. Embedding work scales with the size of the drift, not the size of
 the vault, so a steady-state boot does zero embedding work.
 
 Convergence embeds per document, in the same bounded batches as the cold
 build (#159): a provider failure on one document's chunks (token-context
-rejection, transient outage) skips exactly that document — its existing
-vectors stay intact — and the rest still converge. This is also the
+rejection, transient outage) skips exactly that document (its existing
+vectors stay intact) and the rest still converge. This is also the
 self-healing property: a boot `BuildEmbeddings` job that failed outright
 (recorded in `last_build_embeddings_error`, never retried in-process)
 merely leaves a larger diff for the next successful run to converge. A
@@ -582,7 +582,7 @@ Two-layer model:
 **Exception types**:
 
 | Exception | Raised by | When |
-|-----------|-----------|------|
+|-|-|-|
 | `DocumentNotFoundError` | `edit()`, `delete()`, `rename()` | Document path does not exist on disk |
 | `ReadOnlyError` | `write()`, `edit()`, `delete()`, `rename()` | `read_only=True` |
 | `EditConflictError` | `edit()` | `old_text` not found or appears more than once. Includes optional diagnostic fields: `closest_match_line`, `first_diff_char`, `expected_snippet`, `found_snippet` |
@@ -595,7 +595,7 @@ Two-layer model:
 `build_embeddings()` processes chunks in bounded batches (default 64) to avoid
 pathological memory allocation from embedding providers (see issue #159).
 FastEmbed's ONNX inference uses a further inner batch size of 4 to keep
-per-call memory bounded — without this, the ONNX attention matrix for 64 long
+per-call memory bounded; without this, the ONNX attention matrix for 64 long
 chunks can require >192 GB of allocation. The save happens once at the end so a
 mid-run crash does not leave a partial index on disk; if one exists anyway,
 the next startup's convergence pass (see Embedding Convergence, #665) embeds
@@ -604,7 +604,7 @@ exactly the missing chunks rather than treating the index as complete.
 ### Thread Safety
 
 **Single-writer architecture (issue #559).** `Vault` owns exactly one
-worker thread — an :class:`~markdown_vault_mcp.indexing.IndexWriter` — that
+worker thread, an :class:`~markdown_vault_mcp.indexing.IndexWriter`, that
 serves every FTS and vector-index mutation through a FIFO job queue. The
 writer is constructed and `start()`ed in `Vault.__init__` and closed
 first inside `Vault.close()`, before any downstream resource teardown.
@@ -612,12 +612,12 @@ No other thread mutates the FTS or vector index directly; submission is the
 only entry point. This replaces the legacy `_write_lock` + `threading.Timer`
 embedding flush from issue #175, which interleaved fine-grained locking and
 periodic timer callbacks in a way that proved hard to reason about under
-the #513 background-build and #519 per-thread-SQLite work.
+the concurrent constraints exposed by #513 background-build and #519 per-thread SQLite.
 
 The writer accepts five job kinds, each a frozen dataclass:
 
 | Job | Purpose |
-|-----|---------|
+|-|-|
 | `BuildIndex(force)` | Full FTS index build (sync or background-spawned). |
 | `ReindexAll` | Incremental FTS reindex via the change tracker. |
 | `BuildEmbeddings(force)` | Full vector index build. |
@@ -625,9 +625,9 @@ The writer accepts five job kinds, each a frozen dataclass:
 | `FlushDirtyEmbeddings` | Drain the vector-dirty set, re-embed, and save. |
 
 Submission returns a `concurrent.futures.Future`; callers wait via
-`.result()` for synchronous semantics (e.g. library-level `build_index()`,
+`.result()` for synchronous semantics (library-level `build_index()`,
 `reindex()`, `build_embeddings()`) or fire-and-forget via the `*_async`
-counterparts (e.g. MCP-tool-level `reindex` and `build_embeddings`, both of
+counterparts (MCP-tool-level `reindex` and `build_embeddings`, both of
 which return `{"status": "queued"}` immediately and let the writer thread
 do the work).
 
@@ -637,15 +637,15 @@ restart the build short-circuits in O(1) via the FTS sentinel and scans
 nothing, so the queued `ReindexAll` job is what picks up files added,
 modified, or deleted while no server was running (the file watcher only
 sees future events). FIFO ordering guarantees build-before-reindex; on a
-cold boot the full build has just recorded tracker state — including
-skipped files — so the reindex degenerates to a hash scan with zero
+cold boot the full build has just recorded tracker state (including
+skipped files), so the reindex degenerates to a hash scan with zero
 re-parses and zero re-upserts. While the boot reindex is pending or in
 flight the writer is non-drained, so the `_meta.index_stale` signal
-(#646) honestly reports `true` to early readers until offline changes are
-reconciled — no extra staleness bookkeeping is needed. Follow-up submissions issued from inside the writer thread
+(#646) reports `true` to early readers until offline changes are
+reconciled; no extra staleness bookkeeping is needed. Follow-up submissions issued from inside the writer thread
 itself succeed even during shutdown drain, so `ProcessDirtyPaths` can
 chain into `FlushDirtyEmbeddings` and both flush before the sentinel
-terminates the worker loop.
+ends the worker loop.
 
 **Per-document write semantics.** `write()`, `edit()`, `delete()`,
 `rename()`, and `write_attachment()` perform the file mutation under a
@@ -655,7 +655,7 @@ read-modify-write of disk content), then call
 returning. The user-visible call returns as soon as the file is on disk;
 the FTS upsert and any vector re-embedding run asynchronously on the
 writer. The `on_write` callback (git commit) is submitted to a separate
-background worker queue as before — that queue is unrelated to the
+background worker queue as before; that queue is unrelated to the
 IndexWriter and is drained in `close()` step 2.
 
 **Embedding flush.** The legacy 30-second `threading.Timer` is gone.
@@ -695,7 +695,7 @@ The contract is:
   timeout (or the dispatcher worker has died), the pull logs a WARNING and
   proceeds anyway, accepting the pre-fix dirty-tree behavior for the
   still-pending commit rather than blocking the pull indefinitely.
-- The `on_write` callback fires in a **background thread** — it must not
+- The `on_write` callback fires in a **background thread**; it must not
   itself call write methods on the same Vault instance (deadlock).
 - Callbacks must not raise; exceptions are logged and swallowed.
 - `close()` shuts the writer down first (with a 30 s drain timeout), then
@@ -708,11 +708,11 @@ prerequisites that motivated centralising mutations on a single writer.
 
 #### Drift signals on index-querying read tools (#534, #641, #645)
 
-Every MCP read tool that queries the index — `search`, the B2 listing /
+Every MCP read tool that queries the index (`search`, the B2 listing /
 aggregate tools (`list_documents`, `list_folders`, `list_tags`, `stats`,
 `get_recent`, `get_broken_links`, `get_orphan_notes`, `get_most_linked`),
 and the B3 graph tools (`get_backlinks`, `get_outlinks`, `get_similar`,
-`get_context`, `get_connection_path`) — returns its **bare** payload (a
+`get_context`, `get_connection_path`)) returns its **bare** payload (a
 list or dict) and reports index freshness **out-of-band in the MCP
 response's `_meta.index_stale` field** via FastMCP `ToolResult(meta=...)`.
 The data payload is identical whether the index is fresh or stale, so
@@ -729,17 +729,17 @@ timed out (writer never went idle within the budget), the writer's
 monotonic `write_generation` counter advanced during the read (a write
 cycle completed inside the read window), or `is_drained()` reports a
 non-idle writer at response-construction time (a write is in flight). The
-`write_generation` counter — incremented under `_in_flight_lock` once per
-completed job — closes the case the pre/post `is_drained()` pair could not
+`write_generation` counter (incremented under `_in_flight_lock` once per
+completed job) closes the case the pre/post `is_drained()` pair could not
 detect: a write that started and finished entirely between two snapshots.
 
 Each such tool accepts an optional `wait_for_pending_writes: bool = false`
 parameter (client-facing name; the internal primitive is still "drain").
 When `true`, the tool layer polls `IndexFacet.is_drained()`
 with `asyncio.sleep` until the writer drains or
-`MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S` (default 60s) elapses, then
+`MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S` (default 60 s) elapses, then
 runs the query. On timeout the tool answers from the current index
-rather than raising — best-effort fresh-read semantics, with
+rather than raising; best-effort fresh-read semantics with
 `index_stale=true` in `_meta`. (`IndexFacet.wait_for_drain()` is the
 synchronous counterpart for in-process callers.)
 
@@ -751,7 +751,7 @@ readable through the resource read's `_meta`. Resources take no
 `wait_for_pending_writes` parameter (a resource URI template binds only address
 path segments, not ad-hoc control parameters), so they signal staleness
 only. Each body is wrapped in an explicit `application/json`
-`ResourceContent` so the declared MIME type survives — a bare `str` in a
+`ResourceContent` so the declared MIME type survives; a bare `str` in a
 `ResourceResult` would default to `text/plain`.
 
 Implementation: the shared `_staleness_result()` helper (in
@@ -765,9 +765,9 @@ is `_stale_resource()` in `_server_resources.py`.
 
 The drift signal reflects writer-internal state only: paths in
 `dirty_paths`, paths in `dirty_embeddings`, the in-flight job
-kind, and the queue depth. **External file changes on disk** —
-files modified outside the MCP server with no `write` tool call
-and no git pull — are not covered by this signal; that drift mode
+kind, and the queue depth. **External file changes on disk**
+(files modified outside the MCP server with no `write` tool call
+and no git pull) are not covered by this signal; that drift mode
 is tracked separately in #558.
 
 #### Vault thread-safety contract (issue #519)
@@ -785,13 +785,13 @@ The mechanism is **per-thread `sqlite3.Connection` instances** managed by
   call, via `_conn()` (which routes through `threading.local`).
 - A side registry (`_all_conns: list[sqlite3.Connection]`, guarded by
   `_reg_lock`) holds strong references to every opened connection so
-  `close()` can close all of them — including those opened by threads
+  `close()` can close all of them, including those opened by threads
   that have since exited. `check_same_thread=False` is set on every
   connection so `close()` can iterate cross-thread.
 - The constructing thread is special only in that it runs schema/migrations
   exactly once and applies WAL (a DB-header pragma) for file-backed DBs.
   Per-thread opens apply only per-connection pragmas (`foreign_keys=ON`,
-  `busy_timeout=5000`, `synchronous=NORMAL`) — **pragmas apply BEFORE
+  `busy_timeout=5000`, `synchronous=NORMAL`); **pragmas apply BEFORE
   schema/migrations** so `busy_timeout` is active during `ALTER TABLE`.
 - `_closed: bool` uses double-checked locking: the fast path is lock-free;
   the slow path re-checks under `_reg_lock` so a concurrent `close()`
@@ -805,7 +805,7 @@ The mechanism is **per-thread `sqlite3.Connection` instances** managed by
 - `:memory:` databases are translated to a unique-per-instance shared-cache
   URI (`file:fts_<uuid4hex>?mode=memory&cache=shared`) so every per-thread
   open joins the same in-memory DB. A startup probe opens a second
-  connection to the URI and raises `RuntimeError` with an operator-actionable
+  connection to the URI and raises `RuntimeError` with a clear error
   message if `SQLITE_ENABLE_SHARED_CACHE` is unavailable.
 
 Dead-thread connections accumulate in `_all_conns` until `close()`. This
@@ -815,7 +815,7 @@ is preferred over the `weakref` approach that introduced a 3-finding
 cascade in PR #520 (see project-memory file
 `feedback_519_weakref_whackamole.md`).
 
-Cursors never escape the method that created them — verified by audit
+Cursors never escape the method that created them, verified by audit
 during the #519 design. Each `with self._conn():` block emits one
 BEGIN/COMMIT pair; no nested `with conn:` exists in the current code, so
 Python 3.12's implicit-transaction wrapper is never re-entered.
@@ -833,10 +833,10 @@ through the single-owner IndexWriter, and the PR #518 failure pattern
 
 All five write methods (`write()`, `edit()`, `delete()`, `rename()`,
 `write_attachment()`) accept an optional `if_match: str | None = None`
-parameter.  When provided, the method computes the SHA-256 hex digest of the
-current file **inside `_file_write_lock`** and compares it to `if_match`.  If
+parameter. When provided, the method computes the SHA-256 hex digest of the
+current file **inside `_file_write_lock`** and compares it to `if_match`. If
 the digests differ, `ConcurrentModificationError` is raised and no mutation
-occurs.  Passing `if_match=None` (the default) skips the check and preserves
+occurs. Passing `if_match=None` (the default) skips the check and preserves
 pre-existing unconditional-write behavior.
 
 The etag used for comparison is the same value returned in the `etag` field of
@@ -867,8 +867,8 @@ resolved path escapes `source_dir`, it returns `None` instead of raising.
 `Vault.close()` must be called on shutdown to release resources:
 
 1. Closes the :class:`~markdown_vault_mcp.indexing.IndexWriter` first (30 s
-   drain timeout). The writer drains any pending jobs — including the
-   final `ProcessDirtyPaths`/`FlushDirtyEmbeddings` chain — so deferred FTS
+   drain timeout). The writer drains any pending jobs, including the
+   final `ProcessDirtyPaths`/`FlushDirtyEmbeddings` chain, so deferred FTS
    upserts and embedding flushes complete before downstream resources tear
    down (#559).
 2. Joins the background-build thread (if `start_background_build_index()`
@@ -877,7 +877,7 @@ resolved path escapes `source_dir`, it returns `None` instead of raising.
 4. Closes the `GitWriteStrategy` (flushes and pushes pending commits).
 5. Closes the SQLite database connection.
 
-This ensures no work is lost on shutdown. The full lifecycle contract is:
+The full lifecycle contract is:
 
 ```
 Vault(...)
@@ -890,7 +890,7 @@ Vault(...)
 ```
 
 `stop()` may also be called independently to pause the pull loop without closing
-the vault (e.g. during maintenance or test teardown). It is a no-op if the
+the vault (such as during maintenance or test teardown). It is a no-op if the
 loop was never started.
 
 In the MCP server, `close()` is called in the FastMCP lifespan `finally` block.
@@ -899,8 +899,8 @@ Callers using `Vault` as a Python library must call `close()` explicitly
 
 ### One-Time Transfer Links (`transfer/` subsystem)
 
-The transfer subsystem lets vault files move out-of-band — to a browser or
-another service — without passing bytes through the LLM context. It is an
+The transfer subsystem lets vault files move out-of-band (to a browser or
+another service) without passing bytes through the LLM context. It is an
 HTTP-layer feature: the route is registered only on HTTP/SSE transports and
 requires `MARKDOWN_VAULT_MCP_BASE_URL` to construct capability URLs.
 
@@ -919,8 +919,8 @@ this design:
   default 100 MiB).
 - A successfully completed transfer burns the token; subsequent requests with
   the same token return HTTP 404.
-- A transient failure (network drop, size limit exceeded) does **not** burn
-  the token — the transfer can be retried until expiry.
+- A transient failure (network drop, size limit exceeded) does not burn
+  the token; the transfer can be retried until expiry.
 
 #### `TransferStore` state machine
 
@@ -942,12 +942,12 @@ available → in-flight → consumed
   (returning 404).
 
 Expired and consumed tokens are always rejected by `claim()`. Stale entries are
-purged from memory the next time a token is minted — `create()` sweeps expired
-records before inserting the new one — so no background thread is needed.
+purged from memory the next time a token is minted: `create()` sweeps expired
+records before inserting the new one, so no background thread is needed.
 
 #### Download path (`GET /transfer/{token}`)
 
-1. `claim(token)` — verifies the token exists, is `available`, and is not
+1. `claim(token)`: verifies the token exists, is `available`, and is not
    expired; atomically transitions it to `in-flight`.
 2. The path stored on the token is resolved via `vault.reader.read()` or
    `vault.reader.read_attachment()` (lazy read from disk).
@@ -956,7 +956,7 @@ records before inserting the new one — so no background thread is needed.
 4. On success: `complete(token)` burns the token.
 5. On failure: `release(token)` returns the token to `available`.
 
-Single full-fetch only — HTTP range requests (`Range:`) are not supported.
+Single full-fetch only; HTTP range requests (`Range:`) are not supported.
 The entire file is read into memory before streaming.
 
 #### Upload path (`POST /transfer/{token}` and `PUT /transfer/{token}`)
@@ -964,7 +964,7 @@ The entire file is read into memory before streaming.
 `PUT` is accepted as an alias for `POST` to accommodate HTTP clients that
 prefer it for byte-range-like semantics, but both behave identically.
 
-1. `claim(token)` — same as download.
+1. `claim(token)`: same as download.
 2. The raw request body bytes are collected up to `TRANSFER_MAX_UPLOAD_BYTES`;
    a body that exceeds the cap triggers `release(token)` and returns HTTP 413.
 3. The bytes are written to the fixed destination path via the normal write
@@ -975,17 +975,17 @@ prefer it for byte-range-like semantics, but both behave identically.
 4. On success: `complete(token)` burns the token.
 5. On failure: `release(token)` returns the token to `available`.
 
-The upload body is raw bytes — not `multipart/form-data`. The destination
+The upload body is raw bytes (not `multipart/form-data`). The destination
 path is decided at link-creation time and cannot be overridden by the uploader.
 
 #### MCP tools
 
 Two MCP tools create tokens and return the capability URL:
 
-- **`create_download_link(path, ttl_seconds=None)`** — read tool (available in
+- **`create_download_link(path, ttl_seconds=None)`**: read tool (available in
   read-only mode). Validates that `path` exists before minting the token (fail-fast).
   Returns `{url, path, expires_at, expires_in_seconds}`.
-- **`create_upload_link(path, ttl_seconds=None)`** — write tool (hidden in
+- **`create_upload_link(path, ttl_seconds=None)`**: write tool (hidden in
   read-only mode). Validates the destination path (traversal + extension check)
   at link-creation time. Returns the same shape.
 
@@ -1035,7 +1035,7 @@ unless overridden by `-v` (sets both app and FastMCP to `DEBUG`). When
 
 **Request logging:** `make_server()` wires pvl-core's single
 `RequestLoggingMiddleware` (via `wire_middleware_stack`), which emits
-family-conforming, tool-aware lines — a bare event name first, then
+family conforming, tool-aware lines: a bare event name first, then
 `key=value` pairs, with request timing carried inline on the terminal line.
 Tool calls (`tools/call`) use the `tool_call_started` / `tool_call_completed`
 / `tool_call_failed` vocabulary and carry `tool=<name>`; other messages use
@@ -1106,8 +1106,8 @@ class GroupedResult:
 class SearchResult:
     """Legacy single-chunk shape.  Retained for backward API compatibility
     (exported via ``__all__``); new code returns GroupedResult.  Not
-    directly returned by search()/get_similar()/get_context after v2.0.0
-    — see GroupedResult."""
+    directly returned by search()/get_similar()/get_context after v2.0.0.
+    See GroupedResult."""
     path: str                         # document relative path
     title: str                        # document title
     folder: str                       # derived folder
@@ -1352,7 +1352,7 @@ is stored without it.
 vault-wide resolution rules rather than relative path resolution:
 
 - **Bare wikilinks** (`[[Note]]`, `[[folder/Note]]`): the scanner stores the
-  path as-is after appending `.md` (e.g. `Note.md`, `folder/Note.md`). After
+  path as-is after appending `.md` (such as `Note.md`, `folder/Note.md`). After
   all documents are indexed, `FTSIndex.resolve_vault_wikilinks()` performs a
   bulk SQL UPDATE that resolves each unmatched wikilink target vault-wide:
   it searches for any document whose path equals the target or ends with
@@ -1368,26 +1368,26 @@ vault-wide resolution rules rather than relative path resolution:
 - **Alias resolution**: When no path match is found,
   `resolve_vault_wikilinks()` also checks the `document_aliases` table.
   Documents can declare alternative names via a YAML `aliases` (list) or
-  `alias` (string) frontmatter field. For example, `[[AI]]` resolves to a
+  `alias` (string) frontmatter field. `[[AI]]` resolves to a
   document with `aliases: [AI, A.I.]` in its frontmatter. Alias matching
   is case-insensitive. When multiple documents share the same alias, the
   shortest path wins. Path matches always take priority over alias matches.
 
 `resolve_vault_wikilinks()` is called automatically at the end of
 `IndexFacet.build_index()`, `IndexFacet.reindex()`, and every
-`DocumentManager` write that mutates the `links` table — `write()` and
+`DocumentManager` write that mutates the `links` table: `write()` and
 `edit()` of a `.md` document, `delete()` of a `.md` document, and
-`rename()` of a `.md` document.  Attachment writes do not invoke the
-resolver because attachments do not produce `links` rows.  Without the
+`rename()` of a `.md` document. Attachment writes do not invoke the
+resolver because attachments do not produce `links` rows. Without the
 per-write call, wikilinks introduced or invalidated by a tool-driven edit
-would persist as bare basenames (e.g. `Target.md`) — leaving them as
+would persist as bare basenames (such as `Target.md`), leaving them as
 false-positive broken outlinks and invisible to backlink queries against
-the full document path (e.g. `notes/Target.md`).
+the full document path (such as `notes/Target.md`).
 
 ### Graph Traversal
 
 The `links` table is a directed graph where notes are nodes and links are edges.
-`FTSIndex` provides a BFS-based traversal treating the graph as **undirected** —
+`FTSIndex` provides a BFS-based traversal treating the graph as **undirected**;
 a link from A→B or B→A both count as a connection.
 
 **`get_connection_path(source_path, target_path, max_depth=10)`**
@@ -1401,7 +1401,7 @@ Algorithm:
    if missing).
 2. Trivial case: `source == target` → returns `[source]`.
 3. Load all edges into an undirected adjacency dict:
-   `{path: set(neighbours)}` — both forward and reverse directions.
+   `{path: set(neighbours)}` (both forward and reverse directions).
 4. BFS from `source`, tracking the full path at each node. Early exit when
    `target` is found. Nodes beyond `max_depth` edges are not expanded.
 
@@ -1417,7 +1417,7 @@ The MCP tool `get_connection_path` returns
 
 ## Module Design
 
-### `__init__.py` -- Lazy Package Root (PEP 562, #665)
+### `__init__.py`: Lazy Package Root (PEP 562, #665)
 
 The package root resolves its public attributes lazily via module-level
 ``__getattr__``/``__dir__`` (PEP 562) from an explicit name -> submodule map
@@ -1432,12 +1432,12 @@ with ``importlib.util.find_spec`` inside a sys.modules-restoring context, so
 those dependencies were imported and then purged while their process-global
 side effects (beartype's claw entry in ``sys.path_hooks``, PyYAML's cached
 single-phase-init C extension) survived, breaking every subsequent import in
-the process. The package root must therefore stay import-light: it may not
+the process. The package root must stay import-light: it may not
 import (directly or transitively) ``fastmcp_pvl_core``, ``beartype``,
 ``frontmatter``, or ``yaml``. Regression tests live in
 ``tests/test_package_imports.py``.
 
-### `vault.py` -- Thin Facade
+### `vault.py`: Thin Façade
 
 The main interface. Orchestrates specialized manager modules via dependency
 injection. Vault creates managers in ``__init__`` and delegates all
@@ -1446,11 +1446,11 @@ operations to them. No manager holds a back-reference to Vault.
 #### Internal Manager Architecture
 
 | Manager | Responsibility | Dependencies |
-|---------|---------------|-------------|
+|-|-|-|
 | ``LinkManager`` | Backlinks, outlinks, broken links, orphans, hubs, connection paths | ``FTSIndex``, ``source_dir`` |
 | ``SearchManager`` | Keyword/semantic/hybrid search, list, folders, tags, recent, similar, context, stats | ``FTSIndex``, ``source_dir``, embedding config, ``LinkManager`` |
-| ``IndexManager`` | build_index, reindex, build_embeddings, process_dirty_paths, flush_dirty_embeddings | ``FTSIndex``, ``ChangeTracker``, ``source_dir``, chunk strategy (no lock — driven by the single-owner :class:`~markdown_vault_mcp.indexing.IndexWriter`, #559) |
-| ``DocumentManager`` | read, write, edit, delete, rename, attachments, TOC | ``FTSIndex``, ``source_dir``, ``_file_write_lock`` (file-mutation atomicity only — see #559), ``mark_paths_dirty`` hook, callbacks |
+| ``IndexManager`` | build_index, reindex, build_embeddings, process_dirty_paths, flush_dirty_embeddings | ``FTSIndex``, ``ChangeTracker``, ``source_dir``, chunk strategy (no lock; driven by the single-owner :class:`~markdown_vault_mcp.indexing.IndexWriter`, #559) |
+| ``DocumentManager`` | read, write, edit, delete, rename, attachments, TOC | ``FTSIndex``, ``source_dir``, ``_file_write_lock`` (file-mutation atomicity only; see #559), ``mark_paths_dirty`` hook, callbacks |
 | ``GitQueryManager`` | Git history / diff reads (read-only, #610) | ``GitWriteStrategy`` (or ``None`` when not a git repo), ``source_dir`` |
 
 Each manager receives its dependencies as constructor arguments. This enables
@@ -1460,12 +1460,12 @@ live in ``utils/text.py`` (normalization, position mapping, fuzzy matching) and
 
 #### Facets (`facets/`, #604)
 
-The ``facets/`` package groups the formerly-flat ``Vault`` surface into
+The ``facets/`` package groups the formerly flat ``Vault`` surface into
 four cohesive views, each a thin delegator over the managers/coordinator the
 root already owns:
 
 | Facet | Surface | Collaborators |
-|-------|---------|--------------|
+|-|-|-|
 | ``ReaderFacet`` | search, read, list, folders, tags, toc, recent, similar, context, stats, history, diff, read_attachment | ``SearchManager``, ``DocumentManager``, ``GitQueryManager``, ``require_built`` |
 | ``WriterFacet`` | write, edit, delete, rename, write_attachment | ``DocumentManager`` |
 | ``GraphFacet`` | backlinks, outlinks, broken_links, orphans, most_linked, connection_path | ``LinkManager``, ``require_built`` |
@@ -1473,7 +1473,7 @@ root already owns:
 
 ``Vault`` constructs the facets once in ``__init__`` and exposes them via
 the ``reader`` / ``writer`` / ``graph`` / ``index`` properties. The bucket-3
-readiness gate (``require_built``) lives inside the facets — ``ReaderFacet``
+readiness gate (``require_built``) lives inside the facets: ``ReaderFacet``
 (``get_toc`` / ``get_similar`` / ``get_context``) and ``GraphFacet``
 (``get_backlinks`` / ``get_outlinks`` / ``get_connection_path``) call it before
 delegating, so the gate is expressed in exactly one place. ``IndexFacet`` is a
@@ -1489,9 +1489,9 @@ flat delegators were removed (PR4a, #627), leaving the composition root thin;
 it was then renamed ``Collection`` → ``Vault`` (PR4b, #629), completing the epic.
 
 Clients reach the read / write / graph / index operations through the facet
-accessors (e.g. ``vault.reader.search(...)``), never through managers
+accessors (such as ``vault.reader.search(...)``), never through managers
 directly. ``Vault`` itself now exposes only construction, the four facet
-accessors, and lifecycle — the per-facet method surface is the Facets table
+accessors, and lifecycle; the per-facet method surface is the Facets table
 above.
 
 ```python
@@ -1542,8 +1542,8 @@ class Vault:
 - `state_path=None`: defaults to `{source_dir}/.markdown_vault_mcp/state.json`.
 
 **Index build**: callers build the FTS index explicitly via
-`IndexFacet.build_index` — the server builds at startup, and a cold on-disk
-start builds in the background (#513). There is no lazy build on first query.
+`IndexFacet.build_index`; the server builds at startup, and a cold on-disk
+start builds in the background (#513). No lazy build on first query.
 
 **Write operations** (`write`, `edit`, `delete`, `rename`) raise
 `ReadOnlyError` when `read_only=True`.
@@ -1553,10 +1553,10 @@ intermediate directories as needed (`mkdir -p` semantics). If `frontmatter` is
 provided, it is serialized as YAML front matter at the top of the file. Updates
 the FTS index and triggers `on_write`.
 
-**`edit()` behavior**: supports three modes: (1) exact match — reads file,
-verifies `old_text` exists exactly once, replaces with `new_text`; (2) line-range
-— replaces lines `line_start..line_end` (1-based, inclusive) with `new_text`;
-(3) scoped match — searches for `old_text` within the specified line range only.
+**`edit()` behavior**: supports three modes: (1) exact match: reads file,
+verifies `old_text` exists exactly once, replaces with `new_text`; (2) line-range:
+replaces lines `line_start..line_end` (1-based, inclusive) with `new_text`;
+(3) scoped match: searches for `old_text` within the specified line range only.
 
 When exact match fails (count == 0), a normalized comparison is attempted:
 Unicode NFC, en-dash/em-dash → hyphen, smart quotes → straight quotes,
@@ -1568,9 +1568,9 @@ not found (after both exact and normalized matching) or appears more than
 once. When both exact and normalized match fail, `EditConflictError`
 carries optional diagnostic fields: `closest_match_line`, `first_diff_char`,
 `expected_snippet`, `found_snippet`. For a multi-line `old_text` these
-locate the *first line that genuinely diverges* from the file — the
+locate the *first line that genuinely diverges* from the file: the
 diagnostic anchors on the first line, then walks subsequent lines so a
-later-line mismatch is reported rather than a perfectly-matching first line.
+later-line mismatch is reported rather than a perfectly matching first line.
 The fields are omitted (left `None`) when no divergence can be localized:
 no file line is similar enough to anchor on, or every line of `old_text`
 matches the file region.
@@ -1578,8 +1578,8 @@ matches the file region.
 **`delete()` behavior**: removes the file from disk, deletes FTS and embedding
 entries, triggers `on_write`. Raises `DocumentNotFoundError` if not found.
 
-**`rename()` behavior** (Phase 2-3): renames the file on disk, deletes old
-FTS/embedding entries, inserts new entries under the new path, updates
+**`rename()` behavior** (Phase 2-3): moves the file on disk; replaces old
+FTS/embedding entries with new ones under the new path; updates
 embedding metadata in-place. Triggers `on_write` with the new path. Raises
 `DocumentNotFoundError` if `old_path` does not exist. Raises
 `DocumentExistsError` if `new_path` already exists.
@@ -1590,7 +1590,7 @@ The replacement is **best-effort**: per-file failures are logged at `WARNING`
 but do not prevent the rename from succeeding. The `RenameResult.updated_links`
 count reflects source documents successfully rewritten. Link style is
 preserved: vault-root-relative links are rewritten as vault-root-relative;
-source-directory-relative links (e.g. `../notes/target.md`) are rewritten
+source-directory-relative links (such as `../notes/target.md`) are rewritten
 with the correct new relative path from the source file's directory.
 `update_links` is silently ignored for attachments (non-`.md` files).
 
@@ -1629,7 +1629,7 @@ legacy factory `git_write_strategy(token=...)`) that auto-commits and pushes.
 backward compatibility. Prefer constructing `GitWriteStrategy` directly for
 access to `flush()` and `close()` methods.
 
-### `scanner.py` -- File Discovery and Parsing
+### `scanner.py`: File Discovery and Parsing
 
 ```python
 def scan_directory(
@@ -1646,7 +1646,7 @@ def parse_note(path: Path, source_dir: Path) -> ParsedNote: ...
 **Frontmatter parsing**: use `python-frontmatter` library. Schema-agnostic.
 Documents without frontmatter get an empty dict and proceed normally.
 
-**Exclude patterns**: glob patterns (e.g., `[".obsidian/**", "_templates/**"]`)
+**Exclude patterns**: glob patterns (such as `[".obsidian/**", "_templates/**"]`)
 matched against relative paths from `source_dir` using `pathlib.Path.match()`.
 
 **Fault tolerance**: documents that cannot be decoded as UTF-8 are skipped with
@@ -1661,11 +1661,11 @@ BOM-prefixed file's frontmatter parses and is indexed correctly. Writes are
 plain `utf-8` (no BOM), so the vault normalizes to no-BOM: a BOM-prefixed file
 loses its BOM the next time it is rewritten. A genuinely non-UTF-8 file still
 raises `UnicodeDecodeError`. The same `decode_utf8` is applied on **ingress**
-(#681) — the `fetch` tool and the transfer-upload route decode externally
+(#681): the `fetch` tool and the transfer-upload route decode externally
 supplied markdown bodies through it, so a fetched/uploaded file is written
 BOM-free rather than carrying its BOM until the next rewrite.
 
-### `fts_index.py` -- SQLite FTS5
+### `fts_index.py`: SQLite FTS5
 
 ```python
 class FTSIndex:
@@ -1689,7 +1689,7 @@ Uses the schema defined in [Database Schema](#database-schema). Note that
 with RRF scoring in hybrid mode; each file appears once with up to
 `chunks_per_file` matching sections).
 
-### `vector_index.py` -- Numpy Embeddings
+### `vector_index.py`: Numpy Embeddings
 
 Adapted from ifcraftcorpus `embeddings.py`. Rename `EmbeddingIndex` to
 `VectorIndex`. The `load()` classmethod **must** import from
@@ -1701,14 +1701,14 @@ row index to `{path, title, folder, heading, content}`. This enables:
 - Returning rich metadata with semantic search results
 
 Key methods:
-- `add(texts, metadata)` — embeds texts via the provider then appends rows.
-- `add_vectors(raw_vectors, metadata)` — appends pre-computed float vectors
+- `add(texts, metadata)`: embeds texts via the provider then appends rows.
+- `add_vectors(raw_vectors, metadata)`: appends pre-computed float vectors
   (L2-normalised internally) **without** calling the provider. Use this when
   embeddings have been computed outside a lock section (see Thread Safety).
-- `delete_by_path(path)` — removes all rows for a document.
-- `save(path)` / `load(path, provider)` — persist/restore sidecar files.
+- `delete_by_path(path)`: removes all rows for a document.
+- `save(path)` / `load(path, provider)`: persist/restore sidecar files.
 
-### `providers.py` -- Embedding Providers
+### `providers.py`: Embedding Providers
 
 Copied from ifcraftcorpus, adapted:
 - Rename env var prefix `IFCRAFTCORPUS_` to `MARKDOWN_VAULT_MCP_`
@@ -1716,7 +1716,7 @@ Copied from ifcraftcorpus, adapted:
 - Keep the same provider ABC and implementations (Ollama, OpenAI,
   SentenceTransformers)
 
-### `tracker.py` -- Change Detection
+### `tracker.py`: Change Detection
 
 ```python
 class ChangeTracker:
@@ -1734,7 +1734,7 @@ format (version 2, #665): `{"version": 2, "indexed": {"Journal/note.md":
 The legacy flat `{"Journal/note.md": "sha256hex", ...}` format loads with
 every entry treated as indexed.
 
-### `server.py` -- Generic MCP Server
+### `server.py`: Generic MCP Server
 
 Uses **FastMCP 3.0+** with lifespan hooks for Vault init/teardown.
 
@@ -1742,7 +1742,7 @@ Uses **FastMCP 3.0+** with lifespan hooks for Vault init/teardown.
 pattern). Each tool is annotated with MCP `ToolAnnotations`:
 
 | Tool | Description | `readOnlyHint` | `destructiveHint` | `idempotentHint` |
-|------|-------------|:-:|:-:|:-:|
+|-|-|:-:|:-:|:-:|
 | `search` | Search the vault by query | `True` | `False` | `True` |
 | `read` | Read a document's full content | `True` | `False` | `True` |
 | `list_documents` | List documents, optionally filtered | `True` | `False` | `True` |
@@ -1776,7 +1776,7 @@ mis-resolved against the method in class scope.
 **Tag-based visibility**: `write`, `edit`, `delete`, `rename`, `fetch` are always
 registered but tagged with ``tags={"write"}``. When ``read_only=True``, the
 server calls ``mcp.disable(tags={"write"})`` to hide them from clients.
-This also hides any prompts sharing the ``write`` tag (e.g. ``research``,
+This also hides any prompts sharing the ``write`` tag (such as ``research``,
 ``discuss``, ``create_from_template``). The Vault still raises ``ReadOnlyError`` as a defence-in-depth
 guard if a write method is somehow called on a read-only instance.
 
@@ -1796,7 +1796,7 @@ This signals capability status to clients and reduces irrelevant prompting.
 - `write(path, content, frontmatter?)` creates or overwrites entire file
 - `edit(path, old_text, new_text)` reads file, verifies `old_text` exists
   exactly once, replaces, writes back. Fails on not-found or ambiguous match.
-- `delete(path)` removes file, updates index, triggers `on_write`
+- `delete(path)` removes file from disk and index, then fires `on_write`
 - `fetch(url, path, frontmatter?, if_match?, timeout_s?)` downloads content
   from an HTTP/HTTPS URL and dispatches to `write()` (for `.md` paths) or
   `write_attachment()` (for other extensions). Requires `httpx` (included in
@@ -1814,7 +1814,7 @@ template functions with no vault dependency.
 **Resources**: the server exposes 6 read-only MCP resources:
 
 | URI | Source | Description |
-|-----|--------|-------------|
+|-|-|-|
 | ``config://vault`` | ``VaultConfig`` | Source dir, read-only flag, indexed fields, extensions |
 | ``stats://vault`` | ``ReaderFacet.stats()`` | Document/chunk/folder counts, capabilities |
 | ``tags://vault`` | ``ReaderFacet.list_tags()`` | All tags grouped by indexed field |
@@ -1823,18 +1823,18 @@ template functions with no vault dependency.
 | ``toc://vault/{path}`` | ``ReaderFacet.get_toc(path)`` | Document headings with synthetic H1 title |
 
 Resources return JSON (``mime_type="application/json"``). The ToC resource
-queries the existing ``sections`` table — no file I/O.
+queries the existing ``sections`` table (no file I/O).
 
 **Prompts**: 6 built-in prompt templates, plus optional user-defined prompts:
 
 | Prompt | Parameters | Tags | Description |
-|--------|-----------|------|-------------|
-| ``summarize`` | ``path`` | — | Summarize a document |
+|-|-|-|-|
+| ``summarize`` | ``path`` | | Summarize a document |
 | ``research`` | ``topic`` | ``write`` | Search and consolidate as new note |
 | ``discuss`` | ``path`` | ``write`` | Analyze and suggest improvements |
 | ``create_from_template`` | ``template_name`` (optional) | ``write`` | Discover/read/fill/write from a template |
-| ``related`` | ``path`` | — | Find related notes, suggest cross-references |
-| ``compare`` | ``path1, path2`` | — | Compare two documents |
+| ``related`` | ``path`` | | Find related notes, suggest cross-references |
+| ``compare`` | ``path1, path2`` | | Compare two documents |
 
 Write-tagged prompts are hidden in read-only mode by the same
 ``mcp.disable(tags={"write"})`` call that hides write tools.
@@ -1863,9 +1863,8 @@ Prompt content here. Use $path and $topic as placeholders (string.Template synta
 
 **Override semantics**: if a user-defined prompt has the same name as a
 built-in, the built-in is skipped and the user's version is registered.
-This allows domain-specific workflows (e.g. the ``zettelkasten`` or
-``para-triage`` prompts) to live outside the core server and be mounted
-at deployment time.
+Domain-specific prompts (such as ``zettelkasten`` or ``para-triage``)
+can live outside the core server and be mounted at deployment time.
 
 ## Configuration
 
@@ -1878,7 +1877,7 @@ Configuration is the `Vault` constructor. No config files.
 For MCP server deployment:
 
 | Variable | Description | Default |
-|----------|-------------|---------|
+|-|-|-|
 | `MARKDOWN_VAULT_MCP_SERVER_NAME` | MCP server name shown to clients | `markdown-vault-mcp` |
 | `MARKDOWN_VAULT_MCP_INSTRUCTIONS` | System-level instructions for LLM context | generic description |
 | `MARKDOWN_VAULT_MCP_DISABLE_APPS_UI` | Hide MCP-Apps UI tools (`browse_vault`, `show_context`) from the listing | `false` |
@@ -1899,16 +1898,16 @@ For MCP server deployment:
 | `MARKDOWN_VAULT_MCP_GIT_COMMIT_NAME` | Committer name for auto-commits | `markdown-vault-mcp` |
 | `MARKDOWN_VAULT_MCP_GIT_COMMIT_EMAIL` | Committer email for auto-commits | `noreply@markdown-vault-mcp` |
 | `MARKDOWN_VAULT_MCP_GIT_LFS` | Run `git lfs pull` on startup to resolve LFS pointer files | `true` |
-| `MARKDOWN_VAULT_MCP_BEARER_TOKEN` | Static bearer token for simple auth — clients send `Authorization: Bearer <token>` | none |
-| `MARKDOWN_VAULT_MCP_BASE_URL` | Server's public URL — required for OIDC auth and MCP Apps domain computation (e.g. `https://mcp.example.com`) | none |
+| `MARKDOWN_VAULT_MCP_BEARER_TOKEN` | Static bearer token for simple auth; clients send `Authorization: Bearer <token>` | none |
+| `MARKDOWN_VAULT_MCP_BASE_URL` | Server's public URL, required for OIDC auth and MCP Apps domain computation (such as `https://mcp.example.com`) | none |
 | `MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL` | OIDC discovery URL (`/.well-known/openid-configuration`) | none |
 | `MARKDOWN_VAULT_MCP_OIDC_CLIENT_ID` | OIDC client ID registered with the provider | none |
 | `MARKDOWN_VAULT_MCP_OIDC_CLIENT_SECRET` | OIDC client secret | none |
-| `MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY` | Persistent JWT signing key — **required for Docker/Linux** to survive restarts | ephemeral on Linux |
+| `MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY` | Persistent JWT signing key (**required for Docker/Linux** to survive restarts) | ephemeral on Linux |
 | `MARKDOWN_VAULT_MCP_OIDC_AUDIENCE` | JWT audience claim (required by some providers) | none |
 | `MARKDOWN_VAULT_MCP_OIDC_REQUIRED_SCOPES` | Comma-separated OAuth scopes to request | `openid` |
 | `MARKDOWN_VAULT_MCP_OIDC_VERIFY_ACCESS_TOKEN` | Verify the upstream access token as JWT instead of the id token. Set `true` only when your provider issues JWT access tokens and you need audience-claim validation on that token | `false` (verify id token) |
-| `MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS` | Comma-separated allowlist of non-.md extensions (without dot), e.g. `pdf,png,docx`; use `*` to allow all non-.md files | common list (pdf, png, jpg, docx, …) |
+| `MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS` | Comma-separated allowlist of non-.md extensions (without dot), such as `pdf,png,docx`; use `*` to allow all non-.md files | common list (pdf, png, jpg, docx, …) |
 | `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB` | Maximum attachment size in MB, enforced by the `read` / `write` / `fetch` MCP tools (not the vault library); `0` disables the limit | `1.0` |
 | `MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES` | Maximum bytes returned by full-document `read()` for `.md` files; raises `ValueError` if exceeded. `read(path, section=...)` for partial reads bypasses the cap. `0` disables the limit | `262144` (256 KB) |
 | `MARKDOWN_VAULT_MCP_APP_DOMAIN` | Claude app domain for MCP Apps iframe sandboxing; auto-computed from `BASE_URL` via `_compute_claude_app_domain()` | derived from `BASE_URL` |
@@ -1971,16 +1970,16 @@ MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY=your-random-secret   # required on Linux
 
 The server supports four auth modes:
 
-1. **Multi-auth** — both bearer token and OIDC configured simultaneously; either credential is accepted (`FastMCP.MultiAuth`)
-2. **Bearer token** — simple static token via `MARKDOWN_VAULT_MCP_BEARER_TOKEN` (only OIDC vars absent)
-3. **OIDC** — full OAuth 2.1 flow via `OIDCProxy` (only bearer token absent; requires `BASE_URL`, `OIDC_CONFIG_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`)
-4. **No auth** — server accepts all connections (default)
+1. **Multi-auth**: both bearer token and OIDC configured simultaneously; either credential is accepted (`FastMCP.MultiAuth`)
+2. **Bearer token**: simple static token via `MARKDOWN_VAULT_MCP_BEARER_TOKEN` (only OIDC vars absent)
+3. **OIDC**: full OAuth 2.1 flow via `OIDCProxy` (only bearer token absent; requires `BASE_URL`, `OIDC_CONFIG_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`)
+4. **No auth**: server accepts all connections (default)
 
 When both `BEARER_TOKEN` and the OIDC variables are set, the server uses `MultiAuth(server=oidc_auth, verifiers=[bearer_auth])` so that bearer-token clients and OIDC clients can connect to the same instance. `OIDCProxy` goes in `server=` so that `MultiAuth.get_routes()` delegates the OAuth authorization, token, and discovery endpoints to it; `StaticTokenVerifier` goes in `verifiers=`.
 
 #### Bearer Token Authentication
 
-Set `MARKDOWN_VAULT_MCP_BEARER_TOKEN` to a secret string. Clients must send an `Authorization: Bearer <token>` header with every request. Uses FastMCP's `StaticTokenVerifier` — no external dependencies or identity providers needed.
+Set `MARKDOWN_VAULT_MCP_BEARER_TOKEN` to a secret string. Clients must send an `Authorization: Bearer <token>` header with every request. Uses FastMCP's `StaticTokenVerifier`; no external dependencies or identity providers needed.
 
 Best for deployments behind a VPN, in a Docker compose stack, or on a private network where full OIDC is unnecessary.
 
@@ -1988,9 +1987,9 @@ Best for deployments behind a VPN, in a Docker compose stack, or on a private ne
 
 When all four required vars are set (`BASE_URL`, `OIDC_CONFIG_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`), the server uses FastMCP's `OIDCProxy` to authenticate MCP clients via OAuth 2.1 + PKCE. The server auto-discovers provider endpoints from the OIDC discovery URL so no additional endpoint configuration is needed.
 
-**Token verification:** By default the server verifies the upstream `id_token` (always a standard JWT per OIDC Core) rather than the `access_token`. This works with all providers, including those that issue opaque (non-JWT) access tokens (e.g. Authelia). Set `MARKDOWN_VAULT_MCP_OIDC_VERIFY_ACCESS_TOKEN=true` to revert to access-token JWT verification when audience-claim validation on that token is required.
+**Token verification:** By default the server verifies the upstream `id_token` (always a standard JWT per OIDC Core) rather than the `access_token`. This works with all providers, including those that issue opaque (non-JWT) access tokens (such as Authelia). Set `MARKDOWN_VAULT_MCP_OIDC_VERIFY_ACCESS_TOKEN=true` to revert to access-token JWT verification when audience-claim validation on that token is required.
 
-**Token lifetime recommendations:** MCP clients do not reliably refresh tokens (see [Known Limitations](guides/authentication.md#known-limitations-mcp-oauth-token-refresh)). Configure all token lifetimes on your identity provider: `access_token: '8h'`, `id_token: '8h'`, `refresh_token: '30d'`. The `id_token` lifetime is critical when using `verify_id_token` mode — if shorter than `access_token`, the session dies at the `id_token` expiry regardless of the access token setting. Include `offline_access` in provider-side scopes for when clients support refresh.
+**Token lifetime recommendations:** MCP clients do not reliably refresh tokens (see [Known Limitations](guides/authentication.md#known-limitations-mcp-oauth-token-refresh)). Configure all token lifetimes on your identity provider: `access_token: '8h'`, `id_token: '8h'`, `refresh_token: '30d'`. The `id_token` lifetime is critical when using `verify_id_token` mode; if shorter than `access_token`, the session dies at the `id_token` expiry regardless of the access token setting. Include `offline_access` in provider-side scopes for when clients support refresh.
 
 **Authelia client registration** (in your Authelia `configuration.yml`):
 ```yaml
@@ -2022,11 +2021,11 @@ identity_providers:
         token_endpoint_auth_method: client_secret_post
 ```
 
-**Linux/Docker note:** FastMCP uses an ephemeral JWT signing key on Linux by default — every restart invalidates all client tokens and forces re-authentication. Set `MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY` to a stable random secret (e.g. `openssl rand -hex 32`) to persist tokens across restarts.
+**Linux/Docker note:** FastMCP uses an ephemeral JWT signing key on Linux by default; every restart invalidates all client tokens and forces re-authentication. Set `MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY` to a stable random secret (such as `openssl rand -hex 32`) to persist tokens across restarts.
 
 #### Attachment Support
 
-The server supports reading and writing non-markdown binary files (PDFs, images, etc.) by overloading the existing MCP tools — no new tool registrations.
+The server supports reading and writing non-markdown binary files (PDFs, images, and so on) by overloading the existing MCP tools, with no new tool registrations.
 
 **Extension-based dispatch**: `.md` files always follow the markdown path. All other extensions are treated as attachments if they appear in the configured allowlist.
 
@@ -2035,17 +2034,17 @@ The server supports reading and writing non-markdown binary files (PDFs, images,
 **Tool behaviour changes**:
 
 | Tool | .md path | Attachment path |
-|------|----------|-----------------|
+|-|-|-|
 | `read(path)` | returns markdown body + frontmatter | returns `{path, mime_type, size_bytes, content_base64, modified_at}` |
 | `write(path, content, frontmatter, content_base64)` | uses `content` + `frontmatter` | uses `content_base64` (base64-encoded bytes) |
 | `list_documents(include_attachments=False)` | notes only (unchanged) | also returns `AttachmentInfo` entries with `kind="attachment"`, `mime_type` |
 | `delete(path)` | removes file + index entries | removes file only (no index) |
 | `rename(old, new)` | moves file + updates index | moves file only (no index) |
-| `stats()` | includes `attachment_extensions` list | — |
+| `stats()` | includes `attachment_extensions` list | (none) |
 
-Attachments are **not indexed or searched** — only direct path-based read/write/delete/rename. MIME type is detected via Python's `mimetypes.guess_type()` (no extra dependencies).
+Attachments are **not indexed or searched**: only direct path-based read/write/delete/rename. MIME type is detected via Python's `mimetypes.guess_type()` (no extra dependencies).
 
-The cap is enforced by the `read`, `write`, and `fetch` MCP tools — the layer where attachment bytes flow through the LLM context as base64. The vault library's `read_attachment()` / `write_attachment()` accept any size, so out-of-band byte movement (e.g. an HTTP transfer route) is not gated by it. Set `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB=0` to disable the limit. The default was tightened from 10 MB to 1 MB in #442 to keep LLM context bounded — most contexts can't survive a 10 MB base64-encoded attachment, so the old default was a silent context-blow-up. The error message names `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB` as the knob to raise if the bytes are genuinely needed in context.
+The cap is enforced by the `read`, `write`, and `fetch` MCP tools, the layer where attachment bytes flow through the LLM context as base64. The vault library's `read_attachment()` / `write_attachment()` accept any size, so out-of-band byte movement (such as an HTTP transfer route) is not gated by it. Set `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB=0` to disable the limit. The default was tightened from 10 MB to 1 MB in #442 to keep LLM context bounded; most contexts can't survive a 10 MB base64-encoded attachment, so the old default was a silent context-blow-up. The error message names `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB` as the knob to raise if the bytes are genuinely needed in context.
 
 A parallel cap on whole-document `read()` for `.md` files (`MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES`, default 256 KB) raises `ValueError` with a message pointing at `read(path, section=heading)` for partial reads. Section reads bypass the cap because they only load one chunk.
 
@@ -2053,7 +2052,7 @@ A parallel cap on whole-document `read()` for `.md` files (`MARKDOWN_VAULT_MCP_M
 
 MCP Apps are browser-based views that MCP clients supporting the protocol can render inline (in a sidebar or panel) or fullscreen. They augment tool-based interaction with direct visual exploration.
 
-**Resource URI**: `ui://vault/app.html` — the entire application is a single HTML resource registered with `visibility="app"`. This keeps it out of the standard tool list and exposes it only to clients that support the MCP Apps protocol.
+**Resource URI**: `ui://vault/app.html`: the entire application is a single HTML resource registered with `visibility="app"`. This keeps it out of the standard tool list and exposes it only to clients that support the MCP Apps protocol.
 
 **Display modes**:
 - **Inline**: rendered in a client sidebar or panel alongside the conversation
@@ -2062,8 +2061,8 @@ MCP Apps are browser-based views that MCP clients supporting the protocol can re
 **Four views** are bundled in the single resource:
 
 | View | `view` value | Description |
-|------|-------------|-------------|
-| Context Card | `context` | Note dossier — backlinks, outlinks, similar notes, tags, and last-modified time for the note in focus |
+|-|-|-|
+| Context Card | `context` | Note dossier: backlinks, outlinks, similar notes, tags, and last-modified time for the note in focus |
 | Graph Explorer | `graph` | Interactive force-directed link graph of the entire vault; nodes are notes, edges are links |
 | Vault Browser | `browse` | Searchable, filterable file tree for direct vault navigation without issuing tool calls |
 | Note Preview | `note` | Full-width rendered markdown preview with frontmatter table and action buttons |
@@ -2071,14 +2070,14 @@ MCP Apps are browser-based views that MCP clients supporting the protocol can re
 **Primary tools** (visible to LLM, launch apps):
 
 | Tool | Description |
-|------|-------------|
+|-|-|
 | `browse_vault` | Opens the SPA with optional `path` and `view` (`context`, `graph`, `browse`, `note`); returns text summary for non-Apps clients |
 | `show_context` | Opens the Context Card for a path; returns text summary for non-Apps clients |
 
 **App-only tools** (`visibility="app"`): registered but hidden from the standard MCP tool list, serving MCP Apps clients only:
 
 | Tool | Description |
-|------|-------------|
+|-|-|
 | `_vault_context` | Returns full NoteContext JSON for the Context Card view |
 | `_vault_graph_neighborhood` | Returns `{nodes, edges}` for a note's link neighborhood |
 | `_vault_graph_hubs` | Returns `{nodes, edges}` for the most-linked hub notes |
@@ -2086,20 +2085,20 @@ MCP Apps are browser-based views that MCP clients supporting the protocol can re
 | `_vault_read` | Returns note content, frontmatter, and metadata |
 | `_vault_search` | Returns search results with snippets (default mode `hybrid`) |
 
-**View navigation behavior**: backlinks, outlinks, and similar-note items rendered inside the Context Card are clickable, and a click loads that note's context **in the same Context Card view** rather than switching the active view. A dedicated "Open in Browser" button (`ctx-browse-btn`) is the only path that calls `navigateTo('browse', {path})` to switch into the Vault Browser. This supersedes any earlier wording that suggested item clicks themselves perform cross-view navigation — keeping the click in-view preserves an exploration flow without losing scroll position or the surrounding dossier.
+**View navigation behavior**: backlinks, outlinks, and similar-note items rendered inside the Context Card are clickable, and a click loads that note's context **in the same Context Card view** rather than switching the active view. A dedicated "Open in Browser" button (`ctx-browse-btn`) is the only path that calls `navigateTo('browse', {path})` to switch into the Vault Browser. This supersedes any earlier wording that suggested item clicks themselves perform cross-view navigation; keeping the click in-view preserves an exploration flow without losing scroll position or the surrounding dossier.
 
-**Host context updates**: the Graph Explorer calls `app.updateContext(...)` whenever the active note or the visible neighborhood changes, supplying the active path, title, visible node count, and visible link count. The exact wording of the string is an implementation detail of the SPA; clients should read the structured fields (path/title/counts) rather than parse the string.
+**Host context updates**: the Graph Explorer calls `app.updateContext(...)` whenever the active note or the visible neighborhood changes, supplying the active path, title, visible node count, and visible link count. The exact wording of the string is an internal detail of the SPA; clients should read the structured fields (path/title/counts) rather than parse the string.
 
 **Vendored dependencies** (bundled inline at build time via `scripts/vendor_spa.py`):
-- `vis-network` — force-directed graph rendering for Graph Explorer
-- `marked.js` — markdown-to-HTML rendering for note previews
-- `DOMPurify` — XSS sanitization for all rendered HTML
-- `@modelcontextprotocol/ext-apps` — MCP Apps SDK lifecycle and theming
+- `vis-network`: force-directed graph rendering for Graph Explorer
+- `marked.js`: markdown-to-HTML rendering for note previews
+- `DOMPurify`: XSS sanitization for all rendered HTML
+- `@modelcontextprotocol/ext-apps`: MCP Apps SDK lifecycle and theming
 
-**Domain configuration**: MCP Apps iframes are sandboxed to a specific Claude app domain. The server computes it from `MARKDOWN_VAULT_MCP_BASE_URL` via `_compute_claude_app_domain()`. Override with `MARKDOWN_VAULT_MCP_APP_DOMAIN` when `BASE_URL` does not reflect the actual hostname visible to the Claude client (e.g. behind a proxy, or on a custom domain).
+**Domain configuration**: MCP Apps iframes are sandboxed to a specific Claude app domain. The server computes it from `MARKDOWN_VAULT_MCP_BASE_URL` via `_compute_claude_app_domain()`. Override with `MARKDOWN_VAULT_MCP_APP_DOMAIN` when `BASE_URL` does not reflect the actual hostname visible to the Claude client (such as behind a proxy, or on a custom domain).
 
 | Variable | Default | Description |
-|----------|---------|-------------|
+|-|-|-|
 | `MARKDOWN_VAULT_MCP_APP_DOMAIN` | (derived from `BASE_URL`) | Override Claude app domain for MCP Apps iframe sandboxing |
 
 ### Phase 3: Evaluate YAML
@@ -2144,7 +2143,7 @@ Same pattern as ifcraftcorpus: `python:3.12-slim` base, `uv` for installs.
 CI/CD, GitHub Actions, and PyPI publishing adapted from ifcraftcorpus with
 minimal changes.
 
-**Volume layout**: two volumes — `/data/vault` (user content, bind-mount or
+**Volume layout**: two volumes: `/data/vault` (user content, bind-mount or
 named volume) and `/data/state` (all internal state: SQLite index, embeddings,
 FastEmbed model cache, OIDC proxy state via `FASTMCP_HOME`). The Dockerfile
 sets `FASTMCP_HOME=/data/state/fastmcp` so OIDCProxy persists JTI mappings
@@ -2176,7 +2175,7 @@ pull+push behavior against the existing checkout but logs a deprecation warning.
 
 In managed/legacy push-enabled modes, `GitWriteStrategy` commits per-write and
 defers push to a background timer (`MARKDOWN_VAULT_MCP_GIT_PUSH_DELAY_S`,
-default 30s). After the idle period elapses with no writes, all accumulated
+default 30 s). After the idle period elapses with no writes, all accumulated
 local commits are pushed in a single `git push`. On shutdown,
 `Vault.close()` flushes any pending push.
 
@@ -2203,15 +2202,15 @@ Provider-specific usernames:
 
 **Git credential security**: when a token is supplied, `GitWriteStrategy` uses
 a `GIT_ASKPASS` temporary script rather than embedding the token in any
-command-line argument. This means the token is never visible in
-`/proc/<pid>/cmdline` or process listings. The script is created with `0o700`
+command-line argument, keeping it out of `/proc/<pid>/cmdline` and process listings.
+The script is created with `0o700`
 permissions (owner-only) and deleted in a `finally` block regardless of push
 outcome. Tokens are also **redacted** from all error log messages (replaced
 with `***`).
 
 **Git LFS support**: when `MARKDOWN_VAULT_MCP_GIT_LFS=true` (default),
-`GitWriteStrategy` calls `_lfs_pull()` once during lazy initialisation — after
-startup recovery (`_push_if_unpushed()`), outside the init lock — to resolve
+`GitWriteStrategy` calls `_lfs_pull()` once during lazy initialisation, after
+startup recovery (`_push_if_unpushed()`) and outside the init lock, to resolve
 LFS pointer files before the first write is committed. `_lfs_pull()` runs
 `git lfs pull` in the vault root; failures (including `git lfs` not installed
 or any non-zero exit) are logged at ERROR and never propagated to the caller.
@@ -2237,12 +2236,12 @@ Safety branch mode for push failures is tracked separately (see #119).
 
 **Git history queries**: `GitWriteStrategy` exposes two read-only methods for querying the git commit log without modifying any state:
 
-- `get_file_history(repo_path, path, since, limit, until=None)` — runs `git log` with a sentinel-delimited format string to enumerate commits touching a note or the entire vault. Uses ASCII Record Separator (`\x1e`) as a block delimiter so commit records can be parsed reliably regardless of commit message content. Vault-wide queries append `--name-only` to include changed file paths per commit. Both `since` and `until` are passed through verbatim to `git log` and are inclusive at the boundary.
-- `get_file_diff(repo_path, path, ref, per_commit, since_timestamp=None, limit=None)` — runs `git diff` or `git show` to produce unified diffs. When `since_sha` is provided (validated as `[0-9a-f]{4,40}`), it is used directly as the ref. When `since_timestamp` is provided, `git rev-list --before=<ts> -1 HEAD` resolves it to a SHA (boundary **inclusive**: `--before` returns the most recent commit at or before that instant — a commit whose committer date equals the timestamp IS the resolved ref). When `per_commit=True` and `limit` is set, the inner `git log` adds `-n{clamped_limit}` (clamped to `[1, 100]`) to cap the number of commits walked — useful for keeping per-commit responses within LLM context budgets. Output exceeding 50 KB is truncated with a `[diff truncated: N bytes omitted]` note. `CalledProcessError` from an unknown ref is re-raised as `ValueError`.
+- `get_file_history(repo_path, path, since, limit, until=None)`: runs `git log` with a sentinel-delimited format string to enumerate commits touching a note or the entire vault. Uses ASCII Record Separator (`\x1e`) as a block delimiter so commit records can be parsed reliably regardless of commit message content. Vault-wide queries append `--name-only` to include changed file paths per commit. Both `since` and `until` are passed through verbatim to `git log` and are inclusive at the boundary.
+- `get_file_diff(repo_path, path, ref, per_commit, since_timestamp=None, limit=None)`: runs `git diff` or `git show` to produce unified diffs. When `since_sha` is provided (validated as `[0-9a-f]{4,40}`), it is used directly as the ref. When `since_timestamp` is provided, `git rev-list --before=<ts> -1 HEAD` resolves it to a SHA (boundary **inclusive**: `--before` returns the most recent commit at or before that instant, meaning a commit whose committer date equals the timestamp is the resolved ref). When `per_commit=True` and `limit` is set, the inner `git log` adds `-n{clamped_limit}` (clamped to `[1, 100]`) to cap the number of commits walked, useful for keeping per-commit responses within LLM context budgets. Output exceeding 50 KB is truncated with a `[diff truncated: N bytes omitted]` note. `CalledProcessError` from an unknown ref is re-raised as `ValueError`.
 
 Both methods use the existing `_git_env()` / `_cleanup_git_env()` pattern for credential forwarding and cleanup. Path arguments are always validated via `Vault._validate_path()` before being passed to the git layer. No shell injection is possible because all subprocess calls use list arguments with `shell=False`.
 
-**MCP response envelope**: the MCP wrappers for `get_history` and `get_diff(per_commit=True)` return a `{"commits": [...], "total": N}` envelope rather than a bare list, so the structured payload is self-describing on the wire. FastMCP otherwise auto-wraps list-typed tool returns under a synthetic `"result"` key (`x-fastmcp-wrap-result: true` in the output schema), which forces clients re-reading persisted MCP content to know FastMCP's wrapping convention to find the data. The Python facade (`ReaderFacet.get_history`, `ReaderFacet.get_diff`) stays list-returning — only the MCP-tool wrapper transforms to the envelope. `get_diff(per_commit=False)` keeps its existing `{"diff": str}` shape since it is already self-describing.
+**MCP response envelope**: the MCP wrappers for `get_history` and `get_diff(per_commit=True)` return a `{"commits": [...], "total": N}` envelope rather than a bare list, so the structured payload is self-describing on the wire. FastMCP otherwise auto-wraps list-typed tool returns under a synthetic `"result"` key (`x-fastmcp-wrap-result: true` in the output schema), which forces clients re-reading persisted MCP content to know FastMCP's wrapping convention to find the data. The Python façade (`ReaderFacet.get_history`, `ReaderFacet.get_diff`) stays list-returning; only the MCP-tool wrapper transforms to the envelope. `get_diff(per_commit=False)` keeps its existing `{"diff": str}` shape since it is already self-describing.
 
 **Attachment history & diff (#342).** `get_history` and `get_diff` accept a
 `.md` note OR a configured attachment, validated by `validate_history_path`
@@ -2254,7 +2253,7 @@ notes are unchanged. The per-commit path (`per_commit=True`) is rename-aware
 per commit (#683): for each commit it resolves the path's rename against
 that commit's parent (`resolve_path_at_ref(git_root, "{sha}^", commit_path, …,
 to_ref=sha)`) and diffs the two blobs (`git diff {sha}^:old {sha}:new`),
-classifying binariness per commit — so a renamed binary pairs into
+classifying binariness per commit, so a renamed binary pairs into
 `{old => new} | Bin OLD -> NEW` instead of an add/text stat. A copied file
 renders as a plain add (binary classification still correct; copy records are
 skipped by `resolve_path_at_ref`). Non-rename commits use
@@ -2263,7 +2262,7 @@ skipped by `resolve_path_at_ref`). Non-rename commits use
 byte-identical content produces an empty two-blob diff; the per-commit path
 synthesizes a `{old} => {new} (renamed, no content change)` marker in that case
 (#683). Known bounds: per-commit rename pairing relies on git's
-`--find-renames=30` similarity threshold (a binary rename with a very large edit
+`--find-renames=30` similarity threshold (a binary rename with a large edit
 may render as separate add/delete rather than a paired `{old => new}` stat), and
 a per-commit diff of a merge commit renders the first-parent diff rather than a
 combined diff.
@@ -2285,7 +2284,7 @@ distinct channels via a single `workflow_dispatch` trigger:
   exercises the full pipeline without touching public catalogs.
   semantic-release cuts a `vX.Y.Z-rc.N` tag and marks the GitHub
   Release as a pre-release. The Docker image publishes `:unstable`
-  and `:vX.Y.Z-rc.N` only — `:latest`, `:vX.Y`, `:vX` never move on
+  and `:vX.Y.Z-rc.N` only; `:latest`, `:vX.Y`, `:vX` never move on
   a pre-release. The mcpb bundle is built and attached to the
   pre-release for manual smoke-test in Claude Desktop. PyPI, linux
   packages, the Claude Code catalog PR, and the MCP Registry publish
@@ -2302,7 +2301,7 @@ for the bundle.
 
 ### Future Work
 
-- **FastMCP OAuth**: implemented via `OIDCProxy` — see OIDC Authentication section above.
+- **FastMCP OAuth**: implemented via `OIDCProxy` (see OIDC Authentication section above).
 
 ## Implementation Plan
 
@@ -2314,11 +2313,11 @@ for the bundle.
 
 1. Create repo structure, packaging, CI/CD (adapted from ifcraftcorpus)
 2. Copy + adapt `providers.py` and `embeddings.py` (rename to `vector_index.py`)
-3. Implement `scanner.py` -- frontmatter parsing, heading-based chunking,
+3. Implement `scanner.py`: frontmatter parsing, heading-based chunking,
    `ChunkStrategy` protocol
-4. Implement `fts_index.py` -- generic FTS5 with `document_tags`, RRF hybrid
-5. Implement `tracker.py` -- hash-based change detection
-6. Implement `vault.py` -- thin facade tying it all together
+4. Implement `fts_index.py`: generic FTS5 with `document_tags`, RRF hybrid
+5. Implement `tracker.py`: hash-based change detection
+6. Implement `vault.py`: thin façade tying it all together
 7. Tests for all modules (fixtures with sample .md files covering: no
    frontmatter, partial frontmatter, malformed YAML, deep headings, unicode,
    invalid UTF-8)
@@ -2334,7 +2333,7 @@ for the bundle.
 
 9. Implement `server.py` with all read-only tools, `ToolAnnotations`,
    lifespan hooks
-10. Implement `cli.py` -- `serve`, `index`, `search`, `reindex` commands
+10. Implement `cli.py`: `serve`, `index`, `search`, `reindex` commands
 11. Configuration loading (env vars)
 12. Docker + GitHub Actions + PyPI (adapted from ifcraftcorpus)
 13. Validate against Obsidian vault (`pvliesdonk/obsidian.md`) as read-only
@@ -2382,8 +2381,8 @@ for the bundle.
 ## Risks and Mitigations
 
 | Risk | Mitigation |
-|------|-----------|
-| VRAM contention (Ollama on RTX 4060 8GB) | `cpu_only` mode, batch embeddings |
+|-|-|
+| VRAM contention (Ollama on RTX 4060 8 GB) | `cpu_only` mode, batch embeddings |
 | Vault scale (numpy in-memory) | Fine for thousands of documents. If tens of thousands, evaluate Qdrant. |
 | Concurrent writes (Obsidian + MCP) | Use git as sync layer. MCP server should not write directly to live Obsidian vault without git in between. |
 | FastMCP breaking changes | Pin `>=3.0,<4`. Monitor for 4.0 migration. |
@@ -2394,13 +2393,13 @@ for the bundle.
 Decisions made during design review (2026-03-07):
 
 | # | Topic | Decision | Rationale |
-|---|-------|----------|-----------|
+|-|-|-|-|
 | 1 | Document identity | Relative path with `.md` extension | Avoids collisions between same-name files in different folders |
 | 2 | Frontmatter handling | Optional by default; `required_frontmatter` config | Obsidian vaults rarely have frontmatter; ifcraftcorpus requires it |
 | 3 | Hybrid scoring | Reciprocal Rank Fusion (RRF) | Fixes latent bug: raw BM25 vs cosine comparison |
 | 4 | Phasing | Validate API against ifcraftcorpus in Phase 1 | Discover API mismatches before shipping |
 | 5 | Code reuse | Copy + adapt (not move) | ifcraftcorpus stays as-is; temporary duplication accepted |
-| 6 | Module structure | Thin facade + specialized modules | Avoid fat modules; prefer focused abstractions |
+| 6 | Module structure | Thin façade + specialized modules | Avoid fat modules; prefer focused abstractions |
 | 7 | Frontmatter filtering | `document_tags` table (indexed) + raw JSON blob | Performant multi-value filtering without `json_extract()` |
 | 8 | Configuration | Phase 1: API. Phase 2: env vars. Phase 3: evaluate YAML | Avoid premature config complexity |
 | 9 | Chunking | `heading` + `whole` with `ChunkStrategy` protocol | Extensible without over-engineering; `sliding` deferred |
