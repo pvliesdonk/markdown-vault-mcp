@@ -3,7 +3,7 @@
 markdown-vault-mcp exposes MCP tools across several categories. Write tools are only available when `MARKDOWN_VAULT_MCP_READ_ONLY=false`.
 
 !!! note "Index freshness on read tools (`wait_for_pending_writes` + `_meta.index_stale`)"
-    Every read tool that queries the FTS index — `search`, `list_documents`, `list_folders`, `list_tags`, `stats`, `get_recent`, `get_backlinks`, `get_outlinks`, `get_broken_links`, `get_similar`, `get_context`, `get_orphan_notes`, `get_most_linked`, and `get_connection_path` — accepts an optional **`wait_for_pending_writes`** (`bool`, default `false`) parameter and reports index freshness **out-of-band in the MCP response's `_meta.index_stale` field** rather than wrapping the payload in a `{stale, data}` envelope. The data payload is a **bare list/dict, identical whether the index is fresh or stale** — clients that do not care about drift ignore `_meta` entirely. Clients that need a fresh-read guarantee either inspect `result._meta.index_stale`, or pass `wait_for_pending_writes=true` to block until the writer drains (bounded by `MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S`, default 60s; on timeout it answers from the current index rather than raising). `index_stale` is `true` when the IndexWriter had pending or in-flight work at any of three observation points: the optional `wait_for_pending_writes` timed out, a write completed inside the read window, or the writer was non-idle at response time. The same `_meta.index_stale` field rides on the index-querying MCP **resources** (`config://`, `stats://`, `folders://`, `tags://`, `recent://`, `toc://`, `similar://`), readable via the resource read's `_meta` (resources carry no `wait_for_pending_writes` parameter — they signal only).
+    Every read tool that queries the FTS index (`search`, `list_documents`, `list_folders`, `list_tags`, `stats`, `get_recent`, `get_backlinks`, `get_outlinks`, `get_broken_links`, `get_similar`, `get_context`, `get_orphan_notes`, `get_most_linked`, and `get_connection_path`) accepts an optional **`wait_for_pending_writes`** (`bool`, default `false`) parameter and reports index freshness **out-of-band in the MCP response's `_meta.index_stale` field** rather than wrapping the payload in a `{stale, data}` envelope. The data payload is a **bare list/dict, identical whether the index is fresh or stale**; clients that do not care about drift ignore `_meta` entirely. Clients that need a fresh-read guarantee either inspect `result._meta.index_stale`, or pass `wait_for_pending_writes=true` to block until the writer drains (bounded by `MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S`, default 60&nbsp;s; on timeout it answers from the current index rather than raising). `index_stale` is `true` when the IndexWriter had pending or in-flight work. The relevant conditions are: the optional `wait_for_pending_writes` timed out; a write completed inside the read window; the writer was non-idle at response time. The same `_meta.index_stale` field rides on the index-querying MCP **resources** (`config://`, `stats://`, `folders://`, `tags://`, `recent://`, `toc://`, `similar://`), readable via the resource read's `_meta` (resources carry no `wait_for_pending_writes` parameter; they signal only).
 
 <!-- DOMAIN-TOOLS-LIST-START -->
 
@@ -59,20 +59,20 @@ Find documents matching a query using full-text or semantic search.
 | `limit` | int | `10` | Maximum results to return |
 | `mode` | string | `"keyword"` | `"keyword"` (FTS5/BM25), `"semantic"` (vector similarity), or `"hybrid"` (reciprocal rank fusion) |
 | `folder` | string | `null` | Restrict to documents under this folder path |
-| `filters` | object | `null` | Filter by indexed frontmatter field values (e.g. `{"tags": "pacing"}`) |
+| `filters` | object | `null` | Filter by indexed frontmatter field values (such as `{"tags": "pacing"}`) |
 | `chunks_per_file` | int | server default (`2`) | Maximum number of matching sections returned per file. Overrides `MARKDOWN_VAULT_MCP_CHUNKS_PER_FILE` for this call. `0` is rejected. |
 | `snippet_words` | int | server default (`200`) | Approximate word budget for each section's `content` field. `0` returns the full chunk. Overrides `MARKDOWN_VAULT_MCP_SNIPPET_WORDS` for this call. |
 
-**Returns:** List of grouped result dicts ranked by relevance, one entry per file with up to `chunks_per_file` best-matching sections. Each entry contains: `path`, `title`, `folder`, `score` (max section score), `search_type`, `frontmatter`, and `sections` — a list of `{heading, content, score}` dicts sorted by score then document order.
+**Returns:** List of grouped result dicts ranked by relevance, one entry per file with up to `chunks_per_file` best-matching sections. Each entry contains: `path`, `title`, `folder`, `score` (max section score), `search_type`, `frontmatter`, and `sections` (a list of `{heading, content, score}` dicts sorted by score then document order).
 
 !!! note "Grouped result shape"
     Each file appears at most once in results, with up to `chunks_per_file` sections nested under `sections`. The top-level `score` is the maximum of the section scores (MaxP aggregation). Iterate `sections` to drill into individual matches.
 
 !!! note "Snippet content and full-chunk recovery"
-    By default, each section's `content` is a snippet of approximately 200 words centered on the query terms — not the full chunk. Pass `snippet_words=0` to receive the complete chunk. To read the full section after receiving a search result, call `read(path=result["path"], section=result["sections"][0]["heading"])` — this returns the entire chunk from the index without re-reading the whole document.
+    By default, each section's `content` is a snippet of approximately 200 words centered on the query terms (not the full chunk). Pass `snippet_words=0` to receive the complete chunk. To read the full section after receiving a search result, call `read(path=result["path"], section=result["sections"][0]["heading"])`; this returns the entire chunk from the index without re-reading the whole document.
 
 !!! tip "Choosing a search mode"
-    - Use `mode="hybrid"` when semantic search is available — it combines keyword precision with semantic understanding
+    - Use `mode="hybrid"` when semantic search is available, combining keyword precision with semantic understanding
     - Use `mode="keyword"` for exact term matches
     - Use `mode="semantic"` for meaning-based similarity
     - Check `stats` to see if `semantic_search_available` is true
@@ -96,19 +96,19 @@ Read the full content of a document or attachment by path. When combined with se
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `path` | string | required | Relative path to the document or attachment (e.g. `"Journal/note.md"` or `"assets/diagram.pdf"`) |
-| `section` | string | `null` | Optional heading to select a single section chunk. Pass the `heading` field from a `search` result to retrieve the full chunk content. Matching collapses internal whitespace on both sides — `"1.3.  Reducing..."` (two spaces) matches a stored `"1.3. Reducing..."` (one space) and vice versa. On miss, the error lists the document's actual stored headings so callers can recover. Raises an error if the heading is not found or is empty. |
+| `path` | string | required | Relative path to the document or attachment (such as `"Journal/note.md"` or `"assets/diagram.pdf"`) |
+| `section` | string | `null` | Optional heading to select a single section chunk. Pass the `heading` field from a `search` result to retrieve the full chunk content. Matching collapses internal whitespace on both sides: `"1.3.  Reducing..."` (two spaces) matches a stored `"1.3. Reducing..."` (one space) and vice versa. On miss, the error lists the document's actual stored headings so callers can recover. Raises an error if the heading is not found or is empty. |
 
 !!! tip "Recovering full chunks after search"
     When `search` returns a snippet result, pass `result["heading"]` as the `section` parameter to recover the complete chunk: `read(path=result["path"], section=result["heading"])`. If the document has no sub-headings (preamble content), omit `section` to read the whole document.
 
 !!! note "Heading matching tolerates whitespace differences"
-    The `section` lookup compares heading strings after collapsing all whitespace runs to single spaces (and stripping leading/trailing whitespace). This handles the common case where an LLM caller infers a heading from a rendered TOC that normalises whitespace differently from the source markdown. Markdown emphasis (`**bold**`, `_italic_`) and case are still significant — pass the heading as it would appear in the document source.
+    The `section` lookup compares heading strings after collapsing all whitespace runs to single spaces (and stripping leading/trailing whitespace). This handles the common case where an LLM caller infers a heading from a rendered TOC that normalises whitespace differently from the source markdown. Markdown emphasis (`**bold**`, `_italic_`) and case still matter; pass the heading as it would appear in the document source.
 
 **Context cost:** every byte returned counts against the LLM's context
 budget. Reads above `MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES` (default
 256 KB for `.md`) or `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB` (default
-1 MB for binaries) raise an error — use `section=result["heading"]` for
+1 MB for binaries) raise an error; use `section=result["heading"]` for
 partial markdown reads (see the tip above).
 
 **Returns:**
@@ -147,16 +147,16 @@ List documents (and optionally attachments) in the vault.
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `folder` | string | `null` | Return only documents in this folder |
-| `pattern` | string | `null` | Unix glob matched against relative paths (e.g. `"Journal/*.md"`) |
+| `pattern` | string | `null` | Unix glob matched against relative paths (such as `"Journal/*.md"`) |
 | `include_attachments` | bool | `false` | When true, also returns non-`.md` files that match the configured allowlist |
 
-**Returns:** List of info dicts. Every entry has a `kind` field (`"note"` or `"attachment"`). Body content is not included — call `read` for full text.
+**Returns:** List of info dicts. Every entry has a `kind` field (`"note"` or `"attachment"`). Body content is not included; call `read` for full text.
 
 ### `list_folders`
 
-List all folder paths that contain documents. Use this to discover valid folder names for filtering `search` or `list_documents`. The root folder (top-level documents) is represented as an empty string `""`.
+List all folder paths that contain documents. Use this to discover valid folder names for filtering `search` or `list_documents`. The root folder (top-level documents) is represented as the empty string `""`.
 
-**Returns:** Sorted list of folder paths, e.g. `["", "Journal", "Projects"]`.
+**Returns:** Sorted list of folder paths, such as `["", "Journal", "Projects"]`.
 
 ### `list_tags`
 
@@ -168,7 +168,7 @@ List all distinct values for a frontmatter field across the vault.
 |-----------|------|---------|-------------|
 | `field` | string | `"tags"` | Frontmatter field name to enumerate. Must match a field in `indexed_frontmatter_fields` (check `stats`) |
 
-**Returns:** Sorted list of distinct string values, e.g. `["craft", "pacing", "worldbuilding"]`.
+**Returns:** Sorted list of distinct string values, such as `["craft", "pacing", "worldbuilding"]`.
 
 ### `stats`
 
@@ -207,7 +207,7 @@ Check the embedding provider configuration and vector index status. Use this to 
 Returns background-build state of the FTS index. Use this when
 `initialize` returned but bucket-3/4 calls block longer than expected
 or surface `IndexUnavailableError` (with `reason` of `"never_built"`,
-`"build_failed"`, `"timeout"`, `"broken"`, or `"busy"`) — the `status` field
+`"build_failed"`, `"timeout"`, `"broken"`, or `"busy"`). The `status` field
 distinguishes "still building" from "build failed," and the `error`
 field carries the diagnostic message from the last failed background
 build attempt.
@@ -216,10 +216,10 @@ build attempt.
 - `status`: `"queryable"`, `"building"`, or `"failed"`.
 - `documents_indexed`: count of documents committed to the FTS index
   right now (rises during `"building"`). `0` both for an empty index
-  and when the count could not be read — check `documents_indexed_error`
+  and when the count could not be read; check `documents_indexed_error`
   to tell them apart.
 - `documents_indexed_error`: `null` on a normal read; the SQLite error
-  message when the document count could not be read (e.g. a locked or
+  message when the document count could not be read (such as a locked or
   closed database), in which case `documents_indexed` is `0`.
 - `error`: `null` unless the background build raised; otherwise the
   exception message.
@@ -231,11 +231,11 @@ build attempt.
 ## Index Management
 
 !!! note "Cold-start blocking"
-    Calls to `reindex` and `build_embeddings` during a cold-start background FTS build block via the tool-layer `needs_queryable` decorator. If the build takes longer than `MARKDOWN_VAULT_MCP_BUILD_TIMEOUT_S` (default 60s), the tool returns `IndexUnavailableError(reason="timeout")`. The same exception fires with `reason="build_failed"` if a scheduled background build ran and failed — read `get_index_status`'s `error` field for the captured diagnostic. The decorator additionally remaps a SQLite `OperationalError` from the handler call to `IndexUnavailableError(reason="broken")` (corruption / I/O failure / unknown codes) or `reason="busy"` (SQLITE_BUSY/LOCKED — lock contention); inspect the exception's `__cause__` for the underlying SQLite error. Poll `get_index_status` to observe build state without blocking.
+    Calls to `reindex` and `build_embeddings` during a cold-start background FTS build block via the tool-layer `needs_queryable` decorator. If the build takes longer than `MARKDOWN_VAULT_MCP_BUILD_TIMEOUT_S` (default 60&nbsp;s), the tool returns `IndexUnavailableError(reason="timeout")`. The same exception fires with `reason="build_failed"` if a scheduled background build ran and failed; read `get_index_status`'s `error` field for the captured diagnostic. The decorator also remaps a SQLite `OperationalError` from the handler call to `IndexUnavailableError(reason="broken")` (corruption / I/O failure / unknown codes) or `reason="busy"` (SQLITE_BUSY/LOCKED, lock contention); inspect the exception's `__cause__` for the underlying SQLite error. Poll `get_index_status` to observe build state without blocking.
 
 ### `reindex`
 
-Incrementally update the full-text search index to reflect file changes made outside this server. Only processes changed files — unchanged documents are skipped, and files deliberately excluded from the index (missing required frontmatter, exclude-pattern matches, unparseable content) are remembered across scans so they are not re-parsed or re-reported until their content changes (#665).
+Incrementally update the full-text search index to reflect file changes made outside this server. Only changed files are processed; unchanged documents are skipped, and files deliberately excluded from the index (missing required frontmatter, exclude-pattern matches, unparseable content) are remembered across scans so they are not re-parsed or re-reported until their content changes (#665).
 
 If semantic search is configured, the queued reindex job re-embeds the changed documents on the writer thread. Poll `get_index_status` and watch the `dirty_embeddings` counter to observe completion.
 
@@ -248,7 +248,7 @@ If semantic search is configured, the queued reindex job re-embeds the changed d
 
 Build vector embeddings to enable semantic and hybrid search. This can be slow for large vaults.
 
-Without `force`, an existing vector index is **converged** to the FTS chunk set (#665): documents missing from it are embedded, documents whose indexed content changed are re-embedded, and vectors for deleted or excluded documents are dropped. Work scales with the size of the drift, not the size of the vault — an already-converged index does no embedding work.
+Without `force`, an existing vector index is **converged** to the FTS chunk set (#665). The operation embeds missing documents, re-embeds those whose indexed content changed, and drops vectors for deleted or excluded documents. Work scales with the size of the drift, not the size of the vault; an already-converged index does no embedding work.
 
 **Parameters:**
 
@@ -259,7 +259,7 @@ Without `force`, an existing vector index is **converged** to the FTS chunk set 
 **Returns:** `{"status": "queued"}`. The build runs asynchronously on the single-owner :class:`IndexWriter` thread (#559); poll `get_server_info` or `get_index_status` for completion.
 
 !!! note "When to use"
-    Normally never: the server queues a `build_embeddings` job at every startup, which converges the vector index to whatever the boot reconciliation reindex found (#665). Call it manually only to embed a vault for the first time without restarting, to retry after a provider outage, or with `force=true` after changing the embedding model.
+    Normally never: the server queues a `build_embeddings` job at every startup, which converges the vector index to whatever the boot reconciliation reindex found (#665). Manual calls are needed in three cases: embedding a vault for the first time without restarting; retrying after a provider outage; or rebuilding from scratch after an embedding-model change (pass `force=true`).
 
 ---
 
@@ -282,21 +282,21 @@ Create or overwrite a document or attachment.
 | `content_base64` | string | Base64-encoded binary content for attachment files. Required when path is not `.md` |
 
 **Context cost:** the `content` parameter (text) is bounded only by the
-LLM's own output budget.  The `content_base64` parameter (binary) inflates
+LLM's own output budget. The `content_base64` parameter (binary) inflates
 by ~33%.
 
 **Returns:** `{"path": "Journal/note.md", "created": true}`
 
 !!! warning
-    `write` replaces the entire file — use `edit` for targeted changes to existing documents.
+    `write` replaces the entire file. Use `edit` for targeted changes to existing documents.
 
 ### `edit`
 
 Make a targeted text replacement in an existing document. Supports three modes:
 
-- **Exact match** (`old_text` only) — must appear exactly once in the document.
-- **Line-range** (`line_start` + `line_end`, no `old_text`) — replaces the specified lines. Pass `if_match` for safety.
-- **Scoped match** (`old_text` + `line_start`/`line_end`) — searches for `old_text` within the specified line range only.
+- **Exact match** (`old_text` only): must appear exactly once in the document.
+- **Line-range** (`line_start` + `line_end`, no `old_text`): replaces the specified lines. Pass `if_match` for safety.
+- **Scoped match** (`old_text` + `line_start`/`line_end`): searches for `old_text` within the specified line range only.
 
 **Parameters:**
 
@@ -314,13 +314,13 @@ Make a targeted text replacement in an existing document. Supports three modes:
 `match_type` is `"exact"` when the text matched byte-for-byte, or `"normalized"` when it matched after Unicode/whitespace normalization.
 
 !!! tip "Usage pattern"
-    Always call `read` first to get the exact current text and line numbers. For small edits, use `old_text` (exact match). For large block replacements, use `line_start`/`line_end` with the line numbers shown by `read`. Frontmatter can be edited — `old_text` may span the YAML block.
+    Always call `read` first to get the exact current text and line numbers. For small edits, use `old_text` (exact match). For large block replacements, use `line_start`/`line_end` with the line numbers shown by `read`. Frontmatter can be edited; `old_text` may span the YAML block.
 
 !!! info "Normalized matching"
-    When exact match fails, the tool automatically tries a normalized comparison: Unicode NFC, dash normalization (en-dash/em-dash → hyphen), smart quote normalization, whitespace collapsing. If a unique match is found, it proceeds and returns `match_type: "normalized"`.
+    When exact match fails, the tool automatically tries a normalized comparison. Normalization covers Unicode NFC, whitespace collapsing, and smart quote conversion (en-dash/em-dash to hyphen). If a unique match is found, it proceeds and returns `match_type: "normalized"`.
 
 !!! warning "Diagnostic errors"
-    When no match is found, the error message includes diagnostic info: the closest matching line number, the character position of the first difference, and short snippets showing what was expected vs. what was found. This helps identify the exact mismatch.
+    When no match is found, the error message reports the closest matching line number and the character position of the first difference, along with short snippets showing what was expected vs. what was found. This helps identify the exact mismatch.
 
 ### `delete`
 
@@ -364,7 +364,7 @@ Download a file from a URL and save it to the vault as a note or attachment. Des
 | `if_match` | string | `null` | Optional etag from a previous `read` call for optimistic concurrency |
 | `timeout_s` | float | `30.0` | Download timeout in seconds |
 
-**Context cost:** zero — the file is downloaded server-side.  Reference
+**Context cost:** zero. The file is downloaded server-side. Reference
 the saved file by `path` for downstream tools rather than `read()`-ing it
 back into context.
 
@@ -385,29 +385,29 @@ history before continuing the conversation.
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `direction` | `"pull"` \| `"push"` \| `"both"` | `"both"` | Which leg(s) to run. `"both"` runs pull first, then push; if pull fails (`pull.applied=false`) the push leg is skipped and `push` stays `null` so a callable can inspect `pull.reason` before retrying. |
-| `dry_run` | bool | `false` | When `true`, the pull leg runs `git fetch` and reports what *would* happen (`would_apply: bool`, projected `to_sha`) without moving HEAD. The push leg has no safe local probe for "would the remote accept this", so a dry-run push is a no-op that returns `applied=false` with `reason="dry_run_unsupported"`. |
+| `direction` | `"pull"` \| `"push"` \| `"both"` | `"both"` | Which legs to run. `"both"` runs pull first, then push; if pull fails (`pull.applied=false`) the push leg is skipped and `push` stays `null` so a callable can inspect `pull.reason` before retrying. |
+| `dry_run` | bool | `false` | When `true`, the pull leg runs `git fetch` and reports what *would* happen (`would_apply: bool`, projected `to_sha`) without moving HEAD. The push leg has no safe local probe for "would the remote accept this," so a dry-run push is a no-op that returns `applied=false` with `reason="dry_run_unsupported"`. |
 
 **Returns:** Dict with the following fields:
 
-- `direction` (str) — the requested direction, echoed back.
-- `head_sha` (str) — local HEAD SHA after the operation. Differs from
+- `direction` (str): the requested direction, echoed back.
+- `head_sha` (str): local HEAD SHA after the operation. Differs from
   the pre-call HEAD when the pull leg advanced the branch.
-- `branch` (str) — current branch name (or `"HEAD"` on detached HEAD).
-- `pull` (dict | null) — payload from the pull leg, or `null` when
+- `branch` (str): current branch name (or `"HEAD"` on detached HEAD).
+- `pull` (dict | null): payload from the pull leg, or `null` when
   `direction="push"`. Fields: `applied`, `fast_forward`,
   `commits_pulled`, `from_sha`, `to_sha`; optional `reason`,
   `conflict_files`; `would_apply` (only in `dry_run` mode).
   `commits_pulled` is reliable on the fast-forward path. On
   `reason="rebased"` and `reason="conflicts_resolved_with_siblings"` it
-  is `0` even when HEAD advanced — the rebase replays local commits *on
-  top of* the upstream rather than fast-forwarding, so inspect
+  is `0` even when HEAD advanced (the rebase replays local commits *on
+  top of* the upstream rather than fast-forwarding); inspect
   `from_sha != to_sha` to detect the actual change.
-- `push` (dict | null) — payload from the push leg, or `null` when
+- `push` (dict | null): payload from the push leg, or `null` when
   `direction="pull"` or when the pull leg failed in
   `direction="both"`. Fields: `applied`, `commits_pushed`,
   `remote_sha_before`, `remote_sha_after`; optional `reason`, `hint`.
-- `dry_run` (bool) — present only when `dry_run=true` was passed.
+- `dry_run` (bool): present only when `dry_run=true` was passed.
 
 **Examples:**
 
@@ -459,10 +459,10 @@ The pull *succeeded* (`applied=true`): HEAD now points at the remote tip
 and the local edits that conflicted with the remote were preserved as
 `.conflict-mcp-<timestamp>.md` siblings on the same path. The remote
 version wins on the canonical path; the LLM should read the listed
-sibling(s) and propose how to merge the local content back in.
+each sibling and propose how to merge the local content back in.
 `commits_pulled` is `0` on this path because the rebase replays local
-commits *on top of* the remote — the remote commits are reconciled, not
-"pulled forward" in the linear-history sense.
+commits *on top of* the remote (the remote commits are reconciled, not
+"pulled forward" in the linear-history sense).
 
 Push rejected as non-fast-forward:
 
@@ -499,12 +499,12 @@ already-up-to-date no-op):
 
 | Reason | Meaning | `applied` |
 |--------|---------|-----------|
-| `"dry_run_unsupported"` | Caller passed `dry_run=true`. Git has no safe local probe for "would the remote accept this", so the push leg is a deliberate no-op. | `false` |
+| `"dry_run_unsupported"` | Caller passed `dry_run=true`. Git has no safe local probe for "would the remote accept this," so the push leg is a deliberate no-op. | `false` |
 | `"no_remote"` | Upstream tracking branch could not be resolved (no `@{upstream}` and no `origin/HEAD`). Push not attempted. | `false` |
 | `"non_fast_forward"` | Remote rejected the push because the local branch is not a strict descendant of the remote tip. `hint` points at `git_sync(direction='pull')` to reconcile first. | `false` |
 | `"push_failed"` | `git push origin` exited non-zero for any other reason (network, auth, server-side hook). `hint` carries the truncated stderr. | `false` |
 
-**Context cost:** small — structured dict only, no file bytes.
+**Context cost:** small (structured dict only, no file bytes).
 
 **Tag:** `{write, git-managed}`. Hidden when
 `MARKDOWN_VAULT_MCP_READ_ONLY=true` or when the deployment is not in
@@ -512,8 +512,8 @@ managed git mode (`MARKDOWN_VAULT_MCP_GIT_REPO_URL` not set).
 
 **Errors:**
 
-- `ValueError` — raised at call time when the underlying strategy is
-  not a managed `GitWriteStrategy` (i.e. `MARKDOWN_VAULT_MCP_GIT_REPO_URL`
+- `ValueError`: raised at call time when the underlying strategy is
+  not a managed `GitWriteStrategy` (that is, `MARKDOWN_VAULT_MCP_GIT_REPO_URL`
   is unset). The visibility tag normally hides the tool in that case;
   this error guards the path where a client invokes the tool by name
   despite it not being advertised.
@@ -522,7 +522,7 @@ managed git mode (`MARKDOWN_VAULT_MCP_GIT_REPO_URL` not set).
     Only available in managed git mode. Set
     `MARKDOWN_VAULT_MCP_GIT_REPO_URL` and a working
     `MARKDOWN_VAULT_MCP_GIT_TOKEN` (with the
-    `MARKDOWN_VAULT_MCP_GIT_USERNAME` appropriate for your provider —
+    `MARKDOWN_VAULT_MCP_GIT_USERNAME` appropriate for your provider;
     see the [Git Integration guide](../guides/git-integration.md#provider-username-reference)).
 
 ---
@@ -530,7 +530,7 @@ managed git mode (`MARKDOWN_VAULT_MCP_GIT_REPO_URL` not set).
 ## Link Graph
 
 !!! note "Cold-start blocking"
-    Calls to `get_backlinks`, `get_outlinks`, `get_similar`, `get_context`, and `get_connection_path` during a cold-start background FTS build block via the tool-layer `needs_queryable` decorator. If the build takes longer than `MARKDOWN_VAULT_MCP_BUILD_TIMEOUT_S` (default 60s), the tool returns `IndexUnavailableError(reason="timeout")`. The same exception fires with `reason="build_failed"` if a scheduled background build ran and failed — read `get_index_status`'s `error` field for the captured diagnostic. The decorator additionally remaps a SQLite `OperationalError` from the handler call to `IndexUnavailableError(reason="broken")` (corruption / I/O failure / unknown codes) or `reason="busy"` (SQLITE_BUSY/LOCKED — lock contention); inspect the exception's `__cause__` for the underlying SQLite error. Poll `get_index_status` to observe build state without blocking.
+    Calls to `get_backlinks`, `get_outlinks`, `get_similar`, `get_context`, and `get_connection_path` during a cold-start background FTS build block via the tool-layer `needs_queryable` decorator. If the build takes longer than `MARKDOWN_VAULT_MCP_BUILD_TIMEOUT_S` (default 60&nbsp;s), the tool returns `IndexUnavailableError(reason="timeout")`. The same exception fires with `reason="build_failed"` if a scheduled background build ran and failed; read `get_index_status`'s `error` field for the captured diagnostic. The decorator also remaps a SQLite `OperationalError` from the handler call to `IndexUnavailableError(reason="broken")` (corruption / I/O failure / unknown codes) or `reason="busy"` (SQLITE_BUSY/LOCKED, lock contention); inspect the exception's `__cause__` for the underlying SQLite error. Poll `get_index_status` to observe build state without blocking.
 
 ### `get_backlinks`
 
@@ -585,7 +585,7 @@ Find semantically similar notes by document path. Requires embeddings to be buil
 | `chunks_per_file` | int | server default (`2`) | Maximum number of matching sections returned per file. Overrides `MARKDOWN_VAULT_MCP_CHUNKS_PER_FILE` for this call. `0` is rejected. |
 | `wait_for_pending_writes` | bool | `false` | Block until the IndexWriter drains before answering, then report freshness via `_meta.index_stale` (see the *Index freshness on read tools* note at the top of this page). |
 
-**Returns:** List of grouped similar-document dicts ranked by cosine similarity, one entry per file with up to `chunks_per_file` best-matching sections. Each entry contains: `path`, `title`, `folder`, `score` (max section score), `search_type` (`"semantic"`), `frontmatter`, and `sections` — a list of `{heading, content, score}` dicts sorted by score then document order. Index freshness is reported in `_meta.index_stale` (see the freshness note at the top of this page).
+**Returns:** List of grouped similar-document dicts ranked by cosine similarity, one entry per file with up to `chunks_per_file` best-matching sections. Each entry contains: `path`, `title`, `folder`, `score` (max section score), `search_type` (`"semantic"`), `frontmatter`, and `sections` (a list of `{heading, content, score}` dicts sorted by score then document order). Index freshness is reported in `_meta.index_stale` (see the freshness note at the top of this page).
 
 !!! note "Grouped result shape"
     Returns one entry per file with up to `chunks_per_file` best-matching sections. Default is 2 sections per file; pass `chunks_per_file=1` for compact dossiers.
@@ -599,7 +599,7 @@ Get the most recently modified notes.
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `limit` | int | `20` | Maximum results to return |
-| `folder` | string | `null` | Optional folder filter; only returns notes from this folder (e.g. `"Journal"`) |
+| `folder` | string | `null` | Optional folder filter; only returns notes from this folder (such as `"Journal"`) |
 
 **Returns:** List of notes with Unix timestamps (`modified_at` as float), sorted by modification time (newest first).
 
@@ -612,20 +612,20 @@ Get a consolidated context dossier for a note. Combines backlinks, outlinks, sim
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `path` | string | required | Relative path to the document |
-| `similar_limit` | int | `5` | Max similar files to include. Pass `0` to skip the similarity lookup (e.g. when `stats` shows `semantic_search_available=false`) |
+| `similar_limit` | int | `5` | Max similar files to include. Pass `0` to skip the similarity lookup (such as when `stats` shows `semantic_search_available=false`) |
 | `link_limit` | int | `10` | Max backlinks and outlinks to include each |
 | `wait_for_pending_writes` | bool | `false` | Block until the IndexWriter drains before answering, then report freshness via `_meta.index_stale` (see the *Index freshness on read tools* note at the top of this page). |
 
-**Returns:** Object with `path`, `title`, `folder`, `frontmatter`, `modified_at`, `backlinks`, `outlinks`, `similar`, `folder_notes`, and `tags` fields. The `similar` list contains grouped result dicts — one entry per file with up to `chunks_per_file` best-matching sections (default 1 for `get_context` to keep dossiers compact). Index freshness is reported in `_meta.index_stale` (see the freshness note at the top of this page).
+**Returns:** Object with `path`, `title`, `folder`, `frontmatter`, `modified_at`, `backlinks`, `outlinks`, `similar`, `folder_notes`, and `tags` fields. The `similar` list contains grouped result dicts, one entry per file with up to `chunks_per_file` best-matching sections (default 1 for `get_context` to keep dossiers compact). Index freshness is reported in `_meta.index_stale` (see the freshness note at the top of this page).
 
 !!! note "Grouped similar shape"
-    Each `similar` entry contains `path`, `title`, `folder`, `score`, `search_type`, `frontmatter`, and `sections` — a list of `{heading, content, score}` dicts. `get_context` defaults to one section per file for compact dossiers; `search` and `get_similar` default to 2.
+    Each `similar` entry contains `path`, `title`, `folder`, `score`, `search_type`, `frontmatter`, and `sections` (a list of `{heading, content, score}` dicts). `get_context` defaults to one section per file for compact dossiers; `search` and `get_similar` default to 2.
 
 ### `get_orphan_notes`
 
-Find all notes with no inbound or outbound links — isolated documents that may need cross-referencing.
+Find all notes with no inbound or outbound links (isolated documents that may need cross-referencing).
 
-**Returns:** List of `NoteInfo` objects (`path`, `title`, `folder`, `frontmatter`, `modified_at`, `kind`), ordered by path. Returns ALL orphans with no limit — check `stats.orphan_count` before calling on large vaults.
+**Returns:** List of `NoteInfo` objects (`path`, `title`, `folder`, `frontmatter`, `modified_at`, `kind`), ordered by path. Returns ALL orphans with no limit; check `stats.orphan_count` before calling on large vaults.
 
 ### `get_most_linked`
 
@@ -652,7 +652,7 @@ Find the shortest path between two notes via BFS on the undirected link graph (m
 | `max_depth` | int | `10` | Maximum hops to search (clamped to [1, 10]) |
 | `wait_for_pending_writes` | bool | `false` | Block until the IndexWriter drains before answering, then report freshness via `_meta.index_stale` (see the *Index freshness on read tools* note at the top of this page). |
 
-**Returns:** Object with `found` (bool), `path` (ordered list of note paths from source to target), and `hops` (number of edges, or `-1` if not found). Index freshness is reported in `_meta.index_stale` (see the freshness note at the top of this page).
+**Returns:** Object with `found` (bool), `path` (ordered list of document paths from source to target), and `hops` (number of edges, or `-1` if not found). Index freshness is reported in `_meta.index_stale` (see the *Index freshness on read tools* admonition at the top of this page).
 
 ### `get_history`
 
@@ -662,12 +662,12 @@ List commits that touched a note or attachment (or the whole vault) within an op
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `path` | string | `null` | Relative vault path (e.g. `"notes/alpha.md"` or `"assets/diagram.png"`). May be a `.md` note or a configured attachment extension (png, pdf, svg, …). Omit for vault-wide history. An unsupported extension is rejected. |
+| `path` | string | `null` | Relative vault path (such as `"notes/alpha.md"` or `"assets/diagram.png"`). May be a `.md` note or a configured attachment extension (png, pdf, svg, …). Omit for vault-wide history. An unsupported extension is rejected. |
 | `since` | string | `null` | ISO 8601 datetime string (`"2026-04-01T00:00:00"`) or git date expression (`"1 week ago"`). Passed as `--since` to `git log`. Inclusive at the boundary. |
 | `until` | string | `null` | ISO 8601 datetime string or git date expression, passed as `--until` to `git log`. Combined with `since` to bound a window. Inclusive at the boundary. |
 | `limit` | int | `20` | Maximum number of commits to return. Capped at 100. |
 
-**Returns:** Object with `commits` (list of commit entries, newest-first) and `total` (count — always equals `len(commits)`; does NOT indicate how many commits exist beyond the `limit` cap). The envelope keeps the structured payload self-describing on the wire instead of relying on FastMCP's auto-wrapping `result` key. Each entry in `commits` contains:
+**Returns:** Object with `commits` (list of commit entries, newest-first) and `total` (count; always equals `len(commits)` and does NOT indicate how many commits exist beyond the `limit` cap). The envelope keeps the structured payload self-describing on the wire instead of relying on FastMCP's auto-wrapping `result` key. Each entry in `commits` contains:
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -676,7 +676,7 @@ List commits that touched a note or attachment (or the whole vault) within an op
 | `timestamp` | string | ISO 8601 author timestamp |
 | `author` | string | Author name and email |
 | `message` | string | First line of the commit message |
-| `paths_changed` | list[string] | Files touched by the commit. Populated for vault-wide queries (`path=null`); always empty for single-note queries, since the path is already determined by the query arguments — callers know which file the commit touched without needing it echoed back. |
+| `paths_changed` | list[string] | Files touched by the commit. Populated for vault-wide queries (`path=null`); always empty for single-note queries, since the path is already determined by the query arguments (callers know which file the commit touched without needing it echoed back). |
 
 **Raises:** `ToolError` if `path` is invalid or uses an unsupported extension.
 
@@ -688,18 +688,18 @@ Return the diff of a specific note or attachment between a reference point and `
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `path` | string | required | Relative vault path (e.g. `"notes/alpha.md"` or `"assets/diagram.png"`). May be a `.md` note or a configured attachment extension (png, pdf, svg, …). An unsupported extension is rejected. |
+| `path` | string | required | Relative vault path (such as `"notes/alpha.md"` or `"assets/diagram.png"`). May be a `.md` note or a configured attachment extension (png, pdf, svg, …). An unsupported extension is rejected. |
 | `since_sha` | string | `null` | A commit SHA (full or abbreviated, at least 4 hex digits) to diff from. Mutually exclusive with `since_timestamp`. |
 | `since_timestamp` | string | `null` | ISO 8601 datetime string, resolved via `git rev-list --before=<ts> -1 HEAD` to the most recent commit at or before that instant. Boundary is **inclusive**: a commit whose committer date equals `since_timestamp` IS the resolved ref. Mutually exclusive with `since_sha`. |
 | `per_commit` | bool | `false` | When `false`, return a single unified diff. When `true`, return one diff per intervening commit, newest-first. |
-| `limit` | int | `null` | Only meaningful when `per_commit=true`. Caps the number of commits returned to the `limit` most recent ones. Clamped to `[1, 100]`. `null` = unbounded (still bounded by the `since..HEAD` range). Silently ignored when `per_commit=false`. |
+| `limit` | int | `null` | Applies only when `per_commit=true`. Caps the number of commits returned to the `limit` most recent ones. Clamped to `[1, 100]`. `null` = unbounded (still bounded by the `since..HEAD` range). Silently ignored when `per_commit=false`. |
 
 Exactly one of `since_sha` / `since_timestamp` must be supplied.
 
 **Returns:**
 
-- `per_commit=false`: object with `diff` (string) — unified diff from reference to HEAD. For a **binary attachment**, this is a `git diff --stat` size/rename summary (e.g. `assets/x.png | Bin 1234 -> 5678 bytes`); for a **text attachment** (`.svg`, `.csv`, …) or `.md` note, it is a full unified patch. May include `[diff truncated: N bytes omitted]` if output exceeds 50 KB.
-- `per_commit=true`: object with `commits` (list of per-commit entries, newest-first — each containing `sha`, `short_sha`, `timestamp`, `message`, and `diff`) and `total` (count — always equals `len(commits)`; does NOT indicate how many commits exist beyond the `limit` cap). The envelope keeps the structured payload self-describing on the wire instead of relying on FastMCP's auto-wrapping `result` key.
+- `per_commit=false`: object with `diff` (string), the unified diff from reference to HEAD. For a **binary attachment**, this is a `git diff --stat` size/rename summary (such as `assets/x.png | Bin 1234 -> 5678 bytes`); for a **text attachment** (`.svg`, `.csv`, …) or `.md` note, it is a full unified patch. May include `[diff truncated: N bytes omitted]` if output exceeds 50 KB.
+- `per_commit=true`: object with `commits` (list of per-commit entries, newest-first, each containing `sha`, `short_sha`, `timestamp`, `message`, and `diff`) and `total` (count; always equals `len(commits)` and does NOT indicate how many commits exist beyond the `limit` cap). The envelope keeps the structured payload self-describing on the wire instead of relying on FastMCP's auto-wrapping `result` key.
 
 **Raises:** `ToolError` if parameters are invalid, the reference commit is not found, or the path uses an unsupported extension.
 
@@ -707,7 +707,7 @@ Exactly one of `since_sha` / `since_timestamp` must be supplied.
 
 ## One-Time Transfer Links
 
-Transfer tools mint short-lived capability URLs so large files can move between the vault and a browser or another service without inflating the LLM context window. The unguessable token in the URL is the authorization — no separate `Authorization` header is needed.
+Transfer tools mint short-lived capability URLs so large files can move between the vault and a browser or another service without inflating the LLM context window. The unguessable token in the URL is the authorization; no separate `Authorization` header is needed.
 
 !!! note "HTTP/SSE transport only"
     Transfer tools require a running HTTP or SSE server with `MARKDOWN_VAULT_MCP_BASE_URL` set. They are not available on stdio transport.
@@ -717,7 +717,7 @@ Transfer tools mint short-lived capability URLs so large files can move between 
 
 ### `create_download_link`
 
-Mint a one-time capability URL to download a vault note or attachment. The file must exist at link-creation time. The URL can be fetched exactly once — after a successful download the token is consumed. A failed or interrupted download does not consume the token.
+Mint a one-time capability URL to download a vault note or attachment. The file must exist at link-creation time. The URL can be fetched exactly once; after a successful download the token is consumed. A failed or interrupted download does not consume the token.
 
 **Parameters:**
 
@@ -787,11 +787,11 @@ curl -X POST --data-binary @local-diagram.pdf \
      "https://mcp.example.com/transfer/<token>"
 ```
 
-!!! note "Raw body — not multipart"
+!!! note "Raw body, not multipart"
     The upload endpoint expects the raw file bytes as the request body. Do not use `multipart/form-data`; send the content directly (curl's `--data-binary` flag does this correctly).
 
 !!! note "One-time"
-    The token is consumed on the first successful upload. A transient failure (network error, size limit exceeded) does not consume the token — retry is permitted until the TTL expires.
+    The token is consumed on the first successful upload. A transient failure (network error, size limit exceeded) does not consume the token; retry is permitted until the TTL expires.
 
 ---
 
