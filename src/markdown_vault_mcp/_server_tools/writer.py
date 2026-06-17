@@ -36,6 +36,10 @@ _BLOCKED_ADDR_MSG = (
     "are not allowed."
 )
 
+# Default ports per scheme — omitted from the Host header (RFC 7230 §5.4:
+# a client SHOULD NOT send a port that equals the scheme default).
+_SCHEME_DEFAULT_PORTS = {"http": 80, "https": 443}
+
 
 def _ip_is_blocked(ip: str) -> bool:
     """Return True if *ip* (an IP literal) is in a non-public range.
@@ -511,9 +515,19 @@ def register(mcp: FastMCP) -> None:
         # SNI so vhost routing and certificate verification still use the real
         # hostname. httpx then dials the pinned IP without re-resolving.
         ip_host = f"[{pinned_ip}]" if ":" in pinned_ip else pinned_ip
+        # Rebuild netloc from the pinned IP + port only. Any userinfo
+        # (``user:pass@``) in the original URL is intentionally dropped — the
+        # fetch tool must not relay embedded credentials to the server.
         pinned_netloc = f"{ip_host}:{parsed.port}" if parsed.port else ip_host
         pinned_url = urlunparse(parsed._replace(netloc=pinned_netloc))
-        host_header = hostname if parsed.port is None else f"{hostname}:{parsed.port}"
+        # Host header carries the real hostname, omitting an explicit default
+        # port (RFC 7230 §5.4) so origin matching on strict servers still works.
+        if parsed.port is None or parsed.port == _SCHEME_DEFAULT_PORTS.get(
+            parsed.scheme
+        ):
+            host_header = hostname
+        else:
+            host_header = f"{hostname}:{parsed.port}"
 
         # Stream download — enforce size limit as chunks arrive.
         chunks: list[bytes] = []
