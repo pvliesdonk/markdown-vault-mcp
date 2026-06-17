@@ -39,7 +39,7 @@ vault becomes another.
 3. **Python library**: direct use as a search API (such as wrapping as a LangChain
    tool by downstream projects like QuestFoundry). The `Vault` class is
    the primary interface; MCP is one consumer, not the only one. Other
-   Libraries (LangChain, LlamaIndex, and so on) may wrap `Vault` directly.
+   libraries (LangChain, LlamaIndex, and so on) may wrap `Vault` directly.
 
 ## Shared Infrastructure
 
