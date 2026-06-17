@@ -49,7 +49,7 @@ scholar-mcp's own documentation covers API keys, OIDC auth, transport options, a
 
 The five phases are not a linear pipeline. A typical session enters one phase, spends most of its time in a second, then loops back. Some common session shapes:
 
-- **Seed + ground.** You have a new idea. You write the seed, mark the load-bearing claims. The session ends with the seed half-grounded after grounding one or two of them; remaining markers wait for next time.
+- **Seed + ground.** You have a new idea. You write the seed, mark the central claims. The session ends with the seed half-grounded after grounding one or two of them; remaining markers wait for next time.
 - **Absorb + interconnect.** You read a paper and want to capture it. You write the literature note, then immediately run `get_similar` against it to see which existing research notes it connects to. You add links in both directions before closing the session.
 - **Produce + all four predecessors.** You're writing a draft. Any paragraph may pull you into an earlier phase. A new question triggers reseeding; a challenged claim triggers grounding; a thin source triggers absorption; Claude surfaces a forgotten note and you stop to interconnect.
 
@@ -121,7 +121,7 @@ A final point on frontmatter: keep it minimal at the seeding stage. A seed doesn
 
 ### Baseline flow
 
-Grounding converts a seed's confident-but-unsourced claims into claims with sources attached, or flags them clearly as unresolved. Claude + web search does most of the work when web search is available.
+Grounding converts a seed's confident-but-unsourced claims into claims with sources attached, or flags them clearly as unresolved. Claude with web search covers most cases when web search is available.
 
 Ask template:
 
@@ -250,7 +250,7 @@ For a vault-wide sweep ("find every note that should probably be linked but isn'
 
 For examining a specific note's neighborhood without committing to edits, ask Claude to run `get_context(path="research/incentive-misalignment.md")`. It returns backlinks, outlinks, similar notes, folder peers, and tags in one call: the full dossier for deciding what to link and what to write next. Use it before starting a writing session on an existing note; it is fast and thorough, and it often surfaces a link you were about to miss.
 
-A useful ancillary is `get_backlinks(path=<note>)` on its own when you want to know "who cites this?" without the rest of `get_context`'s payload. Backlinks are the measure of how load-bearing a note is in the rest of the vault; a literature note with many backlinks is spine for multiple arguments and deserves care. `get_most_linked` surfaces these globally if you want to find the vault's hubs.
+A useful ancillary is `get_backlinks(path=<note>)` on its own when you want to know "who cites this?" without the rest of `get_context`'s payload. Backlinks measure how central a note is to the rest of the vault; a literature note with many backlinks is spine for multiple arguments and deserves care. `get_most_linked` surfaces these globally if you want to find the vault's hubs.
 
 ### With scholar-mcp
 
@@ -356,7 +356,7 @@ AI-written text looks like a finished deliverable even when it's a first draft. 
 
 Fix: mark uncertainty in the note, not just in your head. `[citation needed]`, `[verify]`, `[my guess]`: any convention you'll actually use. The marker signals to future-you and future-Claude that the surrounding prose has not cleared the verification bar yet. An unmarked note reads as done, even if it isn't.
 
-Claude reads its own output as authoritative when it surfaces again in a future session. This is the mechanism by which confidence compounds. A later session reads a confident-but-unverified claim back through `read` or `get_similar` and, treating it as settled fact, incorporates it into a new note without checking. The fabrication propagates without anyone noticing. Markers break this chain: a future Claude session seeing `[citation needed]` knows the claim is not yet load-bearing.
+Claude reads its own output as authoritative when it surfaces again in a future session. This is the mechanism by which confidence compounds. A later session reads a confident-but-unverified claim back through `read` or `get_similar` and, treating it as settled fact, incorporates it into a new note without checking. The fabrication propagates without anyone noticing. Markers break this chain: a future Claude session seeing `[citation needed]` knows the claim is not yet established.
 
 ### Verify before polishing
 
@@ -364,7 +364,7 @@ If a note reads like a deliverable but its claims aren't verified, it's prematur
 
 Order of operations matters. Do the grounding pass first; polish second. Polishing first makes the prose read as finished, and the grounding pass becomes a formality: you tick boxes instead of actually reading sources. Grounding first keeps the prose ugly until it's right, which is the honest state.
 
-A practical rule: a note is only allowed to lose its `[citation needed]` markers when the claim is backed by a specific source you have actually checked. Not "Claude said this paper supports it": actually checked. The verification step is the workflow's load-bearing element. Every other step is optional; this one is not.
+A practical rule: a note is only allowed to lose its `[citation needed]` markers when the claim is backed by a specific source you have actually checked. Not "Claude said this paper supports it": actually checked. The verification step is the workflow's essential one. Every other step is optional; this one is not.
 
 If you're short on time and can't verify a claim in the current session, the honest move is to leave the marker in place and write a brief note next to it explaining what you looked at and what was inconclusive. A marker with context is more useful in the next session than a marker with no trail; a note that deletes the marker without verification is actively misleading.
 
