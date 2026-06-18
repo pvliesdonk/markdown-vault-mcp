@@ -4,12 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       force:
-        description: 'Force version bump (empty = auto; "prerelease" advances the rc revision e.g. rc.1 → rc.2 — keep the pre-release box below checked)'
+        description: 'Force version bump type (empty = auto from commits). patch/minor/major override commit analysis. Ignored when pre-release box is checked and an rc series is already active — the revision is advanced automatically.'
         type: choice
         default: ''
         options:
           - ''
-          - prerelease
           - patch
           - minor
           - major
@@ -33,18 +32,48 @@ jobs:
       id-token: write
 
     steps:
-      - name: Reject contradictory dispatch inputs
-        if: inputs.force == 'prerelease' && inputs.prerelease == false
-        run: |
-          echo "::error::force=prerelease advances the rc revision and requires the pre-release box to stay checked"
-          exit 1
-
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
           ref: ${{ github.ref_name }}
           token: ${{ secrets.RELEASE_TOKEN }}
+
+      - name: Detect active pre-release series
+        id: detect-rc
+        run: |
+          latest_rc=$(git tag --sort=-version:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$' | head -1 || true)
+          if [ -n "$latest_rc" ]; then
+            rc_base="${latest_rc%-rc.*}"
+            if ! git tag --list | grep -qx "$rc_base"; then
+              echo "in_rc_series=true" >> "$GITHUB_OUTPUT"
+              echo "rc_series_target=$rc_base" >> "$GITHUB_OUTPUT"
+            else
+              echo "in_rc_series=false" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "in_rc_series=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Compute effective PSR force
+        id: compute-force
+        run: |
+          force="${{ inputs.force }}"
+          prerelease="${{ inputs.prerelease }}"
+          in_rc_series="${{ steps.detect-rc.outputs.in_rc_series }}"
+          if [[ "$prerelease" == "true" && "$force" == "" && "$in_rc_series" == "true" ]]; then
+            echo "effective_force=prerelease" >> "$GITHUB_OUTPUT"
+          else
+            echo "effective_force=$force" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Reject force bump on active pre-release series
+        if: steps.detect-rc.outputs.in_rc_series == 'true' && inputs.prerelease == false && (inputs.force == 'patch' || inputs.force == 'minor' || inputs.force == 'major')
+        run: |
+          echo "::error::An active pre-release series is in progress targeting ${{ steps.detect-rc.outputs.rc_series_target }}."
+          echo "::error::force=patch/minor/major with prerelease=false applies an additional bump on top of the series target and will skip ${{ steps.detect-rc.outputs.rc_series_target }}."
+          echo "::error::To finalize the series as a stable release, dispatch with force='' and prerelease=false."
+          exit 1
 
       - name: Install uv
         uses: astral-sh/setup-uv@v8.2.0
@@ -61,7 +90,7 @@ jobs:
           github_token: ${{ secrets.RELEASE_TOKEN }}
           git_committer_name: "github-actions"
           git_committer_email: "actions@users.noreply.github.com"
-          force: ${{ inputs.force }}
+          force: ${{ steps.compute-force.outputs.effective_force }}
           prerelease: ${{ inputs.prerelease }}
           prerelease_token: rc
 

@@ -171,6 +171,7 @@ jobs:
         continue-on-error: true
         env:
           PREVIOUS_COMMIT: ${{ steps.meta.outputs.previous_commit }}
+          NEW_REF: ${{ steps.meta.outputs.new_ref }}
           TEMPLATE_REPO: ${{ steps.meta.outputs.template_repo }}
         run: |
           set -euo pipefail
@@ -182,10 +183,14 @@ jobs:
           git clone --filter=blob:none \
             "https://github.com/${TEMPLATE_REPO}.git" \
             /tmp/template
-          # Verify both refs are reachable
+          # Verify both refs are reachable before declaring the clone usable.
           git -C /tmp/template fetch --tags
           if [ -n "${PREVIOUS_COMMIT}" ]; then
             git -C /tmp/template rev-parse "${PREVIOUS_COMMIT}^{commit}" >/dev/null
+          fi
+          if [ -n "${NEW_REF}" ]; then
+            git -C /tmp/template rev-parse "${NEW_REF}^{commit}" >/dev/null \
+              || { echo "::error::NEW_REF not reachable in template clone: ${NEW_REF}"; exit 1; }
           fi
           echo "template_clone_ok=true" >> "$GITHUB_OUTPUT"
 
@@ -275,7 +280,7 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           prompt: ${{ steps.prepare-prompt-a.outputs.prompt }}
           claude_args: |
-            --allowed-tools "Read,Edit,Write,Bash(git status:*),Bash(git diff:*),Bash(git add:*),Bash(git commit:*),Bash(git rev-parse:*),Bash(git -C /tmp/template:*)"
+            --allowed-tools "Read,Edit,Write,Bash(git status:*),Bash(git diff:*),Bash(git add:*),Bash(git config user.name:*),Bash(git config user.email:*),Bash(git commit:*),Bash(git rev-parse:*),Bash(git -C /tmp/template:*)"
 
       - name: Pre-render Job B prompt
         id: prepare-prompt-b
@@ -368,6 +373,11 @@ jobs:
           REF: ${{ steps.meta.outputs.ref }}
         run: |
           set -euo pipefail
+          # claude-code-action overwrites local git config (user.name/email) to
+          # claude[bot] during the agent step; reset here so this commit is
+          # attributed to github-actions[bot], not the agent identity.
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           branch="copier/update"
           # `git add -A` runs BEFORE `git checkout -B` because copier's
           # `--conflict=inline` mode leaves conflict-marker files in the
@@ -406,7 +416,7 @@ jobs:
             echo "DIFF_STAT_EOF"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Build #49 body content
+      - name: Build PR body content
         id: build-body
         if: steps.changes.outputs.changed == 'true'
         env:
@@ -483,10 +493,10 @@ jobs:
 
       - name: Compose PR body via aggregator
         id: compose
-        # Reads the existing #49-shaped body data + three /tmp/agent-job-*.json
+        # Reads the existing PR body data + three /tmp/agent-job-*.json
         # files (any may be missing/errored) and writes the composed PR body.
         # Failure-tolerant: if aggregator crashes, PR still opens with the
-        # existing #49 body (no agent sections).
+        # existing body (no agent sections).
         if: steps.changes.outputs.changed == 'true'
         continue-on-error: true
         env:
@@ -529,8 +539,8 @@ jobs:
           branch="copier/update"
           title="chore(copier): update to ${REF}"
 
-          # Prefer the aggregator's composed body; fall back to the plain
-          # #49 body if the aggregator step failed (continue-on-error: true).
+          # Prefer the aggregator's composed body; fall back to the plain body
+          # if the aggregator step failed (continue-on-error: true).
           if [ -f /tmp/aggregator/composed-body.md ]; then
             body_file=/tmp/aggregator/composed-body.md
           else

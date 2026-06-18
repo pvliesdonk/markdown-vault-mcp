@@ -69,7 +69,12 @@ git add <files-you-modified>
 # the PR branch under the auto-resolve commit.
 git diff --cached --name-only
 
-git commit -m "auto-resolve N trivial conflicts (claude-code)" --author="claude-code <claude-code@anthropic.com>"
+# Reset git identity so both author and committer are github-actions[bot].
+# claude-code-action overwrites user.name/email to claude[bot]; --author alone
+# would fix the author field but leave the committer as claude[bot].
+git config user.name "github-actions[bot]"
+git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+git commit -m "auto-resolve N trivial conflicts (claude-code)"
 ```
 
 Capture the commit SHA via `git rev-parse HEAD`.
@@ -113,7 +118,8 @@ deviation from the shapes above will cause the section to render as
 
 - Tool access: file read/write on the working tree, file read on `/tmp/template`,
   `git -C /tmp/template <subcommand>`, `git status`, `git diff`, `git add <path>`,
-  `git commit -m '<msg>'`. NO `git push`, NO branch operations, NO network calls.
+  `git config user.name`, `git config user.email`, `git commit -m '<msg>'`,
+  `git rev-parse`. NO `git push`, NO branch operations, NO network calls.
 - Do not modify files outside the conflict files listed above.
 - Sentinel-block awareness: lines inside `<!-- DOMAIN-*-START -->` ... `<!-- DOMAIN-*-END -->`,
   `<!-- PROJECT-*-START -->` ... `<!-- PROJECT-*-END -->`, `# CONFIG-*-START` ...

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -46,12 +47,31 @@ class AggregatorInputs:
 
 
 def _read_job_json(path: Path | None) -> dict | None:
-    """Read and JSON-parse an agent output file. Returns None if missing or unreadable."""
-    if path is None or not path.exists():
+    """Read and JSON-parse an agent output file.
+
+    Absent paths (None or not a regular file) return None silently — expected
+    when an agent was gated off. Parse, encoding, or I/O failures emit a
+    ::warning:: annotation so operators have a breadcrumb without aborting the
+    aggregator run. Note: UnicodeDecodeError requires its own except clause
+    because it is a ValueError subclass, not an OSError subclass.
+    """
+    if path is None or not path.is_file():
         return None
     try:
         return json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
+    except json.JSONDecodeError as e:
+        print(
+            f"::warning::agent output at {path} is not valid JSON: {e}", file=sys.stderr
+        )
+        return None
+    except UnicodeDecodeError as e:
+        print(
+            f"::warning::agent output at {path} is not valid UTF-8: {e}",
+            file=sys.stderr,
+        )
+        return None
+    except OSError as e:
+        print(f"::warning::could not read agent output at {path}: {e}", file=sys.stderr)
         return None
 
 
@@ -524,6 +544,12 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
+    if not args.existing_body.is_file():
+        print(
+            f"::error::--existing-body not found or not a regular file: {args.existing_body}",
+            file=sys.stderr,
+        )
+        return 1
     inputs = AggregatorInputs(
         existing_body=args.existing_body.read_text(encoding="utf-8"),
         agent_enabled=(args.agent_enabled == "true"),

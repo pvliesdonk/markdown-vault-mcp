@@ -115,11 +115,31 @@ Every issue, PR, and code change must consider documentation impact. Before clos
 
 ## Logging Standard
 
+### Scope
+
+This standard governs **first-party code only** — `src/markdown_vault_mcp/` and
+`tests/`. Two categories of log output are explicitly **out of scope**; do not
+try to make them conform:
+
+- **FastMCP middleware stack** (`fastmcp-pvl-core` timing / logging /
+  error-handling middleware): emits conforming, bare-event-name-first lines
+  automatically. Tool-call lines carry `tool=<name>`. Governed by
+  `fastmcp-pvl-core` itself (see pvliesdonk/fastmcp-pvl-core#90); no
+  first-party code needed.
+- **`uvicorn.access` and `mcp.server.lowlevel.server` log lines**: upstream
+  transport / SDK output. `configure_logging_from_env` raises their effective
+  level to `WARNING`, suppressing per-request `INFO` output at the default
+  level; at `DEBUG` they are reset to `NOTSET` so the root logger governs
+  their effective level via propagation (pvliesdonk/fastmcp-pvl-core#91).
+  `uvicorn.error` is intentionally not suppressed — it carries startup and
+  bind failures. Do not silence or reformat any of these — they are out of
+  scope by design.
+
 ### Framework
 - Standard library `logging` throughout. Every module: `logger = logging.getLogger(__name__)`.
 - No `print()` for operational output. No third-party logging libraries.
 - FastMCP middleware handles tool invocation, timing, and error logging automatically.
-- All logging goes through FastMCP's `configure_logging()` for uniform output. `FASTMCP_LOG_LEVEL` is the single log level control; the `-v` CLI flag sets it to `DEBUG`. `FASTMCP_ENABLE_RICH_LOGGING=false` switches to plain/JSON output.
+- All first-party logging goes through FastMCP's `configure_logging_from_env()` for uniform output. `FASTMCP_LOG_LEVEL` is the single log level control; the `-v` CLI flag sets it to `DEBUG`. `FASTMCP_ENABLE_RICH_LOGGING=false` switches to plain/JSON output.
 
 ### Log Levels
 | Level | Use for |
