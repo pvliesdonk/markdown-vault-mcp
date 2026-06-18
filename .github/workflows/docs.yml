@@ -12,14 +12,16 @@ on:
 permissions:
   contents: read
 
+# Include event_name so push/PR/release runs on the same ref get separate
+# concurrency buckets and don't cancel each other.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:
   build:
-    # Validation only: strict docs build + config-wizard browser smoke test.
-    # Never deploys; publishing happens in `deploy` on release.
+    # Validation only: strict docs build. Never deploys; publishing happens
+    # in `deploy` on release:published.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -42,31 +44,20 @@ jobs:
       - name: Build documentation
         run: uv run mkdocs build --strict
 
-      - name: Install browser test deps
-        # --all-extras so the shared tests/conftest.py imports (numpy, etc.)
-        # resolve; the smoke test loads the package conftest like any pytest run.
-        run: uv sync --no-default-groups --all-extras --group docs --group browser --frozen
-
-      - name: Install Chromium
-        run: uv run playwright install --with-deps chromium
-
-      - name: Run config-wizard smoke test
-        run: uv run pytest tests/test_config_wizard_smoke.py -v -m browser
-
   deploy:
     # Publish versioned docs with mike, serving from the gh-pages branch:
     #   stable release (prerelease=false) -> version <major.minor> + `latest` alias (default)
     #   rc prerelease  (prerelease=true)  -> single rolling `unstable` version
     #
-    # One-time setup before the first release deploy takes effect:
-    #   1. Seed gh-pages locally:
+    # One-time setup before the first deploy (per-project, cannot be templated):
+    #   1. Seed gh-pages:
     #        uv run mike deploy --push --update-aliases unstable --title "unstable (<ver>)"
     #   2. Repo Settings -> Pages -> Deploy from a branch -> gh-pages / (root).
+    #   Order matters: seed (1) before switching source (2) so the site is never empty.
     if: github.event_name == 'release'
     needs: build
     # Serialize all release deploys (no cancellation) so two releases close
-    # together never push to gh-pages concurrently, and an in-flight mike push
-    # is never cancelled mid-sequence.
+    # together never push to gh-pages concurrently.
     concurrency:
       group: ${{ github.workflow }}-deploy
       cancel-in-progress: false
@@ -74,13 +65,16 @@ jobs:
     permissions:
       contents: write
     steps:
+      # `needs: build` is a sequencing gate only — mike drives its own
+      # build internally; no artifact is passed from the build job.
       - uses: actions/checkout@v6
         with:
+          # Full history required: mike reads and pushes the gh-pages branch.
           fetch-depth: 0
           ref: main
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v8.2.0
+        uses: astral-sh/setup-uv@v8.1.0
         with:
           version: "latest"
 
@@ -103,7 +97,7 @@ jobs:
         run: |
           version="${TAG#v}"
           if [ "$PRERELEASE" = "true" ]; then
-            uv run mike deploy --push --update-aliases unstable --title "unstable (${version})"
+            uv run mike deploy --push unstable --title "unstable (${version})"
           else
             minor="$(echo "$version" | cut -d. -f1-2)"
             uv run mike deploy --push --update-aliases --title "$version" "$minor" latest

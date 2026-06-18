@@ -32,6 +32,8 @@ classifiers = [
 ]
 dependencies = [
     "fastmcp-pvl-core>=3.2.0,<4",
+    "typer>=0.12",
+
     # PROJECT-DEPS-START — add domain dependencies below; kept across copier update
     "python-frontmatter>=1.0",
     "requests>=2.33.0",
@@ -66,6 +68,7 @@ dev = [
     "watchdog>=4.0",
 ]
 docs = [
+    "mike>=2",
     "mkdocs-material>=9.7.6",
     "mkdocstrings[python]>=0.28",
     "mkdocs-llmstxt>=0.5",

@@ -237,23 +237,25 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Cache Vale style packages
-        # Vale style packs are ~30 MB total and re-downloaded on every run
-        # without caching. Cache key invalidates when .vale.ini changes
-        # (Packages line edited, ai-tells URL bumped, etc.) OR when any
-        # vocab file under .vale/styles/config/ changes (added/removed
-        # accepted terms). Without the config/** hash, cache restore would
-        # silently clobber a newly-added vocab term on disk with the stale
-        # snapshot, making Vale flag the new term as unknown in CI even
-        # though the file is checked in. The `v1-` prefix is a manual
-        # escape hatch: bump it to force re-sync if Vale ever changes
-        # pack format backward-incompatibly.
-        uses: actions/cache@v5
+        # Cache only the downloaded pack directories — NOT .vale/styles/config/.
+        # The config/ subtree (accept.txt vocabulary) is tracked by git and must
+        # stay authoritative from checkout. Caching the whole .vale/styles tree
+        # would let restore-keys overwrite a newly-added vocab term with the
+        # stale snapshot on the exact PR that adds the term.
+        # Pack list mirrors the Packages = line in .vale.ini; if you add or
+        # remove a pack, update both. Bump the v1- prefix to evict all cached
+        # packs if Vale changes pack format backward-incompatibly.
+        uses: actions/cache@v4
         with:
-          path: .vale/styles
-          key: vale-styles-v1-${{ hashFiles('.vale.ini', '.vale/styles/config/**') }}
-          # Fallback to any prior `vale-styles-v1-*` cache as a warm start
-          # when the exact key misses. `vale sync` will then only fetch the
-          # packs that actually changed instead of re-downloading all four.
+          path: |
+            .vale/styles/Google
+            .vale/styles/proselint
+            .vale/styles/write-good
+            .vale/styles/ai-tells
+          key: vale-styles-v1-${{ hashFiles('.vale.ini') }}
+          # Warm-start fallback: restores the most recent pack snapshot when
+          # .vale.ini changes (e.g. URL bump). vale sync then only re-fetches
+          # the changed pack rather than re-downloading all four.
           restore-keys: vale-styles-v1-
 
       - name: Run Vale

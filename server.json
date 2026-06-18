@@ -275,7 +275,7 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_KV_STORE_URL",
-          "description": "Unified key-value backend for HTTP session persistence (file:///path or memory://). Legacy alias: MARKDOWN_VAULT_MCP_EVENT_STORE_URL",
+          "description": "Persistent-state backend URL for pvl-core subsystems. Schemes: file:///path (survives restarts), memory:// (dev/ephemeral).",
           "default": "file:///data/state"
         },
         {
