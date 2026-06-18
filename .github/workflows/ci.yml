@@ -240,9 +240,6 @@ jobs:
         run: uv export --all-extras --no-default-groups --frozen --no-emit-project --no-hashes -o ${{ runner.temp }}/requirements.txt
 
       - name: Run pip-audit
-<<<<<<< before updating
-        run: uvx pip-audit --strict --progress-spinner off --ignore-vuln CVE-2026-25990 --ignore-vuln CVE-2026-4539 -r ${{ runner.temp }}/requirements.txt
-=======
         run: |
           uvx pip-audit --strict --progress-spinner off \
             --ignore-vuln CVE-2026-42561 \
@@ -250,7 +247,6 @@ jobs:
           # CVE-2026-42561: python-multipart <0.0.27, pulled in transitively by
           # fastmcp/starlette. Ignored until the upstream pin chain propagates
           # the fix to 0.0.27. Remove once `uv lock` resolves >=0.0.27.
->>>>>>> after updating
 
   secrets:
     name: Secret Detection
@@ -263,7 +259,7 @@ jobs:
           fetch-depth: 0
 
       - name: Run gitleaks
-        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e  # v3.0.0
+        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -308,7 +304,7 @@ jobs:
         # The current release is named "v2.1.2" in the GitHub UI but the
         # underlying git tag is `2.1.2` (no `v` prefix) — pinning to the
         # SHA sidesteps that mismatch and provides supply-chain hygiene.
-        uses: vale-cli/vale-action@85f9f7f2c5f449ac0ae5b66662961bae3f77ca6a  # v2.1.2
+        uses: vale-cli/vale-action@85f9f7f2c5f449ac0ae5b66662961bae3f77ca6a # v2.1.2
         with:
           # Pin Vale CLI version explicitly. Bump in lockstep with the
           # pre-commit hook `rev:` in .pre-commit-config.yaml — template-ci
