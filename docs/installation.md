@@ -125,10 +125,7 @@ markdown-vault-mcp search "hello world"
 ```
 
 <!-- DOMAIN-INSTALL-EXTRA-START -->
-
-## Project-specific notes
-
-_Add domain-specific install notes here, such as system dependencies, optional
-extras, or custom configuration steps._
-
+<!-- Project-specific notes for installation go here; kept across copier
+     update. (E.g. system dependencies, optional extras, custom configuration
+     steps.) -->
 <!-- DOMAIN-INSTALL-EXTRA-END -->

@@ -34,6 +34,7 @@ theme:
   icon:
     repo: fontawesome/brands/github
 
+<<<<<<< before updating
 exclude_docs: |
   design.md
   deployment.md
@@ -41,6 +42,12 @@ exclude_docs: |
 
 hooks:
   - docs/hooks.py
+=======
+extra:
+  version:
+    provider: mike
+    default: latest
+>>>>>>> after updating
 
 plugins:
   - search
@@ -156,6 +163,7 @@ nav:
       - Docker: guides/docker.md
       - Embeddings: guides/embeddings.md
       - Authentication: guides/authentication.md
+<<<<<<< before updating
       - OIDC Providers: guides/oidc-providers.md
       - Obsidian Everywhere: guides/obsidian-everywhere.md
       - Research Workflows: guides/research-workflows.md
@@ -164,6 +172,8 @@ nav:
       - MCP Apps: guides/mcp-apps.md
       - Transfer Links: guides/transfer-links.md
       - Claude Code Plugin: guides/claude-code-plugin.md
+=======
+>>>>>>> after updating
   - MCP Interface:
       - Tools: tools/index.md
       - Resources: resources.md
@@ -174,6 +184,7 @@ nav:
       - systemd: deployment/systemd.md
       - Claude Desktop: deployment/claude-desktop.md
       - OIDC Authentication: deployment/oidc.md
+<<<<<<< before updating
   - Python API:
       - Vault: api/vault.md
       - Facets: api/facets.md
@@ -182,4 +193,7 @@ nav:
       - Embedding Providers: api/providers.md
       - Types: api/types.md
       - Exceptions: api/exceptions.md
+=======
+      - Claude Desktop: deployment/claude-desktop.md
+>>>>>>> after updating
   # PROJECT-NAV-END

@@ -1,5 +1,6 @@
 # Configuration
 
+<<<<<<< before updating
 !!! tip "Prefer a guided setup?"
     Use the [Configuration Generator](configuration-generator.md) to answer a few
     questions and copy a ready-made `.env`, Docker, or Claude config.
@@ -51,6 +52,17 @@ timeout the tool answers from the current index rather than raising
 `_meta`. Increase for large vaults where reindex / build_embeddings
 jobs take longer; decrease for faster client feedback when the index has
 chronic backlog.
+=======
+Markdown Vault MCP is configured via environment variables with the
+``MARKDOWN_VAULT_MCP_`` prefix.
+
+## Common variables
+
+See `fastmcp-pvl-core`'s README for the full list of universal
+variables (`MARKDOWN_VAULT_MCP_TRANSPORT`, `MARKDOWN_VAULT_MCP_HOST`,
+`MARKDOWN_VAULT_MCP_PORT`, `MARKDOWN_VAULT_MCP_HTTP_PATH`,
+`MARKDOWN_VAULT_MCP_BASE_URL`, auth vars, etc.).
+>>>>>>> after updating
 
 <!-- DOMAIN-CONFIG-VARS-START -->
 ## Server Identity

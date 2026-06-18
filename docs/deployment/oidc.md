@@ -288,12 +288,7 @@ labels:
 
 
 <!-- DOMAIN-OIDC-EXTRA-START -->
-<!-- Project-specific notes for OIDC deployment; kept across copier update. -->
-
-## Project-specific notes
-
-<!-- Add domain-specific caveats here (e.g. "Keycloak requires X claim",
-     "Authelia token-cache quirk for /admin paths", "this server's audience
-     claim must include 'mcp'"). Use sub-headings to organize if needed. -->
-
+<!-- Project-specific notes for OIDC deployment go here; kept across copier
+     update. (E.g. "Keycloak requires X claim", "Authelia token-cache quirk
+     for /admin paths", "this server's audience claim must include 'mcp'".) -->
 <!-- DOMAIN-OIDC-EXTRA-END -->
