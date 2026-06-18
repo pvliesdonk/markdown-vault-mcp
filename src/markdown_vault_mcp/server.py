@@ -23,13 +23,8 @@ from fastmcp import FastMCP
 from fastmcp_pvl_core import (
     ServerConfig,
     build_auth,
-<<<<<<< before updating
-=======
-    build_event_store,  # noqa: F401  — re-exported for downstream projects' convenience
-    build_instructions,
     build_kv_store,  # noqa: F401  — re-exported for downstream projects' convenience
-    configure_logging_from_env,
->>>>>>> after updating
+    configure_logging_from_env,  # noqa: F401  — re-exported for downstream projects' convenience
     register_server_info_tool,
     resolve_auth_mode,
     wire_middleware_stack,
@@ -143,7 +138,6 @@ def make_server(transport: str = "stdio", config: VaultConfig | None = None) -> 
       built-in.  Default: disabled.
 
     Args:
-<<<<<<< before updating
         transport: ``"stdio"`` / ``"http"`` / ``"sse"`` / ``"streamable-http"``.
             Used to gate HTTP-only wiring (e.g. the GitHub webhook route) and
             as ``transport=%s`` in the startup log.
@@ -152,11 +146,6 @@ def make_server(transport: str = "stdio", config: VaultConfig | None = None) -> 
             via ``from_env``. Callers that already hold a config (e.g. the HTTP
             serve path, which also needs ``config.server`` for the event store)
             pass it here to avoid parsing the environment twice (#609).
-=======
-        transport: ``"stdio"`` / ``"http"`` / ``"sse"``.  Used here for
-            logging only.
-        config: Optional pre-loaded config; default loads from env.
->>>>>>> after updating
 
     Returns:
         A fully configured :class:`~fastmcp.FastMCP` instance ready to run.
@@ -269,7 +258,6 @@ def make_server(transport: str = "stdio", config: VaultConfig | None = None) -> 
         )
     # DOMAIN-WIRING-END
 
-<<<<<<< before updating
     # DOMAIN-FILE-EXCHANGE-START — one-time transfer-link wiring (#622), kept
     # across copier update.  HTTP/SSE only: stdio has no server to receive
     # requests.  Registers the create_*_link tools and the /transfer/{token}
@@ -307,6 +295,4 @@ def make_server(transport: str = "stdio", config: VaultConfig | None = None) -> 
     if config.disable_apps_ui:
         mcp.disable(tags={"apps-ui"})
 
-=======
->>>>>>> after updating
     return mcp

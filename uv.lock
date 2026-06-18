@@ -1323,12 +1323,13 @@ wheels = [
 
 [[package]]
 name = "markdown-vault-mcp"
-version = "2.0.0rc4"
+version = "3.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastmcp-pvl-core" },
     { name = "python-frontmatter" },
     { name = "requests" },
+    { name = "typer" },
 ]
 
 [package.optional-dependencies]
@@ -1395,6 +1396,7 @@ requires-dist = [
     { name = "numpy", marker = "extra == 'embeddings-api'", specifier = ">=1.20" },
     { name = "python-frontmatter", specifier = ">=1.0" },
     { name = "requests", specifier = ">=2.33.0" },
+    { name = "typer", specifier = ">=0.12" },
     { name = "watchdog", marker = "extra == 'all'", specifier = ">=4.0" },
     { name = "watchdog", marker = "extra == 'file-watcher'", specifier = ">=4.0" },
 ]
@@ -1414,6 +1416,7 @@ dev = [
     { name = "watchdog", specifier = ">=4.0" },
 ]
 docs = [
+    { name = "mike", specifier = ">=2" },
     { name = "mike", specifier = ">=2.1" },
     { name = "mkdocs-llmstxt", specifier = ">=0.5" },
     { name = "mkdocs-material", specifier = ">=9.7.6" },
