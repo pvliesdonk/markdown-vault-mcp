@@ -1,7 +1,7 @@
 <!-- mcp-name: io.github.pvliesdonk/markdown-vault-mcp -->
 # markdown-vault-mcp
 
-[![CI](https://github.com/pvliesdonk/markdown-vault-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/pvliesdonk/markdown-vault-mcp/actions/workflows/ci.yml) [![codecov](https://codecov.io/gh/pvliesdonk/markdown-vault-mcp/graph/badge.svg)](https://codecov.io/gh/pvliesdonk/markdown-vault-mcp) [![PyPI](https://img.shields.io/pypi/v/markdown-vault-mcp)](https://pypi.org/project/markdown-vault-mcp/) [![Python](https://img.shields.io/pypi/pyversions/markdown-vault-mcp)](https://pypi.org/project/markdown-vault-mcp/) [![License](https://img.shields.io/github/license/pvliesdonk/markdown-vault-mcp)](LICENSE) [![Docker](https://img.shields.io/github/v/release/pvliesdonk/markdown-vault-mcp?label=ghcr.io&logo=docker)](https://github.com/pvliesdonk/markdown-vault-mcp/pkgs/container/markdown-vault-mcp) [![Docs](https://img.shields.io/badge/docs-GitHub%20Pages-blue)](https://pvliesdonk.github.io/markdown-vault-mcp/) [![llms.txt](https://img.shields.io/badge/llms.txt-available-brightgreen)](https://pvliesdonk.github.io/markdown-vault-mcp/llms.txt) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/pvliesdonk/markdown-vault-mcp) [![Template](https://img.shields.io/badge/dynamic/yaml?url=https://raw.githubusercontent.com/pvliesdonk/markdown-vault-mcp/main/.copier-answers.yml&query=%24._commit&label=template)](https://github.com/pvliesdonk/fastmcp-server-template)
+[![CI](https://github.com/pvliesdonk/markdown-vault-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/pvliesdonk/markdown-vault-mcp/actions/workflows/ci.yml) [![codecov](https://codecov.io/gh/pvliesdonk/markdown-vault-mcp/graph/badge.svg)](https://codecov.io/gh/pvliesdonk/markdown-vault-mcp) [![PyPI](https://img.shields.io/pypi/v/markdown-vault-mcp)](https://pypi.org/project/markdown-vault-mcp/) [![Python](https://img.shields.io/pypi/pyversions/markdown-vault-mcp)](https://pypi.org/project/markdown-vault-mcp/) [![License](https://img.shields.io/github/license/pvliesdonk/markdown-vault-mcp)](LICENSE) [![Docker](https://img.shields.io/github/v/release/pvliesdonk/markdown-vault-mcp?label=ghcr.io&logo=docker)](https://github.com/pvliesdonk/markdown-vault-mcp/pkgs/container/markdown-vault-mcp) [![Docs](https://img.shields.io/badge/docs-GitHub%20Pages-blue)](https://pvliesdonk.github.io/markdown-vault-mcp/) [![llms.txt](https://img.shields.io/badge/llms.txt-available-brightgreen)](https://pvliesdonk.github.io/markdown-vault-mcp/latest/llms.txt) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/pvliesdonk/markdown-vault-mcp) [![Template](https://img.shields.io/badge/dynamic/yaml?url=https://raw.githubusercontent.com/pvliesdonk/markdown-vault-mcp/main/.copier-answers.yml&query=%24._commit&label=template)](https://github.com/pvliesdonk/fastmcp-server-template)
 
 <!-- DOMAIN-START -->
 A generic markdown vault [MCP](https://modelcontextprotocol.io/) server with FTS5 full-text search, semantic vector search, frontmatter-aware indexing, incremental reindexing, and non-markdown attachment support.
@@ -38,9 +38,9 @@ Point it at a directory of Markdown files (an Obsidian vault, a docs folder, a Z
 With this server mounted in Claude, you can:
 
 - **Capture a URL as a note.** "Fetch <url>, summarize as a Resource note under `3-Resources/`, and link any existing notes on the topic." — Claude composes `fetch` + `search` + `write`.
-- **Research a topic into your vault.** "Research product security regulations, compare them, and create a set of interlinked notes — one per regulation, plus a map-of-content." — Claude composes web-search tools (client-side) + `write` with wikilinks. See the [Research workflows guide](https://pvliesdonk.github.io/markdown-vault-mcp/guides/research-workflows/) for the full loop.
+- **Research a topic into your vault.** "Research product security regulations, compare them, and create a set of interlinked notes — one per regulation, plus a map-of-content." — Claude composes web-search tools (client-side) + `write` with wikilinks. See the [Research workflows guide](https://pvliesdonk.github.io/markdown-vault-mcp/latest/guides/research-workflows/) for the full loop.
 - **Distill today's thinking.** "Summarize today's conversations into Inbox notes." — Claude.ai only; uses `conversation_search` + `recent_chats` + `write`. The [`para-capture-chats`](examples/para/prompts/para-capture-chats.md) prompt is the one-click version.
-- **Find missing links.** Fire the [`propose-links`](https://pvliesdonk.github.io/markdown-vault-mcp/prompts/#propose-links) prompt from the `+` menu — it scans recently-modified notes, proposes meaningful connections, and writes them on confirmation.
+- **Find missing links.** Fire the [`propose-links`](https://pvliesdonk.github.io/markdown-vault-mcp/latest/prompts/#propose-links) prompt from the `+` menu — it scans recently-modified notes, proposes meaningful connections, and writes them on confirmation.
 - **Split or merge captures.** "Split this Inbox note into two." / "Merge this into `<existing note>` instead of duplicating." — Claude composes `read` + `write` + `delete`.
 
 No external scheduler, no separate capture app — the vault sits behind your conversations and absorbs their output.
@@ -88,7 +88,7 @@ To attach a remote Python debugger (development only — the protocol is unauthe
 
 ### Linux packages (.deb / .rpm)
 
-Download `.deb` or `.rpm` packages from the [GitHub Releases](https://github.com/pvliesdonk/markdown-vault-mcp/releases) page. Both install a hardened systemd unit; env configuration is sourced from `/etc/markdown-vault-mcp/env` (copy from the shipped `/etc/markdown-vault-mcp/env.example`). See the [systemd deployment guide](https://pvliesdonk.github.io/markdown-vault-mcp/deployment/systemd/) for details.
+Download `.deb` or `.rpm` packages from the [GitHub Releases](https://github.com/pvliesdonk/markdown-vault-mcp/releases) page. Both install a hardened systemd unit; env configuration is sourced from `/etc/markdown-vault-mcp/env` (copy from the shipped `/etc/markdown-vault-mcp/env.example`). See the [systemd deployment guide](https://pvliesdonk.github.io/markdown-vault-mcp/latest/deployment/systemd/) for details.
 
 ### Claude Desktop (.mcpb bundle)
 
@@ -100,7 +100,7 @@ mcpb install markdown-vault-mcp-<version>.mcpb
 ```
 
 <!-- DOMAIN-START -->
-Claude Desktop opens a GUI wizard that prompts for required env vars — no manual JSON editing needed. See [Step 0 of the Claude Desktop guide](https://pvliesdonk.github.io/markdown-vault-mcp/guides/claude-desktop/#step-0-install-via-mcpb-bundle-easiest) for details.
+Claude Desktop opens a GUI wizard that prompts for required env vars — no manual JSON editing needed. See [Step 0 of the Claude Desktop guide](https://pvliesdonk.github.io/markdown-vault-mcp/latest/guides/claude-desktop/#step-0-install-via-mcpb-bundle-easiest) for details.
 
 ### Claude Code plugin
 
@@ -109,7 +109,7 @@ Claude Desktop opens a GUI wizard that prompts for required env vars — no manu
 /plugin install markdown-vault-mcp@pvliesdonk
 ```
 
-Installs the MCP server and the `vault-workflow` skill. See the [Claude Code plugin guide](https://pvliesdonk.github.io/markdown-vault-mcp/guides/claude-code-plugin/) for details.
+Installs the MCP server and the `vault-workflow` skill. See the [Claude Code plugin guide](https://pvliesdonk.github.io/markdown-vault-mcp/latest/guides/claude-code-plugin/) for details.
 
 ## Quick Start
 
@@ -172,7 +172,7 @@ The server registers a built-in `get_server_info` tool (via `fastmcp_pvl_core.re
 
 All configuration is via environment variables with the `MARKDOWN_VAULT_MCP_` prefix (except embedding provider settings, which use their own conventions).
 
-- [Configuration Generator](https://pvliesdonk.github.io/markdown-vault-mcp/configuration-generator/): in-browser config / Docker / systemd builder
+- [Configuration Generator](https://pvliesdonk.github.io/markdown-vault-mcp/latest/configuration-generator/): in-browser config / Docker / systemd builder
 
 ### Core
 
@@ -340,7 +340,7 @@ For reverse proxies, you can either:
 - Keep app path at `/mcp` and use proxy rewrite/strip-prefix middleware.
 - Set app path directly to the public path (`/vault/mcp`) and route without rewrite.
 
-When OIDC is enabled under a subpath, the configuration is different: the subpath goes in `BASE_URL` only, and `HTTP_PATH` stays at `/mcp`. See [OIDC subpath deployments](https://pvliesdonk.github.io/markdown-vault-mcp/deployment/oidc/#subpath-deployments).
+When OIDC is enabled under a subpath, the configuration is different: the subpath goes in `BASE_URL` only, and `HTTP_PATH` stays at `/mcp`. See [OIDC subpath deployments](https://pvliesdonk.github.io/markdown-vault-mcp/latest/deployment/oidc/#subpath-deployments).
 
 Then your redirect URI is:
 
@@ -450,12 +450,12 @@ Templates are regular markdown files. If placeholder template text pollutes sear
 
 Mount a directory of `.md` prompt files to override or extend the built-in prompts. Set `MARKDOWN_VAULT_MCP_PROMPTS_FOLDER` to the path. Each file's frontmatter defines `description`, `arguments` (a list of objects, each with `name`, `description`, and `required` fields), and optional `tags`. A user prompt with the same name as a built-in replaces it.
 
-For a complete example — including Zettelkasten capture, development, and review prompts — see the [Zettelkasten guide](https://pvliesdonk.github.io/markdown-vault-mcp/guides/zettelkasten/).
-For an alternative action-oriented workflow — Projects, Areas, Resources, Archive with triage, kickoff, and weekly review prompts — see the [PARA guide](https://pvliesdonk.github.io/markdown-vault-mcp/guides/para/).
+For a complete example — including Zettelkasten capture, development, and review prompts — see the [Zettelkasten guide](https://pvliesdonk.github.io/markdown-vault-mcp/latest/guides/zettelkasten/).
+For an alternative action-oriented workflow — Projects, Areas, Resources, Archive with triage, kickoff, and weekly review prompts — see the [PARA guide](https://pvliesdonk.github.io/markdown-vault-mcp/latest/guides/para/).
 
 ## MCP Apps
 
-The server ships four browser-based views that MCP clients supporting the MCP Apps protocol can render inline or in fullscreen. They are delivered as a single HTML resource at `ui://vault/app.html` and registered using `visibility="app"` so they appear only in supporting clients and do not clutter the standard tool list. See the [MCP Apps guide](https://pvliesdonk.github.io/markdown-vault-mcp/guides/mcp-apps/) for details.
+The server ships four browser-based views that MCP clients supporting the MCP Apps protocol can render inline or in fullscreen. They are delivered as a single HTML resource at `ui://vault/app.html` and registered using `visibility="app"` so they appear only in supporting clients and do not clutter the standard tool list. See the [MCP Apps guide](https://pvliesdonk.github.io/markdown-vault-mcp/latest/guides/mcp-apps/) for details.
 
 | View | Description |
 |------|-------------|
@@ -493,7 +493,7 @@ curl -X POST --data-binary @new-diagram.png "https://mcp.example.com/transfer/<t
 
 Each token is consumed on its first **successful** use. A failed or interrupted transfer does not burn the token — retry is permitted until the TTL expires.
 
-Requirements: HTTP or SSE transport; `MARKDOWN_VAULT_MCP_BASE_URL` set. See the [transfer links guide](https://pvliesdonk.github.io/markdown-vault-mcp/guides/transfer-links/) for the full walkthrough and security model.
+Requirements: HTTP or SSE transport; `MARKDOWN_VAULT_MCP_BASE_URL` set. See the [transfer links guide](https://pvliesdonk.github.io/markdown-vault-mcp/latest/guides/transfer-links/) for the full walkthrough and security model.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -561,7 +561,7 @@ The server supports four auth modes:
 
 **Auth requires `--transport http` (or `sse`).** It has no effect with `--transport stdio`.
 
-For setup instructions, troubleshooting, and provider-specific guides, see the [Authentication guide](https://pvliesdonk.github.io/markdown-vault-mcp/guides/authentication/).
+For setup instructions, troubleshooting, and provider-specific guides, see the [Authentication guide](https://pvliesdonk.github.io/markdown-vault-mcp/latest/guides/authentication/).
 
 ## Development
 
