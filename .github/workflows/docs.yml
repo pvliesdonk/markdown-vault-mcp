@@ -44,6 +44,15 @@ jobs:
       - name: Build documentation
         run: uv run mkdocs build --strict
 
+      - name: Install browser test deps
+        run: uv sync --no-default-groups --all-extras --group docs --group browser --frozen
+
+      - name: Install Chromium
+        run: uv run playwright install --with-deps chromium
+
+      - name: Run config-wizard smoke test
+        run: uv run pytest tests/test_config_wizard_smoke.py -v -m browser
+
   deploy:
     # Publish versioned docs with mike, serving from the gh-pages branch:
     #   stable release (prerelease=false) -> version <major.minor> + `latest` alias (default)

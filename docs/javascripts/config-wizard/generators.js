@@ -1,17 +1,16 @@
-// Pure config-output generators. No DOM, no spec knowledge beyond the emit map.
+// Pure config-output generators. No DOM. All per-project data comes from
+// spec.meta; Docker path behaviour comes from per-question dockerVolume /
+// dockerPath. This file is template-owned and identical across all consumers.
 
-const IMAGE = "ghcr.io/pvliesdonk/markdown-vault-mcp:latest";
+const FASTMCP_HOME = "/data/state/fastmcp";
+// The named state volume, mounted in every Docker/Compose artifact.
+const STATE_VOLUME = "state-data:/data/state";
 
-// Vars whose value is fixed to a container path in Docker/Compose output.
-const CONTAINER_PATHS = {
-  MARKDOWN_VAULT_MCP_SOURCE_DIR: "/data/vault",
-  MARKDOWN_VAULT_MCP_INDEX_PATH: "/data/state/index.db",
-  MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH: "/data/state/embeddings/embeddings",
-  MARKDOWN_VAULT_MCP_STATE_PATH: "/data/state/state.json",
-  MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR: "/data/state/fastembed",
+const secretPlaceholder = (key, envPrefix) => {
+  const prefix = `${envPrefix}_`;
+  const short = key.startsWith(prefix) ? key.slice(prefix.length) : key;
+  return `<YOUR_${short}>`;
 };
-
-const SECRET_PLACEHOLDER = (key) => `<YOUR_${key.replace(/^MARKDOWN_VAULT_MCP_/, "")}>`;
 
 // Single-quote a value for a POSIX shell `-e KEY=value` argument, but only when
 // it contains characters outside the shell-safe set (keeps clean output tidy).
@@ -20,11 +19,22 @@ const shellQuote = (v) => {
   return /^[A-Za-z0-9_@%+=:,./-]+$/.test(s) ? s : `'${s.replace(/'/g, "'\\''")}'`;
 };
 
-// Quote a YAML scalar only when it contains characters that would otherwise
-// break parsing (or has surrounding whitespace, or is empty).
+// Bare tokens that YAML 1.1 parsers (used by Docker Compose) coerce to
+// bool/null/number. Env values are always strings, so these must be quoted to
+// stay strings — `KEY: true` would otherwise load as a boolean, `KEY: 8080` as
+// an int. Case-insensitive; covers bool, null, decimal/hex/octal ints, floats
+// (incl. exponent and ±.inf/.nan).
+const YAML_TYPED =
+  /^(?:y|n|yes|no|on|off|true|false|null|~|[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?|0x[0-9a-fA-F]+|0o[0-7]+|[-+]?\.(?:inf|nan))$/i;
+
+// Quote a YAML scalar when it contains characters that would otherwise break
+// parsing (or has surrounding whitespace, or is empty), or when it is a bare
+// token a YAML 1.1 parser would type-coerce.
 const yamlScalar = (v) => {
   const s = String(v);
-  return /[:#[\]{}&*?|<>=!%@,`"']|^\s|\s$|^$/.test(s) ? JSON.stringify(s) : s;
+  return YAML_TYPED.test(s) || /[\n:#[\]{}&*?|<>=!%@,`"']|^\s|\s$|^$/.test(s)
+    ? JSON.stringify(s)
+    : s;
 };
 
 // A systemd `Environment=` line. systemd does NOT expand `$` in Environment=
@@ -44,7 +54,8 @@ const systemdLine = (k, v) => {
 // dropped; a visible secret left empty becomes a placeholder so the artifact is
 // still complete and signals "replace me".
 export function buildEnvMap(spec, answers) {
-  const secrets = new Set(spec.secretKeys);
+  const secrets = new Set(spec.secretKeys ?? []);
+  const envPrefix = spec.meta.envPrefix;
   const map = {};
   for (const q of spec.questions) {
     if (!isVisible(q, answers)) continue;
@@ -55,7 +66,7 @@ export function buildEnvMap(spec, answers) {
     if (q.var) {
       const raw = answers[q.id];
       if (raw !== undefined && raw !== "") map[q.var] = raw;
-      else if (secrets.has(q.var)) map[q.var] = SECRET_PLACEHOLDER(q.var);
+      else if (secrets.has(q.var)) map[q.var] = secretPlaceholder(q.var, envPrefix);
     }
   }
   return map;
@@ -66,67 +77,88 @@ export function isVisible(q, answers) {
   return Object.entries(q.showIf).every(([k, allowed]) => allowed.includes(answers[k]));
 }
 
-function dockerEnvMap(map) {
-  const out = { ...map };
-  // SOURCE_DIR is always forced to its container path; the remaining container
-  // paths override only when the user supplied a value (else the server default
-  // under /data applies).
-  out.MARKDOWN_VAULT_MCP_SOURCE_DIR = CONTAINER_PATHS.MARKDOWN_VAULT_MCP_SOURCE_DIR;
-  for (const [k, v] of Object.entries(CONTAINER_PATHS)) {
-    if (k !== "MARKDOWN_VAULT_MCP_SOURCE_DIR" && k in out) out[k] = v;
+// Bind mounts for visible dockerVolume questions: [[hostPath, containerPath]].
+// An empty answer yields a `/path/to/<id>` placeholder so the artifact still
+// reads as "replace me".
+export function dockerVolumes(spec, answers) {
+  const vols = [];
+  for (const q of spec.questions) {
+    if (!q.dockerVolume || !isVisible(q, answers)) continue;
+    const host = answers[q.id] || `/path/to/${q.id}`;
+    vols.push([host, q.dockerVolume]);
   }
-  out.FASTMCP_HOME = "/data/state/fastmcp";
+  return vols;
+}
+
+// Rewrite the env map for Docker/Compose output. A dockerVolume question's var
+// is always fixed to its container path (the bind mount makes that path real).
+// A dockerPath question's var is fixed only when already present (the user
+// opted into the value); dockerPath never adds a mount. FASTMCP_HOME is injected.
+function dockerEnvMap(spec, answers, map) {
+  const out = { ...map };
+  for (const q of spec.questions) {
+    if (!isVisible(q, answers) || !q.var) continue;
+    if (q.dockerVolume) {
+      out[q.var] = q.dockerVolume;
+    } else if (q.dockerPath && q.var in out) {
+      out[q.var] = q.dockerPath;
+    }
+  }
+  out.FASTMCP_HOME = FASTMCP_HOME;
   return out;
 }
 
 // Quote a .env value when it contains characters that common dotenv parsers
 // treat specially (notably `#`, which starts an inline comment in an unquoted
-// value and would silently truncate the value on load).
+// value and would silently truncate the value on load, and `$`, which triggers
+// variable expansion when the file is shell-sourced).
 const dotenvQuote = (v) => {
   const s = String(v);
-  if (!/[#"'\\\s]/.test(s)) return s;
-  return `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+  if (!/[#"'\\\s$]/.test(s)) return s;
+  return `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\$/g, '\\$')}"`;
 };
 
 export function generateDotenv(map) {
   return Object.entries(map).map(([k, v]) => `${k}=${dotenvQuote(v)}`).join("\n") + "\n";
 }
 
-export function generateClaudeJson(map) {
+export function generateClaudeJson(meta, map) {
   return JSON.stringify(
-    { mcpServers: { "markdown-vault": { command: "markdown-vault-mcp", args: ["serve"], env: map } } },
+    { mcpServers: { [meta.projectName]: { command: meta.projectName, args: ["serve"], env: map } } },
     null, 2,
   );
 }
 
-export function generateDockerRun(map, hostVaultPath) {
-  const env = dockerEnvMap(map);
+export function generateDockerRun(spec, answers, map) {
+  const env = dockerEnvMap(spec, answers, map);
   const lines = [
-    "docker run -d --name markdown-vault-mcp",
+    `docker run -d --name ${spec.meta.projectName}`,
     "  -p 8000:8000",
-    `  -v ${shellQuote(hostVaultPath || "/path/to/vault")}:/data/vault`,
-    "  -v state-data:/data/state",
+    `  -v ${STATE_VOLUME}`,
   ];
+  for (const [host, container] of dockerVolumes(spec, answers)) {
+    lines.push(`  -v ${shellQuote(host)}:${container}`);
+  }
   for (const [k, v] of Object.entries(env)) lines.push(`  -e ${k}=${shellQuote(v)}`);
-  lines.push(`  ${IMAGE}`);
+  lines.push(`  ${spec.meta.dockerImage}`);
   return lines.join(" \\\n");
 }
 
-export function generateCompose(map, hostVaultPath) {
-  const env = dockerEnvMap(map);
+export function generateCompose(spec, answers, map) {
+  const env = dockerEnvMap(spec, answers, map);
+  const volLines = [`      - ${STATE_VOLUME}`];
+  for (const [host, container] of dockerVolumes(spec, answers)) {
+    volLines.push(`      - ${yamlScalar(`${host}:${container}`)}`);
+  }
   const envLines = Object.entries(env).map(([k, v]) => `      ${k}: ${yamlScalar(v)}`).join("\n");
-  // Quote the whole "host:/data/vault" mount when the host path needs it.
-  const mount = `${hostVaultPath || "/path/to/vault"}:/data/vault`;
-  const mountLine = /[\s"#]/.test(mount) ? `      - ${JSON.stringify(mount)}` : `      - ${mount}`;
   return [
     "services:",
-    "  markdown-vault-mcp:",
-    `    image: ${IMAGE}`,
+    `  ${spec.meta.projectName}:`,
+    `    image: ${spec.meta.dockerImage}`,
     "    ports:",
     '      - "8000:8000"',
     "    volumes:",
-    mountLine,
-    "      - state-data:/data/state",
+    ...volLines,
     "    environment:",
     envLines,
     "volumes:",
@@ -134,18 +166,19 @@ export function generateCompose(map, hostVaultPath) {
   ].join("\n");
 }
 
-export function generateSystemd(map) {
+export function generateSystemd(meta, map) {
+  const name = meta.projectName;
   const envLines = Object.entries(map).map(([k, v]) => systemdLine(k, v)).join("\n");
   return [
     "[Unit]",
-    "Description=markdown-vault-mcp",
+    `Description=${name}`,
     "After=network.target",
     "",
     "[Service]",
     "Type=simple",
-    "# Create this user first: sudo useradd --system --no-create-home markdown-vault-mcp",
-    "User=markdown-vault-mcp",
-    "ExecStart=/opt/markdown-vault-mcp/venv/bin/markdown-vault-mcp serve --transport http",
+    `# Create this user first: sudo useradd --system --no-create-home ${name}`,
+    `User=${name}`,
+    `ExecStart=/opt/${name}/venv/bin/${name} serve --transport http`,
     envLines,
     "Restart=on-failure",
     "",

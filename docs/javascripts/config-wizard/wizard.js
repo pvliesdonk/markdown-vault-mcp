@@ -24,7 +24,11 @@ function writeUrlState(spec) {
     if (answers[q.id] !== undefined && answers[q.id] !== "") params.set(q.id, answers[q.id]);
   }
   const qs = params.toString();
-  history.replaceState(null, "", qs ? `#${qs}` : location.pathname + location.search);
+  try {
+    history.replaceState(null, "", qs ? `#${qs}` : location.pathname + location.search);
+  } catch {
+    // history.replaceState throws in sandboxed iframes — safe to ignore.
+  }
 }
 
 function field(q, secrets) {
@@ -78,6 +82,7 @@ function field(q, secrets) {
 
 let SPEC = null;
 let ROOT = null;
+let _writeTimer = null;
 
 function render() {
   const spec = SPEC;
@@ -119,15 +124,15 @@ function render() {
     els.forEach((e) => drawer.appendChild(e));
   }
 
+  const meta = spec.meta;
   const map = buildEnvMap(spec, answers);
-  const hostVault = map["MARKDOWN_VAULT_MCP_SOURCE_DIR"];
   const local = answers.deployment !== "server";
   const tabs = local
-    ? [["Claude config", generateClaudeJson(map)], [".env", generateDotenv(map)]]
+    ? [["Claude config", generateClaudeJson(meta, map)], [".env", generateDotenv(map)]]
     : [
-        ["docker run", generateDockerRun(map, hostVault)],
-        ["compose", generateCompose(map, hostVault)],
-        ["systemd", generateSystemd(map)],
+        ["docker run", generateDockerRun(spec, answers, map)],
+        ["compose", generateCompose(spec, answers, map)],
+        ["systemd", generateSystemd(meta, map)],
         [".env", generateDotenv(map)],
       ];
   const out = document.createElement("div");
@@ -152,9 +157,11 @@ function render() {
         // Fallback for non-secure contexts: select the block so Ctrl/Cmd-C works.
         const range = document.createRange();
         range.selectNodeContents(pre);
-        const sel = getSelection();
-        sel.removeAllRanges();
-        sel.addRange(range);
+        const sel = window.getSelection();
+        if (sel) {
+          sel.removeAllRanges();
+          sel.addRange(range);
+        }
       }
     });
     head.appendChild(copy);
@@ -165,7 +172,7 @@ function render() {
 
   const warnings = document.createElement("div");
   warnings.className = "cfg-warnings";
-  for (const g of spec.guards) {
+  for (const g of (spec.guards ?? [])) {
     if (Object.entries(g.when).every(([k, vals]) => vals.includes(answers[k]))) {
       const w = document.createElement("div");
       w.className = `cfg-${g.level}`;
@@ -174,13 +181,21 @@ function render() {
     }
   }
 
-  ROOT.replaceChildren(core, drawer, warnings, out);
-  writeUrlState(spec);
+  if (Object.keys(advanced).length > 0) {
+    ROOT.replaceChildren(core, drawer, warnings, out);
+  } else {
+    ROOT.replaceChildren(core, warnings, out);
+  }
+  // Debounce URL writes: browsers throttle history.replaceState to ~100
+  // calls/10 s, and URL sync is a "share" feature, not live feedback.
+  clearTimeout(_writeTimer);
+  _writeTimer = setTimeout(() => writeUrlState(spec), 300);
 
   // Restore focus + caret to the field the user was editing.
   if (activeQid) {
+    const escaped = CSS.escape(activeQid);
     const restored = ROOT.querySelector(
-      `.cfg-field[data-qid="${activeQid}"] input, .cfg-field[data-qid="${activeQid}"] select`,
+      `.cfg-field[data-qid="${escaped}"] input, .cfg-field[data-qid="${escaped}"] select`,
     );
     if (restored) {
       restored.focus();
@@ -202,12 +217,34 @@ async function init() {
   try {
     const resp = await fetch(specUrl);
     if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
-    SPEC = await resp.json();
+    const spec = await resp.json();
+    if (!spec || typeof spec !== "object" || !Array.isArray(spec.questions)) {
+      throw new Error("wizard-spec.json is malformed (missing questions array)");
+    }
+    if (!spec.meta || typeof spec.meta !== "object") {
+      // The generators read project identity from spec.meta; a spec missing it
+      // (e.g. mid-migration) must fail loudly here rather than throw an
+      // uncaught TypeError deep inside render().
+      throw new Error("wizard-spec.json is malformed (missing meta block)");
+    }
+    SPEC = spec;
   } catch (e) {
     ROOT.textContent = `Failed to load the configuration generator: ${e.message}`;
     return;
   }
   readUrlState(SPEC);
+  // Initialize all answers so guards that match [""] fire on the first render.
+  // Secrets are excluded from URL hydration (readUrlState skips them) so they
+  // also need this default, ensuring guards referencing secret question IDs
+  // evaluate correctly before the user has typed anything.
+  for (const q of SPEC.questions) {
+    if (answers[q.id] !== undefined) continue;
+    if (q.type === "select" && q.options?.length) {
+      answers[q.id] = q.options[0].value;
+    } else {
+      answers[q.id] = "";
+    }
+  }
   render();
 }
 

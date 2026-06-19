@@ -66,6 +66,7 @@ dev = [
     "pre-commit>=3.0",
     "pip-audit>=2.7",
     "watchdog>=4.0",
+    "jsonschema>=4.18",
 ]
 docs = [
     "mike>=2",
@@ -192,6 +193,10 @@ ignore_missing_imports = true
 # template v1.2.0).  Typing the full test suite is tracked separately.
 module = ["tests.*"]
 ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = ["jsonschema", "jsonschema.*"]
+ignore_missing_imports = true
 
 [tool.pyright]
 # Point Pyright at the uv-managed venv so editor diagnostics resolve

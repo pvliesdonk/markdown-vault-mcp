@@ -1364,6 +1364,7 @@ browser = [
 ]
 dev = [
     { name = "diff-cover" },
+    { name = "jsonschema" },
     { name = "mypy" },
     { name = "pip-audit" },
     { name = "pre-commit" },
@@ -1406,6 +1407,7 @@ provides-extras = ["mcp", "embeddings-api", "embeddings", "file-watcher", "all",
 browser = [{ name = "pytest-playwright", specifier = ">=0.5" }]
 dev = [
     { name = "diff-cover", specifier = ">=9.0" },
+    { name = "jsonschema", specifier = ">=4.18" },
     { name = "mypy", specifier = ">=1.0" },
     { name = "pip-audit", specifier = ">=2.7" },
     { name = "pre-commit", specifier = ">=3.0" },
