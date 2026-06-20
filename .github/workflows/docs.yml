@@ -24,7 +24,7 @@ jobs:
     # in `deploy` on release:published.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           # On release events the triggering tag may move after the workflow is
           # queued (semantic-release pushes a version-bump commit); build main.
@@ -76,7 +76,7 @@ jobs:
     steps:
       # `needs: build` is a sequencing gate only — mike drives its own
       # build internally; no artifact is passed from the build job.
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           # Full history required: mike reads and pushes the gh-pages branch.
           fetch-depth: 0
