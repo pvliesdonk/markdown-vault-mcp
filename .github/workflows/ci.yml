@@ -21,7 +21,7 @@ jobs:
           version: "latest"
 
       - name: Cache Python interpreter
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.local/share/uv/python
           key: uv-python-3.12-${{ runner.os }}
@@ -54,7 +54,7 @@ jobs:
           version: "latest"
 
       - name: Cache Python interpreter
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.local/share/uv/python
           key: uv-python-3.12-${{ runner.os }}
@@ -100,7 +100,7 @@ jobs:
           version: "latest"
 
       - name: Cache Python interpreter
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           # `uv python install` writes to UV_PYTHON_INSTALL_DIR, which is
           # separate from the uv package cache and not covered by setup-uv's
@@ -222,7 +222,7 @@ jobs:
           version: "latest"
 
       - name: Cache Python interpreter
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.local/share/uv/python
           key: uv-python-3.12-${{ runner.os }}
@@ -286,7 +286,7 @@ jobs:
         # Pack list mirrors the Packages = line in .vale.ini; if you add or
         # remove a pack, update both. Bump the v1- prefix to evict all cached
         # packs if Vale changes pack format backward-incompatibly.
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             .vale/styles/Google
