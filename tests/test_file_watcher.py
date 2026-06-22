@@ -22,10 +22,21 @@ from typing import TYPE_CHECKING
 from unittest.mock import patch
 
 import pytest
+from watchdog.events import (
+    DirModifiedEvent,
+    FileClosedEvent,
+    FileClosedNoWriteEvent,
+    FileCreatedEvent,
+    FileDeletedEvent,
+    FileModifiedEvent,
+    FileMovedEvent,
+    FileOpenedEvent,
+)
 
 from markdown_vault_mcp._file_watcher import (
     VaultFileWatcher,
     _has_hidden_component,
+    _VaultEventHandler,
     should_start_file_watcher,
 )
 from markdown_vault_mcp._server_deps import make_vault_lifespan
@@ -76,6 +87,58 @@ def test_has_hidden_component_visible_file() -> None:
 def test_has_hidden_component_hidden_inside_visible() -> None:
     """visible/subdir/.git/file has a hidden ancestor."""
     assert _has_hidden_component(("visible", ".git", "file")) is True
+
+
+# ---------------------------------------------------------------------------
+# Event-type filtering (#720 — read events must not re-trigger reindex)
+# ---------------------------------------------------------------------------
+
+
+def _record_handler(source_dir: Path) -> tuple[_VaultEventHandler, list[int]]:
+    """Return a handler whose schedule appends to a call-log list."""
+    calls: list[int] = []
+    handler = _VaultEventHandler(lambda: calls.append(1), source_dir)
+    return handler, calls
+
+
+def test_read_only_events_do_not_schedule(tmp_path: Path) -> None:
+    """OPEN / CLOSE_NOWRITE / CLOSE events from the reindex walk are ignored.
+
+    These are exactly the inotify events the read-only vault walk inside
+    ``reindex()`` emits; forwarding them would re-arm the watcher and spin
+    the reindex self-feedback loop (#720).
+    """
+    handler, calls = _record_handler(tmp_path)
+    visible = str(tmp_path / "note.md")
+    for event in (
+        FileOpenedEvent(visible),
+        FileClosedNoWriteEvent(visible),
+        FileClosedEvent(visible),
+    ):
+        handler.on_any_event(event)
+    assert calls == [], "read-only events must not schedule a reindex"
+
+
+def test_mutating_events_schedule(tmp_path: Path) -> None:
+    """A real create/modify/move/delete on a visible path triggers a reindex."""
+    visible = str(tmp_path / "note.md")
+    for event in (
+        FileCreatedEvent(visible),
+        FileModifiedEvent(visible),
+        FileDeletedEvent(visible),
+        FileMovedEvent(visible, str(tmp_path / "renamed.md")),
+        DirModifiedEvent(str(tmp_path / "subdir")),
+    ):
+        handler, calls = _record_handler(tmp_path)
+        handler.on_any_event(event)
+        assert calls == [1], f"{type(event).__name__} should schedule a reindex"
+
+
+def test_mutating_event_in_hidden_dir_still_ignored(tmp_path: Path) -> None:
+    """The hidden-path filter still applies to mutating events."""
+    handler, calls = _record_handler(tmp_path)
+    handler.on_any_event(FileModifiedEvent(str(tmp_path / ".git" / "HEAD")))
+    assert calls == [], "mutations inside hidden dirs must not schedule a reindex"
 
 
 # ---------------------------------------------------------------------------

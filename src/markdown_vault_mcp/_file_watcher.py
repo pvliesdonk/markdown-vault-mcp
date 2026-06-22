@@ -24,10 +24,34 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 try:
-    from watchdog.events import FileSystemEvent, FileSystemEventHandler
+    from watchdog.events import (
+        EVENT_TYPE_CREATED,
+        EVENT_TYPE_DELETED,
+        EVENT_TYPE_MODIFIED,
+        EVENT_TYPE_MOVED,
+        FileSystemEvent,
+        FileSystemEventHandler,
+    )
     from watchdog.observers import Observer
 
     _WATCHDOG_AVAILABLE = True
+
+    # Only these event types represent an actual mutation of the vault.
+    # Read-only events (``opened``, ``closed``, ``closed_no_write``, access)
+    # must be ignored: ``reindex()`` walks the whole vault read-only, and on
+    # Linux that walk emits inotify read events (OPEN / CLOSE_NOWRITE, also on
+    # directories) for every entry it touches. Forwarding those to the
+    # debounce scheduler would make each reindex re-arm the watcher, which
+    # fires another reindex — an endless self-feedback loop that pins the CPU
+    # with no real file changes (#720).
+    _MUTATING_EVENT_TYPES = frozenset(
+        {
+            EVENT_TYPE_CREATED,
+            EVENT_TYPE_MODIFIED,
+            EVENT_TYPE_MOVED,
+            EVENT_TYPE_DELETED,
+        }
+    )
 except ImportError:
     _WATCHDOG_AVAILABLE = False
 
@@ -197,7 +221,12 @@ class VaultFileWatcher:
 if _WATCHDOG_AVAILABLE:
 
     class _VaultEventHandler(FileSystemEventHandler):
-        """Forward non-hidden filesystem events to the debounce scheduler."""
+        """Forward mutating, non-hidden filesystem events to the scheduler.
+
+        Read-only events (``opened`` / ``closed`` / ``closed_no_write``) are
+        dropped before the hidden-path check so the read-only vault walk that
+        ``reindex()`` performs cannot re-trigger itself (#720).
+        """
 
         def __init__(self, schedule: Callable[[], None], source_dir: Path) -> None:
             super().__init__()
@@ -205,6 +234,8 @@ if _WATCHDOG_AVAILABLE:
             self._source_dir = source_dir
 
         def on_any_event(self, event: FileSystemEvent) -> None:
+            if event.event_type not in _MUTATING_EVENT_TYPES:
+                return
             path = getattr(event, "src_path", "") or ""
             try:
                 rel = Path(path).relative_to(self._source_dir)
