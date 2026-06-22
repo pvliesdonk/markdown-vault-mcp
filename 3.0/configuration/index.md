@@ -1,10 +1,12 @@
 # Configuration
 
+Markdown Vault MCP is configured via environment variables with the `MARKDOWN_VAULT_MCP_` prefix.
+
+See `fastmcp-pvl-core`'s README for the full list of universal variables (`MARKDOWN_VAULT_MCP_TRANSPORT`, `MARKDOWN_VAULT_MCP_HOST`, `MARKDOWN_VAULT_MCP_PORT`, `MARKDOWN_VAULT_MCP_HTTP_PATH`, `MARKDOWN_VAULT_MCP_BASE_URL`, auth vars, etc.).
+
 Prefer a guided setup?
 
 Use the [Configuration Generator](https://pvliesdonk.github.io/markdown-vault-mcp/3.0/configuration-generator/index.md) to answer a few questions and copy a ready-made `.env`, Docker, or Claude config.
-
-All configuration is via environment variables. Most use the `MARKDOWN_VAULT_MCP_` prefix. `OLLAMA_HOST` and `OPENAI_API_KEY` are bare ecosystem-standard names; all other variables use the `MARKDOWN_VAULT_MCP_` prefix.
 
 Configuration is validated at startup
 

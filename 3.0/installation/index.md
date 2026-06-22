@@ -115,7 +115,3 @@ markdown-vault-mcp --help
 export MARKDOWN_VAULT_MCP_SOURCE_DIR=/path/to/your/markdown/files
 markdown-vault-mcp search "hello world"
 ```
-
-## Project-specific notes
-
-*Add domain-specific install notes here, such as system dependencies, optional extras, or custom configuration steps.*

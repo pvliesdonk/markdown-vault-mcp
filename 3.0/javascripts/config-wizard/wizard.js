@@ -1,5 +1,5 @@
 import {
-  buildEnvMap, isVisible, generateDotenv, generateClaudeJson,
+  validateSpec, buildEnvMap, isVisible, generateDotenv, generateClaudeJson,
   generateDockerRun, generateCompose, generateSystemd,
 } from "./generators.js";
 
@@ -24,7 +24,15 @@ function writeUrlState(spec) {
     if (answers[q.id] !== undefined && answers[q.id] !== "") params.set(q.id, answers[q.id]);
   }
   const qs = params.toString();
-  history.replaceState(null, "", qs ? `#${qs}` : location.pathname + location.search);
+  try {
+    history.replaceState(null, "", qs ? `#${qs}` : location.pathname + location.search);
+  } catch (e) {
+    // Benign in a sandboxed iframe (SecurityError, no allow-same-origin). But
+    // replaceState also throws SecurityError when its ~100-calls/10 s throttle
+    // is breached — a real signal the 300 ms debounce is insufficient — so log
+    // the cause at debug level rather than swallow it blind.
+    console.debug("config-wizard: history.replaceState failed", e);
+  }
 }
 
 function field(q, secrets) {
@@ -78,6 +86,7 @@ function field(q, secrets) {
 
 let SPEC = null;
 let ROOT = null;
+let _writeTimer = null;
 
 function render() {
   const spec = SPEC;
@@ -119,15 +128,15 @@ function render() {
     els.forEach((e) => drawer.appendChild(e));
   }
 
+  const meta = spec.meta;
   const map = buildEnvMap(spec, answers);
-  const hostVault = map["MARKDOWN_VAULT_MCP_SOURCE_DIR"];
   const local = answers.deployment !== "server";
   const tabs = local
-    ? [["Claude config", generateClaudeJson(map)], [".env", generateDotenv(map)]]
+    ? [["Claude config", generateClaudeJson(meta, map)], [".env", generateDotenv(map)]]
     : [
-        ["docker run", generateDockerRun(map, hostVault)],
-        ["compose", generateCompose(map, hostVault)],
-        ["systemd", generateSystemd(map)],
+        ["docker run", generateDockerRun(spec, answers, map)],
+        ["compose", generateCompose(spec, answers, map)],
+        ["systemd", generateSystemd(meta, map)],
         [".env", generateDotenv(map)],
       ];
   const out = document.createElement("div");
@@ -146,15 +155,31 @@ function render() {
     copy.className = "cfg-copy";
     copy.textContent = "Copy";
     copy.addEventListener("click", () => {
-      if (navigator.clipboard) {
-        navigator.clipboard.writeText(text).catch(() => {});
-      } else {
-        // Fallback for non-secure contexts: select the block so Ctrl/Cmd-C works.
+      // Flash a transient affordance on the button, then restore its label.
+      const flash = (msg) => {
+        copy.textContent = msg;
+        setTimeout(() => {
+          copy.textContent = "Copy";
+        }, 1500);
+      };
+      // Select the block so the user can finish with Ctrl/Cmd-C themselves.
+      // Used both when the Clipboard API is absent (non-secure context) and when
+      // writeText rejects (permission/focus) — without it the empty catch left
+      // the user believing a failed copy had succeeded.
+      const selectFallback = () => {
         const range = document.createRange();
         range.selectNodeContents(pre);
-        const sel = getSelection();
-        sel.removeAllRanges();
-        sel.addRange(range);
+        const sel = window.getSelection();
+        if (sel) {
+          sel.removeAllRanges();
+          sel.addRange(range);
+        }
+        flash("Press Ctrl-C");
+      };
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(text).then(() => flash("Copied!"), selectFallback);
+      } else {
+        selectFallback();
       }
     });
     head.appendChild(copy);
@@ -165,7 +190,7 @@ function render() {
 
   const warnings = document.createElement("div");
   warnings.className = "cfg-warnings";
-  for (const g of spec.guards) {
+  for (const g of (spec.guards ?? [])) {
     if (Object.entries(g.when).every(([k, vals]) => vals.includes(answers[k]))) {
       const w = document.createElement("div");
       w.className = `cfg-${g.level}`;
@@ -174,13 +199,21 @@ function render() {
     }
   }
 
-  ROOT.replaceChildren(core, drawer, warnings, out);
-  writeUrlState(spec);
+  if (Object.keys(advanced).length > 0) {
+    ROOT.replaceChildren(core, drawer, warnings, out);
+  } else {
+    ROOT.replaceChildren(core, warnings, out);
+  }
+  // Debounce URL writes: browsers throttle history.replaceState to ~100
+  // calls/10 s, and URL sync is a "share" feature, not live feedback.
+  clearTimeout(_writeTimer);
+  _writeTimer = setTimeout(() => writeUrlState(spec), 300);
 
   // Restore focus + caret to the field the user was editing.
   if (activeQid) {
+    const escaped = CSS.escape(activeQid);
     const restored = ROOT.querySelector(
-      `.cfg-field[data-qid="${activeQid}"] input, .cfg-field[data-qid="${activeQid}"] select`,
+      `.cfg-field[data-qid="${escaped}"] input, .cfg-field[data-qid="${escaped}"] select`,
     );
     if (restored) {
       restored.focus();
@@ -202,12 +235,29 @@ async function init() {
   try {
     const resp = await fetch(specUrl);
     if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
-    SPEC = await resp.json();
+    const spec = await resp.json();
+    // The generators read project identity from spec.meta and dereference its
+    // required fields unconditionally; validateSpec fails loudly here rather
+    // than let render() emit undefined-laden output (see generators.js).
+    validateSpec(spec);
+    SPEC = spec;
   } catch (e) {
     ROOT.textContent = `Failed to load the configuration generator: ${e.message}`;
     return;
   }
   readUrlState(SPEC);
+  // Initialize all answers so guards that match [""] fire on the first render.
+  // Secrets are excluded from URL hydration (readUrlState skips them) so they
+  // also need this default, ensuring guards referencing secret question IDs
+  // evaluate correctly before the user has typed anything.
+  for (const q of SPEC.questions) {
+    if (answers[q.id] !== undefined) continue;
+    if (q.type === "select" && q.options?.length) {
+      answers[q.id] = q.options[0].value;
+    } else {
+      answers[q.id] = "";
+    }
+  }
   render();
 }
 

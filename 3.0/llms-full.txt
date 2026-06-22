@@ -222,17 +222,15 @@ export MARKDOWN_VAULT_MCP_SOURCE_DIR=/path/to/your/markdown/files
 markdown-vault-mcp search "hello world"
 ```
 
-## Project-specific notes
-
-*Add domain-specific install notes here, such as system dependencies, optional extras, or custom configuration steps.*
-
 # Configuration
+
+Markdown Vault MCP is configured via environment variables with the `MARKDOWN_VAULT_MCP_` prefix.
+
+See `fastmcp-pvl-core`'s README for the full list of universal variables (`MARKDOWN_VAULT_MCP_TRANSPORT`, `MARKDOWN_VAULT_MCP_HOST`, `MARKDOWN_VAULT_MCP_PORT`, `MARKDOWN_VAULT_MCP_HTTP_PATH`, `MARKDOWN_VAULT_MCP_BASE_URL`, auth vars, etc.).
 
 Prefer a guided setup?
 
 Use the [Configuration Generator](https://pvliesdonk.github.io/markdown-vault-mcp/3.0/configuration-generator/index.md) to answer a few questions and copy a ready-made `.env`, Docker, or Claude config.
-
-All configuration is via environment variables. Most use the `MARKDOWN_VAULT_MCP_` prefix. `OLLAMA_HOST` and `OPENAI_API_KEY` are bare ecosystem-standard names; all other variables use the `MARKDOWN_VAULT_MCP_` prefix.
 
 Configuration is validated at startup
 
@@ -1559,8 +1557,6 @@ The bearer-token mode above shares one subject across every authenticated caller
 
 Each token resolves to a distinct subject string for downstream attribution. Subject strings are opaque: the `<kind>:<id>` convention (`user:`, `service:`, `token:`) is documentation only. When `BEARER_TOKENS_FILE` is set it overrides `BEARER_TOKEN` (a `WARNING` is logged if both are present). A missing or malformed file aborts startup with `ConfigurationError` rather than silently denying every request.
 
-For the per-tool authorization that consumes these subjects, see [Authorization (opt-in)](https://github.com/pvliesdonk/markdown-vault-mcp/blob/main/README.md#authorization-opt-in) in the project README.
-
 ______________________________________________________________________
 
 ## OIDC
@@ -1596,10 +1592,10 @@ Client → markdown-vault-mcp (present JWT → validate via JWKS)
 
 ### How it works (oidc-proxy mode)
 
-The server uses FastMCP's built-in `OIDCProxy` (no external auth sidecar needed):
+The server proxies OIDC itself, with no external auth sidecar to deploy:
 
 ```
-Client → markdown-vault-mcp (OIDCProxy) → OIDC Provider
+Client → mcp-server → OIDC Provider
 ```
 
 1. Client connects to the server
@@ -5756,31 +5752,35 @@ sudo systemctl restart markdown-vault-mcp
 
 # Claude Desktop
 
-markdown-vault-mcp integrates with [Claude Desktop](https://claude.ai/download) via the stdio transport.
+Markdown Vault MCP integrates with [Claude Desktop](https://claude.ai/download) via the stdio transport.
 
 ## Setup
 
 ### 1. Install
 
-```
-pip install markdown-vault-mcp[all]
-```
-
-Or with uv:
+From PyPI:
 
 ```
-uv tool install markdown-vault-mcp[all]
+pip install markdown-vault-mcp
 ```
+
+Or with uv (installs `markdown-vault-mcp` as a global command on your PATH):
+
+```
+uv tool install markdown-vault-mcp
+```
+
+Or download the `.mcpb` bundle from the [GitHub Releases](https://github.com/pvliesdonk/markdown-vault-mcp/releases) page and double-click to install; Claude Desktop prompts for required env vars via a GUI wizard, no manual JSON editing needed.
 
 ### 2. Configure Claude Desktop
 
-Add the server to your Claude Desktop configuration file:
+If you installed via `.mcpb`, skip this step (Claude Desktop was configured automatically by the wizard).
 
-Edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
+Otherwise, add the server to your Claude Desktop configuration file. The path varies by operating system:
 
-Edit `%APPDATA%\Claude\claude_desktop_config.json`:
-
-Edit `~/.config/Claude/claude_desktop_config.json`:
+- **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
+- **Linux:** `~/.config/Claude/claude_desktop_config.json`
 
 ```
 {
@@ -5789,7 +5789,7 @@ Edit `~/.config/Claude/claude_desktop_config.json`:
       "command": "markdown-vault-mcp",
       "args": ["serve"],
       "env": {
-        "MARKDOWN_VAULT_MCP_SOURCE_DIR": "/path/to/your/vault"
+        "MARKDOWN_VAULT_MCP_READ_ONLY": "true"
       }
     }
   }
@@ -5798,9 +5798,9 @@ Edit `~/.config/Claude/claude_desktop_config.json`:
 
 ### 3. Restart Claude Desktop
 
-Restart the application to pick up the new configuration. You should see the markdown-vault-mcp tools available in Claude's tool list.
+Restart the application to pick up the new configuration. If the server connects successfully, `Markdown Vault MCP` tools appear in Claude's tool list. If not, see [Troubleshooting](#troubleshooting) below.
 
-## Configuration Examples
+## Configuration examples
 
 ### Read-only with Ollama embeddings
 
@@ -5896,24 +5896,6 @@ Naming instances
 
 Use `MARKDOWN_VAULT_MCP_SERVER_NAME` to give each instance a descriptive name. This helps Claude distinguish between vaults when multiple instances are configured.
 
-## Using with uv
-
-If you installed with `uv tool install`, the command is already on your PATH. If you installed in a project with `uv pip install`, point to the uv-managed binary:
-
-```
-{
-  "mcpServers": {
-    "my-vault": {
-      "command": "uv",
-      "args": ["run", "markdown-vault-mcp", "serve"],
-      "env": {
-        "MARKDOWN_VAULT_MCP_SOURCE_DIR": "/path/to/vault"
-      }
-    }
-  }
-}
-```
-
 ## Troubleshooting
 
 ### Server not appearing in Claude Desktop
@@ -5925,17 +5907,39 @@ If you installed with `uv tool install`, the command is already on your PATH. If
 
 ### "Command not found"
 
-Ensure `markdown-vault-mcp` is on your PATH. If installed in a virtualenv, use the full path:
+Ensure `markdown-vault-mcp` is on your PATH. If installed in a virtualenv, use the full path to the binary. Replace only the `"command"` value in your existing config (keep `"args"` and `"env"` as-is).
+
+macOS/Linux:
 
 ```
 {
-  "command": "/Users/me/.venvs/mcp/bin/markdown-vault-mcp"
+  "mcpServers": {
+    "markdown-vault-mcp": {
+      "command": "/Users/me/.venvs/mcp/bin/markdown-vault-mcp",
+      "args": ["serve"],
+      "env": {
+        "MARKDOWN_VAULT_MCP_READ_ONLY": "true"
+      }
+    }
+  }
 }
 ```
 
-### Slow startup
+Windows (`Scripts\` not `bin\`, `.exe` suffix):
 
-The first startup builds the full-text index. Set `MARKDOWN_VAULT_MCP_INDEX_PATH` to persist the index between restarts; subsequent starts will only process changed files.
+```
+{
+  "mcpServers": {
+    "markdown-vault-mcp": {
+      "command": "C:\\Users\\me\\.venvs\\mcp\\Scripts\\markdown-vault-mcp.exe",
+      "args": ["serve"],
+      "env": {
+        "MARKDOWN_VAULT_MCP_READ_ONLY": "true"
+      }
+    }
+  }
+}
+```
 
 # OIDC Authentication
 
@@ -6232,8 +6236,6 @@ This works when `markdown-vault-mcp` is the **only** OAuth service on the hostna
 
 - **Dedicated hostname** (preferred): give `markdown-vault-mcp` its own hostname (such as `vault.example.com`) so discovery routes do not collide.
 - **External auth gateway**: use `mcp-auth-proxy` as a sidecar instead of native OIDC. The MCP server runs unauthenticated behind the proxy, and the proxy handles OAuth discovery at its own routes.
-
-## Project-specific notes
 # Python API
 
 # Vault

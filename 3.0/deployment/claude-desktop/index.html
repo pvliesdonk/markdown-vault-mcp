@@ -1424,12 +1424,12 @@
   <a href="#configuration-examples" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Configuration Examples
+        Configuration examples
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Configuration Examples">
+    <nav class="md-nav" aria-label="Configuration examples">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -1482,17 +1482,6 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#using-with-uv" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Using with uv
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#troubleshooting" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1520,17 +1509,6 @@
     <span class="md-ellipsis">
       
         "Command not found"
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#slow-startup" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Slow startup
       
     </span>
   </a>
@@ -1923,12 +1901,12 @@
   <a href="#configuration-examples" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Configuration Examples
+        Configuration examples
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Configuration Examples">
+    <nav class="md-nav" aria-label="Configuration examples">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -1981,17 +1959,6 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#using-with-uv" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Using with uv
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#troubleshooting" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2025,17 +1992,6 @@
   
 </li>
         
-          <li class="md-nav__item">
-  <a href="#slow-startup" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Slow startup
-      
-    </span>
-  </a>
-  
-</li>
-        
       </ul>
     </nav>
   
@@ -2062,44 +2018,40 @@
 
 
 <h1 id="claude-desktop">Claude Desktop<a class="headerlink" href="#claude-desktop" title="Permanent link">&para;</a></h1>
-<p>markdown-vault-mcp integrates with <a href="https://claude.ai/download">Claude Desktop</a> via the stdio transport.</p>
+<p>Markdown Vault MCP integrates with <a href="https://claude.ai/download">Claude Desktop</a> via the stdio transport.</p>
 <h2 id="setup">Setup<a class="headerlink" href="#setup" title="Permanent link">&para;</a></h2>
 <h3 id="1-install">1. Install<a class="headerlink" href="#1-install" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>markdown-vault-mcp<span class="o">[</span>all<span class="o">]</span>
+<p>From PyPI:</p>
+<div class="highlight"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>markdown-vault-mcp
 </code></pre></div>
-<p>Or with uv:</p>
-<div class="highlight"><pre><span></span><code>uv<span class="w"> </span>tool<span class="w"> </span>install<span class="w"> </span>markdown-vault-mcp<span class="o">[</span>all<span class="o">]</span>
+<p>Or with uv (installs <code>markdown-vault-mcp</code> as a global command on your PATH):</p>
+<div class="highlight"><pre><span></span><code>uv<span class="w"> </span>tool<span class="w"> </span>install<span class="w"> </span>markdown-vault-mcp
 </code></pre></div>
+<p>Or download the <code>.mcpb</code> bundle from the <a href="https://github.com/pvliesdonk/markdown-vault-mcp/releases">GitHub Releases</a> page and double-click to install; Claude Desktop prompts for required env vars via a GUI wizard, no manual JSON editing needed.</p>
 <h3 id="2-configure-claude-desktop">2. Configure Claude Desktop<a class="headerlink" href="#2-configure-claude-desktop" title="Permanent link">&para;</a></h3>
-<p>Add the server to your Claude Desktop configuration file:</p>
-<div class="tabbed-set tabbed-alternate" data-tabs="1:3"><input checked="checked" id="__tabbed_1_1" name="__tabbed_1" type="radio" /><input id="__tabbed_1_2" name="__tabbed_1" type="radio" /><input id="__tabbed_1_3" name="__tabbed_1" type="radio" /><div class="tabbed-labels"><label for="__tabbed_1_1">macOS</label><label for="__tabbed_1_2">Windows</label><label for="__tabbed_1_3">Linux</label></div>
-<div class="tabbed-content">
-<div class="tabbed-block">
-<p>Edit <code>~/Library/Application Support/Claude/claude_desktop_config.json</code>:</p>
-</div>
-<div class="tabbed-block">
-<p>Edit <code>%APPDATA%\Claude\claude_desktop_config.json</code>:</p>
-</div>
-<div class="tabbed-block">
-<p>Edit <code>~/.config/Claude/claude_desktop_config.json</code>:</p>
-</div>
-</div>
-</div>
+<p>If you installed via <code>.mcpb</code>, skip this step (Claude Desktop was configured automatically by the wizard).</p>
+<p>Otherwise, add the server to your Claude Desktop configuration file. The path varies by operating system:</p>
+<ul>
+<li><strong>macOS:</strong> <code>~/Library/Application Support/Claude/claude_desktop_config.json</code></li>
+<li><strong>Windows:</strong> <code>%APPDATA%\Claude\claude_desktop_config.json</code></li>
+<li><strong>Linux:</strong> <code>~/.config/Claude/claude_desktop_config.json</code></li>
+</ul>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
 <span class="w">  </span><span class="nt">&quot;mcpServers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="nt">&quot;markdown-vault-mcp&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
 <span class="w">      </span><span class="nt">&quot;command&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;markdown-vault-mcp&quot;</span><span class="p">,</span>
 <span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;serve&quot;</span><span class="p">],</span>
 <span class="w">      </span><span class="nt">&quot;env&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="nt">&quot;MARKDOWN_VAULT_MCP_SOURCE_DIR&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;/path/to/your/vault&quot;</span>
+<span class="w">        </span><span class="nt">&quot;MARKDOWN_VAULT_MCP_READ_ONLY&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;true&quot;</span>
 <span class="w">      </span><span class="p">}</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="w">  </span><span class="p">}</span>
 <span class="p">}</span>
 </code></pre></div>
 <h3 id="3-restart-claude-desktop">3. Restart Claude Desktop<a class="headerlink" href="#3-restart-claude-desktop" title="Permanent link">&para;</a></h3>
-<p>Restart the application to pick up the new configuration. You should see the markdown-vault-mcp tools available in Claude's tool list.</p>
-<h2 id="configuration-examples">Configuration Examples<a class="headerlink" href="#configuration-examples" title="Permanent link">&para;</a></h2>
+<p>Restart the application to pick up the new configuration. If the server connects successfully, <code>Markdown Vault MCP</code> tools appear in Claude's tool list. If not, see <a href="#troubleshooting">Troubleshooting</a> below.</p>
+<h2 id="configuration-examples">Configuration examples<a class="headerlink" href="#configuration-examples" title="Permanent link">&para;</a></h2>
+<!-- DOMAIN-CLAUDE-DESKTOP-START -->
 <h3 id="read-only-with-ollama-embeddings">Read-only with Ollama embeddings<a class="headerlink" href="#read-only-with-ollama-embeddings" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
 <span class="w">  </span><span class="nt">&quot;mcpServers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
@@ -2181,20 +2133,8 @@
 <p class="admonition-title">Naming instances</p>
 <p>Use <code>MARKDOWN_VAULT_MCP_SERVER_NAME</code> to give each instance a descriptive name. This helps Claude distinguish between vaults when multiple instances are configured.</p>
 </div>
-<h2 id="using-with-uv">Using with uv<a class="headerlink" href="#using-with-uv" title="Permanent link">&para;</a></h2>
-<p>If you installed with <code>uv tool install</code>, the command is already on your PATH. If you installed in a project with <code>uv pip install</code>, point to the uv-managed binary:</p>
-<div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;mcpServers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="nt">&quot;my-vault&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">      </span><span class="nt">&quot;command&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;uv&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;run&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;markdown-vault-mcp&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;serve&quot;</span><span class="p">],</span>
-<span class="w">      </span><span class="nt">&quot;env&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="nt">&quot;MARKDOWN_VAULT_MCP_SOURCE_DIR&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;/path/to/vault&quot;</span>
-<span class="w">      </span><span class="p">}</span>
-<span class="w">    </span><span class="p">}</span>
-<span class="w">  </span><span class="p">}</span>
-<span class="p">}</span>
-</code></pre></div>
+<!-- DOMAIN-CLAUDE-DESKTOP-END -->
+
 <h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link">&para;</a></h2>
 <h3 id="server-not-appearing-in-claude-desktop">Server not appearing in Claude Desktop<a class="headerlink" href="#server-not-appearing-in-claude-desktop" title="Permanent link">&para;</a></h3>
 <ol>
@@ -2204,13 +2144,33 @@
 <li>Check Claude Desktop logs for error messages</li>
 </ol>
 <h3 id="command-not-found">"Command not found"<a class="headerlink" href="#command-not-found" title="Permanent link">&para;</a></h3>
-<p>Ensure <code>markdown-vault-mcp</code> is on your PATH. If installed in a virtualenv, use the full path:</p>
+<p>Ensure <code>markdown-vault-mcp</code> is on your PATH. If installed in a virtualenv, use the full path to the binary. Replace only the <code>"command"</code> value in your existing config (keep <code>"args"</code> and <code>"env"</code> as-is).</p>
+<p>macOS/Linux:</p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;command&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;/Users/me/.venvs/mcp/bin/markdown-vault-mcp&quot;</span>
+<span class="w">  </span><span class="nt">&quot;mcpServers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;markdown-vault-mcp&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;command&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;/Users/me/.venvs/mcp/bin/markdown-vault-mcp&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;serve&quot;</span><span class="p">],</span>
+<span class="w">      </span><span class="nt">&quot;env&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;MARKDOWN_VAULT_MCP_READ_ONLY&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;true&quot;</span>
+<span class="w">      </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
 <span class="p">}</span>
 </code></pre></div>
-<h3 id="slow-startup">Slow startup<a class="headerlink" href="#slow-startup" title="Permanent link">&para;</a></h3>
-<p>The first startup builds the full-text index. Set <code>MARKDOWN_VAULT_MCP_INDEX_PATH</code> to persist the index between restarts; subsequent starts will only process changed files.</p>
+<p>Windows (<code>Scripts\</code> not <code>bin\</code>, <code>.exe</code> suffix):</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;mcpServers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;markdown-vault-mcp&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;command&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;C:\\Users\\me\\.venvs\\mcp\\Scripts\\markdown-vault-mcp.exe&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;serve&quot;</span><span class="p">],</span>
+<span class="w">      </span><span class="nt">&quot;env&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;MARKDOWN_VAULT_MCP_READ_ONLY&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;true&quot;</span>
+<span class="w">      </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
 
 
 

@@ -293,5 +293,3 @@ This works when `markdown-vault-mcp` is the **only** OAuth service on the hostna
 
 - **Dedicated hostname** (preferred): give `markdown-vault-mcp` its own hostname (such as `vault.example.com`) so discovery routes do not collide.
 - **External auth gateway**: use `mcp-auth-proxy` as a sidecar instead of native OIDC. The MCP server runs unauthenticated behind the proxy, and the proxy handles OAuth discovery at its own routes.
-
-## Project-specific notes
