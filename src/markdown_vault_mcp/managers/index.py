@@ -501,12 +501,14 @@ class IndexManager:
                     vectors.add(texts, meta)
 
         # Persist the vector index only when this pass actually mutated it.
-        # An empty-diff reindex (0 added/modified/deleted) touches no vectors,
-        # so re-serialising the whole index to disk every run is pure churn —
-        # particularly under a file watcher that may fire reindex repeatedly
-        # (#720).
+        # An empty-diff reindex (0 added/modified/deleted) that purged no
+        # stale-excluded entries touches no vectors, so re-serialising the
+        # whole index to disk every run is pure churn — particularly under a
+        # file watcher that may fire reindex repeatedly (#720). ``stale_excluded``
+        # must be included: purging excluded docs calls ``vectors.delete_by_path``
+        # above, mutating the in-memory index even when the file diff is empty.
         vector_index_changed = bool(
-            indexed_added or indexed_modified or changes.deleted
+            indexed_added or indexed_modified or changes.deleted or stale_excluded
         )
         if (
             vectors is not None

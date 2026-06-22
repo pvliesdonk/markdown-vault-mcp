@@ -540,6 +540,56 @@ class TestSkipStateMemory:
         assert result.modified == 1
         vectors.save.assert_called_once()
 
+    def test_stale_excluded_reindex_saves_vectors(
+        self, index_vault: Path, tmp_path: Path
+    ) -> None:
+        """A reindex that only purges stale-excluded entries must still save.
+
+        Purging an excluded-but-already-indexed doc calls
+        ``vectors.delete_by_path`` (mutating the in-memory index) while the
+        file diff stays empty (the file is still on disk, just filtered).
+        Skipping the save would leave the stale vectors on disk to reload on
+        the next startup (#720 follow-up).
+        """
+        mgr, holder = self._mgr_with_embeddings(index_vault, tmp_path)
+        mgr.build_index()
+        mgr.build_embeddings()
+        vectors = holder["vectors"]
+        assert vectors is not None
+
+        vectors.save = MagicMock(wraps=vectors.save)  # type: ignore[method-assign]
+        # Exclude a note that is already indexed; the file remains on disk so
+        # the tracker reports no add/modify/delete — only the stale-excluded
+        # purge mutates the vector index.
+        mgr._exclude_patterns = ["alpha.md"]
+        result = mgr.reindex()
+
+        assert (result.added, result.modified, result.deleted) == (0, 0, 0)
+        vectors.save.assert_called_once()
+
+    def test_deletion_only_reindex_saves_vectors(
+        self, index_vault: Path, tmp_path: Path
+    ) -> None:
+        """A reindex whose only change is a deleted file must still save.
+
+        A pure deletion purges vectors via ``vectors.delete_by_path`` while
+        ``indexed_added``/``indexed_modified``/``stale_excluded`` all stay 0, so
+        ``changes.deleted`` is the sole term that must keep the save alive (#720).
+        """
+        mgr, holder = self._mgr_with_embeddings(index_vault, tmp_path)
+        mgr.build_index()
+        mgr.build_embeddings()
+        vectors = holder["vectors"]
+        assert vectors is not None
+
+        vectors.save = MagicMock(wraps=vectors.save)  # type: ignore[method-assign]
+        (index_vault / "beta.md").unlink()
+        result = mgr.reindex()
+
+        assert (result.added, result.modified) == (0, 0)
+        assert result.deleted == 1
+        vectors.save.assert_called_once()
+
 
 # ---------------------------------------------------------------------------
 # build_embeddings
