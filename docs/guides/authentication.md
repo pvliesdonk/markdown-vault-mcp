@@ -75,8 +75,6 @@ The bearer-token mode above shares one subject across every authenticated caller
 
 Each token resolves to a distinct subject string for downstream attribution. Subject strings are opaque: the `<kind>:<id>` convention (`user:`, `service:`, `token:`) is documentation only. When `BEARER_TOKENS_FILE` is set it overrides `BEARER_TOKEN` (a `WARNING` is logged if both are present). A missing or malformed file aborts startup with `ConfigurationError` rather than silently denying every request.
 
-For the per-tool authorization that consumes these subjects, see [Authorization (opt-in)](https://github.com/pvliesdonk/markdown-vault-mcp/blob/main/README.md#authorization-opt-in) in the project README.
-
 ---
 
 ## OIDC
@@ -111,10 +109,10 @@ Client → markdown-vault-mcp (present JWT → validate via JWKS)
 
 ### How it works (oidc-proxy mode)
 
-The server uses FastMCP's built-in `OIDCProxy` (no external auth sidecar needed):
+The server proxies OIDC itself — no external auth sidecar to deploy:
 
 ```
-Client → markdown-vault-mcp (OIDCProxy) → OIDC Provider
+Client → mcp-server → OIDC Provider
 ```
 
 1. Client connects to the server

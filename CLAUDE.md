@@ -91,6 +91,18 @@ The config is in `_skip_if_exists`, so domain-specific additions (shellcheck, ya
 
 Trivial exceptions: pure typo fixes and automated dependency bumps (Dependabot / Renovate) may skip the issue.
 
+<!-- TEMPLATE-TRACKING-START -->
+**Bot reviewers (claude-review, gemini-code-assist) are merge gates, not pair reviewers.** Local review must be complete before the PR opens. If a bot finds anything on first run, the local review was incomplete — that is a discipline failure to investigate, not "address-and-move-on." Run a local code-review pass on the cumulative diff before `gh pr create`; the bots are not a substitute.
+<!-- TEMPLATE-TRACKING-END -->
+
+## GitHub Review Types
+
+GitHub has two distinct review mechanisms — **both must be read and addressed**:
+
+- **Inline review comments** (`get_review_comments`): attached to specific lines of the diff. Appear in the "Files changed" tab. Use `get_review_comments` to fetch these.
+- **PR-level comments** (`get_comments`): posted on the Conversation tab, not tied to a line. Review summary posts, bot analysis, and blocking issues are often posted here. Use `get_comments` to fetch these.
+
+Always fetch both before declaring a review round complete.
 ## Documentation Discipline
 
 Every issue, PR, and code change must consider documentation impact. Before closing any issue or creating any PR, check whether the following need updating:
@@ -186,6 +198,7 @@ These sentinel blocks in `Dockerfile` are preserved across `copier update`. Add 
 
 For services that talk to a remote upstream (e.g. paperless, an HTTP API), wire the upstream version inside the `DOMAIN-UPSTREAM-START` / `DOMAIN-UPSTREAM-END` sentinel in `src/markdown_vault_mcp/server.py`. Pass `upstream_version=` (a zero-arg callable returning a dict / str / None) and optionally `upstream_label="<service>"` (default `"upstream"`). The simplest pattern is a module-level upstream client (typically constructed from env vars at import time) whose version method is referenced from the callable — `CurrentContext()` is a FastMCP DI marker that only resolves inside parameter defaults, so it cannot be called directly from a zero-arg provider. The block is preserved across `copier update`.
 
+<!-- TEMPLATE-TRACKING-START -->
 ## Shared Infrastructure
 
 Shared infrastructure (auth providers, middleware stack, logging bootstrap, event store factory, CLI scaffolding, release pipeline, Docker entrypoint, nfpm packaging, mcpb bundle) lives upstream in two places:
@@ -202,6 +215,7 @@ Fixes and improvements to shared code land in those repos and propagate here via
 - **Domain-only fix** (anything inside a `DOMAIN-*`, `CONFIG-*`, or `PROJECT-*` sentinel block, `tools.py`, `resources.py`, `prompts.py`, `domain.py`, `tests/`): PR on this repo directly.
 
 If a conflict marker appears in a copier-update bot PR, the conflict itself often signals a template bug — investigate whether the template's version needs fixing before resolving locally.
+<!-- TEMPLATE-TRACKING-END -->
 
 <!-- ===== TEMPLATE-OWNED SECTIONS END ===== -->
 
