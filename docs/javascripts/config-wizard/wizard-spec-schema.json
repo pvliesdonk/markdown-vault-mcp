@@ -68,6 +68,15 @@
         {
           "if": { "required": ["type"], "properties": { "type": { "const": "select" } } },
           "then": { "required": ["options"] }
+        },
+        {
+          "$comment": "A dockerVolume/dockerPath question binds its var to the container path (generators.js dockerEnvMap). Without var that binding never happens — reject rather than accept a question that silently emits a dead bind mount (dockerVolume) or a no-op (dockerPath).",
+          "if": { "required": ["dockerVolume"] },
+          "then": { "required": ["var"] }
+        },
+        {
+          "if": { "required": ["dockerPath"] },
+          "then": { "required": ["var"] }
         }
       ],
       "not": { "required": ["dockerVolume", "dockerPath"] }

@@ -50,6 +50,28 @@ const systemdLine = (k, v) => {
   return `Environment="${k}=${escaped}"`;
 };
 
+// Validate a loaded wizard spec before any generator runs. The generators
+// iterate spec.questions and dereference spec.meta.{projectName,dockerImage,
+// envPrefix} with no per-field guard at the use site, so an incomplete spec
+// (hand-edited, or served mid-migration) must fail loudly here rather than
+// reach the generators and emit
+// undefined-laden artifacts the user copy-pastes. The JSON Schema enforces the
+// same shape, but only in the Python test lane — never at runtime, which is what
+// this guards. Throws Error with a specific message on the first violation.
+export function validateSpec(spec) {
+  if (!spec || typeof spec !== "object" || !Array.isArray(spec.questions)) {
+    throw new Error("wizard-spec.json is malformed (missing questions array)");
+  }
+  if (!spec.meta || typeof spec.meta !== "object") {
+    throw new Error("wizard-spec.json is malformed (missing meta block)");
+  }
+  for (const k of ["projectName", "dockerImage", "envPrefix"]) {
+    if (typeof spec.meta[k] !== "string" || spec.meta[k] === "") {
+      throw new Error(`wizard-spec.json is malformed (meta.${k} missing or empty)`);
+    }
+  }
+}
+
 // Build {VAR: value} from the spec + answers. Empty non-secret answers are
 // dropped; a visible secret left empty becomes a placeholder so the artifact is
 // still complete and signals "replace me".

@@ -1,5 +1,5 @@
 import {
-  buildEnvMap, isVisible, generateDotenv, generateClaudeJson,
+  validateSpec, buildEnvMap, isVisible, generateDotenv, generateClaudeJson,
   generateDockerRun, generateCompose, generateSystemd,
 } from "./generators.js";
 
@@ -26,8 +26,12 @@ function writeUrlState(spec) {
   const qs = params.toString();
   try {
     history.replaceState(null, "", qs ? `#${qs}` : location.pathname + location.search);
-  } catch {
-    // history.replaceState throws in sandboxed iframes — safe to ignore.
+  } catch (e) {
+    // Benign in a sandboxed iframe (SecurityError, no allow-same-origin). But
+    // replaceState also throws SecurityError when its ~100-calls/10 s throttle
+    // is breached — a real signal the 300 ms debounce is insufficient — so log
+    // the cause at debug level rather than swallow it blind.
+    console.debug("config-wizard: history.replaceState failed", e);
   }
 }
 
@@ -151,10 +155,18 @@ function render() {
     copy.className = "cfg-copy";
     copy.textContent = "Copy";
     copy.addEventListener("click", () => {
-      if (navigator.clipboard) {
-        navigator.clipboard.writeText(text).catch(() => {});
-      } else {
-        // Fallback for non-secure contexts: select the block so Ctrl/Cmd-C works.
+      // Flash a transient affordance on the button, then restore its label.
+      const flash = (msg) => {
+        copy.textContent = msg;
+        setTimeout(() => {
+          copy.textContent = "Copy";
+        }, 1500);
+      };
+      // Select the block so the user can finish with Ctrl/Cmd-C themselves.
+      // Used both when the Clipboard API is absent (non-secure context) and when
+      // writeText rejects (permission/focus) — without it the empty catch left
+      // the user believing a failed copy had succeeded.
+      const selectFallback = () => {
         const range = document.createRange();
         range.selectNodeContents(pre);
         const sel = window.getSelection();
@@ -162,6 +174,12 @@ function render() {
           sel.removeAllRanges();
           sel.addRange(range);
         }
+        flash("Press Ctrl-C");
+      };
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(text).then(() => flash("Copied!"), selectFallback);
+      } else {
+        selectFallback();
       }
     });
     head.appendChild(copy);
@@ -218,15 +236,10 @@ async function init() {
     const resp = await fetch(specUrl);
     if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
     const spec = await resp.json();
-    if (!spec || typeof spec !== "object" || !Array.isArray(spec.questions)) {
-      throw new Error("wizard-spec.json is malformed (missing questions array)");
-    }
-    if (!spec.meta || typeof spec.meta !== "object") {
-      // The generators read project identity from spec.meta; a spec missing it
-      // (e.g. mid-migration) must fail loudly here rather than throw an
-      // uncaught TypeError deep inside render().
-      throw new Error("wizard-spec.json is malformed (missing meta block)");
-    }
+    // The generators read project identity from spec.meta and dereference its
+    // required fields unconditionally; validateSpec fails loudly here rather
+    // than let render() emit undefined-laden output (see generators.js).
+    validateSpec(spec);
     SPEC = spec;
   } catch (e) {
     ROOT.textContent = `Failed to load the configuration generator: ${e.message}`;

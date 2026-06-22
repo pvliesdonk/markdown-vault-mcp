@@ -10,8 +10,9 @@ Two kinds of tests live here, both template-owned and spec-agnostic:
   every spec shares (the ``deployment`` question exists; output carries the
   project identity from ``meta``).
 * Generator unit tests import ``generators.js`` directly and feed it synthetic
-  specs, so they exercise ``dockerVolume`` / ``dockerPath`` behaviour without
-  depending on this project's questions.
+  specs, so they exercise generator behaviour (``dockerVolume`` / ``dockerPath``
+  mapping, ``validateSpec`` rejection of malformed specs) without depending on
+  this project's questions.
 
 Domain-specific assertions belong in ``test_config_wizard_domain.py``.
 """
@@ -113,6 +114,75 @@ def _eval_generators(page: Page, body: str) -> typing.Any:
         + ")(g); }"
     )
     return page.evaluate(script)
+
+
+def test_validate_spec_accepts_complete_spec(page: Page) -> None:
+    err = _eval_generators(
+        page,
+        """(g) => {
+          const spec = { version: 1,
+            meta: { projectName: 'demo', dockerImage: 'img:latest', envPrefix: 'DEMO' },
+            secretKeys: [],
+            questions: [{ id: 'deployment', label: 'W', type: 'select' }],
+            guards: [] };
+          try { g.validateSpec(spec); return null; } catch (e) { return e.message; }
+        }""",
+    )
+    assert err is None
+
+
+def test_validate_spec_rejects_missing_questions(page: Page) -> None:
+    err = _eval_generators(
+        page,
+        """(g) => {
+          const spec = { version: 1,
+            meta: { projectName: 'demo', dockerImage: 'img:latest', envPrefix: 'DEMO' } };
+          try { g.validateSpec(spec); return null; } catch (e) { return e.message; }
+        }""",
+    )
+    assert err is not None
+    assert "missing questions array" in err
+
+
+def test_validate_spec_rejects_missing_meta(page: Page) -> None:
+    err = _eval_generators(
+        page,
+        """(g) => {
+          const spec = { version: 1, questions: [{ id: 'deployment', label: 'W', type: 'select' }] };
+          try { g.validateSpec(spec); return null; } catch (e) { return e.message; }
+        }""",
+    )
+    assert err is not None
+    assert "missing meta block" in err
+
+
+def test_validate_spec_rejects_empty_meta(page: Page) -> None:
+    # meta is an object but lacks the fields the generators dereference: the
+    # exact gap the old `typeof meta === 'object'` guard let through.
+    err = _eval_generators(
+        page,
+        """(g) => {
+          const spec = { version: 1, meta: {},
+            questions: [{ id: 'deployment', label: 'W', type: 'select' }] };
+          try { g.validateSpec(spec); return null; } catch (e) { return e.message; }
+        }""",
+    )
+    assert err is not None
+    assert "meta.projectName missing or empty" in err
+
+
+def test_validate_spec_rejects_empty_meta_field(page: Page) -> None:
+    err = _eval_generators(
+        page,
+        """(g) => {
+          const spec = { version: 1,
+            meta: { projectName: 'demo', dockerImage: '', envPrefix: 'DEMO' },
+            questions: [{ id: 'deployment', label: 'W', type: 'select' }] };
+          try { g.validateSpec(spec); return null; } catch (e) { return e.message; }
+        }""",
+    )
+    assert err is not None
+    assert "meta.dockerImage missing or empty" in err
 
 
 def test_docker_volume_adds_mount_and_fixes_container_path(page: Page) -> None:

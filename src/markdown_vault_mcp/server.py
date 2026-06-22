@@ -201,22 +201,6 @@ def make_server(transport: str = "stdio", config: VaultConfig | None = None) -> 
     # 3.x: kwargs removed; installs one tool-aware logging middleware.
     wire_middleware_stack(mcp)
 
-    # Optional: enable opt-in per-subject authorization on tools / resources /
-    # prompts.  See fastmcp-pvl-core's README "Authorization" section for the
-    # design.  Tools, resources, and prompts opt in by setting
-    # ``meta={"required_scope": "<scope>"}``; absence of the key means
-    # unrestricted.  The middleware is only installed when ``acl_path`` is set.
-    #
-    # from fastmcp_pvl_core import (
-    #     AuthorizationMiddleware,
-    #     load_acl,
-    #     make_acl_authorizer,
-    # )
-    #
-    # if config.acl_path is not None:
-    #     authorizer = make_acl_authorizer(load_acl(config.acl_path))
-    #     mcp.add_middleware(AuthorizationMiddleware(authorizer=authorizer))
-
     register_tools(mcp)
     register_resources(mcp)
     register_apps(mcp)

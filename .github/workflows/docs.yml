@@ -50,8 +50,12 @@ jobs:
       - name: Install Chromium
         run: uv run playwright install --with-deps chromium
 
-      - name: Run config-wizard smoke test
-        run: uv run pytest tests/test_config_wizard_smoke.py -v -m browser
+      - name: Run config-wizard browser tests
+        # Both the template-owned smoke suite and the project-owned domain suite
+        # (test_config_wizard_domain.py). -m browser selects the browser-marked
+        # tests in each; the seeded domain placeholder is skipped until a
+        # consumer replaces it with real assertions.
+        run: uv run pytest tests/test_config_wizard_smoke.py tests/test_config_wizard_domain.py -v -m browser
 
   deploy:
     # Publish versioned docs with mike, serving from the gh-pages branch:
