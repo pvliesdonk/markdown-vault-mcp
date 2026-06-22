@@ -500,7 +500,19 @@ class IndexManager:
                 if texts:
                     vectors.add(texts, meta)
 
-        if vectors is not None and self._embeddings_path is not None:
+        # Persist the vector index only when this pass actually mutated it.
+        # An empty-diff reindex (0 added/modified/deleted) touches no vectors,
+        # so re-serialising the whole index to disk every run is pure churn —
+        # particularly under a file watcher that may fire reindex repeatedly
+        # (#720).
+        vector_index_changed = bool(
+            indexed_added or indexed_modified or changes.deleted
+        )
+        if (
+            vectors is not None
+            and self._embeddings_path is not None
+            and vector_index_changed
+        ):
             vectors.save(self._embeddings_path)
 
         # Re-resolve vault-wide wikilinks.
