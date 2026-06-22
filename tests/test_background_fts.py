@@ -381,30 +381,73 @@ def test_close_twice_is_safe(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_lifespan_cold_start_handshake_under_1s(
+def test_lifespan_cold_start_handshake_does_not_block_on_build(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import time as time_mod
+    """Cold start: the lifespan submits the FTS BuildIndex job and yields
+    immediately, without awaiting the build (#559).
 
+    The build is gated on the writer thread so it provably cannot complete
+    during the handshake — the deterministic replacement for the old flaky
+    wall-clock ``handshake_elapsed < 1.0`` assertion (#713, mirroring the
+    #674 fix for the embeddings sibling): with the build gated, a correct
+    non-blocking lifespan reaches the handshake while the writer is still
+    non-drained, so ``is_drained()`` is deterministically False there (no
+    wall-clock race). After releasing the gate the build runs to completion
+    and the index becomes queryable.
+
+    A regression that awaited the build during startup is still caught — it
+    cannot make this test silently pass — but via a different path: the gate
+    is released only inside the client context (below), which such a
+    regression never reaches, so startup blocks on the gate until
+    ``release.wait(10)`` times out and the gate assertion fails the test.
+    """
+    from markdown_vault_mcp.managers.index import IndexManager
     from markdown_vault_mcp.server import make_server
 
     vault = tmp_path / "vault"
     vault.mkdir()
     for i in range(20):
-        (vault / f"n_{i}.md").write_text(
-            f"# N{i}\n\n" + ("body " * 200) + "\n", encoding="utf-8"
-        )
+        (vault / f"n_{i}.md").write_text(f"# N{i}\n\nbody\n", encoding="utf-8")
 
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_INDEX_PATH", str(tmp_path / "fts.db"))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_STATE_PATH", str(tmp_path / "s.json"))
 
+    # Gate the FTS build on the writer thread so it cannot finish during the
+    # handshake. The writer looks up ``build_index`` on the instance at call
+    # time, so patching the class method is picked up.
+    release = threading.Event()
+    original_build_index = IndexManager.build_index
+
+    def gated_build_index(self: Any, *, force: bool = False) -> Any:
+        assert release.wait(10), (
+            "build gate not released within 10s — the lifespan likely blocked "
+            "on the FTS build during startup (the gate is released only inside "
+            "the client context, which a startup-blocking lifespan never "
+            "reaches), or the test is mis-wired"
+        )
+        return original_build_index(self, force=force)
+
+    monkeypatch.setattr(IndexManager, "build_index", gated_build_index)
+
     server = make_server()
 
-    async def _run() -> tuple[float, dict[str, Any]]:
-        start = time_mod.perf_counter()
+    from markdown_vault_mcp._server_deps import get_vault_singleton
+
+    async def _run() -> tuple[bool, dict[str, Any]]:
         async with Client(server) as client:
-            handshake_elapsed = time_mod.perf_counter() - start
+            try:
+                # Handshake completed while the build is still gated on the
+                # writer thread, so the writer is provably non-drained here
+                # unless the lifespan blocked on the build.
+                drained_at_handshake = get_vault_singleton().index.is_drained()
+            finally:
+                # Always release — even if the read above raised — so the
+                # build can run and lifespan shutdown can drain. Releasing
+                # inside the context (not in a finally outside ``async with``)
+                # avoids stalling teardown on the gate for the full timeout.
+                release.set()
             res: Any = None
             for _ in range(50):
                 res = await client.call_tool("get_index_status", {})
@@ -412,11 +455,12 @@ def test_lifespan_cold_start_handshake_under_1s(
                     break
                 await asyncio.sleep(0.1)
             final = res.structured_content or {}
-        return handshake_elapsed, final
+        return drained_at_handshake, final
 
-    handshake_elapsed, final = asyncio.run(_run())
-    assert handshake_elapsed < 1.0, (
-        f"cold-start handshake took {handshake_elapsed:.3f}s, expected < 1.0s"
+    drained_at_handshake, final = asyncio.run(_run())
+    assert drained_at_handshake is False, (
+        "lifespan appears to have blocked on the build: the writer drained "
+        "before the handshake completed despite the FTS build being gated"
     )
     assert final["status"] == "queryable"
     assert final["documents_indexed"] == 20
