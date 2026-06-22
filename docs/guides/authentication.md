@@ -109,7 +109,7 @@ Client → markdown-vault-mcp (present JWT → validate via JWKS)
 
 ### How it works (oidc-proxy mode)
 
-The server proxies OIDC itself — no external auth sidecar to deploy:
+The server proxies OIDC itself, with no external auth sidecar to deploy:
 
 ```
 Client → mcp-server → OIDC Provider

@@ -33,7 +33,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           ref: ${{ github.ref_name }}
@@ -175,7 +175,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: ${{ needs.release.outputs.tag }}
           fetch-depth: 1
@@ -265,7 +265,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: ${{ needs.release.outputs.tag }}
           fetch-depth: 1
@@ -319,7 +319,7 @@ jobs:
     env:
       MCPB_VERSION: "2.1.2"
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.release.outputs.tag }}
       - name: Install mcpb CLI
@@ -398,7 +398,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout catalog repo
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: pvliesdonk/claude-plugins
           token: ${{ secrets.RELEASE_TOKEN }}
@@ -459,7 +459,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: main
           fetch-depth: 1

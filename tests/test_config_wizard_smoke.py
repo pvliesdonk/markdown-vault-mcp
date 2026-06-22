@@ -34,14 +34,47 @@ if typing.TYPE_CHECKING:
     from playwright.sync_api import Browser, Page
 
 SITE = Path(__file__).resolve().parent.parent / "site"
+_DOCS_WIZARD = (
+    Path(__file__).resolve().parent.parent / "docs" / "javascripts" / "config-wizard"
+)
+_SITE_WIZARD = SITE / "javascripts" / "config-wizard"
 
 pytestmark = pytest.mark.browser
+
+
+def _stale_wizard_assets() -> list[str]:
+    """Names of wizard assets whose built copy is missing or differs from source.
+
+    mkdocs copies the ``docs/javascripts/config-wizard`` files into ``site/``
+    verbatim, so a byte mismatch means ``site/`` is stale relative to the source
+    these tests actually exercise. Comparing bytes (not mtimes) is robust across
+    fresh checkouts, where mtimes carry no build ordering.
+    """
+    stale: list[str] = []
+    for src in sorted(_DOCS_WIZARD.glob("*")):
+        if not src.is_file():
+            continue
+        built = _SITE_WIZARD / src.name
+        if not built.is_file() or built.read_bytes() != src.read_bytes():
+            stale.append(src.name)
+    return stale
 
 
 @pytest.fixture(scope="module")
 def site_url() -> typing.Iterator[str]:
     if not (SITE / "configuration-generator" / "index.html").exists():
         pytest.skip("site/ not built -- run `uv run mkdocs build` first")
+    # A built-but-stale site/ (source edited under docs/ without rebuilding)
+    # would silently run these tests against outdated assets and false-fail.
+    # Skip with an actionable message instead. CI always builds fresh, so this
+    # only ever trips locally.
+    stale = _stale_wizard_assets()
+    if stale:
+        pytest.skip(
+            "site/ is stale relative to docs/ ("
+            + ", ".join(stale)
+            + ") -- rebuild with `uv run mkdocs build`"
+        )
     handler = functools.partial(
         http.server.SimpleHTTPRequestHandler, directory=str(SITE)
     )
