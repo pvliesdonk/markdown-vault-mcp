@@ -139,6 +139,36 @@ class TestLoadUserPromptDefs:
             result["greet"]["description"] == "Greeter"
         )  # frontmatter parsed past the BOM
 
+    def test_non_list_arguments_coerced_to_empty(self, tmp_path: Path) -> None:
+        """A non-iterable ``arguments`` value is coerced to [] rather than raising.
+
+        An int is used deliberately: without the isinstance guard, ``for arg in 5``
+        raises TypeError, so this pins the guard (a string would iterate to [] even
+        without it, masking a regression).
+        """
+        (tmp_path / "bad_args.md").write_text(
+            "---\narguments: 5\n---\nBody.", encoding="utf-8"
+        )
+        result = _load_user_prompt_defs(str(tmp_path))
+        assert result["bad_args"]["arguments"] == []
+
+    def test_non_list_tags_coerced_to_empty(self, tmp_path: Path) -> None:
+        """A scalar ``tags`` value is coerced to [] rather than char-iterated."""
+        (tmp_path / "bad_tags.md").write_text(
+            "---\ntags: write\n---\nBody.", encoding="utf-8"
+        )
+        result = _load_user_prompt_defs(str(tmp_path))
+        assert result["bad_tags"]["tags"] == []
+
+    def test_non_string_description_coerced_to_str(self, tmp_path: Path) -> None:
+        """A non-string ``description`` (frontmatter 1.3 can return an int) is
+        coerced to str rather than flowing through as a non-str value."""
+        (tmp_path / "numdesc.md").write_text(
+            "---\ndescription: 5\n---\nBody.", encoding="utf-8"
+        )
+        result = _load_user_prompt_defs(str(tmp_path))
+        assert result["numdesc"]["description"] == "5"
+
 
 class TestLoadBuiltinPrompt:
     """Unit tests for _load_builtin_prompt."""
@@ -157,6 +187,27 @@ class TestLoadBuiltinPrompt:
         assert result is not None
         assert result["description"] == "Demo"  # frontmatter parsed past the BOM
         assert result["content"] == "body"
+
+    def test_non_list_arguments_and_tags_coerced(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Scalar arguments/tags are coerced to [] (the guards this loader gained).
+
+        The previous ``[str(t) for t in post.get("tags", [])]`` would char-iterate
+        a scalar ``tags: write`` into ['w', 'r', ...]; the isinstance guard now
+        yields []. ``arguments`` gains the same guard the user loader already had;
+        an int pins it (``for arg in 5`` raises TypeError without the guard).
+        """
+        from markdown_vault_mcp import _server_prompts
+
+        (tmp_path / "demo.md").write_text(
+            "---\narguments: 5\ntags: write\n---\nbody", encoding="utf-8"
+        )
+        monkeypatch.setattr(_server_prompts, "_BUILTIN_PROMPTS_DIR", tmp_path)
+        result = _load_builtin_prompt("demo")
+        assert result is not None
+        assert result["arguments"] == []
+        assert result["tags"] == []
 
 
 class TestRegisterOneUserPromptArgValidation:

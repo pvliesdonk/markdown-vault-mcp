@@ -74,7 +74,7 @@ def _load_user_prompt_defs(prompts_folder: str | None) -> dict[str, dict[str, An
             )
             continue
 
-        description: str = post.get("description", "") or ""
+        description: str = str(post.get("description") or "")
         raw_arguments = post.get("arguments") or []
         if not isinstance(raw_arguments, list):
             raw_arguments = []
@@ -211,6 +211,8 @@ def _load_builtin_prompt(name: str) -> dict[str, Any] | None:
         )
         return None
     raw_arguments = post.get("arguments") or []
+    if not isinstance(raw_arguments, list):
+        raw_arguments = []
     arguments: list[dict[str, Any]] = []
     for arg in raw_arguments:
         if isinstance(arg, dict) and "name" in arg:
@@ -221,10 +223,12 @@ def _load_builtin_prompt(name: str) -> dict[str, Any] | None:
                     "required": bool(arg.get("required", False)),
                 }
             )
+    raw_tags = post.get("tags") or []
+    tags: list[str] = [str(t) for t in raw_tags] if isinstance(raw_tags, list) else []
     return {
-        "description": post.get("description", "") or "",
+        "description": str(post.get("description") or ""),
         "arguments": arguments,
-        "tags": [str(t) for t in post.get("tags", [])],
+        "tags": tags,
         "icons": str(post.get("icons", "")),
         "content": post.content,
     }

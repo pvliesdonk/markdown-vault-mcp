@@ -62,7 +62,7 @@ dev = [
     "pytest-cov>=4.0",
     "diff-cover>=9.0",
     "ruff>=0.1",
-    "mypy>=1.0",
+    "mypy>=1.0,<2",  # mypy 2.x migration deferred — see #727
     "pre-commit>=3.0",
     "pip-audit>=2.7",
     "watchdog>=4.0",
@@ -97,6 +97,11 @@ build-backend = "hatchling.build"
 # Pygments 2.20.0 crashes on filename=None in HtmlFormatter (introduced in 2.20.0,
 # tracked upstream as Pygments PR #3078). Pin globally until the fix ships.
 override-dependencies = ["pygments>=2,<2.21"]
+# numpy 2.5.0's stubs use PEP 695 `type` aliases; mypy run with python_version=3.11
+# rejects them as 3.12-only syntax and aborts the type-check. Our dev/CI interpreter
+# is 3.12+, which would otherwise pull numpy 2.5.0, so cap <2.5.0 to keep the 2.4.x
+# stubs that mypy@3.11 accepts. Lift once mypy/numpy resolve it — see #727.
+constraint-dependencies = ["numpy<2.5.0"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/markdown_vault_mcp"]
