@@ -297,8 +297,10 @@ class SearchManager:
         attachment_extensions: Allowed non-.md extensions.  ``None`` uses
             the default set.
         link_manager: Optional :class:`LinkManager` for context queries.
-        rebuild_embeddings: Callback to rebuild all embeddings from scratch
-            (used when vector index compatibility fails).
+        rebuild_embeddings: Callback to rebuild all embeddings from scratch.
+            Invoked by ``_load_vectors`` on any unrecoverable sidecar fault —
+            a provider/model mismatch, a row-count mismatch, or a
+            truncated/zero-byte/incomplete sidecar.
     """
 
     def __init__(
@@ -387,8 +389,10 @@ class SearchManager:
             A :class:`~markdown_vault_mcp.vector_index.VectorIndex` instance.
 
         Raises:
-            RuntimeError: If embedding support is not configured
-                (``_embedding_provider`` or ``_embeddings_path`` is ``None``).
+            RuntimeError: If called without a prior ``_require_vectors()``
+                (a call-ordering fault; ``_embedding_provider`` or
+                ``_embeddings_path`` is ``None`` at entry). ``_require_vectors``
+                itself raises ``ValueError`` for the unconfigured case.
             ValueError: If a self-heal rebuild fails to produce a usable index.
         """
         if self._vectors is not None:

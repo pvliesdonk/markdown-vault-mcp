@@ -986,3 +986,31 @@ class TestSearchLoadVectorsSelfHeal:
         assert any(
             "vector_index_corrupt_rebuilding" in r.getMessage() for r in caplog.records
         )
+
+    def test_permission_error_propagates_without_rebuild(
+        self,
+        search_mgr_with_embeddings: SearchManager,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """An environmental OSError on load must propagate, not trigger a rebuild.
+
+        PermissionError is an OSError but not one of the corruption types, so it
+        is deliberately excluded from the catch tuple. Pins that contract on the
+        SearchManager path too (parity with IndexManager), so a future widening
+        to OSError cannot silently slip through here.
+        """
+        from markdown_vault_mcp.vector_index import VectorIndex
+
+        mgr = search_mgr_with_embeddings
+        mgr._vectors = None
+
+        def boom(*_args: object, **_kwargs: object) -> VectorIndex:
+            raise PermissionError("read denied")
+
+        monkeypatch.setattr(VectorIndex, "load", boom)
+        rebuild_calls: list[bool] = []
+        mgr._rebuild_embeddings = lambda: rebuild_calls.append(True)
+
+        with pytest.raises(PermissionError, match="read denied"):
+            mgr._load_vectors()
+        assert rebuild_calls == []  # no rebuild attempted

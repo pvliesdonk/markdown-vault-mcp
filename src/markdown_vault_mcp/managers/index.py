@@ -146,8 +146,10 @@ class IndexManager:
             A :class:`~markdown_vault_mcp.vector_index.VectorIndex` instance.
 
         Raises:
-            RuntimeError: If embedding support is not configured
-                (``_embedding_provider`` or ``_embeddings_path`` is ``None``).
+            RuntimeError: If called without a prior ``_require_vectors()``
+                (a call-ordering fault; ``_embedding_provider`` or
+                ``_embeddings_path`` is ``None`` at entry). ``_require_vectors``
+                itself raises ``ValueError`` for the unconfigured case.
             ValueError: If a self-heal rebuild fails to produce a usable index.
         """
         vectors = self._get_vectors()
