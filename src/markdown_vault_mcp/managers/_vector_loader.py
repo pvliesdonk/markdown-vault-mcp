@@ -27,7 +27,7 @@ def load_or_self_heal(
     embedding_provider: EmbeddingProvider,
     get_vectors: Callable[[], VectorIndex | None],
     set_vectors: Callable[[VectorIndex], None],
-    rebuild: Callable[[], None],
+    rebuild: Callable[[], object],
     logger: logging.Logger,
 ) -> VectorIndex:
     """Load the vector sidecar into the caller's slot, self-healing corruption.

@@ -156,7 +156,7 @@ class IndexManager:
             embedding_provider=self._embedding_provider,
             get_vectors=self._get_vectors,
             set_vectors=self._set_vectors,
-            rebuild=lambda: self.build_embeddings(force=True),  # type: ignore[arg-type]
+            rebuild=lambda: self.build_embeddings(force=True),
             logger=logger,
         )
 
