@@ -1711,6 +1711,11 @@ Key methods:
   directory and atomically `replace()`s the final path (mirrors
   `tracker._save_state`), so an interrupted write can never corrupt a
   previously persisted index.
+  `load()` also verifies that the embeddings matrix and metadata
+  list agree on row count and raises `VectorIndexCorruptError` on a
+  mismatch (the residue of a crash between the two independent atomic
+  replaces), which the load-time self-heal routes to a `force=True`
+  rebuild (#734).
 
 ### `providers.py`: Embedding Providers
 

@@ -144,6 +144,7 @@ class IndexManager:
         from markdown_vault_mcp.vector_index import (
             VectorIndex,
             VectorIndexCompatibilityError,
+            VectorIndexCorruptError,
         )
 
         if self._embeddings_path is None or self._embedding_provider is None:
@@ -165,6 +166,7 @@ class IndexManager:
                         "Failed to rebuild vector index after a compatibility error."
                     ) from exc
             except (
+                VectorIndexCorruptError,
                 json.JSONDecodeError,
                 ValueError,
                 EOFError,
@@ -174,6 +176,9 @@ class IndexManager:
                 # rebuild (#720 follow-up): an interrupted save can leave a
                 # truncated or zero-byte file. Self-heal by routing to the same
                 # force-rebuild path as a compatibility mismatch.
+                #   VectorIndexCorruptError — embeddings/metadata row-count
+                #     mismatch (a crash between the two atomic sidecar
+                #     replaces; subclasses ValueError, listed for clarity).
                 #   ValueError — truncated/garbage .json (JSONDecodeError is a
                 #     ValueError subclass) and corrupt/bad-version .npy.
                 #   EOFError — a zero-byte .npy (the canonical interrupted-save

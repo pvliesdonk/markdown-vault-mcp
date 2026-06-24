@@ -882,6 +882,38 @@ class TestLoadVectorsSelfHeal:
             "vector_index_corrupt_rebuilding" in r.getMessage() for r in caplog.records
         )
 
+    def test_row_count_mismatch_triggers_rebuild(
+        self, index_vault: Path, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A valid pair whose .json drops rows (count mismatch) rebuilds.
+
+        This is the residue of a crash between the two atomic sidecar
+        replaces: both files parse, but embeddings rows != metadata rows.
+        VectorIndex.load raises VectorIndexCorruptError (a ValueError), which
+        the self-heal catch routes to a force rebuild.
+        """
+        import json as _json
+
+        mgr, holder, _npy, json_path = self._build_persisted_index(
+            index_vault, tmp_path
+        )
+        payload = _json.loads(json_path.read_text(encoding="utf-8"))
+        # Drop the last metadata row, leaving more embedding rows than rows.
+        payload["rows"] = payload["rows"][:-1]
+        json_path.write_text(_json.dumps(payload), encoding="utf-8")
+
+        with caplog.at_level(
+            logging.WARNING, logger="markdown_vault_mcp.managers.index"
+        ):
+            result = mgr._load_vectors()
+
+        assert result is holder["vectors"]
+        assert result.count >= 4  # repopulated, internally consistent
+        assert result.count == result._embeddings.shape[0]  # parity restored
+        assert any(
+            "vector_index_corrupt_rebuilding" in r.getMessage() for r in caplog.records
+        )
+
     def test_permission_error_propagates_without_rebuild(
         self, index_vault: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
