@@ -889,8 +889,9 @@ class TestLoadVectorsSelfHeal:
 
         This is the residue of a crash between the two atomic sidecar
         replaces: both files parse, but embeddings rows != metadata rows.
-        VectorIndex.load raises VectorIndexCorruptError (a ValueError), which
-        the self-heal catch routes to a force rebuild.
+        VectorIndex.load raises VectorIndexCorruptError (a RuntimeError,
+        caught by its explicit entry in the self-heal tuple), which routes
+        to a force rebuild.
         """
         import json as _json
 

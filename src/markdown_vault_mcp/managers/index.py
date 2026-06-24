@@ -132,10 +132,23 @@ class IndexManager:
             )
 
     def _load_vectors(self) -> VectorIndex:
-        """Load or return the cached VectorIndex.
+        """Load or return the cached VectorIndex, self-healing corrupt sidecars.
+
+        Returns the cached index if already loaded. Otherwise deserialises it
+        from disk; on an incompatible, corrupt, or incomplete sidecar
+        (``VectorIndexCompatibilityError``, ``VectorIndexCorruptError``,
+        ``json.JSONDecodeError``/``ValueError``, ``EOFError``,
+        ``FileNotFoundError``) it routes to a ``force=True`` rebuild. A vault
+        with no persisted index cold-builds an empty one. Environmental errors
+        (e.g. ``PermissionError``) are not caught and propagate.
 
         Returns:
             A :class:`~markdown_vault_mcp.vector_index.VectorIndex` instance.
+
+        Raises:
+            RuntimeError: If called before ``_require_vectors()`` configured
+                both ``embedding_provider`` and ``embeddings_path``.
+            ValueError: If a self-heal rebuild fails to produce a usable index.
         """
         vectors = self._get_vectors()
         if vectors is not None:
@@ -178,9 +191,8 @@ class IndexManager:
                 # force-rebuild path as a compatibility mismatch.
                 #   VectorIndexCorruptError — embeddings/metadata row-count
                 #     mismatch (#734; a crash between the two atomic sidecar
-                #     replaces). Subclasses ValueError, so listed explicitly
-                #     here only so tightening this tuple cannot silently drop
-                #     the corrupt-index self-heal.
+                #     replaces). A RuntimeError, so this entry is load-bearing
+                #     — it is NOT covered by the ValueError arm below.
                 #   ValueError — truncated/garbage .json (JSONDecodeError is a
                 #     ValueError subclass) and corrupt/bad-version .npy.
                 #   EOFError — a zero-byte .npy (the canonical interrupted-save

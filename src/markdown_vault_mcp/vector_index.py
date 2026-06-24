@@ -26,14 +26,15 @@ class VectorIndexCompatibilityError(RuntimeError):
     """Raised when a persisted vector index is incompatible with current provider."""
 
 
-class VectorIndexCorruptError(ValueError):
+class VectorIndexCorruptError(RuntimeError):
     """A persisted index is internally inconsistent and must be rebuilt.
 
     Raised by :meth:`VectorIndex.load` when the embeddings sidecar
     (``.npy``) and the metadata sidecar (``.json``) disagree on row count
     — the residue of a crash between the two atomic sidecar replaces
-    (#734). Subclasses :class:`ValueError`; the load-time self-heal routes
-    it to a ``force=True`` rebuild (see the caller's catch block).
+    (#734). A :class:`RuntimeError` (like its sibling
+    :class:`VectorIndexCompatibilityError`), signalling a storage-integrity
+    fault rather than a caller value error.
     """
 
 
