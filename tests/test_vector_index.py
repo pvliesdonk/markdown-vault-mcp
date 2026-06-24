@@ -540,6 +540,93 @@ class TestVectorIndexPersistence:
         loaded = VectorIndex.load(base, mock_provider)
         assert loaded.count == 1
 
+    def test_load_raises_on_row_count_mismatch_more_embeddings(
+        self,
+        mock_provider: MockEmbeddingProvider,
+        tmp_path: Path,
+    ) -> None:
+        """More .npy rows than .json rows must raise VectorIndexCorruptError.
+
+        This is the IndexError-at-search shape: argsort over the embeddings
+        rows yields an index past the end of the shorter metadata list.
+        """
+        from markdown_vault_mcp.vector_index import VectorIndexCorruptError
+
+        index = VectorIndex(mock_provider)
+        index.add(
+            ["north star", "south star"],
+            [
+                _make_meta("stars.md", heading="North"),
+                _make_meta("stars.md", heading="South"),
+            ],
+        )
+        base = tmp_path / "embeddings"
+        index.save(base)
+
+        # Drop one metadata row, leaving 2 embedding rows vs 1 metadata row.
+        json_path = tmp_path / "embeddings.json"
+        payload = json.loads(json_path.read_text(encoding="utf-8"))
+        payload["rows"] = payload["rows"][:1]
+        json_path.write_text(json.dumps(payload), encoding="utf-8")
+
+        with pytest.raises(VectorIndexCorruptError, match="row count"):
+            VectorIndex.load(base, mock_provider)
+
+    def test_load_raises_on_row_count_mismatch_more_metadata(
+        self,
+        mock_provider: MockEmbeddingProvider,
+        tmp_path: Path,
+    ) -> None:
+        """Fewer .npy rows than .json rows must also raise — invariant is equality."""
+        from markdown_vault_mcp.vector_index import VectorIndexCorruptError
+
+        index = VectorIndex(mock_provider)
+        index.add(["north star"], [_make_meta("stars.md", heading="North")])
+        base = tmp_path / "embeddings"
+        index.save(base)
+
+        # Duplicate the single metadata row → 2 metadata rows vs 1 embedding row.
+        json_path = tmp_path / "embeddings.json"
+        payload = json.loads(json_path.read_text(encoding="utf-8"))
+        payload["rows"] = payload["rows"] * 2
+        json_path.write_text(json.dumps(payload), encoding="utf-8")
+
+        with pytest.raises(VectorIndexCorruptError, match="row count"):
+            VectorIndex.load(base, mock_provider)
+
+    def test_load_succeeds_on_matching_row_counts(
+        self,
+        mock_provider: MockEmbeddingProvider,
+        tmp_path: Path,
+    ) -> None:
+        """An equal, non-zero embeddings/metadata pair loads cleanly (no false positive)."""
+        index = VectorIndex(mock_provider)
+        index.add(
+            ["north star", "south star"],
+            [
+                _make_meta("stars.md", heading="North"),
+                _make_meta("stars.md", heading="South"),
+            ],
+        )
+        base = tmp_path / "embeddings"
+        index.save(base)
+
+        loaded = VectorIndex.load(base, mock_provider)
+        assert loaded.count == 2
+
+    def test_load_succeeds_on_empty_index(
+        self,
+        mock_provider: MockEmbeddingProvider,
+        tmp_path: Path,
+    ) -> None:
+        """An empty (0,0) index loads cleanly — shape[0] == 0 == len([])."""
+        index = VectorIndex(mock_provider)
+        base = tmp_path / "embeddings"
+        index.save(base)
+
+        loaded = VectorIndex.load(base, mock_provider)
+        assert loaded.count == 0
+
     def test_failed_save_leaves_no_temp_files(
         self,
         mock_provider: MockEmbeddingProvider,

@@ -35,6 +35,7 @@ site/
 
 # --- Development / ecosystem ignores (don't ship)
 .mcpregistry_*
+.repowise/
 .worktrees/
 .claude/worktrees/
 .claude/settings.local.json
