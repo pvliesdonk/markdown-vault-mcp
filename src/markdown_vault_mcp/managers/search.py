@@ -382,6 +382,7 @@ class SearchManager:
         from markdown_vault_mcp.vector_index import (
             VectorIndex,
             VectorIndexCompatibilityError,
+            VectorIndexCorruptError,
         )
 
         if self._embeddings_path is None or self._embedding_provider is None:
@@ -402,6 +403,35 @@ class SearchManager:
                 if self._vectors is None:
                     raise ValueError(
                         "Failed to rebuild vector index after a compatibility error."
+                    ) from exc
+            except (
+                VectorIndexCorruptError,
+                json.JSONDecodeError,
+                ValueError,
+                EOFError,
+                FileNotFoundError,
+            ) as exc:
+                # SearchManager loads the same shared sidecar as IndexManager and
+                # must self-heal the identical corruption set (#734); a search
+                # query can be the first access after a crash-interrupted save.
+                #   VectorIndexCorruptError — embeddings/metadata row-count
+                #     mismatch (a RuntimeError; not covered by the ValueError
+                #     entry, so this must be listed explicitly).
+                #   ValueError — truncated/garbage .json/.npy (JSONDecodeError
+                #     is a ValueError subclass).
+                #   EOFError — a zero-byte .npy (numpy raises EOFError).
+                #   FileNotFoundError — a missing .json while the .npy exists.
+                # Broad OSError stays uncaught: PermissionError / disk-IO faults
+                # are environmental and must propagate, not trigger a rebuild.
+                logger.warning(
+                    "vector_index_corrupt_rebuilding path=%s error=%s",
+                    self._embeddings_path,
+                    exc,
+                )
+                self._rebuild_embeddings()
+                if self._vectors is None:
+                    raise ValueError(
+                        "Failed to rebuild vector index after a corrupt sidecar."
                     ) from exc
         else:
             self._vectors = VectorIndex(self._embedding_provider)
