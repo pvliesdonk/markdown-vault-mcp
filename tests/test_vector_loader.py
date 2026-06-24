@@ -75,7 +75,7 @@ def test_clean_load_returns_loaded_index(tmp_path: Path) -> None:
     provider = MockEmbeddingProvider()
     base = tmp_path / "embeddings"
     _populated(provider).save(base)
-    _box, get, set_ = _slot()
+    box, get, set_ = _slot()
     calls: list[int] = []
     result = load_or_self_heal(
         embeddings_path=base,
@@ -87,6 +87,7 @@ def test_clean_load_returns_loaded_index(tmp_path: Path) -> None:
     )
     assert result.count == 1
     assert calls == []
+    assert box["v"] is result  # set_vectors persisted the loaded index
 
 
 def test_compatibility_error_triggers_rebuild(
@@ -116,7 +117,10 @@ def test_compatibility_error_triggers_rebuild(
         )
 
     assert result is rebuilt
-    assert any("Rebuilding embeddings" in r.getMessage() for r in caplog.records)
+    assert any(
+        r.name == _LOGGER_NAME and "Rebuilding embeddings" in r.getMessage()
+        for r in caplog.records
+    )
 
 
 def test_corrupt_error_triggers_rebuild(
