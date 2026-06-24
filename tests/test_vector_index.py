@@ -594,6 +594,42 @@ class TestVectorIndexPersistence:
         with pytest.raises(VectorIndexCorruptError, match="row count"):
             VectorIndex.load(base, mock_provider)
 
+    def test_load_raises_on_row_count_mismatch_legacy_list_payload(
+        self,
+        mock_provider: MockEmbeddingProvider,
+        tmp_path: Path,
+    ) -> None:
+        """A legacy bare-list .json with a row count != .npy must also raise.
+
+        The parity check sits outside both the legacy (``isinstance(payload,
+        list)``) and modern (dict) metadata-decode branches. This pins that
+        placement: a future refactor that moved the check inside the modern
+        ``else`` branch would silently stop guarding legacy sidecars, and
+        this test would catch that regression.
+        """
+        from markdown_vault_mcp.vector_index import VectorIndexCorruptError
+
+        index = VectorIndex(mock_provider)
+        index.add(
+            ["north star", "south star"],
+            [
+                _make_meta("stars.md", heading="North"),
+                _make_meta("stars.md", heading="South"),
+            ],
+        )
+        base = tmp_path / "embeddings"
+        index.save(base)  # 2 embedding rows
+
+        # Overwrite with a legacy bare-list payload of a single row → 2 vs 1.
+        json_path = tmp_path / "embeddings.json"
+        json_path.write_text(
+            json.dumps([_make_meta("stars.md", heading="North")]),
+            encoding="utf-8",
+        )
+
+        with pytest.raises(VectorIndexCorruptError, match="row count"):
+            VectorIndex.load(base, mock_provider)
+
     def test_load_succeeds_on_matching_row_counts(
         self,
         mock_provider: MockEmbeddingProvider,

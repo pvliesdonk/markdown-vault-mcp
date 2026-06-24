@@ -32,9 +32,8 @@ class VectorIndexCorruptError(ValueError):
     Raised by :meth:`VectorIndex.load` when the embeddings sidecar
     (``.npy``) and the metadata sidecar (``.json``) disagree on row count
     — the residue of a crash between the two atomic sidecar replaces
-    (#734). Subclasses :class:`ValueError` so the load-time self-heal in
-    :meth:`markdown_vault_mcp.managers.index.IndexManager._load_vectors`
-    routes it to a ``force=True`` rebuild.
+    (#734). Subclasses :class:`ValueError`; the load-time self-heal routes
+    it to a ``force=True`` rebuild (see the caller's catch block).
     """
 
 
@@ -139,16 +138,18 @@ class VectorIndex:
                     f"current model={expected_model!r}."
                 )
 
-        index = cls(provider)
-        index._embeddings = embeddings
-        index._metadata = metadata
-
+        # Gate the parity invariant before constructing the index, so a
+        # mismatched pair never yields even a transient inconsistent object.
         if embeddings.shape[0] != len(metadata):
             raise VectorIndexCorruptError(
                 "VectorIndex.load: sidecar row count mismatch at "
                 f"{path}: {embeddings.shape[0]} embedding rows vs "
                 f"{len(metadata)} metadata rows (incomplete atomic save)."
             )
+
+        index = cls(provider)
+        index._embeddings = embeddings
+        index._metadata = metadata
 
         logger.info(
             "VectorIndex.load: loaded %d vectors from %s",

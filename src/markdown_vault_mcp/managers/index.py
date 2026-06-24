@@ -177,8 +177,10 @@ class IndexManager:
                 # truncated or zero-byte file. Self-heal by routing to the same
                 # force-rebuild path as a compatibility mismatch.
                 #   VectorIndexCorruptError — embeddings/metadata row-count
-                #     mismatch (a crash between the two atomic sidecar
-                #     replaces; subclasses ValueError, listed for clarity).
+                #     mismatch (#734; a crash between the two atomic sidecar
+                #     replaces). Subclasses ValueError, so listed explicitly
+                #     here only so tightening this tuple cannot silently drop
+                #     the corrupt-index self-heal.
                 #   ValueError — truncated/garbage .json (JSONDecodeError is a
                 #     ValueError subclass) and corrupt/bad-version .npy.
                 #   EOFError — a zero-byte .npy (the canonical interrupted-save
