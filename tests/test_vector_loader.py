@@ -177,6 +177,30 @@ def test_rebuild_failure_raises_value_error(
         )
 
 
+def test_compatibility_rebuild_failure_raises_value_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    provider = MockEmbeddingProvider()
+    base = tmp_path / "embeddings"
+    (tmp_path / "embeddings.npy").touch()
+
+    def boom(*_a: object, **_k: object) -> VectorIndex:
+        raise VectorIndexCompatibilityError("mismatch")
+
+    monkeypatch.setattr(VectorIndex, "load", boom)
+    _box, get, set_ = _slot()
+
+    with pytest.raises(ValueError, match="compatibility error"):
+        load_or_self_heal(
+            embeddings_path=base,
+            embedding_provider=provider,
+            get_vectors=get,
+            set_vectors=set_,
+            rebuild=lambda: None,  # no-op: slot stays None
+            logger=_LOG,
+        )
+
+
 def test_permission_error_propagates_without_rebuild(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

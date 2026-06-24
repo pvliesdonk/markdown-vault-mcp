@@ -389,6 +389,8 @@ class SearchManager:
                 (``_embedding_provider`` or ``_embeddings_path`` is ``None``).
             ValueError: If a self-heal rebuild fails to produce a usable index.
         """
+        if self._vectors is not None:
+            return self._vectors
         if self._embeddings_path is None or self._embedding_provider is None:
             raise RuntimeError(
                 "_require_vectors() must be called before _load_vectors()"
