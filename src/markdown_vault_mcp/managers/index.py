@@ -20,6 +20,7 @@ import yaml
 
 from markdown_vault_mcp.fts_index import _derive_folder, should_optimize
 from markdown_vault_mcp.hashing import compute_file_hash
+from markdown_vault_mcp.managers._vector_loader import load_or_self_heal
 from markdown_vault_mcp.scanner import parse_note, scan_directory
 from markdown_vault_mcp.types import IndexStats, ParsedNote, ReindexResult
 from markdown_vault_mcp.utils import is_path_excluded
@@ -134,98 +135,30 @@ class IndexManager:
     def _load_vectors(self) -> VectorIndex:
         """Load or return the cached VectorIndex, self-healing corrupt sidecars.
 
-        Returns the cached index if already loaded. Otherwise deserialises it
-        from disk; on an incompatible, corrupt, or incomplete sidecar
-        (``VectorIndexCompatibilityError``, ``VectorIndexCorruptError``,
-        ``json.JSONDecodeError``/``ValueError``, ``EOFError``,
-        ``FileNotFoundError``) it routes to a ``force=True`` rebuild. A vault
-        with no persisted index cold-builds an empty one. Environmental errors
-        (e.g. ``PermissionError``) are not caught and propagate.
+        Delegates to
+        :func:`markdown_vault_mcp.managers._vector_loader.load_or_self_heal`;
+        see there for the full self-heal contract.
 
         Returns:
             A :class:`~markdown_vault_mcp.vector_index.VectorIndex` instance.
 
         Raises:
             RuntimeError: If called without a prior ``_require_vectors()``
-                (a call-ordering fault; ``_embedding_provider`` or
-                ``_embeddings_path`` is ``None`` at entry). ``_require_vectors``
-                itself raises ``ValueError`` for the unconfigured case.
+                (``_embedding_provider`` or ``_embeddings_path`` is ``None``).
             ValueError: If a self-heal rebuild fails to produce a usable index.
         """
-        vectors = self._get_vectors()
-        if vectors is not None:
-            return vectors
-
-        from markdown_vault_mcp.vector_index import (
-            VectorIndex,
-            VectorIndexCompatibilityError,
-            VectorIndexCorruptError,
-        )
-
         if self._embeddings_path is None or self._embedding_provider is None:
             raise RuntimeError(
                 "_require_vectors() must be called before _load_vectors()"
             )
-
-        npy_path = Path(str(self._embeddings_path) + ".npy")
-        if npy_path.exists():
-            try:
-                vi = VectorIndex.load(self._embeddings_path, self._embedding_provider)
-                self._set_vectors(vi)
-                logger.info("Loaded vector index from %s", self._embeddings_path)
-            except VectorIndexCompatibilityError as exc:
-                logger.warning("%s Rebuilding embeddings.", exc)
-                self.build_embeddings(force=True)
-                if self._get_vectors() is None:
-                    raise ValueError(
-                        "Failed to rebuild vector index after a compatibility error."
-                    ) from exc
-            except (
-                VectorIndexCorruptError,
-                json.JSONDecodeError,
-                ValueError,
-                EOFError,
-                FileNotFoundError,
-            ) as exc:
-                # A corrupt/incomplete sidecar wedges every boot until a manual
-                # rebuild (#720 follow-up): an interrupted save can leave a
-                # truncated or zero-byte file. Self-heal by routing to the same
-                # force-rebuild path as a compatibility mismatch.
-                #   VectorIndexCorruptError — embeddings/metadata row-count
-                #     mismatch (#734; a crash between the two atomic sidecar
-                #     replaces). A RuntimeError, so this entry is load-bearing
-                #     — it is NOT covered by the ValueError arm below.
-                #   ValueError — truncated/garbage .json (JSONDecodeError is a
-                #     ValueError subclass) and corrupt/bad-version .npy.
-                #   EOFError — a zero-byte .npy (the canonical interrupted-save
-                #     residue; numpy raises EOFError, not ValueError/OSError).
-                #   FileNotFoundError — a missing .json while the .npy exists
-                #     (an incomplete pair); the .npy-exists guard above means a
-                #     FileNotFoundError here can only be the gone .json sidecar.
-                # Deliberately NOT broad OSError: PermissionError / disk-IO
-                # errors are environmental — a destructive rebuild would be
-                # futile and mask the real problem, so they must propagate.
-                logger.warning(
-                    "vector_index_corrupt_rebuilding path=%s error=%s",
-                    self._embeddings_path,
-                    exc,
-                )
-                self.build_embeddings(force=True)
-                if self._get_vectors() is None:
-                    raise ValueError(
-                        "Failed to rebuild vector index after a corrupt sidecar."
-                    ) from exc
-        else:
-            vi = VectorIndex(self._embedding_provider)
-            self._set_vectors(vi)
-            logger.info("No vector index on disk; created empty VectorIndex")
-
-        result = self._get_vectors()
-        if result is None:
-            raise ValueError(
-                "Failed to rebuild vector index after a compatibility error."
-            )
-        return result
+        return load_or_self_heal(
+            embeddings_path=self._embeddings_path,
+            embedding_provider=self._embedding_provider,
+            get_vectors=self._get_vectors,
+            set_vectors=self._set_vectors,
+            rebuild=lambda: self.build_embeddings(force=True),  # type: ignore[arg-type]
+            logger=logger,
+        )
 
     # ------------------------------------------------------------------
     # Index building

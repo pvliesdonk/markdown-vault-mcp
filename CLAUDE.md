@@ -21,6 +21,7 @@ src/markdown_vault_mcp/
     index.py           -- IndexManager: build_index, reindex, embeddings, flush
     document.py        -- DocumentManager: CRUD, attachments, path validation, backlinks
     git_query.py       -- GitQueryManager: git history/diff reads (#610)
+    _vector_loader.py  -- shared load-or-self-heal routine for the vector sidecar (#736)
   indexing/
     index_writer.py    -- IndexWriter: single-owner FIFO writer thread + job dataclasses/runners
     readiness.py       -- ReadinessState: build-readiness state machine (#576)
