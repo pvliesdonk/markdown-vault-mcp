@@ -371,10 +371,25 @@ class SearchManager:
             )
 
     def _load_vectors(self) -> VectorIndex:
-        """Load or return the cached VectorIndex.
+        """Load or return the cached VectorIndex, self-healing corrupt sidecars.
+
+        Returns the cached index if already loaded. Otherwise deserialises it
+        from disk; on an incompatible, corrupt, or incomplete sidecar
+        (``VectorIndexCompatibilityError``, ``VectorIndexCorruptError``,
+        ``json.JSONDecodeError``/``ValueError``, ``EOFError``,
+        ``FileNotFoundError``) it routes to the injected ``rebuild_embeddings``
+        callback. A vault with no persisted index cold-builds an empty one.
+        Environmental errors (e.g. ``PermissionError``) are not caught and
+        propagate. Mirrors ``IndexManager._load_vectors`` over the shared
+        index (#734); the two are tracked for unification in #736.
 
         Returns:
             A :class:`~markdown_vault_mcp.vector_index.VectorIndex` instance.
+
+        Raises:
+            RuntimeError: If embedding support is not configured
+                (``_embedding_provider`` or ``_embeddings_path`` is ``None``).
+            ValueError: If a self-heal rebuild fails to produce a usable index.
         """
         if self._vectors is not None:
             return self._vectors

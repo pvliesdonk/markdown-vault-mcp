@@ -899,7 +899,7 @@ class TestLoadVectorsSelfHeal:
             index_vault, tmp_path
         )
         payload = _json.loads(json_path.read_text(encoding="utf-8"))
-        # Drop the last metadata row, leaving more embedding rows than rows.
+        # Drop the last metadata row, leaving more embedding rows than metadata.
         payload["rows"] = payload["rows"][:-1]
         json_path.write_text(_json.dumps(payload), encoding="utf-8")
 

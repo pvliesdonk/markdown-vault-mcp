@@ -851,6 +851,22 @@ class TestSearchLoadVectorsSelfHeal:
         payload["rows"] = payload["rows"][:-1]
         json_path.write_text(json.dumps(payload), encoding="utf-8")
 
+    @staticmethod
+    def _arm_rebuild(mgr: SearchManager) -> None:
+        """Wire a rebuild callback that repopulates the shared slot, then drop cache.
+
+        Mirrors what the coordinator's writer-routed rebuild does — sets
+        ``mgr.vectors`` to a populated index — so the self-heal path returns a
+        usable index rather than tripping the rebuild-failure guard.
+        """
+        from markdown_vault_mcp.vector_index import VectorIndex
+
+        assert mgr._embedding_provider is not None
+        rebuilt = VectorIndex(mgr._embedding_provider)
+        rebuilt.add(["alpha"], [{"path": "a.md", "title": "A", "heading": None}])
+        mgr._rebuild_embeddings = lambda: setattr(mgr, "vectors", rebuilt)
+        mgr._vectors = None  # force a re-read from disk
+
     def test_corrupt_sidecar_triggers_rebuild(
         self,
         search_mgr_with_embeddings: SearchManager,
@@ -898,3 +914,75 @@ class TestSearchLoadVectorsSelfHeal:
             ValueError, match="Failed to rebuild vector index after a corrupt sidecar"
         ):
             mgr._load_vectors()
+
+    def test_zero_byte_npy_triggers_rebuild(
+        self,
+        search_mgr_with_embeddings: SearchManager,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """A zero-byte .npy raises EOFError from numpy — must rebuild, not propagate.
+
+        EOFError is neither a ValueError nor an OSError, so the SearchManager
+        catch tuple must name it explicitly (parity with IndexManager).
+        """
+        import logging
+
+        mgr = search_mgr_with_embeddings
+        npy_path = mgr._embeddings_path.with_suffix(".npy")  # type: ignore[union-attr]
+        npy_path.write_bytes(b"")
+        self._arm_rebuild(mgr)
+
+        with caplog.at_level(
+            logging.WARNING, logger="markdown_vault_mcp.managers.search"
+        ):
+            result = mgr._load_vectors()
+
+        assert result.count >= 1
+        assert any(
+            "vector_index_corrupt_rebuilding" in r.getMessage() for r in caplog.records
+        )
+
+    def test_garbage_npy_triggers_rebuild(
+        self,
+        search_mgr_with_embeddings: SearchManager,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """A garbage (non-numpy) .npy raises ValueError — must rebuild."""
+        import logging
+
+        mgr = search_mgr_with_embeddings
+        npy_path = mgr._embeddings_path.with_suffix(".npy")  # type: ignore[union-attr]
+        npy_path.write_bytes(b"this is not a numpy array at all")
+        self._arm_rebuild(mgr)
+
+        with caplog.at_level(
+            logging.WARNING, logger="markdown_vault_mcp.managers.search"
+        ):
+            result = mgr._load_vectors()
+
+        assert result.count >= 1
+        assert any(
+            "vector_index_corrupt_rebuilding" in r.getMessage() for r in caplog.records
+        )
+
+    def test_missing_json_with_present_npy_triggers_rebuild(
+        self,
+        search_mgr_with_embeddings: SearchManager,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """A missing .json while the .npy exists (incomplete pair) rebuilds."""
+        import logging
+
+        mgr = search_mgr_with_embeddings
+        mgr._embeddings_path.with_suffix(".json").unlink()  # type: ignore[union-attr]
+        self._arm_rebuild(mgr)
+
+        with caplog.at_level(
+            logging.WARNING, logger="markdown_vault_mcp.managers.search"
+        ):
+            result = mgr._load_vectors()
+
+        assert result.count >= 1
+        assert any(
+            "vector_index_corrupt_rebuilding" in r.getMessage() for r in caplog.records
+        )
