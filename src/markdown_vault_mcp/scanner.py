@@ -776,13 +776,10 @@ def extract_links(content: str, source_path: str) -> list[LinkInfo]:
     # --- Wikilinks ---
     for m in _RE_WIKILINK.finditer(clean):
         raw_path = m.group(1).strip()
-        # Obsidian escapes the alias pipe as `\|` when a wikilink sits in a
-        # table cell (e.g. `[[notes/foo\|Foo]]`); `[^\]|]+` does not exclude
-        # backslashes, so the trailing `\` flows into group(1) (#731). Strip one
-        # trailing backslash — this fires for ANY trailing backslash, not only
-        # the aliased-table case. Must run BEFORE `wikilink_raw_target` is built
-        # below: raw_target is the anchor for `resolve_vault_wikilinks()`, so a
-        # `notes/foo\` anchor would never resolve.
+        # Obsidian escapes the alias pipe as `\|` in table cells, so the target
+        # keeps a trailing `\` (#731). Strip it BEFORE wikilink_raw_target is
+        # built — raw_target is the resolve_vault_wikilinks() anchor and must be
+        # the clean stem, else the link never resolves.
         if raw_path.endswith("\\"):
             raw_path = raw_path[:-1]
         alias = m.group(2)
