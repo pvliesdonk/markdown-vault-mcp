@@ -776,6 +776,13 @@ def extract_links(content: str, source_path: str) -> list[LinkInfo]:
     # --- Wikilinks ---
     for m in _RE_WIKILINK.finditer(clean):
         raw_path = m.group(1).strip()
+        # Obsidian requires the alias pipe to be escaped as `\|` when an
+        # aliased wikilink sits in a table cell, so the canonical target carries
+        # a trailing escape backslash the regex captures (#731). Drop it so
+        # `[[notes/foo\|Foo]]` resolves to `notes/foo`, not the literal
+        # `notes/foo\`.
+        if raw_path.endswith("\\"):
+            raw_path = raw_path[:-1]
         alias = m.group(2)
         link_text = alias.strip() if alias else raw_path
 

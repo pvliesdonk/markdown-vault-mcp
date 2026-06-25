@@ -299,6 +299,41 @@ class TestExtractWikilinks:
         assert len(links) == 1
         assert links[0].raw_target == "note.md"
 
+    def test_wikilink_escaped_pipe_alias_in_table(self) -> None:
+        """[[path\\|alias]] (Obsidian table escape) drops the trailing backslash.
+
+        Obsidian requires the alias pipe to be escaped as ``\\|`` inside a table
+        cell; the regex would otherwise capture ``notes/foo\\`` as the target
+        (#731).
+        """
+        links = extract_links("| [[notes/foo\\|Foo]] |", "hub.md")
+        assert len(links) == 1
+        assert links[0].target_path == "notes/foo.md"
+        assert links[0].raw_target == "notes/foo"
+        assert links[0].link_text == "Foo"
+
+    def test_wikilink_escaped_pipe_with_fragment(self) -> None:
+        """[[note#sec\\|Alias]] strips the escape and still splits the fragment."""
+        links = extract_links("[[note#sec\\|Alias]]", "index.md")
+        assert len(links) == 1
+        assert links[0].target_path == "note.md"
+        assert links[0].fragment == "sec"
+        assert links[0].raw_target == "note#sec"
+        assert links[0].link_text == "Alias"
+
+    def test_wikilink_unescaped_pipe_unchanged(self) -> None:
+        """A normal [[path|alias]] (no backslash) is unaffected by the strip."""
+        links = extract_links("[[notes/topic|My Topic]]", "index.md")
+        assert len(links) == 1
+        assert links[0].target_path == "notes/topic.md"
+        assert links[0].raw_target == "notes/topic"
+
+    def test_wikilink_mid_path_backslash_not_stripped(self) -> None:
+        """Only a TRAILING backslash is stripped; a mid-target one is kept."""
+        links = extract_links("[[a\\b]]", "index.md")
+        assert len(links) == 1
+        assert links[0].target_path == "a\\b.md"
+
 
 # ---------------------------------------------------------------------------
 # extract_links: code block exclusion
@@ -411,6 +446,29 @@ class TestFTSIndexLinks:
         assert rows[0]["source_title"] == "Source Doc"
         assert rows[0]["link_text"] == "the target"
         assert rows[0]["link_type"] == "markdown"
+
+    def test_escaped_pipe_wikilink_not_broken_and_backlinked(self) -> None:
+        """End-to-end (#731): a table-escaped aliased wikilink resolves cleanly.
+
+        Reproduces the reported symptom: ``[[notes/foo\\|Foo]]`` in a source
+        note, with ``notes/foo.md`` indexed, must NOT be reported broken and the
+        backlink edge to ``notes/foo.md`` must be present.
+        """
+        idx = FTSIndex(":memory:")
+        source_links = extract_links("| [[notes/foo\\|Foo]] |", "hub.md")
+        assert len(source_links) == 1  # sanity: the wikilink was extracted
+        idx.build_from_notes(
+            [
+                make_note(path="hub.md", title="Hub", links=source_links),
+                make_note(path="notes/foo.md", title="Foo"),
+            ]
+        )
+        idx.resolve_vault_wikilinks()
+
+        assert idx.get_broken_links() == []
+        assert idx.get_outlinks("hub.md")[0]["target_path"] == "notes/foo.md"
+        backlinks = idx.get_backlinks("notes/foo.md")
+        assert [r["source_path"] for r in backlinks] == ["hub.md"]
 
     def test_build_from_notes_populates_links(self) -> None:
         """build_from_notes bulk indexes links for all notes."""
