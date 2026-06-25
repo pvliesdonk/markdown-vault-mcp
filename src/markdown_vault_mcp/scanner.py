@@ -627,7 +627,7 @@ _RE_INLINE_LINK = re.compile(r"\[([^\]]*)\]\(([^)]+)\)")
 _RE_REF_USAGE = re.compile(r"\[([^\]]*)\]\[([^\]]*)\]")
 # Reference definition: [ref]: target  (at start of line, optional leading whitespace)
 _RE_REF_DEF = re.compile(r"^\s*\[([^\]]+)\]:\s*(.+)$", re.MULTILINE)
-# Wikilink: [[path]] or [[path|alias]]
+# Wikilink: [[path]], [[path|alias]], or [[path\|alias]] (Obsidian table-cell escape)
 _RE_WIKILINK = re.compile(r"\[\[([^\]|]+)(?:\|([^\]]+))?\]\]")
 
 
@@ -776,11 +776,13 @@ def extract_links(content: str, source_path: str) -> list[LinkInfo]:
     # --- Wikilinks ---
     for m in _RE_WIKILINK.finditer(clean):
         raw_path = m.group(1).strip()
-        # Obsidian requires the alias pipe to be escaped as `\|` when an
-        # aliased wikilink sits in a table cell, so the canonical target carries
-        # a trailing escape backslash the regex captures (#731). Drop it so
-        # `[[notes/foo\|Foo]]` resolves to `notes/foo`, not the literal
-        # `notes/foo\`.
+        # Obsidian escapes the alias pipe as `\|` when a wikilink sits in a
+        # table cell (e.g. `[[notes/foo\|Foo]]`); `[^\]|]+` does not exclude
+        # backslashes, so the trailing `\` flows into group(1) (#731). Strip one
+        # trailing backslash — this fires for ANY trailing backslash, not only
+        # the aliased-table case. Must run BEFORE `wikilink_raw_target` is built
+        # below: raw_target is the anchor for `resolve_vault_wikilinks()`, so a
+        # `notes/foo\` anchor would never resolve.
         if raw_path.endswith("\\"):
             raw_path = raw_path[:-1]
         alias = m.group(2)

@@ -329,10 +329,33 @@ class TestExtractWikilinks:
         assert links[0].raw_target == "notes/topic"
 
     def test_wikilink_mid_path_backslash_not_stripped(self) -> None:
-        """Only a TRAILING backslash is stripped; a mid-target one is kept."""
+        """A mid-target backslash (`[[a\\b]]`) does not trigger the strip.
+
+        `endswith("\\")` is False, so the strip is never reached — pins that
+        only a *trailing* backslash is removed.
+        """
         links = extract_links("[[a\\b]]", "index.md")
         assert len(links) == 1
         assert links[0].target_path == "a\\b.md"
+
+    def test_wikilink_escaped_pipe_dotmd_explicit_extension(self) -> None:
+        """[[note.md\\|Alias]] strips the escape; .md is not doubled."""
+        links = extract_links("| [[note.md\\|Alias]] |", "index.md")
+        assert len(links) == 1
+        assert links[0].target_path == "note.md"
+        assert links[0].raw_target == "note.md"  # extension preserved, not doubled
+        assert links[0].link_text == "Alias"
+
+    def test_wikilinks_mixed_escaped_and_plain_same_line(self) -> None:
+        """A table row with one escaped and one plain wikilink resolves each independently."""
+        links = extract_links("| [[a/b\\|Escaped]] | [[c/d|Plain]] |", "hub.md")
+        assert len(links) == 2
+        escaped = next(link for link in links if link.raw_target == "a/b")
+        plain = next(link for link in links if link.raw_target == "c/d")
+        assert escaped.target_path == "a/b.md"
+        assert escaped.link_text == "Escaped"
+        assert plain.target_path == "c/d.md"
+        assert plain.link_text == "Plain"
 
 
 # ---------------------------------------------------------------------------
