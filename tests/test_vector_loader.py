@@ -248,7 +248,7 @@ def test_empty_rebuild_is_accepted_not_an_error(
         raise VectorIndexCorruptError("row count mismatch")
 
     monkeypatch.setattr(VectorIndex, "load", boom)
-    box, get, set_ = _slot()
+    _box, get, set_ = _slot()
     empty = VectorIndex(provider)  # count == 0
 
     result = load_or_self_heal(
@@ -256,7 +256,7 @@ def test_empty_rebuild_is_accepted_not_an_error(
         embedding_provider=provider,
         get_vectors=get,
         set_vectors=set_,
-        rebuild=lambda: box.__setitem__("v", empty),
+        rebuild=lambda: set_(empty),
         logger=_LOG,
     )
     assert result is empty
@@ -296,6 +296,43 @@ def test_rebuild_that_raises_is_logged_then_propagates(
 
     def boom(*_a: object, **_k: object) -> VectorIndex:
         raise VectorIndexCorruptError("row count mismatch")
+
+    monkeypatch.setattr(VectorIndex, "load", boom)
+    _box, get, set_ = _slot()
+
+    def rebuild_explodes() -> None:
+        raise RuntimeError("provider down")
+
+    with (
+        caplog.at_level(logging.ERROR, logger=_LOGGER_NAME),
+        pytest.raises(RuntimeError, match="provider down"),
+    ):
+        load_or_self_heal(
+            embeddings_path=base,
+            embedding_provider=provider,
+            get_vectors=get,
+            set_vectors=set_,
+            rebuild=rebuild_explodes,
+            logger=_LOG,
+        )
+    assert any(
+        r.name == _LOGGER_NAME and "vector_index_rebuild_failed" in r.getMessage()
+        for r in caplog.records
+    )
+
+
+def test_compat_rebuild_that_raises_is_logged_then_propagates(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A raising rebuild on the compatibility arm is also logged + propagated."""
+    provider = MockEmbeddingProvider()
+    base = tmp_path / "embeddings"
+    (tmp_path / "embeddings.npy").touch()
+
+    def boom(*_a: object, **_k: object) -> VectorIndex:
+        raise VectorIndexCompatibilityError("mismatch")
 
     monkeypatch.setattr(VectorIndex, "load", boom)
     _box, get, set_ = _slot()

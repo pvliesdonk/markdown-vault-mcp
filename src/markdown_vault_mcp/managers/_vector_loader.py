@@ -56,7 +56,9 @@ def load_or_self_heal(
         A :class:`~markdown_vault_mcp.vector_index.VectorIndex` instance.
 
     Raises:
-        ValueError: If a self-heal rebuild fails to produce a usable index.
+        ValueError: If a self-heal rebuild completes but leaves the slot empty.
+        Exception: Any exception raised by the ``rebuild`` callback is logged
+            at ERROR and re-raised unchanged.
     """
     cached = get_vectors()
     if cached is not None:
@@ -69,7 +71,7 @@ def load_or_self_heal(
     )
 
     def _run_rebuild() -> None:
-        """Run the rebuild callback; if it raises, log and re-raise unchanged.
+        """Run the rebuild callback; if it raises, log at ERROR and re-raise the original exception without wrapping.
 
         Ties a rebuild failure (e.g. provider/FTS error inside the rebuild)
         to the corruption event in the log instead of letting it propagate
@@ -77,6 +79,9 @@ def load_or_self_heal(
         """
         try:
             rebuild()
+        # Broad by design: the rebuild callback (build_embeddings / a provider
+        # call) raises heterogeneous types; log then re-raise unchanged. Mirrors
+        # IndexManager.build_embeddings' own broad per-batch except (#735).
         except Exception:
             logger.error(
                 "vector_index_rebuild_failed path=%s",
@@ -91,11 +96,11 @@ def load_or_self_heal(
             set_vectors(VectorIndex.load(embeddings_path, embedding_provider))
             logger.info("Loaded vector index from %s", embeddings_path)
         except VectorIndexCompatibilityError as exc:
-            logger.warning("%s Rebuilding embeddings.", exc)
+            logger.warning("%s Rebuilding embeddings.", exc, exc_info=True)
             _run_rebuild()
             # An empty-but-populated index is accepted, not an error: the
             # degraded "every batch failed" case is surfaced by
-            # build_embeddings' build_embeddings_all_batches_failed warning
+            # IndexManager.build_embeddings' build_embeddings_all_batches_failed warning
             # (#649/#735). This guard only catches a rebuild that left the slot
             # entirely unpopulated (None).
             if get_vectors() is None:
