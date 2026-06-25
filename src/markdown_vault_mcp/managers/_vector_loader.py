@@ -68,6 +68,23 @@ def load_or_self_heal(
         VectorIndexCorruptError,
     )
 
+    def _run_rebuild() -> None:
+        """Run the rebuild callback; if it raises, log and re-raise unchanged.
+
+        Ties a rebuild failure (e.g. provider/FTS error inside the rebuild)
+        to the corruption event in the log instead of letting it propagate
+        unlogged (#735).
+        """
+        try:
+            rebuild()
+        except Exception:
+            logger.error(
+                "vector_index_rebuild_failed path=%s",
+                embeddings_path,
+                exc_info=True,
+            )
+            raise
+
     npy_path = Path(str(embeddings_path) + ".npy")
     if npy_path.exists():
         try:
@@ -75,7 +92,12 @@ def load_or_self_heal(
             logger.info("Loaded vector index from %s", embeddings_path)
         except VectorIndexCompatibilityError as exc:
             logger.warning("%s Rebuilding embeddings.", exc)
-            rebuild()
+            _run_rebuild()
+            # An empty-but-populated index is accepted, not an error: the
+            # degraded "every batch failed" case is surfaced by
+            # build_embeddings' build_embeddings_all_batches_failed warning
+            # (#649/#735). This guard only catches a rebuild that left the slot
+            # entirely unpopulated (None).
             if get_vectors() is None:
                 raise ValueError(
                     "Failed to rebuild vector index after a compatibility error."
@@ -108,8 +130,9 @@ def load_or_self_heal(
                 "vector_index_corrupt_rebuilding path=%s error=%s",
                 embeddings_path,
                 exc,
+                exc_info=True,
             )
-            rebuild()
+            _run_rebuild()
             if get_vectors() is None:
                 raise ValueError(
                     "Failed to rebuild vector index after a corrupt sidecar."
@@ -120,5 +143,7 @@ def load_or_self_heal(
 
     result = get_vectors()
     if result is None:
-        raise ValueError("Failed to rebuild vector index after a compatibility error.")
+        raise ValueError(
+            "Failed to obtain a usable vector index (slot empty after load/rebuild)."
+        )
     return result

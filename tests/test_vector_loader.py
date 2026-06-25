@@ -229,3 +229,93 @@ def test_permission_error_propagates_without_rebuild(
             logger=_LOG,
         )
     assert calls == []
+
+
+def test_empty_rebuild_is_accepted_not_an_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A rebuild that populates an EMPTY index returns it without raising.
+
+    Respects #649 graceful degradation: a provider-down rebuild yields an
+    empty (but populated) slot, which build_embeddings already warns about;
+    load_or_self_heal must not turn that into a hard failure.
+    """
+    provider = MockEmbeddingProvider()
+    base = tmp_path / "embeddings"
+    (tmp_path / "embeddings.npy").touch()
+
+    def boom(*_a: object, **_k: object) -> VectorIndex:
+        raise VectorIndexCorruptError("row count mismatch")
+
+    monkeypatch.setattr(VectorIndex, "load", boom)
+    box, get, set_ = _slot()
+    empty = VectorIndex(provider)  # count == 0
+
+    result = load_or_self_heal(
+        embeddings_path=base,
+        embedding_provider=provider,
+        get_vectors=get,
+        set_vectors=set_,
+        rebuild=lambda: box.__setitem__("v", empty),
+        logger=_LOG,
+    )
+    assert result is empty
+    assert result.count == 0
+
+
+def test_tail_guard_uses_scenario_neutral_message(tmp_path: Path) -> None:
+    """The cold-build tail guard must not misattribute to 'compatibility error'.
+
+    A no-op set_vectors leaves the slot None after the cold-build branch, so
+    the trailing guard fires. Its message must be scenario-neutral.
+    """
+    provider = MockEmbeddingProvider()
+    base = tmp_path / "embeddings"  # no .npy on disk -> cold-build path
+
+    with pytest.raises(ValueError, match="slot empty after load/rebuild"):
+        load_or_self_heal(
+            embeddings_path=base,
+            embedding_provider=provider,
+            get_vectors=lambda: None,  # slot never populated
+            set_vectors=lambda _v: None,  # no-op: drops the cold-build index
+            rebuild=lambda: None,
+            logger=_LOG,
+        )
+
+
+def test_rebuild_that_raises_is_logged_then_propagates(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A rebuild callback that itself raises logs vector_index_rebuild_failed
+    and propagates the original exception (does not swallow it)."""
+    provider = MockEmbeddingProvider()
+    base = tmp_path / "embeddings"
+    (tmp_path / "embeddings.npy").touch()
+
+    def boom(*_a: object, **_k: object) -> VectorIndex:
+        raise VectorIndexCorruptError("row count mismatch")
+
+    monkeypatch.setattr(VectorIndex, "load", boom)
+    _box, get, set_ = _slot()
+
+    def rebuild_explodes() -> None:
+        raise RuntimeError("provider down")
+
+    with (
+        caplog.at_level(logging.ERROR, logger=_LOGGER_NAME),
+        pytest.raises(RuntimeError, match="provider down"),
+    ):
+        load_or_self_heal(
+            embeddings_path=base,
+            embedding_provider=provider,
+            get_vectors=get,
+            set_vectors=set_,
+            rebuild=rebuild_explodes,
+            logger=_LOG,
+        )
+    assert any(
+        r.name == _LOGGER_NAME and "vector_index_rebuild_failed" in r.getMessage()
+        for r in caplog.records
+    )
