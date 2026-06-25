@@ -117,8 +117,12 @@ def test_compatibility_error_triggers_rebuild(
         )
 
     assert result is rebuilt
+    # Pin the warning AND that it carries a traceback (exc_info) for the
+    # destructive rebuild (#735).
     assert any(
-        r.name == _LOGGER_NAME and "Rebuilding embeddings" in r.getMessage()
+        r.name == _LOGGER_NAME
+        and "Rebuilding embeddings" in r.getMessage()
+        and r.exc_info is not None
         for r in caplog.records
     )
 
@@ -150,9 +154,13 @@ def test_corrupt_error_triggers_rebuild(
         )
 
     assert result is rebuilt
-    # Pins both the event name AND that the PASSED logger emitted it (#736).
+    # Pins the event name, that the PASSED logger emitted it (#736), AND that
+    # the warning carries a traceback (exc_info) for the destructive rebuild
+    # (#735).
     assert any(
-        r.name == _LOGGER_NAME and "vector_index_corrupt_rebuilding" in r.getMessage()
+        r.name == _LOGGER_NAME
+        and "vector_index_corrupt_rebuilding" in r.getMessage()
+        and r.exc_info is not None
         for r in caplog.records
     )
 
