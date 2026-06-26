@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import threading
 from typing import TYPE_CHECKING
 
@@ -18,6 +19,7 @@ from markdown_vault_mcp.exceptions import (
     ReadOnlyError,
 )
 from markdown_vault_mcp.fts_index import FTSIndex
+from markdown_vault_mcp.managers import document as doc_mod
 from markdown_vault_mcp.managers.document import DocumentManager
 from markdown_vault_mcp.scanner import HeadingChunker, scan_directory
 
@@ -142,30 +144,50 @@ class TestRead:
         assert result is not None
         assert result.folder == ""
 
+    @staticmethod
+    def _assert_degrade_warning(caplog: pytest.LogCaptureFixture, path: str) -> None:
+        """Assert read() logged the documented degrade-to-None warning for *path*."""
+        assert any(
+            record.levelno == logging.WARNING
+            and "could not parse file" in record.getMessage()
+            and path in record.getMessage()
+            for record in caplog.records
+        ), f"expected a degrade-to-None warning for {path!r}; got {caplog.records!r}"
+
     def test_read_degrades_to_none_if_content_read_fails(
-        self, doc_mgr: DocumentManager, monkeypatch: pytest.MonkeyPatch
+        self,
+        doc_mgr: DocumentManager,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         """If the post-parse content read fails (e.g. the file is removed or
         truncated between parse_note and the content read), read() degrades to
-        None rather than leaking the raw OSError/UnicodeDecodeError (#745)."""
-        import markdown_vault_mcp.managers.document as doc_mod
+        None and logs a warning rather than leaking the raw
+        OSError/UnicodeDecodeError (#745, #746)."""
 
         def _boom(_path: Path) -> str:
             raise OSError("file vanished between reads")
 
         monkeypatch.setattr(doc_mod, "_read_text_utf8", _boom)
-        assert doc_mgr.read("alpha.md") is None
+        with caplog.at_level(logging.WARNING, logger=doc_mod.logger.name):
+            assert doc_mgr.read("alpha.md") is None
+        self._assert_degrade_warning(caplog, "alpha.md")
 
     def test_read_malformed_frontmatter_returns_none(
-        self, doc_mgr: DocumentManager, doc_vault: Path
+        self,
+        doc_mgr: DocumentManager,
+        doc_vault: Path,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         """A whole-document read of a file with a malformed YAML frontmatter
-        block degrades to None (logged warning), rather than leaking a
-        yaml.YAMLError into the caller (#742)."""
+        block degrades to None and logs a warning, rather than leaking a
+        yaml.YAMLError into the caller (#742, #746)."""
         (doc_vault / "bad_fm.md").write_text(
             "---\ntitle: [unclosed\n---\n# Body\ntext\n", encoding="utf-8"
         )
-        assert doc_mgr.read("bad_fm.md") is None
+        with caplog.at_level(logging.WARNING, logger=doc_mod.logger.name):
+            assert doc_mgr.read("bad_fm.md") is None
+        self._assert_degrade_warning(caplog, "bad_fm.md")
 
 
 # ---------------------------------------------------------------------------
