@@ -366,6 +366,24 @@ def test_read_section_raises_when_indexed_file_missing_on_disk(tmp_path):
         mgr.read("a.md", section="Section One")
 
 
+def test_read_unknown_section_suggestion_dedupes_headings(tmp_path):
+    """The 'did you mean' suggestion lists each heading once even when the
+    document repeats a heading."""
+    body = (
+        "# A\n"
+        + "\n".join(["preamble"] * 12)
+        + "\n## Repeat\nfirst.\n"
+        + "## Other\nmid.\n"
+        + "## Repeat\nsecond.\n"
+    )
+    mgr = _make_mgr(tmp_path, body)
+
+    with pytest.raises(ValueError) as excinfo:
+        mgr.read("a.md", section="No Such Heading")
+    message = str(excinfo.value)
+    assert message.count("'Repeat'") == 1
+
+
 def test_read_section_raises_on_non_utf8_file(tmp_path):
     """A file that decodes cleanly at index time but is later overwritten with
     invalid UTF-8 yields a ValueError, not a leaked UnicodeDecodeError (#741).
