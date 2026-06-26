@@ -697,6 +697,15 @@ class TestExtractSection:
         # there — content after the fence is not part of this section.
         assert "after fence." not in out
 
+    def test_empty_section_returns_empty_string_not_none(self) -> None:
+        """A present-but-empty section (heading immediately followed by a
+        same-or-higher heading) returns "" — distinct from the None that a
+        *missing* heading returns. _read_section keys 'not found' on None, so
+        this `"" is not None` boundary must hold."""
+        text = "# A\n## Empty\n## Next\nnext body.\n"
+        assert extract_section(text, "Empty") == ""
+        assert extract_section(text, "Missing") is None
+
     def test_returns_none_for_missing_heading(self) -> None:
         assert extract_section("# A\nbody.\n", "Nope") is None
 

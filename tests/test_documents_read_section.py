@@ -366,6 +366,23 @@ def test_read_section_raises_when_indexed_file_missing_on_disk(tmp_path):
         mgr.read("a.md", section="Section One")
 
 
+def test_read_empty_but_present_section_returns_empty_content(tmp_path):
+    """A heading with no body (immediately followed by a same-level heading) is
+    a present-but-empty section: it returns NoteContent with empty content, NOT
+    a 'section not found' ValueError (#741)."""
+    body = (
+        "# A\n"
+        + "\n".join(["preamble"] * 12)
+        + "\n## Empty\n## Next\nmarker_next body.\n"
+    )
+    mgr = _make_mgr(tmp_path, body)
+
+    nc = mgr.read("a.md", section="Empty")
+    assert nc is not None
+    assert nc.content.strip() == ""
+    assert "marker_next" not in nc.content
+
+
 def test_read_unknown_section_suggestion_dedupes_headings(tmp_path):
     """The 'did you mean' suggestion lists each heading once even when the
     document repeats a heading."""
