@@ -27,7 +27,11 @@ from markdown_vault_mcp.exceptions import (
     ReadOnlyError,
 )
 from markdown_vault_mcp.hashing import compute_etag, compute_file_hash
-from markdown_vault_mcp.scanner import parse_note
+from markdown_vault_mcp.scanner import (
+    extract_section,
+    list_section_headings,
+    parse_note,
+)
 from markdown_vault_mcp.types import (
     AttachmentContent,
     DeleteResult,
@@ -232,10 +236,11 @@ class DocumentManager:
 
         Args:
             path: Relative document path (e.g. ``"Journal/note.md"``).
-            section: When provided, return only the chunk whose heading
-                matches *section* (case-sensitive; internal whitespace is
-                collapsed before comparison). ``None`` returns the whole
-                document (today's behaviour).
+            section: When provided, return the whole section whose heading
+                matches *section* — its body and any sub-sections, up to the
+                next heading at the same or higher level (case-sensitive;
+                internal whitespace is collapsed before comparison). ``None``
+                returns the whole document.
 
         Returns:
             A :class:`~markdown_vault_mcp.types.NoteContent`, or ``None`` if
@@ -247,7 +252,7 @@ class DocumentManager:
 
         Raises:
             ValueError: When *section* is provided and is empty / whitespace,
-                or when the document does not contain a chunk with that
+                or when the document does not contain a section with that
                 heading. (Path-not-found also raises in section mode rather
                 than returning ``None``, since "no document" implies "no
                 section".)
@@ -312,14 +317,20 @@ class DocumentManager:
         )
 
     def _read_section(self, path: str, heading: str) -> NoteContent:
-        """Return a NoteContent containing only the named section's chunk.
+        """Return a NoteContent containing the full named section.
+
+        The section is reconstructed from the document on disk: its span runs
+        from just after the heading line to the next heading at the same or
+        higher level (or end of document), so the *whole* section is returned
+        even when the chunker fragmented it into several rows — an over-budget
+        body split on paragraphs, or a parent split at its sub-headings (#741).
+        Sub-sections under the requested heading are included.
 
         Args:
             path: Relative document path.
-            heading: Exact heading string to match in the sections table.
-                When a document contains multiple sections with the same
-                heading text (rare in practice), the first occurrence by
-                ``start_line`` is returned.
+            heading: Heading string to match (internal whitespace collapsed;
+                case-sensitive). When a document contains multiple sections
+                with the same heading text, the first occurrence is returned.
 
         Returns:
             A :class:`~markdown_vault_mcp.types.NoteContent` with the
@@ -329,8 +340,8 @@ class DocumentManager:
             frontmatter.
 
         Raises:
-            ValueError: If the document is not indexed or the heading is
-                not found.
+            ValueError: If the document is not indexed, its file cannot be
+                read, or the heading is not found.
         """
         doc_row = self._fts.get_note(path)
         if doc_row is None:
@@ -338,20 +349,25 @@ class DocumentManager:
                 f"Section '{heading}' not found in document {path}: "
                 "document is not indexed or does not exist"
             )
-        section_row = self._fts.get_section(path, heading)
-        if section_row is None:
-            # Miss path only — fires a second SELECT over the same rows
-            # get_section already fetched. Acceptable because the miss
-            # path is by definition rare (LLM caller already gave us a
-            # bad heading) and consolidating the queries would couple
-            # get_section's return shape to error-message rendering.
-            available = self._fts.list_section_headings(path, limit=10)
+
+        abs_path = self._validate_path(path)
+        try:
+            text = _read_text_utf8(abs_path)
+        except OSError as exc:
+            raise ValueError(
+                f"Section '{heading}' not found in document {path}: "
+                "document file is not readable"
+            ) from exc
+
+        content = extract_section(text, heading)
+        if content is None:
+            available = list_section_headings(text)[:10]
             if available:
                 suggestion = " — available headings include: " + ", ".join(
                     repr(h) for h in available
                 )
             else:
-                suggestion = " (document has no indexed headings)"
+                suggestion = " (document has no headings)"
             raise ValueError(
                 f"Section '{heading}' not found in document {path}{suggestion}"
             )
@@ -364,7 +380,7 @@ class DocumentManager:
             path=path,
             title=doc_row["title"],
             folder=folder,
-            content=section_row["content"],
+            content=content,
             frontmatter={},  # section reads do not synthesise frontmatter
             modified_at=doc_row["modified_at"],
             etag="",  # ETag is whole-file; not meaningful for a section

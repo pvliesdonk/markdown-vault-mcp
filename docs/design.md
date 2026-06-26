@@ -220,7 +220,10 @@ Four complementary mechanisms improve result diversity and bound LLM context cos
    `snippet_words` words (default 200). For keyword and hybrid results, FTS5's built-in
    `snippet()` function selects a tokenizer-aware window centered on query terms. For
    semantic-only results, a Python word-window scan picks the densest-matching window.
-   Full chunk recovery is available via `read(path, section=heading)`.
+   Full-section recovery is available via `read(path, section=heading)`, which
+   reconstructs the whole section (body plus any sub-sections) from the document
+   on disk regardless of how the chunker fragmented it, so a section longer than
+   the chunk budget is returned intact rather than truncated to its first chunk.
 4. **Adaptive heading-level chunking.** The `HeadingChunker` recursively re-splits
    oversize chunks at deeper heading levels (H1 → H6) until each fits `max_chunk_words`
    words. When heading-based refinement cannot make further progress (a leaf section
@@ -2055,7 +2058,7 @@ Attachments are **not indexed or searched**: only direct path-based read/write/d
 
 The cap is enforced by the `read`, `write`, and `fetch` MCP tools, the layer where attachment bytes flow through the LLM context as base64. The vault library's `read_attachment()` / `write_attachment()` accept any size, so out-of-band byte movement (such as an HTTP transfer route) is not gated by it. Set `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB=0` to disable the limit. The default was tightened from 10 MB to 1 MB in #442 to keep LLM context bounded; most contexts can't survive a 10 MB base64-encoded attachment, so the old default was a silent context-blow-up. The error message names `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB` as the knob to raise if the bytes are needed in context.
 
-A parallel cap on whole-document `read()` for `.md` files (`MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES`, default 256 KB) raises `ValueError` with a message pointing at `read(path, section=heading)` for partial reads. Section reads bypass the cap because they only load one chunk.
+A parallel cap on whole-document `read()` for `.md` files (`MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES`, default 256 KB) raises `ValueError` with a message pointing at `read(path, section=heading)` for partial reads. Section reads bypass the cap because they return only the requested section, not the whole document.
 
 #### MCP Apps
 

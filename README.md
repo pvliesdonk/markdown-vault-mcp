@@ -17,10 +17,10 @@ Point it at a directory of Markdown files (an Obsidian vault, a docs folder, a Z
 - **Full-text search** — SQLite FTS5 with BM25 scoring, porter stemming
 - **Semantic search** — cosine similarity over embedding vectors (FastEmbed, Ollama, or OpenAI)
 - **Hybrid search** — Reciprocal Rank Fusion combining FTS5 and vector results
-- **Diversity-aware ranking** — each search result list caps a single document at 2 chunks (configurable), downweights chunks of long documents, and returns sentence-scale snippets — bounded LLM context cost per query, with full chunk recovery via `read(path, section=heading)`
+- **Diversity-aware ranking** — each search result list caps a single document at 2 chunks (configurable), downweights chunks of long documents, and returns sentence-scale snippets — bounded LLM context cost per query, with full-section recovery via `read(path, section=heading)`
 - **Adaptive heading-level chunking** — long sections are recursively re-split at deeper heading levels (H1 → H6) until each chunk fits a configurable word budget, improving retrieval precision on synthesising essays without manual restructuring
 
-> **Upgrading.** As of this release, `search` returns query-relevant snippets in the `content` field by default (approximately 200 words). Pass `snippet_words=0` to recover the prior full-chunk behaviour, or use `read(path, section=heading)` to fetch a specific chunk after seeing a snippet. Documents are also re-chunked on next `reindex` to honour the adaptive `MARKDOWN_VAULT_MCP_MAX_CHUNK_WORDS` threshold (default 400).
+> **Upgrading.** As of this release, `search` returns query-relevant snippets in the `content` field by default (approximately 200 words). Pass `snippet_words=0` to recover the prior full-chunk behaviour, or use `read(path, section=heading)` to fetch the full section after seeing a snippet. Documents are also re-chunked on next `reindex` to honour the adaptive `MARKDOWN_VAULT_MCP_MAX_CHUNK_WORDS` threshold (default 400).
 - **Frontmatter-aware** — indexes YAML frontmatter fields, supports required field enforcement
 - **Incremental reindexing** — hash-based change detection, only re-processes modified files; an automatic boot-time reconciliation pass picks up changes made while no server was running, and the vector index converges to the reconciled chunk set (embedding exactly the delta)
 - **Write operations** — create, edit, delete, rename documents with automatic index updates

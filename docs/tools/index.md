@@ -69,7 +69,7 @@ Find documents matching a query using full-text or semantic search.
     Each file appears at most once in results, with up to `chunks_per_file` sections nested under `sections`. The top-level `score` is the maximum of the section scores (MaxP aggregation). Iterate `sections` to drill into individual matches.
 
 !!! note "Snippet content and full-chunk recovery"
-    By default, each section's `content` is a snippet of approximately 200 words centered on the query terms (not the full chunk). Pass `snippet_words=0` to receive the complete chunk. To read the full section after receiving a search result, call `read(path=result["path"], section=result["sections"][0]["heading"])`; this returns the entire chunk from the index without re-reading the whole document.
+    By default, each section's `content` is a snippet of approximately 200 words centered on the query terms (not the full chunk). Pass `snippet_words=0` to receive the complete chunk. To read the full section after receiving a search result, call `read(path=result["path"], section=result["sections"][0]["heading"])`; this returns the entire section (body plus any sub-sections) reconstructed from the document.
 
 !!! tip "Choosing a search mode"
     - Use `mode="hybrid"` when semantic search is available, combining keyword precision with semantic understanding
@@ -90,17 +90,17 @@ Find documents matching a query using full-text or semantic search.
 
 ### `read`
 
-Read the full content of a document or attachment by path. When combined with search, the optional `section` parameter lets you retrieve the full content of a specific chunk without loading the entire document.
+Read the full content of a document or attachment by path. When combined with search, the optional `section` parameter lets you retrieve a single section in full (its body and any sub-sections) without loading the entire document.
 
 **Parameters:**
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `path` | string | required | Relative path to the document or attachment (such as `"Journal/note.md"` or `"assets/diagram.pdf"`) |
-| `section` | string | `null` | Optional heading to select a single section chunk. Pass the `heading` field from a `search` result to retrieve the full chunk content. Matching collapses internal whitespace on both sides: `"1.3.  Reducing..."` (two spaces) matches a stored `"1.3. Reducing..."` (one space) and vice versa. On miss, the error lists the document's actual stored headings so callers can recover. Raises an error if the heading is not found or is empty. |
+| `section` | string | `null` | Optional heading selecting one section. The whole section is returned (every paragraph, list, and sub-section from the heading up to the next heading at the same or higher level), reconstructed from the document on disk, so a section longer than the chunk budget comes back intact rather than truncated to its first chunk. Pass the `heading` field from a `search` result. Matching collapses internal whitespace on both sides: `"1.3.  Reducing..."` (two spaces) matches a stored `"1.3. Reducing..."` (one space) and vice versa. On miss, the error lists the document's actual headings so callers can recover. Raises an error if the heading is not found or is empty. |
 
-!!! tip "Recovering full chunks after search"
-    When `search` returns a snippet result, pass `result["heading"]` as the `section` parameter to recover the complete chunk: `read(path=result["path"], section=result["heading"])`. If the document has no sub-headings (preamble content), omit `section` to read the whole document.
+!!! tip "Recovering the full section after search"
+    When `search` returns a snippet result, pass `result["heading"]` as the `section` parameter to recover the complete section: `read(path=result["path"], section=result["heading"])`. If the document has no sub-headings (preamble content), omit `section` to read the whole document.
 
 !!! note "Heading matching tolerates whitespace differences"
     The `section` lookup compares heading strings after collapsing all whitespace runs to single spaces (and stripping leading/trailing whitespace). This handles the common case where an LLM caller infers a heading from a rendered TOC that normalises whitespace differently from the source markdown. Markdown emphasis (`**bold**`, `_italic_`) and case still matter; pass the heading as it would appear in the document source.

@@ -585,6 +585,104 @@ class HeadingChunker:
             _emit(cur)
 
 
+# ATX heading detection, matching ``HeadingChunker._split_at_levels``: an
+# ``#``-run of 1-6 followed by whitespace and text, tested against the
+# right-stripped line.  Deliberately *not* code-fence aware, so a section's
+# span here matches the boundaries the chunker used when indexing.
+_HEADING_RE = re.compile(r"^(#{1,6})\s+(.+)$")
+
+
+def normalize_heading(heading: str) -> str:
+    """Collapse internal whitespace runs to single spaces and strip.
+
+    Rendered TOCs and markdown editors normalise whitespace inconsistently
+    (single vs double space after a numbered prefix, tabs vs spaces, trailing
+    whitespace), so an LLM caller rarely reproduces the on-disk byte sequence.
+    Normalising both sides before comparison closes that gap.
+
+    Args:
+        heading: Heading string to normalise.
+
+    Returns:
+        The heading with whitespace runs collapsed to single spaces, stripped.
+    """
+    return " ".join(heading.split())
+
+
+def _scan_headings(lines: list[str]) -> list[tuple[int, int, str]]:
+    """Return ``(line_index, level, heading_text)`` for each ATX heading.
+
+    Heading detection mirrors :meth:`HeadingChunker._split_at_levels` so the
+    section spans derived here line up with how the document was chunked.
+
+    Args:
+        lines: Document body lines (``splitlines(keepends=True)``).
+
+    Returns:
+        One tuple per heading, in document order.
+    """
+    out: list[tuple[int, int, str]] = []
+    for idx, line in enumerate(lines):
+        m = _HEADING_RE.match(line.rstrip())
+        if m:
+            out.append((idx, len(m.group(1)), m.group(2).strip()))
+    return out
+
+
+def list_section_headings(text: str) -> list[str]:
+    """Return the document's ATX heading texts in document order.
+
+    Frontmatter is stripped before scanning. Used to build "did you mean"
+    suggestions when a section lookup misses.
+
+    Args:
+        text: Raw markdown file text (frontmatter included).
+
+    Returns:
+        Heading strings as written (whitespace not normalised), in order.
+    """
+    body = frontmatter.loads(text).content
+    return [h for _, _, h in _scan_headings(body.splitlines(keepends=True))]
+
+
+def extract_section(text: str, heading: str) -> str | None:
+    """Return the full body of the first section matching *heading*.
+
+    The span runs from just after the matched heading line to the line before
+    the next heading at the same or higher level (or end of document). The
+    heading line itself is excluded, matching the chunker's section-content
+    convention. Matching collapses internal whitespace and is case-sensitive.
+    Frontmatter is stripped before scanning.
+
+    Unlike a per-chunk lookup, this reconstructs the whole section regardless of
+    how the chunker fragmented it (an over-budget body split on paragraphs, or a
+    parent split at its sub-headings), so the complete section is returned (#741).
+
+    Args:
+        text: Raw markdown file text (frontmatter included).
+        heading: Heading to match (internal whitespace collapsed).
+
+    Returns:
+        The section's body text, or ``None`` when no heading matches.
+    """
+    norm_query = normalize_heading(heading)
+    if not norm_query:
+        return None
+    body = frontmatter.loads(text).content
+    lines = body.splitlines(keepends=True)
+    headings = _scan_headings(lines)
+    for i, (idx, level, htext) in enumerate(headings):
+        if normalize_heading(htext) != norm_query:
+            continue
+        end = len(lines)
+        for nxt_idx, nxt_level, _ in headings[i + 1 :]:
+            if nxt_level <= level:
+                end = nxt_idx
+                break
+        return "".join(lines[idx + 1 : end])
+    return None
+
+
 def _resolve_title(metadata: dict[str, Any], content: str, path: Path) -> str:
     """Resolve the document title using the priority order from the design spec.
 

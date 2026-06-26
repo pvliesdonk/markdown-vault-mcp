@@ -139,7 +139,7 @@ def test_read_section_no_headings_message(tmp_path):
 
     with pytest.raises(ValueError) as excinfo:
         mgr.read("a.md", section="Anything")
-    assert "document has no indexed headings" in str(excinfo.value)
+    assert "document has no headings" in str(excinfo.value)
 
 
 def test_read_section_duplicate_heading_returns_first_by_start_line(tmp_path):
@@ -171,6 +171,199 @@ def test_read_section_duplicate_heading_returns_first_by_start_line(tmp_path):
     assert nc is not None
     assert "first occurrence body" in nc.content
     assert "second occurrence body" not in nc.content
+
+
+def _make_mgr(tmp_path, body: str) -> DocumentManager:
+    """Write *body* to ``a.md``, index it, and return a DocumentManager.
+
+    Uses a budgeted chunker (mirroring the production vault's
+    ``max_chunk_words=400`` default) so long sections are split into multiple
+    same-heading rows — the configuration under which #741 reproduces.
+    """
+    (tmp_path / "a.md").write_text(body, encoding="utf-8")
+    fts = FTSIndex(db_path=":memory:")
+    chunker = HeadingChunker(max_chunk_words=400, max_chunk_chars=6000)
+    for note in scan_directory(tmp_path, chunk_strategy=chunker):
+        fts.upsert_note(note)
+    return DocumentManager(
+        fts=fts,
+        source_dir=tmp_path,
+        write_lock=threading.RLock(),
+        chunk_strategy=chunker,
+        read_only=False,
+    )
+
+
+def test_read_section_returns_full_body_when_budget_split(tmp_path):
+    """A section whose body exceeds the chunk budget (no sub-headings) is
+    returned in full, not truncated to its first chunk (#741)."""
+    intro = "marker_intro opening paragraph."
+    bullets = "\n".join(f"- bullet{i} " + "word " * 30 for i in range(20))
+    closing = "marker_closing final paragraph."
+    body = (
+        "# A\n"
+        + "\n".join(["preamble"] * 12)
+        + "\n## Section One\n"
+        + intro
+        + "\n\n"
+        + bullets
+        + "\n\n"
+        + closing
+        + "\n## Section Two\n"
+        + "second body word\n"
+    )
+    mgr = _make_mgr(tmp_path, body)
+
+    nc = mgr.read("a.md", section="Section One")
+    assert nc is not None
+    # The whole section comes back: intro paragraph, the last bullet, and the
+    # closing paragraph — not merely the first chunk.
+    assert "marker_intro" in nc.content
+    assert "bullet19" in nc.content
+    assert "marker_closing" in nc.content
+    # The next sibling section is excluded.
+    assert "second body word" not in nc.content
+
+
+def test_read_section_includes_subsections(tmp_path):
+    """Reading a parent heading whose body was split at sub-headings returns
+    the sub-sections too, stopping at the next same-or-higher heading (#741)."""
+    body = (
+        "# A\n"
+        + "\n".join(["preamble"] * 12)
+        + "\n## Parent\n"
+        + "marker_pre parent preamble.\n"
+        + "### Child One\n"
+        + "marker_c1 "
+        + "word " * 250
+        + "\n"
+        + "### Child Two\n"
+        + "marker_c2 "
+        + "word " * 250
+        + "\n"
+        + "## Sibling\n"
+        + "marker_sib sibling body.\n"
+    )
+    mgr = _make_mgr(tmp_path, body)
+
+    nc = mgr.read("a.md", section="Parent")
+    assert nc is not None
+    assert "marker_pre" in nc.content
+    assert "marker_c1" in nc.content
+    assert "marker_c2" in nc.content
+    # Stops at the next H2.
+    assert "marker_sib" not in nc.content
+
+
+def test_read_subsection_stops_at_next_same_level(tmp_path):
+    """A sub-heading read returns only its own span, stopping at the next
+    heading of the same or higher level (#741)."""
+    body = (
+        "# A\n"
+        + "\n".join(["preamble"] * 12)
+        + "\n## Parent\n"
+        + "### X\n"
+        + "marker_x body.\n"
+        + "### Y\n"
+        + "marker_y body.\n"
+        + "## Z\n"
+        + "marker_z body.\n"
+    )
+    mgr = _make_mgr(tmp_path, body)
+
+    nc = mgr.read("a.md", section="X")
+    assert nc is not None
+    assert "marker_x" in nc.content
+    assert "marker_y" not in nc.content
+    assert "marker_z" not in nc.content
+
+
+def test_read_section_spans_to_end_of_document(tmp_path):
+    """The last section in a document spans to EOF (#741)."""
+    last_body = "marker_last " + "word " * 250
+    body = (
+        "# A\n"
+        + "\n".join(["preamble"] * 12)
+        + "\n## First\n"
+        + "marker_first body.\n"
+        + "## Last\n"
+        + last_body
+        + "\n"
+    )
+    mgr = _make_mgr(tmp_path, body)
+
+    nc = mgr.read("a.md", section="Last")
+    assert nc is not None
+    assert "marker_last" in nc.content
+    assert "marker_first" not in nc.content
+
+
+def test_read_section_works_in_short_document(tmp_path):
+    """Section read works even for short docs the chunker keeps as a single
+    whole-document chunk (#741)."""
+    body = "# Title\n## Alpha\nmarker_a body.\n## Beta\nmarker_b body.\n"
+    mgr = _make_mgr(tmp_path, body)
+
+    nc = mgr.read("a.md", section="Alpha")
+    assert nc is not None
+    assert "marker_a" in nc.content
+    assert "marker_b" not in nc.content
+
+
+def test_read_section_excludes_heading_line(tmp_path):
+    """The section's own heading line is not part of the returned content."""
+    body = (
+        "# A\n"
+        + "\n".join(["preamble"] * 12)
+        + "\n## Section One\n"
+        + "first body word\n"
+        + "## Section Two\n"
+        + "second body word\n"
+    )
+    mgr = _make_mgr(tmp_path, body)
+
+    nc = mgr.read("a.md", section="Section One")
+    assert nc is not None
+    assert "## Section One" not in nc.content
+    assert "first body word" in nc.content
+
+
+def test_read_section_ignores_frontmatter(tmp_path):
+    """Frontmatter is stripped before heading scanning; section content is the
+    body only."""
+    body = (
+        "---\n"
+        "title: A doc\n"
+        "tags: [x]\n"
+        "---\n"
+        "# A\n"
+        + "\n".join(["preamble"] * 12)
+        + "\n## Section One\n"
+        + "first body word\n"
+    )
+    mgr = _make_mgr(tmp_path, body)
+
+    nc = mgr.read("a.md", section="Section One")
+    assert nc is not None
+    assert "first body word" in nc.content
+    assert "tags:" not in nc.content
+
+
+def test_read_section_raises_when_indexed_file_missing_on_disk(tmp_path):
+    """If the index still has the doc but its file is gone, section read raises
+    a ValueError rather than leaking the underlying OSError (#741)."""
+    body = (
+        "# A\n"
+        + "\n".join(["preamble"] * 12)
+        + "\n## Section One\n"
+        + "first body word\n"
+    )
+    mgr = _make_mgr(tmp_path, body)
+    # Remove the file from disk without reindexing — get_note still hits.
+    (tmp_path / "a.md").unlink()
+
+    with pytest.raises(ValueError, match="not readable"):
+        mgr.read("a.md", section="Section One")
 
 
 def test_write_fires_callback_while_holding_file_write_lock(tmp_path: Path) -> None:

@@ -171,12 +171,13 @@ def register(mcp: FastMCP) -> None:
             path: Relative path to the document or attachment
                 (e.g. "Journal/note.md" or "assets/diagram.pdf").
                 Case-sensitive.
-            section: When provided, return only the section whose heading
-                matches *section* (case-sensitive; internal whitespace is
-                collapsed before comparison). Pass the ``heading`` value
-                from a ``search`` result unchanged for guaranteed match.
-                ``None`` (the default) returns the whole document.
-                Ignored for non-.md paths.
+            section: When provided, return the whole section whose heading
+                matches *section* — every paragraph, list, and sub-section
+                from the heading up to the next heading at the same or higher
+                level (case-sensitive; internal whitespace is collapsed before
+                comparison). Pass the ``heading`` value from a ``search``
+                result unchanged for guaranteed match. ``None`` (the default)
+                returns the whole document. Ignored for non-.md paths.
 
         Returns:
             For .md: dict with path, title, folder, content (markdown body
