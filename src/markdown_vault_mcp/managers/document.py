@@ -244,12 +244,14 @@ class DocumentManager:
                 returns the whole document.
 
         Returns:
-            A :class:`~markdown_vault_mcp.types.NoteContent`, or ``None`` if
-            the file does not exist (whole-document mode). When ``section`` is
-            provided, the returned ``NoteContent.frontmatter`` is an empty dict
-            ``{}`` because section reads do not synthesise per-section frontmatter.
-            Call ``read(path)`` without ``section=`` to get the full document's
-            frontmatter.
+            A :class:`~markdown_vault_mcp.types.NoteContent`, or ``None`` in
+            whole-document mode if the file does not exist or exists but cannot
+            be parsed (invalid UTF-8, an I/O error, or malformed YAML
+            frontmatter — a warning is logged in those cases). When ``section``
+            is provided, the returned ``NoteContent.frontmatter`` is an empty
+            dict ``{}`` because section reads do not synthesise per-section
+            frontmatter. Call ``read(path)`` without ``section=`` to get the
+            full document's frontmatter.
 
         Raises:
             ValueError: When *section* is provided and is empty / whitespace,
@@ -297,7 +299,10 @@ class DocumentManager:
 
         try:
             note = parse_note(abs_path, self._source_dir, self._chunk_strategy)
-        except (UnicodeDecodeError, OSError) as exc:
+        except (UnicodeDecodeError, OSError, yaml.YAMLError) as exc:
+            # yaml.YAMLError covers a file whose frontmatter became malformed on
+            # disk after indexing (the stale-index window) — degrade to None like
+            # the decode/IO failures rather than leak the raw exception (#742).
             logger.warning("read(%s): could not parse file — %s", path, exc)
             return None
 

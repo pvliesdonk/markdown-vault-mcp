@@ -142,6 +142,17 @@ class TestRead:
         assert result is not None
         assert result.folder == ""
 
+    def test_read_malformed_frontmatter_returns_none(
+        self, doc_mgr: DocumentManager, doc_vault: Path
+    ) -> None:
+        """A whole-document read of a file with a malformed YAML frontmatter
+        block degrades to None (logged warning), rather than leaking a
+        yaml.YAMLError into the caller (#742)."""
+        (doc_vault / "bad_fm.md").write_text(
+            "---\ntitle: [unclosed\n---\n# Body\ntext\n", encoding="utf-8"
+        )
+        assert doc_mgr.read("bad_fm.md") is None
+
 
 # ---------------------------------------------------------------------------
 # Write tests
