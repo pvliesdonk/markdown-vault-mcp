@@ -297,16 +297,21 @@ class DocumentManager:
                     f"full document in context."
                 )
 
+        # Guard both on-disk reads (parse_note's, and the content read below)
+        # in one try: a file removed/truncated/made-unparseable on disk between
+        # the size check and here — or between the two reads — degrades to None
+        # rather than leaking the raw exception (#742, #745). yaml.YAMLError
+        # covers frontmatter that became malformed after indexing.
+        # (parse_note decodes without universal-newline translation; the content
+        # is read separately via _read_text_utf8, which applies it, so the two
+        # reads are intentionally not collapsed — see #745.)
         try:
             note = parse_note(abs_path, self._source_dir, self._chunk_strategy)
+            raw_content = _read_text_utf8(abs_path)
         except (UnicodeDecodeError, OSError, yaml.YAMLError) as exc:
-            # yaml.YAMLError covers a file whose frontmatter became malformed on
-            # disk after indexing (the stale-index window) — degrade to None like
-            # the decode/IO failures rather than leak the raw exception (#742).
             logger.warning("read(%s): could not parse file — %s", path, exc)
             return None
 
-        raw_content = _read_text_utf8(abs_path)
         etag = note.content_hash
         folder = str(Path(path).parent)
         if folder == ".":

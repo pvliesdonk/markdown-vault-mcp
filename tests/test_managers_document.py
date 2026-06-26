@@ -142,6 +142,20 @@ class TestRead:
         assert result is not None
         assert result.folder == ""
 
+    def test_read_degrades_to_none_if_content_read_fails(
+        self, doc_mgr: DocumentManager, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """If the post-parse content read fails (e.g. the file is removed or
+        truncated between parse_note and the content read), read() degrades to
+        None rather than leaking the raw OSError/UnicodeDecodeError (#745)."""
+        import markdown_vault_mcp.managers.document as doc_mod
+
+        def _boom(_path: Path) -> str:
+            raise OSError("file vanished between reads")
+
+        monkeypatch.setattr(doc_mod, "_read_text_utf8", _boom)
+        assert doc_mgr.read("alpha.md") is None
+
     def test_read_malformed_frontmatter_returns_none(
         self, doc_mgr: DocumentManager, doc_vault: Path
     ) -> None:
