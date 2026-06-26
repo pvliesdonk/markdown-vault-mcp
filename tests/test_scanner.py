@@ -675,6 +675,28 @@ class TestExtractSection:
         # (Frontmatter parsing may drop a trailing newline, so compare loosely.)
         assert out.splitlines() == ["last line one.", "last line two."]
 
+    def test_fenced_hash_line_acts_as_boundary(self) -> None:
+        """A '#'-prefixed line inside a code fence ends the span, matching the
+        (deliberately non-code-fence-aware) chunker. Characterises the current
+        contract so a future fence-aware change to one side cannot silently
+        desync extraction from indexing."""
+        text = (
+            "# Title\n"
+            "## Section\n"
+            "before fence.\n"
+            "```sh\n"
+            "# not really a heading\n"
+            "```\n"
+            "after fence.\n"
+            "## Next\nnext body.\n"
+        )
+        out = extract_section(text, "Section")
+        assert out is not None
+        assert "before fence." in out
+        # The fenced '#' line is treated as an H1 boundary, so the span ends
+        # there — content after the fence is not part of this section.
+        assert "after fence." not in out
+
     def test_returns_none_for_missing_heading(self) -> None:
         assert extract_section("# A\nbody.\n", "Nope") is None
 

@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import frontmatter as fm
+import yaml
 
 from markdown_vault_mcp.exceptions import (
     ConcurrentModificationError,
@@ -341,7 +342,8 @@ class DocumentManager:
 
         Raises:
             ValueError: If the document is not indexed, its file cannot be
-                read, or the heading is not found.
+                read or decoded, its frontmatter cannot be parsed, or the
+                heading is not found.
         """
         doc_row = self._fts.get_note(path)
         if doc_row is None:
@@ -351,16 +353,31 @@ class DocumentManager:
             )
 
         abs_path = self._validate_path(path)
+        # The file decoded and parsed cleanly when it was indexed, but it may
+        # have changed on disk since (the stale-index window). Map the same
+        # failure classes the whole-document read path handles —
+        # UnicodeDecodeError/OSError on read, yaml.YAMLError on frontmatter
+        # parse — to a user-facing ValueError instead of leaking the raw
+        # exception into the MCP error middleware.
         try:
             text = _read_text_utf8(abs_path)
-        except OSError as exc:
+        except (UnicodeDecodeError, OSError) as exc:
             raise ValueError(
                 f"Section '{heading}' not found in document {path}: "
                 "document file is not readable"
             ) from exc
 
-        content = extract_section(text, heading)
+        try:
+            content = extract_section(text, heading)
+        except yaml.YAMLError as exc:
+            raise ValueError(
+                f"Section '{heading}' not found in document {path}: "
+                "document frontmatter is not parseable"
+            ) from exc
+
         if content is None:
+            # extract_section already parsed the frontmatter successfully above,
+            # so list_section_headings (same parse) cannot raise here.
             available = list_section_headings(text)[:10]
             if available:
                 suggestion = " — available headings include: " + ", ".join(

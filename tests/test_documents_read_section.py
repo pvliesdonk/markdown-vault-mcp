@@ -366,6 +366,51 @@ def test_read_section_raises_when_indexed_file_missing_on_disk(tmp_path):
         mgr.read("a.md", section="Section One")
 
 
+def test_read_section_raises_on_non_utf8_file(tmp_path):
+    """A file that decodes cleanly at index time but is later overwritten with
+    invalid UTF-8 yields a ValueError, not a leaked UnicodeDecodeError (#741).
+
+    ``UnicodeDecodeError`` subclasses ``ValueError`` but does not subclass
+    ``OSError``; matching on the message pins the friendly error rather than the
+    raw decode failure.
+    """
+    body = (
+        "# A\n"
+        + "\n".join(["preamble"] * 12)
+        + "\n## Section One\n"
+        + "first body word\n"
+    )
+    mgr = _make_mgr(tmp_path, body)
+    # Corrupt the file with invalid UTF-8 bytes after indexing.
+    (tmp_path / "a.md").write_bytes(b"\xff\xfe invalid \x80\x81 bytes")
+
+    with pytest.raises(ValueError, match="not readable"):
+        mgr.read("a.md", section="Section One")
+
+
+def test_read_section_raises_on_malformed_frontmatter(tmp_path):
+    """A file with valid frontmatter at index time, later overwritten with a
+    malformed YAML block, yields a ValueError rather than a leaked
+    yaml.YAMLError (#741)."""
+    body = (
+        "---\n"
+        "title: A\n"
+        "---\n"
+        "# A\n"
+        + "\n".join(["preamble"] * 12)
+        + "\n## Section One\n"
+        + "first body word\n"
+    )
+    mgr = _make_mgr(tmp_path, body)
+    # Overwrite with an unclosed YAML flow sequence after indexing.
+    (tmp_path / "a.md").write_text(
+        "---\ntitle: [unclosed\n---\n## Section One\nbody\n", encoding="utf-8"
+    )
+
+    with pytest.raises(ValueError, match="not parseable"):
+        mgr.read("a.md", section="Section One")
+
+
 def test_write_fires_callback_while_holding_file_write_lock(tmp_path: Path) -> None:
     """The write callback must fire INSIDE _file_write_lock (#571): a concurrent
     thread must not be able to acquire the lock while the callback runs."""
