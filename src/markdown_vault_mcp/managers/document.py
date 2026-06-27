@@ -1062,6 +1062,58 @@ class DocumentManager:
             updated_links=updated_links,
         )
 
+    def _rewrite_one_source(
+        self,
+        source_abs: Path,
+        rewrites: list[tuple[str, str, str | None, str, str]],
+        source_path: str,
+    ) -> str:
+        """Rewrite all link targets in a single source file in one pass.
+
+        Reads *source_abs*, applies every ``(link_type, raw_target, fragment,
+        target_old, target_new)`` rewrite using the source's *current* vault
+        path (which, for a moved source, is its new path), and writes the
+        result back atomically.
+
+        Args:
+            source_abs: Absolute path of the source file to rewrite (its
+                current on-disk location).
+            rewrites: One tuple per link to rewrite:
+                ``(link_type, raw_target, fragment, target_old, target_new)``.
+            source_path: Vault-relative path of the source at its current
+                location — used for correct relative-path computation.
+
+        Returns:
+            The rewritten file content.
+        """
+        content = _read_text_utf8(source_abs)
+        for link_type, raw_target, fragment, target_old, target_new in rewrites:
+            new_raw = _compute_new_raw_target(
+                link_type,
+                raw_target,
+                fragment,
+                target_new,
+                source_path=source_path,
+                old_path=target_old,
+            )
+            content = _apply_link_replacement(content, link_type, raw_target, new_raw)
+        with tempfile.NamedTemporaryFile(
+            dir=source_abs.parent,
+            mode="w",
+            encoding="utf-8",
+            suffix=".tmp",
+            delete=False,
+        ) as tmp:
+            tmp.write(content)
+            tmp_name = tmp.name
+        shutil.copymode(source_abs, tmp_name)
+        try:
+            Path(tmp_name).replace(source_abs)
+        except Exception:
+            Path(tmp_name).unlink(missing_ok=True)
+            raise
+        return content
+
     def _update_backlinks(
         self,
         old_path: str,
@@ -1115,37 +1167,17 @@ class DocumentManager:
                         source_path,
                     )
                     continue
-                content = _read_text_utf8(source_abs)
-                for row in rows:
-                    new_raw = _compute_new_raw_target(
+                rewrites = [
+                    (
                         row["link_type"],
                         row["raw_target"],
                         row["fragment"],
+                        old_path,
                         new_path,
-                        source_path=source_path,
-                        old_path=old_path,
                     )
-                    content = _apply_link_replacement(
-                        content,
-                        row["link_type"],
-                        row["raw_target"],
-                        new_raw,
-                    )
-                with tempfile.NamedTemporaryFile(
-                    dir=source_abs.parent,
-                    mode="w",
-                    encoding="utf-8",
-                    suffix=".tmp",
-                    delete=False,
-                ) as tmp:
-                    tmp.write(content)
-                    tmp_name = tmp.name
-                shutil.copymode(source_abs, tmp_name)
-                try:
-                    Path(tmp_name).replace(source_abs)
-                except Exception:
-                    Path(tmp_name).unlink(missing_ok=True)
-                    raise
+                    for row in rows
+                ]
+                content = self._rewrite_one_source(source_abs, rewrites, source_path)
                 pending_callbacks.append((source_abs, content))
                 dirty_paths.append(source_path)
             except (
