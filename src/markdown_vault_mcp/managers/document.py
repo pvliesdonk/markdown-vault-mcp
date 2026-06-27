@@ -1382,7 +1382,11 @@ class DocumentManager:
                 self._mark_paths_dirty(dirty)
 
             # 7. Callbacks: rename for every moved note + allowlisted attachment,
-            #    edit for every rewritten source.
+            #    edit for every rewritten source. A source inside the moved
+            #    subtree already gets a "rename" callback (it is in md_map), so
+            #    skip its redundant "edit" to avoid a duplicate git commit.
+            moved_note_paths = set(md_map.values())
+            source_root = self._source_dir.resolve()
             for _old_path, new_path in md_map.items():
                 new_note_abs = (self._source_dir / new_path).resolve()
                 self._on_write_callback(
@@ -1391,10 +1395,21 @@ class DocumentManager:
             for dst_abs, _new_rel in attachment_moves:
                 self._on_write_callback(dst_abs, "", "rename")
             for src_abs, src_content in pending_callbacks:
+                src_rel = src_abs.relative_to(source_root).as_posix()
+                if src_rel in moved_note_paths:
+                    continue
                 self._on_write_callback(src_abs, src_content, "edit")
 
-            # 8. Remove the now-empty source tree.
-            shutil.rmtree(old_abs, ignore_errors=True)
+            # 8. Remove the now-empty source tree. A leftover file (e.g. from a
+            #    concurrent write) is logged rather than silently swallowed.
+            try:
+                shutil.rmtree(old_abs)
+            except OSError as exc:
+                logger.warning(
+                    "move_folder: failed to remove source tree %s: %s",
+                    old_dir,
+                    exc,
+                )
 
         return MoveFolderResult(
             old_dir=old_dir,

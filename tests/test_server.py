@@ -309,11 +309,13 @@ class TestToolAnnotations:
             assert ann.readOnlyHint is False, f"{name} readOnlyHint"
             assert ann.destructiveHint is False, f"{name} destructiveHint"
 
-        # Delete is destructive
-        ann = by_name["delete"].annotations
-        assert ann is not None
-        assert ann.readOnlyHint is False
-        assert ann.destructiveHint is True
+        # Delete and move_folder are destructive (move_folder removes the
+        # source directory tree and can leave a partial state on OS failure)
+        for name in ("delete", "move_folder"):
+            ann = by_name[name].annotations
+            assert ann is not None
+            assert ann.readOnlyHint is False, f"{name} readOnlyHint"
+            assert ann.destructiveHint is True, f"{name} destructiveHint"
 
     @pytest.mark.usefixtures("_mcp_env_writable")
     async def test_every_registered_tool_has_title(self) -> None:

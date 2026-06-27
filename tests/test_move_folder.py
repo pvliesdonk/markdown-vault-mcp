@@ -325,3 +325,50 @@ def test_move_folder_best_effort_generic_exception(
 
     assert "ext.md" in result.failed_links
     assert result.updated_links == 0
+
+
+def test_move_folder_no_double_callback_for_intra_subtree_source(
+    tmp_path: Path,
+) -> None:
+    """A moved note that is also link-rewritten gets ONE callback, not two.
+
+    Such a note appears in both the moved set (a ``"rename"`` callback) and
+    the rewritten-sources set (an ``"edit"`` callback). Firing both would emit
+    a redundant git commit for the same file, so the ``"edit"`` is suppressed.
+    """
+    import threading
+
+    from markdown_vault_mcp.fts_index import FTSIndex
+    from markdown_vault_mcp.managers.document import DocumentManager
+    from markdown_vault_mcp.scanner import HeadingChunker, scan_directory
+
+    vault_dir = tmp_path / "v"
+    (vault_dir / "drafts").mkdir(parents=True)
+    # a.md links to its sibling b.md — both move together.
+    (vault_dir / "drafts" / "a.md").write_text("Link to [b](./b.md).\n")
+    (vault_dir / "drafts" / "b.md").write_text("I am b.\n")
+
+    fts = FTSIndex(db_path=":memory:")
+    for note in scan_directory(vault_dir):
+        fts.upsert_note(note)
+    fts.resolve_vault_wikilinks()
+
+    calls: list[tuple[str, str]] = []
+    mgr = DocumentManager(
+        fts=fts,
+        source_dir=vault_dir,
+        write_lock=threading.RLock(),
+        chunk_strategy=HeadingChunker(),
+        read_only=False,
+        on_write_callback=lambda p, _c, op: calls.append((p.as_posix(), op)),
+        mark_paths_dirty=lambda _paths: None,
+    )
+
+    mgr.move_folder("drafts", "archive")
+
+    # archive/a.md was moved AND link-rewritten -> exactly one "rename".
+    a_ops = [op for path, op in calls if path.endswith("archive/a.md")]
+    assert a_ops == ["rename"], a_ops
+    # archive/b.md only moved -> one "rename".
+    b_ops = [op for path, op in calls if path.endswith("archive/b.md")]
+    assert b_ops == ["rename"], b_ops

@@ -415,7 +415,10 @@ def register(mcp: FastMCP) -> None:
         annotations={
             "title": "Move Folder",
             "readOnlyHint": False,
-            "destructiveHint": False,
+            # Removes the source directory tree (shutil.rmtree) and can leave a
+            # partial state on a mid-move OS error — materially larger blast
+            # radius than single-file rename, so flag it destructive.
+            "destructiveHint": True,
             "idempotentHint": False,
         },
     )

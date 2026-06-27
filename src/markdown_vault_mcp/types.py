@@ -278,9 +278,14 @@ class RenameResult:
     updated_links: int = 0
 
 
-@dataclass(frozen=True)
+@dataclass
 class MoveFolderResult:
     """Result of a folder-level move operation.
+
+    Not frozen — ``failed_links`` is a mutable list (matching the other
+    result dataclasses such as :class:`RenameResult` and :class:`IndexStats`),
+    and a frozen dataclass holding a list neither prevents in-place mutation
+    nor stays hashable.
 
     Attributes:
         old_dir: Original relative folder prefix that was moved.
