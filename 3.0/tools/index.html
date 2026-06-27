@@ -3445,12 +3445,12 @@ failures; <code>null</code> for clean fast-forwards and dry-runs):</p>
 </tr>
 <tr>
 <td><code>"no_remote"</code></td>
-<td>Neither <code>@{upstream}</code> nor <code>origin/HEAD</code> could be resolved on the local clone.</td>
+<td>No remote-tracking ref (<code>origin/&lt;branch&gt;</code>, or <code>origin/HEAD</code> for a detached checkout) could be resolved on the local clone.</td>
 <td><code>false</code></td>
 </tr>
 <tr>
 <td><code>"rebased"</code></td>
-<td>Local and remote diverged but <code>git rebase @{upstream}</code> replayed local commits cleanly. <code>conflict_files</code> empty.</td>
+<td>Local and remote diverged but <code>git rebase origin/&lt;branch&gt;</code> replayed local commits cleanly. <code>conflict_files</code> empty.</td>
 <td><code>true</code></td>
 </tr>
 <tr>
@@ -3488,7 +3488,7 @@ already-up-to-date no-op):</p>
 </tr>
 <tr>
 <td><code>"no_remote"</code></td>
-<td>Upstream tracking branch could not be resolved (no <code>@{upstream}</code> and no <code>origin/HEAD</code>). Push not attempted.</td>
+<td>No remote-tracking ref could be resolved (no <code>origin/&lt;branch&gt;</code> and no <code>origin/HEAD</code>). Push not attempted.</td>
 <td><code>false</code></td>
 </tr>
 <tr>

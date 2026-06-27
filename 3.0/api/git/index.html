@@ -2417,9 +2417,10 @@ strategy.close()  # final flush
     <div class="doc doc-contents ">
 
         <p>Pull from <code>origin</code> synchronously and return a structured result.</p>
-<p>The remote-tracking branch is identified by reading the upstream of
-the current branch (<code>@{upstream}</code>) so this method works even when
-<code>origin/HEAD</code> has not been set on the local clone.</p>
+<p>The remote-tracking branch is resolved as <code>origin/&lt;current-branch&gt;</code>
+(see :meth:<code>_tracking_ref</code>) so this method works even when branch
+tracking (<code>@{upstream}</code>) was never configured on the local clone —
+falling back to <code>origin/HEAD</code> for a detached checkout.</p>
 <p>Acquires :attr:<code>_lock</code> for the duration so the periodic pull loop
 and the per-write commit path cannot race against the fetch /
 merge / rebase pipeline.  This blocks writes for the network
