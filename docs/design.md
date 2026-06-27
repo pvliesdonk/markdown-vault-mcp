@@ -1606,7 +1606,10 @@ destination file list is computed. If ANY destination path already exists the
 call raises immediately and nothing is moved. Merging into a pre-existing
 target directory is allowed as long as no individual file would collide. The
 gate is atomic (all-or-nothing) but there is **no rollback of link rewrites**
-once the move phase begins.
+once the move phase begins. The move phase itself is not OS-failure-atomic: an
+OS error during file moves (permission error, full disk, concurrent removal)
+can leave the subtree partially moved with the index unchanged; a subsequent
+`reindex` reconciles the index with the on-disk state.
 
 *File move policy*: all files in the subtree are moved (`.md` notes,
 allowlisted attachments, and any other files). Only `.md` files are

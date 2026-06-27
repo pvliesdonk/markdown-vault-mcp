@@ -437,7 +437,10 @@ def register(mcp: FastMCP) -> None:
         The move is atomic at the gate: if any destination file already exists,
         the call fails before moving anything. Link rewrites are best-effort —
         a source that cannot be rewritten is reported in failed_links rather
-        than aborting the move.
+        than aborting the move. Note: an OS error during the move phase itself
+        (permission error, full disk, concurrent file removal) can leave the
+        subtree partially moved with the index unchanged; call 'reindex' to
+        reconcile the index with the on-disk state.
 
         Args:
             old_dir: Relative source folder prefix (e.g. "drafts").

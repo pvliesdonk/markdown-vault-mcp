@@ -379,7 +379,7 @@ Move an entire folder subtree to a new prefix and rewrite all vault links that p
 **Index:** updated immediately after the call; no `reindex` needed.
 
 !!! warning
-    Link rewrites are not rolled back if the process is interrupted after the move phase begins. Use `rename` for single-file moves where full atomicity is required.
+    Link rewrites are not rolled back if the process is interrupted after the move phase begins. The move phase itself is not OS-failure-atomic: an OS error during file moves (permission error, full disk, concurrent removal) can leave the subtree partially moved with the index unchanged; run `reindex` to recover. Use `rename` for single-file moves where full atomicity is required.
 
 ### `fetch`
 

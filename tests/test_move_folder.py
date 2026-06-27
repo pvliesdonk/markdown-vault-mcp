@@ -257,6 +257,58 @@ def test_move_folder_preserves_nested_structure(vault: Vault, source_dir: Path) 
     assert result.files_moved == 2
 
 
+def test_move_folder_mid_move_oserror_leaves_subtree_partial(
+    vault: Vault, source_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An OSError on the 2nd shutil.move call leaves the subtree partially moved.
+
+    Asserts the documented partial-failure contract:
+    - move_folder raises OSError.
+    - The first file reached its new path; the second file is still at the old path.
+    - The index was NOT updated: searching a unique token from the first (moved)
+      file does NOT return the new path, confirming mark_paths_dirty never ran.
+    """
+    _write(vault, "drafts/alpha.md", "unique_alpha_token_qzx\n")
+    _write(vault, "drafts/beta.md", "unique_beta_token_qzx\n")
+    _write(vault, "backlinker.md", "Links to [alpha](drafts/alpha.md).\n")
+
+    import shutil as _shutil_real
+
+    call_count = 0
+    real_move = _shutil_real.move
+
+    def flaky_move(src: str, dst: str) -> None:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 2:
+            raise OSError("injected mid-move failure")
+        real_move(src, dst)
+
+    import markdown_vault_mcp.managers.document as _doc_mod
+
+    monkeypatch.setattr(_doc_mod.shutil, "move", flaky_move)
+
+    with pytest.raises(OSError, match="injected mid-move failure"):
+        vault.writer.move_folder("drafts", "moved")
+
+    wait_for_writer_drain(vault)
+
+    # Subtree is partially moved: the first file succeeded, the second did not.
+    # (shutil.move processes moves in sorted order via rglob+sorted; alpha < beta.)
+    assert (source_dir / "moved/alpha.md").is_file(), "first file should have moved"
+    assert (source_dir / "drafts/beta.md").is_file(), (
+        "second file should still be at old path"
+    )
+
+    # Index was NOT updated by the failed operation: mark_paths_dirty never ran,
+    # so searching the unique token from the moved file returns NO new-path hit.
+    hits = vault.reader.search("unique_alpha_token_qzx")
+    new_paths = [h.path for h in hits]
+    assert "moved/alpha.md" not in new_paths, (
+        "index should not have been updated after mid-move OSError"
+    )
+
+
 def test_move_folder_best_effort_generic_exception(
     vault: Vault, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -203,6 +203,10 @@ class WriterFacet:
             DocumentExistsError: If any destination file already exists.
             ValueError: If either path escapes the vault or the two paths are
                 nested.
+            OSError: If the OS raises during the move phase (e.g. a permission
+                error or full disk). The collision gate prevents pre-existing
+                destination clashes, but a mid-move OS error leaves the subtree
+                partially moved with the index unchanged; reindex recovers.
         """
         return self._doc_mgr.move_folder(old_dir, new_dir)
 

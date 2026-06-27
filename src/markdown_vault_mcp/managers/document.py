@@ -1252,6 +1252,12 @@ class DocumentManager:
             DocumentExistsError: If any destination file already exists.
             ValueError: If either path escapes the vault, is the vault root,
                 or one path is nested inside the other.
+            OSError: If the OS raises during the move phase (e.g. a permission
+                error, full disk, or concurrent file removal). The pre-move
+                collision gate prevents destination clashes, but an OS error
+                mid-move can leave the subtree partially moved with the index
+                unchanged; a subsequent reindex reconciles the index with the
+                on-disk state.
         """
         self._check_writable()
 
