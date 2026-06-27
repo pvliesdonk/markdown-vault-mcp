@@ -330,7 +330,9 @@ class TestToolAnnotations:
         disabled-by-default tools (``git_sync``, the HTTP-only transfer tools)
         are asserted too. ``get_server_info`` is not in this set: it is added
         only by ``make_server`` via ``fastmcp-pvl-core``'s
-        ``register_server_info_tool``, which sets no title.
+        ``register_server_info_tool``, not the ``register_*`` functions; its
+        title (``"Server Info"`` on the >=4.1.0 core floor) is asserted
+        separately by ``test_get_server_info_has_title``.
         """
         from fastmcp import FastMCP
 
@@ -355,6 +357,19 @@ class TestToolAnnotations:
         titles = [t.annotations.title for t in tools if t.annotations]
         dupes = sorted({t for t in titles if titles.count(t) > 1})
         assert not dupes, f"duplicate tool titles: {dupes}"
+
+    @pytest.mark.usefixtures("_mcp_env")
+    async def test_get_server_info_has_title(self) -> None:
+        """get_server_info is core-owned; its title comes from the
+        fastmcp-pvl-core >=4.1.0 floor (register_server_info_tool's title
+        param, default "Server Info"). It is registered by make_server, not
+        the register_* functions, so it sits outside the registry sweep above
+        and gets its own integration assertion (#754).
+        """
+        server = make_server()
+        tool = await server.get_tool("get_server_info")
+        assert tool.annotations is not None
+        assert tool.annotations.title == "Server Info"
 
 
 # ---------------------------------------------------------------------------
