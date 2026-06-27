@@ -57,13 +57,14 @@ class PullResult:
 
             * ``"fetch_failed"`` — ``git fetch origin`` exited non-zero
               (network error, auth failure, etc.); HEAD did not move.
-            * ``"no_remote"`` — neither ``@{upstream}`` nor
-              ``origin/HEAD`` could be resolved on the local clone.
+            * ``"no_remote"`` — no remote-tracking ref
+              (``origin/<branch>``, or ``origin/HEAD`` for a detached
+              checkout) could be resolved on the local clone.
             * ``"non_fast_forward_with_conflicts"`` — local and remote
               histories diverged and the conflict-resolution path
               failed to produce a usable result; HEAD did not move.
             * ``"rebased"`` — local and remote histories diverged but
-              ``git rebase @{upstream}`` replayed local commits cleanly
+              ``git rebase origin/<branch>`` replayed local commits cleanly
               on top of the upstream with no manual intervention.
               ``applied`` is ``True``; ``conflict_files`` is empty.
             * ``"conflicts_resolved_with_siblings"`` — local and remote
@@ -152,9 +153,9 @@ class PushResult:
               this push be accepted by the remote", so the call is a
               no-op that sets this code.  HEAD and the remote are not
               touched.
-            * ``"no_remote"`` — the upstream tracking branch could not
-              be resolved (no ``@{upstream}`` and no ``origin/HEAD``);
-              the push was not attempted.
+            * ``"no_remote"`` — no remote-tracking ref could be resolved
+              (no ``origin/<branch>`` and no ``origin/HEAD``); the push
+              was not attempted.
             * ``"non_fast_forward"`` — the remote rejected the push
               because the local branch is not a strict descendant of
               the remote tip.  ``hint`` points the caller at

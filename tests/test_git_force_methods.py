@@ -471,7 +471,7 @@ class TestForceMethodsErrorBranches:
     def test_force_pull_checkout_failure_drops_path_from_siblings(
         self, git_repo_pair: GitRepoPair, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Failed ``git checkout @{upstream} -- <path>`` drops the path from siblings.
+        """Failed ``git checkout origin/<branch> -- <path>`` drops the path from siblings.
 
         After the rebase-in-progress check trips the defensive abort, the
         working tree reverts to the pre-rebase MCP content.
@@ -489,7 +489,7 @@ class TestForceMethodsErrorBranches:
           calling ``git rebase --continue`` (so the next ``rebase_in_progress``
           probe returns True and the abort + restored loop both fire);
         * stubs ``subprocess.run`` to fail specifically on the
-          ``checkout @{upstream}`` invocation that the restored loop runs.
+          ``checkout origin/<branch>`` invocation that the restored loop runs.
 
         With every checkout failing, the saved list ends up empty and
         ``_force_pull_rebase_fallback`` surfaces ``conflict_resolution_failed``
@@ -530,14 +530,14 @@ class TestForceMethodsErrorBranches:
 
         monkeypatch.setattr(strategy, "_resolve_rebase_conflicts", _stub_resolve)
 
-        # Patch subprocess.run on the git module to fail the checkout
-        # ``@{upstream}`` call.  All other subprocess.run calls (including
-        # the rebase --abort the fallback runs) pass through to the real
-        # implementation.
+        # Patch subprocess.run on the git module to fail the
+        # ``checkout origin/main -- <path>`` restore call.  All other
+        # subprocess.run calls (including the rebase --abort the fallback
+        # runs) pass through to the real implementation.
         real_run = _real_subprocess.run
 
         def _patched_run(args: list[str], **kwargs: object) -> object:
-            if isinstance(args, list) and "checkout" in args and "@{upstream}" in args:
+            if isinstance(args, list) and "checkout" in args and "origin/main" in args:
                 return _real_subprocess.CompletedProcess(
                     args=args,
                     returncode=1,

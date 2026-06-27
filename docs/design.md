@@ -2192,7 +2192,7 @@ local commits are pushed in a single `git push`. On shutdown,
 `Vault.close()` flushes any pending push.
 
 Startup recovery: `GitWriteStrategy` checks for unpushed local commits
-(`git log @{upstream}..HEAD`) on first invocation and pushes them before
+(`git log origin/<branch>..HEAD`) on first invocation and pushes them before
 accepting new writes.
 
 **Deferred push mechanics**: `GitWriteStrategy` uses a `threading.Timer` that
@@ -2243,6 +2243,17 @@ Set `MARKDOWN_VAULT_MCP_GIT_LFS=false` for repos that do not use LFS, or when
   enables concurrent readers during index writes).
 - If `MARKDOWN_VAULT_MCP_GIT_LFS=true`, each successful pull tick ends with
   `git lfs pull` so LFS pointer files are resolved before reads and indexing.
+
+**Tracking-independent remote ref**: all sync operations (startup unpushed
+check, periodic `sync_once`, interactive `force_pull`/`force_push`, and the
+rebase-abort upstream restore) target `origin/<current-branch>` rather than the
+branch's configured upstream (`@{upstream}`). A managed clone is created and
+maintained by the server and may be a detached or `git clone --branch` checkout
+with no upstream tracking configured; deriving the ref from the current branch
+name (`git symbolic-ref --short HEAD`) keeps sync working regardless. When HEAD
+is detached, or the current branch has no counterpart on `origin`, resolution
+falls back to `origin/HEAD` (the remote's default branch); when neither
+resolves, the operation reports `no_remote` and is skipped.
 
 Safety branch mode for push failures is tracked separately (see #119).
 

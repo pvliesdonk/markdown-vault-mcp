@@ -267,6 +267,7 @@ def restore_upstream_paths(
     git_root: Path,
     env: dict[str, str] | None,
     saved: list[tuple[str, str]],
+    ref: str,
     *,
     token: str | None,
 ) -> list[tuple[str, str]]:
@@ -275,7 +276,7 @@ def restore_upstream_paths(
     After ``git rebase --abort`` the working tree reverts to the
     pre-rebase MCP state — every file in ``saved`` again contains the
     MCP version, not the upstream version.  For each path we run
-    ``git checkout @{upstream} -- <path>`` to bring back the upstream
+    ``git checkout <ref> -- <path>`` to bring back the upstream
     bytes so :func:`write_conflict_files` reads the right side
     (canonical = upstream, sibling = MCP).
 
@@ -291,6 +292,7 @@ def restore_upstream_paths(
         env: Optional GIT_ASKPASS environment.
         saved: List of ``(rel_path, mcp_content)`` tuples returned by
             :func:`resolve_conflicts_safely`.
+        ref: Remote-tracking ref to restore from (``origin/<branch>``).
         token: PAT used for redacting sensitive text in log messages.
 
     Returns:
@@ -302,7 +304,7 @@ def restore_upstream_paths(
         checkout_proc = run_git_capturing(
             git_root,
             "checkout",
-            "@{upstream}",
+            ref,
             "--",
             rel_path,
             env=env,

@@ -164,6 +164,59 @@ def run_git(git_root: Path, *args: str, env: dict[str, str] | None = None) -> st
     return result.stdout
 
 
+def resolve_tracking_ref(
+    git_root: Path, env: dict[str, str] | None = None
+) -> str | None:
+    """Resolve the remote-tracking ref to sync against, tracking-independent.
+
+    Managed-git sync targets ``origin/<current-branch>`` rather than the
+    branch's configured upstream (``@{upstream}``).  A managed clone is created
+    and maintained by the server, so it may be a detached or
+    ``git clone --branch`` checkout that never had upstream tracking set; in
+    that case ``@{upstream}`` does not resolve and fetch/merge/rebase silently
+    skip.  Deriving the ref from the current branch name keeps sync working
+    regardless of whether tracking was configured.
+
+    Resolution order:
+
+    1. ``origin/<branch>`` where *branch* is ``git symbolic-ref --short HEAD``
+       — the normal case.
+    2. ``origin/HEAD`` (the remote's default branch) when HEAD is detached or
+       the current branch has no counterpart on ``origin``.
+
+    Args:
+        git_root: Working-tree root used for ``git -C``.
+        env: Optional environment (e.g. from :func:`git_env`).  Pure-local ref
+            lookups do not touch the network, but the env is threaded through
+            for consistency with the rest of the call sites.
+
+    Returns:
+        The verified remote-tracking ref name (e.g. ``"origin/main"`` or
+        ``"origin/HEAD"``), or ``None`` when neither could be resolved.
+    """
+    branch_proc = run_git_capturing(
+        git_root, "symbolic-ref", "--quiet", "--short", "HEAD", env=env
+    )
+    if branch_proc.returncode == 0:
+        branch = branch_proc.stdout.strip()
+        if branch:
+            candidate = f"origin/{branch}"
+            verify = run_git_capturing(
+                git_root, "rev-parse", "--verify", "--quiet", candidate, env=env
+            )
+            if verify.returncode == 0:
+                return candidate
+
+    # Detached HEAD, or branch has no origin counterpart — fall back to the
+    # remote's default branch.
+    fallback = run_git_capturing(
+        git_root, "rev-parse", "--verify", "--quiet", "origin/HEAD", env=env
+    )
+    if fallback.returncode == 0:
+        return "origin/HEAD"
+    return None
+
+
 def run_git_capturing(
     git_root: Path, *args: str, env: dict[str, str] | None = None
 ) -> subprocess.CompletedProcess[str]:

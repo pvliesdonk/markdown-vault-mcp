@@ -32,6 +32,7 @@ from markdown_vault_mcp.git._run import (
     cleanup_git_env,
     git_env,
     redact,
+    resolve_tracking_ref,
     run_git,
     run_git_capturing,
 )
@@ -510,6 +511,11 @@ class GitWriteStrategy:
             return
 
         try:
+            ref = self._tracking_ref(self._git_root)
+            if ref is None:
+                # No remote-tracking ref resolvable — not an error at startup.
+                logger.debug("Git: no remote ref to check for unpushed commits")
+                return
             result = subprocess.run(
                 [
                     "git",
@@ -517,7 +523,7 @@ class GitWriteStrategy:
                     str(self._git_root),
                     "log",
                     "--oneline",
-                    "@{upstream}..HEAD",
+                    f"{ref}..HEAD",
                 ],
                 capture_output=True,
                 text=True,
@@ -527,8 +533,8 @@ class GitWriteStrategy:
             return
 
         if result.returncode != 0:
-            # No upstream or no remote — not an error at startup.
-            logger.debug("Git: no upstream to check for unpushed commits")
+            # No remote-tracking ref or no remote — not an error at startup.
+            logger.debug("Git: no remote ref to check for unpushed commits")
             return
 
         if result.stdout.strip():
@@ -681,13 +687,14 @@ class GitWriteStrategy:
         git_root: Path,
         env: dict[str, str] | None,
         saved: list[tuple[str, str]],
+        ref: str,
     ) -> list[tuple[str, str]]:
         """Restore upstream content for each conflict path after rebase abort.
 
         After ``git rebase --abort`` the working tree reverts to the
         pre-rebase MCP state — every file in ``saved`` again contains the
         MCP version, not the upstream version.  For each path we run
-        ``git checkout @{upstream} -- <path>`` to bring back the upstream
+        ``git checkout <ref> -- <path>`` to bring back the upstream
         bytes so :meth:`_write_conflict_files` reads the right side
         (canonical = upstream, sibling = MCP).
 
@@ -703,12 +710,16 @@ class GitWriteStrategy:
             env: Optional GIT_ASKPASS environment.
             saved: List of ``(rel_path, mcp_content)`` tuples returned by
                 :meth:`_resolve_conflicts_safely`.
+            ref: Remote-tracking ref to restore from (``origin/<branch>``),
+                resolved by :meth:`_tracking_ref`.
 
         Returns:
             Subset of ``saved`` whose upstream restore succeeded.  May be
             empty if every checkout failed.
         """
-        return conflict.restore_upstream_paths(git_root, env, saved, token=self._token)
+        return conflict.restore_upstream_paths(
+            git_root, env, saved, ref, token=self._token
+        )
 
     def _build_pull_result_advanced(
         self,
@@ -860,12 +871,26 @@ class GitWriteStrategy:
         """
         return run_git_capturing(git_root, *args, env=env)
 
+    def _tracking_ref(
+        self, git_root: Path, env: dict[str, str] | None = None
+    ) -> str | None:
+        """Resolve the remote-tracking ref to sync against (``origin/<branch>``).
+
+        Thin instance wrapper over :func:`resolve_tracking_ref`.  Returns the
+        verified ref name (e.g. ``"origin/main"``), falling back to
+        ``origin/HEAD`` for detached / non-tracking checkouts, or ``None`` when
+        neither resolves.  Used in place of ``@{upstream}`` so sync does not
+        depend on branch tracking being configured.
+        """
+        return resolve_tracking_ref(git_root, env)
+
     def force_pull(self, *, dry_run: bool = False) -> PullResult:
         """Pull from ``origin`` synchronously and return a structured result.
 
-        The remote-tracking branch is identified by reading the upstream of
-        the current branch (``@{upstream}``) so this method works even when
-        ``origin/HEAD`` has not been set on the local clone.
+        The remote-tracking branch is resolved as ``origin/<current-branch>``
+        (see :meth:`_tracking_ref`) so this method works even when branch
+        tracking (``@{upstream}``) was never configured on the local clone —
+        falling back to ``origin/HEAD`` for a detached checkout.
 
         Acquires :attr:`_lock` for the duration so the periodic pull loop
         and the per-write commit path cannot race against the fetch /
@@ -932,23 +957,20 @@ class GitWriteStrategy:
                         from_sha, PULL_REASON_FETCH_FAILED
                     )
 
-                # Resolve the upstream-tracking branch.  Falls back to
-                # ``origin/HEAD`` so callers with a non-tracking checkout
-                # still get a reasonable answer; both yield the remote-side
-                # SHA.
+                # Resolve the remote-tracking ref (``origin/<branch>``,
+                # falling back to ``origin/HEAD`` for a non-tracking or
+                # detached checkout) and read its SHA.
+                ref = self._tracking_ref(git_root, env)
+                if ref is None:
+                    return PullResult.head_unchanged_failure(
+                        from_sha, PULL_REASON_NO_REMOTE
+                    )
                 try:
-                    remote_sha = self._git(
-                        git_root, "rev-parse", "@{upstream}", env=env
-                    ).strip()
+                    remote_sha = self._git(git_root, "rev-parse", ref, env=env).strip()
                 except subprocess.CalledProcessError:
-                    try:
-                        remote_sha = self._git(
-                            git_root, "rev-parse", "origin/HEAD", env=env
-                        ).strip()
-                    except subprocess.CalledProcessError:
-                        return PullResult.head_unchanged_failure(
-                            from_sha, PULL_REASON_NO_REMOTE
-                        )
+                    return PullResult.head_unchanged_failure(
+                        from_sha, PULL_REASON_NO_REMOTE
+                    )
 
                 if remote_sha == from_sha:
                     # Already up to date — successful no-op (applied=True even on dry_run).
@@ -1060,11 +1082,16 @@ class GitWriteStrategy:
             ``"non_fast_forward_with_conflicts"`` (rebase started but
             could not be cleanly resolved or aborted, ``applied=False``).
         """
+        # Resolve the remote-tracking ref once for the rebase target and the
+        # post-abort upstream-restore below.  ``force_pull`` already verified a
+        # ref resolves before delegating here, but fall back defensively.
+        ref = self._tracking_ref(git_root, env) or "@{upstream}"
+
         # First try a plain rebase — this handles the common case where
         # local commits touch *different* files than the upstream commits
         # and replay cleanly with no manual intervention.
         try:
-            self._git(git_root, "rebase", "@{upstream}", env=env)
+            self._git(git_root, "rebase", ref, env=env)
         except subprocess.CalledProcessError:
             # Real conflicts during rebase — resolve by accepting upstream
             # and saving the local MCP versions as Syncthing-style siblings.
@@ -1095,7 +1122,7 @@ class GitWriteStrategy:
                     return PullResult.head_unchanged_failure(
                         from_sha, PULL_REASON_NON_FAST_FORWARD_WITH_CONFLICTS
                     )
-                saved = self._restore_upstream_paths(git_root, env, saved)
+                saved = self._restore_upstream_paths(git_root, env, saved, ref)
 
             if not saved:
                 logger.warning(
@@ -1188,33 +1215,29 @@ class GitWriteStrategy:
             local_head = self._head_sha(git_root)
 
             # Resolve the remote-tracking SHA before the push.  Mirrors
-            # :meth:`force_pull` — prefer ``@{upstream}`` (set when the
-            # branch was created via ``git push -u``), fall back to
-            # ``origin/HEAD`` for non-tracking checkouts.  ``origin/HEAD``
-            # alone is unreliable on freshly-pushed clones, hence the
-            # two-step lookup.
+            # :meth:`force_pull` — derive ``origin/<branch>`` from the current
+            # branch (see :meth:`_tracking_ref`), falling back to
+            # ``origin/HEAD`` for a detached checkout, so the lookup does not
+            # depend on ``@{upstream}`` tracking being configured.
+            ref = self._tracking_ref(git_root)
             try:
-                remote_sha_before = self._git(
-                    git_root, "rev-parse", "@{upstream}"
-                ).strip()
+                if ref is None:
+                    raise subprocess.CalledProcessError(1, "git rev-parse")
+                remote_sha_before = self._git(git_root, "rev-parse", ref).strip()
             except subprocess.CalledProcessError:
-                try:
-                    remote_sha_before = self._git(
-                        git_root, "rev-parse", "origin/HEAD"
-                    ).strip()
-                except subprocess.CalledProcessError:
-                    return PushResult(
-                        applied=False,
-                        commits_pushed=0,
-                        remote_sha_before="",
-                        remote_sha_after="",
-                        reason=PUSH_REASON_NO_REMOTE,
-                        hint=(
-                            "No upstream tracking branch is configured for the "
-                            "current branch.  Run `git push -u origin <branch>` "
-                            "from the working tree once to establish tracking."
-                        ),
-                    )
+                return PushResult(
+                    applied=False,
+                    commits_pushed=0,
+                    remote_sha_before="",
+                    remote_sha_after="",
+                    reason=PUSH_REASON_NO_REMOTE,
+                    hint=(
+                        "No remote-tracking branch (origin/<branch>) could be "
+                        "resolved for the current branch.  Push the branch to "
+                        "origin once (`git push -u origin <branch>`) so the "
+                        "remote-tracking ref exists."
+                    ),
+                )
 
             if dry_run:
                 # Document the limitation rather than fake a result.
@@ -1352,21 +1375,11 @@ class GitWriteStrategy:
         try:
             env = self._git_env()
             with self._quiesce_writes(), self._lock:
-                upstream_check = subprocess.run(
-                    [
-                        "git",
-                        "-C",
-                        str(git_root),
-                        "rev-parse",
-                        "--verify",
-                        "@{upstream}",
-                    ],
-                    capture_output=True,
-                    text=True,
-                    env=env,
-                )
-                if upstream_check.returncode != 0:
-                    logger.info("Git pull: no upstream configured; skipping fetch")
+                ref = self._tracking_ref(git_root, env)
+                if ref is None:
+                    logger.info(
+                        "Git pull: no remote-tracking ref resolvable; skipping fetch"
+                    )
                     return False
 
                 old_head = subprocess.run(
@@ -1393,7 +1406,7 @@ class GitWriteStrategy:
                             str(git_root),
                             "merge",
                             "--ff-only",
-                            "@{upstream}",
+                            ref,
                         ],
                         capture_output=True,
                         text=True,
@@ -1416,7 +1429,7 @@ class GitWriteStrategy:
                                 "-C",
                                 str(git_root),
                                 "rebase",
-                                "@{upstream}",
+                                ref,
                             ],
                             capture_output=True,
                             text=True,
@@ -1460,7 +1473,7 @@ class GitWriteStrategy:
                                         "-C",
                                         str(git_root),
                                         "checkout",
-                                        "@{upstream}",
+                                        ref,
                                         "--",
                                         rel_path,
                                     ],
@@ -1590,24 +1603,20 @@ class GitWriteStrategy:
         if git_root is None:
             return
 
-        # Guard: do not start the loop if there is no upstream configured.
+        # Guard: do not start the loop if no remote-tracking ref resolves.
         # This check is intentionally independent of the sync_once() call in
         # sync_from_remote_before_index() — start() may be called even when
         # the startup sync was skipped (pull_interval_s changed at runtime,
         # or Vault.start() called directly by library users).  The double
-        # upstream check is harmless (costs one git subprocess) and avoids
-        # noisy "no upstream" logs on every tick.
+        # check is harmless (costs one git subprocess) and avoids noisy
+        # "no remote ref" logs on every tick.
         env = None
         try:
             env = self._git_env()
-            upstream_check = subprocess.run(
-                ["git", "-C", str(git_root), "rev-parse", "--verify", "@{upstream}"],
-                capture_output=True,
-                text=True,
-                env=env,
-            )
-            if upstream_check.returncode != 0:
-                logger.info("Git pull: no upstream configured; pull loop disabled")
+            if self._tracking_ref(git_root, env) is None:
+                logger.info(
+                    "Git pull: no remote-tracking ref resolvable; pull loop disabled"
+                )
                 return
         except FileNotFoundError:
             logger.info("Git pull: git not found on PATH; pull loop disabled")

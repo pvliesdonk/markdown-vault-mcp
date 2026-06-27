@@ -488,8 +488,8 @@ failures; `null` for clean fast-forwards and dry-runs):
 | Reason | Meaning | `applied` |
 |--------|---------|-----------|
 | `"fetch_failed"` | `git fetch origin` exited non-zero (network / auth / proxy). HEAD did not move. | `false` |
-| `"no_remote"` | Neither `@{upstream}` nor `origin/HEAD` could be resolved on the local clone. | `false` |
-| `"rebased"` | Local and remote diverged but `git rebase @{upstream}` replayed local commits cleanly. `conflict_files` empty. | `true` |
+| `"no_remote"` | No remote-tracking ref (`origin/<branch>`, or `origin/HEAD` for a detached checkout) could be resolved on the local clone. | `false` |
+| `"rebased"` | Local and remote diverged but `git rebase origin/<branch>` replayed local commits cleanly. `conflict_files` empty. | `true` |
 | `"conflicts_resolved_with_siblings"` | Rebase hit real conflicts; resolved by accepting upstream and writing local versions as `.conflict-mcp-*` siblings (#232). `conflict_files` populated. | `true` |
 | `"conflict_resolution_failed"` | The conflict-resolution loop could not produce a recoverable working tree; rebase was aborted. HEAD did not move. | `false` |
 | `"non_fast_forward_with_conflicts"` | Rare catastrophic fallback when even the conflict-resolution path could not stabilise the working tree. HEAD did not move. | `false` |
@@ -500,7 +500,7 @@ already-up-to-date no-op):
 | Reason | Meaning | `applied` |
 |--------|---------|-----------|
 | `"dry_run_unsupported"` | Caller passed `dry_run=true`. Git has no safe local probe for "would the remote accept this," so the push leg is a deliberate no-op. | `false` |
-| `"no_remote"` | Upstream tracking branch could not be resolved (no `@{upstream}` and no `origin/HEAD`). Push not attempted. | `false` |
+| `"no_remote"` | No remote-tracking ref could be resolved (no `origin/<branch>` and no `origin/HEAD`). Push not attempted. | `false` |
 | `"non_fast_forward"` | Remote rejected the push because the local branch is not a strict descendant of the remote tip. `hint` points at `git_sync(direction='pull')` to reconcile first. | `false` |
 | `"push_failed"` | `git push origin` exited non-zero for any other reason (network, auth, server-side hook). `hint` carries the truncated stderr. | `false` |
 
