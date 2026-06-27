@@ -591,7 +591,8 @@ class GitWriteStrategy:
     ) -> list[tuple[str, str]]:
         """Resolve rebase conflicts by accepting theirs and saving ours.
 
-        Called when ``git rebase @{upstream}`` has stopped at a conflict.
+        Called when ``git rebase <ref>`` (the resolved ``origin/<branch>``
+        remote-tracking ref) has stopped at a conflict.
         For each conflicting file, saves the MCP version from
         ``REBASE_HEAD``, then accepts the upstream version via
         ``git checkout --ours``.  Continues the rebase, looping if
@@ -1034,6 +1035,7 @@ class GitWriteStrategy:
                         git_root=git_root,
                         env=env,
                         from_sha=from_sha,
+                        ref=ref,
                     )
 
                 # Fast-forward succeeded.  ``remote_sha`` is the new HEAD —
@@ -1055,6 +1057,7 @@ class GitWriteStrategy:
         git_root: Path,
         env: dict[str, str] | None,
         from_sha: str,
+        ref: str,
     ) -> PullResult:
         """Attempt rebase + Syncthing-style sibling resolution.
 
@@ -1070,6 +1073,10 @@ class GitWriteStrategy:
             git_root: Working-tree root used for git ``-C``.
             env: Optional GIT_ASKPASS environment for token auth.
             from_sha: HEAD SHA captured before the fetch.
+            ref: Remote-tracking ref (``origin/<branch>``) already resolved
+                and verified non-``None`` by :meth:`force_pull` before
+                delegating here.  Used as the rebase target and the
+                post-abort upstream-restore ref.
 
         Returns:
             :class:`PullResult` whose ``reason`` is one of
@@ -1082,11 +1089,6 @@ class GitWriteStrategy:
             ``"non_fast_forward_with_conflicts"`` (rebase started but
             could not be cleanly resolved or aborted, ``applied=False``).
         """
-        # Resolve the remote-tracking ref once for the rebase target and the
-        # post-abort upstream-restore below.  ``force_pull`` already verified a
-        # ref resolves before delegating here, but fall back defensively.
-        ref = self._tracking_ref(git_root, env) or "@{upstream}"
-
         # First try a plain rebase — this handles the common case where
         # local commits touch *different* files than the upstream commits
         # and replay cleanly with no manual intervention.

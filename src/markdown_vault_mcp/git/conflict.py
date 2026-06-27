@@ -37,7 +37,8 @@ def resolve_rebase_conflicts(
 ) -> list[tuple[str, str]]:
     """Resolve rebase conflicts by accepting theirs and saving ours.
 
-    Called when ``git rebase @{upstream}`` has stopped at a conflict.
+    Called when ``git rebase <ref>`` (the resolved ``origin/<branch>``
+    remote-tracking ref) has stopped at a conflict.
     For each conflicting file, saves the MCP version from
     ``REBASE_HEAD``, then accepts the upstream version via
     ``git checkout --ours``.  Continues the rebase, looping if
@@ -454,7 +455,8 @@ def write_conflict_files(
     # NOTE: this commit is pathspec-less — it commits the whole staged index,
     # not just ``paths_to_add``. That is intentional: it also captures upstream
     # content already staged during conflict resolution (by the rebase's merge,
-    # or by the ``checkout @{upstream}`` restore on the rebase-abort path). It
+    # or by the ``checkout <ref>`` (``origin/<branch>``) restore on the
+    # rebase-abort path). It
     # relies on the caller holding ``_lock`` so no unrelated change is staged.
     commit_result = subprocess.run(
         [

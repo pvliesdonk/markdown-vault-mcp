@@ -11,6 +11,7 @@ whose upstream tracking has been unset.
 
 from __future__ import annotations
 
+import subprocess
 from typing import TYPE_CHECKING
 
 from markdown_vault_mcp.git._run import resolve_tracking_ref
@@ -43,8 +44,6 @@ class TestResolveTrackingRef:
         """
         _run_git(git_repo_pair.local_path, "branch", "--unset-upstream")
         # Sanity: @{upstream} no longer resolves.
-        import subprocess
-
         upstream = subprocess.run(
             ["git", "-C", str(git_repo_pair.local_path), "rev-parse", "@{upstream}"],
             capture_output=True,
@@ -132,3 +131,84 @@ class TestForcePullWithoutTracking:
         assert result.fast_forward is True
         assert result.commits_pulled == 1
         assert (git_repo_pair.local_path / "new.md").exists()
+
+    def test_force_pull_rebases_on_non_tracking_checkout(
+        self, git_repo_pair: GitRepoPair
+    ) -> None:
+        """Divergent histories rebase via the derived ref without ``@{upstream}``.
+
+        The rebase fallback targets the resolved ``origin/<branch>`` ref, not
+        ``@{upstream}``.  This drives ``git rebase origin/main`` on a clone
+        whose upstream tracking has been unset — the exact path the fix exists
+        for, which the fast-forward case above never reaches.
+        """
+        from markdown_vault_mcp.git import (
+            PULL_REASON_REBASED,
+            GitWriteStrategy,
+        )
+
+        # Remote advances on file A; local commits a different file B.
+        _seed_remote_commit(
+            git_repo_pair,
+            clone_name="clone_nt_rebase",
+            file_name="remote_only.md",
+            body="remote\n",
+        )
+        (git_repo_pair.local_path / "local_only.md").write_text("local\n")
+        _run_git(git_repo_pair.local_path, "add", "local_only.md")
+        _run_git(git_repo_pair.local_path, "commit", "-m", "local divergent")
+        _run_git(git_repo_pair.local_path, "branch", "--unset-upstream")
+
+        strategy = GitWriteStrategy(
+            enable_pull=True,
+            enable_push=False,
+            repo_path=git_repo_pair.local_path,
+        )
+        result = strategy.force_pull()
+
+        assert result.applied is True
+        assert result.fast_forward is False
+        assert result.reason == PULL_REASON_REBASED
+        assert (git_repo_pair.local_path / "remote_only.md").exists()
+        assert (git_repo_pair.local_path / "local_only.md").exists()
+
+    def test_force_pull_resolves_conflict_with_siblings_on_non_tracking_checkout(
+        self, git_repo_pair: GitRepoPair
+    ) -> None:
+        """Same-file divergence resolves to siblings via the derived ref.
+
+        Drives the rebase fallback's conflict-resolution branch (rebase onto
+        ``origin/main`` then Syncthing-style sibling write) on a clone with
+        upstream tracking unset, so the ``ref``-threaded rebase target is
+        exercised end-to-end on the non-tracking conflict path.
+        """
+        from markdown_vault_mcp.git import (
+            PULL_REASON_CONFLICTS_RESOLVED_WITH_SIBLINGS,
+            GitWriteStrategy,
+        )
+
+        # Remote and local edit the SAME file differently → rebase conflict.
+        _seed_remote_commit(
+            git_repo_pair,
+            clone_name="clone_nt_conflict",
+            file_name="README.md",
+            body="# remote-edited\n",
+        )
+        (git_repo_pair.local_path / "README.md").write_text("# local-edited\n")
+        _run_git(git_repo_pair.local_path, "add", "README.md")
+        _run_git(git_repo_pair.local_path, "commit", "-m", "local edit")
+        _run_git(git_repo_pair.local_path, "branch", "--unset-upstream")
+
+        strategy = GitWriteStrategy(
+            enable_pull=True,
+            enable_push=False,
+            repo_path=git_repo_pair.local_path,
+        )
+        result = strategy.force_pull()
+
+        assert result.applied is True
+        assert result.fast_forward is False
+        assert result.reason == PULL_REASON_CONFLICTS_RESOLVED_WITH_SIBLINGS
+        assert result.conflict_files
+        for rel in result.conflict_files:
+            assert (git_repo_pair.local_path / rel).exists(), rel
