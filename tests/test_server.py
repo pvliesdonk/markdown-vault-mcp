@@ -256,6 +256,7 @@ class TestToolManifest:
             "list_documents",
             "list_folders",
             "list_tags",
+            "move_folder",
             "read",
             "reindex",
             "rename",
@@ -814,6 +815,76 @@ class TestRenameTool:
             result = await client.call_tool_mcp(
                 "rename",
                 {"old_path": "simple.md", "new_path": "simple.md"},
+            )
+        assert result.isError is True
+
+
+# ---------------------------------------------------------------------------
+# move_folder tool
+# ---------------------------------------------------------------------------
+
+
+class TestMoveFolderTool:
+    """Test the move_folder MCP tool."""
+
+    @pytest.mark.usefixtures("_mcp_env_writable")
+    async def test_move_folder_tool_moves_and_reports(self, vault_path: Path) -> None:
+        """move_folder tool moves files and returns the expected result dict."""
+        # Seed two notes inside a 'drafts' subfolder.
+        (vault_path / "drafts").mkdir(exist_ok=True)
+        (vault_path / "drafts" / "a.md").write_text(
+            "# A\n\nSee [b](./b.md).\n", encoding="utf-8"
+        )
+        (vault_path / "drafts" / "b.md").write_text(
+            "# B\n\nContent.\n", encoding="utf-8"
+        )
+        # External backlink from the vault root so updated_links is exercised.
+        (vault_path / "index.md").write_text(
+            "# Index\n\nSee [A](drafts/a.md).\n", encoding="utf-8"
+        )
+
+        server = make_server()
+        async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
+            result = await client.call_tool(
+                "move_folder", {"old_dir": "drafts", "new_dir": "archive"}
+            )
+
+        data = result.data
+        assert data["old_dir"] == "drafts"
+        assert data["new_dir"] == "archive"
+        assert data["files_moved"] >= 2
+        assert "updated_links" in data
+        assert "failed_links" in data
+        # Files landed at new location.
+        assert (vault_path / "archive" / "a.md").is_file()
+        assert (vault_path / "archive" / "b.md").is_file()
+        # Old folder is gone.
+        assert not (vault_path / "drafts").exists()
+
+    @pytest.mark.usefixtures("_mcp_env_writable")
+    async def test_move_folder_tool_missing_source_returns_error(self) -> None:
+        """move_folder tool returns an error when old_dir does not exist."""
+        server = make_server()
+        async with Client(server) as client:
+            result = await client.call_tool_mcp(
+                "move_folder", {"old_dir": "nonexistent", "new_dir": "archive"}
+            )
+        assert result.isError is True
+
+    @pytest.mark.usefixtures("_mcp_env_writable")
+    async def test_move_folder_tool_nested_target_returns_error(
+        self, vault_path: Path
+    ) -> None:
+        """move_folder tool returns an error when new_dir is nested under old_dir."""
+        (vault_path / "drafts").mkdir(exist_ok=True)
+        (vault_path / "drafts" / "a.md").write_text("# A\n", encoding="utf-8")
+
+        server = make_server()
+        async with Client(server) as client:
+            result = await client.call_tool_mcp(
+                "move_folder",
+                {"old_dir": "drafts", "new_dir": "drafts/sub"},
             )
         assert result.isError is True
 

@@ -411,6 +411,55 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool(
         tags={"write"},
+        icons=_TOOL_ICONS["rename"],
+        annotations={
+            "title": "Move Folder",
+            "readOnlyHint": False,
+            "destructiveHint": False,
+            "idempotentHint": False,
+        },
+    )
+    async def move_folder(
+        old_dir: str,
+        new_dir: str,
+        vault: Vault = Depends(get_vault),
+    ) -> dict[str, Any]:
+        """Move an entire folder subtree to a new location in one call,
+        rewriting every link across the vault that points into the moved
+        subtree — the folder-level analogue of 'rename'.
+
+        Moves all files under old_dir (.md notes, attachments, and any other
+        files) to the matching path under new_dir, preserving structure. Links
+        between documents inside the subtree and backlinks from outside are all
+        rewritten. The search index is updated immediately — do not call
+        'reindex' afterward.
+
+        The move is atomic at the gate: if any destination file already exists,
+        the call fails before moving anything. Link rewrites are best-effort —
+        a source that cannot be rewritten is reported in failed_links rather
+        than aborting the move.
+
+        Args:
+            old_dir: Relative source folder prefix (e.g. "drafts").
+            new_dir: Relative target folder prefix (e.g. "archive/2026").
+                May be an existing folder — files merge in; a per-file name
+                clash aborts the whole move.
+
+        Returns:
+            Dict with old_dir (str), new_dir (str), files_moved (int),
+            updated_links (int), and failed_links (list[str]).
+
+        Raises:
+            DocumentNotFoundError: If old_dir is missing, not a folder, or empty.
+            DocumentExistsError: If any destination file already exists.
+            ValueError: If a path fails traversal validation or the two paths
+                are nested.
+        """
+        result = await asyncio.to_thread(vault.writer.move_folder, old_dir, new_dir)
+        return asdict(result)
+
+    @mcp.tool(
+        tags={"write"},
         icons=_TOOL_ICONS["fetch"],
         annotations={
             "title": "Fetch to Vault",
