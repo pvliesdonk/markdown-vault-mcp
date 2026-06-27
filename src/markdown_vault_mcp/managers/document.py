@@ -37,6 +37,7 @@ from markdown_vault_mcp.types import (
     AttachmentContent,
     DeleteResult,
     EditResult,
+    MoveFolderResult,
     NoteContent,
     RenameResult,
     WriteOperation,
@@ -225,6 +226,29 @@ class DocumentManager:
             )
         abs_path = (self._source_dir / path).resolve()
         if not abs_path.is_relative_to(self._source_dir.resolve()):
+            raise ValueError(f"Path traversal detected: {path}")
+        return abs_path
+
+    def _validate_dir_path(self, path: str) -> Path:
+        """Resolve a relative folder path and validate it is inside the vault.
+
+        Unlike :meth:`_validate_path`, this does not require a ``.md`` suffix —
+        it is for directory prefixes used by :meth:`move_folder`.
+
+        Args:
+            path: Relative folder path (e.g. ``"drafts"`` or ``"a/b"``).
+
+        Returns:
+            The resolved absolute path.
+
+        Raises:
+            ValueError: If the path is empty or escapes the source directory.
+        """
+        if not path or path in (".", "/"):
+            raise ValueError(f"Invalid folder path: {path!r}")
+        abs_path = (self._source_dir / path).resolve()
+        source_root = self._source_dir.resolve()
+        if abs_path == source_root or not abs_path.is_relative_to(source_root):
             raise ValueError(f"Path traversal detected: {path}")
         return abs_path
 
@@ -1199,3 +1223,177 @@ class DocumentManager:
                     exc_info=True,
                 )
         return pending_callbacks, dirty_paths
+
+    def move_folder(self, old_dir: str, new_dir: str) -> MoveFolderResult:
+        """Move an entire folder subtree to a new prefix, rewriting links.
+
+        Moves every file under *old_dir* (``.md`` notes, allowlisted
+        attachments, and any other files) to the matching path under
+        *new_dir*, preserving relative structure. All links across the vault
+        that point into the moved subtree — including links *between*
+        documents inside it — are rewritten in a single pass.
+
+        The move is atomic at the gate: if any destination file path already
+        exists, the operation raises before moving anything. Link rewrites are
+        best-effort: a source that cannot be rewritten is logged and reported
+        in :attr:`MoveFolderResult.failed_links` without aborting the move.
+
+        Args:
+            old_dir: Relative source folder prefix (e.g. ``"drafts"``).
+            new_dir: Relative target folder prefix (e.g. ``"archive/2026"``).
+
+        Returns:
+            :class:`~markdown_vault_mcp.types.MoveFolderResult`.
+
+        Raises:
+            ReadOnlyError: If the vault is read-only.
+            DocumentNotFoundError: If *old_dir* is missing, not a directory,
+                or empty.
+            DocumentExistsError: If any destination file already exists.
+            ValueError: If either path escapes the vault, is the vault root,
+                or one path is nested inside the other.
+        """
+        self._check_writable()
+
+        with self._file_write_lock:
+            old_abs = self._validate_dir_path(old_dir)
+            new_abs = self._validate_dir_path(new_dir)
+
+            if not old_abs.is_dir():
+                raise DocumentNotFoundError(f"Folder not found: {old_dir}")
+
+            # Reject nesting in either direction (would corrupt the prefix map).
+            if old_abs == new_abs:
+                raise ValueError("old_dir and new_dir are the same folder")
+            if new_abs.is_relative_to(old_abs) or old_abs.is_relative_to(new_abs):
+                raise ValueError("move_folder: old_dir and new_dir must not be nested")
+
+            # 1. Enumerate the subtree (filesystem, not the index — attachments
+            #    and other files are not indexed). Build the old->new path map.
+            old_rel = old_dir.strip("/")
+            new_rel = new_dir.strip("/")
+            attachment_exts = self._effective_attachment_extensions()
+
+            moves: list[tuple[Path, Path]] = []  # (src_abs, dst_abs)
+            md_map: dict[str, str] = {}  # old_rel_path -> new_rel_path (.md only)
+            attachment_moves: list[tuple[Path, str]] = []  # (dst_abs, new_rel)
+            for src_abs in sorted(old_abs.rglob("*")):
+                if not src_abs.is_file():
+                    continue
+                rel_within = src_abs.relative_to(old_abs).as_posix()
+                old_path = f"{old_rel}/{rel_within}"
+                new_path = f"{new_rel}/{rel_within}"
+                dst_abs = (self._source_dir / new_path).resolve()
+                moves.append((src_abs, dst_abs))
+                if old_path.endswith(".md"):
+                    md_map[old_path] = new_path
+                else:
+                    suffix = src_abs.suffix.lstrip(".").lower()
+                    if "*" in attachment_exts or suffix in attachment_exts:
+                        attachment_moves.append((dst_abs, new_path))
+
+            if not moves:
+                raise DocumentNotFoundError(f"Folder is empty: {old_dir}")
+
+            # 2. Atomic collision gate — fail before moving anything.
+            for _src_abs, dst_abs in moves:
+                if dst_abs.exists():
+                    rel = dst_abs.relative_to(self._source_dir.resolve()).as_posix()
+                    raise DocumentExistsError(f"Target already exists: {rel}")
+
+            # 3. Capture backlinks for every moved note BEFORE the move, while
+            #    the index still reflects old paths. Annotate each row with its
+            #    target's old/new path so a multi-target rewrite is possible.
+            annotated: list[tuple[str, dict[str, Any]]] = []  # (target_old, row)
+            for target_old in md_map:
+                for row in self._fts.get_backlinks(target_old):
+                    annotated.append((target_old, row))
+
+            # 4. Move every file.
+            for src_abs, dst_abs in moves:
+                dst_abs.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(src_abs), str(dst_abs))
+
+            # 5. Single-pass link rewrite. Group annotated rows by source,
+            #    remapping a source that moved to its new path so it is read at
+            #    its new on-disk location.
+            by_source: dict[str, list[tuple[str, dict[str, Any]]]] = defaultdict(list)
+            for target_old, row in annotated:
+                src_old = row["source_path"]
+                src_new = md_map.get(src_old, src_old)  # remap if inside subtree
+                by_source[src_new].append((target_old, row))
+
+            pending_callbacks: list[tuple[Path, str]] = []
+            dirty_paths: list[str] = []
+            failed_links: list[str] = []
+            for source_path, items in by_source.items():
+                try:
+                    source_abs = self._validate_path(source_path)
+                    if not source_abs.is_file():
+                        logger.warning(
+                            "move_folder: skipping %s — file not found",
+                            source_path,
+                        )
+                        failed_links.append(source_path)
+                        continue
+                    rewrites = [
+                        (
+                            row["link_type"],
+                            row["raw_target"],
+                            row["fragment"],
+                            target_old,
+                            md_map[target_old],
+                        )
+                        for target_old, row in items
+                    ]
+                    content = self._rewrite_one_source(
+                        source_abs, rewrites, source_path
+                    )
+                    pending_callbacks.append((source_abs, content))
+                    dirty_paths.append(source_path)
+                except (OSError, UnicodeDecodeError, ValueError, sqlite3.Error) as exc:
+                    logger.warning(
+                        "move_folder: failed to update %s: %s", source_path, exc
+                    )
+                    failed_links.append(source_path)
+                except Exception as exc:
+                    logger.warning(
+                        "move_folder: unexpected error updating %s: %s",
+                        source_path,
+                        exc,
+                        exc_info=True,
+                    )
+                    failed_links.append(source_path)
+
+            # 6. Index: purge old note paths, reparse new note paths, plus the
+            #    rewritten sources. A single mark_paths_dirty batch makes the
+            #    writer run resolve_vault_wikilinks() once.
+            if self._mark_paths_dirty is not None:
+                dirty: list[str] = []
+                dirty.extend(md_map.keys())  # old paths -> purged
+                dirty.extend(md_map.values())  # new paths -> reparsed
+                dirty.extend(dirty_paths)  # rewritten sources
+                self._mark_paths_dirty(dirty)
+
+            # 7. Callbacks: rename for every moved note + allowlisted attachment,
+            #    edit for every rewritten source.
+            for _old_path, new_path in md_map.items():
+                new_note_abs = (self._source_dir / new_path).resolve()
+                self._on_write_callback(
+                    new_note_abs, _read_text_utf8(new_note_abs), "rename"
+                )
+            for dst_abs, _new_rel in attachment_moves:
+                self._on_write_callback(dst_abs, "", "rename")
+            for src_abs, src_content in pending_callbacks:
+                self._on_write_callback(src_abs, src_content, "edit")
+
+            # 8. Remove the now-empty source tree.
+            shutil.rmtree(old_abs, ignore_errors=True)
+
+        return MoveFolderResult(
+            old_dir=old_dir,
+            new_dir=new_dir,
+            files_moved=len(moves),
+            updated_links=len(pending_callbacks),
+            failed_links=failed_links,
+        )

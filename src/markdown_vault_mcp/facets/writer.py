@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from markdown_vault_mcp.types import (
         DeleteResult,
         EditResult,
+        MoveFolderResult,
         RenameResult,
         WriteResult,
     )
@@ -176,6 +177,34 @@ class WriterFacet:
             if_match=if_match,
             update_links=update_links,
         )
+
+    def move_folder(self, old_dir: str, new_dir: str) -> MoveFolderResult:
+        """Move a folder subtree to a new prefix, rewriting links vault-wide.
+
+        Moves every file under *old_dir* (notes, attachments, and other
+        files) to the matching path under *new_dir* and rewrites all links
+        across the vault that point into the moved subtree, including links
+        between documents inside it.
+
+        The move is atomic at the gate (a destination-file collision aborts
+        before anything moves); link rewrites are best-effort.
+
+        Args:
+            old_dir: Relative source folder prefix (e.g. ``"drafts"``).
+            new_dir: Relative target folder prefix (e.g. ``"archive/2026"``).
+
+        Returns:
+            :class:`~markdown_vault_mcp.types.MoveFolderResult`.
+
+        Raises:
+            ReadOnlyError: If the vault is read-only.
+            DocumentNotFoundError: If *old_dir* is missing, not a directory,
+                or empty.
+            DocumentExistsError: If any destination file already exists.
+            ValueError: If either path escapes the vault or the two paths are
+                nested.
+        """
+        return self._doc_mgr.move_folder(old_dir, new_dir)
 
     def write_attachment(
         self,
