@@ -124,6 +124,7 @@ def register(mcp: FastMCP) -> None:
         tags={"write"},
         icons=_TOOL_ICONS["write"],
         annotations={
+            "title": "Write Note",
             "readOnlyHint": False,
             "destructiveHint": False,
             "idempotentHint": True,
@@ -217,6 +218,7 @@ def register(mcp: FastMCP) -> None:
         tags={"write"},
         icons=_TOOL_ICONS["edit"],
         annotations={
+            "title": "Edit Note",
             "readOnlyHint": False,
             "destructiveHint": False,
             "idempotentHint": False,
@@ -306,6 +308,7 @@ def register(mcp: FastMCP) -> None:
         tags={"write"},
         icons=_TOOL_ICONS["delete"],
         annotations={
+            "title": "Delete Note",
             "readOnlyHint": False,
             "destructiveHint": True,
             "idempotentHint": True,
@@ -349,6 +352,7 @@ def register(mcp: FastMCP) -> None:
         tags={"write"},
         icons=_TOOL_ICONS["rename"],
         annotations={
+            "title": "Rename Note",
             "readOnlyHint": False,
             "destructiveHint": False,
             "idempotentHint": False,
@@ -409,6 +413,7 @@ def register(mcp: FastMCP) -> None:
         tags={"write"},
         icons=_TOOL_ICONS["fetch"],
         annotations={
+            "title": "Fetch to Vault",
             "readOnlyHint": False,
             "destructiveHint": False,
             # Treat like write — calling twice with the same inputs is safe

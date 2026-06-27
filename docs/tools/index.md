@@ -9,39 +9,39 @@ markdown-vault-mcp exposes MCP tools across several categories. Write tools are 
 
 ## Quick Reference
 
-| Tool | Category | Description |
-|------|----------|-------------|
-| [`search`](#search) | Read | Hybrid full-text + semantic search with optional frontmatter filters |
-| [`read`](#read) | Read | Read a document or attachment by relative path |
-| [`list_documents`](#list_documents) | Read | List indexed documents and optionally attachments |
-| [`list_folders`](#list_folders) | Read | List all folder paths in the vault |
-| [`list_tags`](#list_tags) | Read | List all unique frontmatter tag values |
-| [`stats`](#stats) | Read | Get vault statistics and capabilities |
-| [`embeddings_status`](#embeddings_status) | Read | Check embedding provider and vector index status |
-| [`get_index_status`](#get_index_status) | Read | Check background FTS build state (queryable / building / failed) |
-| [`get_backlinks`](#get_backlinks) | Read | Find all documents that link to a given document |
-| [`get_outlinks`](#get_outlinks) | Read | Find all links from a document, with existence check |
-| [`get_broken_links`](#get_broken_links) | Read | Find all links pointing to non-existent documents |
-| [`get_similar`](#get_similar) | Read | Find semantically similar notes by document path |
-| [`get_recent`](#get_recent) | Read | Get the most recently modified notes |
-| [`get_context`](#get_context) | Read | Get a consolidated context dossier for a note |
-| [`get_orphan_notes`](#get_orphan_notes) | Read | Find notes with no inbound or outbound links |
-| [`get_most_linked`](#get_most_linked) | Read | Find the most-linked-to notes ranked by backlink count |
-| [`get_connection_path`](#get_connection_path) | Read | Find the shortest path between two notes via link graph |
-| [`get_history`](#get_history) | Read (git) | List commits that touched a note, attachment, or the whole vault |
-| [`get_diff`](#get_diff) | Read (git) | Return a diff of a note or attachment between two points in history |
-| [`reindex`](#reindex) | Admin | Force a full reindex of the vault |
-| [`build_embeddings`](#build_embeddings) | Admin | Build or rebuild vector embeddings |
-| [`write`](#write) | Write | Create or overwrite a document or attachment |
-| [`edit`](#edit) | Write | Replace a unique text span in a document |
-| [`delete`](#delete) | Write | Delete a document or attachment |
-| [`rename`](#rename) | Write | Rename/move a document or attachment |
-| [`fetch`](#fetch) | Write | Download from URL and save to vault |
-| [`git_sync`](#git_sync) | Write (git) | Force an immediate git pull / push / both, bypassing the periodic loops |
-| [`create_download_link`](#create_download_link) | Transfer | Mint a one-time capability URL to download a vault file (HTTP/SSE only) |
-| [`create_upload_link`](#create_upload_link) | Transfer | Mint a one-time capability URL to upload bytes to a fixed vault path (HTTP/SSE only) |
-| [`browse_vault`](#browse_vault) | Apps | Open the vault explorer SPA |
-| [`show_context`](#show_context) | Apps | Open the Context Card for a note |
+| Tool | Title | Category | Description |
+|------|-------|----------|-------------|
+| [`search`](#search) | Search Vault | Read | Hybrid full-text + semantic search with optional frontmatter filters |
+| [`read`](#read) | Read Note | Read | Read a document or attachment by relative path |
+| [`list_documents`](#list_documents) | List Documents | Read | List indexed documents and optionally attachments |
+| [`list_folders`](#list_folders) | List Folders | Read | List all folder paths in the vault |
+| [`list_tags`](#list_tags) | List Tags | Read | List all unique frontmatter tag values |
+| [`stats`](#stats) | Vault Stats | Read | Get vault statistics and capabilities |
+| [`embeddings_status`](#embeddings_status) | Embeddings Status | Read | Check embedding provider and vector index status |
+| [`get_index_status`](#get_index_status) | Index Status | Read | Check background FTS build state (queryable / building / failed) |
+| [`get_backlinks`](#get_backlinks) | Backlinks | Read | Find all documents that link to a given document |
+| [`get_outlinks`](#get_outlinks) | Outlinks | Read | Find all links from a document, with existence check |
+| [`get_broken_links`](#get_broken_links) | Broken Links | Read | Find all links pointing to non-existent documents |
+| [`get_similar`](#get_similar) | Similar Notes | Read | Find semantically similar notes by document path |
+| [`get_recent`](#get_recent) | Recent Notes | Read | Get the most recently modified notes |
+| [`get_context`](#get_context) | Note Context | Read | Get a consolidated context dossier for a note |
+| [`get_orphan_notes`](#get_orphan_notes) | Orphan Notes | Read | Find notes with no inbound or outbound links |
+| [`get_most_linked`](#get_most_linked) | Most-Linked Notes | Read | Find the most-linked-to notes ranked by backlink count |
+| [`get_connection_path`](#get_connection_path) | Connection Path | Read | Find the shortest path between two notes via link graph |
+| [`get_history`](#get_history) | Note History | Read (git) | List commits that touched a note, attachment, or the whole vault |
+| [`get_diff`](#get_diff) | Note Diff | Read (git) | Return a diff of a note or attachment between two points in history |
+| [`reindex`](#reindex) | Reindex Vault | Admin | Force a full reindex of the vault |
+| [`build_embeddings`](#build_embeddings) | Build Embeddings | Admin | Build or rebuild vector embeddings |
+| [`write`](#write) | Write Note | Write | Create or overwrite a document or attachment |
+| [`edit`](#edit) | Edit Note | Write | Replace a unique text span in a document |
+| [`delete`](#delete) | Delete Note | Write | Delete a document or attachment |
+| [`rename`](#rename) | Rename Note | Write | Rename/move a document or attachment |
+| [`fetch`](#fetch) | Fetch to Vault | Write | Download from URL and save to vault |
+| [`git_sync`](#git_sync) | Sync with Git | Write (git) | Force an immediate git pull / push / both, bypassing the periodic loops |
+| [`create_download_link`](#create_download_link) | Download Link | Transfer | Mint a one-time capability URL to download a vault file (HTTP/SSE only) |
+| [`create_upload_link`](#create_upload_link) | Upload Link | Transfer | Mint a one-time capability URL to upload bytes to a fixed vault path (HTTP/SSE only) |
+| [`browse_vault`](#browse_vault) | Browse Vault | Apps | Open the vault explorer SPA |
+| [`show_context`](#show_context) | Context Card | Apps | Open the Context Card for a note |
 
 ---
 

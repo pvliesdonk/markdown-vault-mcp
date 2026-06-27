@@ -314,6 +314,48 @@ class TestToolAnnotations:
         assert ann.readOnlyHint is False
         assert ann.destructiveHint is True
 
+    @pytest.mark.usefixtures("_mcp_env_writable")
+    async def test_every_registered_tool_has_title(self) -> None:
+        """Every registered tool exposes a non-empty annotations.title (#751).
+
+        Title-aware clients (notably VS Code's MCP client, which honours only
+        ``title`` and ``readOnlyHint`` among annotations) render the title as
+        the tool's label; without it they fall back to the raw machine name.
+
+        Enumerates the *full* tool registry via ``_list_tools()``, not the
+        client-facing ``list_tools()``: the latter filters out app-only tools
+        (``visibility=["app"]``), which would let a titleless app tool slip
+        past this guard. Builds the surface via the ``register_*`` functions
+        directly — bypassing ``make_server``'s tag-based disable passes — so
+        disabled-by-default tools (``git_sync``, the HTTP-only transfer tools)
+        are asserted too. ``get_server_info`` is not in this set: it is added
+        only by ``make_server`` via ``fastmcp-pvl-core``'s
+        ``register_server_info_tool``, which sets no title.
+        """
+        from fastmcp import FastMCP
+
+        from markdown_vault_mcp._server_apps import register_apps
+        from markdown_vault_mcp._server_tools import register_tools
+        from markdown_vault_mcp._server_transfer import register_transfer
+        from markdown_vault_mcp.config import VaultConfig
+
+        mcp = FastMCP("title-test")
+        register_tools(mcp)
+        register_apps(mcp)
+        register_transfer(mcp, VaultConfig.from_env())
+
+        tools = await mcp._list_tools()
+        missing = sorted(
+            t.name for t in tools if t.annotations is None or not t.annotations.title
+        )
+        assert not missing, f"tools missing annotations.title: {missing}"
+
+        # Titles are bulk-authored, so guard against a copy-paste collision
+        # (two tools sharing one label is as useless to the user as none).
+        titles = [t.annotations.title for t in tools if t.annotations]
+        dupes = sorted({t for t in titles if titles.count(t) > 1})
+        assert not dupes, f"duplicate tool titles: {dupes}"
+
 
 # ---------------------------------------------------------------------------
 # Read-only tools

@@ -241,6 +241,7 @@ def register_apps(mcp: FastMCP) -> None:
         tags={"apps-ui"},
         icons=_TOOL_ICONS["browse_vault"],
         annotations={
+            "title": "Browse Vault",
             "readOnlyHint": True,
             "destructiveHint": False,
             "idempotentHint": True,
@@ -307,6 +308,7 @@ def register_apps(mcp: FastMCP) -> None:
     @mcp.tool(
         icons=_TOOL_ICONS["vault_context"],
         annotations={
+            "title": "Vault Context",
             "readOnlyHint": True,
             "destructiveHint": False,
             "idempotentHint": True,
@@ -342,6 +344,7 @@ def register_apps(mcp: FastMCP) -> None:
         tags={"apps-ui"},
         icons=_TOOL_ICONS["show_context"],
         annotations={
+            "title": "Context Card",
             "readOnlyHint": True,
             "destructiveHint": False,
             "idempotentHint": True,
@@ -399,6 +402,7 @@ def register_apps(mcp: FastMCP) -> None:
     @mcp.tool(
         icons=_TOOL_ICONS["vault_graph_neighborhood"],
         annotations={
+            "title": "Graph Neighborhood",
             "readOnlyHint": True,
             "destructiveHint": False,
             "idempotentHint": True,
@@ -593,6 +597,7 @@ def register_apps(mcp: FastMCP) -> None:
     @mcp.tool(
         icons=_TOOL_ICONS["vault_graph_hubs"],
         annotations={
+            "title": "Graph Hubs",
             "readOnlyHint": True,
             "destructiveHint": False,
             "idempotentHint": True,
@@ -706,6 +711,7 @@ def register_apps(mcp: FastMCP) -> None:
     @mcp.tool(
         icons=_TOOL_ICONS["vault_list"],
         annotations={
+            "title": "Vault List",
             "readOnlyHint": True,
             "destructiveHint": False,
             "idempotentHint": True,
@@ -772,6 +778,7 @@ def register_apps(mcp: FastMCP) -> None:
     @mcp.tool(
         icons=_TOOL_ICONS["vault_read"],
         annotations={
+            "title": "Vault Read",
             "readOnlyHint": True,
             "destructiveHint": False,
             "idempotentHint": True,
@@ -810,6 +817,7 @@ def register_apps(mcp: FastMCP) -> None:
     @mcp.tool(
         icons=_TOOL_ICONS["vault_search"],
         annotations={
+            "title": "Vault Search",
             "readOnlyHint": True,
             "destructiveHint": False,
             "idempotentHint": True,

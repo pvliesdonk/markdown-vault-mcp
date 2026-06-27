@@ -200,6 +200,7 @@ def register(mcp: FastMCP) -> None:
     @mcp.tool(
         icons=_TOOL_ICONS["get_history"],
         annotations={
+            "title": "Note History",
             "readOnlyHint": True,
             "destructiveHint": False,
             "idempotentHint": True,
@@ -270,6 +271,7 @@ def register(mcp: FastMCP) -> None:
     @mcp.tool(
         icons=_TOOL_ICONS["get_diff"],
         annotations={
+            "title": "Note Diff",
             "readOnlyHint": True,
             "destructiveHint": False,
             "idempotentHint": True,
@@ -359,6 +361,7 @@ def register(mcp: FastMCP) -> None:
         tags={"write", "git-managed"},
         icons=_TOOL_ICONS["git_sync"],
         annotations={
+            "title": "Sync with Git",
             "readOnlyHint": False,
             "destructiveHint": False,
             "idempotentHint": False,

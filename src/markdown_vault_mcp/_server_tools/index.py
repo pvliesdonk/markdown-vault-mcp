@@ -19,6 +19,7 @@ def register(mcp: FastMCP) -> None:
     @mcp.tool(
         icons=_TOOL_ICONS["embeddings_status"],
         annotations={
+            "title": "Embeddings Status",
             "readOnlyHint": True,
             "destructiveHint": False,
             "idempotentHint": True,
@@ -49,6 +50,7 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool(
         annotations={
+            "title": "Index Status",
             "readOnlyHint": True,
             "openWorldHint": False,
         },
@@ -91,6 +93,7 @@ def register(mcp: FastMCP) -> None:
     @mcp.tool(
         icons=_TOOL_ICONS["reindex"],
         annotations={
+            "title": "Reindex Vault",
             "readOnlyHint": False,
             "destructiveHint": False,
             "idempotentHint": True,
@@ -128,6 +131,7 @@ def register(mcp: FastMCP) -> None:
     @mcp.tool(
         icons=_TOOL_ICONS["build_embeddings"],
         annotations={
+            "title": "Build Embeddings",
             "readOnlyHint": False,
             "destructiveHint": False,
             "idempotentHint": True,

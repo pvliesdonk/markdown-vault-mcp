@@ -21,6 +21,7 @@ def register(mcp: FastMCP) -> None:
     @mcp.tool(
         icons=_TOOL_ICONS["search"],
         annotations={
+            "title": "Search Vault",
             "readOnlyHint": True,
             "destructiveHint": False,
             "idempotentHint": True,
@@ -137,6 +138,7 @@ def register(mcp: FastMCP) -> None:
     @mcp.tool(
         icons=_TOOL_ICONS["read"],
         annotations={
+            "title": "Read Note",
             "readOnlyHint": True,
             "destructiveHint": False,
             "idempotentHint": True,
@@ -220,6 +222,7 @@ def register(mcp: FastMCP) -> None:
     @mcp.tool(
         icons=_TOOL_ICONS["list_documents"],
         annotations={
+            "title": "List Documents",
             "readOnlyHint": True,
             "destructiveHint": False,
             "idempotentHint": True,
@@ -292,6 +295,7 @@ def register(mcp: FastMCP) -> None:
     @mcp.tool(
         icons=_TOOL_ICONS["list_folders"],
         annotations={
+            "title": "List Folders",
             "readOnlyHint": True,
             "destructiveHint": False,
             "idempotentHint": True,
@@ -343,6 +347,7 @@ def register(mcp: FastMCP) -> None:
     @mcp.tool(
         icons=_TOOL_ICONS["list_tags"],
         annotations={
+            "title": "List Tags",
             "readOnlyHint": True,
             "destructiveHint": False,
             "idempotentHint": True,
@@ -399,6 +404,7 @@ def register(mcp: FastMCP) -> None:
     @mcp.tool(
         icons=_TOOL_ICONS["stats"],
         annotations={
+            "title": "Vault Stats",
             "readOnlyHint": True,
             "destructiveHint": False,
             "idempotentHint": True,
@@ -462,6 +468,7 @@ def register(mcp: FastMCP) -> None:
     @mcp.tool(
         icons=_TOOL_ICONS["get_similar"],
         annotations={
+            "title": "Similar Notes",
             "readOnlyHint": True,
             "destructiveHint": False,
             "idempotentHint": True,
@@ -553,6 +560,7 @@ def register(mcp: FastMCP) -> None:
     @mcp.tool(
         icons=_TOOL_ICONS["get_recent"],
         annotations={
+            "title": "Recent Notes",
             "readOnlyHint": True,
             "destructiveHint": False,
             "idempotentHint": True,
@@ -614,6 +622,7 @@ def register(mcp: FastMCP) -> None:
     @mcp.tool(
         icons=_TOOL_ICONS["get_context"],
         annotations={
+            "title": "Note Context",
             "readOnlyHint": True,
             "destructiveHint": False,
             "idempotentHint": True,
