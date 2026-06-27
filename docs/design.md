@@ -1597,6 +1597,43 @@ source-directory-relative links (such as `../notes/target.md`) are rewritten
 with the correct new relative path from the source file's directory.
 `update_links` is silently ignored for attachments (non-`.md` files).
 
+**`move_folder()` behavior**: a dedicated tool (not an overload of `rename`)
+that moves an entire folder subtree to a new prefix in one call. It is the
+folder-level analogue of `rename`.
+
+*Collision gate (atomic pre-check)*: before any file is moved, the full
+destination file list is computed. If ANY destination path already exists the
+call raises immediately and nothing is moved. Merging into a pre-existing
+target directory is allowed as long as no individual file would collide. The
+gate is atomic (all-or-nothing) but there is **no rollback of link rewrites**
+once the move phase begins.
+
+*File move policy*: all files in the subtree are moved (`.md` notes,
+allowlisted attachments, and any other files). Only `.md` files are
+re-indexed; non-markdown files are moved on disk without index updates.
+
+*Link rewrite*: after all files are moved, a single pass over the vault
+rewrites every outbound link (markdown links and wikilinks) whose target falls
+under the old prefix. This covers links between documents inside the moved
+subtree (intra-subtree) and backlinks from outside documents that pointed into
+the subtree. The rewrite applies a prefix-shift: `old_dir/…` to `new_dir/…`.
+Rewriting is **best-effort**: a source document that cannot be rewritten is
+logged at `WARNING` and its path is appended to `failed_links` in the result;
+this does not abort the move. A single `mark_paths_dirty` batch
+drives one `resolve_vault_wikilinks()` pass so the index is consistent after
+the call.
+
+*Empty-source-dir cleanup*: after the move the (now-empty) source directory is
+removed from disk.
+
+*Read-only vaults*: the call raises `ReadOnlyError` immediately.
+
+*Result fields*: `old_dir` (str), `new_dir` (str), `files_moved` (int),
+`updated_links` (int), `failed_links` (list[str]).
+
+*Out of scope*: transactional rollback of link rewrites, dry-run/preview, and
+cross-vault moves.
+
 **`list_documents()` pattern parameter**: if provided, `pattern` is a Unix glob
 matched against the relative path using `fnmatch.fnmatch()`. Example:
 `pattern="Journal/*.md"` returns only documents in the Journal folder.

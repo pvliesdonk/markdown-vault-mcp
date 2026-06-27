@@ -36,6 +36,7 @@ markdown-vault-mcp exposes MCP tools across several categories. Write tools are 
 | [`edit`](#edit) | Edit Note | Write | Replace a unique text span in a document |
 | [`delete`](#delete) | Delete Note | Write | Delete a document or attachment |
 | [`rename`](#rename) | Rename Note | Write | Rename/move a document or attachment |
+| [`move_folder`](#move_folder) | Move Folder | Write | Move an entire folder subtree and rewrite vault links |
 | [`fetch`](#fetch) | Fetch to Vault | Write | Download from URL and save to vault |
 | [`git_sync`](#git_sync) | Sync with Git | Write (git) | Force an immediate git pull / push / both, bypassing the periodic loops |
 | [`create_download_link`](#create_download_link) | Download Link | Transfer | Mint a one-time capability URL to download a vault file (HTTP/SSE only) |
@@ -349,6 +350,36 @@ Rename a document or attachment, or move it to a different folder. Parent direct
 | `new_path` | string | Target relative path. Fails if `new_path` already exists |
 
 **Returns:** `{"old_path": "drafts/idea.md", "new_path": "projects/idea.md"}`
+
+### `move_folder`
+
+Move an entire folder subtree to a new prefix and rewrite all vault links that point into the moved subtree. This is the folder-level analogue of `rename`.
+
+**Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `old_dir` | string | Current folder path (relative, no trailing slash, such as `"drafts/2024"`) |
+| `new_dir` | string | Target folder path (relative, such as `"archive/2024"`) |
+
+**Returns:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `old_dir` | string | Source folder path (echoed back) |
+| `new_dir` | string | Destination folder path (echoed back) |
+| `files_moved` | integer | Number of files moved on disk |
+| `updated_links` | integer | Number of source documents whose links were rewritten |
+| `failed_links` | array of strings | Paths of documents whose link rewrite failed (best-effort) |
+
+**Atomicity:** before any file is moved, every destination path is checked. If any single destination file already exists the call raises and **nothing is moved**. Merging into a pre-existing target directory is allowed as long as no per-file collision exists.
+
+**Link rewrites:** after the move, all vault links pointing into the subtree (markdown links and wikilinks, including links between documents inside the moved subtree and backlinks from outside) are rewritten in a single pass. Rewriting is best-effort; a document that cannot be rewritten is listed in `failed_links` and does not abort the move.
+
+**Index:** updated immediately after the call; no `reindex` needed.
+
+!!! warning
+    Link rewrites are not rolled back if the process is interrupted after the move phase begins. Use `rename` for single-file moves where full atomicity is required.
 
 ### `fetch`
 

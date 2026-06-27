@@ -99,7 +99,9 @@ def _build_default_instructions(*, read_only: bool) -> str:
         else (
             " Write tools: use 'write' to create, 'edit' for targeted changes "
             "(read first), 'rename' to move (pass update_links=True to fix links "
-            "in other notes), 'delete' to remove. All write operations update the "
+            "in other notes), 'delete' to remove. Use 'move_folder(old_dir, new_dir)' "
+            "to move an entire folder subtree and rewrite all vault links in one call. "
+            "All write operations update the "
             "search index immediately — never call 'reindex' after write, edit, "
             "delete, or rename."
         )

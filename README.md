@@ -23,11 +23,11 @@ Point it at a directory of Markdown files (an Obsidian vault, a docs folder, a Z
 > **Upgrading.** As of this release, `search` returns query-relevant snippets in the `content` field by default (approximately 200 words). Pass `snippet_words=0` to recover the prior full-chunk behaviour, or use `read(path, section=heading)` to fetch the full section after seeing a snippet. Documents are also re-chunked on next `reindex` to honour the adaptive `MARKDOWN_VAULT_MCP_MAX_CHUNK_WORDS` threshold (default 400).
 - **Frontmatter-aware** — indexes YAML frontmatter fields, supports required field enforcement
 - **Incremental reindexing** — hash-based change detection, only re-processes modified files; an automatic boot-time reconciliation pass picks up changes made while no server was running, and the vector index converges to the reconciled chunk set (embedding exactly the delta)
-- **Write operations** — create, edit, delete, rename documents with automatic index updates
+- **Write operations** — create, edit, delete, rename documents, and move entire folder subtrees with automatic index updates
 - **Attachment support** — read, write, delete, and list non-markdown files (PDFs, images, etc.)
 - **Git integration** — optional auto-commit and push on every write via `GIT_ASKPASS`
 - **OIDC authentication** — optional token-based auth for HTTP deployments (Authelia, Keycloak, etc.)
-- **MCP tools** — 31 LLM-visible tools including search, read, write, edit, delete, rename, git history, manual git sync, one-time transfer links, and admin operations; plus 6 app-only tools for MCP Apps clients
+- **MCP tools** — 32 LLM-visible tools including search, read, write, edit, delete, rename, move_folder, git history, manual git sync, one-time transfer links, and admin operations; plus 6 app-only tools for MCP Apps clients
 - **MCP resources** — 9 resources exposing vault configuration, statistics, tags, folders, document outlines, similar notes, recent notes, and an interactive SPA
 - **MCP prompts** — 7 prompt templates including template-driven note creation
 <!-- DOMAIN-END -->
@@ -383,6 +383,7 @@ markdown-vault-mcp reindex [--source-dir PATH] [--index-path PATH]
 | `edit` | Replace text in a document — exact match, line-range, or scoped match with normalized fallback |
 | `delete` | Delete a document or attachment and its index entries |
 | `rename` | Rename/move a document or attachment, updating all index entries; pass `update_links=true` to also rewrite backlinks in other notes |
+| `move_folder` | Move an entire folder subtree to a new prefix, rewriting all vault links that point into the moved subtree in one call |
 | `list_documents` | List indexed documents; pass `include_attachments=true` to also list non-markdown files |
 | `list_folders` | List all folder paths in the vault |
 | `list_tags` | List all unique frontmatter tag values |
@@ -409,7 +410,7 @@ markdown-vault-mcp reindex [--source-dir PATH] [--index-path PATH]
 | `browse_vault` | Open the vault explorer SPA in a supporting MCP Apps client |
 | `show_context` | Open the Context Card for a specific note in a supporting MCP Apps client |
 
-Write tools (`write`, `edit`, `delete`, `rename`, `fetch`, `git_sync`, `create_upload_link`) are only available when `MARKDOWN_VAULT_MCP_READ_ONLY=false`. `git_sync` additionally requires managed git mode (`MARKDOWN_VAULT_MCP_GIT_REPO_URL` set).
+Write tools (`write`, `edit`, `delete`, `rename`, `move_folder`, `fetch`, `git_sync`, `create_upload_link`) are only available when `MARKDOWN_VAULT_MCP_READ_ONLY=false`. `git_sync` additionally requires managed git mode (`MARKDOWN_VAULT_MCP_GIT_REPO_URL` set).
 
 `browse_vault` and `show_context` are LLM-visible in all clients; when called in an MCP Apps-capable client they open the interactive SPA. Six additional internal tools (`vault_context`, `vault_list`, `vault_read`, `vault_search`, `vault_graph_neighborhood`, `vault_graph_hubs`) use `visibility="app"` and are used by the SPA only — they are never visible to the LLM.
 

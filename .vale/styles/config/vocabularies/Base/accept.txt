@@ -47,6 +47,7 @@ traceback
 accessors
 affordances
 allowlist
+allowlisted
 ANDed
 APIs
 async
@@ -167,6 +168,7 @@ stderr
 streamable
 subprocess
 subqueries
+subtree
 svg
 syscalls
 teardown
