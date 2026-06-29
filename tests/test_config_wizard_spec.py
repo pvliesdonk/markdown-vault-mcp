@@ -39,7 +39,8 @@ import markdown_vault_mcp
 PREFIX = "MARKDOWN_VAULT_MCP"
 
 # Base names of the env-reading helpers (config_sections/_helpers.py). Files may
-# import them aliased (config.py uses ``env as _env``), resolved per file.
+# import them directly or aliased (the extractor resolves aliases per file);
+# config.py now imports ``env`` without an alias (#767).
 _HELPER_BASENAMES = {"env", "env_int", "env_float", "opt_int"}
 
 # Local names that stand in for the env prefix inside f-strings such as

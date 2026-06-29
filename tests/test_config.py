@@ -1230,7 +1230,7 @@ def test_domain_env_suffixes_sees_decomposed_reads() -> None:
     } <= suffixes
     # Lower bound (full surface is ~40) so a sub-config silently dropping out of
     # the recursion is caught, not just the five sampled suffixes above.
-    assert len(suffixes) >= 35
+    assert len(suffixes) >= 38
 
 
 def test_search_ranking_config_rejects_malformed_int(
