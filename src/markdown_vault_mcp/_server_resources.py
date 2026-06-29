@@ -185,7 +185,15 @@ def register_resources(mcp: FastMCP) -> None:
         path: str,
         vault: Vault = Depends(get_vault),
     ) -> ResourceResult:
-        """Table of contents — ordered list of {level, text, anchor} headings. Useful for navigating long notes without reading full content.
+        """Table of contents for a note or a folder subtree.
+
+        A note path (ending in ``.md``) returns a flat ordered list of
+        ``{heading, level}`` headings (the title as a synthetic H1). A folder
+        path returns a nested-per-note object
+        ``{path, notes: [{path, title, headings}], truncated}`` aggregating the
+        subtree (default cap 200 notes). Useful for navigating structure
+        without reading full content. See the ``get_toc`` tool for the same
+        data with ``max_level`` / ``max_notes`` controls.
 
         Index freshness is reported in _meta.index_stale.
         """

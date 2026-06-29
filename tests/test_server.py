@@ -2283,6 +2283,14 @@ class TestResources:
             with pytest.raises(McpError, match="Document not found"):
                 await client.read_resource("toc://vault/does_not_exist.md")
 
+    @pytest.mark.usefixtures("_mcp_env")
+    async def test_toc_resource_folder_returns_nested(self) -> None:
+        async with Client(make_server()) as client:
+            result = await client.read_resource("toc://vault/subfolder")
+            data = json.loads(result[0].text)
+            assert isinstance(data, dict)
+            assert "notes" in data and data["path"] == "subfolder"
+
 
 # ---------------------------------------------------------------------------
 # Prompts
