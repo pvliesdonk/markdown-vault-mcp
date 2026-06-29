@@ -69,6 +69,9 @@ def test_subtree_toc_is_recursive_and_path_ordered(vault: Path) -> None:
     # Raw section headings only — no synthetic H1 prepended at this layer.
     assert {"heading": "Goals", "level": 2} in alpha["headings"]
     assert {"heading": "Detail", "level": 3} in alpha["headings"]
+    assert alpha["headings"].index({"heading": "Goals", "level": 2}) < alpha[
+        "headings"
+    ].index({"heading": "Detail", "level": 3})
 
 
 def test_subtree_prefix_is_boundary_matched(vault: Path) -> None:
@@ -108,3 +111,18 @@ def test_get_toc_max_level_filter(vault: Path) -> None:
     toc = fts.get_toc("Projects/alpha.md", max_level=2)
     assert all(h["level"] <= 2 for h in toc)
     assert {"heading": "Detail", "level": 3} not in toc
+
+
+def test_subtree_escapes_like_wildcards(tmp_path: Path) -> None:
+    (tmp_path / "notes_2026").mkdir()
+    (tmp_path / "notes_2026" / "a.md").write_text(
+        "---\ntitle: A\n---\n# A\n\n## Sec\n\nx\n", encoding="utf-8"
+    )
+    (tmp_path / "notesX2026").mkdir()
+    (tmp_path / "notesX2026" / "b.md").write_text(
+        "---\ntitle: B\n---\n# B\n\n## Sec\n\ny\n", encoding="utf-8"
+    )
+    fts = _build_fts(tmp_path)
+    notes, _ = fts.get_subtree_toc("notes_2026")
+    paths = [n["path"] for n in notes]
+    assert paths == ["notes_2026/a.md"]

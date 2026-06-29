@@ -1438,8 +1438,10 @@ class FTSIndex:
         Returns:
             ``(notes, truncated)`` where *notes* is a list of
             ``{"path", "title", "headings": [{"heading", "level"}]}`` ordered
-            by path, *headings* are raw section headings (no synthetic H1),
-            and *truncated* is True when more than ``max_notes`` notes matched.
+            by path, *headings* are raw section headings (no synthetic H1 —
+            the manager layer prepends the synthetic H1 before exposing them
+            to consumers), and *truncated* is True when more than ``max_notes``
+            notes matched.
         """
         escaped = _escape_like(prefix)
         doc_rows = (

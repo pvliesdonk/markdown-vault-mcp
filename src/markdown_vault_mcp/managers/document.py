@@ -233,7 +233,8 @@ class DocumentManager:
         """Resolve a relative folder path and validate it is inside the vault.
 
         Unlike :meth:`_validate_path`, this does not require a ``.md`` suffix —
-        it is for directory prefixes used by :meth:`move_folder`.
+        it is for directory prefixes used by :meth:`move_folder` and
+        :meth:`_subtree_toc`.
 
         Args:
             path: Relative folder path (e.g. ``"drafts"`` or ``"a/b"``).
@@ -521,8 +522,8 @@ class DocumentManager:
 
         Raises:
             ValueError: Note mode, if no document exists at *path* or if the
-                path escapes the vault; folder mode, if *path* is empty/root or
-                escapes the vault.
+                path escapes the vault; folder mode, if *path* is empty, the
+                vault root (```.```/```/```), or escaping the vault.
         """
         if path.endswith(".md"):
             return self._note_toc(path, max_level=max_level)

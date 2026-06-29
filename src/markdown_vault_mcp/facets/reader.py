@@ -193,7 +193,11 @@ class ReaderFacet:
             max_notes: Folder mode cap on distinct notes (default 200).
 
         Returns:
-            ``list`` for a note path, ``dict`` for a folder path.
+            Note path → ``list[{"heading": str, "level": int}]`` with the
+            document title prepended as a synthetic H1.
+            Folder path → ``{"path": str, "notes": list[{"path": str,
+            "title": str, "headings": list[{"heading": str, "level": int}]}],
+            "truncated": bool}``.
 
         Raises:
             IndexUnavailableError: If :meth:`IndexFacet.build_index` has not been called.

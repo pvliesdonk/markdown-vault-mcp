@@ -6,7 +6,6 @@ from typing import Any, Literal
 
 from fastmcp import FastMCP
 from fastmcp.dependencies import Depends
-from fastmcp.tools import ToolResult
 
 from markdown_vault_mcp.vault import Vault
 
@@ -616,19 +615,12 @@ def register(mcp: FastMCP) -> None:
             max_level=max_level,
             max_notes=max_notes,
         )
-        index_stale = (
-            (not drained)
-            or (vault.index.write_generation() != gen_before)
-            or (not vault.index.is_drained())
-        )
-        # The union return type (list | dict) causes FastMCP to generate an
-        # output schema that wraps both branches in {"result": <payload>}.
-        # Construct ToolResult directly to ensure structured_content always
-        # uses the {"result": ...} envelope that the schema requires.
-        return ToolResult(  # type: ignore[return-value]
-            content=data,
-            structured_content={"result": data},
-            meta={"index_stale": index_stale},
+        return _staleness_result(
+            vault,
+            data,
+            drained_on_request=drained,
+            gen_before=gen_before,
+            force_result_wrap=True,
         )
 
     @mcp.tool(

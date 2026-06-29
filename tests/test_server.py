@@ -291,6 +291,7 @@ class TestToolAnnotations:
             "get_broken_links",
             "get_similar",
             "get_recent",
+            "get_toc",
         ):
             ann = by_name[name].annotations
             assert ann is not None, f"{name} missing annotations"
@@ -2011,6 +2012,7 @@ class TestGetTocTool:
         data = _parse_tool_data(result)
         assert isinstance(data, list)
         assert data[0]["level"] == 1
+        assert result.structured_content == {"result": data}
 
     @pytest.mark.usefixtures("_mcp_env_writable")
     async def test_get_toc_tool_folder(self) -> None:
@@ -2306,6 +2308,12 @@ class TestResources:
         async with Client(server) as client:
             with pytest.raises(McpError, match="Document not found"):
                 await client.read_resource("toc://vault/does_not_exist.md")
+
+    @pytest.mark.usefixtures("_mcp_env")
+    async def test_toc_resource_folder_traversal_raises(self) -> None:
+        async with Client(make_server()) as client:
+            with pytest.raises(McpError):
+                await client.read_resource("toc://vault/..%2Fetc")
 
     @pytest.mark.usefixtures("_mcp_env")
     async def test_toc_resource_folder_returns_nested(self) -> None:

@@ -460,6 +460,11 @@ class TestGetToc:
         gamma = result["notes"][0]
         assert gamma["headings"] == [{"heading": "Gamma", "level": 1}]
 
+    def test_get_toc_dedups_title_matching_h1(self, doc_mgr: DocumentManager) -> None:
+        toc = doc_mgr.get_toc("sub/gamma.md")
+        h1s = [e for e in toc if e == {"heading": "Gamma", "level": 1}]
+        assert len(h1s) == 1
+
 
 # ---------------------------------------------------------------------------
 # Validation tests
