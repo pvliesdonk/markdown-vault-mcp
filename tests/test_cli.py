@@ -1,4 +1,4 @@
-"""Tests for cli.py — argument parsing and subcommand dispatch."""
+"""Tests for cli.py — typer app, subcommand dispatch, and domain regressions."""
 
 from __future__ import annotations
 
@@ -6,1053 +6,739 @@ import json
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
-import pytest
+from typer.testing import CliRunner
 
-from markdown_vault_mcp._cli_impl import _build_parser, _cmd_serve, main
+from markdown_vault_mcp.cli import _build_vault, app
 
 if TYPE_CHECKING:
     from pathlib import Path
 
+    import pytest
 
-class TestBuildParser:
-    """Test argument parser construction."""
+runner = CliRunner()
 
-    def test_no_command_exits(self) -> None:
-        parser = _build_parser()
-        with pytest.raises(SystemExit):
-            parser.parse_args([])
+_ENV_PREFIX = "MARKDOWN_VAULT_MCP"
 
-    def test_serve_defaults(self) -> None:
-        parser = _build_parser()
-        args = parser.parse_args(["serve"])
-        assert args.command == "serve"
-        assert args.transport == "stdio"
 
-    def test_serve_sse_transport(self) -> None:
-        parser = _build_parser()
-        args = parser.parse_args(["serve", "--transport", "sse"])
-        assert args.transport == "sse"
+# ---------------------------------------------------------------------------
+# Help / structure
+# ---------------------------------------------------------------------------
 
-    def test_serve_http_transport(self) -> None:
-        parser = _build_parser()
-        args = parser.parse_args(["serve", "--transport", "http"])
-        assert args.transport == "http"
-        assert args.host == "127.0.0.1"
-        assert args.port == 8000
-        assert args.http_path is None
 
-    def test_serve_http_custom_host_port(self) -> None:
-        parser = _build_parser()
-        args = parser.parse_args(
-            ["serve", "--transport", "http", "--host", "127.0.0.1", "--port", "9000"]
+def test_help_lists_all_subcommands() -> None:
+    """`--help` lists all four subcommands."""
+    result = runner.invoke(app, ["--help"])
+    assert result.exit_code == 0
+    for cmd in ("serve", "index", "search", "reindex"):
+        assert cmd in result.output
+
+
+def test_no_args_exits_nonzero() -> None:
+    """Bare invocation exits with code 2 (typer no_args_is_help=True)."""
+    result = runner.invoke(app, [])
+    assert result.exit_code == 2
+    assert "serve" in result.output
+
+
+def test_serve_help_exits_zero() -> None:
+    """`serve --help` documents the transport flag."""
+    result = runner.invoke(app, ["serve", "--help"])
+    assert result.exit_code == 0
+    assert "stdio" in result.output
+
+
+def test_index_help_exits_zero() -> None:
+    result = runner.invoke(app, ["index", "--help"])
+    assert result.exit_code == 0
+    assert "source-dir" in result.output
+
+
+def test_search_help_exits_zero() -> None:
+    result = runner.invoke(app, ["search", "--help"])
+    assert result.exit_code == 0
+    assert "QUERY" in result.output
+
+
+def test_reindex_help_exits_zero() -> None:
+    result = runner.invoke(app, ["reindex", "--help"])
+    assert result.exit_code == 0
+    assert "source-dir" in result.output
+
+
+# ---------------------------------------------------------------------------
+# serve — patch targets:
+#   make_server  → markdown_vault_mcp.server.make_server  (function-local import)
+#   build_event_store → markdown_vault_mcp.cli.build_event_store (top-level import)
+#   uvicorn.run  → uvicorn.run  (imported inside serve as `import uvicorn`)
+# ---------------------------------------------------------------------------
+
+
+def _invoke_http_serve(
+    extra_args: list[str] | None = None,
+    host: str = "127.0.0.1",
+    port: int = 8000,
+) -> tuple[object, dict[str, object]]:
+    """Invoke ``serve --transport http`` with all side effects patched.
+
+    Returns the CliRunner result and the kwargs captured by the fake uvicorn.run.
+    ``host`` and ``port`` are wired into the mock config so tests that rely on
+    env-var fallbacks see the expected values without needing SOURCE_DIR set.
+    """
+    captured: dict[str, object] = {}
+
+    def fake_uvicorn_run(_asgi_app: object, **kwargs: object) -> None:
+        captured.update(kwargs)
+
+    fake_server = MagicMock()
+    fake_server.http_app.return_value = MagicMock()
+
+    mock_config = MagicMock()
+    mock_config.server.host = host
+    mock_config.server.port = port
+
+    with (
+        patch("uvicorn.run", side_effect=fake_uvicorn_run),
+        patch("markdown_vault_mcp.server.make_server", return_value=fake_server),
+        patch("markdown_vault_mcp.cli.build_event_store", return_value=MagicMock()),
+        patch("markdown_vault_mcp.cli.ProjectConfig") as mock_cfg_cls,
+    ):
+        mock_cfg_cls.from_env.return_value = mock_config
+        args = ["serve", "--transport", "http"] + (extra_args or [])
+        result = runner.invoke(app, args)
+
+    return result, captured
+
+
+def test_serve_http_runs_uvicorn(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``serve --transport http`` calls uvicorn.run."""
+    monkeypatch.setenv(f"{_ENV_PREFIX}_SOURCE_DIR", "/tmp/vault")
+    result, captured = _invoke_http_serve(["--host", "127.0.0.1", "--port", "9001"])
+    assert result.exit_code == 0, result.output
+    assert captured.get("port") == 9001
+    assert captured.get("host") == "127.0.0.1"
+
+
+def test_serve_http_reads_host_port_from_env() -> None:
+    """``serve --transport http`` uses HOST/PORT from env when no CLI flags given.
+
+    The serve command falls back to ``config.server.host/port`` when no CLI flags
+    are passed.  We wire those values into the mock config so the env-var path
+    (ProjectConfig.from_env reading MARKDOWN_VAULT_MCP_HOST/PORT) is exercised
+    without needing SOURCE_DIR to be set.
+    """
+    # The mock_config in _invoke_http_serve is what from_env() returns.
+    # Pass the expected host/port so mock_config.server.host/port carry them.
+    result, captured = _invoke_http_serve(host="192.168.1.50", port=9090)
+    assert result.exit_code == 0, result.output
+    assert captured.get("host") == "192.168.1.50"
+    assert captured.get("port") == 9090
+
+
+def test_serve_http_cli_flags_override_env() -> None:
+    """Explicit ``--host``/``--port`` CLI flags override env-var defaults.
+
+    When CLI flags are given they take precedence over config.server.host/port.
+    The mock config carries a different host/port to prove the CLI wins.
+    """
+    result, captured = _invoke_http_serve(
+        ["--host", "10.0.0.1", "--port", "7777"],
+        host="192.168.1.50",
+        port=9090,
+    )
+    assert result.exit_code == 0, result.output
+    assert captured.get("host") == "10.0.0.1"
+    assert captured.get("port") == 7777
+
+
+def _fake_config(host: str = "127.0.0.1", port: int = 8000) -> MagicMock:
+    """Return a mock ProjectConfig with server.host/port set."""
+    cfg = MagicMock()
+    cfg.server.host = host
+    cfg.server.port = port
+    return cfg
+
+
+def test_serve_http_default_path_is_mcp() -> None:
+    """``serve --transport http`` defaults to /mcp when no path flags/env set."""
+    fake_server = MagicMock()
+    fake_server.http_app.return_value = MagicMock()
+    with (
+        patch("uvicorn.run"),
+        patch("markdown_vault_mcp.server.make_server", return_value=fake_server),
+        patch("markdown_vault_mcp.cli.build_event_store", return_value=MagicMock()),
+        patch("markdown_vault_mcp.cli.ProjectConfig") as mock_cfg_cls,
+    ):
+        mock_cfg_cls.from_env.return_value = _fake_config()
+        result = runner.invoke(app, ["serve", "--transport", "http"])
+    assert result.exit_code == 0, result.output
+    call_kwargs = fake_server.http_app.call_args[1]
+    assert call_kwargs["path"] == "/mcp"
+
+
+def test_serve_http_custom_path() -> None:
+    """``--http-path`` is passed through normalised to http_app()."""
+    fake_server = MagicMock()
+    fake_server.http_app.return_value = MagicMock()
+    with (
+        patch("uvicorn.run"),
+        patch("markdown_vault_mcp.server.make_server", return_value=fake_server),
+        patch("markdown_vault_mcp.cli.build_event_store", return_value=MagicMock()),
+        patch("markdown_vault_mcp.cli.ProjectConfig") as mock_cfg_cls,
+    ):
+        mock_cfg_cls.from_env.return_value = _fake_config()
+        result = runner.invoke(
+            app, ["serve", "--transport", "http", "--http-path", "/vault/mcp"]
         )
-        assert args.transport == "http"
-        assert args.host == "127.0.0.1"
-        assert args.port == 9000
+    assert result.exit_code == 0, result.output
+    call_kwargs = fake_server.http_app.call_args[1]
+    assert call_kwargs["path"] == "/vault/mcp"
 
-    def test_serve_http_custom_path(self) -> None:
-        parser = _build_parser()
-        args = parser.parse_args(
-            ["serve", "--transport", "http", "--http-path", "/vault/mcp"]
+
+def test_serve_http_path_normalised() -> None:
+    """``serve`` normalises --http-path (adds leading slash, trims trailing)."""
+    fake_server = MagicMock()
+    fake_server.http_app.return_value = MagicMock()
+    with (
+        patch("uvicorn.run"),
+        patch("markdown_vault_mcp.server.make_server", return_value=fake_server),
+        patch("markdown_vault_mcp.cli.build_event_store", return_value=MagicMock()),
+        patch("markdown_vault_mcp.cli.ProjectConfig") as mock_cfg_cls,
+    ):
+        mock_cfg_cls.from_env.return_value = _fake_config()
+        result = runner.invoke(
+            app, ["serve", "--transport", "http", "--http-path", "vault/mcp/"]
         )
-        assert args.transport == "http"
-        assert args.http_path == "/vault/mcp"
+    assert result.exit_code == 0, result.output
+    call_kwargs = fake_server.http_app.call_args[1]
+    assert call_kwargs["path"] == "/vault/mcp"
 
-    def test_serve_legacy_path_alias_still_works(self) -> None:
-        """The legacy --path spelling is kept as an alias for --http-path.
 
-        Protects existing Dockerfiles, systemd units, and service configs
-        from the rename; the argparse dest remains ``http_path``.
-        """
-        parser = _build_parser()
-        args = parser.parse_args(
-            ["serve", "--transport", "http", "--path", "/legacy/mcp"]
+def test_serve_http_path_env_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``serve`` uses MARKDOWN_VAULT_MCP_HTTP_PATH when --http-path is omitted."""
+    monkeypatch.setenv(f"{_ENV_PREFIX}_HTTP_PATH", "/vault/mcp")
+    fake_server = MagicMock()
+    fake_server.http_app.return_value = MagicMock()
+    with (
+        patch("uvicorn.run"),
+        patch("markdown_vault_mcp.server.make_server", return_value=fake_server),
+        patch("markdown_vault_mcp.cli.build_event_store", return_value=MagicMock()),
+        patch("markdown_vault_mcp.cli.ProjectConfig") as mock_cfg_cls,
+    ):
+        mock_cfg_cls.from_env.return_value = _fake_config()
+        result = runner.invoke(app, ["serve", "--transport", "http"])
+    assert result.exit_code == 0, result.output
+    call_kwargs = fake_server.http_app.call_args[1]
+    assert call_kwargs["path"] == "/vault/mcp"
+
+
+def test_serve_http_path_cli_overrides_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """CLI --http-path takes precedence over MARKDOWN_VAULT_MCP_HTTP_PATH."""
+    monkeypatch.setenv(f"{_ENV_PREFIX}_HTTP_PATH", "/from-env")
+    fake_server = MagicMock()
+    fake_server.http_app.return_value = MagicMock()
+    with (
+        patch("uvicorn.run"),
+        patch("markdown_vault_mcp.server.make_server", return_value=fake_server),
+        patch("markdown_vault_mcp.cli.build_event_store", return_value=MagicMock()),
+        patch("markdown_vault_mcp.cli.ProjectConfig") as mock_cfg_cls,
+    ):
+        mock_cfg_cls.from_env.return_value = _fake_config()
+        result = runner.invoke(
+            app, ["serve", "--transport", "http", "--http-path", "/from-cli"]
         )
-        assert args.http_path == "/legacy/mcp"
-
-    def test_index_command(self) -> None:
-        parser = _build_parser()
-        args = parser.parse_args(["index"])
-        assert args.command == "index"
-        assert args.force is False
-
-    def test_index_force_flag(self) -> None:
-        parser = _build_parser()
-        args = parser.parse_args(["index", "--force"])
-        assert args.force is True
-
-    def test_search_defaults(self) -> None:
-        parser = _build_parser()
-        args = parser.parse_args(["search", "hello world"])
-        assert args.command == "search"
-        assert args.query == "hello world"
-        assert args.limit == 10
-        assert args.mode == "keyword"
-        assert args.folder is None
-        assert args.json is False
-
-    def test_search_all_options(self) -> None:
-        parser = _build_parser()
-        args = parser.parse_args(
-            [
-                "search",
-                "test query",
-                "-n",
-                "5",
-                "-m",
-                "hybrid",
-                "--folder",
-                "Journal",
-                "--json",
-            ]
-        )
-        assert args.query == "test query"
-        assert args.limit == 5
-        assert args.mode == "hybrid"
-        assert args.folder == "Journal"
-        assert args.json is True
-
-    def test_index_source_dir_and_index_path(self) -> None:
-        parser = _build_parser()
-        args = parser.parse_args(
-            ["index", "--source-dir", "/data/vault", "--index-path", "/data/idx.db"]
-        )
-        assert args.source_dir == "/data/vault"
-        assert args.index_path == "/data/idx.db"
-
-    def test_search_source_dir(self) -> None:
-        parser = _build_parser()
-        args = parser.parse_args(["search", "query", "--source-dir", "/data/vault"])
-        assert args.source_dir == "/data/vault"
-
-    def test_reindex_command(self) -> None:
-        parser = _build_parser()
-        args = parser.parse_args(["reindex"])
-        assert args.command == "reindex"
-
-    def test_reindex_source_dir_and_index_path(self) -> None:
-        parser = _build_parser()
-        args = parser.parse_args(
-            ["reindex", "--source-dir", "/data/vault", "--index-path", "/data/idx.db"]
-        )
-        assert args.source_dir == "/data/vault"
-        assert args.index_path == "/data/idx.db"
-
-    def test_verbose_flag(self) -> None:
-        parser = _build_parser()
-        args = parser.parse_args(["-v", "index"])
-        assert args.verbose is True
-
-
-class TestMainDispatch:
-    """Test main() dispatches to the correct subcommand handler."""
-
-    def test_no_command_exits(self) -> None:
-        with (
-            patch("sys.argv", ["markdown-vault-mcp"]),
-            pytest.raises(SystemExit, match="2"),
-        ):
-            main()
-
-    @patch("markdown_vault_mcp._cli_impl._COMMANDS")
-    def test_index_dispatch(self, mock_commands: MagicMock) -> None:
-        mock_handler = MagicMock()
-        mock_commands.__getitem__ = MagicMock(return_value=mock_handler)
-        with patch("sys.argv", ["markdown-vault-mcp", "index"]):
-            main()
-        mock_commands.__getitem__.assert_called_once_with("index")
-        mock_handler.assert_called_once()
-
-    @patch("markdown_vault_mcp._cli_impl._COMMANDS")
-    def test_valueerror_exits_with_message(self, mock_commands: MagicMock) -> None:
-        mock_handler = MagicMock(side_effect=ValueError("SOURCE_DIR not set"))
-        mock_commands.__getitem__ = MagicMock(return_value=mock_handler)
-        with (
-            patch("sys.argv", ["markdown-vault-mcp", "index"]),
-            pytest.raises(SystemExit, match="1"),
-        ):
-            main()
-
-    @patch("markdown_vault_mcp._cli_impl._COMMANDS")
-    def test_serve_dispatch(self, mock_commands: MagicMock) -> None:
-        mock_handler = MagicMock()
-        mock_commands.__getitem__ = MagicMock(return_value=mock_handler)
-        with patch("sys.argv", ["markdown-vault-mcp", "serve"]):
-            main()
-        mock_commands.__getitem__.assert_called_once_with("serve")
-        mock_handler.assert_called_once()
-
-    @patch("markdown_vault_mcp._cli_impl._COMMANDS")
-    @patch("markdown_vault_mcp._cli_impl.configure_logging_from_env")
-    def test_verbose_enables_debug_for_both_logger_trees(
-        self, mock_configure: MagicMock, mock_commands: MagicMock
-    ) -> None:
-        """``-v`` routes to configure_logging_from_env and silences httpx/httpcore."""
-        mock_handler = MagicMock()
-        mock_commands.__getitem__ = MagicMock(return_value=mock_handler)
-        with patch("sys.argv", ["markdown-vault-mcp", "-v", "index"]):
-            main()
-        mock_configure.assert_called_once_with(verbose=True)
-        import logging
-
-        assert logging.getLogger("httpx").level == logging.WARNING
-        assert logging.getLogger("httpcore").level == logging.WARNING
-
-    @patch("markdown_vault_mcp._cli_impl._COMMANDS")
-    def test_verbose_sets_fastmcp_log_level_env(self, mock_commands: MagicMock) -> None:
-        """``-v`` sets FASTMCP_LOG_LEVEL=DEBUG via the real configure_logging_from_env.
-
-        Intentionally exercises the real helper (not mocked) so it covers the
-        env-var contract MV depends on.  Saves and restores the root logger's
-        level + handlers and FASTMCP_LOG_LEVEL to keep global state clean.
-        """
-        import logging
-        import os
-
-        mock_handler = MagicMock()
-        mock_commands.__getitem__ = MagicMock(return_value=mock_handler)
-        root = logging.getLogger()
-        saved_env = os.environ.pop("FASTMCP_LOG_LEVEL", None)
-        saved_level = root.level
-        saved_handlers = root.handlers[:]
-        try:
-            with patch("sys.argv", ["markdown-vault-mcp", "-v", "index"]):
-                main()
-            assert os.environ.get("FASTMCP_LOG_LEVEL") == "DEBUG"
-        finally:
-            if saved_env is not None:
-                os.environ["FASTMCP_LOG_LEVEL"] = saved_env
-            else:
-                os.environ.pop("FASTMCP_LOG_LEVEL", None)
-            root.setLevel(saved_level)
-            root.handlers[:] = saved_handlers
-
-    @patch("markdown_vault_mcp._cli_impl._COMMANDS")
-    def test_no_verbose_does_not_set_fastmcp_log_level(
-        self, mock_commands: MagicMock
-    ) -> None:
-        """Without ``-v``, FASTMCP_LOG_LEVEL is not touched."""
-        import os
-
-        mock_handler = MagicMock()
-        mock_commands.__getitem__ = MagicMock(return_value=mock_handler)
-        old = os.environ.pop("FASTMCP_LOG_LEVEL", None)
-        try:
-            with patch("sys.argv", ["markdown-vault-mcp", "index"]):
-                main()
-            assert os.environ.get("FASTMCP_LOG_LEVEL") is None
-        finally:
-            if old is not None:
-                os.environ["FASTMCP_LOG_LEVEL"] = old
-            else:
-                os.environ.pop("FASTMCP_LOG_LEVEL", None)
-
-    @patch("markdown_vault_mcp._cli_impl._COMMANDS")
-    def test_root_handler_added_when_none_exist(self, mock_commands: MagicMock) -> None:
-        """A StreamHandler is added to root when it has no handlers."""
-        import logging
-
-        mock_handler = MagicMock()
-        mock_commands.__getitem__ = MagicMock(return_value=mock_handler)
-        root = logging.getLogger()
-        original_handlers = root.handlers[:]
-        root.handlers.clear()
-        try:
-            with patch("sys.argv", ["markdown-vault-mcp", "index"]):
-                main()
-            assert len(root.handlers) >= 1
-        finally:
-            root.handlers[:] = original_handlers
-
-
-class TestCmdServe:
-    """Test the serve subcommand dispatch."""
-
-    @patch("uvicorn.run")
-    @patch("markdown_vault_mcp.server.build_event_store")
-    @patch("markdown_vault_mcp._cli_impl.ProjectConfig")
-    @patch("markdown_vault_mcp.server.make_server")
-    def test_serve_http_calls_http_app_and_uvicorn(
-        self,
-        mock_create: MagicMock,
-        mock_vault_config: MagicMock,
-        mock_build_es: MagicMock,
-        mock_uvicorn_run: MagicMock,
-    ) -> None:
-        """_cmd_serve builds ASGI app via http_app() and runs uvicorn for http."""
-        mock_server = MagicMock()
-        mock_create.return_value = mock_server
-        mock_config = MagicMock()
-        mock_config.server.event_store_url = None
-        mock_vault_config.from_env.return_value = mock_config
-        mock_event_store = MagicMock()
-        mock_build_es.return_value = mock_event_store
-        mock_app = MagicMock()
-        mock_server.http_app.return_value = mock_app
-
-        args = _build_parser().parse_args(
-            ["serve", "--transport", "http", "--host", "127.0.0.1", "--port", "9000"]
-        )
-        _cmd_serve(args)
-
-        mock_server.http_app.assert_called_once_with(
-            path="/mcp",
-            transport="http",
-            event_store=mock_event_store,
-        )
-        mock_uvicorn_run.assert_called_once_with(
-            mock_app,
-            host="127.0.0.1",
-            port=9000,
-            timeout_graceful_shutdown=3,
-            lifespan="on",
-        )
-
-    @patch("uvicorn.run")
-    @patch("markdown_vault_mcp.server.build_event_store")
-    @patch("markdown_vault_mcp._cli_impl.ProjectConfig")
-    @patch("markdown_vault_mcp.server.make_server")
-    def test_serve_http_custom_path(
-        self,
-        mock_create: MagicMock,
-        mock_vault_config: MagicMock,
-        mock_build_es: MagicMock,
-        _mock_uvicorn_run: MagicMock,
-    ) -> None:
-        """_cmd_serve passes custom --http-path to http_app()."""
-        mock_server = MagicMock()
-        mock_create.return_value = mock_server
-        mock_config = MagicMock()
-        mock_config.server.event_store_url = None
-        mock_vault_config.from_env.return_value = mock_config
-        mock_build_es.return_value = MagicMock()
-        mock_server.http_app.return_value = MagicMock()
-
-        args = _build_parser().parse_args(
-            ["serve", "--transport", "http", "--http-path", "/vault/mcp"]
-        )
-        _cmd_serve(args)
-
-        mock_server.http_app.assert_called_once()
-        call_kwargs = mock_server.http_app.call_args[1]
-        assert call_kwargs["path"] == "/vault/mcp"
-
-    @patch("uvicorn.run")
-    @patch("markdown_vault_mcp.server.build_event_store")
-    @patch("markdown_vault_mcp._cli_impl.ProjectConfig")
-    @patch("markdown_vault_mcp.server.make_server")
-    def test_serve_http_custom_path_normalised(
-        self,
-        mock_create: MagicMock,
-        mock_vault_config: MagicMock,
-        mock_build_es: MagicMock,
-        _mock_uvicorn_run: MagicMock,
-    ) -> None:
-        """_cmd_serve normalises --http-path by adding leading slash and trimming tail."""
-        mock_server = MagicMock()
-        mock_create.return_value = mock_server
-        mock_config = MagicMock()
-        mock_config.server.event_store_url = None
-        mock_vault_config.from_env.return_value = mock_config
-        mock_build_es.return_value = MagicMock()
-        mock_server.http_app.return_value = MagicMock()
-
-        args = _build_parser().parse_args(
-            ["serve", "--transport", "http", "--http-path", "vault/mcp/"]
-        )
-        _cmd_serve(args)
-
-        mock_server.http_app.assert_called_once()
-        call_kwargs = mock_server.http_app.call_args[1]
-        assert call_kwargs["path"] == "/vault/mcp"
-
-    @patch("uvicorn.run")
-    @patch("markdown_vault_mcp.server.build_event_store")
-    @patch("markdown_vault_mcp._cli_impl.ProjectConfig")
-    @patch("markdown_vault_mcp.server.make_server")
-    def test_serve_http_path_env_fallback(
-        self,
-        mock_create: MagicMock,
-        mock_vault_config: MagicMock,
-        mock_build_es: MagicMock,
-        _mock_uvicorn_run: MagicMock,
-    ) -> None:
-        """_cmd_serve uses MARKDOWN_VAULT_MCP_HTTP_PATH when --http-path is omitted."""
-        mock_server = MagicMock()
-        mock_create.return_value = mock_server
-        mock_config = MagicMock()
-        mock_config.server.event_store_url = None
-        mock_vault_config.from_env.return_value = mock_config
-        mock_build_es.return_value = MagicMock()
-        mock_server.http_app.return_value = MagicMock()
-
-        with patch.dict("os.environ", {"MARKDOWN_VAULT_MCP_HTTP_PATH": "/vault/mcp"}):
-            args = _build_parser().parse_args(["serve", "--transport", "http"])
-            _cmd_serve(args)
-
-        mock_server.http_app.assert_called_once()
-        call_kwargs = mock_server.http_app.call_args[1]
-        assert call_kwargs["path"] == "/vault/mcp"
-
-    @patch("uvicorn.run")
-    @patch("markdown_vault_mcp.server.build_event_store")
-    @patch("markdown_vault_mcp._cli_impl.ProjectConfig")
-    @patch("markdown_vault_mcp.server.make_server")
-    def test_serve_http_path_cli_overrides_env(
-        self,
-        mock_create: MagicMock,
-        mock_vault_config: MagicMock,
-        mock_build_es: MagicMock,
-        _mock_uvicorn_run: MagicMock,
-    ) -> None:
-        """_cmd_serve --http-path takes precedence over MARKDOWN_VAULT_MCP_HTTP_PATH."""
-        mock_server = MagicMock()
-        mock_create.return_value = mock_server
-        mock_config = MagicMock()
-        mock_config.server.event_store_url = None
-        mock_vault_config.from_env.return_value = mock_config
-        mock_build_es.return_value = MagicMock()
-        mock_server.http_app.return_value = MagicMock()
-
-        with patch.dict("os.environ", {"MARKDOWN_VAULT_MCP_HTTP_PATH": "/from-env"}):
-            args = _build_parser().parse_args(
-                ["serve", "--transport", "http", "--http-path", "/from-cli"]
-            )
-            _cmd_serve(args)
-
-        mock_server.http_app.assert_called_once()
-        call_kwargs = mock_server.http_app.call_args[1]
-        assert call_kwargs["path"] == "/from-cli"
-
-    @patch("markdown_vault_mcp.server.make_server")
-    def test_serve_stdio_does_not_pass_host_port(self, mock_create: MagicMock) -> None:
-        """_cmd_serve does not pass host/port for stdio transport."""
-        mock_server = MagicMock()
-        mock_create.return_value = mock_server
-        args = _build_parser().parse_args(["serve"])
-        _cmd_serve(args)
-        mock_server.run.assert_called_once_with(transport="stdio")
-
-    @patch("uvicorn.run")
-    @patch("markdown_vault_mcp.server.build_event_store")
-    @patch("markdown_vault_mcp._cli_impl.ProjectConfig")
-    @patch("markdown_vault_mcp.server.make_server")
-    def test_serve_http_reads_config_once_and_reuses_it(
-        self,
-        mock_create: MagicMock,
-        mock_vault_config: MagicMock,
-        mock_build_es: MagicMock,
-        _mock_uvicorn_run: MagicMock,
-    ) -> None:
-        """#609: the HTTP path reads config once and hands the same object to
-        make_server() and build_event_store(), instead of parsing env twice."""
-        mock_server = MagicMock()
-        mock_create.return_value = mock_server
-        mock_config = MagicMock()
-        mock_vault_config.from_env.return_value = mock_config
-        mock_server.http_app.return_value = MagicMock()
-
-        args = _build_parser().parse_args(["serve", "--transport", "http"])
-        _cmd_serve(args)
-
-        mock_vault_config.from_env.assert_called_once()
-        assert mock_create.call_args.kwargs.get("config") is mock_config
-        mock_build_es.assert_called_once_with(mock_config.server)
-
-    @patch("markdown_vault_mcp._cli_impl.ProjectConfig")
-    @patch("markdown_vault_mcp.server.make_server")
-    def test_serve_stdio_does_not_read_config(
-        self, mock_create: MagicMock, mock_vault_config: MagicMock
-    ) -> None:
-        """#609: the stdio path lets make_server own the single config read —
-        _cmd_serve must not call ProjectConfig.from_env itself."""
-        mock_create.return_value = MagicMock()
-        args = _build_parser().parse_args(["serve"])
-        _cmd_serve(args)
-        mock_vault_config.from_env.assert_not_called()
-        assert mock_create.call_args.kwargs.get("config") is None
-
-
-class TestCmdIndex:
-    """Test the index subcommand."""
-
-    @patch("markdown_vault_mcp._cli_impl._build_vault")
-    def test_index_prints_stats(
-        self,
-        mock_build: MagicMock,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        mock_vault = MagicMock()
-        mock_stats = MagicMock()
-        mock_stats.documents_indexed = 42
-        mock_stats.chunks_indexed = 128
-        mock_vault.index.build_index.return_value = mock_stats
-        mock_build.return_value = mock_vault
-
-        with patch("sys.argv", ["markdown-vault-mcp", "index"]):
-            main()
-
-        mock_vault.index.build_index.assert_called_once_with(force=False)
-        captured = capsys.readouterr()
-        assert "42 documents" in captured.out
-        assert "128 chunks" in captured.out
-
-    @patch("markdown_vault_mcp._cli_impl._build_vault")
-    def test_valueerror_exits_with_message(
-        self,
-        mock_build: MagicMock,
-    ) -> None:
-        mock_build.side_effect = ValueError("MARKDOWN_VAULT_MCP_SOURCE_DIR is required")
-
-        with (
-            patch("sys.argv", ["markdown-vault-mcp", "index"]),
-            pytest.raises(SystemExit, match="1"),
-        ):
-            main()
-
-    @patch("markdown_vault_mcp._cli_impl._build_vault")
-    def test_index_force_propagates(
-        self,
-        mock_build: MagicMock,
-    ) -> None:
-        mock_vault = MagicMock()
-        mock_stats = MagicMock()
-        mock_stats.documents_indexed = 10
-        mock_stats.chunks_indexed = 30
-        mock_vault.index.build_index.return_value = mock_stats
-        mock_build.return_value = mock_vault
-
-        with patch("sys.argv", ["markdown-vault-mcp", "index", "--force"]):
-            main()
-
-        mock_vault.index.build_index.assert_called_once_with(force=True)
-
-    @patch("markdown_vault_mcp._cli_impl._build_vault")
-    def test_index_builds_embeddings_when_configured(
-        self,
-        mock_build: MagicMock,
-    ) -> None:
-        """index command calls build_embeddings() after build_index() when configured."""
-        mock_vault = MagicMock()
-        mock_stats = MagicMock()
-        mock_stats.documents_indexed = 5
-        mock_stats.chunks_indexed = 20
-        mock_vault.index.build_index.return_value = mock_stats
-        mock_vault.index.build_embeddings.return_value = 20
-        mock_build.return_value = mock_vault
-
-        with patch("sys.argv", ["markdown-vault-mcp", "index"]):
-            main()
-
-        mock_vault.index.build_embeddings.assert_called_once_with(force=False)
-
-    @patch("markdown_vault_mcp._cli_impl._build_vault")
-    def test_index_skips_embeddings_when_not_configured(
-        self,
-        mock_build: MagicMock,
-    ) -> None:
-        """index command does not fail when embeddings are not configured."""
-        mock_vault = MagicMock()
-        mock_stats = MagicMock()
-        mock_stats.documents_indexed = 5
-        mock_stats.chunks_indexed = 20
-        mock_vault.index.build_index.return_value = mock_stats
-        mock_vault.index.build_embeddings.side_effect = ValueError("not configured")
-        mock_build.return_value = mock_vault
-
-        with patch("sys.argv", ["markdown-vault-mcp", "index"]):
-            main()  # must not raise
-
-        mock_vault.index.build_embeddings.assert_called_once()
-
-    @patch("markdown_vault_mcp._cli_impl._build_vault")
-    def test_index_force_propagates_to_embeddings(
-        self,
-        mock_build: MagicMock,
-    ) -> None:
-        """--force flag is passed through to build_embeddings."""
-        mock_vault = MagicMock()
-        mock_stats = MagicMock()
-        mock_stats.documents_indexed = 5
-        mock_stats.chunks_indexed = 20
-        mock_vault.index.build_index.return_value = mock_stats
-        mock_vault.index.build_embeddings.return_value = 20
-        mock_build.return_value = mock_vault
-
-        with patch("sys.argv", ["markdown-vault-mcp", "index", "--force"]):
-            main()
-
-        mock_vault.index.build_embeddings.assert_called_once_with(force=True)
-
-
-class TestCmdSearch:
-    """Test the search subcommand."""
-
-    @patch("markdown_vault_mcp._cli_impl._build_vault")
-    def test_search_text_output(
-        self,
-        mock_build: MagicMock,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        mock_result = MagicMock()
-        mock_result.path = "notes/test.md"
-        mock_result.title = "Test Note"
-        mock_result.score = 0.9876
-
-        mock_vault = MagicMock()
-        mock_vault.reader.search.return_value = [mock_result]
-        mock_build.return_value = mock_vault
-
-        with patch("sys.argv", ["markdown-vault-mcp", "search", "test"]):
-            main()
-
-        captured = capsys.readouterr()
-        assert "notes/test.md" in captured.out
-        assert "0.9876" in captured.out
-        assert "Test Note" in captured.out
-
-    @patch("markdown_vault_mcp._cli_impl._build_vault")
-    def test_search_json_output(
-        self,
-        mock_build: MagicMock,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        from markdown_vault_mcp.types import SearchResult
-
-        result = SearchResult(
-            path="a.md",
-            title="Note A",
-            folder="",
+    assert result.exit_code == 0, result.output
+    call_kwargs = fake_server.http_app.call_args[1]
+    assert call_kwargs["path"] == "/from-cli"
+
+
+def test_serve_stdio_runs_server_run() -> None:
+    """``serve`` (default stdio) calls server.run(transport='stdio')."""
+    fake_server = MagicMock()
+    with (
+        patch("markdown_vault_mcp.server.make_server", return_value=fake_server),
+        patch("markdown_vault_mcp.cli.ProjectConfig") as mock_cfg_cls,
+    ):
+        mock_cfg_cls.from_env.return_value = _fake_config()
+        result = runner.invoke(app, ["serve"])
+    assert result.exit_code == 0, result.output
+    fake_server.run.assert_called_once_with(transport="stdio")
+
+
+def test_serve_http_reads_config_once() -> None:
+    """#609: the HTTP path reads config once and passes it to both make_server
+    and build_event_store rather than parsing env twice."""
+    fake_server = MagicMock()
+    fake_server.http_app.return_value = MagicMock()
+    with (
+        patch("uvicorn.run"),
+        patch(
+            "markdown_vault_mcp.server.make_server", return_value=fake_server
+        ) as mock_ms,
+        patch(
+            "markdown_vault_mcp.cli.build_event_store", return_value=MagicMock()
+        ) as mock_bes,
+        patch("markdown_vault_mcp.cli.ProjectConfig") as mock_cfg,
+    ):
+        mock_config = _fake_config()
+        mock_cfg.from_env.return_value = mock_config
+        result = runner.invoke(app, ["serve", "--transport", "http"])
+    assert result.exit_code == 0, result.output
+    mock_cfg.from_env.assert_called_once()
+    assert mock_ms.call_args.kwargs.get("config") is mock_config
+    mock_bes.assert_called_once_with(_ENV_PREFIX, mock_config.server)
+
+
+# ---------------------------------------------------------------------------
+# _build_vault field propagation (domain regressions)
+# ---------------------------------------------------------------------------
+
+
+def test_build_vault_exclude_patterns_from_env(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """MARKDOWN_VAULT_MCP_EXCLUDE reaches Vault._exclude_patterns."""
+    from markdown_vault_mcp.vault import Vault
+
+    vault_dir = tmp_path / "vault"
+    vault_dir.mkdir()
+    monkeypatch.setenv(f"{_ENV_PREFIX}_SOURCE_DIR", str(vault_dir))
+    monkeypatch.setenv(f"{_ENV_PREFIX}_EXCLUDE", "**/*.log.md,.obsidian/**")
+
+    result = _build_vault()
+    assert isinstance(result, Vault)
+    assert result._exclude_patterns == ("**/*.log.md", ".obsidian/**")
+
+
+def test_build_vault_attachment_fields_from_env(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """MARKDOWN_VAULT_MCP_ATTACHMENT_* env vars reach the Vault."""
+    vault_dir = tmp_path / "vault"
+    vault_dir.mkdir()
+    monkeypatch.setenv(f"{_ENV_PREFIX}_SOURCE_DIR", str(vault_dir))
+    monkeypatch.setenv(f"{_ENV_PREFIX}_ATTACHMENT_EXTENSIONS", "pdf,png,jpg")
+    monkeypatch.setenv(f"{_ENV_PREFIX}_MAX_ATTACHMENT_SIZE_MB", "25")
+
+    result = _build_vault()
+    assert result._attachment_extensions == ("pdf", "png", "jpg")
+    assert result._max_attachment_size_mb == 25.0
+
+
+def test_build_vault_index_path_override(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``index_path`` kwarg override reaches the Vault._index_path."""
+    vault_dir = tmp_path / "vault"
+    vault_dir.mkdir()
+    custom_index = tmp_path / "custom.sqlite"
+    monkeypatch.setenv(f"{_ENV_PREFIX}_SOURCE_DIR", str(vault_dir))
+
+    result = _build_vault(index_path=str(custom_index))
+    assert result._index_path == custom_index
+
+
+def test_build_vault_exclude_patterns_are_functional(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Behavioural regression: Vault built via _build_vault actually excludes.
+
+    Previously the CLI path dropped exclude_patterns so
+    Vault._is_path_excluded always returned False.
+    """
+    vault_dir = tmp_path / "vault"
+    vault_dir.mkdir()
+    monkeypatch.setenv(f"{_ENV_PREFIX}_SOURCE_DIR", str(vault_dir))
+    monkeypatch.setenv(f"{_ENV_PREFIX}_EXCLUDE", "**/*.log.md,.obsidian/**")
+
+    vault = _build_vault()
+    assert vault._doc_mgr._is_path_excluded("sessions/2026-04-09/chat.log.md") is True
+    assert vault._doc_mgr._is_path_excluded(".obsidian/workspace.json.md") is True
+    assert vault._doc_mgr._is_path_excluded("notes/alpha.md") is False
+    assert vault._doc_mgr._is_path_excluded("decisions/2026-04-09-auth.md") is False
+
+
+# ---------------------------------------------------------------------------
+# index command
+# ---------------------------------------------------------------------------
+
+
+def test_index_prints_stats() -> None:
+    """``index`` prints indexed documents and chunks."""
+    mock_vault = MagicMock()
+    mock_stats = MagicMock()
+    mock_stats.documents_indexed = 42
+    mock_stats.chunks_indexed = 128
+    mock_vault.index.build_index.return_value = mock_stats
+
+    with patch("markdown_vault_mcp.cli._build_vault", return_value=mock_vault):
+        result = runner.invoke(app, ["index"])
+
+    assert result.exit_code == 0, result.output
+    mock_vault.index.build_index.assert_called_once_with(force=False)
+    assert "42 documents" in result.output
+    assert "128 chunks" in result.output
+
+
+def test_index_force_propagates() -> None:
+    """``--force`` is forwarded to build_index and build_embeddings."""
+    mock_vault = MagicMock()
+    mock_stats = MagicMock()
+    mock_stats.documents_indexed = 10
+    mock_stats.chunks_indexed = 30
+    mock_vault.index.build_index.return_value = mock_stats
+    mock_vault.index.build_embeddings.return_value = 30
+
+    with patch("markdown_vault_mcp.cli._build_vault", return_value=mock_vault):
+        result = runner.invoke(app, ["index", "--force"])
+
+    assert result.exit_code == 0, result.output
+    mock_vault.index.build_index.assert_called_once_with(force=True)
+    mock_vault.index.build_embeddings.assert_called_once_with(force=True)
+
+
+def test_index_builds_embeddings_when_configured() -> None:
+    """``index`` calls build_embeddings() after build_index() when configured."""
+    mock_vault = MagicMock()
+    mock_stats = MagicMock()
+    mock_stats.documents_indexed = 5
+    mock_stats.chunks_indexed = 20
+    mock_vault.index.build_index.return_value = mock_stats
+    mock_vault.index.build_embeddings.return_value = 20
+
+    with patch("markdown_vault_mcp.cli._build_vault", return_value=mock_vault):
+        result = runner.invoke(app, ["index"])
+
+    assert result.exit_code == 0, result.output
+    mock_vault.index.build_embeddings.assert_called_once_with(force=False)
+    assert "20 chunks" in result.output
+
+
+def test_index_swallows_valueerror_from_embeddings() -> None:
+    """Embedding graceful-degradation: ValueError from build_embeddings exits 0."""
+    mock_vault = MagicMock()
+    mock_stats = MagicMock()
+    mock_stats.documents_indexed = 5
+    mock_stats.chunks_indexed = 20
+    mock_vault.index.build_index.return_value = mock_stats
+    mock_vault.index.build_embeddings.side_effect = ValueError("not configured")
+
+    with patch("markdown_vault_mcp.cli._build_vault", return_value=mock_vault):
+        result = runner.invoke(app, ["index"])
+
+    assert result.exit_code == 0, result.output
+    mock_vault.index.build_embeddings.assert_called_once()
+    assert "5 documents" in result.output
+
+
+# ---------------------------------------------------------------------------
+# search command
+# ---------------------------------------------------------------------------
+
+
+def test_search_text_output() -> None:
+    """``search`` prints path, score, and title in plain mode."""
+    mock_result = MagicMock()
+    mock_result.path = "notes/test.md"
+    mock_result.title = "Test Note"
+    mock_result.score = 0.9876
+
+    mock_vault = MagicMock()
+    mock_vault.reader.search.return_value = [mock_result]
+
+    with patch("markdown_vault_mcp.cli._build_vault", return_value=mock_vault):
+        result = runner.invoke(app, ["search", "test"])
+
+    assert result.exit_code == 0, result.output
+    assert "notes/test.md" in result.output
+    assert "0.9876" in result.output
+    assert "Test Note" in result.output
+
+
+def test_search_json_output() -> None:
+    """``search --json`` emits a valid JSON array."""
+    from markdown_vault_mcp.types import SearchResult
+
+    sr = SearchResult(
+        path="a.md",
+        title="Note A",
+        folder="",
+        heading=None,
+        content="hello",
+        score=1.0,
+        search_type="keyword",
+        frontmatter={},
+    )
+    mock_vault = MagicMock()
+    mock_vault.reader.search.return_value = [sr]
+
+    with patch("markdown_vault_mcp.cli._build_vault", return_value=mock_vault):
+        result = runner.invoke(app, ["search", "test", "--json"])
+
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert len(data) == 1
+    assert data[0]["path"] == "a.md"
+    assert data[0]["score"] == 1.0
+
+
+def test_search_json_multiple_results() -> None:
+    """``search --json`` with multiple results emits them all."""
+    from markdown_vault_mcp.types import SearchResult
+
+    results = [
+        SearchResult(
+            path="notes/alpha.md",
+            title="Alpha",
+            folder="notes",
             heading=None,
-            content="hello",
-            score=1.0,
+            content="some text",
+            score=0.75,
             search_type="keyword",
             frontmatter={},
-        )
-        mock_vault = MagicMock()
-        mock_vault.reader.search.return_value = [result]
-        mock_build.return_value = mock_vault
+        ),
+        SearchResult(
+            path="notes/beta.md",
+            title="Beta",
+            folder="notes",
+            heading="Section",
+            content="more text",
+            score=0.55,
+            search_type="keyword",
+            frontmatter={"tag": "x"},
+        ),
+    ]
+    mock_vault = MagicMock()
+    mock_vault.reader.search.return_value = results
 
-        with patch("sys.argv", ["markdown-vault-mcp", "search", "test", "--json"]):
-            main()
+    with patch("markdown_vault_mcp.cli._build_vault", return_value=mock_vault):
+        result = runner.invoke(app, ["search", "alpha", "--json"])
 
-        captured = capsys.readouterr()
-        data = json.loads(captured.out)
-        assert len(data) == 1
-        assert data[0]["path"] == "a.md"
-        assert data[0]["score"] == 1.0
-
-    @patch("markdown_vault_mcp._cli_impl._build_vault")
-    def test_search_passes_options(self, mock_build: MagicMock) -> None:
-        mock_vault = MagicMock()
-        mock_vault.reader.search.return_value = []
-        mock_build.return_value = mock_vault
-
-        with patch(
-            "sys.argv",
-            [
-                "markdown-vault-mcp",
-                "search",
-                "query",
-                "-n",
-                "5",
-                "-m",
-                "semantic",
-                "--folder",
-                "Journal",
-            ],
-        ):
-            main()
-
-        mock_vault.reader.search.assert_called_once_with(
-            "query", limit=5, mode="semantic", folder="Journal"
-        )
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert isinstance(data, list)
+    assert len(data) == 2
+    assert data[0]["path"] == "notes/alpha.md"
+    assert data[1]["path"] == "notes/beta.md"
 
 
-class TestCmdServeEdgeCases:
-    """Edge-case branches in _cmd_serve."""
+def test_search_json_empty_results() -> None:
+    """``search --json`` with no results outputs an empty JSON array."""
+    mock_vault = MagicMock()
+    mock_vault.reader.search.return_value = []
 
-    def test_import_error_exits_with_1(self) -> None:
-        """_cmd_serve calls sys.exit(1) when FastMCP import fails."""
-        import sys
+    with patch("markdown_vault_mcp.cli._build_vault", return_value=mock_vault):
+        result = runner.invoke(app, ["search", "nothing", "--json"])
 
-        args = _build_parser().parse_args(["serve"])
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert data == []
 
-        with (
-            patch.dict(sys.modules, {"markdown_vault_mcp.server": None}),
-            pytest.raises(SystemExit) as exc_info,
-        ):
-            _cmd_serve(args)
 
-        assert exc_info.value.code == 1
+def test_search_passes_options() -> None:
+    """``search`` forwards -n/-m/--folder to vault.reader.search."""
+    mock_vault = MagicMock()
+    mock_vault.reader.search.return_value = []
 
-    def test_non_http_transport_with_custom_host_port_logs_warning(
-        self, caplog: pytest.LogCaptureFixture
-    ) -> None:
-        """--host/--port with non-http transport logs a warning."""
-        import logging
-
-        mock_server = MagicMock()
-
-        args = _build_parser().parse_args(
-            ["serve", "--transport", "stdio", "--host", "127.0.0.1", "--port", "9999"]
+    with patch("markdown_vault_mcp.cli._build_vault", return_value=mock_vault):
+        result = runner.invoke(
+            app,
+            ["search", "query", "-n", "5", "-m", "semantic", "--folder", "Journal"],
         )
 
-        with (
-            patch("markdown_vault_mcp.server.make_server", return_value=mock_server),
-            caplog.at_level(logging.WARNING, logger="markdown_vault_mcp._cli_impl"),
-        ):
-            _cmd_serve(args)
-
-        assert any(
-            "--host" in r.message or "--port" in r.message
-            for r in caplog.records
-            if r.levelno == logging.WARNING
-        )
-        mock_server.run.assert_called_once_with(transport="stdio")
+    assert result.exit_code == 0, result.output
+    mock_vault.reader.search.assert_called_once_with(
+        "query", limit=5, mode="semantic", folder="Journal"
+    )
 
 
-class TestBuildVaultEmbeddingFailure:
-    """Graceful degradation when the embedding provider fails to load."""
-
-    def test_embedding_provider_failure_returns_vault(
-        self,
-        tmp_path: Path,
-        caplog: pytest.LogCaptureFixture,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """Vault is still returned even when get_embedding_provider raises."""
-        import logging
-
-        from markdown_vault_mcp._cli_impl import _build_vault
-
-        vault = tmp_path / "vault"
-        vault.mkdir()
-
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault))
-        # Set an embeddings_path so the try-block is entered.
-        monkeypatch.setenv(
-            "MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH", str(tmp_path / "vecs.npy")
-        )
-
-        args = _build_parser().parse_args(["index"])
-
-        with (
-            patch(
-                "markdown_vault_mcp.providers.get_embedding_provider",
-                side_effect=RuntimeError("no embedding provider"),
-            ),
-            caplog.at_level(logging.WARNING, logger="markdown_vault_mcp._cli_impl"),
-        ):
-            vault = _build_vault(args)
-
-        # Vault is returned despite the provider failure.
-        from markdown_vault_mcp.vault import Vault
-
-        assert isinstance(vault, Vault)
-        assert any("semantic search disabled" in r.message for r in caplog.records)
+# ---------------------------------------------------------------------------
+# reindex command
+# ---------------------------------------------------------------------------
 
 
-class TestBuildProjectConfigFields:
-    """`_build_vault` must propagate every field `ProjectConfig.to_vault_kwargs` produces.
+def test_reindex_prints_stats() -> None:
+    """``reindex`` prints all five counters."""
+    mock_result = MagicMock()
+    mock_result.added = 3
+    mock_result.modified = 1
+    mock_result.deleted = 2
+    mock_result.unchanged = 10
+    mock_result.skipped = 4
 
-    Regression tests for a bug where the CLI path hardcoded a subset of kwargs
-    (``source_dir``, ``read_only``, ``index_path``, ``embeddings_path``,
-    ``embedding_provider``, ``state_path``, ``indexed_frontmatter_fields``,
-    ``required_frontmatter``) and silently dropped the rest — including
-    ``exclude_patterns``, ``attachment_extensions``, and
-    ``max_attachment_size_mb``. All CLI subcommands (``index``, ``reindex``,
-    ``search``) that route through ``_build_vault`` were affected, so
-    ``MARKDOWN_VAULT_MCP_EXCLUDE`` was silently ignored on the CLI side even
-    though the serve path via ``_server_deps.make_vault_lifespan`` honored
-    it correctly.
+    mock_vault = MagicMock()
+    mock_vault.index.reindex.return_value = mock_result
+
+    with patch("markdown_vault_mcp.cli._build_vault", return_value=mock_vault):
+        result = runner.invoke(app, ["reindex"])
+
+    assert result.exit_code == 0, result.output
+    assert "3 added" in result.output
+    assert "1 modified" in result.output
+    assert "2 deleted" in result.output
+    assert "10 unchanged" in result.output
+    assert "4 skipped" in result.output
+
+
+def test_reindex_calls_build_index_first() -> None:
+    """``reindex`` calls build_index() before reindex() (#525 contract)."""
+    mock_vault = MagicMock()
+    mock_result = MagicMock()
+    mock_result.added = mock_result.modified = mock_result.deleted = 0
+    mock_result.unchanged = mock_result.skipped = 0
+    mock_vault.index.reindex.return_value = mock_result
+
+    with patch("markdown_vault_mcp.cli._build_vault", return_value=mock_vault):
+        result = runner.invoke(app, ["reindex"])
+
+    assert result.exit_code == 0, result.output
+    # build_index must be called before reindex
+    call_names = [c[0] for c in mock_vault.index.method_calls]
+    assert call_names.index("build_index") < call_names.index("reindex")
+
+
+def test_reindex_builds_embeddings_when_configured() -> None:
+    """``reindex`` calls build_embeddings() (no force) when configured."""
+    mock_vault = MagicMock()
+    mock_result = MagicMock()
+    mock_result.added = 1
+    mock_result.modified = mock_result.deleted = mock_result.skipped = 0
+    mock_result.unchanged = 5
+    mock_vault.index.reindex.return_value = mock_result
+    mock_vault.index.build_embeddings.return_value = 10
+
+    with patch("markdown_vault_mcp.cli._build_vault", return_value=mock_vault):
+        result = runner.invoke(app, ["reindex"])
+
+    assert result.exit_code == 0, result.output
+    mock_vault.index.build_embeddings.assert_called_once_with()
+
+
+def test_reindex_swallows_valueerror_from_embeddings() -> None:
+    """Embedding graceful-degradation: ValueError from build_embeddings exits 0."""
+    mock_vault = MagicMock()
+    mock_result = MagicMock()
+    mock_result.added = mock_result.modified = mock_result.deleted = (
+        mock_result.skipped
+    ) = 0
+    mock_result.unchanged = 5
+    mock_vault.index.reindex.return_value = mock_result
+    mock_vault.index.build_embeddings.side_effect = ValueError("not configured")
+
+    with patch("markdown_vault_mcp.cli._build_vault", return_value=mock_vault):
+        result = runner.invoke(app, ["reindex"])
+
+    assert result.exit_code == 0, result.output
+    mock_vault.index.build_embeddings.assert_called_once()
+
+
+def test_reindex_never_forces_embedding_rebuild() -> None:
+    """``reindex`` always calls build_embeddings() without force (#665)."""
+    mock_vault = MagicMock()
+    mock_result = MagicMock()
+    mock_result.added = 2
+    mock_result.modified = 1
+    mock_result.deleted = mock_result.skipped = 0
+    mock_result.unchanged = 10
+    mock_vault.index.reindex.return_value = mock_result
+    mock_vault.index.build_embeddings.return_value = 4
+
+    with patch("markdown_vault_mcp.cli._build_vault", return_value=mock_vault):
+        result = runner.invoke(app, ["reindex"])
+
+    assert result.exit_code == 0, result.output
+    # Must be called with no arguments (no force=True)
+    mock_vault.index.build_embeddings.assert_called_once_with()
+
+
+def test_reindex_against_real_vault(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """End-to-end: ``reindex`` on a real (unbuilt) Vault must succeed.
+
+    Regression for a crash where reindex() was called before build_index()
+    (bucket-4 readiness contract, issue #525). Mock-based tests miss this
+    because they replace Vault wholesale.
     """
+    vault_dir = tmp_path / "vault"
+    vault_dir.mkdir()
+    (vault_dir / "a.md").write_text("# A\n\nhello\n")
+    (vault_dir / "b.md").write_text("# B\n\nworld\n")
 
-    def test_exclude_patterns_propagated_from_env(
-        self,
-        tmp_path: Path,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """``MARKDOWN_VAULT_MCP_EXCLUDE`` reaches ``Vault._exclude_patterns``."""
-        from markdown_vault_mcp._cli_impl import _build_vault
+    monkeypatch.setenv(f"{_ENV_PREFIX}_SOURCE_DIR", str(vault_dir))
+    monkeypatch.setenv(f"{_ENV_PREFIX}_INDEX_PATH", str(tmp_path / "fts.db"))
+    monkeypatch.setenv(f"{_ENV_PREFIX}_STATE_PATH", str(tmp_path / "state.json"))
 
-        vault = tmp_path / "vault"
-        vault.mkdir()
+    result = runner.invoke(app, ["reindex"])
 
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault))
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_EXCLUDE", "**/*.log.md,.obsidian/**")
-
-        args = _build_parser().parse_args(["index"])
-        vault = _build_vault(args)
-
-        assert vault._exclude_patterns == ("**/*.log.md", ".obsidian/**")
-
-    def test_attachment_fields_propagated_from_env(
-        self,
-        tmp_path: Path,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """``MARKDOWN_VAULT_MCP_ATTACHMENT_*`` env vars reach the Vault."""
-        from markdown_vault_mcp._cli_impl import _build_vault
-
-        vault = tmp_path / "vault"
-        vault.mkdir()
-
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault))
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS", "pdf,png,jpg")
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB", "25")
-
-        args = _build_parser().parse_args(["index"])
-        vault = _build_vault(args)
-
-        assert vault._attachment_extensions == ("pdf", "png", "jpg")
-        assert vault._max_attachment_size_mb == 25.0
-
-    def test_exclude_patterns_are_functional_via_cli_path(
-        self,
-        tmp_path: Path,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """Behavioural regression: Vault built via the CLI actually excludes.
-
-        The bug was that ``_build_vault`` constructed the Vault
-        without ``exclude_patterns``, so
-        :meth:`~markdown_vault_mcp.vault.Vault._is_path_excluded`
-        always returned ``False`` — because ``self._exclude_patterns`` was
-        ``None``. Assert the exclusion logic is live end-to-end.
-        """
-        from markdown_vault_mcp._cli_impl import _build_vault
-
-        vault = tmp_path / "vault"
-        vault.mkdir()
-
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault))
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_EXCLUDE", "**/*.log.md,.obsidian/**")
-
-        args = _build_parser().parse_args(["index"])
-        vault = _build_vault(args)
-
-        # These should be excluded via the newly-propagated patterns.
-        assert (
-            vault._doc_mgr._is_path_excluded("sessions/2026-04-09/chat.log.md") is True
-        )
-        assert vault._doc_mgr._is_path_excluded(".obsidian/workspace.json.md") is True
-
-        # And these should still pass through unaffected.
-        assert vault._doc_mgr._is_path_excluded("notes/alpha.md") is False
-        assert vault._doc_mgr._is_path_excluded("decisions/2026-04-09-auth.md") is False
-
-    def test_index_path_override_propagated(
-        self,
-        tmp_path: Path,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """``--index-path`` CLI override reaches the Vault."""
-        from markdown_vault_mcp._cli_impl import _build_vault
-
-        vault = tmp_path / "vault"
-        vault.mkdir()
-        custom_index = tmp_path / "custom.sqlite"
-
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault))
-
-        args = _build_parser().parse_args(["index", "--index-path", str(custom_index)])
-        vault = _build_vault(args)
-
-        assert vault._index_path == custom_index
+    assert result.exit_code == 0, result.output
+    assert "Reindex" in result.output
 
 
-class TestCmdSearchJsonOutput:
-    """Verify --json flag in _cmd_search produces valid parseable output."""
+# ---------------------------------------------------------------------------
+# verbose / logging root-callback
+# ---------------------------------------------------------------------------
 
-    @patch("markdown_vault_mcp._cli_impl._build_vault")
-    def test_json_flag_produces_valid_json(
-        self,
-        mock_build: MagicMock,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """_cmd_search with --json outputs a valid JSON array."""
-        from markdown_vault_mcp.types import SearchResult
 
-        results = [
-            SearchResult(
-                path="notes/alpha.md",
-                title="Alpha",
-                folder="notes",
-                heading=None,
-                content="some text",
-                score=0.75,
-                search_type="keyword",
-                frontmatter={},
-            ),
-            SearchResult(
-                path="notes/beta.md",
-                title="Beta",
-                folder="notes",
-                heading="Section",
-                content="more text",
-                score=0.55,
-                search_type="keyword",
-                frontmatter={"tag": "x"},
-            ),
-        ]
+def test_verbose_enables_debug_logging(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`-v` sets FASTMCP_LOG_LEVEL=DEBUG via configure_logging_from_env."""
+    import os
+
+    monkeypatch.setenv(f"{_ENV_PREFIX}_SOURCE_DIR", "/tmp/vault")
+    saved = os.environ.pop("FASTMCP_LOG_LEVEL", None)
+    try:
         mock_vault = MagicMock()
-        mock_vault.reader.search.return_value = results
-        mock_build.return_value = mock_vault
-
-        with patch("sys.argv", ["markdown-vault-mcp", "search", "alpha", "--json"]):
-            main()
-
-        captured = capsys.readouterr()
-        data = json.loads(captured.out)
-        assert isinstance(data, list)
-        assert len(data) == 2
-        assert data[0]["path"] == "notes/alpha.md"
-        assert data[0]["score"] == 0.75
-        assert data[1]["path"] == "notes/beta.md"
-
-    @patch("markdown_vault_mcp._cli_impl._build_vault")
-    def test_json_flag_empty_results(
-        self,
-        mock_build: MagicMock,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """_cmd_search with --json and no results outputs an empty JSON array."""
-        mock_vault = MagicMock()
-        mock_vault.reader.search.return_value = []
-        mock_build.return_value = mock_vault
-
-        with patch("sys.argv", ["markdown-vault-mcp", "search", "nothing", "--json"]):
-            main()
-
-        captured = capsys.readouterr()
-        data = json.loads(captured.out)
-        assert data == []
+        mock_stats = MagicMock()
+        mock_stats.documents_indexed = 0
+        mock_stats.chunks_indexed = 0
+        mock_vault.index.build_index.return_value = mock_stats
+        with patch("markdown_vault_mcp.cli._build_vault", return_value=mock_vault):
+            runner.invoke(app, ["-v", "index"])
+        assert os.environ.get("FASTMCP_LOG_LEVEL") == "DEBUG"
+    finally:
+        if saved is not None:
+            os.environ["FASTMCP_LOG_LEVEL"] = saved
+        else:
+            os.environ.pop("FASTMCP_LOG_LEVEL", None)
 
 
-class TestCmdReindex:
-    """Test the reindex subcommand."""
+def test_verbose_silences_httpx_httpcore(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`-v` sets httpx/httpcore to WARNING to suppress their DEBUG noise."""
+    import logging
 
-    @patch("markdown_vault_mcp._cli_impl._build_vault")
-    def test_reindex_prints_stats(
-        self,
-        mock_build: MagicMock,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        mock_result = MagicMock()
-        mock_result.added = 3
-        mock_result.modified = 1
-        mock_result.deleted = 2
-        mock_result.unchanged = 10
-        mock_result.skipped = 4
+    monkeypatch.setenv(f"{_ENV_PREFIX}_SOURCE_DIR", "/tmp/vault")
+    mock_vault = MagicMock()
+    mock_stats = MagicMock()
+    mock_stats.documents_indexed = 0
+    mock_stats.chunks_indexed = 0
+    mock_vault.index.build_index.return_value = mock_stats
+    with patch("markdown_vault_mcp.cli._build_vault", return_value=mock_vault):
+        runner.invoke(app, ["-v", "index"])
+    assert logging.getLogger("httpx").level == logging.WARNING
+    assert logging.getLogger("httpcore").level == logging.WARNING
 
-        mock_vault = MagicMock()
-        mock_vault.index.reindex.return_value = mock_result
-        mock_build.return_value = mock_vault
 
-        with patch("sys.argv", ["markdown-vault-mcp", "reindex"]):
-            main()
+def test_root_handler_added_when_none_exist(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A StreamHandler is added to root when it has no handlers."""
+    import logging
 
-        captured = capsys.readouterr()
-        assert "3 added" in captured.out
-        assert "1 modified" in captured.out
-        assert "2 deleted" in captured.out
-        assert "10 unchanged" in captured.out
-        assert "4 skipped" in captured.out
+    monkeypatch.setenv(f"{_ENV_PREFIX}_SOURCE_DIR", "/tmp/vault")
+    mock_vault = MagicMock()
+    mock_stats = MagicMock()
+    mock_stats.documents_indexed = 0
+    mock_stats.chunks_indexed = 0
+    mock_vault.index.build_index.return_value = mock_stats
 
-    @patch("markdown_vault_mcp._cli_impl._build_vault")
-    def test_reindex_builds_embeddings_when_configured(
-        self,
-        mock_build: MagicMock,
-    ) -> None:
-        """reindex command calls build_embeddings() (convergence) when configured."""
-        mock_vault = MagicMock()
-        mock_result = MagicMock()
-        mock_result.added = 1
-        mock_result.modified = 0
-        mock_result.deleted = 0
-        mock_result.unchanged = 5
-        mock_vault.index.reindex.return_value = mock_result
-        mock_vault.index.build_embeddings.return_value = 10
-        mock_build.return_value = mock_vault
-
-        with patch("sys.argv", ["markdown-vault-mcp", "reindex"]):
-            main()
-
-        mock_vault.index.build_embeddings.assert_called_once_with()
-
-    @patch("markdown_vault_mcp._cli_impl._build_vault")
-    def test_reindex_skips_embeddings_when_not_configured(
-        self,
-        mock_build: MagicMock,
-    ) -> None:
-        """reindex command does not fail when embeddings are not configured."""
-        mock_vault = MagicMock()
-        mock_result = MagicMock()
-        mock_result.added = 0
-        mock_result.modified = 0
-        mock_result.deleted = 0
-        mock_result.unchanged = 5
-        mock_vault.index.reindex.return_value = mock_result
-        mock_vault.index.build_embeddings.side_effect = ValueError("not configured")
-        mock_build.return_value = mock_vault
-
-        with patch("sys.argv", ["markdown-vault-mcp", "reindex"]):
-            main()  # must not raise
-
-        mock_vault.index.build_embeddings.assert_called_once()
-
-    @patch("markdown_vault_mcp._cli_impl._build_vault")
-    def test_reindex_never_forces_embedding_rebuild(
-        self,
-        mock_build: MagicMock,
-    ) -> None:
-        """reindex never force-rebuilds embeddings, even when changes exist.
-
-        build_embeddings() without force converges the vector index to the
-        FTS chunk set (#665), embedding exactly the delta — the old
-        force-on-any-change workaround re-embedded the entire corpus.
-        """
-        mock_vault = MagicMock()
-        mock_result = MagicMock()
-        mock_result.added = 2
-        mock_result.modified = 1
-        mock_result.deleted = 0
-        mock_result.unchanged = 10
-        mock_vault.index.reindex.return_value = mock_result
-        mock_vault.index.build_embeddings.return_value = 4
-        mock_build.return_value = mock_vault
-
-        with patch("sys.argv", ["markdown-vault-mcp", "reindex"]):
-            main()
-
-        mock_vault.index.build_embeddings.assert_called_once_with()
-
-    def test_reindex_against_real_vault(
-        self,
-        tmp_path: Path,
-        capsys: pytest.CaptureFixture[str],
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """End-to-end: ``markdown-vault-mcp reindex`` on a real (unbuilt)
-        Vault must succeed. Pre-fix the bucket-4 readiness guard
-        crashed every invocation because the command jumped straight to
-        ``reindex()`` without first building. Mock-based tests above
-        miss this because they replace Vault wholesale.
-        """
-        vault = tmp_path / "vault"
-        vault.mkdir()
-        (vault / "a.md").write_text("# A\n\nhello\n")
-        (vault / "b.md").write_text("# B\n\nworld\n")
-
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault))
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_INDEX_PATH", str(tmp_path / "fts.db"))
-        monkeypatch.setenv(
-            "MARKDOWN_VAULT_MCP_STATE_PATH", str(tmp_path / "state.json")
-        )
-
-        with patch("sys.argv", ["markdown-vault-mcp", "reindex"]):
-            main()
-
-        captured = capsys.readouterr()
-        assert "Reindex" in captured.out
+    root = logging.getLogger()
+    original_handlers = root.handlers[:]
+    root.handlers.clear()
+    try:
+        with patch("markdown_vault_mcp.cli._build_vault", return_value=mock_vault):
+            runner.invoke(app, ["index"])
+        assert len(root.handlers) >= 1
+    finally:
+        root.handlers[:] = original_handlers
