@@ -82,7 +82,12 @@ def test_server_name_env_override(
 async def test_server_name_override_reaches_server_info(
     monkeypatch: pytest.MonkeyPatch, vault_path: Path
 ) -> None:
-    """The overridden name also flows through to ``get_server_info``."""
+    """The overridden name also flows through to ``get_server_info``.
+
+    Uses an inline ``Client`` rather than the shared ``client`` fixture because
+    it needs a custom ``SERVER_NAME`` set before ``make_server()``; the autouse
+    ``_clear_env`` still isolates the env (it runs before this test body).
+    """
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault_path))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SERVER_NAME", "renamed-instance")
     async with Client(make_server()) as c:
@@ -118,7 +123,9 @@ def test_blank_overrides_fall_back_to_defaults(
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_INSTRUCTIONS", "   ")
     server = make_server()
     assert server.name == "markdown-vault-mcp"
-    assert server.instructions  # non-empty default, not "   "
+    # the built default, not the whitespace that was set (which would leak if
+    # the strip-blank-to-default logic regressed)
+    assert server.instructions and server.instructions != "   "
 
 
 async def test_no_file_exchange_scaffolding(
@@ -128,9 +135,10 @@ async def test_no_file_exchange_scaffolding(
 
     Two guards: no tool name carries the removed file-exchange scaffolding
     substrings (``file_exchange`` / ``upload_file``), and the real transfer
-    tools (``create_upload_link`` / ``create_download_link``) — which are
-    registered only on HTTP/SSE transport — are absent on the in-process stdio
-    transport used here.
+    tools (``create_upload_link`` / ``create_download_link``) are absent. The
+    transfer tools register only when ``make_server()`` runs with a non-stdio
+    transport; here it uses its default ``transport="stdio"`` argument (the
+    in-memory ``Client`` channel is unrelated to that gating).
     """
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
     async with Client(make_server()) as c:

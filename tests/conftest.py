@@ -27,11 +27,13 @@ def _clear_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """Strip all ``MARKDOWN_VAULT_MCP_*`` env vars before each test (isolation).
 
     Prevents an env var set by one test (or the ambient shell) from leaking
-    into another.  Because this fixture is ``autouse=True``, pytest resolves it
-    before any fixture or test body that shares the same ``monkeypatch``
-    instance, so these deletions always precede any test-local ``setenv`` — the
-    test's own overrides win.  ``_mcp_env`` declares it as an explicit
-    dependency to make that ordering a hard guarantee.
+    into another.  ``autouse=True`` ensures this runs for every test; pytest
+    always runs fixtures before the test body, so these deletions precede any
+    test-local ``monkeypatch.setenv`` and the test's own overrides win.
+    Ordering relative to *other fixtures* is not implied by ``autouse`` — a
+    fixture that needs a clean env first (e.g. ``_mcp_env``) must declare
+    ``_clear_env: None`` as an explicit parameter; that dependency edge is the
+    only reliable fixture-vs-fixture ordering mechanism.
     """
     for key in list(os.environ):
         if key.startswith("MARKDOWN_VAULT_MCP_"):
@@ -239,9 +241,9 @@ def _mcp_env(
 ) -> None:
     """Set minimal env vars for make_server().
 
-    Only sets ``SOURCE_DIR``: the depended-on ``_clear_env`` already strips every
-    ``MARKDOWN_VAULT_MCP_*`` var (including ``READ_ONLY`` and all ``_CLEAR_VARS``)
-    before this runs, so no per-var clearing is needed here.
+    Only sets ``SOURCE_DIR``; the depended-on ``_clear_env`` (autouse) strips all
+    ``MARKDOWN_VAULT_MCP_*`` vars before this runs, so no per-var clearing is
+    needed here.
     """
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault_path))
 
