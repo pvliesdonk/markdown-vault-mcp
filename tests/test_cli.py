@@ -171,6 +171,10 @@ def test_serve_http_default_path_is_mcp() -> None:
     assert result.exit_code == 0, result.output
     call_kwargs = fake_server.http_app.call_args[1]
     assert call_kwargs["path"] == "/mcp"
+    # serve is the template's verbatim and calls http_app WITHOUT transport=
+    # (FastMCP's http_app defaults to streamable-http). Pin that template-driven
+    # contract so a future merge that re-adds transport= is caught here.
+    assert "transport" not in call_kwargs
 
 
 def test_serve_http_custom_path() -> None:
