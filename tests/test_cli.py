@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 from typer.testing import CliRunner
 
-from markdown_vault_mcp.cli import _build_vault, app
+from markdown_vault_mcp.cli import _ENV_PREFIX, _build_vault, app
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -16,8 +16,6 @@ if TYPE_CHECKING:
     import pytest
 
 runner = CliRunner()
-
-_ENV_PREFIX = "MARKDOWN_VAULT_MCP"
 
 
 # ---------------------------------------------------------------------------

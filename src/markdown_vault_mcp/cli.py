@@ -137,6 +137,8 @@ def _build_vault(source_dir: str | None = None, index_path: str | None = None) -
 
     from markdown_vault_mcp.vault import Vault
 
+    # --source-dir overrides the env var: set it before from_env() reads it.
+    # Deliberate process-env mutation — safe for a single-shot, single-threaded CLI.
     if source_dir:
         os.environ[f"{_ENV_PREFIX}_SOURCE_DIR"] = source_dir
     config = ProjectConfig.from_env()
