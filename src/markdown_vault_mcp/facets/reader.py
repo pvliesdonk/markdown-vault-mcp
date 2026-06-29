@@ -172,26 +172,35 @@ class ReaderFacet:
         """
         return self._search_mgr.list_tags(field)
 
-    def get_toc(self, path: str) -> list[dict[str, Any]]:
-        """Return table of contents for a document.
+    def get_toc(
+        self,
+        path: str,
+        *,
+        max_level: int | None = None,
+        max_notes: int = 200,
+    ) -> list[dict[str, Any]] | dict[str, Any]:
+        """Return a table of contents for a note or a folder subtree.
 
-        Queries the FTS sections table for headings and prepends the document
-        title as a synthetic H1 entry. The result depends on the FTS index, so
-        cold-start callers must build the index first (bucket 3).
+        Note paths (ending in ``.md``) return a flat ``[{"heading", "level"}]``
+        outline with the title as a synthetic H1. Folder paths return a
+        nested-per-note object ``{"path", "notes", "truncated"}``. The result
+        depends on the FTS index, so cold-start callers must build the index
+        first (bucket 3).
 
         Args:
-            path: Relative path to the document (e.g. ``"notes/intro.md"``).
+            path: Note path or folder prefix.
+            max_level: Drop headings with ``level`` above this (both modes).
+            max_notes: Folder mode cap on distinct notes (default 200).
 
         Returns:
-            List of ``{"heading": str, "level": int}`` dicts ordered by
-            position, with the document title prepended as level 1.
+            ``list`` for a note path, ``dict`` for a folder path.
 
         Raises:
             IndexUnavailableError: If :meth:`IndexFacet.build_index` has not been called.
-            ValueError: If no document exists at the given path.
+            ValueError: Note path with no document; invalid folder path.
         """
         self._require_built()
-        return self._doc_mgr.get_toc(path)
+        return self._doc_mgr.get_toc(path, max_level=max_level, max_notes=max_notes)
 
     def get_recent(
         self, *, limit: int = 20, folder: str | None = None

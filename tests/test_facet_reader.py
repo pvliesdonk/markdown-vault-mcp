@@ -50,6 +50,11 @@ class TestReaderFacetBehaviour:
     def test_get_toc_returns_list(self, built: Vault) -> None:
         assert isinstance(built.reader.get_toc("full_frontmatter.md"), list)
 
+    def test_get_toc_folder_returns_dict(self, built: Vault) -> None:
+        result = built.reader.get_toc("subfolder")
+        assert isinstance(result, dict)
+        assert "notes" in result and "truncated" in result
+
     def test_get_similar_empty_without_embeddings(self, built: Vault) -> None:
         # No embedding provider configured -> semantic similarity degrades to [].
         assert built.reader.get_similar("full_frontmatter.md") == []

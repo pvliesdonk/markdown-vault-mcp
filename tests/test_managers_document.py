@@ -67,8 +67,11 @@ def doc_mgr(doc_vault: Path) -> DocumentManager:
     """
     from markdown_vault_mcp.scanner import parse_note as _parse_note
 
+    # short_doc_lines=0 disables the short-doc bypass; max_chunk_words=1 forces
+    # heading-boundary splitting so all heading levels appear in sections.
+    _chunker = HeadingChunker(short_doc_lines=0, max_chunk_words=1)
     fts = FTSIndex(db_path=":memory:")
-    for note in scan_directory(doc_vault):
+    for note in scan_directory(doc_vault, chunk_strategy=_chunker):
         fts.upsert_note(note)
     fts.resolve_vault_wikilinks()
 
@@ -421,6 +424,38 @@ class TestGetToc:
     def test_get_toc_not_found(self, doc_mgr: DocumentManager) -> None:
         with pytest.raises(ValueError, match="Document not found"):
             doc_mgr.get_toc("missing.md")
+
+    def test_get_toc_max_level_note_mode(self, doc_mgr: DocumentManager) -> None:
+        toc = doc_mgr.get_toc("sub/gamma.md", max_level=1)
+        # Only the synthetic H1 title survives an H1-only cap.
+        assert toc == [{"heading": "Gamma", "level": 1}]
+
+    def test_get_toc_folder_mode_nested(self, doc_mgr: DocumentManager) -> None:
+        result = doc_mgr.get_toc("sub")
+        assert isinstance(result, dict)
+        assert result["path"] == "sub"
+        assert result["truncated"] is False
+        paths = [n["path"] for n in result["notes"]]
+        assert paths == ["sub/gamma.md"]
+        gamma = result["notes"][0]
+        assert gamma["title"] == "Gamma"
+        # Synthetic H1 prepended, body headings follow.
+        assert gamma["headings"][0] == {"heading": "Gamma", "level": 1}
+        assert {"heading": "Section One", "level": 2} in gamma["headings"]
+
+    def test_get_toc_folder_trailing_slash(self, doc_mgr: DocumentManager) -> None:
+        result = doc_mgr.get_toc("sub/")
+        assert result["path"] == "sub"
+        assert [n["path"] for n in result["notes"]] == ["sub/gamma.md"]
+
+    def test_get_toc_empty_folder_returns_empty(self, doc_mgr: DocumentManager) -> None:
+        result = doc_mgr.get_toc("does-not-exist")
+        assert result == {"path": "does-not-exist", "notes": [], "truncated": False}
+
+    def test_get_toc_folder_max_level(self, doc_mgr: DocumentManager) -> None:
+        result = doc_mgr.get_toc("sub", max_level=1)
+        gamma = result["notes"][0]
+        assert gamma["headings"] == [{"heading": "Gamma", "level": 1}]
 
 
 # ---------------------------------------------------------------------------
