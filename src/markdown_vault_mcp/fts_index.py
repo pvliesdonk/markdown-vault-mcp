@@ -1379,7 +1379,9 @@ class FTSIndex:
         return [dict(row) for row in cur.fetchall()]
 
     @_retry_on_locked
-    def get_toc(self, path: str) -> list[dict[str, str | int]]:
+    def get_toc(
+        self, path: str, *, max_level: int | None = None
+    ) -> list[dict[str, str | int]]:
         """Return headings for a document, ordered by position.
 
         Queries the sections table for distinct non-NULL headings, ordered by
@@ -1387,27 +1389,116 @@ class FTSIndex:
 
         Args:
             path: Relative document path (e.g. ``"Journal/note.md"``).
+            max_level: If set, drop headings with ``level`` greater than this.
 
         Returns:
             List of ``{"heading": str, "level": int}`` dicts ordered by
             first appearance.  Empty list if the document is not found or
             has no headings.
         """
+        level_clause = "" if max_level is None else "AND heading_level <= ?"
+        params: list[object] = [path]
+        if max_level is not None:
+            params.append(max_level)
         cur = self._conn().execute(
-            """
+            f"""
             SELECT heading, heading_level
             FROM sections
             WHERE document_id = (SELECT id FROM documents WHERE path = ?)
               AND heading IS NOT NULL
+              {level_clause}
             GROUP BY heading, heading_level
             ORDER BY MIN(rowid)
             """,
-            (path,),
+            params,
         )
         return [
             {"heading": row["heading"], "level": row["heading_level"]}
             for row in cur.fetchall()
         ]
+
+    @_retry_on_locked
+    def get_subtree_toc(
+        self,
+        prefix: str,
+        *,
+        max_level: int | None = None,
+        max_notes: int = 200,
+    ) -> tuple[list[dict[str, Any]], bool]:
+        """Return per-note headings for every document under a folder prefix.
+
+        Matches documents whose ``folder`` equals *prefix* or is a descendant
+        of it (boundary match, so ``"Project"`` never matches ``"Projects"``).
+
+        Args:
+            prefix: Folder path with no trailing slash (e.g. ``"Projects"``).
+            max_level: If set, drop headings with ``level`` greater than this.
+            max_notes: Cap on distinct notes returned (default 200).
+
+        Returns:
+            ``(notes, truncated)`` where *notes* is a list of
+            ``{"path", "title", "headings": [{"heading", "level"}]}`` ordered
+            by path, *headings* are raw section headings (no synthetic H1),
+            and *truncated* is True when more than ``max_notes`` notes matched.
+        """
+        escaped = _escape_like(prefix)
+        doc_rows = (
+            self._conn()
+            .execute(
+                """
+            SELECT id, path, title
+            FROM documents
+            WHERE (folder = ? OR folder LIKE ? ESCAPE '\\')
+            ORDER BY path ASC
+            LIMIT ?
+            """,
+                (prefix, escaped + "/%", max_notes + 1),
+            )
+            .fetchall()
+        )
+        truncated = len(doc_rows) > max_notes
+        doc_rows = doc_rows[:max_notes]
+        if not doc_rows:
+            return [], truncated
+
+        ids = [row["id"] for row in doc_rows]
+        placeholders = ",".join("?" * len(ids))
+        level_clause = "" if max_level is None else "AND heading_level <= ?"
+        params: list[object] = [*ids]
+        if max_level is not None:
+            params.append(max_level)
+        section_rows = (
+            self._conn()
+            .execute(
+                f"""
+            SELECT document_id, heading, heading_level
+            FROM sections
+            WHERE document_id IN ({placeholders})
+              AND heading IS NOT NULL
+              {level_clause}
+            GROUP BY document_id, heading, heading_level
+            ORDER BY document_id, MIN(rowid)
+            """,
+                params,
+            )
+            .fetchall()
+        )
+
+        by_doc: dict[int, list[dict[str, Any]]] = {}
+        for row in section_rows:
+            by_doc.setdefault(row["document_id"], []).append(
+                {"heading": row["heading"], "level": row["heading_level"]}
+            )
+
+        notes = [
+            {
+                "path": row["path"],
+                "title": row["title"],
+                "headings": by_doc.get(row["id"], []),
+            }
+            for row in doc_rows
+        ]
+        return notes, truncated
 
     @_retry_on_locked
     def get_backlinks(
