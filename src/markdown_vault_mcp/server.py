@@ -162,6 +162,16 @@ def make_server(transport: str = "stdio", config: VaultConfig | None = None) -> 
     else:
         instructions = _build_default_instructions(read_only=is_read_only)
 
+    # Operator overrides: SERVER_NAME renames this instance; INSTRUCTIONS
+    # replaces the default instructions text (the latter is the override that
+    # build_instructions' hint advertises). Both fall back when unset/empty.
+    server_name = env(_ENV_PREFIX, "SERVER_NAME", "markdown-vault-mcp")
+    instructions = env(_ENV_PREFIX, "INSTRUCTIONS") or build_instructions(
+        read_only=True,
+        env_prefix=_ENV_PREFIX,
+        domain_line="Generic markdown vault MCP server with FTS5 + semantic search",
+    )
+
     auth = build_auth(config.server)
     # build_auth returns None only for mode="none" or precondition-miss inside an
     # OIDC builder (missing required fields).  pvl-core 2.0 raises ConfigurationError
