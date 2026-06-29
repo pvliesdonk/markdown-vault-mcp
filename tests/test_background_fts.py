@@ -529,7 +529,7 @@ def test_lifespan_cold_start_with_embeddings_submits_both_jobs(
     # kwargs["embedding_provider"] is non-None without needing a real provider.
     from markdown_vault_mcp import config as config_mod
 
-    original_to_kwargs = config_mod.VaultConfig.to_vault_kwargs
+    original_to_kwargs = config_mod.ProjectConfig.to_vault_kwargs
 
     # Gate the embeddings build on the writer thread so it provably cannot
     # complete during the handshake — the deterministic replacement for the
@@ -548,7 +548,7 @@ def test_lifespan_cold_start_with_embeddings_submits_both_jobs(
             kw["embeddings_path"] = tmp_path / "vectors"
         return kw
 
-    monkeypatch.setattr(config_mod.VaultConfig, "to_vault_kwargs", patched_to_kwargs)
+    monkeypatch.setattr(config_mod.ProjectConfig, "to_vault_kwargs", patched_to_kwargs)
 
     server = make_server()
     caplog.set_level(logging.INFO)

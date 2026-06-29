@@ -361,11 +361,11 @@ def test_from_env_file_watcher_disabled_via_env(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """FILE_WATCHER=false sets file_watcher_enabled=False."""
-    from markdown_vault_mcp.config import VaultConfig
+    from markdown_vault_mcp.config import ProjectConfig
 
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_FILE_WATCHER", "false")
-    config = VaultConfig.from_env()
+    config = ProjectConfig.from_env()
     assert config.sync.file_watcher_enabled is False
 
 
@@ -373,11 +373,11 @@ def test_from_env_file_watcher_debounce_custom(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """FILE_WATCHER_DEBOUNCE_S=5.0 is accepted."""
-    from markdown_vault_mcp.config import VaultConfig
+    from markdown_vault_mcp.config import ProjectConfig
 
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_FILE_WATCHER_DEBOUNCE_S", "5.0")
-    config = VaultConfig.from_env()
+    config = ProjectConfig.from_env()
     assert config.sync.file_watcher_debounce_s == 5.0
 
 
@@ -385,26 +385,26 @@ def test_from_env_file_watcher_debounce_invalid_raises(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Non-numeric FILE_WATCHER_DEBOUNCE_S raises (no warn-and-default; #638)."""
-    from markdown_vault_mcp.config import VaultConfig
+    from markdown_vault_mcp.config import ProjectConfig
     from markdown_vault_mcp.exceptions import ConfigurationError
 
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_FILE_WATCHER_DEBOUNCE_S", "not-a-number")
     with pytest.raises(ConfigurationError):
-        VaultConfig.from_env()
+        ProjectConfig.from_env()
 
 
 def test_from_env_file_watcher_debounce_nonpositive_raises(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """FILE_WATCHER_DEBOUNCE_S <= 0 raises (must be > 0; #638)."""
-    from markdown_vault_mcp.config import VaultConfig
+    from markdown_vault_mcp.config import ProjectConfig
     from markdown_vault_mcp.exceptions import ConfigurationError
 
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_FILE_WATCHER_DEBOUNCE_S", "0")
     with pytest.raises(ConfigurationError, match="file_watcher_debounce_s"):
-        VaultConfig.from_env()
+        ProjectConfig.from_env()
 
 
 def test_fire_exception_in_on_change_is_logged(tmp_path: Path) -> None:
@@ -432,10 +432,10 @@ def test_lifespan_starts_and_stops_watcher_when_no_git(tmp_path: Path) -> None:
     """The lifespan starts the watcher on a non-git vault and stops it on exit."""
     import asyncio
 
-    from markdown_vault_mcp.config import VaultConfig
+    from markdown_vault_mcp.config import ProjectConfig
 
     (tmp_path / "note.md").write_text("# note\n\nbody", encoding="utf-8")
-    config = VaultConfig(source_dir=tmp_path, read_only=False)
+    config = ProjectConfig(source_dir=tmp_path, read_only=False)
     lifespan_fn = make_vault_lifespan(config)
 
     async def _run() -> None:
@@ -461,12 +461,12 @@ def test_lifespan_skips_watcher_when_git_pull_active(tmp_path: Path) -> None:
     """
     import asyncio
 
-    from markdown_vault_mcp.config import VaultConfig
+    from markdown_vault_mcp.config import ProjectConfig
 
     (tmp_path / "note.md").write_text("# note\n\nbody", encoding="utf-8")
     from markdown_vault_mcp.config_sections import GitConfig
 
-    config = VaultConfig(
+    config = ProjectConfig(
         source_dir=tmp_path,
         read_only=False,
         git=GitConfig(token="fake-token", pull_interval_s=600),
@@ -486,12 +486,12 @@ def test_lifespan_skips_watcher_when_webhook_active(tmp_path: Path) -> None:
     """The lifespan does not start the watcher when a webhook secret is configured."""
     import asyncio
 
-    from markdown_vault_mcp.config import VaultConfig
+    from markdown_vault_mcp.config import ProjectConfig
 
     (tmp_path / "note.md").write_text("# note\n\nbody", encoding="utf-8")
     from markdown_vault_mcp.config_sections import SyncConfig
 
-    config = VaultConfig(
+    config = ProjectConfig(
         source_dir=tmp_path,
         read_only=False,
         sync=SyncConfig(github_webhook_secret="shhh"),

@@ -270,7 +270,7 @@ class TestCmdServe:
 
     @patch("uvicorn.run")
     @patch("markdown_vault_mcp.server.build_event_store")
-    @patch("markdown_vault_mcp._cli_impl.VaultConfig")
+    @patch("markdown_vault_mcp._cli_impl.ProjectConfig")
     @patch("markdown_vault_mcp.server.make_server")
     def test_serve_http_calls_http_app_and_uvicorn(
         self,
@@ -310,7 +310,7 @@ class TestCmdServe:
 
     @patch("uvicorn.run")
     @patch("markdown_vault_mcp.server.build_event_store")
-    @patch("markdown_vault_mcp._cli_impl.VaultConfig")
+    @patch("markdown_vault_mcp._cli_impl.ProjectConfig")
     @patch("markdown_vault_mcp.server.make_server")
     def test_serve_http_custom_path(
         self,
@@ -339,7 +339,7 @@ class TestCmdServe:
 
     @patch("uvicorn.run")
     @patch("markdown_vault_mcp.server.build_event_store")
-    @patch("markdown_vault_mcp._cli_impl.VaultConfig")
+    @patch("markdown_vault_mcp._cli_impl.ProjectConfig")
     @patch("markdown_vault_mcp.server.make_server")
     def test_serve_http_custom_path_normalised(
         self,
@@ -368,7 +368,7 @@ class TestCmdServe:
 
     @patch("uvicorn.run")
     @patch("markdown_vault_mcp.server.build_event_store")
-    @patch("markdown_vault_mcp._cli_impl.VaultConfig")
+    @patch("markdown_vault_mcp._cli_impl.ProjectConfig")
     @patch("markdown_vault_mcp.server.make_server")
     def test_serve_http_path_env_fallback(
         self,
@@ -396,7 +396,7 @@ class TestCmdServe:
 
     @patch("uvicorn.run")
     @patch("markdown_vault_mcp.server.build_event_store")
-    @patch("markdown_vault_mcp._cli_impl.VaultConfig")
+    @patch("markdown_vault_mcp._cli_impl.ProjectConfig")
     @patch("markdown_vault_mcp.server.make_server")
     def test_serve_http_path_cli_overrides_env(
         self,
@@ -435,7 +435,7 @@ class TestCmdServe:
 
     @patch("uvicorn.run")
     @patch("markdown_vault_mcp.server.build_event_store")
-    @patch("markdown_vault_mcp._cli_impl.VaultConfig")
+    @patch("markdown_vault_mcp._cli_impl.ProjectConfig")
     @patch("markdown_vault_mcp.server.make_server")
     def test_serve_http_reads_config_once_and_reuses_it(
         self,
@@ -459,13 +459,13 @@ class TestCmdServe:
         assert mock_create.call_args.kwargs.get("config") is mock_config
         mock_build_es.assert_called_once_with(mock_config.server)
 
-    @patch("markdown_vault_mcp._cli_impl.VaultConfig")
+    @patch("markdown_vault_mcp._cli_impl.ProjectConfig")
     @patch("markdown_vault_mcp.server.make_server")
     def test_serve_stdio_does_not_read_config(
         self, mock_create: MagicMock, mock_vault_config: MagicMock
     ) -> None:
         """#609: the stdio path lets make_server own the single config read —
-        _cmd_serve must not call VaultConfig.from_env itself."""
+        _cmd_serve must not call ProjectConfig.from_env itself."""
         mock_create.return_value = MagicMock()
         args = _build_parser().parse_args(["serve"])
         _cmd_serve(args)
@@ -753,8 +753,8 @@ class TestBuildVaultEmbeddingFailure:
         assert any("semantic search disabled" in r.message for r in caplog.records)
 
 
-class TestBuildVaultConfigFields:
-    """`_build_vault` must propagate every field `VaultConfig.to_vault_kwargs` produces.
+class TestBuildProjectConfigFields:
+    """`_build_vault` must propagate every field `ProjectConfig.to_vault_kwargs` produces.
 
     Regression tests for a bug where the CLI path hardcoded a subset of kwargs
     (``source_dir``, ``read_only``, ``index_path``, ``embeddings_path``,

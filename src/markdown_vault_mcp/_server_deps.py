@@ -20,7 +20,7 @@ from markdown_vault_mcp.vault import Vault
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
-    from markdown_vault_mcp.config import VaultConfig
+    from markdown_vault_mcp.config import ProjectConfig
 
 logger = logging.getLogger(__name__)
 
@@ -65,13 +65,13 @@ def get_vault_singleton() -> Vault:
     return _vault_singleton
 
 
-def make_vault_lifespan(config: VaultConfig) -> Any:
+def make_vault_lifespan(config: ProjectConfig) -> Any:
     """Create a lifespan function that closes over a pre-loaded config.
 
     Args:
-        config: A fully-loaded :class:`~markdown_vault_mcp.config.VaultConfig`
+        config: A fully-loaded :class:`~markdown_vault_mcp.config.ProjectConfig`
             instance, typically produced by a single
-            :meth:`~markdown_vault_mcp.config.VaultConfig.from_env` call in
+            :meth:`~markdown_vault_mcp.config.ProjectConfig.from_env` call in
             :func:`~markdown_vault_mcp.server.make_server`.
 
     Returns:

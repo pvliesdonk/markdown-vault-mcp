@@ -30,12 +30,12 @@ if TYPE_CHECKING:
 
     from fastmcp import FastMCP
 
-    from markdown_vault_mcp.config import VaultConfig
+    from markdown_vault_mcp.config import ProjectConfig
 
 logger = logging.getLogger(__name__)
 
 
-def _base_url(config: VaultConfig) -> str:
+def _base_url(config: ProjectConfig) -> str:
     """Return the configured public base URL (no trailing slash; empty if unset)."""
     return (config.server.base_url or "").rstrip("/")
 
@@ -164,7 +164,7 @@ def _link_response(base: str, record: Any, ttl: int) -> dict[str, Any]:
 
 async def _create_download_link(
     store: TransferStore,
-    config: VaultConfig,
+    config: ProjectConfig,
     _vault: Vault,
     path: str,
     ttl_seconds: int | None,
@@ -199,7 +199,7 @@ async def _create_download_link(
 
 async def _create_upload_link(
     store: TransferStore,
-    config: VaultConfig,
+    config: ProjectConfig,
     _vault: Vault,
     path: str,
     ttl_seconds: int | None,
@@ -239,7 +239,7 @@ async def _create_upload_link(
     return _link_response(base, record, ttl)
 
 
-def register_transfer(mcp: FastMCP, config: VaultConfig) -> None:
+def register_transfer(mcp: FastMCP, config: ProjectConfig) -> None:
     """Register the transfer tools and the /transfer/{token} route on *mcp*.
 
     Builds one shared :class:`TransferStore` captured by both the route

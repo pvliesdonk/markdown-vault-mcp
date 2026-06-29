@@ -4452,7 +4452,7 @@ class TestMaxChunkCharsWiring:
         round(512 * 2.8) in the kwargs that build the Vault's chunker.
         """
         from markdown_vault_mcp import providers as providers_mod
-        from markdown_vault_mcp.config import VaultConfig
+        from markdown_vault_mcp.config import ProjectConfig
         from tests.conftest import MockEmbeddingProvider
 
         class _Ctx512Provider(MockEmbeddingProvider):
@@ -4469,7 +4469,7 @@ class TestMaxChunkCharsWiring:
             lambda _config: _Ctx512Provider(),
         )
 
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         kwargs = config.to_vault_kwargs()
         assert kwargs["max_chunk_chars"] == round(512 * 2.8)
 

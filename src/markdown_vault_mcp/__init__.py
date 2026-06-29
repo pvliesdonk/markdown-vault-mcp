@@ -20,7 +20,7 @@ import importlib
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from markdown_vault_mcp.config import VaultConfig
+    from markdown_vault_mcp.config import ProjectConfig
     from markdown_vault_mcp.exceptions import (
         ConcurrentModificationError,
         ConfigurationError,
@@ -67,7 +67,7 @@ if TYPE_CHECKING:
 # Public attribute name -> defining submodule. Resolved on first access by
 # __getattr__ below. Must stay in sync with __all__ (pinned by a test).
 _EXPORTS: dict[str, str] = {
-    "VaultConfig": "markdown_vault_mcp.config",
+    "ProjectConfig": "markdown_vault_mcp.config",
     "ConcurrentModificationError": "markdown_vault_mcp.exceptions",
     "ConfigurationError": "markdown_vault_mcp.exceptions",
     "DocumentExistsError": "markdown_vault_mcp.exceptions",
@@ -139,13 +139,13 @@ __all__ = [
     "NoteInfo",
     "OutlinkInfo",
     "ParsedNote",
+    "ProjectConfig",
     "ReadOnlyError",
     "ReindexResult",
     "RenameResult",
     "SearchResult",
     "SectionHit",
     "Vault",
-    "VaultConfig",
     "VaultStats",
     "WriteCallback",
     "WriteResult",

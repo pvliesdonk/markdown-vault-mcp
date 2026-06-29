@@ -1,4 +1,4 @@
-"""Domain-grouped sub-configs composed by :class:`VaultConfig`."""
+"""Domain-grouped sub-configs composed by :class:`ProjectConfig`."""
 
 from __future__ import annotations
 

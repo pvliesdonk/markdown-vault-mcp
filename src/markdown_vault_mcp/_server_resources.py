@@ -18,7 +18,7 @@ from fastmcp.dependencies import CurrentContext, Depends
 from fastmcp.resources import ResourceContent, ResourceResult
 from fastmcp.server.context import Context
 
-from markdown_vault_mcp.config import VaultConfig
+from markdown_vault_mcp.config import ProjectConfig
 from markdown_vault_mcp.vault import Vault
 
 from ._icons import _TOOL_ICONS
@@ -51,16 +51,16 @@ def _stale_resource(vault: Vault, contents: str, gen_before: int) -> ResourceRes
     )
 
 
-def _get_config(ctx: Context) -> VaultConfig:
-    """Retrieve the cached :class:`~markdown_vault_mcp.config.VaultConfig` from lifespan context.
+def _get_config(ctx: Context) -> ProjectConfig:
+    """Retrieve the cached :class:`~markdown_vault_mcp.config.ProjectConfig` from lifespan context.
 
     Args:
         ctx: The current request context.
 
     Returns:
-        The ``VaultConfig`` stored by the lifespan hook.
+        The ``ProjectConfig`` stored by the lifespan hook.
     """
-    config: VaultConfig | None = ctx.lifespan_context.get("config")
+    config: ProjectConfig | None = ctx.lifespan_context.get("config")
     if config is None:
         msg = "Config not initialised — server lifespan has not run"
         raise RuntimeError(msg)

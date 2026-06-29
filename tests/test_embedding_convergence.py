@@ -397,7 +397,7 @@ class TestLifespanEmbeddingConvergence:
 
         # Inject the mock provider into to_vault_kwargs so the lifespan
         # submits the boot BuildEmbeddings job without a real provider.
-        original_to_kwargs = config_mod.VaultConfig.to_vault_kwargs
+        original_to_kwargs = config_mod.ProjectConfig.to_vault_kwargs
 
         def patched_to_kwargs(self: Any) -> dict[str, Any]:
             kw = original_to_kwargs(self)
@@ -406,7 +406,7 @@ class TestLifespanEmbeddingConvergence:
             return kw
 
         monkeypatch.setattr(
-            config_mod.VaultConfig, "to_vault_kwargs", patched_to_kwargs
+            config_mod.ProjectConfig, "to_vault_kwargs", patched_to_kwargs
         )
         server = make_server()
 

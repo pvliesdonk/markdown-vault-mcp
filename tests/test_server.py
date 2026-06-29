@@ -342,12 +342,12 @@ class TestToolAnnotations:
         from markdown_vault_mcp._server_apps import register_apps
         from markdown_vault_mcp._server_tools import register_tools
         from markdown_vault_mcp._server_transfer import register_transfer
-        from markdown_vault_mcp.config import VaultConfig
+        from markdown_vault_mcp.config import ProjectConfig
 
         mcp = FastMCP("title-test")
         register_tools(mcp)
         register_apps(mcp)
-        register_transfer(mcp, VaultConfig.from_env())
+        register_transfer(mcp, ProjectConfig.from_env())
 
         tools = await mcp._list_tools()
         missing = sorted(
@@ -3877,13 +3877,13 @@ async def test_transfer_download_present_upload_hidden_in_readonly():
 
 @pytest.mark.usefixtures("_mcp_env")
 def test_make_server_reuses_provided_config_without_re_reading_env() -> None:
-    """make_server(config=...) must not call VaultConfig.from_env again (#609)."""
+    """make_server(config=...) must not call ProjectConfig.from_env again (#609)."""
     from unittest.mock import patch
 
-    from markdown_vault_mcp.config import VaultConfig
+    from markdown_vault_mcp.config import ProjectConfig
 
-    config = VaultConfig.from_env()
-    with patch.object(VaultConfig, "from_env", wraps=VaultConfig.from_env) as spy:
+    config = ProjectConfig.from_env()
+    with patch.object(ProjectConfig, "from_env", wraps=ProjectConfig.from_env) as spy:
         make_server(config=config)
     spy.assert_not_called()
 
@@ -3893,8 +3893,8 @@ def test_make_server_reads_config_from_env_once_when_not_provided() -> None:
     """make_server() with no config reads env exactly once."""
     from unittest.mock import patch
 
-    from markdown_vault_mcp.config import VaultConfig
+    from markdown_vault_mcp.config import ProjectConfig
 
-    with patch.object(VaultConfig, "from_env", wraps=VaultConfig.from_env) as spy:
+    with patch.object(ProjectConfig, "from_env", wraps=ProjectConfig.from_env) as spy:
         make_server()
     spy.assert_called_once()

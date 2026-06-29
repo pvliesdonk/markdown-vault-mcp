@@ -4,7 +4,7 @@ import pytest
 from fastmcp_pvl_core import ServerConfig
 
 from markdown_vault_mcp import _server_transfer as T
-from markdown_vault_mcp.config import VaultConfig
+from markdown_vault_mcp.config import ProjectConfig
 from markdown_vault_mcp.config_sections import ContentConfig
 from markdown_vault_mcp.transfer.store import TransferStore
 from markdown_vault_mcp.vault import Vault
@@ -19,7 +19,7 @@ def env(tmp_path):
     (src / "pic.png").write_bytes(b"DATA")
     col = Vault(source_dir=src, read_only=False, attachment_extensions=["png"])
     col.index.build_index()
-    config = VaultConfig(
+    config = ProjectConfig(
         source_dir=src,
         content=ContentConfig(attachment_extensions=["png"]),
         server=ServerConfig(base_url="https://host"),
@@ -50,7 +50,7 @@ async def test_ttl_is_clamped_to_max(env):
 async def test_base_url_unset_raises(env):
     """Minting fails clearly when BASE_URL is unset."""
     store, config, vault = env
-    config_no_url = VaultConfig(
+    config_no_url = ProjectConfig(
         source_dir=config.source_dir,
         content=ContentConfig(attachment_extensions=["png"]),
     )

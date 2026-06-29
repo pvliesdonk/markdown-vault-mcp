@@ -431,13 +431,13 @@ def test_lifespan_yields_quickly_on_cold_start(tmp_path: Path) -> None:
     import time
 
     from markdown_vault_mcp._server_deps import make_vault_lifespan
-    from markdown_vault_mcp.config import VaultConfig
+    from markdown_vault_mcp.config import ProjectConfig
 
     # Construct a cold vault (many files, no existing DB).
     for i in range(50):
         (tmp_path / f"n{i}.md").write_text(f"# n{i}\n\nhello", encoding="utf-8")
 
-    config = VaultConfig(source_dir=tmp_path, read_only=False)
+    config = ProjectConfig(source_dir=tmp_path, read_only=False)
     lifespan_fn = make_vault_lifespan(config)
 
     async def _run() -> None:

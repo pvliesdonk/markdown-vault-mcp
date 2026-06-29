@@ -1867,7 +1867,7 @@ template functions with no vault dependency.
 
 | URI | Source | Description |
 |-|-|-|
-| ``config://vault`` | ``VaultConfig`` | Source dir, read-only flag, indexed fields, extensions |
+| ``config://vault`` | ``ProjectConfig`` | Source dir, read-only flag, indexed fields, extensions |
 | ``stats://vault`` | ``ReaderFacet.stats()`` | Document/chunk/folder counts, capabilities |
 | ``tags://vault`` | ``ReaderFacet.list_tags()`` | All tags grouped by indexed field |
 | ``tags://vault/{field}`` | ``ReaderFacet.list_tags(field)`` | Flat list for one field (template) |

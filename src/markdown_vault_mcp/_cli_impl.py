@@ -21,7 +21,7 @@ from fastmcp_pvl_core import (
     normalise_http_path,
 )
 
-from markdown_vault_mcp.config import _ENV_PREFIX, VaultConfig
+from markdown_vault_mcp.config import _ENV_PREFIX, ProjectConfig
 from markdown_vault_mcp.vault import Vault
 
 if TYPE_CHECKING:
@@ -35,7 +35,7 @@ _PROG = "markdown-vault-mcp"
 def _build_vault(args: argparse.Namespace) -> Vault:
     """Build a Vault from environment variables and CLI overrides.
 
-    Delegates to :meth:`~markdown_vault_mcp.config.VaultConfig.to_vault_kwargs`
+    Delegates to :meth:`~markdown_vault_mcp.config.ProjectConfig.to_vault_kwargs`
     so the CLI path stays in sync with the server path in
     :func:`~markdown_vault_mcp._server_deps.make_vault_lifespan`. CLI
     arguments ``--source-dir`` and ``--index-path`` override the corresponding
@@ -53,7 +53,7 @@ def _build_vault(args: argparse.Namespace) -> Vault:
     if source_dir_override:
         os.environ[f"{_ENV_PREFIX}_SOURCE_DIR"] = source_dir_override
 
-    config = VaultConfig.from_env()
+    config = ProjectConfig.from_env()
     kwargs = config.to_vault_kwargs()
 
     # CLI --index-path overrides env var / config default.
@@ -87,7 +87,7 @@ def _cmd_serve(args: argparse.Namespace) -> None:
     # The HTTP path needs config.server for the event store, and make_server
     # needs the full config — read it once and share it so the environment is
     # parsed a single time (#609). stdio lets make_server own the single read.
-    config = VaultConfig.from_env() if transport == "http" else None
+    config = ProjectConfig.from_env() if transport == "http" else None
     server = make_server(transport=transport, config=config)
     env_http_path = os.environ.get(f"{_ENV_PREFIX}_HTTP_PATH")
     http_path = normalise_http_path(args.http_path or env_http_path)

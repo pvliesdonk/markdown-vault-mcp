@@ -781,10 +781,10 @@ class TestGitWriteStrategyClass:
 class TestConfigIntegration:
     def test_git_token_wires_up_strategy(self, tmp_path: Path) -> None:
         """Legacy mode: token-only config still wires pull+push strategy."""
-        from markdown_vault_mcp.config import VaultConfig
+        from markdown_vault_mcp.config import ProjectConfig
         from markdown_vault_mcp.config_sections import GitConfig
 
-        config = VaultConfig(
+        config = ProjectConfig(
             source_dir=tmp_path,
             read_only=False,
             git=GitConfig(token="ghp_test"),
@@ -796,9 +796,9 @@ class TestConfigIntegration:
 
     def test_no_git_token_uses_local_only_mode(self, tmp_path: Path) -> None:
         """No token and no repo URL uses local-only mode with no pull loop."""
-        from markdown_vault_mcp.config import VaultConfig
+        from markdown_vault_mcp.config import ProjectConfig
 
-        config = VaultConfig(
+        config = ProjectConfig(
             source_dir=tmp_path,
             read_only=False,
         )
@@ -809,7 +809,7 @@ class TestConfigIntegration:
     def test_git_repo_url_enables_managed_mode(self, tmp_path: Path) -> None:
         """Managed mode uses configured pull interval and write callback."""
 
-        from markdown_vault_mcp.config import VaultConfig
+        from markdown_vault_mcp.config import ProjectConfig
         from markdown_vault_mcp.config_sections import GitConfig
 
         bare = tmp_path / "remote.git"
@@ -819,7 +819,7 @@ class TestConfigIntegration:
             capture_output=True,
         )
 
-        config = VaultConfig(
+        config = ProjectConfig(
             source_dir=tmp_path / "vault",
             read_only=False,
             git=GitConfig(repo_url=str(bare), token="ghp_test", pull_interval_s=321),
@@ -830,10 +830,10 @@ class TestConfigIntegration:
 
     def test_push_delay_passed_to_strategy(self, tmp_path: Path) -> None:
         """to_vault_kwargs() passes git_push_delay_s to strategy."""
-        from markdown_vault_mcp.config import VaultConfig
+        from markdown_vault_mcp.config import ProjectConfig
         from markdown_vault_mcp.config_sections import GitConfig
 
-        config = VaultConfig(
+        config = ProjectConfig(
             source_dir=tmp_path,
             read_only=False,
             git=GitConfig(token="ghp_test", push_delay_s=60.0),
@@ -846,25 +846,25 @@ class TestConfigIntegration:
     def test_from_env_reads_push_delay(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """VaultConfig.from_env() reads GIT_PUSH_DELAY_S from environment."""
-        from markdown_vault_mcp.config import VaultConfig
+        """ProjectConfig.from_env() reads GIT_PUSH_DELAY_S from environment."""
+        from markdown_vault_mcp.config import ProjectConfig
 
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_PUSH_DELAY_S", "45")
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.git.push_delay_s == 45.0
 
     def test_from_env_invalid_push_delay_raises(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """VaultConfig.from_env() raises on a non-numeric GIT_PUSH_DELAY_S (#638)."""
-        from markdown_vault_mcp.config import VaultConfig
+        """ProjectConfig.from_env() raises on a non-numeric GIT_PUSH_DELAY_S (#638)."""
+        from markdown_vault_mcp.config import ProjectConfig
         from markdown_vault_mcp.exceptions import ConfigurationError
 
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_PUSH_DELAY_S", "not_a_number")
         with pytest.raises(ConfigurationError):
-            VaultConfig.from_env()
+            ProjectConfig.from_env()
 
 
 class TestVaultCloseWiresStrategy:
@@ -4935,44 +4935,44 @@ class TestGitClaimConfig:
     def test_from_env_reads_name_claim(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """VaultConfig.from_env() reads GIT_COMMIT_NAME_CLAIM from the environment."""
-        from markdown_vault_mcp.config import VaultConfig
+        """ProjectConfig.from_env() reads GIT_COMMIT_NAME_CLAIM from the environment."""
+        from markdown_vault_mcp.config import ProjectConfig
 
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_COMMIT_NAME_CLAIM", "name")
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.git.commit_name_claim == "name"
 
     def test_from_env_reads_email_claim(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """VaultConfig.from_env() reads GIT_COMMIT_EMAIL_CLAIM from the environment."""
-        from markdown_vault_mcp.config import VaultConfig
+        """ProjectConfig.from_env() reads GIT_COMMIT_EMAIL_CLAIM from the environment."""
+        from markdown_vault_mcp.config import ProjectConfig
 
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_COMMIT_EMAIL_CLAIM", "email")
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.git.commit_email_claim == "email"
 
     def test_from_env_claim_defaults_to_none(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Claim env vars default to None when not set."""
-        from markdown_vault_mcp.config import VaultConfig
+        from markdown_vault_mcp.config import ProjectConfig
 
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
         monkeypatch.delenv("MARKDOWN_VAULT_MCP_GIT_COMMIT_NAME_CLAIM", raising=False)
         monkeypatch.delenv("MARKDOWN_VAULT_MCP_GIT_COMMIT_EMAIL_CLAIM", raising=False)
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.git.commit_name_claim is None
         assert config.git.commit_email_claim is None
 
     def test_claim_config_passed_to_strategy(self, tmp_path: Path) -> None:
-        """VaultConfig.to_vault_kwargs() passes claim keys to GitWriteStrategy."""
-        from markdown_vault_mcp.config import VaultConfig
+        """ProjectConfig.to_vault_kwargs() passes claim keys to GitWriteStrategy."""
+        from markdown_vault_mcp.config import ProjectConfig
         from markdown_vault_mcp.config_sections import GitConfig
 
-        config = VaultConfig(
+        config = ProjectConfig(
             source_dir=tmp_path,
             read_only=False,
             git=GitConfig(commit_name_claim="name", commit_email_claim="email"),

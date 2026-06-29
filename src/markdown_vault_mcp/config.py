@@ -1,7 +1,7 @@
 """Configuration loading from environment variables for markdown-vault-mcp.
 
-Reads env vars via :meth:`VaultConfig.from_env` and returns a
-:class:`VaultConfig` suitable for constructing a
+Reads env vars via :meth:`ProjectConfig.from_env` and returns a
+:class:`ProjectConfig` suitable for constructing a
 :class:`~markdown_vault_mcp.vault.Vault`.
 """
 
@@ -24,7 +24,7 @@ from markdown_vault_mcp.config_sections import (
     SyncConfig,
     TransferConfig,
 )
-from markdown_vault_mcp.config_sections._helpers import env as _env
+from markdown_vault_mcp.config_sections._helpers import env
 from markdown_vault_mcp.exceptions import ConfigurationError
 from markdown_vault_mcp.git import GitWriteStrategy
 
@@ -69,7 +69,7 @@ def derive_max_chunk_chars(*, context_length: int | None, override: int | None) 
 
 
 @dataclass(frozen=True)
-class VaultConfig:
+class ProjectConfig:
     """Configuration for a :class:`~markdown_vault_mcp.vault.Vault`.
 
     Attributes:
@@ -97,7 +97,7 @@ class VaultConfig:
 
     Example::
 
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         vault = Vault(**config.to_vault_kwargs())
     """
 
@@ -131,7 +131,7 @@ class VaultConfig:
 
         Example::
 
-            config = VaultConfig.from_env()
+            config = ProjectConfig.from_env()
             vault = Vault(**config.to_vault_kwargs())
         """
         kwargs: dict[str, Any] = {
@@ -261,7 +261,7 @@ class VaultConfig:
         )
 
     @classmethod
-    def from_env(cls, prefix: str = _ENV_PREFIX) -> VaultConfig:
+    def from_env(cls, prefix: str = _ENV_PREFIX) -> ProjectConfig:
         """Load configuration from environment variables.
 
         Reads the following environment variables:
@@ -370,7 +370,7 @@ class VaultConfig:
             prefix: Env var prefix; defaults to ``"MARKDOWN_VAULT_MCP"``.
 
         Returns:
-            A fully populated :class:`VaultConfig` instance.
+            A fully populated :class:`ProjectConfig` instance.
 
         Raises:
             ConfigurationError: If ``MARKDOWN_VAULT_MCP_SOURCE_DIR`` is not set,
@@ -380,10 +380,10 @@ class VaultConfig:
 
             import os
             os.environ["MARKDOWN_VAULT_MCP_SOURCE_DIR"] = "/home/user/vault"
-            config = VaultConfig.from_env()
+            config = ProjectConfig.from_env()
             vault = Vault(**config.to_vault_kwargs())
         """
-        raw_source_dir = (_env(prefix, "SOURCE_DIR") or "").strip()
+        raw_source_dir = (env(prefix, "SOURCE_DIR") or "").strip()
         if not raw_source_dir:
             raise ConfigurationError(
                 f"{prefix}_SOURCE_DIR is required but not set. "
@@ -392,11 +392,11 @@ class VaultConfig:
         source_dir = Path(raw_source_dir)
         logger.debug("from_env: source_dir=%s", source_dir)
 
-        raw_read_only = _env(prefix, "READ_ONLY")
+        raw_read_only = env(prefix, "READ_ONLY")
         read_only = _parse_bool(raw_read_only) if raw_read_only is not None else True
         logger.debug("from_env: read_only=%s (raw=%r)", read_only, raw_read_only)
 
-        raw_disable_apps_ui = _env(prefix, "DISABLE_APPS_UI")
+        raw_disable_apps_ui = env(prefix, "DISABLE_APPS_UI")
         disable_apps_ui = (
             _parse_bool(raw_disable_apps_ui)
             if raw_disable_apps_ui is not None
@@ -408,11 +408,11 @@ class VaultConfig:
             raw_disable_apps_ui,
         )
 
-        raw_server_name = (_env(prefix, "SERVER_NAME") or "").strip()
+        raw_server_name = (env(prefix, "SERVER_NAME") or "").strip()
         server_name = raw_server_name or "markdown-vault-mcp"
         logger.debug("from_env: server_name=%s", server_name)
 
-        raw_instructions = (_env(prefix, "INSTRUCTIONS") or "").strip()
+        raw_instructions = (env(prefix, "INSTRUCTIONS") or "").strip()
         instructions: str | None = raw_instructions or None
         logger.debug("from_env: instructions=%s", "set" if instructions else "not set")
 

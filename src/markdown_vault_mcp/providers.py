@@ -7,7 +7,7 @@ Provides an :class:`EmbeddingProvider` ABC and three concrete implementations:
 - :class:`FastEmbedProvider` — local fastembed/ONNX runtime embeddings.
 
 Use :func:`get_embedding_provider` to auto-detect and return the best
-available provider based on a :class:`VaultConfig` instance.
+available provider based on a :class:`ProjectConfig` instance.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, Any
 from markdown_vault_mcp.exceptions import ConfigurationError
 
 if TYPE_CHECKING:
-    from markdown_vault_mcp.config import VaultConfig
+    from markdown_vault_mcp.config import ProjectConfig
 
 logger = logging.getLogger(__name__)
 
@@ -490,7 +490,7 @@ class FastEmbedProvider(EmbeddingProvider):
         return _FASTEMBED_CONTEXT_LENGTHS.get(self._model_name)
 
 
-def get_embedding_provider(config: VaultConfig) -> EmbeddingProvider:
+def get_embedding_provider(config: ProjectConfig) -> EmbeddingProvider:
     """Auto-detect and return an embedding provider from config.
 
     Checks ``config.embeddings.provider`` for an explicit selection. When

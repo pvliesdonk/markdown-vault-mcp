@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from markdown_vault_mcp.config import (
-    VaultConfig,
+    ProjectConfig,
     derive_max_chunk_chars,
 )
 from markdown_vault_mcp.config_sections import (
@@ -34,7 +34,7 @@ def test_search_ranking_config_defaults(
     ):
         monkeypatch.delenv(var, raising=False)
 
-    cfg = VaultConfig.from_env()
+    cfg = ProjectConfig.from_env()
     assert cfg.search.chunks_per_file == 2
     assert cfg.search.snippet_words == 200
     assert cfg.search.length_downweight_alpha == 0.25
@@ -51,7 +51,7 @@ def test_search_ranking_config_env_overrides(
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_LENGTH_DOWNWEIGHT_ALPHA", "0.0")
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_MAX_CHUNK_WORDS", "100000")
 
-    cfg = VaultConfig.from_env()
+    cfg = ProjectConfig.from_env()
     assert cfg.search.chunks_per_file == 1
     assert cfg.search.snippet_words == 0
     assert cfg.search.length_downweight_alpha == 0.0
@@ -61,12 +61,12 @@ def test_search_ranking_config_env_overrides(
 def test_search_ranking_config_rejects_zero_chunks_per_file(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """chunks_per_file=0 is rejected at VaultConfig.from_env time (no useful semantics)."""
+    """chunks_per_file=0 is rejected at ProjectConfig.from_env time (no useful semantics)."""
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_CHUNKS_PER_FILE", "0")
 
     with pytest.raises(ConfigurationError, match="chunks_per_file"):
-        VaultConfig.from_env()
+        ProjectConfig.from_env()
 
 
 @pytest.mark.parametrize(
@@ -93,7 +93,7 @@ def test_max_chunk_chars_override_default_none(
     """The char-cap override is None when its env var is unset."""
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
     monkeypatch.delenv("MARKDOWN_VAULT_MCP_MAX_CHUNK_CHARS", raising=False)
-    cfg = VaultConfig.from_env()
+    cfg = ProjectConfig.from_env()
     assert cfg.search.max_chunk_chars_override is None
 
 
@@ -103,7 +103,7 @@ def test_max_chunk_chars_override_env(
     """A positive MAX_CHUNK_CHARS env var populates the override."""
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_MAX_CHUNK_CHARS", "12345")
-    cfg = VaultConfig.from_env()
+    cfg = ProjectConfig.from_env()
     assert cfg.search.max_chunk_chars_override == 12345
 
 
@@ -114,7 +114,7 @@ def test_max_chunk_chars_override_rejects_zero(
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_MAX_CHUNK_CHARS", "0")
     with pytest.raises(ConfigurationError, match="max_chunk_chars"):
-        VaultConfig.from_env()
+        ProjectConfig.from_env()
 
 
 def test_max_chunk_chars_override_rejects_malformed(
@@ -124,24 +124,24 @@ def test_max_chunk_chars_override_rejects_malformed(
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_MAX_CHUNK_CHARS", "lots")
     with pytest.raises(ConfigurationError, match="MAX_CHUNK_CHARS"):
-        VaultConfig.from_env()
+        ProjectConfig.from_env()
 
 
 class TestParseHelpers:
-    """Test boolean and list parsing edge cases via VaultConfig.from_env."""
+    """Test boolean and list parsing edge cases via ProjectConfig.from_env."""
 
     def test_bool_true_variants(self, monkeypatch: pytest.MonkeyPatch) -> None:
         for val in ("true", "True", "TRUE", "1", "yes", "YES", " true "):
             monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
             monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", val)
-            config = VaultConfig.from_env()
+            config = ProjectConfig.from_env()
             assert config.read_only is True, f"Expected True for {val!r}"
 
     def test_bool_false_variants(self, monkeypatch: pytest.MonkeyPatch) -> None:
         for val in ("false", "False", "0", "no", "anything"):
             monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
             monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", val)
-            config = VaultConfig.from_env()
+            config = ProjectConfig.from_env()
             assert config.read_only is False, f"Expected False for {val!r}"
 
 
@@ -151,21 +151,21 @@ class TestDisableAppsUi:
     def test_default_is_false(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
         monkeypatch.delenv("MARKDOWN_VAULT_MCP_DISABLE_APPS_UI", raising=False)
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.disable_apps_ui is False
 
     def test_true_variants(self, monkeypatch: pytest.MonkeyPatch) -> None:
         for val in ("true", "1", "yes", "on", "TRUE"):
             monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
             monkeypatch.setenv("MARKDOWN_VAULT_MCP_DISABLE_APPS_UI", val)
-            config = VaultConfig.from_env()
+            config = ProjectConfig.from_env()
             assert config.disable_apps_ui is True, f"Expected True for {val!r}"
 
     def test_false_variants(self, monkeypatch: pytest.MonkeyPatch) -> None:
         for val in ("false", "0", "no", ""):
             monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
             monkeypatch.setenv("MARKDOWN_VAULT_MCP_DISABLE_APPS_UI", val)
-            config = VaultConfig.from_env()
+            config = ProjectConfig.from_env()
             assert config.disable_apps_ui is False, f"Expected False for {val!r}"
 
 
@@ -173,7 +173,7 @@ class TestLoadConfig:
     def test_missing_source_dir_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", raising=False)
         with pytest.raises(ConfigurationError, match="MARKDOWN_VAULT_MCP_SOURCE_DIR"):
-            VaultConfig.from_env()
+            ProjectConfig.from_env()
 
     def test_minimal_config(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
@@ -193,7 +193,7 @@ class TestLoadConfig:
         ):
             monkeypatch.delenv(var, raising=False)
 
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
 
         assert config.source_dir == Path("/tmp/vault")
         assert config.read_only is True  # default
@@ -226,7 +226,7 @@ class TestLoadConfig:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_PULL_INTERVAL_S", "300")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER", "Templates")
 
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
 
         assert config.source_dir == Path("/data/vault")
         assert config.read_only is False
@@ -245,7 +245,7 @@ class TestLoadConfig:
     def test_git_username_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
         monkeypatch.delenv("MARKDOWN_VAULT_MCP_GIT_USERNAME", raising=False)
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.git.username == "x-access-token"
 
     def test_templates_folder_trailing_slash_normalized(
@@ -253,7 +253,7 @@ class TestLoadConfig:
     ) -> None:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER", "Templates/")
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.content.templates_folder == "Templates"
 
     def test_templates_folder_backslashes_normalized(
@@ -261,7 +261,7 @@ class TestLoadConfig:
     ) -> None:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER", "Templates\\Notes\\")
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.content.templates_folder == "Templates/Notes"
 
     def test_templates_folder_slash_only_falls_back_to_default(
@@ -269,7 +269,7 @@ class TestLoadConfig:
     ) -> None:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER", "/")
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.content.templates_folder == "_templates"
 
     def test_token_without_repo_url_logs_deprecation(
@@ -278,7 +278,7 @@ class TestLoadConfig:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_TOKEN", "ghp_legacy")
         monkeypatch.delenv("MARKDOWN_VAULT_MCP_GIT_REPO_URL", raising=False)
-        _ = VaultConfig.from_env()
+        _ = ProjectConfig.from_env()
         assert "legacy mode is deprecated" in caplog.text
 
     def test_invalid_pull_interval_raises(
@@ -288,7 +288,7 @@ class TestLoadConfig:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_PULL_INTERVAL_S", "nope")
         with pytest.raises(ConfigurationError):
-            VaultConfig.from_env()
+            ProjectConfig.from_env()
 
     def test_negative_pull_interval_raises(
         self, monkeypatch: pytest.MonkeyPatch
@@ -297,14 +297,14 @@ class TestLoadConfig:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_PULL_INTERVAL_S", "-5")
         with pytest.raises(ConfigurationError, match="pull_interval_s"):
-            VaultConfig.from_env()
+            ProjectConfig.from_env()
 
     def test_comma_separated_strips_whitespace(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_INDEXED_FIELDS", " a , b , c ")
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.indexing.indexed_frontmatter_fields == ("a", "b", "c")
 
     def test_empty_comma_list_yields_none(
@@ -312,13 +312,13 @@ class TestLoadConfig:
     ) -> None:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_INDEXED_FIELDS", "")
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.indexing.indexed_frontmatter_fields is None
 
 
 class TestToVaultKwargs:
     def test_includes_exclude_patterns(self) -> None:
-        config = VaultConfig(
+        config = ProjectConfig(
             source_dir=Path("/tmp/vault"),
             indexing=IndexingConfig(exclude_patterns=[".obsidian/**"]),
         )
@@ -327,7 +327,7 @@ class TestToVaultKwargs:
         assert kwargs["source_dir"] == Path("/tmp/vault")
 
     def test_excludes_git_token(self) -> None:
-        config = VaultConfig(
+        config = ProjectConfig(
             source_dir=Path("/tmp/vault"),
             git=GitConfig(token="ghp_secret"),
         )
@@ -346,7 +346,7 @@ class TestToVaultKwargs:
         monkeypatch.setattr(
             providers_mod, "get_embedding_provider", lambda _config: fake
         )
-        config = VaultConfig(
+        config = ProjectConfig(
             source_dir=Path("/tmp/vault"),
             read_only=False,
             indexing=IndexingConfig(
@@ -388,7 +388,7 @@ class TestToVaultKwargs:
         source_dir = tmp_path / "vault"
         source_dir.mkdir()
 
-        config = VaultConfig(
+        config = ProjectConfig(
             source_dir=source_dir,
             git=GitConfig(repo_url=str(bare), token="ghp_secret", pull_interval_s=123),
         )
@@ -405,8 +405,8 @@ class TestToVaultKwargsProvider:
     ConfigurationError; auto-detection failures degrade to keyword-only.
     """
 
-    def _config(self, *, provider: str | None, tmp_path: Path) -> VaultConfig:
-        return VaultConfig(
+    def _config(self, *, provider: str | None, tmp_path: Path) -> ProjectConfig:
+        return ProjectConfig(
             source_dir=tmp_path,
             embeddings=EmbeddingsConfig(provider=provider),
             indexing=IndexingConfig(embeddings_path=tmp_path / "emb"),
@@ -456,7 +456,7 @@ class TestToVaultKwargsProvider:
             raise RuntimeError("should not be called")
 
         monkeypatch.setattr(providers_mod, "get_embedding_provider", _boom)
-        config = VaultConfig(
+        config = ProjectConfig(
             source_dir=tmp_path,
             embeddings=EmbeddingsConfig(provider="openai"),
             indexing=IndexingConfig(embeddings_path=None),
@@ -486,71 +486,71 @@ class TestGitCommitterConfig:
     """Tests for git committer identity configuration."""
 
     def test_default_git_commit_name(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """VaultConfig.from_env() uses default git_commit_name when env var is not set."""
+        """ProjectConfig.from_env() uses default git_commit_name when env var is not set."""
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
         monkeypatch.delenv("MARKDOWN_VAULT_MCP_GIT_COMMIT_NAME", raising=False)
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.git.commit_name == "markdown-vault-mcp"
 
     def test_default_git_commit_email(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """VaultConfig.from_env() uses default git_commit_email when env var is not set."""
+        """ProjectConfig.from_env() uses default git_commit_email when env var is not set."""
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
         monkeypatch.delenv("MARKDOWN_VAULT_MCP_GIT_COMMIT_EMAIL", raising=False)
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.git.commit_email == "noreply@markdown-vault-mcp"
 
     def test_override_git_commit_name(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """VaultConfig.from_env() reads MARKDOWN_VAULT_MCP_GIT_COMMIT_NAME from environment."""
+        """ProjectConfig.from_env() reads MARKDOWN_VAULT_MCP_GIT_COMMIT_NAME from environment."""
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_COMMIT_NAME", "MyBot")
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.git.commit_name == "MyBot"
 
     def test_override_git_commit_email(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """VaultConfig.from_env() reads MARKDOWN_VAULT_MCP_GIT_COMMIT_EMAIL from environment."""
+        """ProjectConfig.from_env() reads MARKDOWN_VAULT_MCP_GIT_COMMIT_EMAIL from environment."""
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_COMMIT_EMAIL", "bot@example.com")
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.git.commit_email == "bot@example.com"
 
     def test_both_git_committer_vars_override(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """VaultConfig.from_env() reads both GIT_COMMIT_NAME and GIT_COMMIT_EMAIL together."""
+        """ProjectConfig.from_env() reads both GIT_COMMIT_NAME and GIT_COMMIT_EMAIL together."""
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_COMMIT_NAME", "DeployBot")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_COMMIT_EMAIL", "deploy@corp.local")
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.git.commit_name == "DeployBot"
         assert config.git.commit_email == "deploy@corp.local"
 
     def test_empty_git_commit_name_uses_default(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """VaultConfig.from_env() falls back to default when GIT_COMMIT_NAME is empty string."""
+        """ProjectConfig.from_env() falls back to default when GIT_COMMIT_NAME is empty string."""
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_COMMIT_NAME", "")
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.git.commit_name == "markdown-vault-mcp"
 
     def test_empty_git_commit_email_uses_default(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """VaultConfig.from_env() falls back to default when GIT_COMMIT_EMAIL is empty string."""
+        """ProjectConfig.from_env() falls back to default when GIT_COMMIT_EMAIL is empty string."""
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_COMMIT_EMAIL", "")
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.git.commit_email == "noreply@markdown-vault-mcp"
 
     def test_config_dataclass_defaults(self) -> None:
-        """VaultConfig has correct default committer values."""
-        config = VaultConfig(source_dir=Path("/tmp/vault"))
+        """ProjectConfig has correct default committer values."""
+        config = ProjectConfig(source_dir=Path("/tmp/vault"))
         assert config.git.commit_name == "markdown-vault-mcp"
         assert config.git.commit_email == "noreply@markdown-vault-mcp"
 
     def test_config_dataclass_custom_values(self) -> None:
-        """VaultConfig accepts custom committer name and email."""
-        config = VaultConfig(
+        """ProjectConfig accepts custom committer name and email."""
+        config = ProjectConfig(
             source_dir=Path("/tmp/vault"),
             git=GitConfig(commit_name="CI", commit_email="ci@example.com"),
         )
@@ -561,7 +561,7 @@ class TestGitCommitterConfig:
         """to_vault_kwargs() passes commit identity to GitWriteStrategy."""
         from markdown_vault_mcp.git import GitWriteStrategy
 
-        config = VaultConfig(
+        config = ProjectConfig(
             source_dir=Path("/tmp/vault"),
             git=GitConfig(
                 token="ghp_test", commit_name="TestBot", commit_email="test@example.com"
@@ -580,7 +580,7 @@ class TestGitCommitterConfig:
         """to_vault_kwargs() uses defaults when no custom identity is set."""
         from markdown_vault_mcp.git import GitWriteStrategy
 
-        config = VaultConfig(
+        config = ProjectConfig(
             source_dir=Path("/tmp/vault"),
             git=GitConfig(token="ghp_test"),
         )
@@ -598,83 +598,83 @@ class TestAttachmentConfig:
     def test_default_attachment_extensions_is_none(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """VaultConfig.from_env() returns None attachment_extensions when env var not set."""
+        """ProjectConfig.from_env() returns None attachment_extensions when env var not set."""
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
         monkeypatch.delenv("MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS", raising=False)
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.content.attachment_extensions is None
 
     def test_attachment_extensions_comma_separated(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """VaultConfig.from_env() parses ATTACHMENT_EXTENSIONS as comma-separated list."""
+        """ProjectConfig.from_env() parses ATTACHMENT_EXTENSIONS as comma-separated list."""
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS", "pdf,png,docx")
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.content.attachment_extensions == ("pdf", "png", "docx")
 
     def test_attachment_extensions_wildcard(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """VaultConfig.from_env() parses ATTACHMENT_EXTENSIONS=* as ['*']."""
+        """ProjectConfig.from_env() parses ATTACHMENT_EXTENSIONS=* as ['*']."""
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS", "*")
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.content.attachment_extensions == ("*",)
 
     def test_attachment_extensions_empty_returns_none(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """VaultConfig.from_env() returns None when ATTACHMENT_EXTENSIONS is empty."""
+        """ProjectConfig.from_env() returns None when ATTACHMENT_EXTENSIONS is empty."""
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS", "")
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.content.attachment_extensions is None
 
     def test_default_max_attachment_size_mb(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """VaultConfig.from_env() defaults max_attachment_size_mb to 1.0 (tightened in #442)."""
+        """ProjectConfig.from_env() defaults max_attachment_size_mb to 1.0 (tightened in #442)."""
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
         monkeypatch.delenv("MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB", raising=False)
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.content.max_attachment_size_mb == 1.0
 
     def test_max_attachment_size_mb_parsed(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """VaultConfig.from_env() parses MAX_ATTACHMENT_SIZE_MB from env var."""
+        """ProjectConfig.from_env() parses MAX_ATTACHMENT_SIZE_MB from env var."""
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB", "25.5")
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.content.max_attachment_size_mb == 25.5
 
     def test_max_attachment_size_mb_zero_disables_limit(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """VaultConfig.from_env() accepts 0 as a valid value for MAX_ATTACHMENT_SIZE_MB."""
+        """ProjectConfig.from_env() accepts 0 as a valid value for MAX_ATTACHMENT_SIZE_MB."""
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB", "0")
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.content.max_attachment_size_mb == 0.0
 
     def test_max_attachment_size_mb_invalid_raises(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """VaultConfig.from_env() raises on a non-numeric MAX_ATTACHMENT_SIZE_MB (#638)."""
+        """ProjectConfig.from_env() raises on a non-numeric MAX_ATTACHMENT_SIZE_MB (#638)."""
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB", "not-a-number")
         with pytest.raises(ConfigurationError):
-            VaultConfig.from_env()
+            ProjectConfig.from_env()
 
     def test_max_attachment_size_mb_negative_raises(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """VaultConfig.from_env() raises on a negative MAX_ATTACHMENT_SIZE_MB (#638)."""
+        """ProjectConfig.from_env() raises on a negative MAX_ATTACHMENT_SIZE_MB (#638)."""
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB", "-5")
         with pytest.raises(ConfigurationError, match="max_attachment_size_mb"):
-            VaultConfig.from_env()
+            ProjectConfig.from_env()
 
     def test_attachment_config_passed_through_to_vault_kwargs(
         self, monkeypatch: pytest.MonkeyPatch
@@ -683,7 +683,7 @@ class TestAttachmentConfig:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS", "pdf,png")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB", "5.0")
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         kwargs = config.to_vault_kwargs()
         assert kwargs["attachment_extensions"] == ("pdf", "png")
         assert kwargs["max_attachment_size_mb"] == 5.0
@@ -693,31 +693,31 @@ class TestGitLfsConfig:
     """Tests for GIT_LFS env var parsing."""
 
     def test_git_lfs_default_is_true(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """VaultConfig.from_env() defaults git_lfs to True when GIT_LFS is not set."""
+        """ProjectConfig.from_env() defaults git_lfs to True when GIT_LFS is not set."""
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
         monkeypatch.delenv("MARKDOWN_VAULT_MCP_GIT_LFS", raising=False)
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.git.lfs is True
 
     def test_git_lfs_disabled_via_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """VaultConfig.from_env() parses GIT_LFS=false as False."""
+        """ProjectConfig.from_env() parses GIT_LFS=false as False."""
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_LFS", "false")
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.git.lfs is False
 
     def test_git_lfs_enabled_via_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """VaultConfig.from_env() parses GIT_LFS=true as True."""
+        """ProjectConfig.from_env() parses GIT_LFS=true as True."""
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_LFS", "true")
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.git.lfs is True
 
     def test_git_lfs_passed_to_strategy(self, tmp_path: Path) -> None:
         """to_vault_kwargs() passes git_lfs to GitWriteStrategy."""
         from markdown_vault_mcp.git import GitWriteStrategy
 
-        config = VaultConfig(
+        config = ProjectConfig(
             source_dir=tmp_path,
             git=GitConfig(token="ghp_test", lfs=False),
         )
@@ -730,7 +730,7 @@ class TestGitLfsConfig:
         """to_vault_kwargs() passes git_lfs=True to strategy by default."""
         from markdown_vault_mcp.git import GitWriteStrategy
 
-        config = VaultConfig(
+        config = ProjectConfig(
             source_dir=tmp_path,
             git=GitConfig(token="ghp_test"),
         )
@@ -789,18 +789,18 @@ class TestGitConfigFromEnv:
             GitConfig().token = "x"  # type: ignore[misc]
 
 
-class TestVaultConfigDefaults:
-    """Verify all new fields on VaultConfig have correct defaults."""
+class TestProjectConfigDefaults:
+    """Verify all new fields on ProjectConfig have correct defaults."""
 
     def test_server_identity_defaults(self) -> None:
         """Server name defaults to 'markdown-vault-mcp', instructions to None."""
-        config = VaultConfig(source_dir=Path("/tmp/vault"))
+        config = ProjectConfig(source_dir=Path("/tmp/vault"))
         assert config.server_name == "markdown-vault-mcp"
         assert config.instructions is None
 
     def test_embedding_provider_defaults(self) -> None:
         """Embedding fields have correct defaults."""
-        config = VaultConfig(source_dir=Path("/tmp/vault"))
+        config = ProjectConfig(source_dir=Path("/tmp/vault"))
         assert config.embeddings.provider is None
         assert config.embeddings.ollama_host == "http://localhost:11434"
         assert config.embeddings.ollama_model == "nomic-embed-text"
@@ -812,8 +812,8 @@ class TestVaultConfigDefaults:
         assert config.embeddings.fastembed_cache_dir is None
 
     def test_custom_values_accepted(self) -> None:
-        """VaultConfig accepts custom values for all new fields."""
-        config = VaultConfig(
+        """ProjectConfig accepts custom values for all new fields."""
+        config = ProjectConfig(
             source_dir=Path("/tmp/vault"),
             server_name="my-server",
             instructions="Be helpful",
@@ -843,49 +843,49 @@ class TestVaultConfigDefaults:
 
 
 class TestLoadConfigServerIdentityFields:
-    """Verify server identity env vars are read by VaultConfig.from_env()."""
+    """Verify server identity env vars are read by ProjectConfig.from_env()."""
 
     @pytest.fixture(autouse=True)
     def _set_source_dir(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
 
     def test_server_name_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """VaultConfig.from_env() defaults server_name to 'markdown-vault-mcp'."""
+        """ProjectConfig.from_env() defaults server_name to 'markdown-vault-mcp'."""
         monkeypatch.delenv("MARKDOWN_VAULT_MCP_SERVER_NAME", raising=False)
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.server_name == "markdown-vault-mcp"
 
     def test_server_name_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """VaultConfig.from_env() reads MARKDOWN_VAULT_MCP_SERVER_NAME."""
+        """ProjectConfig.from_env() reads MARKDOWN_VAULT_MCP_SERVER_NAME."""
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SERVER_NAME", "my-vault")
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.server_name == "my-vault"
 
     def test_server_name_empty_uses_default(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """VaultConfig.from_env() falls back to default when SERVER_NAME is empty."""
+        """ProjectConfig.from_env() falls back to default when SERVER_NAME is empty."""
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SERVER_NAME", "")
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.server_name == "markdown-vault-mcp"
 
     def test_instructions_default_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """VaultConfig.from_env() defaults instructions to None."""
+        """ProjectConfig.from_env() defaults instructions to None."""
         monkeypatch.delenv("MARKDOWN_VAULT_MCP_INSTRUCTIONS", raising=False)
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.instructions is None
 
     def test_instructions_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """VaultConfig.from_env() reads MARKDOWN_VAULT_MCP_INSTRUCTIONS."""
+        """ProjectConfig.from_env() reads MARKDOWN_VAULT_MCP_INSTRUCTIONS."""
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_INSTRUCTIONS", "Be concise")
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.instructions == "Be concise"
 
 
 class TestEmbeddingsConfigNormalization:
     """EmbeddingsConfig.__post_init__ normalizes ollama_host on direct construction.
 
-    VaultConfig.from_env() pre-normalizes ollama_host before building EmbeddingsConfig, so
+    ProjectConfig.from_env() pre-normalizes ollama_host before building EmbeddingsConfig, so
     these assert the dataclass's own contract independently of the loader.
     """
 
@@ -900,197 +900,197 @@ class TestEmbeddingsConfigNormalization:
 
 
 class TestLoadConfigEmbeddingFields:
-    """Verify embedding env vars are read correctly by VaultConfig.from_env()."""
+    """Verify embedding env vars are read correctly by ProjectConfig.from_env()."""
 
     @pytest.fixture(autouse=True)
     def _set_source_dir(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
 
     def test_embedding_provider_prefixed(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """VaultConfig.from_env() reads MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER."""
+        """ProjectConfig.from_env() reads MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER."""
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER", "ollama")
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.embeddings.provider == "ollama"
 
     def test_embedding_provider_default_none(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """VaultConfig.from_env() defaults embedding_provider to None."""
+        """ProjectConfig.from_env() defaults embedding_provider to None."""
         monkeypatch.delenv("MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER", raising=False)
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.embeddings.provider is None
 
     def test_ollama_host_bare_env_var(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """VaultConfig.from_env() reads OLLAMA_HOST (bare, not prefixed)."""
+        """ProjectConfig.from_env() reads OLLAMA_HOST (bare, not prefixed)."""
         monkeypatch.setenv("OLLAMA_HOST", "http://gpu:11434")
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.embeddings.ollama_host == "http://gpu:11434"
 
     def test_ollama_host_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """VaultConfig.from_env() defaults ollama_host to http://localhost:11434."""
+        """ProjectConfig.from_env() defaults ollama_host to http://localhost:11434."""
         monkeypatch.delenv("OLLAMA_HOST", raising=False)
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.embeddings.ollama_host == "http://localhost:11434"
 
     def test_ollama_host_empty_uses_default(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """VaultConfig.from_env() treats empty OLLAMA_HOST as default."""
+        """ProjectConfig.from_env() treats empty OLLAMA_HOST as default."""
         monkeypatch.setenv("OLLAMA_HOST", "")
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.embeddings.ollama_host == "http://localhost:11434"
 
     def test_ollama_host_trailing_slash_stripped(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """VaultConfig.from_env() strips trailing slash from OLLAMA_HOST."""
+        """ProjectConfig.from_env() strips trailing slash from OLLAMA_HOST."""
         monkeypatch.setenv("OLLAMA_HOST", "http://gpu:11434/")
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.embeddings.ollama_host == "http://gpu:11434"
 
     def test_ollama_model_prefixed(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """VaultConfig.from_env() reads MARKDOWN_VAULT_MCP_OLLAMA_MODEL."""
+        """ProjectConfig.from_env() reads MARKDOWN_VAULT_MCP_OLLAMA_MODEL."""
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_OLLAMA_MODEL", "mxbai-embed-large")
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.embeddings.ollama_model == "mxbai-embed-large"
 
     def test_ollama_model_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """VaultConfig.from_env() defaults ollama_model to nomic-embed-text."""
+        """ProjectConfig.from_env() defaults ollama_model to nomic-embed-text."""
         monkeypatch.delenv("MARKDOWN_VAULT_MCP_OLLAMA_MODEL", raising=False)
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.embeddings.ollama_model == "nomic-embed-text"
 
     def test_ollama_cpu_only_default_false(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """VaultConfig.from_env() defaults ollama_cpu_only to False."""
+        """ProjectConfig.from_env() defaults ollama_cpu_only to False."""
         monkeypatch.delenv("MARKDOWN_VAULT_MCP_OLLAMA_CPU_ONLY", raising=False)
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.embeddings.ollama_cpu_only is False
 
     def test_ollama_cpu_only_true(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """VaultConfig.from_env() parses OLLAMA_CPU_ONLY=true."""
+        """ProjectConfig.from_env() parses OLLAMA_CPU_ONLY=true."""
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_OLLAMA_CPU_ONLY", "true")
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.embeddings.ollama_cpu_only is True
 
     def test_openai_api_key_bare_env_var(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """VaultConfig.from_env() reads OPENAI_API_KEY (bare, not prefixed)."""
+        """ProjectConfig.from_env() reads OPENAI_API_KEY (bare, not prefixed)."""
         monkeypatch.setenv("OPENAI_API_KEY", "sk-test123")
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.embeddings.openai_api_key == "sk-test123"
 
     def test_openai_api_key_default_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """VaultConfig.from_env() defaults openai_api_key to None."""
+        """ProjectConfig.from_env() defaults openai_api_key to None."""
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.embeddings.openai_api_key is None
 
     def test_openai_base_url_prefixed_env_var(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """VaultConfig.from_env() reads MARKDOWN_VAULT_MCP_OPENAI_BASE_URL."""
+        """ProjectConfig.from_env() reads MARKDOWN_VAULT_MCP_OPENAI_BASE_URL."""
         monkeypatch.setenv(
             "MARKDOWN_VAULT_MCP_OPENAI_BASE_URL",
             "https://api.siliconflow.cn/v1/",
         )
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.embeddings.openai_base_url == "https://api.siliconflow.cn/v1"
 
     def test_openai_base_url_bare_env_var(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """VaultConfig.from_env() reads OPENAI_BASE_URL when the prefixed var is absent."""
+        """ProjectConfig.from_env() reads OPENAI_BASE_URL when the prefixed var is absent."""
         monkeypatch.delenv("MARKDOWN_VAULT_MCP_OPENAI_BASE_URL", raising=False)
         monkeypatch.setenv("OPENAI_BASE_URL", "https://api.compat.example/v1")
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.embeddings.openai_base_url == "https://api.compat.example/v1"
 
     def test_openai_base_url_prefixed_env_var_wins(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """VaultConfig.from_env() prefers prefixed base URL over OPENAI_BASE_URL."""
+        """ProjectConfig.from_env() prefers prefixed base URL over OPENAI_BASE_URL."""
         monkeypatch.setenv(
             "MARKDOWN_VAULT_MCP_OPENAI_BASE_URL",
             "https://api.prefixed.example/v1",
         )
         monkeypatch.setenv("OPENAI_BASE_URL", "https://api.bare.example/v1")
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.embeddings.openai_base_url == "https://api.prefixed.example/v1"
 
     def test_openai_base_url_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """VaultConfig.from_env() defaults openai_base_url to the OpenAI API base URL."""
+        """ProjectConfig.from_env() defaults openai_base_url to the OpenAI API base URL."""
         monkeypatch.delenv("MARKDOWN_VAULT_MCP_OPENAI_BASE_URL", raising=False)
         monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.embeddings.openai_base_url == "https://api.openai.com/v1"
 
     def test_openai_embedding_model_prefixed_env_var(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """VaultConfig.from_env() reads MARKDOWN_VAULT_MCP_OPENAI_EMBEDDING_MODEL."""
+        """ProjectConfig.from_env() reads MARKDOWN_VAULT_MCP_OPENAI_EMBEDDING_MODEL."""
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_OPENAI_EMBEDDING_MODEL", "BAAI/bge-m3")
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.embeddings.openai_embedding_model == "BAAI/bge-m3"
 
     def test_openai_embedding_model_bare_env_var(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """VaultConfig.from_env() reads OPENAI_EMBEDDING_MODEL when prefixed var is absent."""
+        """ProjectConfig.from_env() reads OPENAI_EMBEDDING_MODEL when prefixed var is absent."""
         monkeypatch.delenv("MARKDOWN_VAULT_MCP_OPENAI_EMBEDDING_MODEL", raising=False)
         monkeypatch.setenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-large")
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.embeddings.openai_embedding_model == "text-embedding-3-large"
 
     def test_openai_embedding_model_prefixed_env_var_wins(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """VaultConfig.from_env() prefers prefixed model over OPENAI_EMBEDDING_MODEL."""
+        """ProjectConfig.from_env() prefers prefixed model over OPENAI_EMBEDDING_MODEL."""
         monkeypatch.setenv(
             "MARKDOWN_VAULT_MCP_OPENAI_EMBEDDING_MODEL",
             "prefixed-embedding-model",
         )
         monkeypatch.setenv("OPENAI_EMBEDDING_MODEL", "bare-embedding-model")
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.embeddings.openai_embedding_model == "prefixed-embedding-model"
 
     def test_openai_embedding_model_default(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """VaultConfig.from_env() defaults openai_embedding_model to text-embedding-3-small."""
+        """ProjectConfig.from_env() defaults openai_embedding_model to text-embedding-3-small."""
         monkeypatch.delenv("MARKDOWN_VAULT_MCP_OPENAI_EMBEDDING_MODEL", raising=False)
         monkeypatch.delenv("OPENAI_EMBEDDING_MODEL", raising=False)
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.embeddings.openai_embedding_model == "text-embedding-3-small"
 
     def test_fastembed_model_prefixed(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """VaultConfig.from_env() reads MARKDOWN_VAULT_MCP_FASTEMBED_MODEL."""
+        """ProjectConfig.from_env() reads MARKDOWN_VAULT_MCP_FASTEMBED_MODEL."""
         monkeypatch.setenv(
             "MARKDOWN_VAULT_MCP_FASTEMBED_MODEL", "BAAI/bge-base-en-v1.5"
         )
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.embeddings.fastembed_model == "BAAI/bge-base-en-v1.5"
 
     def test_fastembed_model_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """VaultConfig.from_env() defaults fastembed_model to BAAI/bge-small-en-v1.5."""
+        """ProjectConfig.from_env() defaults fastembed_model to BAAI/bge-small-en-v1.5."""
         monkeypatch.delenv("MARKDOWN_VAULT_MCP_FASTEMBED_MODEL", raising=False)
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.embeddings.fastembed_model == "BAAI/bge-small-en-v1.5"
 
     def test_fastembed_cache_dir_prefixed(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """VaultConfig.from_env() reads MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR."""
+        """ProjectConfig.from_env() reads MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR."""
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR", "/tmp/fe-cache")
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.embeddings.fastembed_cache_dir == "/tmp/fe-cache"
 
     def test_fastembed_cache_dir_default_none(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """VaultConfig.from_env() defaults fastembed_cache_dir to None."""
+        """ProjectConfig.from_env() defaults fastembed_cache_dir to None."""
         monkeypatch.delenv("MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR", raising=False)
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.embeddings.fastembed_cache_dir is None
 
 
@@ -1111,38 +1111,38 @@ class TestEmptyBoolEnvVarsFallToDefault:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "")
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.read_only is True  # default
 
     def test_git_lfs_empty_falls_through_to_default(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_LFS", "")
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.git.lfs is True  # default
 
     def test_oidc_verify_access_token_empty_falls_through_to_default(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_OIDC_VERIFY_ACCESS_TOKEN", "")
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.server.oidc_verify_access_token is False  # default
 
     def test_ollama_cpu_only_empty_falls_through_to_default(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_OLLAMA_CPU_ONLY", "")
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.embeddings.ollama_cpu_only is False  # default
 
 
 class TestServerConfigComposition:
-    """The composed ServerConfig field on VaultConfig."""
+    """The composed ServerConfig field on ProjectConfig."""
 
     def test_server_field_default_is_empty_serverconfig(self) -> None:
         from fastmcp_pvl_core import ServerConfig
 
-        config = VaultConfig(source_dir=Path("/tmp/v"))
+        config = ProjectConfig(source_dir=Path("/tmp/v"))
         assert isinstance(config.server, ServerConfig)
         # Defaults match ServerConfig dataclass defaults
         assert config.server.transport == "stdio"
@@ -1156,7 +1156,7 @@ class TestServerConfigComposition:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_BEARER_TOKEN", "secret-token")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_BASE_URL", "https://api.example.com")
 
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
 
         assert config.server.transport == "http"
         assert config.server.bearer_token == "secret-token"
@@ -1169,7 +1169,7 @@ class TestServerConfigComposition:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_OIDC_VERIFY_ACCESS_TOKEN", "true")
 
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
 
         assert config.server.oidc_verify_access_token is True
 
@@ -1195,7 +1195,7 @@ class TestServerConfigComposition:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_OIDC_REQUIRED_SCOPES", "openid,profile")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY", "signing-key")
 
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
 
         assert config.server.auth_mode == "oidc-proxy"
         assert (
@@ -1209,6 +1209,27 @@ class TestServerConfigComposition:
         assert config.server.oidc_jwt_signing_key == "signing-key"
 
 
+def test_domain_env_suffixes_sees_decomposed_reads() -> None:
+    """pvl-core's drift-gate scanner sees MVM's decomposed config surface.
+
+    Guards the #767 convergence: a top-level scalar read (now via un-aliased
+    ``env()``) plus reads delegated into four different ``config_sections/``
+    sub-configs must all appear. Re-aliasing ``env`` in ``config.py`` or
+    breaking the sub-config recursion would silently drop these from the
+    config-wizard drift gate's coverage check.
+    """
+    from fastmcp_pvl_core import domain_env_suffixes
+
+    suffixes = domain_env_suffixes(ProjectConfig)
+    assert {
+        "SOURCE_DIR",  # top-level scalar, un-aliased env() in config.py
+        "GIT_TOKEN",  # config_sections/git.py
+        "EMBEDDING_PROVIDER",  # config_sections/embeddings.py
+        "MAX_NOTE_READ_BYTES",  # config_sections/content.py
+        "TRANSFER_TTL_MAX_S",  # config_sections/transfer.py
+    } <= suffixes
+
+
 def test_search_ranking_config_rejects_malformed_int(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -1217,7 +1238,7 @@ def test_search_ranking_config_rejects_malformed_int(
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_CHUNKS_PER_FILE", "foo")
 
     with pytest.raises(ConfigurationError, match="MARKDOWN_VAULT_MCP_CHUNKS_PER_FILE"):
-        VaultConfig.from_env()
+        ProjectConfig.from_env()
 
 
 def test_search_ranking_config_rejects_malformed_float(
@@ -1230,7 +1251,7 @@ def test_search_ranking_config_rejects_malformed_float(
     with pytest.raises(
         ConfigurationError, match="MARKDOWN_VAULT_MCP_LENGTH_DOWNWEIGHT_ALPHA"
     ):
-        VaultConfig.from_env()
+        ProjectConfig.from_env()
 
 
 class TestMaxNoteReadBytesEnv:
@@ -1241,7 +1262,7 @@ class TestMaxNoteReadBytesEnv:
     ) -> None:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
         monkeypatch.delenv("MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES", raising=False)
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.content.max_note_read_bytes == 262144
 
     def test_override_via_env(
@@ -1249,7 +1270,7 @@ class TestMaxNoteReadBytesEnv:
     ) -> None:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES", "1048576")
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.content.max_note_read_bytes == 1048576
 
     def test_zero_disables_limit(
@@ -1257,7 +1278,7 @@ class TestMaxNoteReadBytesEnv:
     ) -> None:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES", "0")
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.content.max_note_read_bytes == 0
 
     def test_invalid_value_raises(
@@ -1269,7 +1290,7 @@ class TestMaxNoteReadBytesEnv:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES", "not-a-number")
         with pytest.raises(ConfigurationError, match="MAX_NOTE_READ_BYTES"):
-            VaultConfig.from_env()
+            ProjectConfig.from_env()
 
     def test_negative_value_raises(
         self,
@@ -1280,7 +1301,7 @@ class TestMaxNoteReadBytesEnv:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES", "-1")
         with pytest.raises(ConfigurationError, match="max_note_read_bytes"):
-            VaultConfig.from_env()
+            ProjectConfig.from_env()
 
 
 class TestMaxAttachmentSizeMbDefault:
@@ -1291,14 +1312,14 @@ class TestMaxAttachmentSizeMbDefault:
     ) -> None:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
         monkeypatch.delenv("MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB", raising=False)
-        config = VaultConfig.from_env()
+        config = ProjectConfig.from_env()
         assert config.content.max_attachment_size_mb == 1.0
 
 
 def test_transfer_config_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     """TransferConfig defaults apply when no env vars are set."""
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
-    cfg = VaultConfig.from_env()
+    cfg = ProjectConfig.from_env()
     assert cfg.transfer.ttl_default_s == 3600
     assert cfg.transfer.ttl_max_s == 86400
     assert cfg.transfer.max_upload_bytes == 104857600
@@ -1310,7 +1331,7 @@ def test_transfer_config_env_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_TRANSFER_TTL_DEFAULT_S", "120")
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_TRANSFER_TTL_MAX_S", "600")
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_TRANSFER_MAX_UPLOAD_BYTES", "2048")
-    cfg = VaultConfig.from_env()
+    cfg = ProjectConfig.from_env()
     assert cfg.transfer.ttl_default_s == 120
     assert cfg.transfer.ttl_max_s == 600
     assert cfg.transfer.max_upload_bytes == 2048
