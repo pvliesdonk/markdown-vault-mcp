@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any
 from fastmcp import Client
 
 from markdown_vault_mcp.server import make_server
+from tests.conftest import wait_for_mcp_writer_drain
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -32,15 +33,18 @@ def test_make_server_constructs(
     assert make_server() is not None
 
 
-async def test_config_resource_round_trips(client: Client[Any]) -> None:
-    """A real MVM resource is reachable via the client and returns valid JSON.
+async def test_config_resource_round_trips(
+    client: Client[Any], vault_path: Path
+) -> None:
+    """``config://vault`` exposes the server config as JSON with the expected fields.
 
     Adapts the template's ``status://`` example to MVM's surface (MVM has no
-    ``status://``): ``config://vault`` round-trips the server's config.
+    ``status://``): the config resource is reachable via the client and carries
+    the wired ``source_dir`` plus a typed ``read_only`` flag.
     """
     result = await client.read_resource("config://vault")
     data = json.loads(result[0].text)
-    assert "source_dir" in data
+    assert data["source_dir"] == str(vault_path)
     assert isinstance(data["read_only"], bool)
 
 
@@ -49,18 +53,20 @@ async def test_get_server_info_tool_registered(client: Client[Any]) -> None:
     tools = {t.name for t in await client.list_tools()}
     assert "get_server_info" in tools
     result = await client.call_tool("get_server_info", {})
-    assert result.data  # non-empty server-info payload
+    assert result.data.get("server_name") == "markdown-vault-mcp"
+    assert result.data.get("server_version")  # non-empty version string
+    assert result.data.get("core_version")  # non-empty
 
 
 async def test_summarize_prompt_round_trips_path(client: Client[Any]) -> None:
-    """MVM's built-in ``summarize`` prompt round-trips its ``path`` argument.
+    """MVM's built-in ``summarize`` prompt requires a ``path`` arg and its
+    rendered output includes the supplied path value.
 
     Adapts the template's ``summarize``-``context`` example: MVM's summarize is
-    a built-in markdown prompt taking ``path`` (required); its body substitutes
-    ``$path``.
+    a built-in markdown prompt taking ``path`` (required).
     """
     result = await client.get_prompt("summarize", {"path": "notes/intro.md"})
-    rendered = " ".join(m.content.text for m in result.messages)
+    rendered = result.messages[0].content.text
     assert "notes/intro.md" in rendered
 
 
@@ -80,6 +86,7 @@ async def test_server_name_override_reaches_server_info(
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault_path))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SERVER_NAME", "renamed-instance")
     async with Client(make_server()) as c:
+        await wait_for_mcp_writer_drain(c)
         result = await c.call_tool("get_server_info", {})
     assert "renamed-instance" in json.dumps(result.data)
 
@@ -117,9 +124,16 @@ def test_blank_overrides_fall_back_to_defaults(
 async def test_no_file_exchange_scaffolding(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """make_server() registers no file-exchange tools (removed scaffolding)."""
+    """make_server() registers no file-exchange tools.
+
+    Transfer replacements (create_upload_link / create_download_link) are
+    registered only on HTTP/SSE transport, not on the in-process stdio
+    transport used here — but they must not silently become file-exchange
+    tools under any name.
+    """
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
     async with Client(make_server()) as c:
+        await wait_for_mcp_writer_drain(c)
         tools = {t.name for t in await c.list_tools()}
     assert not any("file_exchange" in t or "upload_file" in t for t in tools)
 
@@ -132,7 +146,7 @@ def test_register_apps_logs_configured_domain(
     """register_apps logs the configured app domain.
 
     Adapted from the template: MVM's ``register_apps`` is real (not a no-op), so
-    we construct a server with APP_DOMAIN set and assert the structured log,
+    we construct a server with APP_DOMAIN set and assert the log record args contain the domain,
     rather than re-calling register_apps on an already-registered server.
     """
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault_path))

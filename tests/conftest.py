@@ -27,9 +27,11 @@ def _clear_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """Strip all ``MARKDOWN_VAULT_MCP_*`` env vars before each test (isolation).
 
     Prevents an env var set by one test (or the ambient shell) from leaking
-    into another. Tests that need configuration set it explicitly afterwards
-    (e.g. via ``_mcp_env`` or ``monkeypatch.setenv``); autouse fixtures run
-    before the requested ones, so those overrides win.
+    into another.  Tests that need configuration set it explicitly afterwards (e.g. via
+    ``_mcp_env``, which depends on this fixture, or via ``monkeypatch.setenv``).
+    ``monkeypatch`` applies env mutations sequentially within each test, so the
+    strips here are always visible before any test-local ``setenv`` — the
+    test's own overrides win.
     """
     for key in list(os.environ):
         if key.startswith("MARKDOWN_VAULT_MCP_"):
@@ -232,7 +234,9 @@ _CLEAR_VARS = (
 
 
 @pytest.fixture
-def _mcp_env(vault_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def _mcp_env(
+    _clear_env: None, vault_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Set minimal env vars for make_server()."""
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault_path))
     monkeypatch.delenv("MARKDOWN_VAULT_MCP_READ_ONLY", raising=False)
@@ -247,8 +251,14 @@ async def client(_mcp_env: None) -> AsyncIterator[Client[Any]]:
     Adapted from the template's ``client`` fixture: MVM's ``make_server()``
     calls ``ProjectConfig.from_env()`` which requires ``SOURCE_DIR``, so this
     depends on ``_mcp_env`` (which sets it from ``vault_path``). Drains the
-    index writer so index-backed resources (e.g. ``config://vault``) are
-    queryable.
+    index writer so FTS-backed resources/tools (e.g. ``stats://vault``,
+    ``search``) return populated results rather than empty cold-start state.
+
+    Args:
+        _mcp_env: Fixture that sets ``SOURCE_DIR`` (injected by pytest).
+
+    Yields:
+        An in-process FastMCP ``Client`` with the index writer drained.
     """
     server = make_server()
     async with Client(server) as c:
