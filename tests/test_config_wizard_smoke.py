@@ -334,3 +334,62 @@ def test_compose_quotes_yaml_typed_env_values(page: Page) -> None:
     assert 'DEMO_FLAG: "true"' in result
     assert "DEMO_FLAG: true\n" not in result
     assert 'DEMO_PORT: "8080"' in result
+
+
+# A two-level showIf chain (child gates on `auth`, `auth` gates on `deployment`)
+# mirrors the auth/OIDC structure every shipped spec uses. These two tests pin
+# the runtime behaviour the spec-level cascade test (in
+# test_config_wizard_spec_schema.py) is a static proxy for: isVisible does NOT
+# cascade, so buildEnvMap emits a child's var whenever the child's own showIf is
+# satisfied by the raw answers — even if the gating question is itself hidden by
+# a stale answer. A self-contained child showIf is what closes the leak.
+def _cascade_spec(child_showif: str) -> str:
+    return (
+        "{ version: 1,"
+        " meta: { projectName: 'demo', dockerImage: 'img:latest', envPrefix: 'DEMO' },"
+        " secretKeys: [],"
+        " questions: ["
+        "   { id: 'deployment', label: 'D', type: 'select',"
+        "     options: [{ value: 'local', label: 'L' }, { value: 'server', label: 'S' }] },"
+        "   { id: 'auth', label: 'A', type: 'select', showIf: { deployment: ['server'] },"
+        "     options: [{ value: 'none', label: 'N' }, { value: 'oidc', label: 'O' }] },"
+        "   { id: 'oidc_url', label: 'U', type: 'text', var: 'DEMO_OIDC_CONFIG_URL',"
+        "     showIf: " + child_showif + " },"
+        " ],"
+        " guards: [] }"
+    )
+
+
+# Stale state from configuring OIDC under deployment='server' (the auth answer
+# AND a filled-in oidc_url value), then flipping deployment back to 'local'.
+_STALE = "{ deployment: 'local', auth: 'oidc', oidc_url: 'https://auth.example.com' }"
+
+
+def test_buildenvmap_leaks_without_self_contained_showif(page: Page) -> None:
+    # Child gated ONLY on auth (the pre-fix shape). The stale auth answer keeps
+    # the child visible, so its filled-in value is still emitted after deployment
+    # flips back to 'local'. This documents the leak the cascade gate prevents.
+    result = _eval_generators(
+        page,
+        "(g) => {"
+        "  const spec = " + _cascade_spec("{ auth: ['oidc'] }") + ";"
+        "  return g.buildEnvMap(spec, " + _STALE + ");"
+        "}",
+    )
+    assert result.get("DEMO_OIDC_CONFIG_URL") == "https://auth.example.com"
+
+
+def test_buildenvmap_self_contained_showif_blocks_stale_answer(page: Page) -> None:
+    # Child gated on BOTH deployment and auth (the fixed shape). The same stale
+    # state no longer leaks because deployment='local' fails the child's own
+    # deployment gate, so isVisible is false and the var is not emitted.
+    result = _eval_generators(
+        page,
+        "(g) => {"
+        "  const spec = "
+        + _cascade_spec("{ deployment: ['server'], auth: ['oidc'] }")
+        + ";"
+        "  return g.buildEnvMap(spec, " + _STALE + ");"
+        "}",
+    )
+    assert "DEMO_OIDC_CONFIG_URL" not in result

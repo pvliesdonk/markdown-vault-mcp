@@ -52,15 +52,28 @@ the `RELEASE_TOKEN` secret; only its `copier-update` justification is gone.)
 ```bash
 # -i.bak + rm keeps this portable across GNU sed (Linux) and BSD sed (macOS),
 # which disagree on the in-place flag's syntax.
-sed -i.bak '/<!-- TEMPLATE-TRACKING-START -->/,/<!-- TEMPLATE-TRACKING-END -->/d' CLAUDE.md && rm -f CLAUDE.md.bak
+sed -i.bak \
+  -e '/<!-- TEMPLATE-TRACKING-START -->/,/<!-- TEMPLATE-TRACKING-END -->/d' \
+  -e '/<!-- ===== TEMPLATE-OWNED SECTIONS BELOW/d' \
+  -e '/<!-- ===== TEMPLATE-OWNED SECTIONS END ===== -->/d' \
+  -e 's/ Kept across copier update\.//' \
+  -e 's/ on top of the shipped defaults survive `copier update`\./ on top of the shipped defaults are yours to maintain./' \
+  -e 's/ are preserved across `copier update`\./ are domain-owned./' \
+  -e 's/The block is preserved across `copier update`\./The block is domain-owned./' \
+  CLAUDE.md && rm -f CLAUDE.md.bak
 ```
 
 This deletes the template-coupled sections — the bot-reviewer merge-gate
-paragraph, **Shared Infrastructure**, and **Contributing fixes upstream** —
-while keeping the fork-neutral contributor guidance (Conventions, the PR
-acceptance gates, the Logging Standard, the config contract, GitHub Review
-Types). If your fork added its own `.claude/CLAUDE.md`, apply the same scrub
-there.
+paragraph, **Shared Infrastructure**, and **Contributing fixes upstream** — and
+strips the copier-update wording that no longer describes a detached fork: the
+`TEMPLATE-OWNED SECTIONS` banner fences (a fork owns every section, so the
+template/domain split is moot), the "Kept across copier update" notes on the
+DOMAIN blocks, and the remaining "preserved/survive across copier update" notes
+(the pre-commit defaults, the `Dockerfile` sentinels, and the upstream sentinel).
+The fork-neutral contributor guidance
+(Conventions, the PR acceptance gates, the Logging Standard, the config
+contract, GitHub Review Types) is kept. If your fork added its own
+`.claude/CLAUDE.md`, apply the same scrub there.
 
 ## Step 4 — README cleanup (optional)
 

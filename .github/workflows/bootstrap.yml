@@ -1,0 +1,37 @@
+name: Bootstrap repo
+
+# Seeds repository labels that checked-in config references but that GitHub
+# does not create on its own.  `.github/dependabot.yml` applies the
+# `dependencies` label to the PRs it opens; a freshly generated repo has no
+# such label, so without this those PRs would land unlabelled (Dependabot
+# silently drops labels that don't exist).
+#
+# Idempotent: `gh label create --force` creates the label or updates it in
+# place, so every run is a no-op once the label exists.  The first push to the
+# default branch seeds it; `workflow_dispatch` lets you re-seed on demand.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/bootstrap.yml
+      - .github/dependabot.yml
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+jobs:
+  labels:
+    name: Ensure repository labels
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create dependencies label
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh label create dependencies \
+            --color 0366d6 \
+            --description "Pull requests that update a dependency" \
+            --force
