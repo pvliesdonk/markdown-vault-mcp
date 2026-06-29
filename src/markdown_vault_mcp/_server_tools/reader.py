@@ -586,11 +586,11 @@ def register(mcp: FastMCP) -> None:
         Args:
             path: Note path ("a/b.md") or folder prefix ("a/b").
             max_level: Drop headings deeper than this level (e.g. 2 keeps
-                H1-H2). The synthetic H1 title always survives. Default None
-                returns all levels.
-            max_notes: Folder mode only — cap on distinct notes (default 200).
-                When more notes match, the first max_notes (by path) are
-                returned and 'truncated' is True.
+                H1-H2); must be >= 1. The synthetic H1 title always survives.
+                Default None returns all levels.
+            max_notes: Folder mode only — cap on distinct notes (default 200,
+                must be >= 1). When more notes match, the first max_notes (by
+                path) are returned and 'truncated' is True.
             wait_for_pending_writes: When True, wait until recent
                 write/edit/delete/rename operations are applied to the index
                 before answering. Default False answers from the current

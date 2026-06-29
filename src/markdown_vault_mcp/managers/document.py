@@ -510,10 +510,11 @@ class DocumentManager:
 
         Args:
             path: Note path (``"a/b.md"``) or folder prefix (``"a/b"``).
-            max_level: If set, drop headings with ``level`` above this.
-                The synthetic H1 title is always present regardless of
+            max_level: If set, drop headings with ``level`` above this; must be
+                ``>= 1``. The synthetic H1 title is always present regardless of
                 ``max_level`` (it is prepended after the level filter).
-            max_notes: Folder mode only — cap on distinct notes (default 200).
+            max_notes: Folder mode only — cap on distinct notes (default 200);
+                must be ``>= 1``.
 
         Returns:
             Note mode: ``list[{"heading", "level"}]``.
@@ -521,10 +522,15 @@ class DocumentManager:
             each note is ``{"path", "title", "headings": [...]}``.
 
         Raises:
-            ValueError: Note mode, if no document exists at *path* or if the
-                path escapes the vault; folder mode, if *path* is empty, the
-                vault root (```.```/```/```), or escaping the vault.
+            ValueError: If ``max_notes < 1`` or ``max_level < 1``; note mode, if
+                no document exists at *path* or if the path escapes the vault;
+                folder mode, if *path* is empty, the vault root
+                (```.```/```/```), or escaping the vault.
         """
+        if max_notes < 1:
+            raise ValueError(f"max_notes must be >= 1, got {max_notes!r}")
+        if max_level is not None and max_level < 1:
+            raise ValueError(f"max_level must be >= 1, got {max_level!r}")
         if path.endswith(".md"):
             return self._note_toc(path, max_level=max_level)
         return self._subtree_toc(path, max_level=max_level, max_notes=max_notes)

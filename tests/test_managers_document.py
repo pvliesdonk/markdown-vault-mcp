@@ -465,6 +465,18 @@ class TestGetToc:
         h1s = [e for e in toc if e == {"heading": "Gamma", "level": 1}]
         assert len(h1s) == 1
 
+    def test_get_toc_rejects_max_notes_below_one(
+        self, doc_mgr: DocumentManager
+    ) -> None:
+        with pytest.raises(ValueError, match="max_notes must be >= 1"):
+            doc_mgr.get_toc("sub", max_notes=0)
+
+    def test_get_toc_rejects_max_level_below_one(
+        self, doc_mgr: DocumentManager
+    ) -> None:
+        with pytest.raises(ValueError, match="max_level must be >= 1"):
+            doc_mgr.get_toc("sub/gamma.md", max_level=0)
+
 
 # ---------------------------------------------------------------------------
 # Validation tests
