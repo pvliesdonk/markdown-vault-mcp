@@ -4,18 +4,36 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pytest
+from fastmcp import Client
 
 from markdown_vault_mcp.providers import EmbeddingProvider
+from markdown_vault_mcp.server import make_server
 
 # Re-export reusable fixtures so they are auto-discovered by pytest in any
 # test module without requiring a per-file import (which would trip ruff's
 # F811 redefinition check on the parameter shadowing).
 from tests.fixtures.git import git_repo_pair  # noqa: F401
+
+
+@pytest.fixture(autouse=True)
+def _clear_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Strip all ``MARKDOWN_VAULT_MCP_*`` env vars before each test (isolation).
+
+    Prevents an env var set by one test (or the ambient shell) from leaking
+    into another. Tests that need configuration set it explicitly afterwards
+    (e.g. via ``_mcp_env`` or ``monkeypatch.setenv``); autouse fixtures run
+    before the requested ones, so those overrides win.
+    """
+    for key in list(os.environ):
+        if key.startswith("MARKDOWN_VAULT_MCP_"):
+            monkeypatch.delenv(key, raising=False)
 
 
 def _parse_tool_data(result: Any) -> Any:
@@ -220,6 +238,22 @@ def _mcp_env(vault_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("MARKDOWN_VAULT_MCP_READ_ONLY", raising=False)
     for var in _CLEAR_VARS:
         monkeypatch.delenv(var, raising=False)
+
+
+@pytest.fixture
+async def client(_mcp_env: None) -> AsyncIterator[Client[Any]]:
+    """In-memory FastMCP client on a server backed by a throwaway tmp vault.
+
+    Adapted from the template's ``client`` fixture: MVM's ``make_server()``
+    calls ``ProjectConfig.from_env()`` which requires ``SOURCE_DIR``, so this
+    depends on ``_mcp_env`` (which sets it from ``vault_path``). Drains the
+    index writer so index-backed resources (e.g. ``config://vault``) are
+    queryable.
+    """
+    server = make_server()
+    async with Client(server) as c:
+        await wait_for_mcp_writer_drain(c)
+        yield c
 
 
 def wait_for_writer_drain(col: object, timeout: float = 5.0) -> None:
