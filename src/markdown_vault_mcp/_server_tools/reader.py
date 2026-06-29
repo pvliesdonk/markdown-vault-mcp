@@ -6,6 +6,7 @@ from typing import Any, Literal
 
 from fastmcp import FastMCP
 from fastmcp.dependencies import Depends
+from fastmcp.tools import ToolResult
 
 from markdown_vault_mcp.vault import Vault
 
@@ -555,6 +556,79 @@ def register(mcp: FastMCP) -> None:
             [asdict(r) for r in results],
             drained_on_request=drained,
             gen_before=gen_before,
+        )
+
+    @mcp.tool(
+        icons=_TOOL_ICONS["read"],
+        annotations={
+            "title": "Table of Contents",
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+        },
+    )
+    @needs_queryable()
+    async def get_toc(
+        path: str,
+        max_level: int | None = None,
+        max_notes: int = 200,
+        wait_for_pending_writes: bool = False,
+        vault: Vault = Depends(get_vault),
+    ) -> list[dict[str, Any]] | dict[str, Any]:
+        """Heading outline for a single note or a whole folder subtree.
+
+        If 'path' ends in '.md' it is a note: returns a flat ordered list of
+        {heading, level} (the title as a synthetic H1). Otherwise 'path' is a
+        folder: returns {path, notes, truncated} where 'notes' is an ordered
+        list of {path, title, headings} aggregating every note under the
+        subtree. Mirrors the 'toc://vault/{path}' resource, adding the
+        max_level / max_notes controls below.
+
+        Args:
+            path: Note path ("a/b.md") or folder prefix ("a/b").
+            max_level: Drop headings deeper than this level (e.g. 2 keeps
+                H1-H2). The synthetic H1 title always survives. Default None
+                returns all levels.
+            max_notes: Folder mode only — cap on distinct notes (default 200).
+                When more notes match, the first max_notes (by path) are
+                returned and 'truncated' is True.
+            wait_for_pending_writes: When True, wait until recent
+                write/edit/delete/rename operations are applied to the index
+                before answering. Default False answers from the current
+                index; inspect '_meta.index_stale' to tell whether a write was
+                still in flight. Bounded by a server timeout (default 60s).
+
+        Returns:
+            Note mode: list of {heading (str), level (int)}.
+            Folder mode: {path (str), notes (list[{path, title, headings}]),
+            truncated (bool)}. Empty/nonexistent folder → empty 'notes'.
+
+            Index freshness is reported out-of-band in '_meta.index_stale'.
+
+        Raises:
+            ValueError: Note path with no document; invalid folder path.
+        """
+        drained = await _maybe_wait_for_drain(vault, wait_for_pending_writes, "get_toc")
+        gen_before = vault.index.write_generation()
+        data = await asyncio.to_thread(
+            vault.reader.get_toc,
+            path,
+            max_level=max_level,
+            max_notes=max_notes,
+        )
+        index_stale = (
+            (not drained)
+            or (vault.index.write_generation() != gen_before)
+            or (not vault.index.is_drained())
+        )
+        # The union return type (list | dict) causes FastMCP to generate an
+        # output schema that wraps both branches in {"result": <payload>}.
+        # Construct ToolResult directly to ensure structured_content always
+        # uses the {"result": ...} envelope that the schema requires.
+        return ToolResult(  # type: ignore[return-value]
+            content=data,
+            structured_content={"result": data},
+            meta={"index_stale": index_stale},
         )
 
     @mcp.tool(

@@ -396,6 +396,7 @@ markdown-vault-mcp reindex [--source-dir PATH] [--index-path PATH]
 | `get_outlinks` | Find all links from a document, with existence check |
 | `get_broken_links` | Find all links pointing to non-existent documents |
 | `get_similar` | Find semantically similar notes by document path |
+| `get_toc` | Heading outline for a note or a folder subtree |
 | `get_recent` | Get the most recently modified notes |
 | `get_context` | Get a consolidated context dossier for a note (backlinks, outlinks, similar, folder peers, tags, modified time) |
 | `get_orphan_notes` | Find all notes with no inbound or outbound links |

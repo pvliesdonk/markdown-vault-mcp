@@ -1812,6 +1812,7 @@ pattern). Each tool is annotated with MCP `ToolAnnotations`:
 | `get_outlinks` | Find links from a document (with exists flag) | `True` | `False` | `True` |
 | `get_broken_links` | Find links to non-existent documents | `True` | `False` | `True` |
 | `get_similar` | Find semantically similar notes by path | `True` | `False` | `True` |
+| `get_toc` | Heading outline for a note or folder subtree | `True` | `False` | `True` |
 | `get_recent` | Get most recently modified notes | `True` | `False` | `True` |
 | `get_context` | Get consolidated context dossier for a note | `True` | `False` | `True` |
 | `get_orphan_notes` | Find notes with no inbound or outbound links | `True` | `False` | `True` |
@@ -1872,10 +1873,17 @@ template functions with no vault dependency.
 | ``tags://vault`` | ``ReaderFacet.list_tags()`` | All tags grouped by indexed field |
 | ``tags://vault/{field}`` | ``ReaderFacet.list_tags(field)`` | Flat list for one field (template) |
 | ``folders://vault`` | ``ReaderFacet.list_folders()`` | Sorted folder path list |
-| ``toc://vault/{path}`` | ``ReaderFacet.get_toc(path)`` | Document headings with synthetic H1 title |
+| ``toc://vault/{path}`` | ``ReaderFacet.get_toc(path)`` | Document headings (note) or per-note heading outline (folder subtree) |
 
 Resources return JSON (``mime_type="application/json"``). The ToC resource
 queries the existing ``sections`` table (no file I/O).
+
+**TOC surface** (``get_toc`` tool and ``toc://vault/{path}`` resource): dispatch is by suffix. Paths ending in ``.md`` are note mode; all other paths are folder-prefix mode.
+
+- **Note mode** returns a flat ordered ``list[{heading, level}]``. The document title is included as a synthetic H1 entry.
+- **Folder mode** returns ``{path, notes, truncated}`` where ``notes`` is an ordered ``list[{path, title, headings}]`` aggregating every note under the subtree (sorted by path). ``max_notes`` (default 200) caps the note count; when more notes match, the first ``max_notes`` by path are returned and ``truncated`` is ``True``.
+- **``max_level``** (tool only, default ``None``) filters out headings deeper than the given level. The synthetic H1 title always survives regardless of ``max_level``.
+- The resource (``toc://vault/{path}``) exposes no ``max_level`` or ``max_notes`` controls; use the ``get_toc`` tool when those controls are needed.
 
 **Prompts**: 6 built-in prompt templates, plus optional user-defined prompts:
 

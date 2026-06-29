@@ -3,7 +3,7 @@
 markdown-vault-mcp exposes MCP tools across several categories. Write tools are only available when `MARKDOWN_VAULT_MCP_READ_ONLY=false`.
 
 !!! note "Index freshness on read tools (`wait_for_pending_writes` + `_meta.index_stale`)"
-    Every read tool that queries the FTS index (`search`, `list_documents`, `list_folders`, `list_tags`, `stats`, `get_recent`, `get_backlinks`, `get_outlinks`, `get_broken_links`, `get_similar`, `get_context`, `get_orphan_notes`, `get_most_linked`, and `get_connection_path`) accepts an optional **`wait_for_pending_writes`** (`bool`, default `false`) parameter and reports index freshness **out-of-band in the MCP response's `_meta.index_stale` field** rather than wrapping the payload in a `{stale, data}` envelope. The data payload is a **bare list/dict, identical whether the index is fresh or stale**; clients that do not care about drift ignore `_meta` entirely. Clients that need a fresh-read guarantee either inspect `result._meta.index_stale`, or pass `wait_for_pending_writes=true` to block until the writer drains (bounded by `MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S`, default 60&nbsp;s; on timeout it answers from the current index rather than raising). `index_stale` is `true` when the IndexWriter had pending or in-flight work. The relevant conditions are: the optional `wait_for_pending_writes` timed out; a write completed inside the read window; the writer was non-idle at response time. The same `_meta.index_stale` field rides on the index-querying MCP **resources** (`config://`, `stats://`, `folders://`, `tags://`, `recent://`, `toc://`, `similar://`), readable via the resource read's `_meta` (resources carry no `wait_for_pending_writes` parameter; they signal only).
+    Every read tool that queries the FTS index (`search`, `list_documents`, `list_folders`, `list_tags`, `stats`, `get_recent`, `get_backlinks`, `get_outlinks`, `get_broken_links`, `get_similar`, `get_toc`, `get_context`, `get_orphan_notes`, `get_most_linked`, and `get_connection_path`) accepts an optional **`wait_for_pending_writes`** (`bool`, default `false`) parameter and reports index freshness **out-of-band in the MCP response's `_meta.index_stale` field** rather than wrapping the payload in a `{stale, data}` envelope. The data payload is a **bare list/dict, identical whether the index is fresh or stale**; clients that do not care about drift ignore `_meta` entirely. Clients that need a fresh-read guarantee either inspect `result._meta.index_stale`, or pass `wait_for_pending_writes=true` to block until the writer drains (bounded by `MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S`, default 60&nbsp;s; on timeout it answers from the current index rather than raising). `index_stale` is `true` when the IndexWriter had pending or in-flight work. The relevant conditions are: the optional `wait_for_pending_writes` timed out; a write completed inside the read window; the writer was non-idle at response time. The same `_meta.index_stale` field rides on the index-querying MCP **resources** (`config://`, `stats://`, `folders://`, `tags://`, `recent://`, `toc://`, `similar://`), readable via the resource read's `_meta` (resources carry no `wait_for_pending_writes` parameter; they signal only).
 
 <!-- DOMAIN-TOOLS-LIST-START -->
 
@@ -23,6 +23,7 @@ markdown-vault-mcp exposes MCP tools across several categories. Write tools are 
 | [`get_outlinks`](#get_outlinks) | Outlinks | Read | Find all links from a document, with existence check |
 | [`get_broken_links`](#get_broken_links) | Broken Links | Read | Find all links pointing to non-existent documents |
 | [`get_similar`](#get_similar) | Similar Notes | Read | Find semantically similar notes by document path |
+| [`get_toc`](#get_toc) | Table of Contents | Read | Heading outline for a note or a folder subtree |
 | [`get_recent`](#get_recent) | Recent Notes | Read | Get the most recently modified notes |
 | [`get_context`](#get_context) | Note Context | Read | Get a consolidated context dossier for a note |
 | [`get_orphan_notes`](#get_orphan_notes) | Orphan Notes | Read | Find notes with no inbound or outbound links |
@@ -620,6 +621,26 @@ Find semantically similar notes by document path. Requires embeddings to be buil
 
 !!! note "Grouped result shape"
     Returns one entry per file with up to `chunks_per_file` best-matching sections. Default is 2 sections per file; pass `chunks_per_file=1` for compact dossiers.
+
+### `get_toc`
+
+Heading outline for a single note or an entire folder subtree. Mirrors the [`toc://vault/{path}`](../resources.md#tocvaultpath) resource, adding `max_level` and `max_notes` controls. Dispatch is by suffix: paths ending in `.md` are treated as notes; all other paths are treated as folder prefixes.
+
+**Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `path` | string | required | Note path (such as `"a/b.md"`) or folder prefix (such as `"a/b"`) |
+| `max_level` | int | `null` | Drop headings deeper than this level (such as `2` to keep H1 and H2). The synthetic H1 title always survives. `null` returns all levels. |
+| `max_notes` | int | `200` | Folder mode only. Cap on distinct notes. When more notes match, the first `max_notes` (sorted by path) are returned and `truncated` is `true`. |
+| `wait_for_pending_writes` | bool | `false` | Block until the IndexWriter drains before answering, then report freshness via `_meta.index_stale` (see the *Index freshness on read tools* note at the top of this page). |
+
+**Returns:**
+
+- **Note mode** (`path` ends in `.md`): flat ordered `list` of `{heading (str), level (int)}`. The document title is included as a synthetic H1 entry.
+- **Folder mode** (`path` is a folder prefix): `{path (str), notes (list), truncated (bool)}` where each entry in `notes` is `{path, title, headings}` and `headings` is a list of `{heading, level}` for that note. An empty or nonexistent folder returns an empty `notes` list with `truncated: false`.
+
+Index freshness is reported in `_meta.index_stale` (see the freshness note at the top of this page).
 
 ### `get_recent`
 

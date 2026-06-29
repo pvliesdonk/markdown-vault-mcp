@@ -252,6 +252,7 @@ class TestToolManifest:
             "get_outlinks",
             "get_recent",
             "get_similar",
+            "get_toc",
             "git_sync",
             "list_documents",
             "list_folders",
@@ -1998,6 +1999,26 @@ class TestSimilarTool:
             )
         assert _meta_stale(result) is False
         assert isinstance(_parse_tool_data(result), list)
+
+
+class TestGetTocTool:
+    """Integration tests for get_toc tool."""
+
+    @pytest.mark.usefixtures("_mcp_env_writable")
+    async def test_get_toc_tool_note(self) -> None:
+        async with Client(make_server()) as client:
+            result = await client.call_tool("get_toc", {"path": "simple.md"})
+        data = _parse_tool_data(result)
+        assert isinstance(data, list)
+        assert data[0]["level"] == 1
+
+    @pytest.mark.usefixtures("_mcp_env_writable")
+    async def test_get_toc_tool_folder(self) -> None:
+        async with Client(make_server()) as client:
+            result = await client.call_tool("get_toc", {"path": "subfolder"})
+        data = _parse_tool_data(result)
+        assert isinstance(data, dict)
+        assert "notes" in data and "truncated" in data
 
 
 class TestRecentTool:
