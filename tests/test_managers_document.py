@@ -445,15 +445,18 @@ class TestGetToc:
 
     def test_get_toc_folder_trailing_slash(self, doc_mgr: DocumentManager) -> None:
         result = doc_mgr.get_toc("sub/")
+        assert isinstance(result, dict)
         assert result["path"] == "sub"
         assert [n["path"] for n in result["notes"]] == ["sub/gamma.md"]
 
     def test_get_toc_empty_folder_returns_empty(self, doc_mgr: DocumentManager) -> None:
         result = doc_mgr.get_toc("does-not-exist")
+        assert isinstance(result, dict)
         assert result == {"path": "does-not-exist", "notes": [], "truncated": False}
 
     def test_get_toc_folder_max_level(self, doc_mgr: DocumentManager) -> None:
         result = doc_mgr.get_toc("sub", max_level=1)
+        assert isinstance(result, dict)
         gamma = result["notes"][0]
         assert gamma["headings"] == [{"heading": "Gamma", "level": 1}]
 

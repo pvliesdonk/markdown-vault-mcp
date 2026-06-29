@@ -2019,6 +2019,7 @@ class TestGetTocTool:
         data = _parse_tool_data(result)
         assert isinstance(data, dict)
         assert "notes" in data and "truncated" in data
+        assert isinstance(data["notes"], list)
 
 
 class TestRecentTool:
@@ -2311,6 +2312,7 @@ class TestResources:
             data = json.loads(result[0].text)
             assert isinstance(data, dict)
             assert "notes" in data and data["path"] == "subfolder"
+            assert isinstance(data["notes"], list)
 
 
 # ---------------------------------------------------------------------------

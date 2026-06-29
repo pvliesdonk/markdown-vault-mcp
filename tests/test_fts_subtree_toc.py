@@ -39,9 +39,17 @@ def vault(tmp_path: Path) -> Path:
         "---\ntitle: Gamma\n---\n# Gamma\n\n## Nested\n\nq\n",
         encoding="utf-8",
     )
-    # A sibling folder whose prefix shares a leading substring with "Projects".
+    # A root-level file whose name starts with "Project" (not a folder).
     (tmp_path / "Projectile.md").write_text(
         "---\ntitle: Projectile\n---\n# Projectile\n",
+        encoding="utf-8",
+    )
+    # A sibling *folder* whose name starts with "Project" — exercises the /
+    # boundary in the LIKE pattern so "Projects/" does not match "Projectile/".
+    pjl = tmp_path / "Projectile"
+    pjl.mkdir()
+    (pjl / "note.md").write_text(
+        "---\ntitle: Projectile Note\n---\n# Projectile Note\n\n## Misc\n\nm\n",
         encoding="utf-8",
     )
     return tmp_path
@@ -67,6 +75,9 @@ def test_subtree_prefix_is_boundary_matched(vault: Path) -> None:
     fts = _build_fts(vault)
     notes, _ = fts.get_subtree_toc("Project")
     assert notes == []  # neither "Projects/..." nor "Projectile.md" match
+    # Also verify "Projects/" prefix does not bleed into "Projectile/" folder.
+    notes_all, _ = fts.get_subtree_toc("Projects")
+    assert all(not n["path"].startswith("Projectile/") for n in notes_all)
 
 
 def test_subtree_max_level_filters_headings(vault: Path) -> None:

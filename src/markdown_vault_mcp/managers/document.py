@@ -526,6 +526,17 @@ class DocumentManager:
             return self._note_toc(path, max_level=max_level)
         return self._subtree_toc(path, max_level=max_level, max_notes=max_notes)
 
+    @staticmethod
+    def _prepend_title_h1(
+        title: str, headings: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """Prepend the document title as a synthetic H1, deduping a leading H1 equal to it."""
+        toc: list[dict[str, Any]] = [{"heading": title, "level": 1}]
+        toc.extend(
+            h for h in headings if not (h["level"] == 1 and h["heading"] == title)
+        )
+        return toc
+
     def _note_toc(self, path: str, *, max_level: int | None) -> list[dict[str, Any]]:
         self._validate_path(path)
         row = self._fts.get_note(path)
@@ -533,11 +544,7 @@ class DocumentManager:
             raise ValueError(f"Document not found: {path}")
         title: str = row["title"]
         headings = self._fts.get_toc(path, max_level=max_level)
-        toc: list[dict[str, Any]] = [{"heading": title, "level": 1}]
-        toc.extend(
-            h for h in headings if not (h["level"] == 1 and h["heading"] == title)
-        )
-        return toc
+        return self._prepend_title_h1(title, headings)
 
     def _subtree_toc(
         self, path: str, *, max_level: int | None, max_notes: int
@@ -550,12 +557,7 @@ class DocumentManager:
         notes: list[dict[str, Any]] = []
         for note in notes_raw:
             title = note["title"]
-            headings: list[dict[str, Any]] = [{"heading": title, "level": 1}]
-            headings.extend(
-                h
-                for h in note["headings"]
-                if not (h["level"] == 1 and h["heading"] == title)
-            )
+            headings = self._prepend_title_h1(title, note["headings"])
             notes.append({"path": note["path"], "title": title, "headings": headings})
         return {"path": prefix, "notes": notes, "truncated": truncated}
 
