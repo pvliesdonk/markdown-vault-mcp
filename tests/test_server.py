@@ -2020,6 +2020,8 @@ class TestGetTocTool:
         assert isinstance(data, dict)
         assert "notes" in data and "truncated" in data
         assert isinstance(data["notes"], list)
+        assert result.structured_content is not None
+        assert result.structured_content == {"result": data}
 
 
 class TestRecentTool:
@@ -3703,6 +3705,8 @@ class TestIndexStaleSignal:
                 {"source": "notes/topic.md", "target": "index.md"},
                 dict,
             ),
+            ("get_toc", {"path": "notes/topic.md"}, list),
+            ("get_toc", {"path": "notes"}, dict),
         ],
     )
     async def test_index_stale_true_uniform_across_index_tools(

@@ -96,6 +96,13 @@ def test_subtree_max_notes_truncates(vault: Path) -> None:
     assert [n["path"] for n in notes] == ["Projects/alpha.md", "Projects/beta.md"]
 
 
+def test_subtree_max_notes_at_cap_not_truncated(vault: Path) -> None:
+    fts = _build_fts(vault)
+    notes, truncated = fts.get_subtree_toc("Projects", max_notes=3)
+    assert truncated is False
+    assert len(notes) == 3
+
+
 def test_get_toc_max_level_filter(vault: Path) -> None:
     fts = _build_fts(vault)
     toc = fts.get_toc("Projects/alpha.md", max_level=2)

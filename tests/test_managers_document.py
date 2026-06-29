@@ -496,6 +496,14 @@ class TestValidation:
         assert doc_mgr._is_attachment("image.png") is True
         assert doc_mgr._is_attachment("note.md") is False
 
+    def test_get_toc_folder_traversal_raises(self, doc_mgr: DocumentManager) -> None:
+        with pytest.raises(ValueError, match="Path traversal"):
+            doc_mgr.get_toc("../../etc")
+
+    def test_get_toc_folder_root_raises(self, doc_mgr: DocumentManager) -> None:
+        with pytest.raises(ValueError, match="Invalid folder path"):
+            doc_mgr.get_toc(".")
+
     def test_is_path_excluded(self, doc_vault: Path) -> None:
         fts = FTSIndex(db_path=":memory:")
         mgr = DocumentManager(

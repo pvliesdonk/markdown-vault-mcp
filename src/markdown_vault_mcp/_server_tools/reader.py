@@ -559,7 +559,7 @@ def register(mcp: FastMCP) -> None:
         )
 
     @mcp.tool(
-        icons=_TOOL_ICONS["read"],
+        icons=_TOOL_ICONS["get_toc"],
         annotations={
             "title": "Table of Contents",
             "readOnlyHint": True,

@@ -509,8 +509,9 @@ class DocumentManager:
 
         Args:
             path: Note path (``"a/b.md"``) or folder prefix (``"a/b"``).
-            max_level: If set, drop headings with ``level`` above this. The
-                synthetic H1 title always survives ``max_level >= 1``.
+            max_level: If set, drop headings with ``level`` above this.
+                The synthetic H1 title is always present regardless of
+                ``max_level`` (it is prepended after the level filter).
             max_notes: Folder mode only — cap on distinct notes (default 200).
 
         Returns:
@@ -519,8 +520,9 @@ class DocumentManager:
             each note is ``{"path", "title", "headings": [...]}``.
 
         Raises:
-            ValueError: Note mode, if no document exists at *path*; or if a
-                folder *path* is empty/root or escapes the vault.
+            ValueError: Note mode, if no document exists at *path* or if the
+                path escapes the vault; folder mode, if *path* is empty/root or
+                escapes the vault.
         """
         if path.endswith(".md"):
             return self._note_toc(path, max_level=max_level)
@@ -530,7 +532,7 @@ class DocumentManager:
     def _prepend_title_h1(
         title: str, headings: list[dict[str, Any]]
     ) -> list[dict[str, Any]]:
-        """Prepend the document title as a synthetic H1, deduping a leading H1 equal to it."""
+        """Prepend the document title as a synthetic H1, dropping any real H1 whose text matches the title."""
         toc: list[dict[str, Any]] = [{"heading": title, "level": 1}]
         toc.extend(
             h for h in headings if not (h["level"] == 1 and h["heading"] == title)
@@ -538,6 +540,7 @@ class DocumentManager:
         return toc
 
     def _note_toc(self, path: str, *, max_level: int | None) -> list[dict[str, Any]]:
+        """Return a single note's flat outline, title prepended as a synthetic H1."""
         self._validate_path(path)
         row = self._fts.get_note(path)
         if row is None:
@@ -549,6 +552,7 @@ class DocumentManager:
     def _subtree_toc(
         self, path: str, *, max_level: int | None, max_notes: int
     ) -> dict[str, Any]:
+        """Return the nested-per-note TOC for every note under a folder prefix."""
         prefix = path.rstrip("/")
         self._validate_dir_path(prefix)
         notes_raw, truncated = self._fts.get_subtree_toc(
