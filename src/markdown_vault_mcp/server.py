@@ -25,6 +25,7 @@ from fastmcp_pvl_core import (
     build_auth,
     build_kv_store,  # noqa: F401  — re-exported for downstream projects' convenience
     configure_logging_from_env,  # noqa: F401  — re-exported for downstream projects' convenience
+    env,
     register_server_info_tool,
     resolve_auth_mode,
     wire_middleware_stack,
