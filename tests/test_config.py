@@ -1099,7 +1099,7 @@ class TestEmptyBoolEnvVarsFallToDefault:
 
     Adopting fastmcp_pvl_core.env() changed the semantics: blank values are
     treated as unset (the helper strips whitespace and returns the default),
-    where MV's old _env() returned the literal empty string and downstream
+    where MV's earlier local ``env`` wrapper returned the literal empty string and downstream
     parse_bool("") yielded False. These tests lock in the new contract.
     """
 
@@ -1213,10 +1213,10 @@ def test_domain_env_suffixes_sees_decomposed_reads() -> None:
     """pvl-core's drift-gate scanner sees MVM's decomposed config surface.
 
     Guards the #767 convergence: a top-level scalar read (now via un-aliased
-    ``env()``) plus reads delegated into four different ``config_sections/``
-    sub-configs must all appear. Re-aliasing ``env`` in ``config.py`` or
-    breaking the sub-config recursion would silently drop these from the
-    config-wizard drift gate's coverage check.
+    ``env()``) plus reads sampled from four representative ``config_sections/``
+    sub-configs (git, embeddings, content, transfer) must all appear. Re-aliasing
+    ``env`` in ``config.py`` or breaking the sub-config recursion would silently
+    drop these from the config-wizard drift gate's coverage check.
     """
     from fastmcp_pvl_core import domain_env_suffixes
 
@@ -1228,6 +1228,9 @@ def test_domain_env_suffixes_sees_decomposed_reads() -> None:
         "MAX_NOTE_READ_BYTES",  # config_sections/content.py
         "TRANSFER_TTL_MAX_S",  # config_sections/transfer.py
     } <= suffixes
+    # Lower bound (full surface is ~40) so a sub-config silently dropping out of
+    # the recursion is caught, not just the five sampled suffixes above.
+    assert len(suffixes) >= 35
 
 
 def test_search_ranking_config_rejects_malformed_int(
