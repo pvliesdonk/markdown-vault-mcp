@@ -117,12 +117,8 @@ def serve(
 # Domain CLI subcommands live here so the rest of this file stays byte-identical
 # to the template and applies cleanly on copier update. Use function-local
 # imports for domain modules (as ``serve`` does) to keep the top-level import
-# surface template-owned.
-# (example)
-# @app.command()
-# def widgets() -> None:
-#     """List widgets."""
-#     typer.echo("...")
+# surface template-owned. Module-level ``TYPE_CHECKING`` guards are fine — they
+# are erased at runtime.
 
 from typing import TYPE_CHECKING  # noqa: E402
 
@@ -131,7 +127,20 @@ if TYPE_CHECKING:
 
 
 def _build_vault(source_dir: str | None = None, index_path: str | None = None) -> Vault:
-    """Build a Vault from env vars + CLI overrides (shared with the server path)."""
+    """Build a synchronous Vault from env vars + optional CLI overrides.
+
+    Uses the same ``ProjectConfig.to_vault_kwargs()`` bridge as the server path,
+    but constructs a bare Vault (no background tasks, file watcher, or index
+    writer — those belong to the server's lifespan).
+
+    Args:
+        source_dir: Overrides ``{PREFIX}_SOURCE_DIR`` when given (set into the
+            environment before ``ProjectConfig.from_env()`` reads it).
+        index_path: Overrides the resolved SQLite index path when given.
+
+    Returns:
+        A constructed :class:`~markdown_vault_mcp.vault.Vault` (index not built).
+    """
     import os
     from pathlib import Path
 
@@ -219,7 +228,8 @@ def reindex(
 ) -> None:
     """Incrementally reindex the vault."""
     vault = _build_vault(source_dir, index_path)
-    # reindex() needs a built index (#525); build_index() short-circuits O(1) warm.
+    # reindex() needs a built index (#525); build_index() is a cheap no-op when
+    # the index is already populated (a SQL row-count check, no filesystem scan).
     vault.index.build_index()
     result = vault.index.reindex()
     typer.echo(

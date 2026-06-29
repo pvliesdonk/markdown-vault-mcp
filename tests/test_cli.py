@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     import pytest
+    from click.testing import Result
 
 runner = CliRunner()
 
@@ -32,7 +33,7 @@ def test_help_lists_all_subcommands() -> None:
 
 
 def test_no_args_exits_nonzero() -> None:
-    """Bare invocation exits with code 2 (typer no_args_is_help=True)."""
+    """Bare invocation exits with code 2 (missing required COMMAND argument)."""
     result = runner.invoke(app, [])
     assert result.exit_code == 2
     assert "serve" in result.output
@@ -75,7 +76,7 @@ def _invoke_http_serve(
     extra_args: list[str] | None = None,
     host: str = "127.0.0.1",
     port: int = 8000,
-) -> tuple[object, dict[str, object]]:
+) -> tuple[Result, dict[str, object]]:
     """Invoke ``serve --transport http`` with all side effects patched.
 
     Returns the CliRunner result and the kwargs captured by the fake uvicorn.run.
@@ -107,9 +108,8 @@ def _invoke_http_serve(
     return result, captured
 
 
-def test_serve_http_runs_uvicorn(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_serve_http_runs_uvicorn() -> None:
     """``serve --transport http`` calls uvicorn.run."""
-    monkeypatch.setenv(f"{_ENV_PREFIX}_SOURCE_DIR", "/tmp/vault")
     result, captured = _invoke_http_serve(["--host", "127.0.0.1", "--port", "9001"])
     assert result.exit_code == 0, result.output
     assert captured.get("port") == 9001
@@ -284,6 +284,44 @@ def test_serve_http_reads_config_once() -> None:
     mock_cfg.from_env.assert_called_once()
     assert mock_ms.call_args.kwargs.get("config") is mock_config
     mock_bes.assert_called_once_with(_ENV_PREFIX, mock_config.server)
+
+
+def test_serve_http_lifespan_and_graceful_shutdown() -> None:
+    """``serve --transport http`` passes lifespan='on' and timeout_graceful_shutdown=3."""
+    result, captured = _invoke_http_serve()
+    assert result.exit_code == 0, result.output
+    assert captured.get("lifespan") == "on"
+    assert captured.get("timeout_graceful_shutdown") == 3
+
+
+@patch("markdown_vault_mcp.server.make_server")
+@patch("markdown_vault_mcp.cli.ProjectConfig")
+def test_serve_stdio_passes_config_to_make_server(
+    mock_cfg: MagicMock, mock_make_server: MagicMock
+) -> None:
+    """stdio serve reads config once and hands it to make_server (no double read)."""
+    mock_config = mock_cfg.from_env.return_value
+    result = runner.invoke(app, ["serve", "--transport", "stdio"])
+    assert result.exit_code == 0, result.output
+    mock_cfg.from_env.assert_called_once()
+    assert mock_make_server.call_args.kwargs.get("config") is mock_config
+    mock_make_server.return_value.run.assert_called_once_with(transport="stdio")
+
+
+def test_serve_legacy_path_alias_accepted() -> None:
+    """``--path`` alias for ``--http-path`` still works (kept for Dockerfiles/units, #401)."""
+    result, _captured = _invoke_http_serve(["--path", "/legacy/mcp"])
+    assert result.exit_code == 0, result.output
+
+
+def test_build_vault_valueerror_exits_nonzero() -> None:
+    """A command whose _build_vault raises ValueError exits non-zero (shell $? contract)."""
+    with patch(
+        "markdown_vault_mcp.cli._build_vault",
+        side_effect=ValueError("SOURCE_DIR not set"),
+    ):
+        result = runner.invoke(app, ["index"])
+    assert result.exit_code != 0
 
 
 # ---------------------------------------------------------------------------
@@ -683,7 +721,7 @@ def test_reindex_against_real_vault(
 
 
 def test_verbose_enables_debug_logging(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`-v` sets FASTMCP_LOG_LEVEL=DEBUG via configure_logging_from_env."""
+    """``-v`` sets ``FASTMCP_LOG_LEVEL=DEBUG`` in the process environment."""
     import os
 
     monkeypatch.setenv(f"{_ENV_PREFIX}_SOURCE_DIR", "/tmp/vault")
