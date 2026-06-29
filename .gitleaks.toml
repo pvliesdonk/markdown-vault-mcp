@@ -1,9 +1,8 @@
-# Gitleaks configuration
-# https://github.com/gitleaks/gitleaks
-
 [allowlist]
-  # Example placeholder tokens in documentation are not real secrets
-  paths = [
-    '''docs/guides/.*\.md''',
-    '''examples/.*\.env''',
-  ]
+description = "Allow test/example tokens"
+regexes = [
+    # Test bearer tokens in test files and examples
+    '''my-secret-token''',
+    '''test-secret''',
+    '''your-generated-token''',
+]

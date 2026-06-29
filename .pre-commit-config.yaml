@@ -19,9 +19,10 @@ repos:
         name: mypy
         language: system
         entry: uv run mypy
-        files: ^src/
+        files: ^(src|tests)/
+        types: [python]
         pass_filenames: false
-        args: [src/]
+        args: [src/, tests/]
 
       - id: vendor-spa-check
         name: vendored SPA HTML up-to-date
@@ -38,6 +39,11 @@ repos:
       - id: check-yaml
       - id: check-added-large-files
       - id: check-json
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
 
   # Vale prose lint for docs/**. Requires Vale on PATH (`brew install vale`,
   # `apt install vale`, or download from https://vale.sh/docs/install).

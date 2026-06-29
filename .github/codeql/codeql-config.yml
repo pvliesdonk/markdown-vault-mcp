@@ -1,7 +1,15 @@
 name: "CodeQL config"
 
-query-filters:
-  - exclude:
-      id: py/clear-text-storage-of-sensitive-information
-      paths:
-        - src/markdown_vault_mcp/git.py
+# Add project-specific CodeQL tuning here, e.g. `paths-ignore:` to skip
+# generated/vendored code, or a `query-filters:` block to suppress a
+# specific alert on a specific path once you've reviewed it.  Example:
+#
+#   query-filters:
+#     - exclude:
+#         id: py/clear-text-storage-of-sensitive-information
+#         paths:
+#           - src/markdown_vault_mcp/some_module.py
+#
+# This scaffold ships no filters: suppress an alert only after you've
+# confirmed it's a false positive for a path that actually exists, so a
+# real finding is never silently hidden.
