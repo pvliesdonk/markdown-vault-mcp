@@ -88,7 +88,7 @@ async def test_server_name_override_reaches_server_info(
     async with Client(make_server()) as c:
         await wait_for_mcp_writer_drain(c)
         result = await c.call_tool("get_server_info", {})
-    assert "renamed-instance" in json.dumps(result.data)
+    assert result.data.get("server_name") == "renamed-instance"
 
 
 def test_instructions_env_override(
@@ -124,18 +124,21 @@ def test_blank_overrides_fall_back_to_defaults(
 async def test_no_file_exchange_scaffolding(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """make_server() registers no file-exchange tools.
+    """make_server() on stdio registers no file-exchange or transfer tools.
 
-    Transfer replacements (create_upload_link / create_download_link) are
-    registered only on HTTP/SSE transport, not on the in-process stdio
-    transport used here — but they must not silently become file-exchange
-    tools under any name.
+    Two guards: no tool name carries the removed file-exchange scaffolding
+    substrings (``file_exchange`` / ``upload_file``), and the real transfer
+    tools (``create_upload_link`` / ``create_download_link``) — which are
+    registered only on HTTP/SSE transport — are absent on the in-process stdio
+    transport used here.
     """
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
     async with Client(make_server()) as c:
         await wait_for_mcp_writer_drain(c)
         tools = {t.name for t in await c.list_tools()}
     assert not any("file_exchange" in t or "upload_file" in t for t in tools)
+    assert "create_upload_link" not in tools
+    assert "create_download_link" not in tools
 
 
 def test_register_apps_logs_configured_domain(
@@ -146,11 +149,15 @@ def test_register_apps_logs_configured_domain(
     """register_apps logs the configured app domain.
 
     Adapted from the template: MVM's ``register_apps`` is real (not a no-op), so
-    we construct a server with APP_DOMAIN set and assert the log record args contain the domain,
-    rather than re-calling register_apps on an already-registered server.
+    we construct a server with APP_DOMAIN set and assert the log record (from
+    the _server_apps logger, args carrying the domain) rather than re-calling
+    register_apps on an already-registered server.
     """
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault_path))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_APP_DOMAIN", "example.com")
     with caplog.at_level("INFO", logger="markdown_vault_mcp._server_apps"):
         make_server()
-    assert any(r.args == ("example.com",) for r in caplog.records)
+    assert any(
+        r.name == "markdown_vault_mcp._server_apps" and r.args == ("example.com",)
+        for r in caplog.records
+    )

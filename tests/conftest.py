@@ -27,11 +27,11 @@ def _clear_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """Strip all ``MARKDOWN_VAULT_MCP_*`` env vars before each test (isolation).
 
     Prevents an env var set by one test (or the ambient shell) from leaking
-    into another.  Tests that need configuration set it explicitly afterwards (e.g. via
-    ``_mcp_env``, which depends on this fixture, or via ``monkeypatch.setenv``).
-    ``monkeypatch`` applies env mutations sequentially within each test, so the
-    strips here are always visible before any test-local ``setenv`` — the
-    test's own overrides win.
+    into another.  Because this fixture is ``autouse=True``, pytest resolves it
+    before any fixture or test body that shares the same ``monkeypatch``
+    instance, so these deletions always precede any test-local ``setenv`` — the
+    test's own overrides win.  ``_mcp_env`` declares it as an explicit
+    dependency to make that ordering a hard guarantee.
     """
     for key in list(os.environ):
         if key.startswith("MARKDOWN_VAULT_MCP_"):
@@ -237,11 +237,13 @@ _CLEAR_VARS = (
 def _mcp_env(
     _clear_env: None, vault_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Set minimal env vars for make_server()."""
+    """Set minimal env vars for make_server().
+
+    Only sets ``SOURCE_DIR``: the depended-on ``_clear_env`` already strips every
+    ``MARKDOWN_VAULT_MCP_*`` var (including ``READ_ONLY`` and all ``_CLEAR_VARS``)
+    before this runs, so no per-var clearing is needed here.
+    """
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault_path))
-    monkeypatch.delenv("MARKDOWN_VAULT_MCP_READ_ONLY", raising=False)
-    for var in _CLEAR_VARS:
-        monkeypatch.delenv(var, raising=False)
 
 
 @pytest.fixture
@@ -250,12 +252,15 @@ async def client(_mcp_env: None) -> AsyncIterator[Client[Any]]:
 
     Adapted from the template's ``client`` fixture: MVM's ``make_server()``
     calls ``ProjectConfig.from_env()`` which requires ``SOURCE_DIR``, so this
-    depends on ``_mcp_env`` (which sets it from ``vault_path``). Drains the
-    index writer so FTS-backed resources/tools (e.g. ``stats://vault``,
-    ``search``) return populated results rather than empty cold-start state.
+    depends on ``_mcp_env`` (which sets it from ``vault_path``). The server's
+    vault is therefore populated from ``vault_path`` (a copy of the markdown
+    fixtures), not an empty directory. Drains the index writer so FTS-backed
+    resources/tools (e.g. ``stats://vault``, ``search``) return populated
+    results rather than empty cold-start state.
 
     Args:
-        _mcp_env: Fixture that sets ``SOURCE_DIR`` (injected by pytest).
+        _mcp_env: Fixture that sets ``SOURCE_DIR`` from ``vault_path``
+            (injected by pytest; transitively pulls in ``vault_path``).
 
     Yields:
         An in-process FastMCP ``Client`` with the index writer drained.
