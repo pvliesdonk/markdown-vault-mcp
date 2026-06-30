@@ -16,6 +16,9 @@ def toc_payload(
     Note mode returns a ``list[TocEntry]`` → a list of dicts; folder mode
     returns a ``SubtreeToc`` → a nested dict (``asdict`` recurses the
     ``SubtreeNote`` / ``TocEntry`` children).
+
+    The dict keys match the dataclass field names verbatim, so a field
+    rename or addition in ``types.py`` changes the serialized wire shape.
     """
     # Discriminate on type, not truthiness: an empty note TOC is a falsy [].
     if isinstance(data, SubtreeToc):

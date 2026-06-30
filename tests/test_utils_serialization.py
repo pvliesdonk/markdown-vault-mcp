@@ -45,3 +45,7 @@ def test_toc_payload_subtree_nested() -> None:
 def test_toc_payload_empty_subtree() -> None:
     data = SubtreeToc(path="empty", notes=[], truncated=False)
     assert toc_payload(data) == {"path": "empty", "notes": [], "truncated": False}
+
+
+def test_toc_payload_empty_note_list() -> None:
+    assert toc_payload([]) == []

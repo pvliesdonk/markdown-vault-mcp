@@ -183,9 +183,10 @@ class ReaderFacet:
     ) -> list[TocEntry] | SubtreeToc:
         """Return a table of contents for a note or a folder subtree.
 
-        Note paths (ending in ``.md``) return a flat ``[{"heading", "level"}]``
-        outline with the title as a synthetic H1. Folder paths return a
-        nested-per-note object ``{"path", "notes", "truncated"}``. The result
+        Note paths (ending in ``.md``) return a flat
+        :class:`~markdown_vault_mcp.types.TocEntry` list with the title as a
+        synthetic H1. Folder paths return a
+        :class:`~markdown_vault_mcp.types.SubtreeToc`. The result
         depends on the FTS index, so cold-start callers must build the index
         first (bucket 3).
 

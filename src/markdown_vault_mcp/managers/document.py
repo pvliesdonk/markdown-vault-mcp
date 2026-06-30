@@ -506,10 +506,10 @@ class DocumentManager:
         """Return a table of contents for a note or a folder subtree.
 
         When *path* ends in ``.md`` the result is a single note's flat
-        outline: a list of ``{"heading", "level"}`` with the document title
-        prepended as a synthetic H1. Otherwise *path* is treated as a folder
-        prefix and the result is a nested-per-note object aggregating the
-        subtree.
+        outline: a :class:`~markdown_vault_mcp.types.TocEntry` list with the
+        document title prepended as a synthetic H1. Otherwise *path* is treated
+        as a folder prefix and the result is a
+        :class:`~markdown_vault_mcp.types.SubtreeToc` aggregating the subtree.
 
         Args:
             path: Note path (``"a/b.md"``) or folder prefix (``"a/b"``).

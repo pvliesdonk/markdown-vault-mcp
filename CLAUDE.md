@@ -15,6 +15,7 @@ src/markdown_vault_mcp/
   utils/
     text.py            -- text normalization, position mapping, fuzzy matching
     links.py           -- link target computation and replacement
+    serialization.py   -- toc_payload: TocEntry/SubtreeToc → JSON-able dicts
   managers/
     link.py            -- LinkManager: backlinks, outlinks, broken, orphans, hubs, paths
     search.py          -- SearchManager: keyword/semantic/hybrid search, list, context, stats

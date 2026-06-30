@@ -466,6 +466,14 @@ class TestGetToc:
         h1s = [e for e in toc if e == TocEntry("Gamma", 1)]
         assert len(h1s) == 1
 
+    def test_get_toc_folder_mode_dedups_title_matching_h1(
+        self, doc_mgr: DocumentManager
+    ) -> None:
+        result = doc_mgr.get_toc("sub")
+        gamma = result.notes[0]
+        h1s = [h for h in gamma.headings if h == TocEntry("Gamma", 1)]
+        assert len(h1s) == 1
+
     def test_get_toc_rejects_max_notes_below_one(
         self, doc_mgr: DocumentManager
     ) -> None:
