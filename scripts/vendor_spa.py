@@ -43,13 +43,25 @@ VENDORED_VERSIONS: dict[str, dict[str, str]] = {
         "import_specifier": "@modelcontextprotocol/ext-apps",
     },
     # DOMAIN-VENDOR-LIBS-START — add project-specific CDN libs here; kept across copier update.
-    # Example (UMD script tag in app.src.html: <script src="https://unpkg.com/marked@.../marked.umd.js"></script>):
-    #   "marked": {
-    #       "version": "17.0.5",
-    #       "url": "https://unpkg.com/marked@17.0.5/lib/marked.umd.js",
-    #       "sha256": "<sha256-of-the-download>",
-    #       "type": "script",
-    #   },
+    # UMD libs whose <script src> tags live in app.src.html; vendored inline by name.
+    "vis-network": {
+        "version": "10.0.2",
+        "url": "https://unpkg.com/vis-network@10.0.2/standalone/umd/vis-network.min.js",
+        "sha256": "92a2603c7125a249f1b61f3c3a316b4041ef47b32f4433484e3471f140f91485",
+        "type": "script",
+    },
+    "marked": {
+        "version": "17.0.5",
+        "url": "https://unpkg.com/marked@17.0.5/lib/marked.umd.js",
+        "sha256": "0db7abc826b5ac76f6ed11951ae34074ba50438ce6ea8d52889203779e5cbbad",
+        "type": "script",
+    },
+    "dompurify": {
+        "version": "3.3.3",
+        "url": "https://unpkg.com/dompurify@3.3.3/dist/purify.min.js",
+        "sha256": "a95e028e5efd6a7413d1d18d6d9f918fdad19e2be6e962fcbaa10ab1b364725c",
+        "type": "script",
+    },
     # DOMAIN-VENDOR-LIBS-END
 }
 
