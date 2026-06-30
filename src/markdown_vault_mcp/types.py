@@ -589,6 +589,32 @@ class CommitDiff:
     diff: str
 
 
+@dataclass
+class TocEntry:
+    """A single heading in a table of contents."""
+
+    heading: str
+    level: int
+
+
+@dataclass
+class SubtreeNote:
+    """One note's TOC within a folder-subtree table of contents."""
+
+    path: str
+    title: str
+    headings: list[TocEntry]
+
+
+@dataclass
+class SubtreeToc:
+    """A folder-subtree table of contents: per-note headings under a prefix."""
+
+    path: str
+    notes: list[SubtreeNote]
+    truncated: bool
+
+
 WriteOperation = Literal["write", "edit", "delete", "rename"]
 
 WriteCallback = Callable[[Path, str, WriteOperation], None]
