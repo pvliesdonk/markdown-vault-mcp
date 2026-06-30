@@ -14,6 +14,7 @@ import shutil
 import sqlite3
 import tempfile
 from collections import defaultdict
+from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -40,7 +41,6 @@ from markdown_vault_mcp.types import (
     MoveFolderResult,
     NoteContent,
     RenameResult,
-    SubtreeNote,
     SubtreeToc,
     TocEntry,
     WriteOperation,
@@ -562,12 +562,12 @@ class DocumentManager:
         notes_raw, truncated = self._fts.get_subtree_toc(
             prefix, max_level=max_level, max_notes=max_notes
         )
-        notes: list[SubtreeNote] = []
-        for note in notes_raw:
-            headings = self._prepend_title_h1(note.title, note.headings)
-            notes.append(
-                SubtreeNote(path=note.path, title=note.title, headings=headings)
-            )
+        # replace() copies path/title and swaps in the H1-prepended headings,
+        # so a future SubtreeNote field is preserved automatically.
+        notes = [
+            replace(note, headings=self._prepend_title_h1(note.title, note.headings))
+            for note in notes_raw
+        ]
         return SubtreeToc(path=prefix, notes=notes, truncated=truncated)
 
     # ------------------------------------------------------------------
