@@ -5,6 +5,17 @@ repo_url: https://github.com/pvliesdonk/markdown-vault-mcp
 repo_name: pvliesdonk/markdown-vault-mcp
 edit_uri: edit/main/docs/
 
+# Internal dev docs live under docs/ but are NOT part of the published site.
+# Keep this set in lockstep with the Vale exclusion (ci.yml vale_flags glob +
+# the pre-commit `- id: vale` exclude); see the Documentation Conventions
+# section in CLAUDE.md. superpowers/ is also gitignored.
+exclude_docs: |
+  design.md
+  design/**
+  deployment.md
+  decisions/**
+  superpowers/**
+
 theme:
   name: material
   palette:
@@ -33,11 +44,6 @@ theme:
     - content.tabs.link
   icon:
     repo: fontawesome/brands/github
-
-exclude_docs: |
-  design.md
-  deployment.md
-  superpowers/**
 
 hooks:
   - docs/hooks.py

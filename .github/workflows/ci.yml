@@ -21,7 +21,7 @@ jobs:
           version: "latest"
 
       - name: Cache Python interpreter
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ~/.local/share/uv/python
           key: uv-python-3.12-${{ runner.os }}
@@ -32,14 +32,15 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-extras --all-groups
 
+
+      - name: Verify vendored SPA is up-to-date
+        run: uv run python scripts/vendor_spa.py --check
+
       - name: Run ruff check
         run: uv run ruff check src/ tests/
 
       - name: Run ruff format check
         run: uv run ruff format --check src/ tests/
-
-      - name: Check vendored SPA HTML is up-to-date
-        run: uv run python scripts/vendor_spa.py --check
 
   typecheck:
     name: Type Check
@@ -54,7 +55,7 @@ jobs:
           version: "latest"
 
       - name: Cache Python interpreter
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ~/.local/share/uv/python
           key: uv-python-3.12-${{ runner.os }}
@@ -100,7 +101,7 @@ jobs:
           version: "latest"
 
       - name: Cache Python interpreter
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           # `uv python install` writes to UV_PYTHON_INSTALL_DIR, which is
           # separate from the uv package cache and not covered by setup-uv's
@@ -222,7 +223,7 @@ jobs:
           version: "latest"
 
       - name: Cache Python interpreter
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ~/.local/share/uv/python
           key: uv-python-3.12-${{ runner.os }}
@@ -259,7 +260,7 @@ jobs:
           fetch-depth: 0
 
       - name: Run gitleaks
-        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e  # v3.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -286,7 +287,7 @@ jobs:
         # Pack list mirrors the Packages = line in .vale.ini; if you add or
         # remove a pack, update both. Bump the v1- prefix to evict all cached
         # packs if Vale changes pack format backward-incompatibly.
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             .vale/styles/Google
@@ -304,20 +305,32 @@ jobs:
         # The current release is named "v2.1.2" in the GitHub UI but the
         # underlying git tag is `2.1.2` (no `v` prefix) — pinning to the
         # SHA sidesteps that mismatch and provides supply-chain hygiene.
-        uses: vale-cli/vale-action@85f9f7f2c5f449ac0ae5b66662961bae3f77ca6a # v2.1.2
+        uses: vale-cli/vale-action@85f9f7f2c5f449ac0ae5b66662961bae3f77ca6a  # v2.1.2
         with:
           # Pin Vale CLI version explicitly. Bump in lockstep with the
           # pre-commit hook `rev:` in .pre-commit-config.yaml — template-ci
           # asserts the two stay synchronized.
           version: "3.14.2"
-          files: docs
-          # Working specs follow internal conventions, not user-facing prose
-          # style — exclude from linting. NO inner single quotes around the
-          # glob value: vale-action splits `vale_flags` on whitespace and
-          # passes argv elements directly (no shell), so literal quotes here
-          # would be passed through to Vale, the glob would match no files,
-          # and CI would silently exit 0. Verified empirically.
-          vale_flags: "--glob=!docs/superpowers/**"
+          # Lint the published docs site plus the user-facing README. Both are
+          # operator-facing prose and must stay Vale-clean. Internal dev docs
+          # are excluded via the glob below. Multiple paths MUST be a JSON
+          # array: vale-action only splits the `files` string when `separator`
+          # is set (it defaults to empty), so a space- or comma-joined string
+          # silently falls back to linting the whole repo (".").
+          files: '["docs", "README.md"]'
+          # Dev-reference docs (working specs, design notes, ADRs) follow
+          # internal conventions, not user-facing prose style — exclude from
+          # linting. This mirrors the mkdocs `exclude_docs:` block, which keeps
+          # design/** and decisions/** out of the published site. Use ONE
+          # `--glob` with brace alternation: Vale honors only a single `--glob`
+          # pattern (a repeated flag keeps just the last), so the subtrees must
+          # be combined as `{a,b,c}`. NO inner single quotes around the glob
+          # value: vale-action splits `vale_flags` on whitespace and passes
+          # argv elements directly (no shell), so literal quotes here would be
+          # passed through to Vale, the glob would match no files, and CI would
+          # silently exit 0. Verified empirically. Keep the subtree set in sync
+          # with the pre-commit `- id: vale` exclude (template-ci asserts it).
+          vale_flags: "--glob=!docs/{superpowers,design,decisions}/**"
           # Failure gating is controlled by MinAlertLevel = error in
           # .vale.ini (governs both what Vale prints AND its exit code)
           # combined with fail_on_error below — only error-severity

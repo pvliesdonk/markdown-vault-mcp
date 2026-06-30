@@ -8,7 +8,7 @@ You are an agent helping an operator review a `copier-update` PR for the
 
 Some files in the template are listed under `_exclude` in `copier.yml` — they
 exist as `.jinja` source in the template repo for maintainer reference but are
-NEVER rendered to downstream. Examples: `tests/test_tools.py`, `docs/design.md`.
+NEVER rendered to downstream. Examples: `tests/test_tools.py`, `docs/design/index.md`.
 
 Downstream often has its own version of these files (created at scaffold time,
 or hand-written later). Because the template doesn't render these to

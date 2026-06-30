@@ -126,18 +126,36 @@ ignore = ["E501"]
 # FastMCP dependency injection pattern — B008 is a false positive here.
 # Context/FastMCP/Vault imports must stay runtime (not TYPE_CHECKING) for
 # DI resolution — TC001/TC002/TC003.
+
+# Template-managed: the structural diff-gate adds `S` (security) on the diff
+# pass, so the shipped structural-gate test would self-block: its asserts trip
+# S101, and its bare-name `git` call trips S607 (a partial executable path —
+# the `sys.executable -m ...` calls are NOT flagged). S603 (subprocess use) is
+# included defensively: inert in current ruff but emitted by some versions.
+# Ignoring all three in tests keeps the gate from self-blocking on its own test
+# module; all three are safe in test code. No-op for the base whole-repo select
+# (which excludes S). If your project needs its own tests/** ignores, EXTEND
+# this list in place — do not add a second "tests/**" key (duplicate TOML key).
+"tests/**" = ["S101", "S603", "S607"]
+
 # PROJECT-RUFF-IGNORES-START — replace, extend, or override the entries below
 # for your project's real source/test paths (split _server_apps.py into
 # per-domain modules, rename tests, add per-file overrides as needed); kept
 # across copier update.
-"src/markdown_vault_mcp/cli.py" = ["B008"]
-"src/markdown_vault_mcp/server.py" = ["B008", "TC002"]
-"src/markdown_vault_mcp/_server_deps.py" = ["B008", "TC002", "TC003"]
-"src/markdown_vault_mcp/_server_tools/*.py" = ["B008", "TC001", "TC002"]
-"src/markdown_vault_mcp/_server_resources.py" = ["B008", "TC001", "TC002"]
-"src/markdown_vault_mcp/_server_prompts.py" = ["B008", "TC002"]
-"src/markdown_vault_mcp/_server_apps.py" = ["B008", "TC001", "TC002"]
-"src/markdown_vault_mcp/_server_transfer.py" = ["B008", "TC001", "TC002"]
+# PLR0913 (too-many-args) is ignored on the DI/wiring modules below: FastMCP
+# inflates their arg counts with `Context` + `Depends()` injections, so the
+# structural diff-gate would flag every new tool/resource/prompt and make
+# `# noqa: PLR0913` routine. It only bites when enable_structural_gate is on
+# (PLR0913 isn't in the base select); domain modules keep the check, and
+# C901/PLR0912/PLR0915 still catch a genuinely complex tool here.
+"src/markdown_vault_mcp/cli.py" = ["B008", "PLR0913"]
+"src/markdown_vault_mcp/server.py" = ["B008", "TC002", "PLR0913"]
+"src/markdown_vault_mcp/_server_deps.py" = ["B008", "TC002", "TC003", "PLR0913"]
+"src/markdown_vault_mcp/_server_tools/*.py" = ["B008", "TC001", "TC002", "PLR0913"]
+"src/markdown_vault_mcp/_server_resources.py" = ["B008", "TC001", "TC002", "PLR0913"]
+"src/markdown_vault_mcp/_server_prompts.py" = ["B008", "TC002", "PLR0913"]
+"src/markdown_vault_mcp/_server_apps.py" = ["B008", "TC001", "TC002", "PLR0913"]
+"src/markdown_vault_mcp/_server_transfer.py" = ["B008", "TC001", "TC002", "PLR0913"]
 # IndexingConfig/ContentConfig need pathlib.Path and collections.abc.Sequence at
 # runtime so typing.get_type_hints() works on the public frozen dataclasses; keep
 # those imports top-level, not behind TYPE_CHECKING.
@@ -155,6 +173,21 @@ known-first-party = ["markdown_vault_mcp"]
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
+
+
+# Structural-gate thresholds. These rules are NOT in the whole-repo `select`
+# above — they apply only on the diff via the structural gate's
+# `--extend-select` (see .pre-commit-config.yaml / ci.yml). Values are ruff
+# defaults, surfaced here as editable policy constants.
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.pylint]
+max-args = 5
+max-branches = 12
+max-returns = 6
+max-statements = 50
+
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

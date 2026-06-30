@@ -72,9 +72,11 @@ Every PR must pass **all** of the following locally before push. These are mecha
 1. **Tests pass** — `uv run pytest -x -q` all tests pass
 2. **Lint passes** — run in this exact order: `uv run ruff check --fix .` then `uv run ruff format .` then verify with `uv run ruff format --check .`. Always run format *after* check --fix because check --fix can leave files needing reformatting.
 3. **Type-check passes** — `uv run mypy src/ tests/` reports no errors
-4. **Patch coverage ≥ 80%** — Run `uv run pytest --cov=<changed_module> --cov-report=term-missing` and verify new code is exercised. Add tests for every uncovered branch before pushing.
+4. **Patch coverage ≥ 80%** — Codecov measures only lines added/changed in the PR diff. Run `uv run pytest --cov=<changed_module> --cov-report=term-missing` and verify new code is exercised. Add tests for every uncovered branch before pushing.
+
 5. **Docs updated** — `README.md` and `docs/**` reflect any user-facing changes in the same commit
-6. **Manifest version lockstep** — `server.json`, `.claude-plugin/plugin/.claude-plugin/plugin.json`, and `.claude-plugin/plugin/.mcp.json` must all carry the same version. The release workflow bumps them atomically, but if you manually touch any of them, update all three.
+6. **Manifest version lockstep** — `server.json`, `.claude-plugin/plugin/.claude-plugin/plugin.json`, and `.claude-plugin/plugin/.mcp.json` must all carry the same version. The release workflow bumps them atomically via PSR; manual touches require updating all three.
+
 
 ## Pre-commit Hooks
 
@@ -85,6 +87,7 @@ This project ships a `.pre-commit-config.yaml` that runs ruff (check + format), 
 - **Never bypass with `--no-verify`.** A failing hook means the same check will fail in CI; fix the underlying issue rather than silencing it.
 
 The config is in `_skip_if_exists`, so domain-specific additions (shellcheck, yamllint, project-specific linters, additional file checks) on top of the shipped defaults survive `copier update`.
+
 
 ## PR Discipline
 
@@ -125,6 +128,28 @@ Every issue, PR, and code change must consider documentation impact. Before clos
 - **Inline docstrings** — new or changed public API methods need accurate docstrings.
 
 **Rule: code without matching docs is incomplete.** When writing issues, include a "Documentation" section listing which docs need updating. When reviewing PRs, verify documentation is included. A PR that adds a tool, env var, resource, or user-facing feature without updating the corresponding docs/ page and README section should not be merged.
+
+## Documentation Conventions (user-facing vs internal)
+
+`docs/` is the **published, user-facing documentation site** (mkdocs + mike).
+Everything under `docs/`, plus **`README.md`**, is operator-facing prose and is
+**Vale-linted** in CI and pre-commit — keep it clean.
+
+**Internal / developer docs are not user-facing and are not linted.** They live
+under a fixed set of subtrees, excluded from both the published site and Vale:
+
+- `docs/design/` — design specs and architecture notes
+- `docs/decisions/` — architecture decision records (ADRs)
+- `docs/superpowers/` — agent working specs and plans (also gitignored)
+
+This boundary is declared in three places that **must stay in lockstep** (the
+`template-ci` "vale exclusion-scope lockstep" job asserts the CI glob and the
+pre-commit exclude match): the mkdocs `exclude_docs:` block, the `vale` CI
+step's `vale_flags` glob (`--glob=!docs/{superpowers,design,decisions}/**` — one
+glob with brace alternation, because Vale honors only a single `--glob`), and
+the `- id: vale` pre-commit hook's `exclude:` regex
+(`^docs/(superpowers|design|decisions)/`). The set is fixed by convention — do
+not add per-project exclusions; put internal docs in one of the subtrees above.
 
 ## Logging Standard
 
@@ -180,6 +205,16 @@ Domain configuration composes `fastmcp_pvl_core.ServerConfig` inside your domain
 
 Env var prefix is `MARKDOWN_VAULT_MCP_` — all env reads go through `fastmcp_pvl_core.env(_ENV_PREFIX, "SUFFIX", default)` so naming stays consistent.
 
+### Config wizard
+
+`docs/javascripts/config-wizard/wizard-spec.json` drives the guided-setup page. It is **domain-owned and write-once** (`_skip_if_exists`): the runtime (`wizard.js`, `generators.js`, `wizard-spec-schema.json`, the generic tests) is template-owned and re-rendered, but the spec itself is never re-rendered, so it does **not** auto-update when you add config or when the template grows new questions. Reconcile it by hand.
+
+Two rules keep the spec honest:
+
+- **Cover the `ServerConfig` surface.** The seed covers the full `ServerConfig` surface plus logging; the drift test enforces completeness, so no explicit field list needs hand-maintaining here. When you add a domain setting that an operator would plausibly configure, add a question for it. When you adopt a new upstream setting, surface it too.
+- **Coverage is CI-enforced:** `tests/test_config_wizard_drift.py` fails if the wizard offers a var no read site consumes (orphan) or omits a setting the server reads: both `ServerConfig` (via `server_config_env_suffixes()`) and your `ProjectConfig.from_env`. Offer every setting; hide niche ones with `advancedGroup`, never by omission. For the coverage check, the only escape is `_COVERED_BY_INFERENCE`, for settings with no dedicated control by design (for example, `AUTH_MODE`, inferred from which auth vars are set). For the orphan check, `FASTMCP_*` vars are exempt: their prefix never matches `MARKDOWN_VAULT_MCP_`, so they sit outside the coverage check by construction, and they are read by FastMCP itself rather than by project code.
+- **Only offer vars the server actually consumes.** Every `var` must resolve to a real read site (`ServerConfig.from_env`, your `ProjectConfig.from_env`, the CLI, or a native `FASTMCP_*` var) — *advertised but unread* env vars (e.g. a hint that mentions `MARKDOWN_VAULT_MCP_SERVER_NAME` while the scaffold hardcodes the name) must not appear. List secret-bearing vars in `secretKeys` so the wizard masks them and keeps them out of the shareable link. A question may legitimately have **no `var`** when it is a wizard-internal routing key — the seed's `auth` select drives `showIf` but maps to no single env var (auth mode is inferred by `ServerConfig` from which vars are set), so it is not an orphan. Gate `showIf`/`guards` on the questions that are actually visible, and make every `showIf` self-contained: because the runtime checks raw answers with no cascade, a question gated on `auth` must *also* gate on `deployment=server` (the gate on `auth` itself), or it leaks — and emits its var — when `auth` is hidden but its stale answer lingers.
+
 ### Tool icons
 
 Drop SVG / PNG / ICO / JPEG files into `src/markdown_vault_mcp/static/icons/` and bulk-attach them to registered tools via `fastmcp_pvl_core.register_tool_icons(mcp, {"tool_name": "filename.svg"}, static_dir=...)` at the end of `register_tools()` — or attach at decoration time with `@mcp.tool(icons=[make_icon(STATIC / "x.svg")])` (where `STATIC = Path(__file__).parent / "static" / "icons"` is a shorthand you define at module level). The scaffold ships an empty `static/icons/` directory; commented-out wiring lives in `tools.py`.
@@ -192,6 +227,17 @@ These sentinel blocks in `Dockerfile` are preserved across `copier update`. Add 
 - `# DOCKERFILE-UV-EXTRAS-START` / `-END` — `--extra <name>` flags added to both `uv sync` invocations (deps cache layer + project install — adding only to one breaks the cache layer)
 - `# DOCKERFILE-STATE-DIRS-START` / `-END` — state subdirectories created under `/data` (chowned to the runtime user)
 - `# DOCKERFILE-VOLUMES-START` / `-END` — `VOLUME` declarations on the final image
+
+## Tool Registration Checklist
+
+Every MCP tool you register must carry the full set of metadata below — not just the behaviour. A tool that works but lacks a title, hints, or docs is incomplete. When adding or changing a tool, verify each item:
+
+- **Title** — a human-readable `annotations.title` (e.g. `"Search Vault"`). Title-aware clients (notably VS Code, which honours only `title` and `readOnlyHint` among annotations) render this as the tool's label; without it they fall back to the raw machine name. Set it inline in the tool's `annotations={...}` dict.
+- **Behavioural hints** — `readOnlyHint`, and where they apply `destructiveHint` / `idempotentHint`, in the same `annotations` dict. These describe side effects accurately (a destructive tool must set `destructiveHint=True`).
+- **Icon** — an entry wired via `register_tool_icons(...)` or `@mcp.tool(icons=[...])` (see [Tool icons](#tool-icons)).
+- **Docstring** — a Google-style docstring; FastMCP surfaces it as the tool description and per-parameter docs.
+- **Docs entry** — a row in your published tools reference (e.g. `docs/tools/index.md`) so the tool is documented for users (per [Documentation Discipline](#documentation-discipline)).
+- **Enforcement test** — keep a test that enumerates the registered tools and asserts each carries the metadata above (at minimum a non-empty `annotations.title`). Enumerate the *full* registry, not just the client-facing listing, so app-only / hidden tools cannot slip past. Such a test turns this checklist into a CI gate: a future tool added without a title fails loudly rather than silently shipping its machine name.
 
 ## Server Info Tool (`get_server_info`)
 

@@ -84,7 +84,7 @@ docker pull ghcr.io/pvliesdonk/markdown-vault-mcp:latest
 <!-- DOMAIN-START -->
 The Docker image uses `[all]` (MCP + FastEmbed + API embeddings). By default, semantic search works locally with FastEmbed and can switch to Ollama/OpenAI when configured. A `compose.yml` ships at the repo root as a starting point — copy `.env.example` to `.env`, edit, and `docker compose up -d`.
 
-To attach a remote Python debugger (development only — the protocol is unauthenticated), see [Remote debugging](docs/deployment/docker.md#remote-debugging).
+To attach a remote Python debugger (development only; the protocol is unauthenticated), see [Remote debugging](docs/deployment/docker.md#remote-debugging).
 
 ### Linux packages (.deb / .rpm)
 
@@ -167,7 +167,6 @@ For reverse proxy (Traefik) and deployment setup, see [`docs/deployment.md`](doc
 ### Server info
 
 The server registers a built-in `get_server_info` tool (via `fastmcp_pvl_core.register_server_info_tool`) so operators can confirm the deployed version with a single MCP call. The response carries `server_name`, `server_version`, and `core_version`.
-
 
 ## Configuration
 
