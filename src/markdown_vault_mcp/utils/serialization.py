@@ -17,6 +17,7 @@ def toc_payload(
     returns a ``SubtreeToc`` → a nested dict (``asdict`` recurses the
     ``SubtreeNote`` / ``TocEntry`` children).
     """
+    # Discriminate on type, not truthiness: an empty note TOC is a falsy [].
     if isinstance(data, SubtreeToc):
         return asdict(data)
     return [asdict(entry) for entry in data]
