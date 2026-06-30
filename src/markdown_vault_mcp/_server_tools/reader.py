@@ -7,6 +7,7 @@ from typing import Any, Literal
 from fastmcp import FastMCP
 from fastmcp.dependencies import Depends
 
+from markdown_vault_mcp.utils.serialization import toc_payload
 from markdown_vault_mcp.vault import Vault
 
 from .._icons import _TOOL_ICONS
@@ -615,9 +616,10 @@ def register(mcp: FastMCP) -> None:
             max_level=max_level,
             max_notes=max_notes,
         )
+        payload = toc_payload(data)
         return _staleness_result(
             vault,
-            data,
+            payload,
             drained_on_request=drained,
             gen_before=gen_before,
             force_result_wrap=True,

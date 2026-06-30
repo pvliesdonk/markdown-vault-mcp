@@ -19,6 +19,7 @@ from fastmcp.resources import ResourceContent, ResourceResult
 from fastmcp.server.context import Context
 
 from markdown_vault_mcp.config import ProjectConfig
+from markdown_vault_mcp.utils.serialization import toc_payload
 from markdown_vault_mcp.vault import Vault
 
 from ._icons import _TOOL_ICONS
@@ -199,7 +200,7 @@ def register_resources(mcp: FastMCP) -> None:
         """
         gen_before = vault.index.write_generation()
         toc = await asyncio.to_thread(vault.reader.get_toc, path)
-        return _stale_resource(vault, json.dumps(toc), gen_before)
+        return _stale_resource(vault, json.dumps(toc_payload(toc)), gen_before)
 
     @mcp.resource(
         "similar://vault/{path}",

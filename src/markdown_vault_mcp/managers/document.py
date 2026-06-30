@@ -40,6 +40,9 @@ from markdown_vault_mcp.types import (
     MoveFolderResult,
     NoteContent,
     RenameResult,
+    SubtreeNote,
+    SubtreeToc,
+    TocEntry,
     WriteOperation,
     WriteResult,
 )
@@ -499,7 +502,7 @@ class DocumentManager:
         *,
         max_level: int | None = None,
         max_notes: int = 200,
-    ) -> list[dict[str, Any]] | dict[str, Any]:
+    ) -> list[TocEntry] | SubtreeToc:
         """Return a table of contents for a note or a folder subtree.
 
         When *path* ends in ``.md`` the result is a single note's flat
@@ -517,9 +520,7 @@ class DocumentManager:
                 must be ``>= 1``.
 
         Returns:
-            Note mode: ``list[{"heading", "level"}]``.
-            Folder mode: ``{"path", "notes": [...], "truncated": bool}`` where
-            each note is ``{"path", "title", "headings": [...]}``.
+            Note mode: ``list[TocEntry]``. Folder mode: :class:`~markdown_vault_mcp.types.SubtreeToc`.
 
         Raises:
             ValueError: If ``max_notes < 1`` or ``max_level < 1``; note mode, if
@@ -536,17 +537,13 @@ class DocumentManager:
         return self._subtree_toc(path, max_level=max_level, max_notes=max_notes)
 
     @staticmethod
-    def _prepend_title_h1(
-        title: str, headings: list[dict[str, Any]]
-    ) -> list[dict[str, Any]]:
+    def _prepend_title_h1(title: str, headings: list[TocEntry]) -> list[TocEntry]:
         """Prepend the document title as a synthetic H1, dropping any real H1 whose text matches the title."""
-        toc: list[dict[str, Any]] = [{"heading": title, "level": 1}]
-        toc.extend(
-            h for h in headings if not (h["level"] == 1 and h["heading"] == title)
-        )
+        toc: list[TocEntry] = [TocEntry(heading=title, level=1)]
+        toc.extend(h for h in headings if not (h.level == 1 and h.heading == title))
         return toc
 
-    def _note_toc(self, path: str, *, max_level: int | None) -> list[dict[str, Any]]:
+    def _note_toc(self, path: str, *, max_level: int | None) -> list[TocEntry]:
         """Return a single note's flat outline, title prepended as a synthetic H1."""
         self._validate_path(path)
         row = self._fts.get_note(path)
@@ -558,19 +555,20 @@ class DocumentManager:
 
     def _subtree_toc(
         self, path: str, *, max_level: int | None, max_notes: int
-    ) -> dict[str, Any]:
+    ) -> SubtreeToc:
         """Return the nested-per-note TOC for every note under a folder prefix."""
         prefix = path.rstrip("/")
         self._validate_dir_path(prefix)
         notes_raw, truncated = self._fts.get_subtree_toc(
             prefix, max_level=max_level, max_notes=max_notes
         )
-        notes: list[dict[str, Any]] = []
+        notes: list[SubtreeNote] = []
         for note in notes_raw:
-            title = note["title"]
-            headings = self._prepend_title_h1(title, note["headings"])
-            notes.append({"path": note["path"], "title": title, "headings": headings})
-        return {"path": prefix, "notes": notes, "truncated": truncated}
+            headings = self._prepend_title_h1(note.title, note.headings)
+            notes.append(
+                SubtreeNote(path=note.path, title=note.title, headings=headings)
+            )
+        return SubtreeToc(path=prefix, notes=notes, truncated=truncated)
 
     # ------------------------------------------------------------------
     # Write operations

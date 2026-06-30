@@ -8,6 +8,7 @@ import pytest
 
 from markdown_vault_mcp.fts_index import FTSIndex
 from markdown_vault_mcp.scanner import HeadingChunker, scan_directory
+from markdown_vault_mcp.types import TocEntry
 
 
 def _build_fts(root: Path) -> FTSIndex:
@@ -59,19 +60,19 @@ def test_subtree_toc_is_recursive_and_path_ordered(vault: Path) -> None:
     fts = _build_fts(vault)
     notes, truncated = fts.get_subtree_toc("Projects")
     assert truncated is False
-    assert [n["path"] for n in notes] == [
+    assert [n.path for n in notes] == [
         "Projects/alpha.md",
         "Projects/beta.md",
         "Projects/sub/gamma.md",
     ]
     alpha = notes[0]
-    assert alpha["title"] == "Alpha"
+    assert alpha.title == "Alpha"
     # Raw section headings only — no synthetic H1 prepended at this layer.
-    assert {"heading": "Goals", "level": 2} in alpha["headings"]
-    assert {"heading": "Detail", "level": 3} in alpha["headings"]
-    assert alpha["headings"].index({"heading": "Goals", "level": 2}) < alpha[
-        "headings"
-    ].index({"heading": "Detail", "level": 3})
+    assert TocEntry("Goals", 2) in alpha.headings
+    assert TocEntry("Detail", 3) in alpha.headings
+    assert alpha.headings.index(TocEntry("Goals", 2)) < alpha.headings.index(
+        TocEntry("Detail", 3)
+    )
 
 
 def test_subtree_prefix_is_boundary_matched(vault: Path) -> None:
@@ -80,14 +81,14 @@ def test_subtree_prefix_is_boundary_matched(vault: Path) -> None:
     assert notes == []  # neither "Projects/..." nor "Projectile.md" match
     # Also verify "Projects/" prefix does not bleed into "Projectile/" folder.
     notes_all, _ = fts.get_subtree_toc("Projects")
-    assert all(not n["path"].startswith("Projectile/") for n in notes_all)
+    assert all(not n.path.startswith("Projectile/") for n in notes_all)
 
 
 def test_subtree_max_level_filters_headings(vault: Path) -> None:
     fts = _build_fts(vault)
     notes, _ = fts.get_subtree_toc("Projects", max_level=2)
-    alpha = next(n for n in notes if n["path"] == "Projects/alpha.md")
-    levels = {h["level"] for h in alpha["headings"]}
+    alpha = next(n for n in notes if n.path == "Projects/alpha.md")
+    levels = {h.level for h in alpha.headings}
     assert levels <= {1, 2}  # H3 "Detail" dropped
 
 
@@ -96,7 +97,7 @@ def test_subtree_max_notes_truncates(vault: Path) -> None:
     notes, truncated = fts.get_subtree_toc("Projects", max_notes=2)
     assert truncated is True
     assert len(notes) == 2
-    assert [n["path"] for n in notes] == ["Projects/alpha.md", "Projects/beta.md"]
+    assert [n.path for n in notes] == ["Projects/alpha.md", "Projects/beta.md"]
 
 
 def test_subtree_max_notes_at_cap_not_truncated(vault: Path) -> None:
@@ -109,8 +110,8 @@ def test_subtree_max_notes_at_cap_not_truncated(vault: Path) -> None:
 def test_get_toc_max_level_filter(vault: Path) -> None:
     fts = _build_fts(vault)
     toc = fts.get_toc("Projects/alpha.md", max_level=2)
-    assert all(h["level"] <= 2 for h in toc)
-    assert {"heading": "Detail", "level": 3} not in toc
+    assert all(h.level <= 2 for h in toc)
+    assert TocEntry("Detail", 3) not in toc
 
 
 def test_subtree_escapes_like_wildcards(tmp_path: Path) -> None:
@@ -124,5 +125,5 @@ def test_subtree_escapes_like_wildcards(tmp_path: Path) -> None:
     )
     fts = _build_fts(tmp_path)
     notes, _ = fts.get_subtree_toc("notes_2026")
-    paths = [n["path"] for n in notes]
+    paths = [n.path for n in notes]
     assert paths == ["notes_2026/a.md"]

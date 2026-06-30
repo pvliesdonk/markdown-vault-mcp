@@ -15,7 +15,7 @@ from collections import deque
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple, TypeVar
 
-from markdown_vault_mcp.types import FTSResult, ParsedNote
+from markdown_vault_mcp.types import FTSResult, ParsedNote, SubtreeNote, TocEntry
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
@@ -1379,9 +1379,7 @@ class FTSIndex:
         return [dict(row) for row in cur.fetchall()]
 
     @_retry_on_locked
-    def get_toc(
-        self, path: str, *, max_level: int | None = None
-    ) -> list[dict[str, str | int]]:
+    def get_toc(self, path: str, *, max_level: int | None = None) -> list[TocEntry]:
         """Return headings for a document, ordered by position.
 
         Queries the sections table for distinct non-NULL headings, ordered by
@@ -1392,9 +1390,8 @@ class FTSIndex:
             max_level: If set, drop headings with ``level`` greater than this.
 
         Returns:
-            List of ``{"heading": str, "level": int}`` dicts ordered by
-            first appearance.  Empty list if the document is not found or
-            has no headings.
+            List of :class:`~markdown_vault_mcp.types.TocEntry` ordered by first appearance.
+            Empty list if the document is not found or has no headings.
         """
         level_clause = "" if max_level is None else "AND heading_level <= ?"
         params: list[object] = [path]
@@ -1413,7 +1410,7 @@ class FTSIndex:
             params,
         )
         return [
-            {"heading": row["heading"], "level": row["heading_level"]}
+            TocEntry(heading=row["heading"], level=row["heading_level"])
             for row in cur.fetchall()
         ]
 
@@ -1424,7 +1421,7 @@ class FTSIndex:
         *,
         max_level: int | None = None,
         max_notes: int = 200,
-    ) -> tuple[list[dict[str, Any]], bool]:
+    ) -> tuple[list[SubtreeNote], bool]:
         """Return per-note headings for every document under a folder prefix.
 
         Matches documents whose ``folder`` equals *prefix* or is a descendant
@@ -1437,11 +1434,11 @@ class FTSIndex:
 
         Returns:
             ``(notes, truncated)`` where *notes* is a list of
-            ``{"path", "title", "headings": [{"heading", "level"}]}`` ordered
-            by path, *headings* are raw section headings (no synthetic H1 —
-            the manager layer prepends the synthetic H1 before exposing them
-            to consumers), and *truncated* is True when more than ``max_notes``
-            notes matched.
+            :class:`~markdown_vault_mcp.types.SubtreeNote` ordered by path,
+            each with raw :class:`~markdown_vault_mcp.types.TocEntry` headings
+            (no synthetic H1 — the manager layer prepends the synthetic H1
+            before exposing them to consumers), and *truncated* is True when
+            more than ``max_notes`` notes matched.
         """
         escaped = _escape_like(prefix)
         doc_rows = (
@@ -1486,18 +1483,18 @@ class FTSIndex:
             .fetchall()
         )
 
-        by_doc: dict[int, list[dict[str, Any]]] = {}
+        by_doc: dict[int, list[TocEntry]] = {}
         for row in section_rows:
             by_doc.setdefault(row["document_id"], []).append(
-                {"heading": row["heading"], "level": row["heading_level"]}
+                TocEntry(heading=row["heading"], level=row["heading_level"])
             )
 
         notes = [
-            {
-                "path": row["path"],
-                "title": row["title"],
-                "headings": by_doc.get(row["id"], []),
-            }
+            SubtreeNote(
+                path=row["path"],
+                title=row["title"],
+                headings=by_doc.get(row["id"], []),
+            )
             for row in doc_rows
         ]
         return notes, truncated

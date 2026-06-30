@@ -8,7 +8,7 @@ import pytest
 
 from markdown_vault_mcp.exceptions import IndexUnavailableError
 from markdown_vault_mcp.facets.reader import ReaderFacet
-from markdown_vault_mcp.types import NoteContext, VaultStats
+from markdown_vault_mcp.types import NoteContext, SubtreeToc, VaultStats
 from markdown_vault_mcp.vault import Vault
 
 if TYPE_CHECKING:
@@ -52,8 +52,8 @@ class TestReaderFacetBehaviour:
 
     def test_get_toc_folder_returns_dict(self, built: Vault) -> None:
         result = built.reader.get_toc("subfolder")
-        assert isinstance(result, dict)
-        assert "notes" in result and "truncated" in result
+        assert isinstance(result, SubtreeToc)
+        assert result.notes is not None and result.truncated is False
 
     def test_get_similar_empty_without_embeddings(self, built: Vault) -> None:
         # No embedding provider configured -> semantic similarity degrades to [].

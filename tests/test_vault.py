@@ -3516,12 +3516,12 @@ class TestVaultGetToc:
 
         assert isinstance(toc, list)
         assert len(toc) >= 2
-        headings = [entry["heading"] for entry in toc]
+        headings = [entry.heading for entry in toc]
         assert "Section Alpha" in headings
-        # All entries must have heading and level keys.
+        # All entries must have heading and level attributes.
         for entry in toc:
-            assert "heading" in entry
-            assert "level" in entry
+            assert hasattr(entry, "heading")
+            assert hasattr(entry, "level")
 
     def test_get_toc_first_entry_is_synthetic_h1(
         self, vault_with_long_doc: Vault
@@ -3529,18 +3529,18 @@ class TestVaultGetToc:
         """The first entry in get_toc() is always the document title at level 1."""
         toc = vault_with_long_doc.reader.get_toc("long_doc.md")
 
-        assert toc[0]["level"] == 1
-        assert toc[0]["heading"] == "Long Document Title"
+        assert toc[0].level == 1
+        assert toc[0].heading == "Long Document Title"
 
     def test_get_toc_no_duplicate_h1(self, vault_with_long_doc: Vault) -> None:
         """Synthetic H1 title must not duplicate a real H1 heading."""
         toc = vault_with_long_doc.reader.get_toc("long_doc.md")
 
-        h1_entries = [e for e in toc if e["level"] == 1]
+        h1_entries = [e for e in toc if e.level == 1]
         assert len(h1_entries) == 1, (
             f"Expected 1 H1, got {len(h1_entries)}: {h1_entries}"
         )
-        assert h1_entries[0]["heading"] == "Long Document Title"
+        assert h1_entries[0].heading == "Long Document Title"
 
     def test_get_toc_raises_for_nonexistent_document(
         self, vault_with_long_doc: Vault

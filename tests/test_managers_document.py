@@ -22,6 +22,7 @@ from markdown_vault_mcp.fts_index import FTSIndex
 from markdown_vault_mcp.managers import document as doc_mod
 from markdown_vault_mcp.managers.document import DocumentManager
 from markdown_vault_mcp.scanner import HeadingChunker, scan_directory
+from markdown_vault_mcp.types import SubtreeToc, TocEntry
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -418,8 +419,8 @@ class TestGetToc:
     def test_get_toc(self, doc_mgr: DocumentManager) -> None:
         toc = doc_mgr.get_toc("sub/gamma.md")
         assert len(toc) >= 1
-        assert toc[0]["heading"] == "Gamma"
-        assert toc[0]["level"] == 1
+        assert toc[0].heading == "Gamma"
+        assert toc[0].level == 1
 
     def test_get_toc_not_found(self, doc_mgr: DocumentManager) -> None:
         with pytest.raises(ValueError, match="Document not found"):
@@ -428,41 +429,41 @@ class TestGetToc:
     def test_get_toc_max_level_note_mode(self, doc_mgr: DocumentManager) -> None:
         toc = doc_mgr.get_toc("sub/gamma.md", max_level=1)
         # Only the synthetic H1 title survives an H1-only cap.
-        assert toc == [{"heading": "Gamma", "level": 1}]
+        assert toc == [TocEntry("Gamma", 1)]
 
     def test_get_toc_folder_mode_nested(self, doc_mgr: DocumentManager) -> None:
         result = doc_mgr.get_toc("sub")
-        assert isinstance(result, dict)
-        assert result["path"] == "sub"
-        assert result["truncated"] is False
-        paths = [n["path"] for n in result["notes"]]
+        assert isinstance(result, SubtreeToc)
+        assert result.path == "sub"
+        assert result.truncated is False
+        paths = [n.path for n in result.notes]
         assert paths == ["sub/gamma.md"]
-        gamma = result["notes"][0]
-        assert gamma["title"] == "Gamma"
+        gamma = result.notes[0]
+        assert gamma.title == "Gamma"
         # Synthetic H1 prepended, body headings follow.
-        assert gamma["headings"][0] == {"heading": "Gamma", "level": 1}
-        assert {"heading": "Section One", "level": 2} in gamma["headings"]
+        assert gamma.headings[0] == TocEntry("Gamma", 1)
+        assert TocEntry("Section One", 2) in gamma.headings
 
     def test_get_toc_folder_trailing_slash(self, doc_mgr: DocumentManager) -> None:
         result = doc_mgr.get_toc("sub/")
-        assert isinstance(result, dict)
-        assert result["path"] == "sub"
-        assert [n["path"] for n in result["notes"]] == ["sub/gamma.md"]
+        assert isinstance(result, SubtreeToc)
+        assert result.path == "sub"
+        assert [n.path for n in result.notes] == ["sub/gamma.md"]
 
     def test_get_toc_empty_folder_returns_empty(self, doc_mgr: DocumentManager) -> None:
         result = doc_mgr.get_toc("does-not-exist")
-        assert isinstance(result, dict)
-        assert result == {"path": "does-not-exist", "notes": [], "truncated": False}
+        assert isinstance(result, SubtreeToc)
+        assert result == SubtreeToc(path="does-not-exist", notes=[], truncated=False)
 
     def test_get_toc_folder_max_level(self, doc_mgr: DocumentManager) -> None:
         result = doc_mgr.get_toc("sub", max_level=1)
-        assert isinstance(result, dict)
-        gamma = result["notes"][0]
-        assert gamma["headings"] == [{"heading": "Gamma", "level": 1}]
+        assert isinstance(result, SubtreeToc)
+        gamma = result.notes[0]
+        assert gamma.headings == [TocEntry("Gamma", 1)]
 
     def test_get_toc_dedups_title_matching_h1(self, doc_mgr: DocumentManager) -> None:
         toc = doc_mgr.get_toc("sub/gamma.md")
-        h1s = [e for e in toc if e == {"heading": "Gamma", "level": 1}]
+        h1s = [e for e in toc if e == TocEntry("Gamma", 1)]
         assert len(h1s) == 1
 
     def test_get_toc_rejects_max_notes_below_one(
