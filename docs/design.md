@@ -1885,6 +1885,8 @@ queries the existing ``sections`` table (no file I/O).
 - **``max_level``** (tool only, default ``None``) filters out headings deeper than the given level. The synthetic H1 title always survives regardless of ``max_level``.
 - The resource (``toc://vault/{path}``) exposes no ``max_level`` or ``max_notes`` controls; use the ``get_toc`` tool when those controls are needed.
 
+The library layer returns typed structs (``TocEntry``, ``SubtreeNote``, ``SubtreeToc``, defined in ``types.py``); the MCP boundary serializes them to the JSON shapes above via ``utils/serialization.toc_payload``, keeping the wire format unchanged.
+
 **Prompts**: 6 built-in prompt templates, plus optional user-defined prompts:
 
 | Prompt | Parameters | Tags | Description |
