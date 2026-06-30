@@ -22,13 +22,45 @@
       "options": [
         {
           "value": "local",
-          "label": "Local (Claude Desktop / Claude Code, stdio)"
+          "label": "Local (Claude Desktop / Claude Code, stdio)",
+          "emit": {
+            "MARKDOWN_VAULT_MCP_TRANSPORT": "stdio"
+          }
         },
         {
           "value": "server",
-          "label": "Server (HTTP \u2014 Docker / Compose / systemd)"
+          "label": "Server (HTTP — Docker / Compose / systemd)",
+          "emit": {
+            "MARKDOWN_VAULT_MCP_TRANSPORT": "http"
+          }
         }
       ]
+    },
+    {
+      "id": "host",
+      "label": "Bind host",
+      "help": "Interface the HTTP server binds to. Default 127.0.0.1.",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_HOST",
+      "showIf": {
+        "deployment": [
+          "server"
+        ]
+      },
+      "advancedGroup": "Server"
+    },
+    {
+      "id": "port",
+      "label": "Port",
+      "help": "TCP port for the HTTP server. Default 8000.",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_PORT",
+      "showIf": {
+        "deployment": [
+          "server"
+        ]
+      },
+      "advancedGroup": "Server"
     },
     {
       "id": "source_dir",
@@ -227,7 +259,7 @@
     {
       "id": "git_repo_url",
       "label": "Git repo URL (HTTPS)",
-      "help": "HTTPS only \u2014 token auth rejects SSH remotes.",
+      "help": "HTTPS only — token auth rejects SSH remotes.",
       "type": "text",
       "var": "MARKDOWN_VAULT_MCP_GIT_REPO_URL",
       "showIf": {
@@ -365,7 +397,7 @@
     {
       "id": "base_url",
       "label": "Public base URL",
-      "help": "e.g. https://mcp.example.com \u2014 required for OIDC, transfer links, MCP Apps.",
+      "help": "e.g. https://mcp.example.com — required for OIDC, transfer links, MCP Apps.",
       "type": "text",
       "var": "MARKDOWN_VAULT_MCP_BASE_URL",
       "showIf": {
@@ -421,6 +453,9 @@
       "type": "text",
       "var": "MARKDOWN_VAULT_MCP_BEARER_TOKEN",
       "showIf": {
+        "deployment": [
+          "server"
+        ],
         "auth": [
           "bearer",
           "both"
@@ -428,11 +463,48 @@
       }
     },
     {
+      "id": "bearer_tokens_file",
+      "label": "Bearer tokens file (TOML)",
+      "help": "Path to a TOML file of per-token subjects; overrides the single BEARER_TOKEN.",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_BEARER_TOKENS_FILE",
+      "showIf": {
+        "deployment": [
+          "server"
+        ],
+        "auth": [
+          "bearer",
+          "both"
+        ]
+      },
+      "advancedGroup": "Auth"
+    },
+    {
+      "id": "bearer_default_subject",
+      "label": "Bearer default subject",
+      "help": "Subject assigned to the single bearer token. Default bearer-anon.",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_BEARER_DEFAULT_SUBJECT",
+      "showIf": {
+        "deployment": [
+          "server"
+        ],
+        "auth": [
+          "bearer",
+          "both"
+        ]
+      },
+      "advancedGroup": "Auth"
+    },
+    {
       "id": "oidc_config_url",
       "label": "OIDC discovery URL",
       "type": "text",
       "var": "MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL",
       "showIf": {
+        "deployment": [
+          "server"
+        ],
         "auth": [
           "oidc",
           "both"
@@ -445,6 +517,9 @@
       "type": "text",
       "var": "MARKDOWN_VAULT_MCP_OIDC_CLIENT_ID",
       "showIf": {
+        "deployment": [
+          "server"
+        ],
         "auth": [
           "oidc",
           "both"
@@ -458,6 +533,9 @@
       "type": "text",
       "var": "MARKDOWN_VAULT_MCP_OIDC_CLIENT_SECRET",
       "showIf": {
+        "deployment": [
+          "server"
+        ],
         "auth": [
           "oidc",
           "both"
@@ -467,10 +545,13 @@
     {
       "id": "oidc_jwt_signing_key",
       "label": "OIDC JWT signing key",
-      "help": "Required on Linux/Docker \u2014 default is ephemeral. Generate: openssl rand -hex 32.",
+      "help": "Required on Linux/Docker — default is ephemeral. Generate: openssl rand -hex 32.",
       "type": "text",
       "var": "MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY",
       "showIf": {
+        "deployment": [
+          "server"
+        ],
         "auth": [
           "oidc",
           "both"
@@ -483,6 +564,9 @@
       "type": "text",
       "var": "MARKDOWN_VAULT_MCP_OIDC_AUDIENCE",
       "showIf": {
+        "deployment": [
+          "server"
+        ],
         "auth": [
           "oidc",
           "both"
@@ -496,6 +580,9 @@
       "type": "text",
       "var": "MARKDOWN_VAULT_MCP_OIDC_REQUIRED_SCOPES",
       "showIf": {
+        "deployment": [
+          "server"
+        ],
         "auth": [
           "oidc",
           "both"
@@ -509,6 +596,9 @@
       "type": "bool",
       "var": "MARKDOWN_VAULT_MCP_OIDC_VERIFY_ACCESS_TOKEN",
       "showIf": {
+        "deployment": [
+          "server"
+        ],
         "auth": [
           "oidc",
           "both"
@@ -544,6 +634,32 @@
         ]
       },
       "advancedGroup": "Persistence"
+    },
+    {
+      "id": "event_store_url",
+      "label": "Event store URL (HTTP resumability)",
+      "help": "Alternative event-store URL for HTTP resumability; prefer KV_STORE_URL for new deployments.",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_EVENT_STORE_URL",
+      "showIf": {
+        "deployment": [
+          "server"
+        ]
+      },
+      "advancedGroup": "Persistence"
+    },
+    {
+      "id": "app_domain",
+      "label": "MCP Apps domain",
+      "help": "Public domain that serves MCP Apps UI resources.",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_APP_DOMAIN",
+      "showIf": {
+        "deployment": [
+          "server"
+        ]
+      },
+      "advancedGroup": "MCP Apps"
     },
     {
       "id": "indexed_fields",
@@ -745,17 +861,20 @@
         ]
       },
       "level": "warning",
-      "message": "Token auth requires an HTTPS repo URL \u2014 SSH remotes are rejected."
+      "message": "Token auth requires an HTTPS repo URL — SSH remotes are rejected."
     },
     {
       "when": {
+        "deployment": [
+          "server"
+        ],
         "auth": [
           "oidc",
           "both"
         ]
       },
       "level": "warning",
-      "message": "OIDC needs BASE_URL set and (on Linux/Docker) OIDC_JWT_SIGNING_KEY \u2014 the default key is ephemeral and invalidates tokens on restart."
+      "message": "OIDC needs BASE_URL set and (on Linux/Docker) OIDC_JWT_SIGNING_KEY — the default key is ephemeral and invalidates tokens on restart."
     },
     {
       "when": {
