@@ -75,8 +75,15 @@ Every PR must pass **all** of the following locally before push. These are mecha
 3. **Type-check passes** — `uv run mypy src/ tests/` reports no errors
 4. **Patch coverage ≥ 80%** — Codecov measures only lines added/changed in the PR diff. Run `uv run pytest --cov=<changed_module> --cov-report=term-missing` and verify new code is exercised. Add tests for every uncovered branch before pushing.
 
-5. **Docs updated** — `README.md` and `docs/**` reflect any user-facing changes in the same commit
-6. **Manifest version lockstep** — `server.json`, `.claude-plugin/plugin/.claude-plugin/plugin.json`, and `.claude-plugin/plugin/.mcp.json` must all carry the same version. The release workflow bumps them atomically via PSR; manual touches require updating all three.
+5. **Structural quality (diff) passes** — new/changed code must introduce no new structural violations (complexity, too-many-*, security). Enforced on the diff only, so pre-existing code is never blocked. Run before pushing:
+   ```bash
+   uv run diff-quality --violations=ruff.check \
+     --options="--extend-select=C901,PLR0911,PLR0912,PLR0913,PLR0915,S" \
+     --compare-branch=origin/main --fail-under=100
+   ```
+   `# noqa: C901` (etc.) with a one-line justification is the escape hatch for genuinely irreducible new code.
+6. **Docs updated** — `README.md` and `docs/**` reflect any user-facing changes in the same commit
+7. **Manifest version lockstep** — `server.json`, `.claude-plugin/plugin/.claude-plugin/plugin.json`, and `.claude-plugin/plugin/.mcp.json` must all carry the same version. The release workflow bumps them atomically via PSR; manual touches require updating all three.
 
 
 ## Pre-commit Hooks
@@ -85,9 +92,43 @@ This project ships a `.pre-commit-config.yaml` that runs ruff (check + format), 
 
 - **Install once per clone:** `uv run pre-commit install`.
 - **Run on demand before pushing:** `uv run pre-commit run --all-files`. A green run is a precondition for gates #2 and #3 above.
+
+- **Structural gate runs at push time:** the `structural-diff-gate` hook (pre-push stage) runs the command above automatically. `uv run pre-commit install` wires it via `default_install_hook_types`. A clean local push implies a clean CI `structure` job — same command, same range, as long as your PR targets `main` (the hook hardcodes `origin/main`; CI compares against the PR's actual base branch).
+
 - **Never bypass with `--no-verify`.** A failing hook means the same check will fail in CI; fix the underlying issue rather than silencing it.
 
 The config is in `_skip_if_exists`, so domain-specific additions (shellcheck, yamllint, project-specific linters, additional file checks) on top of the shipped defaults survive `copier update`.
+
+
+## Structural health
+
+The structural gate stops *new* debt; these practices and the advisory audit keep existing debt visible.
+
+**Local-shape rules (checkable while you write):**
+
+- Keep functions short and single-purpose; if a function needs a comment to explain a *section*, that section is a function.
+- Nesting beyond ~3 levels is a smell — extract or invert/early-return.
+- Five parameters is the ceiling; past it, pass an object or split the function.
+- A new responsibility is a **new collaborator, not a longer class**. When a class grows a second reason to change, that reason belongs in its own unit.
+
+**Advisory audit (on demand — run before substantial work in an unfamiliar area, or when about to touch a flagged module):**
+
+```bash
+uv run --with radon python -m radon cc -s -n C src/    # complexity hotspots (grade C+)
+uv run --with radon python -m radon mi -s src/         # maintainability index
+uv run --with vulture vulture src/                     # dead-code candidates
+```
+
+Each analyzer is optional and degrades gracefully if absent. `vulture` over-reports on importable/decorated/framework-registered code — **confirm before deleting** and keep a whitelist.
+
+**When you notice decay outside the current change's scope** — a god class forming, a dead branch, a leaking abstraction, a name that no longer matches behaviour, or an audit hotspot — do **not** fix it inline (scope creep) and do **not** pass over it silently. **Open an issue** using this template:
+
+> **What:** the structural problem in one sentence.
+> **Where:** file/symbol and the metric or observation that flagged it.
+> **Why it compounds:** what gets harder or riskier if it's left.
+> **Suggested direction:** a starting point, not a prescribed refactor.
+
+Constrain issues to **decay that will compound**, not anything imperfect. The diff-gate blocks new debt; these issues are the refactor-later backlog for pre-existing debt — neither blocks the current PR.
 
 
 ## PR Discipline

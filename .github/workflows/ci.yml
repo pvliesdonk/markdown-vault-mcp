@@ -346,3 +346,51 @@ jobs:
           # don't gate PRs that don't touch them. To enforce repo-wide
           # cleanliness, set this to `nofilter`.
           filter_mode: added
+
+
+  structure:
+    name: Structural Quality (diff)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Diff-scoped, so only meaningful on a PR (needs a base branch to compare).
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.2.0
+        with:
+          version: "latest"
+
+      - name: Cache Python interpreter
+        uses: actions/cache@v6
+        with:
+          path: ~/.local/share/uv/python
+          key: uv-python-3.12-${{ runner.os }}
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --all-extras --all-groups
+
+      - name: Fetch base branch
+        run: git fetch origin ${{ github.base_ref }} --depth=50
+
+      - name: Structural quality (changed lines only)
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          # Skip when the diff touches no Python — mirrors the diff-cover guard.
+          HAS_PY=$(git diff --name-only "origin/${BASE_REF}...HEAD" | grep -c '\.py$' || true)
+          if [ "$HAS_PY" -eq 0 ]; then
+            echo "No Python source changes — skipping structural diff gate"
+            exit 0
+          fi
+          uv run diff-quality --violations=ruff.check \
+            --options="--extend-select=C901,PLR0911,PLR0912,PLR0913,PLR0915,S" \
+            --compare-branch="origin/${BASE_REF}" --fail-under=100
