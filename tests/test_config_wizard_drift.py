@@ -119,7 +119,17 @@ def _orphan_vars(spec: dict[str, Any]) -> list[str]:
             continue  # native, read by FastMCP / configure_logging_from_env
         suffix = _suffix(var)
         if suffix is None:
-            out.append(f"{var} (not {_ENV_PREFIX}_-prefixed and not FASTMCP_*)")
+            # A non-prefixed var (e.g. a standard external-service var such as
+            # OLLAMA_HOST / OPENAI_API_KEY read directly by a composed client,
+            # not a {PREFIX}_ field) is legitimate IFF the scaffold actually
+            # reads it in src — same read-site test as a prefixed var. Only flag
+            # it when nothing consumes it. ``_read_in_src``'s quoted-literal arm
+            # (``"VAR"``) matches the ``os.environ.get("VAR")`` idiom.
+            if not _read_in_src(var, src_text):
+                out.append(
+                    f"{var} (not {_ENV_PREFIX}_-prefixed, not FASTMCP_*, "
+                    "and not read in src)"
+                )
         elif suffix not in core_domain and not _read_in_src(suffix, src_text):
             out.append(f"{var} (no read site consumes {suffix})")
     return out
@@ -152,6 +162,27 @@ def test_orphan_guard_flags_unread_var() -> None:
     }
     orphans = _orphan_vars(spec)
     assert any("NONSENSE_XYZ" in o for o in orphans)
+
+
+def test_orphan_guard_flags_unread_non_prefixed_var() -> None:
+    """A NON-prefixed var nothing in src reads is still reported as an orphan."""
+    spec: dict[str, Any] = {
+        "questions": [{"id": "x", "var": "TOTALLY_EXTERNAL_NEVER_READ_XYZ"}]
+    }
+    orphans = _orphan_vars(spec)
+    assert any("TOTALLY_EXTERNAL_NEVER_READ_XYZ" in o for o in orphans)
+
+
+def test_read_in_src_matches_non_prefixed_external_var() -> None:
+    """``_read_in_src`` clears a bare external var read via the standard idiom.
+
+    A composed client reads a non-prefixed env var directly (e.g.
+    ``os.environ.get("OLLAMA_HOST")``); the quoted-literal arm matches it, so a
+    wizard offering ``OLLAMA_HOST`` is not flagged as an orphan.
+    """
+    src = 'host = os.environ.get("OLLAMA_HOST") or "http://localhost:11434"'
+    assert _read_in_src("OLLAMA_HOST", src) is True
+    assert _read_in_src("UNRELATED_EXTERNAL_VAR", src) is False
 
 
 def _missing_suffixes(surface: set[str], emitted_suffixes: set[str]) -> list[str]:
