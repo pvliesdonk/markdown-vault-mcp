@@ -13,15 +13,12 @@ to "the seed covers core"; downstream it checks core + the project's domain.
 
 from __future__ import annotations
 
-import ast
-import inspect
 import json
 import re
-import textwrap
 from pathlib import Path
 from typing import Any, cast
 
-from fastmcp_pvl_core import server_config_env_suffixes
+from fastmcp_pvl_core import domain_env_suffixes, server_config_env_suffixes
 
 from markdown_vault_mcp.config import ProjectConfig
 
@@ -62,47 +59,24 @@ def _suffix(var: str) -> str | None:
     return var[len(prefix) :] if var.startswith(prefix) else None
 
 
-def _suffixes_in_source(src: str) -> set[str]:
-    """Literal suffixes read by ``env``/``env_int``/``env_float`` calls in ``src``.
-
-    Only string-literal second positional args are seen; a suffix built from a
-    variable, passed by keyword, or read through a non-``env`` helper is
-    invisible — keep reads in the ``env(_ENV_PREFIX, "LITERAL")`` form.
-    """
-    funcs = {"env", "env_int", "env_float"}
-    found: set[str] = set()
-    for node in ast.walk(ast.parse(textwrap.dedent(src))):
-        if (
-            isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Name)
-            and node.func.id in funcs
-            and len(node.args) >= 2
-            and isinstance(node.args[1], ast.Constant)
-            and isinstance(node.args[1].value, str)
-        ):
-            found.add(node.args[1].value)
-    return found
-
-
-def _domain_suffixes() -> set[str]:
-    """Suffixes ``ProjectConfig.from_env`` reads beyond ``ServerConfig``.
-
-    The ``server=ServerConfig.from_env(_ENV_PREFIX)`` call passes no suffix
-    literal, so it contributes nothing. Vacuous on the scaffold (domain reads
-    are commented examples), live downstream.
-    """
-    return _suffixes_in_source(inspect.getsource(ProjectConfig.from_env))
-
-
 def _surface() -> set[str]:
     """The config surface the wizard must COVER: core (ServerConfig) + domain.
 
-    This is the coverage target. The orphan check uses a broader read set (it
-    also accepts scaffold-direct reads — see ``_src_text``), because the wizard
-    may legitimately offer a var the scaffold reads outside ServerConfig (e.g.
+    The domain half is :func:`fastmcp_pvl_core.domain_env_suffixes`, which
+    AST-scans ``ProjectConfig.from_env`` and recurses into any sub-config
+    sections it composes (each with its own ``from_env``) — so a decomposed
+    config reports its full surface, not just the reads in ``from_env`` itself.
+    Only literal ``env(prefix, "LITERAL")`` reads are visible (a renamed import,
+    attribute-form call, or variable/keyword suffix is invisible), and nested
+    generics expand one level — see :func:`fastmcp_pvl_core.domain_env_suffixes`
+    for the exact limits. Vacuous on the scaffold (domain reads are commented
+    examples), live downstream. The orphan check uses a broader read set (it
+    also accepts
+    scaffold-direct reads — see ``_src_text``), because the wizard may
+    legitimately offer a var the scaffold reads outside ServerConfig (e.g.
     ``HTTP_PATH`` is read in ``cli.py``).
     """
-    return set(server_config_env_suffixes()) | _domain_suffixes()
+    return set(server_config_env_suffixes()) | set(domain_env_suffixes(ProjectConfig))
 
 
 def _src_text() -> str:
@@ -151,6 +125,20 @@ def _orphan_vars(spec: dict[str, Any]) -> list[str]:
     return out
 
 
+def test_surface_composes_core_and_domain() -> None:
+    """The coverage surface is core (``server_config_env_suffixes``) plus the
+    domain half from ``domain_env_suffixes(ProjectConfig)``, which recurses into
+    any sub-config sections. Guards the delegation wiring (callable on the
+    rendered ``ProjectConfig``, returns a frozenset); the scanner's own behavior
+    — literal vs variable reads, recursion, edges — is tested upstream in
+    ``fastmcp_pvl_core``'s ``TestDomainEnvSuffixes``.
+    """
+    domain = domain_env_suffixes(ProjectConfig)
+    assert isinstance(domain, frozenset)
+    assert domain <= _surface()
+    assert set(server_config_env_suffixes()) <= _surface()
+
+
 def test_no_orphan_wizard_vars() -> None:
     """Every wizard var/emit resolves to a read site (or is a FASTMCP_* native)."""
     orphans = _orphan_vars(_spec())
@@ -164,24 +152,6 @@ def test_orphan_guard_flags_unread_var() -> None:
     }
     orphans = _orphan_vars(spec)
     assert any("NONSENSE_XYZ" in o for o in orphans)
-
-
-def test_domain_scan_extracts_literal_env_reads() -> None:
-    """The domain scan picks literal env*-read suffixes and ignores the rest."""
-    src = textwrap.dedent(
-        """
-        @classmethod
-        def from_env(cls):
-            other = some_var
-            return cls(
-                server=ServerConfig.from_env(_ENV_PREFIX),
-                vault_path=env(_ENV_PREFIX, "VAULT_PATH", "/data/vault"),
-                max_n=env_int(_ENV_PREFIX, "MAX_N", 5),
-                skip=env(_ENV_PREFIX, other),
-            )
-        """
-    )
-    assert _suffixes_in_source(src) == {"VAULT_PATH", "MAX_N"}
 
 
 def _missing_suffixes(surface: set[str], emitted_suffixes: set[str]) -> list[str]:
