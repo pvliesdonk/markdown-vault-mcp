@@ -111,6 +111,7 @@ class HeadingChunker:
         *,
         max_chunk_words: int | None = None,
         max_chunk_chars: int | None = None,
+        chunk_overlap_words: int = 0,
     ) -> None:
         """Initialise the chunker.
 
@@ -125,10 +126,14 @@ class HeadingChunker:
                 word) that fits the word budget yet exceeds the embedding
                 model's context. ``None`` disables the char cap; splitting
                 then depends on ``max_chunk_words`` alone.
+            chunk_overlap_words: Words of overlap prepended to each budget-split
+                fragment from the previous fragment of the same section. ``0``
+                disables overlap. Never crosses a heading boundary.
         """
         self.short_doc_lines = short_doc_lines
         self.max_chunk_words = max_chunk_words
         self.max_chunk_chars = max_chunk_chars
+        self.chunk_overlap_words = chunk_overlap_words
 
     def _has_budget(self) -> bool:
         """True when either a word budget or a char budget is configured."""
@@ -426,6 +431,32 @@ class HeadingChunker:
             pending_chars += chars_in_para
 
         emit()
+        return self._apply_overlap(out)
+
+    def _apply_overlap(self, fragments: list[Chunk]) -> list[Chunk]:
+        """Prepend each fragment's trailing words to the next (same section).
+
+        Applied only to the budget-split fragments of one leaf section, so
+        overlap never crosses a heading or heading-refined boundary. Words come
+        from the original previous fragment (no accumulation); start_line is
+        preserved (overlap is duplicated retrieval context, not new source).
+        """
+        n = self.chunk_overlap_words
+        if n <= 0 or len(fragments) < 2:
+            return fragments
+        out: list[Chunk] = [fragments[0]]
+        for i in range(1, len(fragments)):
+            overlap = " ".join(fragments[i - 1].content.split()[-n:])
+            cur = fragments[i]
+            content = f"{overlap}\n\n{cur.content}" if overlap else cur.content
+            out.append(
+                Chunk(
+                    heading=cur.heading,
+                    heading_level=cur.heading_level,
+                    content=content,
+                    start_line=cur.start_line,
+                )
+            )
         return out
 
     def _budget_split_lines(
