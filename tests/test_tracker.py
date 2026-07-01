@@ -313,7 +313,7 @@ class TestMalformedStateFile:
             # Restore permissions so pytest can clean up tmp_path.
             state_path.chmod(stat.S_IRUSR | stat.S_IWUSR)
 
-        assert result == ({}, {})
+        assert result == ({}, {}, {})
         assert any("Cannot read state file" in r.message for r in caplog.records)
 
 
@@ -328,7 +328,7 @@ class TestSaveStateFailure:
             patch("json.dump", side_effect=RuntimeError("disk full")),
             pytest.raises(RuntimeError, match="disk full"),
         ):
-            tracker._save_state({"a.md": "abc123"}, {})
+            tracker._save_state({"a.md": "abc123"}, {}, {})
 
         # No leftover .tmp files.
         leftover = list(tmp_path.glob("*.tmp"))
@@ -647,3 +647,87 @@ class TestExcludePatterns:
         assert ".claude/old.md" not in changes.deleted
         assert ".claude/old.md" not in changes.added
         assert ".claude/old.md" not in changes.modified
+
+
+class TestSkipReasons:
+    """skip_reasons map is persisted in lockstep with the skipped map (#775)."""
+
+    def _hash_of(self, path: Path) -> str:
+        from markdown_vault_mcp.hashing import compute_file_hash
+
+        return compute_file_hash(path)
+
+    def test_round_trips_through_state_file(self, tmp_path: Path) -> None:
+        state_path = tmp_path / "state.json"
+        md = tmp_path / "skip.md"
+        md.write_text("bad", encoding="utf-8")
+        tracker = ChangeTracker(state_path)
+        tracker.update_state(
+            [],
+            skipped={"skip.md": self._hash_of(md)},
+            skip_reasons={"skip.md": {"category": "parse_error", "detail": "boom"}},
+        )
+        reloaded = ChangeTracker(state_path)
+        assert reloaded.skip_reasons() == {
+            "skip.md": {"category": "parse_error", "detail": "boom"},
+        }
+
+    def test_missing_key_loads_as_empty(self, tmp_path: Path) -> None:
+        state_path = tmp_path / "state.json"
+        # A version-2 state file with no skip_reasons key (older format).
+        state_path.write_text(
+            '{"version": 2, "indexed": {}, "skipped": {"skip.md": "abc"}}',
+            encoding="utf-8",
+        )
+        tracker = ChangeTracker(state_path)
+        assert tracker.skip_reasons() == {}
+
+    def test_reason_dropped_when_path_leaves_skipped_set(self, tmp_path: Path) -> None:
+        # A skipped file that later indexes successfully loses its reason.
+        state_path = tmp_path / "state.json"
+        md = tmp_path / "skip.md"
+        md.write_text("---\ntitle: x\n---\nbody", encoding="utf-8")
+        tracker = ChangeTracker(state_path)
+        tracker.update_state(
+            [],
+            skipped={"skip.md": self._hash_of(md)},
+            skip_reasons={
+                "skip.md": {
+                    "category": "missing_frontmatter",
+                    "detail": "missing: ['title']",
+                }
+            },
+        )
+        # Now the same path indexes successfully (present in notes).
+        from markdown_vault_mcp.types import ParsedNote
+
+        note = ParsedNote(
+            path="skip.md",
+            frontmatter={"title": "x"},
+            title="x",
+            chunks=[],
+            content_hash=self._hash_of(md),
+            modified_at=0.0,
+        )
+        tracker.update_state([note])
+        assert tracker.skip_reasons() == {}
+
+    def test_reason_carried_forward_for_unchanged_skip(self, tmp_path: Path) -> None:
+        # An unchanged skipped file keeps its reason across a reindex cycle
+        # even though update_state is not re-passed the reason.
+        state_path = tmp_path / "state.json"
+        md = tmp_path / "skip.md"
+        md.write_text("bad yaml", encoding="utf-8")
+        tracker = ChangeTracker(state_path)
+        tracker.update_state(
+            [],
+            skipped={"skip.md": self._hash_of(md)},
+            skip_reasons={"skip.md": {"category": "parse_error", "detail": "boom"}},
+        )
+        # A fresh scan sees the file unchanged -> carry -> next update_state
+        # (with no skip_reasons passed) must preserve the reason.
+        tracker.detect_changes(tmp_path)
+        tracker.update_state([])
+        assert tracker.skip_reasons() == {
+            "skip.md": {"category": "parse_error", "detail": "boom"},
+        }

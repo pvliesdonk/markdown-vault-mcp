@@ -356,9 +356,12 @@ for built-in names, or pass a custom instance.
 
 - **State file** (the JSON persistence layer for hash-based change detection):
   versioned format `{"version": 2, "indexed": {relative_path: sha256_hash},
-  "skipped": {relative_path: sha256_hash}}` as JSON (#665). The legacy flat
-  `{relative_path: sha256_hash}` format still loads (every entry is treated
-  as indexed), so upgrades need no migration step.
+  "skipped": {relative_path: sha256_hash}, "skip_reasons": {relative_path:
+  {"category": ..., "detail": ...}}}` as JSON (#665, #775). `skip_reasons`
+  is a strict subset of `skipped` covering the surfaced deterministic skips
+  (parse / encoding / missing-frontmatter); a version-2 file without it loads
+  it as `{}`. The legacy flat `{relative_path: sha256_hash}` format still
+  loads (every entry is treated as indexed), so upgrades need no migration.
 - **Default path**: `{source_dir}/.markdown_vault_mcp/state.json` (when
   `state_path=None`).
 - On `reindex()`: scan all files, compare hashes to stored state, re-parse and

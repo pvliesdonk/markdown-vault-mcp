@@ -55,6 +55,10 @@ class ChangeTracker:
         # Skipped entries from the last detect_changes() that are still on
         # disk with unchanged content; carried forward by update_state().
         self._skipped_carry: dict[str, str] = {}
+        # Reasons for the carried-forward unchanged skips (parallel to
+        # _skipped_carry); loaded from state so a surfaced skip keeps its
+        # reason across scans that do not re-observe the failure (#775).
+        self._skip_reasons_carry: dict[str, dict[str, str]] = {}
 
     # ------------------------------------------------------------------
     # Public API
@@ -109,7 +113,7 @@ class ChangeTracker:
         Returns:
             A :class:`~markdown_vault_mcp.types.ChangeSet` describing the delta.
         """
-        indexed_state, skipped_state = self._load_state()
+        indexed_state, skipped_state, skip_reasons_state = self._load_state()
 
         # Build a mapping of relative path → sha256 for current disk contents.
         disk_state: dict[str, str] = {}
@@ -137,6 +141,7 @@ class ChangeTracker:
         unchanged: int = 0
         skipped_unchanged: int = 0
         self._skipped_carry = {}
+        self._skip_reasons_carry = {}
 
         for rel_path, current_hash in disk_state.items():
             if rel_path in indexed_state:
@@ -151,6 +156,10 @@ class ChangeTracker:
                 else:
                     skipped_unchanged += 1
                     self._skipped_carry[rel_path] = current_hash
+                    if rel_path in skip_reasons_state:
+                        self._skip_reasons_carry[rel_path] = skip_reasons_state[
+                            rel_path
+                        ]
             else:
                 added.append(rel_path)
 
@@ -189,14 +198,17 @@ class ChangeTracker:
         self,
         notes: list[ParsedNote],
         skipped: dict[str, str] | None = None,
+        skip_reasons: dict[str, dict[str, str]] | None = None,
     ) -> None:
         """Persist the current hash state derived from *notes*.
 
         Overwrites the entire state file. The indexed map comes from *notes*;
         the skipped map merges the unchanged skipped entries observed by the
-        preceding :meth:`detect_changes` call with *skipped*. Call this after
-        successfully (re)indexing a set of documents to record their current
-        content hashes.
+        preceding :meth:`detect_changes` call with *skipped*. The
+        ``skip_reasons`` map is maintained in lockstep: it merges the carried
+        reasons with *skip_reasons* and is then restricted to exactly the keys
+        of the new skipped map, so a path that indexes successfully or leaves
+        the skipped set also loses its reason (#775).
 
         Args:
             notes: Parsed notes whose ``path`` and ``content_hash`` attributes
@@ -205,8 +217,11 @@ class ChangeTracker:
             skipped: Mapping of relative path to SHA256 hex digest for files
                 seen during this scan but deliberately not indexed (missing
                 required frontmatter, excluded, unparseable). Indexed paths
-                always win: any path also present in *notes* is dropped from
-                the skipped map.
+                always win: any path also present in *notes* is dropped.
+            skip_reasons: Mapping of relative path to a ``{"category",
+                "detail"}`` dict for the surfaced deterministic skips observed
+                this scan. Merged with the carried reasons and clamped to the
+                new skipped key set. ``None`` records no new reasons.
         """
         new_indexed = {note.path: note.content_hash for note in notes}
         new_skipped = {
@@ -217,15 +232,26 @@ class ChangeTracker:
             }.items()
             if path not in new_indexed
         }
-        self._save_state(new_indexed, new_skipped)
-        # The carry is consumed by exactly one update_state call; clearing it
-        # keeps a later call without a fresh detect_changes (e.g. a full
-        # build_index) from merging stale skipped entries into its snapshot.
+        merged_reasons = {
+            **self._skip_reasons_carry,
+            **(skip_reasons or {}),
+        }
+        new_skip_reasons = {
+            path: reason
+            for path, reason in merged_reasons.items()
+            if path in new_skipped
+        }
+        self._save_state(new_indexed, new_skipped, new_skip_reasons)
+        # The carries are consumed by exactly one update_state call; clearing
+        # them keeps a later call without a fresh detect_changes (e.g. a full
+        # build_index) from merging stale entries into its snapshot.
         self._skipped_carry = {}
+        self._skip_reasons_carry = {}
         logger.debug(
-            "update_state: wrote state for %d indexed, %d skipped document(s)",
+            "update_state: wrote state for %d indexed, %d skipped, %d skip-reason(s)",
             len(new_indexed),
             len(new_skipped),
+            len(new_skip_reasons),
         )
 
     def reset(self) -> None:
@@ -234,34 +260,54 @@ class ChangeTracker:
         If the state file does not exist, this is a no-op.
         """
         self._skipped_carry = {}
+        self._skip_reasons_carry = {}
         if self._state_path.exists():
             self._state_path.unlink()
             logger.debug("reset: deleted state file %s", self._state_path)
         else:
             logger.debug("reset: state file does not exist, nothing to delete")
 
+    def skip_reasons(self) -> dict[str, dict[str, str]]:
+        """Return the persisted surfaced-skip reasons (path → category/detail).
+
+        Reads the state file fresh on each call (best-effort, non-blocking:
+        a missing or malformed file yields ``{}``), so callers see the reasons
+        recorded by the most recent build/reindex even after a restart (#775).
+
+        Returns:
+            Mapping of relative POSIX path to a ``{"category", "detail"}`` dict.
+            Empty when nothing was skipped for a surfaced reason.
+        """
+        _indexed, _skipped, skip_reasons = self._load_state()
+        return skip_reasons
+
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
 
-    def _load_state(self) -> tuple[dict[str, str], dict[str, str]]:
+    def _load_state(
+        self,
+    ) -> tuple[dict[str, str], dict[str, str], dict[str, dict[str, str]]]:
         """Load the persisted state from disk.
 
         Supports two formats: the current versioned object
-        (``{"version": 2, "indexed": {...}, "skipped": {...}}``) and the
-        legacy flat mapping of path to digest, which is loaded with every
-        entry treated as indexed.
+        (``{"version": 2, "indexed": {...}, "skipped": {...},
+        "skip_reasons": {...}}``) and the legacy flat mapping of path to
+        digest, which is loaded with every entry treated as indexed.
 
         Returns:
-            Tuple of ``(indexed, skipped)`` maps of relative document path to
-            SHA256 hex digest. Both are empty when the state file does not
-            exist or is malformed.
+            Tuple of ``(indexed, skipped, skip_reasons)``. ``indexed`` and
+            ``skipped`` map relative document path to SHA256 hex digest;
+            ``skip_reasons`` maps relative path to a ``{"category", "detail"}``
+            dict for the surfaced deterministic skips (#775). All three are
+            empty when the state file does not exist or is malformed; a
+            version-2 file lacking ``skip_reasons`` loads it as ``{}``.
         """
         if not self._state_path.exists():
             logger.debug(
                 "No state file at %s; treating all files as added", self._state_path
             )
-            return {}, {}
+            return {}, {}, {}
         try:
             with self._state_path.open(encoding="utf-8") as fh:
                 state = json.load(fh)
@@ -270,29 +316,39 @@ class ChangeTracker:
                     "State file %s is malformed (expected object); resetting",
                     self._state_path,
                 )
-                return {}, {}
+                return {}, {}, {}
             if state.get("version") == _STATE_VERSION:
                 indexed = state.get("indexed", {})
                 skipped = state.get("skipped", {})
-                if not isinstance(indexed, dict) or not isinstance(skipped, dict):
+                skip_reasons = state.get("skip_reasons", {})
+                if (
+                    not isinstance(indexed, dict)
+                    or not isinstance(skipped, dict)
+                    or not isinstance(skip_reasons, dict)
+                ):
                     logger.warning(
                         "State file %s is malformed (expected object maps); resetting",
                         self._state_path,
                     )
-                    return {}, {}
-                return indexed, skipped
+                    return {}, {}, {}
+                return indexed, skipped, skip_reasons
             # Legacy flat format: every entry is an indexed path → digest.
-            return state, {}
+            return state, {}, {}
         except (OSError, json.JSONDecodeError) as exc:
             logger.warning(
                 "Cannot read state file %s (%s); treating all files as added",
                 self._state_path,
                 exc,
             )
-            return {}, {}
+            return {}, {}, {}
 
-    def _save_state(self, indexed: dict[str, str], skipped: dict[str, str]) -> None:
-        """Write the indexed and skipped maps to the state file as JSON.
+    def _save_state(
+        self,
+        indexed: dict[str, str],
+        skipped: dict[str, str],
+        skip_reasons: dict[str, dict[str, str]],
+    ) -> None:
+        """Write the indexed, skipped, and skip_reasons maps to state as JSON.
 
         Creates parent directories if they do not exist.
 
@@ -301,8 +357,16 @@ class ChangeTracker:
                 for documents present in the index.
             skipped: Mapping of relative document path to SHA256 hex digest
                 for files seen on disk but deliberately not indexed.
+            skip_reasons: Mapping of relative document path to a
+                ``{"category", "detail"}`` dict for the surfaced deterministic
+                skips (#775). A strict subset of ``skipped``.
         """
-        state = {"version": _STATE_VERSION, "indexed": indexed, "skipped": skipped}
+        state = {
+            "version": _STATE_VERSION,
+            "indexed": indexed,
+            "skipped": skipped,
+            "skip_reasons": skip_reasons,
+        }
         self._state_path.parent.mkdir(parents=True, exist_ok=True)
         tmp_fd, tmp_path = tempfile.mkstemp(dir=self._state_path.parent, suffix=".tmp")
         try:
@@ -313,9 +377,10 @@ class ChangeTracker:
             Path(tmp_path).unlink(missing_ok=True)
             raise
         logger.debug(
-            "Saved state for %d indexed, %d skipped path(s) to %s",
+            "Saved state for %d indexed, %d skipped, %d skip-reason path(s) to %s",
             len(indexed),
             len(skipped),
+            len(skip_reasons),
             self._state_path,
         )
 
