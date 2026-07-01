@@ -405,12 +405,14 @@ Two methods manage the index:
 
   **Chunking-provenance invalidation (issue #649)**: the chunker is shared
   by FTS and embeddings, and its per-chunk character cap is derived from the
-  embedding model, so a change to the embedding model (or to an explicit
-  `max_chunk_chars` override) changes FTS chunk boundaries, not just
-  embeddings. Each clean build records the two **stable inputs** to the
-  derived cap (the embedding `model_name` and the explicit operator
-  `max_chunk_chars` override, `None` when the cap was derived from the model
-  context) in the FTS `meta` table (`embed_model_name` /
+  embedding model as `min(1500, round(context_length × 2.8))` (issue #790;
+  `max_chunk_chars_override = -1` selects unbounded scaling,
+  `round(context_length × 2.8)` with no ceiling), so a change to the
+  embedding model (or to an explicit `max_chunk_chars` override) changes FTS
+  chunk boundaries, not just embeddings. Each clean build records the two
+  **stable inputs** to the derived cap (the embedding `model_name` and the
+  explicit operator `max_chunk_chars` override, `None` when the cap was
+  derived from the model context) in the FTS `meta` table (`embed_model_name` /
   `max_chunk_chars_override` rows). The runtime-derived cap itself is
   deliberately not recorded. On restart the warm-restart short-circuit
   also requires these stored values to match the current config
