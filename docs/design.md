@@ -336,7 +336,10 @@ default `40`) is copied from the previous fragment onto each budget-split
 fragment produced by `_budget_split` within a leaf section, never across a
 heading boundary; it is deliberately excluded from the chunking-provenance
 key, so it applies going forward (new builds and re-indexed notes) without
-forcing a rebuild.
+forcing a rebuild. The hard cap holds for `_budget_split`'s own output. When
+`chunk_overlap_words` is greater than zero, the overlap words added to the
+front of the fragment can push it past `max_chunk_words` or
+`max_chunk_chars` by up to `chunk_overlap_words` words.
 
 **Future** (deferred):
 - `SlidingWindowChunker`: fixed-size overlapping windows with configurable
