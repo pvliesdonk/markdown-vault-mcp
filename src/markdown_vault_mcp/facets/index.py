@@ -105,8 +105,8 @@ class IndexFacet:
         missing-frontmatter / internal-error), read from tracker state
         (#775, #802). A captured build error appears in ``error`` as
         diagnostic context without demoting a ``queryable`` status;
-        ``documents_indexed_error`` carries a SQLite read
-        failure (``documents_indexed`` stays ``0``) (#583).
+        ``documents_indexed_error`` carries a SQLite read failure
+        (``documents_indexed`` stays ``0``) (#583).
         """
         status = self._coordinator.get_index_status()
         status["skipped_files"] = [asdict(sf) for sf in self._index_mgr.skipped_files()]

@@ -1041,9 +1041,11 @@ def scan_directory(
 ) -> Iterator[ParsedNote]:
     """Discover and parse all markdown files under ``source_dir``.
 
-    Yields :class:`~markdown_vault_mcp.types.ParsedNote` objects. Fault-tolerant: a
-    single bad file (UTF-8 decode error, I/O error) is skipped with a
-    ``WARNING`` log entry; the scan continues.
+    Yields :class:`~markdown_vault_mcp.types.ParsedNote` objects. Fault-tolerant:
+    a single bad file (UTF-8 decode error, I/O error, YAML parse error) is
+    skipped and the scan continues, logged at ``WARNING`` — except a genuinely
+    unexpected parse failure (surfaced as ``internal_error``), which is logged
+    at ``ERROR`` with a traceback.
 
     Args:
         source_dir: Root directory to scan.
@@ -1065,8 +1067,8 @@ def scan_directory(
             ``"missing_frontmatter"``, or ``"internal_error"``). It is
             **not** called for exclude-pattern matches (intentional) or
             transient ``OSError`` skips (self-healing). ``None`` (default)
-            preserves the historical
-            behaviour of silently skipping such files (#775).
+            preserves the historical behaviour of silently skipping such
+            files (#775).
 
     Yields:
         Parsed notes in filesystem traversal order.
