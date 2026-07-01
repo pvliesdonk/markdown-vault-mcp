@@ -91,7 +91,9 @@ class HeadingChunker:
     :meth:`_budget_split` falls back to paragraph, line, and word boundaries
     so the invariant ``not _over_budget(chunk.content)`` holds for every
     emitted chunk regardless of source structure (the sole exception being a
-    single token longer than ``max_chunk_chars``, which is unsplittable).
+    single token longer than ``max_chunk_chars``, which is unsplittable; and,
+    when ``chunk_overlap_words`` is greater than zero, an overlapped fragment
+    may exceed either budget by up to ``chunk_overlap_words`` words).
 
     The ``max_chunk_chars`` cap bounds token-dense content — text with a high
     character-per-word ratio that fits ``max_chunk_words`` yet exceeds the
@@ -272,7 +274,8 @@ class HeadingChunker:
         reached H6), :meth:`_budget_split` fragments it on paragraph and
         word boundaries so the invariant ``not _over_budget(chunk.content)``
         holds for every emitted chunk — including preamble chunks with no
-        heading at all.
+        heading at all. See the class docstring for the two exceptions to
+        this invariant, including the ``chunk_overlap_words`` case.
         """
         assert self._has_budget()  # guarded by caller
         out: list[Chunk] = []
@@ -308,7 +311,10 @@ class HeadingChunker:
 
     def _budget_split(self, chunk: Chunk) -> list[Chunk]:
         """Split *chunk* on paragraph, line, and word boundaries until each
-        fragment fits within the configured word **and** char budgets.
+        fragment fits within the configured word **and** char budgets, then
+        applies ``chunk_overlap_words`` overlap via :meth:`_apply_overlap`,
+        which may push a returned fragment over either budget by up to that
+        many words.
 
         Used as the last-resort splitter when no deeper heading is available
         (e.g. an H6 section longer than the budget, or a preamble with no

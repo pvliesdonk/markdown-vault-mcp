@@ -330,16 +330,17 @@ section), is then fragmented on paragraph and word boundaries by an internal
 `_budget_split` helper. The result is a **hard cap**: every emitted chunk
 satisfies `words(chunk) <= max_chunk_words` regardless of source structure,
 so embedding providers with context-window limits don't silently truncate.
-`max_chunk_words=None` preserves the legacy H1/H2-only behaviour with no
-word-budget enforcement. A configurable word-overlap (`chunk_overlap_words`,
-default `40`) is copied from the previous fragment onto each budget-split
-fragment produced by `_budget_split` within a leaf section, never across a
-heading boundary; it is deliberately excluded from the chunking-provenance
-key, so it applies going forward (new builds and re-indexed notes) without
-forcing a rebuild. The hard cap holds for `_budget_split`'s own output. When
-`chunk_overlap_words` is greater than zero, the overlap words added to the
-front of the fragment can push it past `max_chunk_words` or
-`max_chunk_chars` by up to `chunk_overlap_words` words.
+This cap has an overlap exception described below. `max_chunk_words=None`
+preserves the legacy H1/H2-only behaviour with no word-budget enforcement.
+A configurable word-overlap (`chunk_overlap_words`, default `40`) is copied
+from the previous fragment onto each budget-split fragment produced by
+`_budget_split` within a leaf section, never across a heading boundary; it
+is deliberately excluded from the chunking-provenance key, so it applies
+going forward (new builds and re-indexed notes) without forcing a rebuild.
+The hard cap holds for `_budget_split`'s bin-packing phase, before overlap
+words are added to the front of the fragment. When `chunk_overlap_words` is
+greater than zero, those added words can push a fragment past
+`max_chunk_words` or `max_chunk_chars` by up to `chunk_overlap_words` words.
 
 **Future** (deferred):
 - `SlidingWindowChunker`: fixed-size overlapping windows with configurable
