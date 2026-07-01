@@ -1974,3 +1974,43 @@ class TestTransferConfigFromEnv:
 
         with pytest.raises(dataclasses.FrozenInstanceError):
             TransferConfig().ttl_default_s = 999  # type: ignore[misc]
+
+
+def test_chunk_overlap_words_default_is_40(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """chunk_overlap_words defaults to 40 when its env var is unset."""
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    monkeypatch.delenv("MARKDOWN_VAULT_MCP_CHUNK_OVERLAP_WORDS", raising=False)
+    cfg = ProjectConfig.from_env()
+    assert cfg.search.chunk_overlap_words == 40
+
+
+def test_chunk_overlap_words_env_override(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """CHUNK_OVERLAP_WORDS env var populates the field; 0 disables."""
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_CHUNK_OVERLAP_WORDS", "0")
+    cfg = ProjectConfig.from_env()
+    assert cfg.search.chunk_overlap_words == 0
+
+
+def test_chunk_overlap_words_rejects_negative(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A negative CHUNK_OVERLAP_WORDS is rejected."""
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_CHUNK_OVERLAP_WORDS", "-1")
+    with pytest.raises(ConfigurationError, match="chunk_overlap_words"):
+        ProjectConfig.from_env()
+
+
+def test_chunk_overlap_words_threaded_into_vault_kwargs(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """to_vault_kwargs carries chunk_overlap_words from SearchConfig."""
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_CHUNK_OVERLAP_WORDS", "25")
+    kwargs = ProjectConfig.from_env().to_vault_kwargs()
+    assert kwargs["chunk_overlap_words"] == 25

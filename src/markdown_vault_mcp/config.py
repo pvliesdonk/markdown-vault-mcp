@@ -167,6 +167,7 @@ class ProjectConfig:
             "snippet_words": self.search.snippet_words,
             "length_downweight_alpha": self.search.length_downweight_alpha,
             "max_chunk_words": self.search.max_chunk_words,
+            "chunk_overlap_words": self.search.chunk_overlap_words,
         }
 
         # Semantic search is gated by the storage path in config.indexing,

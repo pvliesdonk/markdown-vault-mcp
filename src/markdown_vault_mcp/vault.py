@@ -194,6 +194,7 @@ class Vault:
         max_chunk_words: int = 400,
         max_chunk_chars: int | None = None,
         max_chunk_chars_override: int | None = None,
+        chunk_overlap_words: int = 0,
     ) -> None:
         self._source_dir = source_dir
         self._index_path = index_path
@@ -208,6 +209,7 @@ class Vault:
             self._chunk_strategy: ChunkStrategy = HeadingChunker(
                 max_chunk_words=max_chunk_words,
                 max_chunk_chars=max_chunk_chars,
+                chunk_overlap_words=chunk_overlap_words,
             )
         else:
             # NOTE: When a caller passes an explicit chunk_strategy instance

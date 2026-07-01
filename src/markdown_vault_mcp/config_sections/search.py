@@ -16,6 +16,7 @@ class SearchConfig:
     length_downweight_alpha: float = 0.25
     max_chunk_words: int = 400
     max_chunk_chars_override: int | None = None
+    chunk_overlap_words: int = 40
 
     def __post_init__(self) -> None:
         """Validate ranges on every construction path (#638).
@@ -49,6 +50,10 @@ class SearchConfig:
                 "max_chunk_chars must be >= 1, or -1 for unbounded "
                 f"context-scaling; got {self.max_chunk_chars_override}"
             )
+        if self.chunk_overlap_words < 0:
+            raise ConfigurationError(
+                f"chunk_overlap_words must be >= 0, got {self.chunk_overlap_words}"
+            )
 
     @classmethod
     def from_env(cls, prefix: str) -> SearchConfig:
@@ -76,4 +81,5 @@ class SearchConfig:
             length_downweight_alpha=env_float(prefix, "LENGTH_DOWNWEIGHT_ALPHA", 0.25),
             max_chunk_words=env_int(prefix, "MAX_CHUNK_WORDS", 400),
             max_chunk_chars_override=opt_int(prefix, "MAX_CHUNK_CHARS"),
+            chunk_overlap_words=env_int(prefix, "CHUNK_OVERLAP_WORDS", 40),
         )
