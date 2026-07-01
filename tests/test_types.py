@@ -1,8 +1,11 @@
 """Tests for data types."""
 
-import dataclasses
+from __future__ import annotations
 
-from markdown_vault_mcp.types import MoveFolderResult
+import dataclasses
+from dataclasses import asdict
+
+from markdown_vault_mcp.types import SKIP_CATEGORIES, MoveFolderResult, SkippedFile
 
 
 def test_move_folder_result_fields():
@@ -25,3 +28,32 @@ def test_move_folder_result_failed_links_defaults_empty():
     assert r.failed_links == []
     # asdict works (the MCP tool serializes via dataclasses.asdict)
     assert dataclasses.asdict(r)["failed_links"] == []
+
+
+class TestSkippedFile:
+    def test_serializes_to_plain_dict(self) -> None:
+        sf = SkippedFile(
+            path="notes/bad.md",
+            category="parse_error",
+            detail="while scanning a simple key",
+        )
+        assert asdict(sf) == {
+            "path": "notes/bad.md",
+            "category": "parse_error",
+            "detail": "while scanning a simple key",
+        }
+
+    def test_is_frozen(self) -> None:
+        sf = SkippedFile(path="a.md", category="parse_error", detail="x")
+        try:
+            sf.path = "b.md"  # type: ignore[misc]
+        except AttributeError:
+            return
+        raise AssertionError("SkippedFile should be frozen")
+
+    def test_skip_categories_are_the_three_legal_values(self) -> None:
+        assert {
+            "parse_error",
+            "encoding_error",
+            "missing_frontmatter",
+        } == SKIP_CATEGORIES

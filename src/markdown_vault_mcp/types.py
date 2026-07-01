@@ -7,6 +7,31 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
+# The three deterministic, non-excluded skip categories surfaced via
+# get_index_status.skipped_files. A plain frozenset (not an enum) keeps the
+# tool payload JSON-trivial; tests/test_types.py pins the legal values and
+# the producer tests assert each category is emitted for the right failure.
+SKIP_CATEGORIES: frozenset[str] = frozenset(
+    {"parse_error", "encoding_error", "missing_frontmatter"}
+)
+
+
+@dataclass(frozen=True)
+class SkippedFile:
+    """A file deliberately dropped from the index for a surfaced reason.
+
+    Attributes:
+        path: Source-dir-relative POSIX path of the skipped file.
+        category: One of :data:`SKIP_CATEGORIES` — ``"parse_error"``,
+            ``"encoding_error"``, or ``"missing_frontmatter"``.
+        detail: Human-readable reason (a YAML/decode error message, or
+            ``"missing: [field, ...]"`` for missing frontmatter).
+    """
+
+    path: str
+    category: str
+    detail: str
+
 
 @dataclass
 class Chunk:
