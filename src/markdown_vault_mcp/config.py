@@ -41,7 +41,7 @@ _CHARS_PER_TOKEN = 2.8
 # Ceiling on the derived chunker char cap. Retrieval quality peaks at ~256-512
 # tokens per chunk regardless of the model's context length, so the cap is bounded
 # rather than scaled to context. 1500 chars (~535 tokens at _CHARS_PER_TOKEN) sits
-# at the top of that band and keeps the fastembed/ONNX fp32 path clear of the #306
+# just above that band and keeps the fastembed/ONNX fp32 path clear of the #306
 # OOM regime. Also the fallback when the model's context length is unknown.
 _MAX_CHUNK_CHARS_CEILING = 1500
 
@@ -49,9 +49,10 @@ _MAX_CHUNK_CHARS_CEILING = 1500
 def derive_max_chunk_chars(*, context_length: int | None, override: int | None) -> int:
     """Resolve the chunker character cap.
 
-    An explicit operator override wins; otherwise the cap is derived from the
-    embedding model's token context length; otherwise a conservative fixed
-    fallback is used.
+    A positive override is used verbatim; ``-1`` opts into unbounded
+    context-scaling; otherwise the cap is the bounded default
+    ``min(_MAX_CHUNK_CHARS_CEILING, round(context * 2.8))``, falling back to
+    ``_MAX_CHUNK_CHARS_CEILING`` when the context length is unknown.
 
     Args:
         context_length: The embedding model's maximum input length in tokens,
