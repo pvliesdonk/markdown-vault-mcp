@@ -824,3 +824,30 @@ class TestScanDirectoryOnSkip:
         (tmp_path / "nomatter.md").write_text("plain", encoding="utf-8")
         _notes, skips = self._collect(tmp_path)
         assert {s.category for s in skips} <= SKIP_CATEGORIES
+
+    def test_reports_unexpected_exception_as_parse_error(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # A non-YAML/non-decode/non-OSError failure inside parse_note (e.g. a
+        # chunker bug raising RuntimeError) hits the generic ``except
+        # Exception`` branch and is surfaced as ``parse_error`` via on_skip.
+        import markdown_vault_mcp.scanner as scanner_module
+        from markdown_vault_mcp.scanner import scan_directory
+        from markdown_vault_mcp.types import SkippedFile
+
+        (tmp_path / "boom.md").write_text("---\ntitle: ok\n---\nbody", encoding="utf-8")
+
+        def exploding_parse(abs_path, source_dir, chunk_strategy):  # noqa: ARG001
+            raise RuntimeError("chunker exploded")
+
+        monkeypatch.setattr(scanner_module, "parse_note", exploding_parse)
+        skips: list[SkippedFile] = []
+        notes = list(
+            scan_directory(
+                tmp_path, required_frontmatter=["title"], on_skip=skips.append
+            )
+        )
+        assert notes == []
+        assert [s.category for s in skips] == ["parse_error"]
+        assert skips[0].path == "boom.md"
+        assert "chunker exploded" in skips[0].detail
