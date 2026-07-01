@@ -286,10 +286,19 @@ class IndexManager:
                 skipped_state[rel_str] = compute_file_hash(abs_path)
             except OSError as exc:
                 # Possibly transient — leave unrecorded so the next scan
-                # retries the file.
-                logger.debug(
-                    "build_index_skip_hash_failed path=%s err=%s", rel_str, exc
-                )
+                # retries the file. If the path was an already-surfaced skip,
+                # its reason is clamped away by update_state; warn so the
+                # transient loss is observable rather than silent (#802).
+                if rel_str in skip_reasons:
+                    logger.warning(
+                        "build_index_surfaced_skip_dropped path=%s err=%s",
+                        rel_str,
+                        exc,
+                    )
+                else:
+                    logger.debug(
+                        "build_index_skip_hash_failed path=%s err=%s", rel_str, exc
+                    )
 
         # Update tracker state so reindex() knows the baseline.
         self._tracker.update_state(

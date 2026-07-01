@@ -1273,6 +1273,39 @@ class TestBuildIndexSkipReasons:
             vault.close()
         assert by_path["latin.md"].category == "encoding_error"
 
+    def test_pass2_hash_failure_on_surfaced_skip_warns(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog
+    ) -> None:
+        import logging
+
+        from markdown_vault_mcp.vault import Vault
+
+        (tmp_path / "good.md").write_text("---\ntitle: ok\n---\nbody", encoding="utf-8")
+        (tmp_path / "bad.md").write_text(
+            "---\ntitle: [unclosed\n---\n", encoding="utf-8"
+        )
+        import markdown_vault_mcp.managers.index as index_module
+
+        def failing_hash(_path):
+            raise OSError("vanished")
+
+        # Only non-indexed files (bad.md) are hashed in build_index's second
+        # pass; good.md is indexed and skipped there. So this forces the
+        # OSError only for the already-surfaced skip.
+        monkeypatch.setattr(index_module, "compute_file_hash", failing_hash)
+        vault = Vault(source_dir=tmp_path)
+        try:
+            with caplog.at_level(
+                logging.WARNING, logger="markdown_vault_mcp.managers.index"
+            ):
+                vault.index.build_index()
+        finally:
+            vault.close()
+        assert any(
+            "build_index_surfaced_skip_dropped" in r.message and "bad.md" in r.message
+            for r in caplog.records
+        )
+
 
 class TestReindexSkipReasons:
     """reindex records surfaced skips into tracker skip_reasons (#775)."""
