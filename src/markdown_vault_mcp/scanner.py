@@ -340,9 +340,11 @@ class HeadingChunker:
             chunk: A chunk whose word or char count exceeds the budget.
 
         Returns:
-            One or more chunks, each respecting the budget.  Returns
-            ``[chunk]`` unchanged when the content is whitespace-only (no
-            paragraphs to split on).
+            One or more chunks. Each fits the word and char budgets from the
+            bin-packing phase; after ``chunk_overlap_words`` overlap is applied
+            a fragment may exceed either budget by up to that many words.
+            Returns ``[chunk]`` unchanged when the content is whitespace-only
+            (no paragraphs to split on).
         """
         assert self._has_budget()  # guarded by caller
         word_budget = self.max_chunk_words

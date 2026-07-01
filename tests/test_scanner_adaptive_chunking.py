@@ -340,6 +340,25 @@ def test_overlap_can_exceed_char_budget_without_resplitting() -> None:
     assert any(len(c.content) > 40 for c in overlapped)
 
 
+def test_overlap_can_exceed_word_budget_without_resplitting() -> None:
+    """Word-budget mirror of the char-budget test: overlap is applied after the
+    word-budget split and is not re-checked, so an overlapped fragment may exceed
+    max_chunk_words and no extra split occurs."""
+    text = " ".join(f"w{i}" for i in range(40))
+    baseline = HeadingChunker(
+        max_chunk_words=8, max_chunk_chars=None, chunk_overlap_words=0
+    ).chunk(text, {})
+    assert len(baseline) >= 2  # the word budget forced a split
+    assert all(len(c.content.split()) <= 8 for c in baseline)
+    overlapped = HeadingChunker(
+        max_chunk_words=8, max_chunk_chars=None, chunk_overlap_words=3
+    ).chunk(text, {})
+    # Same fragment count: overlap did not trigger re-splitting under the word cap.
+    assert len(overlapped) == len(baseline)
+    # And at least one fragment now exceeds the word cap by the overlap words.
+    assert any(len(c.content.split()) > 8 for c in overlapped)
+
+
 def test_apply_overlap_prepends_previous_tail() -> None:
     """Fragment i begins with the last N words of the ORIGINAL fragment i-1."""
     chunker = HeadingChunker(max_chunk_words=10, chunk_overlap_words=2)

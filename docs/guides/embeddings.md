@@ -254,6 +254,8 @@ When you don't set `MAX_CHUNK_CHARS` explicitly, the default is `min(1500, round
 
 Set a positive value to force an exact cap. Set `-1` to opt into unbounded context-scaling (`round(context_length × 2.8)` with no ceiling, or `1500` when the model context is unknown). This reproduces the pre-bounded context-scaling and **can OOM the host** on the fastembed/ONNX path with a long-context model, so use it only with Ollama (out-of-process) or a remote provider.
 
+`MARKDOWN_VAULT_MCP_CHUNK_OVERLAP_WORDS` (default `40`, `0` disables) adds a few words from the end of the previous fragment to the start of each fragment when a section is too large for the caps and gets split on paragraph, line, or word boundaries. This improves retrieval recall at those arbitrary split points. An overlapped fragment can exceed the word or character cap by up to the overlap word count. Overlap applies to new and re-indexed notes, so run `reindex` to apply it across an existing vault; it does not force a rebuild on its own.
+
 !!! note "Changing the embedding model triggers a one-time cold rebuild"
     Because the char cap is derived from the model's context, the chunk boundaries themselves depend on the embedding model. Changing the embedding model (or setting/changing `MAX_CHUNK_CHARS`) re-chunks the **FTS index**, not just the embeddings, so on the next startup the server automatically rejects the warm-restart short-circuit and does a background cold rebuild (keyword search returns first, semantic search once embeddings finish). No manual `reindex` is needed. The same one-time rebuild happens when an embedding-enabled vault is upgraded from a release before this behavior existed.
 
