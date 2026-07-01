@@ -1062,10 +1062,10 @@ def scan_directory(
         on_skip: Optional callback invoked once per *surfaced* deterministic
             skip with a :class:`~markdown_vault_mcp.types.SkippedFile`
             (categories ``"encoding_error"``, ``"parse_error"``,
-            ``"missing_frontmatter"``, or ``"internal_error"``). It is **not**
-            called for
-            exclude-pattern matches (intentional) or transient ``OSError``
-            skips (self-healing). ``None`` (default) preserves the historical
+            ``"missing_frontmatter"``, or ``"internal_error"``). It is
+            **not** called for exclude-pattern matches (intentional) or
+            transient ``OSError`` skips (self-healing). ``None`` (default)
+            preserves the historical
             behaviour of silently skipping such files (#775).
 
     Yields:
