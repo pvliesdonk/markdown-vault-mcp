@@ -388,3 +388,39 @@ def test_overlap_not_applied_across_heading_sections() -> None:
     assert b_chunks, "expected a chunk containing section B content"
     # The chunk that opens section B must not carry section A's last word.
     assert "a39" not in b_chunks[0].content
+
+
+def test_apply_overlap_no_accumulation_sharp() -> None:
+    """Overlap for fragment i reads the ORIGINAL fragment i-1, never the
+    already-overlapped one. With n=3 a naive (accumulating) implementation would
+    produce "c d e" for fragment 2; the correct one produces "d e f"."""
+    chunker = HeadingChunker(max_chunk_words=10, chunk_overlap_words=3)
+    frags = [_frag("a b c"), _frag("d e f"), _frag("g h i")]
+    out = chunker._apply_overlap(frags)
+    assert out[1].content == "a b c\n\nd e f"
+    assert out[2].content == "d e f\n\ng h i"
+
+
+def test_apply_overlap_empty_previous_fragment() -> None:
+    """A previous fragment with no words yields no prefix (no leading blank)."""
+    chunker = HeadingChunker(max_chunk_words=10, chunk_overlap_words=3)
+    out = chunker._apply_overlap([_frag(""), _frag("d e f")])
+    assert out[1].content == "d e f"
+
+
+def test_overlap_not_applied_between_small_adjacent_sections() -> None:
+    """Two adjacent heading sections that each fit the budget stay separate
+    chunks with no overlap between them (overlap is wired only in _budget_split).
+
+    One word per line so the doc exceeds the 30-line short-doc bypass and is
+    split on headings; max_chunk_words is high enough that neither section is
+    budget-split, so _budget_split (hence _apply_overlap) never runs.
+    """
+    chunker = HeadingChunker(max_chunk_words=100, chunk_overlap_words=3)
+    a_body = "\n".join(f"a{i}" for i in range(40))
+    b_body = "\n".join(f"b{i}" for i in range(40))
+    text = f"## Section A\n{a_body}\n## Section B\n{b_body}\n"
+    chunks = chunker.chunk(text, {})
+    b_chunks = [c for c in chunks if "b0" in c.content]
+    assert b_chunks, "expected a chunk containing section B content"
+    assert "a39" not in b_chunks[0].content

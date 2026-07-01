@@ -1995,6 +1995,11 @@ def test_chunk_overlap_words_env_override(
     cfg = ProjectConfig.from_env()
     assert cfg.search.chunk_overlap_words == 0
 
+    # Also test a non-zero value
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_CHUNK_OVERLAP_WORDS", "25")
+    cfg = ProjectConfig.from_env()
+    assert cfg.search.chunk_overlap_words == 25
+
 
 def test_chunk_overlap_words_rejects_negative(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
