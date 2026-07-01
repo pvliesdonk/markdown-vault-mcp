@@ -2351,6 +2351,10 @@ class TestPrompts:
         assert "horror fiction" in text
         assert "`search`" in text
         assert "`write`" in text
+        # The derived ${topic_slug} is substituted end-to-end (#788): no literal
+        # placeholder remains and the slug appears in the target path.
+        assert "Research/horror-fiction.md" in text
+        assert "${topic_slug}" not in text
 
     @pytest.mark.usefixtures("_mcp_env_writable")
     async def test_discuss_prompt(self) -> None:

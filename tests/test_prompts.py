@@ -10,7 +10,7 @@ Tests cover:
 
 from __future__ import annotations
 
-from pathlib import Path  # noqa: TC003
+from pathlib import Path
 
 import pytest
 from fastmcp import Client
@@ -234,7 +234,7 @@ class TestRegisterOneUserPromptArgValidation:
             logging.WARNING, logger="markdown_vault_mcp._server_prompts"
         ):
             _register_one_user_prompt(mcp, "bad_prompt", defn)
-        assert "invalid or reserved argument name" in caplog.text
+        assert "is a reserved Python keyword" in caplog.text
 
     def test_skips_prompt_with_non_identifier_arg_name(
         self, caplog: pytest.LogCaptureFixture
@@ -257,12 +257,13 @@ class TestRegisterOneUserPromptArgValidation:
             logging.WARNING, logger="markdown_vault_mcp._server_prompts"
         ):
             _register_one_user_prompt(mcp, "bad_prompt2", defn)
-        assert "invalid or reserved argument name" in caplog.text
+        assert "is not a valid Python identifier" in caplog.text
 
-    def test_skips_prompt_with_reserved_exec_name(
+    def test_formerly_reserved_name_now_allowed(
         self, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """Arg names 'tmpl'/'_Template' shadow exec closure vars — must be rejected."""
+        """'tmpl' was reserved only to protect the exec() namespace. With exec
+        removed (#788) it is a plain identifier and is no longer rejected."""
         import logging
 
         from fastmcp import FastMCP
@@ -271,7 +272,7 @@ class TestRegisterOneUserPromptArgValidation:
 
         mcp = FastMCP("test")
         defn: dict = {
-            "description": "bad prompt",
+            "description": "ok prompt",
             "arguments": [{"name": "tmpl", "description": "", "required": True}],
             "tags": [],
             "content": "Hello $tmpl",
@@ -279,8 +280,96 @@ class TestRegisterOneUserPromptArgValidation:
         with caplog.at_level(
             logging.WARNING, logger="markdown_vault_mcp._server_prompts"
         ):
-            _register_one_user_prompt(mcp, "bad_exec_name", defn)
-        assert "invalid or reserved argument name" in caplog.text
+            _register_one_user_prompt(mcp, "ok_name", defn)
+        assert "skipping prompt" not in caplog.text
+
+    def test_builtin_prompt_skips_invalid_arg_name(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """The built-in registration path also rejects non-identifier names
+        (defense-in-depth for the shared synthetic-signature path, #788)."""
+        import logging
+
+        from fastmcp import FastMCP
+
+        from markdown_vault_mcp._server_prompts import _register_one_builtin_prompt
+
+        mcp = FastMCP("test")
+        defn: dict = {
+            "description": "bad builtin",
+            "arguments": [{"name": "bad-name", "description": "", "required": True}],
+            "tags": [],
+            "icons": "",
+            "content": "Hi $x",
+        }
+        with caplog.at_level(
+            logging.WARNING, logger="markdown_vault_mcp._server_prompts"
+        ):
+            _register_one_builtin_prompt(mcp, "bad_builtin", defn)
+        assert "is not a valid Python identifier" in caplog.text
+
+    def test_module_has_no_exec(self) -> None:
+        """The prompt-registration module compiles no source and calls no exec
+        (the S102 sink removed in #788)."""
+        import markdown_vault_mcp._server_prompts as mod
+
+        source = Path(mod.__file__).read_text(encoding="utf-8")
+        assert "exec(" not in source
+
+    def test_user_prompt_skips_invalid_arg_order(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """An optional arg before a required one cannot form a valid signature;
+        the prompt is skipped with a warning rather than crashing startup."""
+        import logging
+
+        from fastmcp import FastMCP
+
+        from markdown_vault_mcp._server_prompts import _register_one_user_prompt
+
+        mcp = FastMCP("test")
+        defn: dict = {
+            "description": "bad order",
+            "arguments": [
+                {"name": "opt", "description": "", "required": False},
+                {"name": "req", "description": "", "required": True},
+            ],
+            "tags": [],
+            "content": "$opt $req",
+        }
+        with caplog.at_level(
+            logging.WARNING, logger="markdown_vault_mcp._server_prompts"
+        ):
+            _register_one_user_prompt(mcp, "bad_order", defn)
+        assert "cannot form a valid signature" in caplog.text
+
+    def test_builtin_prompt_skips_invalid_arg_order(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """The built-in path likewise skips an unformable signature (covers the
+        second except-ValueError handler)."""
+        import logging
+
+        from fastmcp import FastMCP
+
+        from markdown_vault_mcp._server_prompts import _register_one_builtin_prompt
+
+        mcp = FastMCP("test")
+        defn: dict = {
+            "description": "bad order builtin",
+            "arguments": [
+                {"name": "opt", "description": "", "required": False},
+                {"name": "req", "description": "", "required": True},
+            ],
+            "tags": [],
+            "icons": "",
+            "content": "$opt $req",
+        }
+        with caplog.at_level(
+            logging.WARNING, logger="markdown_vault_mcp._server_prompts"
+        ):
+            _register_one_builtin_prompt(mcp, "bad_order_builtin", defn)
+        assert "cannot form a valid signature" in caplog.text
 
 
 # ---------------------------------------------------------------------------
@@ -408,6 +497,64 @@ class TestUserPromptWithArgs:
             result = await client.get_prompt("styled", {})
         text = result.messages[0].content.text
         assert "[]" in text  # empty string substituted
+
+    @pytest.mark.usefixtures("_clear_vars")
+    async def test_synthetic_signature_exposes_arguments(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """FastMCP introspects the prompt's arguments from the synthetic
+        signature (name + required), so clients see the declared arguments."""
+        prompts_dir = tmp_path / "prompts"
+        prompts_dir.mkdir()
+        content = (
+            "---\n"
+            "arguments:\n"
+            "  - name: path\n"
+            "    required: true\n"
+            "  - name: style\n"
+            "    required: false\n"
+            "---\n"
+            "$path in $style"
+        )
+        (prompts_dir / "twoarg.md").write_text(content, encoding="utf-8")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_PROMPTS_FOLDER", str(prompts_dir))
+
+        server = make_server()
+        async with Client(server) as client:
+            prompts = await client.list_prompts()
+        prompt = next(p for p in prompts if p.name == "twoarg")
+        args = {a.name: a.required for a in prompt.arguments}
+        assert args == {"path": True, "style": False}
+
+    @pytest.mark.usefixtures("_clear_vars")
+    async def test_formerly_reserved_arg_name_substitutes(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A prompt whose arg is named 'tmpl' (formerly exec-reserved) now
+        registers and substitutes end-to-end (#788)."""
+        prompts_dir = tmp_path / "prompts"
+        prompts_dir.mkdir()
+        content = (
+            "---\narguments:\n  - name: tmpl\n    required: true\n---\nHello $tmpl."
+        )
+        (prompts_dir / "greet.md").write_text(content, encoding="utf-8")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_PROMPTS_FOLDER", str(prompts_dir))
+
+        server = make_server()
+        async with Client(server) as client:
+            result = await client.get_prompt("greet", {"tmpl": "World"})
+        assert "Hello World." in result.messages[0].content.text
+
+
+def test_research_derive_slugifies_topic() -> None:
+    """_research_derive turns $topic into a filesystem-safe ${topic_slug}
+    (lowercased; each non-word/dash char → '-'; leading/trailing '-' trimmed) —
+    the one behaviour beyond plain substitution moved out of the exec (#788)."""
+    from markdown_vault_mcp._server_prompts import _research_derive
+
+    values: dict = {"topic": "Horror Fiction!"}
+    _research_derive(values)
+    assert values["topic_slug"] == "horror-fiction"
 
 
 class TestUserPromptOverride:

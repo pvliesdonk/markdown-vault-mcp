@@ -29,7 +29,7 @@ variables (`MARKDOWN_VAULT_MCP_TRANSPORT`, `MARKDOWN_VAULT_MCP_HOST`,
 | `MARKDOWN_VAULT_MCP_REQUIRED_FIELDS` | csv | (none) | No | Comma-separated frontmatter fields required on every document; documents missing any are excluded from the index |
 | `MARKDOWN_VAULT_MCP_EXCLUDE` | csv | (none) | No | Comma-separated glob patterns to exclude from scanning (such as `.obsidian/**,.trash/**`) |
 | `MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER` | string | `_templates` | No | Relative folder path used by the `create_from_template` prompt to discover/read template files |
-| `MARKDOWN_VAULT_MCP_PROMPTS_FOLDER` | path | (none) | No | Path to a directory of `.md` prompt files that extend or override built-in prompts |
+| `MARKDOWN_VAULT_MCP_PROMPTS_FOLDER` | path | (none) | No | Path to a directory of `.md` prompt files that extend or override built-in prompts. Each declared argument name must be a plain Python identifier (letters, digits, underscore; not a keyword); a prompt with a non-conforming argument name is skipped with a logged warning. |
 
 ## Index Build Timeout
 

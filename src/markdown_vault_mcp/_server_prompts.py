@@ -8,12 +8,16 @@ Call :func:`register_prompts` after constructing the
 from __future__ import annotations
 
 import importlib.resources
+import inspect
 import keyword
 import logging
 import re
 from pathlib import Path, PurePosixPath
 from string import Template
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 import frontmatter
 from fastmcp import FastMCP
@@ -27,13 +31,97 @@ _BUILTIN_PROMPTS_DIR = importlib.resources.files("markdown_vault_mcp").joinpath(
 
 logger = logging.getLogger(__name__)
 
-# Only valid Python identifiers are allowed as argument names in user prompts.
-# This prevents exec() injection via malicious frontmatter argument names.
+# Argument names must be plain, non-keyword Python identifiers: they become
+# parameters of a synthetic inspect.Signature (see _build_prompt_fn), so a name
+# that is not a valid identifier cannot form a parameter at all.
 _VALID_IDENT = re.compile(r"^[a-zA-Z_]\w*$")
 
-# Argument names that would shadow variables injected into the exec() namespace,
-# causing silent wrong output (tmpl) or TypeError at invocation (_Template).
-_RESERVED_EXEC_NAMES = frozenset({"tmpl", "_Template"})
+
+def _arg_names_valid(kind: str, name: str, arg_defs: list[dict[str, Any]]) -> bool:
+    """True when every argument name is a plain, non-keyword identifier.
+
+    Logs a warning and returns False on the first offending name so the caller
+    skips the prompt rather than raising when the synthetic signature is built.
+    """
+    for arg in arg_defs:
+        arg_name = arg["name"]
+        if not _VALID_IDENT.match(arg_name):
+            reason = "is not a valid Python identifier"
+        elif keyword.iskeyword(arg_name):
+            reason = "is a reserved Python keyword"
+        else:
+            continue
+        logger.warning(
+            "%s prompt %r argument name %r %s — skipping prompt",
+            kind,
+            name,
+            arg_name,
+            reason,
+        )
+        return False
+    return True
+
+
+def _build_prompt_fn(
+    template: str,
+    arg_defs: list[dict[str, Any]],
+    derive: Callable[[dict[str, Any]], None] | None = None,
+) -> Any:
+    """Build a prompt callable with a synthetic signature (no ``exec``).
+
+    Each argument becomes a ``str`` parameter (optional args default to ``""``)
+    so FastMCP can introspect the prompt's arguments via the attached
+    ``__signature__``. No source string is compiled from the argument names, so
+    a name can only ever be a parameter, never executable code (#788).
+
+    Args:
+        template: The prompt body with ``$name`` / ``${name}`` placeholders.
+        arg_defs: Argument definitions (``name`` + ``required``).
+        derive: Optional hook that adds computed template variables to the
+            bound-argument dict before substitution (e.g. a slug).
+
+    Returns:
+        A callable whose ``__signature__`` exposes the typed arguments.
+
+    Raises:
+        ValueError: If the arguments cannot form a valid signature (e.g. an
+            optional argument precedes a required one).
+    """
+    params = [
+        inspect.Parameter(
+            arg["name"],
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            annotation=str,
+            default=inspect.Parameter.empty if arg.get("required", False) else "",
+        )
+        for arg in arg_defs
+    ]
+    signature = inspect.Signature(params, return_annotation=str)
+
+    def prompt_fn(**kwargs: str) -> str:
+        bound = signature.bind_partial(**kwargs)
+        bound.apply_defaults()
+        values: dict[str, Any] = dict(bound.arguments)
+        if derive is not None:
+            derive(values)
+        return Template(template).safe_substitute(**values)
+
+    # FastMCP introspects prompts via BOTH inspect.signature (reads
+    # __signature__) and typing.get_type_hints (reads __annotations__), so set
+    # both to the per-argument view rather than the real ``**kwargs`` one.
+    prompt_fn.__signature__ = signature  # type: ignore[attr-defined]
+    prompt_fn.__annotations__ = {p.name: str for p in params} | {"return": str}
+    return prompt_fn
+
+
+def _research_derive(values: dict[str, Any]) -> None:
+    """Add ``topic_slug`` derived from ``topic`` for the built-in research prompt.
+
+    SYNC: coupled to static/prompts/research.md, which uses ``${topic_slug}``.
+    """
+    values["topic_slug"] = re.sub(r"[^\w\-]", "-", str(values["topic"]).lower()).strip(
+        "-"
+    )
 
 
 def _load_user_prompt_defs(prompts_folder: str | None) -> dict[str, dict[str, Any]]:
@@ -108,8 +196,9 @@ def _load_user_prompt_defs(prompts_folder: str | None) -> dict[str, dict[str, An
 def _register_one_user_prompt(mcp: FastMCP, name: str, defn: dict[str, Any]) -> None:
     """Register a single user-defined prompt on *mcp*.
 
-    Builds a function with the correct signature via :func:`exec` so that
-    FastMCP can introspect the arguments.
+    Builds a callable with a synthetic :class:`inspect.Signature` (see
+    :func:`_build_prompt_fn`) so FastMCP can introspect the arguments without
+    compiling any user-derived source.
 
     Args:
         mcp: The :class:`~fastmcp.FastMCP` instance.
@@ -132,51 +221,23 @@ def _register_one_user_prompt(mcp: FastMCP, name: str, defn: dict[str, Any]) -> 
 
         fn = _make_no_arg(content_template)
     else:
-        # Validate all argument names before building the exec'd function.
-        # Malicious frontmatter could inject arbitrary Python via exec() if
-        # names are not restricted to valid identifiers, or if names happen
-        # to be reserved keywords (which would cause a SyntaxError in exec).
-        for arg in arg_defs:
-            arg_name = arg["name"]
-            if (
-                not _VALID_IDENT.match(arg_name)
-                or keyword.iskeyword(arg_name)
-                or arg_name in _RESERVED_EXEC_NAMES
-            ):
-                logger.warning(
-                    "User prompt %r has invalid or reserved argument name %r — skipping prompt",
-                    name,
-                    arg_name,
-                )
-                return
-
-        # Build a function with the correct typed signature via exec so
-        # FastMCP can introspect argument names and required status.
-        # Template substitution uses string.Template ($var / ${var}) rather
-        # than str.format() to prevent attribute-traversal format-string attacks.
-        param_parts: list[str] = []
-        for arg in arg_defs:
-            if arg.get("required", False):
-                param_parts.append(f"{arg['name']}: str")
-            else:
-                param_parts.append(f'{arg["name"]}: str = ""')
-        params_str = ", ".join(param_parts)
-        sub_args = ", ".join(f"{a['name']}={a['name']}" for a in arg_defs)
-        fn_src = (
-            f"def prompt_fn({params_str}) -> str:\n"
-            f"    return _Template(tmpl).safe_substitute({sub_args})\n"
-        )
-        local_ns: dict[str, Any] = {"tmpl": content_template, "_Template": Template}
+        # Reject non-identifier / keyword names before building the signature.
+        if not _arg_names_valid("User", name, arg_defs):
+            return
+        # Build the callable with a synthetic signature (no exec). Template
+        # substitution uses string.Template ($var / ${var}) rather than
+        # str.format() to prevent attribute-traversal format-string attacks.
         try:
-            exec(fn_src, local_ns)
-        except SyntaxError:
+            fn = _build_prompt_fn(content_template, arg_defs)
+        except ValueError:
             logger.warning(
-                "User prompt %r generated invalid function signature — skipping prompt",
+                "User prompt %r has arguments that cannot form a valid signature "
+                "(e.g. a duplicate name, or an optional argument before a required "
+                "one) — skipping prompt",
                 name,
                 exc_info=True,
             )
             return
-        fn = local_ns["prompt_fn"]
 
     fn.__name__ = name
     fn.__doc__ = description or f"User-defined prompt: {name}"
@@ -251,50 +312,24 @@ def _register_one_builtin_prompt(mcp: FastMCP, name: str, defn: dict[str, Any]) 
     if not arg_defs:
         fn: Any = lambda: content_template  # noqa: E731
     else:
-        # Build a function with correct signature via exec (same pattern as
-        # user-defined prompts) so FastMCP can introspect argument names.
-        param_parts: list[str] = []
-        for arg in arg_defs:
-            if arg.get("required", False):
-                param_parts.append(f"{arg['name']}: str")
-            else:
-                param_parts.append(f'{arg["name"]}: str = ""')
-        params_str = ", ".join(param_parts)
-
-        # Some prompts compute derived variables (e.g. research: topic_slug).
-        # Add a pre-compute block for known derivations.
-        # SYNC: the research block below is coupled to static/prompts/research.md
-        # which uses ${topic_slug}.  If that template drops the variable, remove
-        # the pre-compute and extra arg here as well.
-        pre_compute = ""
-        if name == "research":
-            pre_compute = "    topic_slug = _re_sub(r'[^\\w\\-]', '-', topic.lower()).strip('-')\n"
-
-        all_args = [a["name"] for a in arg_defs]
-        if name == "research":
-            all_args.append("topic_slug")
-        sub_args = ", ".join(f"{a}={a}" for a in all_args)
-
-        fn_src = (
-            f"def prompt_fn({params_str}) -> str:\n"
-            f"{pre_compute}"
-            f"    return _Template(tmpl).safe_substitute({sub_args})\n"
-        )
-        local_ns: dict[str, Any] = {
-            "tmpl": content_template,
-            "_Template": Template,
-            "_re_sub": re.sub,
-        }
+        # Built-in prompt definitions ship in the package (first-party), but
+        # validate their names too so the same synthetic-signature path is used
+        # for both trusted and user prompts and no name is ever exec'd (#788).
+        if not _arg_names_valid("Built-in", name, arg_defs):
+            return
+        # Some prompts compute derived template variables (e.g. research adds
+        # ${topic_slug}); those are computed in the closure via ``derive``.
+        derive = _research_derive if name == "research" else None
         try:
-            exec(fn_src, local_ns)
-        except SyntaxError:
+            fn = _build_prompt_fn(content_template, arg_defs, derive=derive)
+        except ValueError:
             logger.warning(
-                "Built-in prompt %r generated invalid function signature — skipping",
+                "Built-in prompt %r has arguments that cannot form a valid "
+                "signature — skipping",
                 name,
                 exc_info=True,
             )
             return
-        fn = local_ns["prompt_fn"]
 
     fn.__name__ = name
     fn.__doc__ = description
