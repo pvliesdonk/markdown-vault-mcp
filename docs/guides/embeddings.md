@@ -247,12 +247,12 @@ The chunker (shared by keyword and semantic search) bounds every chunk by a word
 
 When you don't set `MAX_CHUNK_CHARS` explicitly, the default is `min(1500, round(context_length × 2.8))`: retrieval quality peaks at ~256 to 512 tokens per chunk regardless of the model's context, and the 1500-char ceiling keeps the fastembed/ONNX path clear of the out-of-memory regime seen with oversize chunks (issue [#306](https://github.com/pvliesdonk/markdown-vault-mcp/issues/306)). The result:
 
-- `bge-small-en-v1.5` (512-token context) → ~1,434 chars (below the ceiling, so unchanged)
-- a small-context model clamps *down* to its own limit (`round(context_length × 2.8)`)
-- a long-context model (2048, 8192, …) clamps to the `1500`-char ceiling
+- `bge-small-en-v1.5` (512-token context) → ~1,434 chars (below the ceiling, used as is)
+- a shorter-context model (below ~536 tokens) uses its own smaller value, `round(context_length × 2.8)`
+- a longer-context model (2048, 8192, …) is capped at the `1500`-char ceiling
 - unknown context (no provider, or Ollama unreachable at startup) → the `1500`-char ceiling
 
-Set a positive value to force an exact cap. Set `-1` to opt into unbounded context-scaling (`round(context_length × 2.8)` with no ceiling). This reproduces the pre-bounded context-scaling and **can OOM the host** on the fastembed/ONNX path with a long-context model, so use it only with Ollama (out-of-process) or a remote provider.
+Set a positive value to force an exact cap. Set `-1` to opt into unbounded context-scaling (`round(context_length × 2.8)` with no ceiling, or `1500` when the model context is unknown). This reproduces the pre-bounded context-scaling and **can OOM the host** on the fastembed/ONNX path with a long-context model, so use it only with Ollama (out-of-process) or a remote provider.
 
 !!! note "Changing the embedding model triggers a one-time cold rebuild"
     Because the char cap is derived from the model's context, the chunk boundaries themselves depend on the embedding model. Changing the embedding model (or setting/changing `MAX_CHUNK_CHARS`) re-chunks the **FTS index**, not just the embeddings, so on the next startup the server automatically rejects the warm-restart short-circuit and does a background cold rebuild (keyword search returns first, semantic search once embeddings finish). No manual `reindex` is needed. The same one-time rebuild happens when an embedding-enabled vault is upgraded from a release before this behavior existed.
