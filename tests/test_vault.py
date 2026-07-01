@@ -64,6 +64,7 @@ def _make_vault(
     read_only: bool = True,
     on_write: object = None,
     exclude_patterns: list[str] | None = None,
+    chunk_overlap_words: int = 0,
 ) -> Vault:
     """Create a Vault for testing with sensible defaults.
 
@@ -79,6 +80,7 @@ def _make_vault(
         read_only: When True, write operations raise ReadOnlyError.
         on_write: Optional callback for write operations.
         exclude_patterns: Glob patterns to exclude from indexing.
+        chunk_overlap_words: Overlap words for heading chunker.
 
     Returns:
         A configured :class:`Vault` instance.
@@ -93,6 +95,7 @@ def _make_vault(
         read_only=read_only,
         on_write=on_write,
         exclude_patterns=exclude_patterns,
+        chunk_overlap_words=chunk_overlap_words,
     )
 
 
@@ -401,6 +404,23 @@ class TestBuildIndex:
         assert col2._vectors is not None
         vec_paths2 = [m["path"] for m in col2._vectors._metadata]
         assert ".claude/test.md" not in vec_paths2
+
+
+# ---------------------------------------------------------------------------
+# Vault initialization tests
+# ---------------------------------------------------------------------------
+
+
+class TestVaultInit:
+    def test_vault_forwards_chunk_overlap_words_to_chunker(
+        self, vault_path: Path
+    ) -> None:
+        """chunk_overlap_words is forwarded to the HeadingChunker."""
+        col = _make_vault(vault_path, chunk_overlap_words=7)
+
+        assert col._chunk_strategy.chunk_overlap_words == 7
+
+        col.close()
 
 
 # ---------------------------------------------------------------------------
