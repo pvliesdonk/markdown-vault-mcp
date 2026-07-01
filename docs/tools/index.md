@@ -227,7 +227,8 @@ build attempt.
   exception message.
 - `skipped_files`: list of files dropped from the index for a surfaced
   deterministic reason. Each entry is `{"path", "category", "detail"}`, with
-  `category` one of `parse_error`, `encoding_error`, or `missing_frontmatter`.
+  `category` one of `parse_error`, `encoding_error`, `missing_frontmatter`, or
+  `internal_error` (an unexpected indexer error rather than a content problem).
   Empty when nothing was skipped. This tells a parse-dropped note apart from
   one that simply has not synced yet, without reading container logs.
   Exclude-pattern matches and transient I/O skips are intentionally omitted.

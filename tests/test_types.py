@@ -51,9 +51,10 @@ class TestSkippedFile:
             return
         raise AssertionError("SkippedFile should be frozen")
 
-    def test_skip_categories_are_the_three_legal_values(self) -> None:
+    def test_skip_categories_are_the_legal_values(self) -> None:
         assert {
             "parse_error",
             "encoding_error",
             "missing_frontmatter",
+            "internal_error",
         } == SKIP_CATEGORIES

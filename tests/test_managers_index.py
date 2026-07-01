@@ -1297,6 +1297,32 @@ class TestReindexSkipReasons:
             vault.close()
         assert by_path["bad.md"].category == "parse_error"
 
+    def test_unexpected_exception_recorded_as_internal_error(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        (tmp_path / "seed.md").write_text("---\na: 1\n---\nx", encoding="utf-8")
+        vault = self._build(tmp_path)
+        try:
+            (tmp_path / "boom.md").write_text(
+                "---\ntitle: ok\n---\nbody", encoding="utf-8"
+            )
+            import markdown_vault_mcp.managers.index as index_module
+
+            real_parse = index_module.parse_note
+
+            def maybe_explode(abs_path, source_dir, chunk_strategy):
+                if abs_path.name == "boom.md":
+                    raise RuntimeError("chunker exploded")
+                return real_parse(abs_path, source_dir, chunk_strategy)
+
+            monkeypatch.setattr(index_module, "parse_note", maybe_explode)
+            vault.index.reindex()
+            by_path = {sf.path: sf for sf in vault.index.skipped_files()}
+        finally:
+            vault.close()
+        assert by_path["boom.md"].category == "internal_error"
+        assert "chunker exploded" in by_path["boom.md"].detail
+
     def test_missing_field_recorded_as_missing_frontmatter(
         self, tmp_path: Path
     ) -> None:

@@ -7,12 +7,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
-# The three deterministic, non-excluded skip categories surfaced via
+# The four deterministic, non-excluded skip categories surfaced via
 # get_index_status.skipped_files. A plain frozenset (not an enum) keeps the
 # tool payload JSON-trivial; tests/test_types.py pins the legal values and
 # the producer tests assert each category is emitted for the right failure.
+# ``internal_error`` covers a genuinely-unexpected exception from parse_note
+# (a code/chunker bug), as opposed to ``parse_error`` for malformed content.
 SKIP_CATEGORIES: frozenset[str] = frozenset(
-    {"parse_error", "encoding_error", "missing_frontmatter"}
+    {"parse_error", "encoding_error", "missing_frontmatter", "internal_error"}
 )
 
 
@@ -23,7 +25,8 @@ class SkippedFile:
     Attributes:
         path: Source-dir-relative POSIX path of the skipped file.
         category: One of :data:`SKIP_CATEGORIES` — ``"parse_error"``,
-            ``"encoding_error"``, or ``"missing_frontmatter"``.
+            ``"encoding_error"``, ``"missing_frontmatter"``, or
+            ``"internal_error"``.
         detail: Human-readable reason (a YAML/decode error message, or
             ``"missing: [field, ...]"`` for missing frontmatter).
     """

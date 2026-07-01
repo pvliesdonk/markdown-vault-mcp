@@ -102,7 +102,8 @@ class IndexFacet:
         ``write_generation`` merged from the writer, and ``skipped_files`` — a
         list of ``{path, category, detail}`` dicts for files dropped from the
         index for a surfaced deterministic reason (parse / encoding /
-        missing-frontmatter), read from tracker state (#775). A captured build
+        missing-frontmatter / internal-error), read from tracker state (#775,
+        #802). A captured build
         error appears in ``error`` as diagnostic context without demoting a
         ``queryable`` status; ``documents_indexed_error`` carries a SQLite read
         failure (``documents_indexed`` stays ``0``) (#583).

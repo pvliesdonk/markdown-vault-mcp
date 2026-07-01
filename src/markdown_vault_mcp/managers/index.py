@@ -389,7 +389,7 @@ class IndexManager:
         parsed: list[tuple[str, ParsedNote]] = []
         # Excluded paths are filtered inside detect_changes (before hashing,
         # #257), so they never reach this loop; the only skips recorded here
-        # are parse/decode failures and missing-frontmatter files below.
+        # are parse/decode/unexpected failures and missing-frontmatter below.
         for path in changes.added + changes.modified:
             abs_path = self._source_dir / path
 
@@ -403,14 +403,18 @@ class IndexManager:
                 logger.warning("reindex: skipping %s — %s", path, exc)
                 _record_skip(path, abs_path, "encoding_error", str(exc))
                 continue
+            except yaml.YAMLError as exc:
+                logger.warning("reindex: skipping %s — parse error (%s)", path, exc)
+                _record_skip(path, abs_path, "parse_error", str(exc))
+                continue
             except Exception as exc:
-                logger.warning(
-                    "reindex: skipping %s — parse error (%s)",
+                logger.error(
+                    "reindex: skipping %s — unexpected error (%s)",
                     path,
                     exc,
                     exc_info=True,
                 )
-                _record_skip(path, abs_path, "parse_error", str(exc))
+                _record_skip(path, abs_path, "internal_error", str(exc))
                 continue
 
             if self._required_frontmatter:
@@ -845,8 +849,8 @@ class IndexManager:
         Reads the tracker's persisted ``skip_reasons`` map and returns one
         :class:`~markdown_vault_mcp.types.SkippedFile` per path, sorted by
         path. Covers the deterministic, non-excluded skips (parse / encoding /
-        missing-frontmatter); exclude-pattern and transient-``OSError`` skips
-        are intentionally absent.
+        missing-frontmatter / internal-error); exclude-pattern and
+        transient-``OSError`` skips are intentionally absent.
 
         Returns:
             Path-sorted list of :class:`SkippedFile`. Empty when nothing was

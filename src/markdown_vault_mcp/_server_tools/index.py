@@ -90,8 +90,10 @@ def register(mcp: FastMCP) -> None:
             - skipped_files (list[dict]): Files dropped from the index for a
               surfaced deterministic reason. Each entry is
               ``{"path", "category", "detail"}`` where ``category`` is one of
-              ``"parse_error"``, ``"encoding_error"``, or
-              ``"missing_frontmatter"``. Empty when nothing was skipped.
+              ``"parse_error"``, ``"encoding_error"``,
+              ``"missing_frontmatter"``, or ``"internal_error"`` (an
+              unexpected indexer error, vs a content problem). Empty when
+              nothing was skipped.
               Distinguishes a parse-dropped note from an unsynced one without
               reading container logs. Exclude-pattern and transient-I/O skips
               are intentionally not listed.

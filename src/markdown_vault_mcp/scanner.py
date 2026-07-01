@@ -1061,8 +1061,9 @@ def scan_directory(
             Defaults to :class:`HeadingChunker`.
         on_skip: Optional callback invoked once per *surfaced* deterministic
             skip with a :class:`~markdown_vault_mcp.types.SkippedFile`
-            (categories ``"encoding_error"``, ``"parse_error"``, or
-            ``"missing_frontmatter"``). It is **not** called for
+            (categories ``"encoding_error"``, ``"parse_error"``,
+            ``"missing_frontmatter"``, or ``"internal_error"``). It is **not**
+            called for
             exclude-pattern matches (intentional) or transient ``OSError``
             skips (self-healing). ``None`` (default) preserves the historical
             behaviour of silently skipping such files (#775).
@@ -1119,12 +1120,14 @@ def scan_directory(
                 )
             continue
         except Exception as exc:
-            logger.warning(
+            logger.error(
                 "Skipping %s: unexpected error (%s)", abs_path, exc, exc_info=True
             )
             if on_skip is not None:
                 on_skip(
-                    SkippedFile(path=rel_posix, category="parse_error", detail=str(exc))
+                    SkippedFile(
+                        path=rel_posix, category="internal_error", detail=str(exc)
+                    )
                 )
             continue
 

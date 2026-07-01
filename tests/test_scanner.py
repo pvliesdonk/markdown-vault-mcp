@@ -825,12 +825,12 @@ class TestScanDirectoryOnSkip:
         _notes, skips = self._collect(tmp_path)
         assert {s.category for s in skips} <= SKIP_CATEGORIES
 
-    def test_reports_unexpected_exception_as_parse_error(
+    def test_reports_unexpected_exception_as_internal_error(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         # A non-YAML/non-decode/non-OSError failure inside parse_note (e.g. a
         # chunker bug raising RuntimeError) hits the generic ``except
-        # Exception`` branch and is surfaced as ``parse_error`` via on_skip.
+        # Exception`` branch and is surfaced as ``internal_error`` via on_skip.
         import markdown_vault_mcp.scanner as scanner_module
         from markdown_vault_mcp.scanner import scan_directory
         from markdown_vault_mcp.types import SkippedFile
@@ -848,6 +848,6 @@ class TestScanDirectoryOnSkip:
             )
         )
         assert notes == []
-        assert [s.category for s in skips] == ["parse_error"]
+        assert [s.category for s in skips] == ["internal_error"]
         assert skips[0].path == "boom.md"
         assert "chunker exploded" in skips[0].detail
