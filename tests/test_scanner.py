@@ -754,3 +754,73 @@ class TestListSectionHeadings:
 def test_normalize_heading_collapses_whitespace() -> None:
     assert normalize_heading("1.3.   Reducing   deps  ") == "1.3. Reducing deps"
     assert normalize_heading("\tA\nB\t") == "A B"
+
+
+class TestScanDirectoryOnSkip:
+    """scan_directory reports surfaced skips through on_skip (#775)."""
+
+    def _collect(self, source_dir: Path) -> tuple[list, list]:
+        from markdown_vault_mcp.scanner import scan_directory
+        from markdown_vault_mcp.types import SkippedFile
+
+        skips: list[SkippedFile] = []
+        notes = list(
+            scan_directory(
+                source_dir,
+                required_frontmatter=["title"],
+                exclude_patterns=["excluded/**"],
+                on_skip=skips.append,
+            )
+        )
+        return notes, skips
+
+    def test_reports_parse_error(self, tmp_path: Path) -> None:
+        (tmp_path / "bad.md").write_text(
+            "---\ntitle: [unclosed\n---\nbody", encoding="utf-8"
+        )
+        _notes, skips = self._collect(tmp_path)
+        assert [s.category for s in skips] == ["parse_error"]
+        assert skips[0].path == "bad.md"
+        assert skips[0].detail
+
+    def test_reports_encoding_error(self, tmp_path: Path) -> None:
+        (tmp_path / "latin.md").write_bytes(b"\xff\xfe not utf-8")
+        _notes, skips = self._collect(tmp_path)
+        assert [s.category for s in skips] == ["encoding_error"]
+        assert skips[0].path == "latin.md"
+
+    def test_reports_missing_frontmatter(self, tmp_path: Path) -> None:
+        (tmp_path / "nomatter.md").write_text("no frontmatter here", encoding="utf-8")
+        _notes, skips = self._collect(tmp_path)
+        assert [s.category for s in skips] == ["missing_frontmatter"]
+        assert skips[0].path == "nomatter.md"
+        assert "title" in skips[0].detail
+
+    def test_not_called_for_excluded(self, tmp_path: Path) -> None:
+        (tmp_path / "excluded").mkdir()
+        (tmp_path / "excluded" / "bad.md").write_text(
+            "---\ntitle: [unclosed\n---\n", encoding="utf-8"
+        )
+        _notes, skips = self._collect(tmp_path)
+        assert skips == []
+
+    def test_omitting_on_skip_preserves_behavior(self, tmp_path: Path) -> None:
+        from markdown_vault_mcp.scanner import scan_directory
+
+        (tmp_path / "good.md").write_text("---\ntitle: ok\n---\nbody", encoding="utf-8")
+        (tmp_path / "bad.md").write_text(
+            "---\ntitle: [unclosed\n---\n", encoding="utf-8"
+        )
+        notes = list(scan_directory(tmp_path, required_frontmatter=["title"]))
+        assert [n.path for n in notes] == ["good.md"]
+
+    def test_every_reported_category_is_legal(self, tmp_path: Path) -> None:
+        from markdown_vault_mcp.types import SKIP_CATEGORIES
+
+        (tmp_path / "bad.md").write_text(
+            "---\ntitle: [unclosed\n---\n", encoding="utf-8"
+        )
+        (tmp_path / "latin.md").write_bytes(b"\xff\xfe")
+        (tmp_path / "nomatter.md").write_text("plain", encoding="utf-8")
+        _notes, skips = self._collect(tmp_path)
+        assert {s.category for s in skips} <= SKIP_CATEGORIES

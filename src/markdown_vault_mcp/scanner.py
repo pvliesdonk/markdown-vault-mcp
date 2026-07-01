@@ -12,12 +12,12 @@ import frontmatter
 import yaml
 
 from markdown_vault_mcp.hashing import compute_etag
-from markdown_vault_mcp.types import Chunk, LinkInfo, ParsedNote
+from markdown_vault_mcp.types import Chunk, LinkInfo, ParsedNote, SkippedFile
 from markdown_vault_mcp.utils.fs import GLOB_SYMLINK_KWARGS
 from markdown_vault_mcp.utils.text import decode_utf8
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Callable, Iterator
     from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -1037,6 +1037,7 @@ def scan_directory(
     exclude_patterns: list[str] | None = None,
     required_frontmatter: list[str] | None = None,
     chunk_strategy: ChunkStrategy | None = None,
+    on_skip: Callable[[SkippedFile], None] | None = None,
 ) -> Iterator[ParsedNote]:
     """Discover and parse all markdown files under ``source_dir``.
 
@@ -1058,6 +1059,13 @@ def scan_directory(
             skipped documents is logged at ``INFO`` level after the scan.
         chunk_strategy: Chunking strategy to pass to :func:`parse_note`.
             Defaults to :class:`HeadingChunker`.
+        on_skip: Optional callback invoked once per *surfaced* deterministic
+            skip with a :class:`~markdown_vault_mcp.types.SkippedFile`
+            (categories ``"encoding_error"``, ``"parse_error"``, or
+            ``"missing_frontmatter"``). It is **not** called for
+            exclude-pattern matches (intentional) or transient ``OSError``
+            skips (self-healing). ``None`` (default) preserves the historical
+            behaviour of silently skipping such files (#775).
 
     Yields:
         Parsed notes in filesystem traversal order.
@@ -1088,21 +1096,36 @@ def scan_directory(
         # Parse the file; skip on decode / I/O / YAML errors.
         try:
             note = parse_note(abs_path, source_dir, chunk_strategy)
-        except UnicodeDecodeError:
+        except UnicodeDecodeError as exc:
             logger.warning(
                 "Skipping %s: cannot decode as UTF-8", abs_path, exc_info=False
             )
+            if on_skip is not None:
+                on_skip(
+                    SkippedFile(
+                        path=rel_posix, category="encoding_error", detail=str(exc)
+                    )
+                )
             continue
         except OSError as exc:
+            # Possibly transient (I/O error) — do not surface; retry next scan.
             logger.warning("Skipping %s: I/O error (%s)", abs_path, exc)
             continue
         except yaml.YAMLError as exc:
             logger.warning("Skipping %s: parse error (%s)", abs_path, exc)
+            if on_skip is not None:
+                on_skip(
+                    SkippedFile(path=rel_posix, category="parse_error", detail=str(exc))
+                )
             continue
         except Exception as exc:
             logger.warning(
                 "Skipping %s: unexpected error (%s)", abs_path, exc, exc_info=True
             )
+            if on_skip is not None:
+                on_skip(
+                    SkippedFile(path=rel_posix, category="parse_error", detail=str(exc))
+                )
             continue
 
         # Apply required_frontmatter filter.
@@ -1117,6 +1140,14 @@ def scan_directory(
                     missing,
                 )
                 skipped_required += 1
+                if on_skip is not None:
+                    on_skip(
+                        SkippedFile(
+                            path=rel_posix,
+                            category="missing_frontmatter",
+                            detail=f"missing: {missing}",
+                        )
+                    )
                 continue
 
         yield note

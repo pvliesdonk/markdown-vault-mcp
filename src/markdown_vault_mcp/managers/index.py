@@ -22,7 +22,7 @@ from markdown_vault_mcp.fts_index import _derive_folder, should_optimize
 from markdown_vault_mcp.hashing import compute_file_hash
 from markdown_vault_mcp.managers._vector_loader import load_or_self_heal
 from markdown_vault_mcp.scanner import parse_note, scan_directory
-from markdown_vault_mcp.types import IndexStats, ParsedNote, ReindexResult
+from markdown_vault_mcp.types import IndexStats, ParsedNote, ReindexResult, SkippedFile
 from markdown_vault_mcp.utils import is_path_excluded
 from markdown_vault_mcp.utils.fs import GLOB_SYMLINK_KWARGS
 
@@ -191,12 +191,18 @@ class IndexManager:
 
         logger.info("build_index: scanning %s", self._source_dir)
 
+        skip_reasons: dict[str, dict[str, str]] = {}
+
+        def _collect_skip(sf: SkippedFile) -> None:
+            skip_reasons[sf.path] = {"category": sf.category, "detail": sf.detail}
+
         notes = list(
             scan_directory(
                 self._source_dir,
                 required_frontmatter=self._required_frontmatter,
                 chunk_strategy=self._chunk_strategy,
                 exclude_patterns=self._exclude_patterns,
+                on_skip=_collect_skip,
             )
         )
 
@@ -286,7 +292,9 @@ class IndexManager:
                 )
 
         # Update tracker state so reindex() knows the baseline.
-        self._tracker.update_state(notes, skipped=skipped_state)
+        self._tracker.update_state(
+            notes, skipped=skipped_state, skip_reasons=skip_reasons
+        )
 
         if errored:
             logger.warning(
