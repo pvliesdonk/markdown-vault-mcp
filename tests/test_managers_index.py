@@ -1318,6 +1318,10 @@ class TestReindexSkipReasons:
         return vault
 
     def test_invalid_yaml_recorded_as_parse_error(self, tmp_path: Path) -> None:
+        # Regression guard for the reindex yaml.YAMLError split (#802): without
+        # the dedicated yaml.YAMLError branch (ahead of the generic Exception
+        # branch, which records internal_error), a malformed-YAML file would be
+        # mislabelled internal_error. Do not remove as "redundant".
         (tmp_path / "seed.md").write_text("---\na: 1\n---\nx", encoding="utf-8")
         vault = self._build(tmp_path)
         try:
