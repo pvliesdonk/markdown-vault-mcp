@@ -199,8 +199,9 @@ class ProjectConfig:
 
         # Derive the chunker char cap from the embedding model's token context
         # (a token-dense chunk that fits max_chunk_words can still exceed the
-        # model context). An explicit override always wins; an unreachable or
-        # unknown provider falls back to a conservative fixed cap.
+        # model context). A positive override wins verbatim; -1 opts into
+        # unbounded context-scaling (#790); otherwise the default is bounded by
+        # the ceiling, which is also the fallback when the context is unknown.
         kwargs["max_chunk_chars"] = derive_max_chunk_chars(
             context_length=(provider.context_length if provider is not None else None),
             override=self.search.max_chunk_chars_override,

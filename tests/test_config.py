@@ -88,6 +88,7 @@ def test_search_ranking_config_rejects_zero_chunks_per_file(
         # -1 sentinel: unbounded context-scaling (the documented footgun).
         (8192, -1, round(8192 * 2.8)),  # 22938, no ceiling
         (None, -1, 1500),  # no context to scale: ceiling
+        (0, -1, 1500),  # degenerate 0 context on the -1 path: ceiling, not a 0 cap
     ],
 )
 def test_derive_max_chunk_chars(

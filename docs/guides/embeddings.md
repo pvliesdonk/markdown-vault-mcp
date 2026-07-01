@@ -252,7 +252,7 @@ When you don't set `MAX_CHUNK_CHARS` explicitly, the default is `min(1500, round
 - a long-context model (2048, 8192, …) clamps to the `1500`-char ceiling
 - unknown context (no provider, or Ollama unreachable at startup) → the `1500`-char ceiling
 
-Set a positive value to force an exact cap. Set `-1` to opt into unbounded context-scaling (`round(context_length × 2.8)` with no ceiling). This reproduces the pre-bounded behavior and **can OOM the host** on the fastembed/ONNX path with a long-context model, so use it only with Ollama (out-of-process) or a remote provider.
+Set a positive value to force an exact cap. Set `-1` to opt into unbounded context-scaling (`round(context_length × 2.8)` with no ceiling). This reproduces the pre-bounded context-scaling and **can OOM the host** on the fastembed/ONNX path with a long-context model, so use it only with Ollama (out-of-process) or a remote provider.
 
 !!! note "Changing the embedding model triggers a one-time cold rebuild"
     Because the char cap is derived from the model's context, the chunk boundaries themselves depend on the embedding model. Changing the embedding model (or setting/changing `MAX_CHUNK_CHARS`) re-chunks the **FTS index**, not just the embeddings, so on the next startup the server automatically rejects the warm-restart short-circuit and does a background cold rebuild (keyword search returns first, semantic search once embeddings finish). No manual `reindex` is needed. The same one-time rebuild happens when an embedding-enabled vault is upgraded from a release before this behavior existed.
