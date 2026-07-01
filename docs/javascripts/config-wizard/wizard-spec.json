@@ -747,6 +747,14 @@
       "advancedGroup": "Search & chunking"
     },
     {
+      "id": "chunk_overlap_words",
+      "label": "Chunk overlap (words)",
+      "type": "number",
+      "var": "MARKDOWN_VAULT_MCP_CHUNK_OVERLAP_WORDS",
+      "help": "Words of overlap prepended to adjacent fragments of an oversize section (default 40; 0 disables). Improves retrieval recall at arbitrary split points; applies to new and re-indexed notes, so run reindex to apply it to an existing vault.",
+      "advancedGroup": "Search & chunking"
+    },
+    {
       "id": "attachment_extensions",
       "label": "Attachment extensions (CSV)",
       "type": "text",
