@@ -59,9 +59,11 @@ def derive_max_chunk_chars(*, context_length: int | None, override: int | None) 
             or ``None`` when it cannot be determined.
         override: An explicit operator-supplied char cap. A positive value is
             used verbatim. ``-1`` opts into unbounded context-scaling (the cap
-            tracks the model's full context with no ceiling), which can OOM the
-            fastembed/ONNX path on a long-context model. ``None`` selects the
-            bounded default ``min(_MAX_CHUNK_CHARS_CEILING, round(context * 2.8))``.
+            tracks the model's full context with no ceiling, or
+            ``_MAX_CHUNK_CHARS_CEILING`` when the context length is unknown),
+            which can OOM the fastembed/ONNX path on a long-context model.
+            ``None`` selects the bounded default
+            ``min(_MAX_CHUNK_CHARS_CEILING, round(context * 2.8))``.
 
     Returns:
         The character budget to pass to the chunker.

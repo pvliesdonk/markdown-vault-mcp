@@ -407,7 +407,8 @@ Two methods manage the index:
   by FTS and embeddings, and its per-chunk character cap is derived from the
   embedding model as `min(1500, round(context_length × 2.8))` (issue #790;
   `max_chunk_chars_override = -1` selects unbounded scaling,
-  `round(context_length × 2.8)` with no ceiling), so a change to the
+  `round(context_length × 2.8)` with no ceiling, or `1500` when the model
+  context is unknown), so a change to the
   embedding model (or to an explicit `max_chunk_chars` override) changes FTS
   chunk boundaries, not just embeddings. Each clean build records the two
   **stable inputs** to the derived cap (the embedding `model_name` and the
