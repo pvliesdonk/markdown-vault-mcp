@@ -39,6 +39,32 @@ def test_no_args_exits_nonzero() -> None:
     assert "serve" in result.output
 
 
+def test_root_keeps_httpx_quiet_at_default_visible_at_debug() -> None:
+    """httpx/httpcore emit a per-request INFO line that floods logs during
+    embedding builds (#792). The root callback pins them to WARNING at the
+    default level (quiet) and to NOTSET at -v (root DEBUG governs, visible)."""
+    import logging
+
+    from markdown_vault_mcp.cli import _root
+
+    root = logging.getLogger()
+    httpx_log = logging.getLogger("httpx")
+    httpcore_log = logging.getLogger("httpcore")
+    saved = (root.level, httpx_log.level, httpcore_log.level)
+    try:
+        _root(verbose=False)
+        assert httpx_log.level == logging.WARNING
+        assert httpcore_log.level == logging.WARNING
+
+        _root(verbose=True)
+        assert httpx_log.level == logging.NOTSET
+        assert httpcore_log.level == logging.NOTSET
+    finally:
+        root.setLevel(saved[0])
+        httpx_log.setLevel(saved[1])
+        httpcore_log.setLevel(saved[2])
+
+
 def test_serve_help_exits_zero() -> None:
     """`serve --help` documents the transport flag."""
     result = runner.invoke(app, ["serve", "--help"])
@@ -746,8 +772,43 @@ def test_verbose_enables_debug_logging(monkeypatch: pytest.MonkeyPatch) -> None:
             os.environ.pop("FASTMCP_LOG_LEVEL", None)
 
 
-def test_verbose_silences_httpx_httpcore(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`-v` sets httpx/httpcore to WARNING to suppress their DEBUG noise."""
+def test_default_level_pins_httpx_httpcore_to_warning(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Without -v, the CLI pins httpx/httpcore to WARNING so their per-request
+    INFO lines don't flood normal embedding builds (#792) — the exact production
+    path, exercised through Typer rather than a direct _root call."""
+    import logging
+
+    monkeypatch.setenv(f"{_ENV_PREFIX}_SOURCE_DIR", str(tmp_path))
+    mock_vault = MagicMock()
+    mock_stats = MagicMock()
+    mock_stats.documents_indexed = 0
+    mock_stats.chunks_indexed = 0
+    mock_vault.index.build_index.return_value = mock_stats
+
+    httpx_log = logging.getLogger("httpx")
+    httpcore_log = logging.getLogger("httpcore")
+    saved = (httpx_log.level, httpcore_log.level)
+    # Pre-set the flood-prone state (NOTSET → inherits the root level) so the
+    # assertion proves the default CLI path actively pins WARNING.
+    httpx_log.setLevel(logging.NOTSET)
+    httpcore_log.setLevel(logging.NOTSET)
+    try:
+        with patch("markdown_vault_mcp.cli._build_vault", return_value=mock_vault):
+            runner.invoke(app, ["index"])
+        assert httpx_log.level == logging.WARNING
+        assert httpcore_log.level == logging.WARNING
+    finally:
+        httpx_log.setLevel(saved[0])
+        httpcore_log.setLevel(saved[1])
+
+
+def test_verbose_resets_httpx_httpcore_to_follow_root(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`-v` resets httpx/httpcore to NOTSET so the root DEBUG level governs and
+    they become visible; it no longer pins them to WARNING (#792)."""
     import logging
 
     monkeypatch.setenv(f"{_ENV_PREFIX}_SOURCE_DIR", "/tmp/vault")
@@ -756,10 +817,22 @@ def test_verbose_silences_httpx_httpcore(monkeypatch: pytest.MonkeyPatch) -> Non
     mock_stats.documents_indexed = 0
     mock_stats.chunks_indexed = 0
     mock_vault.index.build_index.return_value = mock_stats
-    with patch("markdown_vault_mcp.cli._build_vault", return_value=mock_vault):
-        runner.invoke(app, ["-v", "index"])
-    assert logging.getLogger("httpx").level == logging.WARNING
-    assert logging.getLogger("httpcore").level == logging.WARNING
+
+    httpx_log = logging.getLogger("httpx")
+    httpcore_log = logging.getLogger("httpcore")
+    saved = (httpx_log.level, httpcore_log.level)
+    # Pre-set WARNING so the assertion proves -v actively resets it, not that
+    # the logger merely started unset.
+    httpx_log.setLevel(logging.WARNING)
+    httpcore_log.setLevel(logging.WARNING)
+    try:
+        with patch("markdown_vault_mcp.cli._build_vault", return_value=mock_vault):
+            runner.invoke(app, ["-v", "index"])
+        assert httpx_log.level == logging.NOTSET
+        assert httpcore_log.level == logging.NOTSET
+    finally:
+        httpx_log.setLevel(saved[0])
+        httpcore_log.setLevel(saved[1])
 
 
 def test_root_handler_added_when_none_exist(monkeypatch: pytest.MonkeyPatch) -> None:

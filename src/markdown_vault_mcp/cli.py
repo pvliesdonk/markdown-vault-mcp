@@ -46,11 +46,10 @@ def _root(
         handler = logging.StreamHandler()
         handler.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
         root.addHandler(handler)
-    if verbose:
-        # httpx/httpcore are noisy at DEBUG; keep them quiet.  Core doesn't
-        # own these deps, so the silencing stays domain-local.
-        logging.getLogger("httpx").setLevel(logging.WARNING)
-        logging.getLogger("httpcore").setLevel(logging.WARNING)
+    # Quiet httpx/httpcore per-request INFO at the default level (#792); -v shows them.
+    _http_level = logging.NOTSET if verbose else logging.WARNING
+    logging.getLogger("httpx").setLevel(_http_level)
+    logging.getLogger("httpcore").setLevel(_http_level)
 
 
 @app.command()

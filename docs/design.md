@@ -1035,9 +1035,12 @@ Follow FastMCP conventions and standard Python logging:
 
 **Log level control:** `FASTMCP_LOG_LEVEL` env var controls FastMCP internals
 (`DEBUG`, `INFO`, `WARNING`, `ERROR`). Default `INFO`. App loggers use `INFO`
-unless overridden by `-v` (sets both app and FastMCP to `DEBUG`). When
-`DEBUG` is active, `httpx` and
-`httpcore` loggers are pinned to `WARNING` to reduce noise.
+unless overridden by `-v` (sets both app and FastMCP to `DEBUG`). The `httpx`
+and `httpcore` loggers are pinned to `WARNING` at the default level so their
+per-request `INFO` line does not flood embedding builds; at `-v` they are reset
+to `NOTSET` so the root `DEBUG` level governs and they become visible. This
+mirrors core's `uvicorn.access` / `mcp.server.lowlevel.server` handling, but
+stays domain-local because `fastmcp-pvl-core` does not own these dependencies.
 
 **Request logging:** `make_server()` wires pvl-core's single
 `RequestLoggingMiddleware` (via `wire_middleware_stack`), which emits
