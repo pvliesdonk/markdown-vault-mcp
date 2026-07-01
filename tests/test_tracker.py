@@ -731,3 +731,46 @@ class TestSkipReasons:
         assert tracker.skip_reasons() == {
             "skip.md": {"category": "parse_error", "detail": "boom"},
         }
+
+
+class TestSkipReasonsSanitization:
+    """Malformed persisted skip_reasons entries are dropped, never raise (#775)."""
+
+    def test_non_dict_value_is_dropped(self, tmp_path: Path, caplog) -> None:
+        import logging
+
+        state_path = tmp_path / "state.json"
+        # A version-2 state file whose skip_reasons value is a bare string,
+        # e.g. from format-version skew or a manual edit.
+        state_path.write_text(
+            '{"version": 2, "indexed": {}, "skipped": {"bad.md": "abc"}, '
+            '"skip_reasons": {"bad.md": "not-a-dict"}}',
+            encoding="utf-8",
+        )
+        tracker = ChangeTracker(state_path)
+        with caplog.at_level(logging.WARNING, logger="markdown_vault_mcp.tracker"):
+            result = tracker.skip_reasons()
+        assert result == {}
+        assert any("skip_reason_malformed" in r.message for r in caplog.records)
+
+    def test_dict_missing_detail_key_is_dropped(self, tmp_path: Path) -> None:
+        state_path = tmp_path / "state.json"
+        state_path.write_text(
+            '{"version": 2, "indexed": {}, "skipped": {"bad.md": "abc"}, '
+            '"skip_reasons": {"bad.md": {"category": "parse_error"}}}',
+            encoding="utf-8",
+        )
+        tracker = ChangeTracker(state_path)
+        assert tracker.skip_reasons() == {}
+
+    def test_wellformed_entry_survives_sanitization(self, tmp_path: Path) -> None:
+        state_path = tmp_path / "state.json"
+        state_path.write_text(
+            '{"version": 2, "indexed": {}, "skipped": {"bad.md": "abc"}, '
+            '"skip_reasons": {"bad.md": {"category": "parse_error", "detail": "boom"}}}',
+            encoding="utf-8",
+        )
+        tracker = ChangeTracker(state_path)
+        assert tracker.skip_reasons() == {
+            "bad.md": {"category": "parse_error", "detail": "boom"},
+        }

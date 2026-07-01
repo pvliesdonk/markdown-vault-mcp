@@ -1246,6 +1246,33 @@ class TestBuildIndexSkipReasons:
         assert by_path["bad.md"].category == "parse_error"
         assert "good.md" not in by_path
 
+    def test_missing_frontmatter_appears_in_skip_reasons(self, tmp_path: Path) -> None:
+        from markdown_vault_mcp.vault import Vault
+
+        (tmp_path / "good.md").write_text("---\ntitle: ok\n---\nbody", encoding="utf-8")
+        (tmp_path / "nomatter.md").write_text("no frontmatter", encoding="utf-8")
+        vault = Vault(source_dir=tmp_path, required_frontmatter=["title"])
+        try:
+            vault.index.build_index()
+            by_path = {sf.path: sf for sf in vault.index.skipped_files()}
+        finally:
+            vault.close()
+        assert by_path["nomatter.md"].category == "missing_frontmatter"
+        assert "title" in by_path["nomatter.md"].detail
+
+    def test_encoding_error_appears_in_skip_reasons(self, tmp_path: Path) -> None:
+        from markdown_vault_mcp.vault import Vault
+
+        (tmp_path / "good.md").write_text("---\ntitle: ok\n---\nbody", encoding="utf-8")
+        (tmp_path / "latin.md").write_bytes(b"\xff\xfe not utf-8")
+        vault = Vault(source_dir=tmp_path)
+        try:
+            vault.index.build_index()
+            by_path = {sf.path: sf for sf in vault.index.skipped_files()}
+        finally:
+            vault.close()
+        assert by_path["latin.md"].category == "encoding_error"
+
 
 class TestReindexSkipReasons:
     """reindex records surfaced skips into tracker skip_reasons (#775)."""
@@ -1327,5 +1354,27 @@ class TestReindexSkipReasons:
             bad.write_text("---\ntitle: fixed\n---\nbody", encoding="utf-8")
             vault.index.reindex()
             assert "bad.md" not in {sf.path for sf in vault.index.skipped_files()}
+        finally:
+            vault.close()
+
+    def test_reason_carried_forward_through_unchanged_reindex(
+        self, tmp_path: Path
+    ) -> None:
+        (tmp_path / "seed.md").write_text("---\na: 1\n---\nx", encoding="utf-8")
+        (tmp_path / "bad.md").write_text(
+            "---\ntitle: [unclosed\n---\n", encoding="utf-8"
+        )
+        vault = self._build(tmp_path)
+        try:
+            vault.index.reindex()
+            first = {sf.path: sf for sf in vault.index.skipped_files()}
+            assert first["bad.md"].category == "parse_error"
+            # Second reindex with bad.md unchanged: it lands in
+            # skipped_unchanged and is never re-parsed, so the reason must
+            # survive via the tracker's carry-forward wired through reindex.
+            vault.index.reindex()
+            second = {sf.path: sf for sf in vault.index.skipped_files()}
+            assert second["bad.md"].category == "parse_error"
+            assert second["bad.md"].detail == first["bad.md"].detail
         finally:
             vault.close()

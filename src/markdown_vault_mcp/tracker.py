@@ -331,7 +331,7 @@ class ChangeTracker:
                         self._state_path,
                     )
                     return {}, {}, {}
-                return indexed, skipped, skip_reasons
+                return indexed, skipped, self._sanitize_skip_reasons(skip_reasons)
             # Legacy flat format: every entry is an indexed path → digest.
             return state, {}, {}
         except (OSError, json.JSONDecodeError) as exc:
@@ -341,6 +341,43 @@ class ChangeTracker:
                 exc,
             )
             return {}, {}, {}
+
+    @staticmethod
+    def _sanitize_skip_reasons(
+        raw: dict[str, object],
+    ) -> dict[str, dict[str, str]]:
+        """Drop malformed skip-reason entries, keeping only well-formed ones.
+
+        A well-formed entry maps a path to a ``{"category": str, "detail":
+        str}`` dict. Entries whose value is not such a dict — from
+        format-version skew, a manual edit, or corruption — are dropped with a
+        ``WARNING`` so a single bad entry cannot raise out of the
+        never-blocking ``get_index_status`` read path (#775).
+
+        Args:
+            raw: The ``skip_reasons`` map as loaded from the state file; its
+                values are untrusted.
+
+        Returns:
+            A map containing only entries with a valid ``{category, detail}``
+            string dict.
+        """
+        clean: dict[str, dict[str, str]] = {}
+        for path, reason in raw.items():
+            if (
+                isinstance(reason, dict)
+                and isinstance(reason.get("category"), str)
+                and isinstance(reason.get("detail"), str)
+            ):
+                clean[path] = {
+                    "category": reason["category"],
+                    "detail": reason["detail"],
+                }
+            else:
+                logger.warning(
+                    "skip_reason_malformed path=%s reason=%r; dropping", path, reason
+                )
+        return clean
 
     def _save_state(
         self,
