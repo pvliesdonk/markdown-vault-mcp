@@ -1801,15 +1801,20 @@ class ChangeTracker:
     def detect_changes(self, source_dir: Path,
                        glob_pattern: str = "**/*.md") -> ChangeSet: ...
     def update_state(self, notes: list[ParsedNote],
-                     skipped: dict[str, str] | None = None) -> None: ...
+                     skipped: dict[str, str] | None = None,
+                     skip_reasons: dict[str, dict[str, str]] | None = None) -> None: ...
+    def skip_reasons(self) -> dict[str, dict[str, str]]: ...
     def reset(self) -> None: ...
 ```
 
 `tracker.py` is entirely new code (no ifcraftcorpus equivalent). State file
-format (version 2, #665): `{"version": 2, "indexed": {"Journal/note.md":
-"sha256hex", ...}, "skipped": {"CLAUDE.md": "sha256hex", ...}}` as JSON.
-The legacy flat `{"Journal/note.md": "sha256hex", ...}` format loads with
-every entry treated as indexed.
+format (version 2, #665, #775): `{"version": 2, "indexed": {"Journal/note.md":
+"sha256hex", ...}, "skipped": {"CLAUDE.md": "sha256hex", ...}, "skip_reasons":
+{"CLAUDE.md": {"category": "missing_frontmatter", "detail": "..."}}}` as JSON.
+`skip_reasons` is a strict subset of `skipped` covering the surfaced
+deterministic skips (parse / encoding / missing-frontmatter); a version-2 file
+without it loads it as empty. The legacy flat `{"Journal/note.md":
+"sha256hex", ...}` format loads with every entry treated as indexed.
 
 ### `server.py`: Generic MCP Server
 
