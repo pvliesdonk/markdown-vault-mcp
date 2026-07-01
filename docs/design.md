@@ -229,7 +229,8 @@ Four complementary mechanisms improve result diversity and bound LLM context cos
    words. When heading-based refinement cannot make further progress (a leaf section
    with no deeper sub-headings, a preamble before the first heading, or a
    no-headings document), the chunker falls back to a paragraph- and word-boundary
-   split so the budget is a **hard** invariant for every emitted chunk. Default
+   split so the budget is a **hard** invariant for every emitted chunk, subject to
+   the `chunk_overlap_words` exception described under Chunking Strategy. Default
    threshold: 400 words. This matters for embedding providers with context limits
    (the default FastEmbed model `BAAI/bge-small-en-v1.5` exposes a 512-token
    context; `nomic-embed-text-v1.5` has 8192 tokens natively but Ollama serves it
