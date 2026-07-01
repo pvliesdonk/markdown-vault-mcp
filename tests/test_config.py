@@ -72,18 +72,28 @@ def test_search_ranking_config_rejects_zero_chunks_per_file(
 @pytest.mark.parametrize(
     "ctx,override,expected",
     [
-        (8192, None, round(8192 * 2.8)),
-        (512, None, round(512 * 2.8)),
-        (None, None, 6000),
-        (0, None, 6000),  # degenerate 0 context falls back, not a 0 cap
+        # Default (override=None): min(ceiling=1500, round(context*2.8)).
+        (8192, None, 1500),  # long context clamped to the ceiling
+        (512, None, round(512 * 2.8)),  # bge-small (1434) below ceiling: unchanged
+        (
+            256,
+            None,
+            round(256 * 2.8),
+        ),  # small context: the model's own limit wins (717)
+        (None, None, 1500),  # unknown context: ceiling fallback
+        (0, None, 1500),  # degenerate 0 context: ceiling fallback, not a 0 cap
+        # Positive override: verbatim passthrough regardless of context.
         (8192, 4096, 4096),
         (None, 4096, 4096),
+        # -1 sentinel: unbounded context-scaling (the documented footgun).
+        (8192, -1, round(8192 * 2.8)),  # 22938, no ceiling
+        (None, -1, 1500),  # no context to scale: ceiling
     ],
 )
 def test_derive_max_chunk_chars(
     ctx: int | None, override: int | None, expected: int
 ) -> None:
-    """Override wins; else derive from context; else the fixed fallback."""
+    """Default is bounded by the ceiling; -1 opts into unbounded scaling."""
     assert derive_max_chunk_chars(context_length=ctx, override=override) == expected
 
 
@@ -445,8 +455,8 @@ class TestToVaultKwargsProvider:
         config = self._config(provider=None, tmp_path=tmp_path)
         kwargs = config.to_vault_kwargs()
         assert "embedding_provider" not in kwargs
-        # No provider → the chunk char cap falls back to the fixed default (#649).
-        assert kwargs["max_chunk_chars"] == 6000
+        # No provider → the chunk char cap falls back to the ceiling (#790).
+        assert kwargs["max_chunk_chars"] == 1500
 
     def test_no_embeddings_path_skips_provider(self, monkeypatch, tmp_path) -> None:
         """With no embeddings_path the provider is never resolved, even if broken."""

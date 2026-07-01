@@ -38,9 +38,12 @@ _ENV_PREFIX = "MARKDOWN_VAULT_MCP"
 # so a derived char cap stays safely under the model's real token limit.
 _CHARS_PER_TOKEN = 2.8
 
-# Fallback char cap when the model's context length is unknown and the operator
-# set no explicit override.
-_DEFAULT_MAX_CHUNK_CHARS = 6000
+# Ceiling on the derived chunker char cap. Retrieval quality peaks at ~256-512
+# tokens per chunk regardless of the model's context length, so the cap is bounded
+# rather than scaled to context. 1500 chars (~535 tokens at _CHARS_PER_TOKEN) sits
+# at the top of that band and keeps the fastembed/ONNX fp32 path clear of the #306
+# OOM regime. Also the fallback when the model's context length is unknown.
+_MAX_CHUNK_CHARS_CEILING = 1500
 
 
 def derive_max_chunk_chars(*, context_length: int | None, override: int | None) -> int:
@@ -53,19 +56,29 @@ def derive_max_chunk_chars(*, context_length: int | None, override: int | None) 
     Args:
         context_length: The embedding model's maximum input length in tokens,
             or ``None`` when it cannot be determined.
-        override: An explicit operator-supplied char cap, or ``None``.
+        override: An explicit operator-supplied char cap. A positive value is
+            used verbatim. ``-1`` opts into unbounded context-scaling (the cap
+            tracks the model's full context with no ceiling), which can OOM the
+            fastembed/ONNX path on a long-context model. ``None`` selects the
+            bounded default ``min(_MAX_CHUNK_CHARS_CEILING, round(context * 2.8))``.
 
     Returns:
         The character budget to pass to the chunker.
     """
+    if override == -1:
+        # Opt-in: track the model's full context with no ceiling. Documented
+        # footgun — a long-context model can OOM the fastembed/ONNX path (#306).
+        if context_length is not None and context_length > 0:
+            return round(context_length * _CHARS_PER_TOKEN)
+        return _MAX_CHUNK_CHARS_CEILING
     if override is not None:
         return override
-    # ``context_length > 0`` guards against a degenerate 0 cap (no real model
-    # reports a 0-token context, but a malformed/absent value must not yield a
-    # chunker that splits everything to nothing).
+    # Default: retrieval-optimal and OOM-safe. ``context_length > 0`` guards a
+    # degenerate 0 cap; a small-context model clamps *down* so chunks never exceed
+    # what it can ingest.
     if context_length is not None and context_length > 0:
-        return round(context_length * _CHARS_PER_TOKEN)
-    return _DEFAULT_MAX_CHUNK_CHARS
+        return min(_MAX_CHUNK_CHARS_CEILING, round(context_length * _CHARS_PER_TOKEN))
+    return _MAX_CHUNK_CHARS_CEILING
 
 
 @dataclass(frozen=True)
