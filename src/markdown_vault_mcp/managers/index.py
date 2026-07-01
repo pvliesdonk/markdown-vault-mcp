@@ -370,13 +370,20 @@ class IndexManager:
         # scan; it is only re-evaluated when its content changes.  Transient
         # I/O errors are NOT recorded, so those files retry on every scan.
         newly_skipped: dict[str, str] = {}
+        newly_skip_reasons: dict[str, dict[str, str]] = {}
 
-        def _record_skip(rel_path: str, abs_file: Path) -> None:
-            """Record a deterministically skipped file's current hash."""
+        def _record_skip(
+            rel_path: str, abs_file: Path, category: str, detail: str
+        ) -> None:
+            """Record a deterministically skipped file's hash and reason (#775)."""
             try:
                 newly_skipped[rel_path] = compute_file_hash(abs_file)
             except OSError as exc:
+                # File vanished/unreadable since parse — treat as transient:
+                # record neither the hash nor the reason so it retries.
                 logger.debug("reindex_skip_hash_failed path=%s err=%s", rel_path, exc)
+                return
+            newly_skip_reasons[rel_path] = {"category": category, "detail": detail}
 
         # Pre-parse notes outside the lock to minimise lock hold time.
         parsed: list[tuple[str, ParsedNote]] = []
@@ -394,7 +401,7 @@ class IndexManager:
                 continue
             except UnicodeDecodeError as exc:
                 logger.warning("reindex: skipping %s — %s", path, exc)
-                _record_skip(path, abs_path)
+                _record_skip(path, abs_path, "encoding_error", str(exc))
                 continue
             except Exception as exc:
                 logger.warning(
@@ -403,7 +410,7 @@ class IndexManager:
                     exc,
                     exc_info=True,
                 )
-                _record_skip(path, abs_path)
+                _record_skip(path, abs_path, "parse_error", str(exc))
                 continue
 
             if self._required_frontmatter:
@@ -417,6 +424,10 @@ class IndexManager:
                         missing,
                     )
                     newly_skipped[path] = note.content_hash
+                    newly_skip_reasons[path] = {
+                        "category": "missing_frontmatter",
+                        "detail": f"missing: {missing}",
+                    }
                     continue
 
             parsed.append((path, note))
@@ -527,7 +538,9 @@ class IndexManager:
             )
             for r in self._fts.list_notes()
         ]
-        self._tracker.update_state(state_notes, skipped=newly_skipped)
+        self._tracker.update_state(
+            state_notes, skipped=newly_skipped, skip_reasons=newly_skip_reasons
+        )
 
         return ReindexResult(
             added=indexed_added,
