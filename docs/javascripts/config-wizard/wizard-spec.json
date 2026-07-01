@@ -743,6 +743,7 @@
       "label": "Max chunk chars",
       "type": "number",
       "var": "MARKDOWN_VAULT_MCP_MAX_CHUNK_CHARS",
+      "help": "Character cap per chunk. Leave unset for the safe default (the smaller of 1500 and the model's context length x 2.8). Enter a positive number to force an exact cap. Enter -1 to scale with the model's full context with no ceiling - this can exhaust memory and crash the host on the fastembed/ONNX path with a long-context model.",
       "advancedGroup": "Search & chunking"
     },
     {
