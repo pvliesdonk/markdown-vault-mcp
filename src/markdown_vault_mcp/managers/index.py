@@ -839,6 +839,29 @@ class IndexManager:
         )
         return added
 
+    def skipped_files(self) -> list[SkippedFile]:
+        """Return files dropped from the index for a surfaced reason (#775).
+
+        Reads the tracker's persisted ``skip_reasons`` map and returns one
+        :class:`~markdown_vault_mcp.types.SkippedFile` per path, sorted by
+        path. Covers the deterministic, non-excluded skips (parse / encoding /
+        missing-frontmatter); exclude-pattern and transient-``OSError`` skips
+        are intentionally absent.
+
+        Returns:
+            Path-sorted list of :class:`SkippedFile`. Empty when nothing was
+            skipped for a surfaced reason.
+        """
+        reasons = self._tracker.skip_reasons()
+        return [
+            SkippedFile(
+                path=path,
+                category=reason.get("category", ""),
+                detail=reason.get("detail", ""),
+            )
+            for path, reason in sorted(reasons.items())
+        ]
+
     def embeddings_status(self) -> dict[str, Any]:
         """Return status information about the vector index.
 

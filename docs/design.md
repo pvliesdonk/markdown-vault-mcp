@@ -379,6 +379,12 @@ for built-in names, or pass a custom instance.
   `OSError` skips are deliberately not recorded, so those files retry on
   every scan. A skipped file deleted from disk is dropped silently; it was
   never indexed, so it is not counted as `deleted`.
+  The surfaced deterministic skips (parse / encoding / missing-frontmatter,
+  but not exclude-pattern or transient `OSError`) are also recorded with a
+  `{category, detail}` reason in the state file's `skip_reasons` map and
+  exposed through `get_index_status`'s `skipped_files` field, so a dropped
+  note is discoverable via the MCP API rather than only the container logs
+  (#775).
 
 **Trigger model**: boot reconciliation reindex (submitted by the server
 lifespan behind the initial build job, #665) + explicit `reindex` tool call

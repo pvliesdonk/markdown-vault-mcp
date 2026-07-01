@@ -57,3 +57,34 @@ class TestIndexFacetEncapsulation:
             "rebuild_embeddings",
         ):
             assert not hasattr(built.index, internal), internal
+
+
+class TestIndexFacetSkippedFiles:
+    """get_index_status surfaces skipped_files (#775)."""
+
+    def test_clean_vault_has_empty_skipped_files(self, tmp_path: Path) -> None:
+        # A fresh tmp_path (not the shared `built` fixture, which
+        # deliberately includes malformed_yaml.md) has nothing to skip.
+        (tmp_path / "good.md").write_text("---\ntitle: ok\n---\nbody", encoding="utf-8")
+        col = Vault(source_dir=tmp_path)
+        try:
+            col.index.build_index()
+            status = col.index.get_index_status()
+        finally:
+            col.close()
+        assert status["skipped_files"] == []
+
+    def test_reports_parse_skip(self, vault_path: Path) -> None:
+        col = Vault(source_dir=vault_path)
+        try:
+            col.index.build_index()
+            (vault_path / "bad.md").write_text(
+                "---\ntitle: [unclosed\n---\n", encoding="utf-8"
+            )
+            col.index.reindex()
+            status = col.index.get_index_status()
+        finally:
+            col.close()
+        entries = {e["path"]: e for e in status["skipped_files"]}
+        assert entries["bad.md"]["category"] == "parse_error"
+        assert set(entries["bad.md"]) == {"path", "category", "detail"}

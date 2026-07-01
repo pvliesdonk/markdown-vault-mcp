@@ -4,7 +4,8 @@ A thin view over the
 :class:`~markdown_vault_mcp.indexing.IndexWriteCoordinator` (build / reindex /
 embeddings sync + async, plus the readiness and writer-status queries) and
 :class:`~markdown_vault_mcp.managers.index.IndexManager`
-(:meth:`IndexFacet.embeddings_status`). It deliberately does NOT expose the coordinator's
+(:meth:`IndexFacet.embeddings_status`, :meth:`IndexFacet.skipped_files`). It
+deliberately does NOT expose the coordinator's
 internal surface (``close``, ``writer``, ``require_built``,
 ``mark_paths_dirty``, ``rebuild_embeddings``), which the root owns. Part of the
 ``vault.py`` facade decomposition (#576).
@@ -12,15 +13,15 @@ internal surface (``close``, ``writer``, ``require_built``,
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from dataclasses import asdict
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from concurrent.futures import Future
-    from typing import Any
 
     from markdown_vault_mcp.indexing import IndexWriteCoordinator
     from markdown_vault_mcp.managers.index import IndexManager
-    from markdown_vault_mcp.types import IndexStats, ReindexResult
+    from markdown_vault_mcp.types import IndexStats, ReindexResult, SkippedFile
 
 
 class IndexFacet:
@@ -92,18 +93,23 @@ class IndexFacet:
         return self._coordinator.wait_for_drain(timeout)
 
     def get_index_status(self) -> dict[str, Any]:
-        """Return a non-blocking eleven-key snapshot of build + writer state.
+        """Return a non-blocking twelve-key snapshot of build + writer state.
 
         Keys: ``status`` (``"queryable"`` | ``"building"`` | ``"failed"``),
         ``documents_indexed``, ``documents_indexed_error``, ``error``,
         ``last_reindex_error``, ``last_build_embeddings_error``, plus
         ``queue_depth``, ``in_flight``, ``dirty_paths``, ``dirty_embeddings``,
-        ``write_generation`` merged from the writer. A captured build error
-        appears in ``error`` as diagnostic context without demoting a
-        ``queryable`` status; ``documents_indexed_error`` carries a SQLite
-        read failure (``documents_indexed`` stays ``0``) (#583).
+        ``write_generation`` merged from the writer, and ``skipped_files`` — a
+        list of ``{path, category, detail}`` dicts for files dropped from the
+        index for a surfaced deterministic reason (parse / encoding /
+        missing-frontmatter), read from tracker state (#775). A captured build
+        error appears in ``error`` as diagnostic context without demoting a
+        ``queryable`` status; ``documents_indexed_error`` carries a SQLite read
+        failure (``documents_indexed`` stays ``0``) (#583).
         """
-        return self._coordinator.get_index_status()
+        status = self._coordinator.get_index_status()
+        status["skipped_files"] = [asdict(sf) for sf in self._index_mgr.skipped_files()]
+        return status
 
     def wait_until_queryable(self, timeout: float | None = None) -> None:
         """Block until the FTS index is queryable, or raise.
@@ -200,3 +206,15 @@ class IndexFacet:
             ``available``.
         """
         return self._index_mgr.embeddings_status()
+
+    def skipped_files(self) -> list[SkippedFile]:
+        """Return files dropped from the index for a surfaced reason (#775).
+
+        Delegates to :meth:`IndexManager.skipped_files`; also merged, as
+        plain dicts, into :meth:`IndexFacet.get_index_status`'s
+        ``skipped_files`` key.
+
+        Returns:
+            Path-sorted list of :class:`~markdown_vault_mcp.types.SkippedFile`.
+        """
+        return self._index_mgr.skipped_files()

@@ -87,6 +87,14 @@ def register(mcp: FastMCP) -> None:
               which case ``documents_indexed`` is ``0``.
             - error (str | None): ``None`` unless the background build
               raised.
+            - skipped_files (list[dict]): Files dropped from the index for a
+              surfaced deterministic reason. Each entry is
+              ``{"path", "category", "detail"}`` where ``category`` is one of
+              ``"parse_error"``, ``"encoding_error"``, or
+              ``"missing_frontmatter"``. Empty when nothing was skipped.
+              Distinguishes a parse-dropped note from an unsynced one without
+              reading container logs. Exclude-pattern and transient-I/O skips
+              are intentionally not listed.
         """
         return await asyncio.to_thread(vault.index.get_index_status)
 

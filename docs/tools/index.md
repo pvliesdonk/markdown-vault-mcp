@@ -225,6 +225,12 @@ build attempt.
   closed database), in which case `documents_indexed` is `0`.
 - `error`: `null` unless the background build raised; otherwise the
   exception message.
+- `skipped_files`: list of files dropped from the index for a surfaced
+  deterministic reason. Each entry is `{"path", "category", "detail"}`, with
+  `category` one of `parse_error`, `encoding_error`, or `missing_frontmatter`.
+  Empty when nothing was skipped. This tells a parse-dropped note apart from
+  one that simply has not synced yet, without reading container logs.
+  Exclude-pattern matches and transient I/O skips are intentionally omitted.
 
 **Tags:** read-only.
 

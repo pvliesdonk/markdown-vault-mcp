@@ -1223,3 +1223,109 @@ def test_index_manager_no_longer_schedules_timer():
     # mark_dirty / remove_from_dirty also gone
     assert "def mark_dirty" not in source
     assert "def remove_from_dirty" not in source
+
+
+class TestBuildIndexSkipReasons:
+    """build_index records surfaced skips into tracker skip_reasons (#775)."""
+
+    def test_invalid_yaml_file_appears_in_skip_reasons(self, tmp_path: Path) -> None:
+        from markdown_vault_mcp.vault import Vault
+
+        (tmp_path / "good.md").write_text("---\ntitle: ok\n---\nbody", encoding="utf-8")
+        (tmp_path / "bad.md").write_text(
+            "---\ntitle: [unclosed\n---\nbody", encoding="utf-8"
+        )
+        vault = Vault(source_dir=tmp_path)
+        try:
+            vault.index.build_index()
+            reasons = vault.index.skipped_files()
+        finally:
+            vault.close()
+        by_path = {sf.path: sf for sf in reasons}
+        assert "bad.md" in by_path
+        assert by_path["bad.md"].category == "parse_error"
+        assert "good.md" not in by_path
+
+
+class TestReindexSkipReasons:
+    """reindex records surfaced skips into tracker skip_reasons (#775)."""
+
+    def _build(self, tmp_path: Path):
+        from markdown_vault_mcp.vault import Vault
+
+        vault = Vault(source_dir=tmp_path)
+        vault.index.build_index()
+        return vault
+
+    def test_invalid_yaml_recorded_as_parse_error(self, tmp_path: Path) -> None:
+        (tmp_path / "seed.md").write_text("---\na: 1\n---\nx", encoding="utf-8")
+        vault = self._build(tmp_path)
+        try:
+            (tmp_path / "bad.md").write_text(
+                "---\ntitle: [unclosed\n---\n", encoding="utf-8"
+            )
+            vault.index.reindex()
+            by_path = {sf.path: sf for sf in vault.index.skipped_files()}
+        finally:
+            vault.close()
+        assert by_path["bad.md"].category == "parse_error"
+
+    def test_missing_field_recorded_as_missing_frontmatter(
+        self, tmp_path: Path
+    ) -> None:
+        from markdown_vault_mcp.vault import Vault
+
+        (tmp_path / "seed.md").write_text("---\ntitle: ok\n---\nx", encoding="utf-8")
+        vault = Vault(source_dir=tmp_path, required_frontmatter=["title"])
+        try:
+            vault.index.build_index()
+            (tmp_path / "nomatter.md").write_text("no fm", encoding="utf-8")
+            vault.index.reindex()
+            by_path = {sf.path: sf for sf in vault.index.skipped_files()}
+        finally:
+            vault.close()
+        assert by_path["nomatter.md"].category == "missing_frontmatter"
+        assert "title" in by_path["nomatter.md"].detail
+
+    def test_non_utf8_recorded_as_encoding_error(self, tmp_path: Path) -> None:
+        (tmp_path / "seed.md").write_text("---\na: 1\n---\nx", encoding="utf-8")
+        vault = self._build(tmp_path)
+        try:
+            (tmp_path / "latin.md").write_bytes(b"\xff\xfe bad bytes")
+            vault.index.reindex()
+            by_path = {sf.path: sf for sf in vault.index.skipped_files()}
+        finally:
+            vault.close()
+        assert by_path["latin.md"].category == "encoding_error"
+
+    def test_excluded_file_not_recorded(self, tmp_path: Path) -> None:
+        from markdown_vault_mcp.vault import Vault
+
+        (tmp_path / "seed.md").write_text("---\na: 1\n---\nx", encoding="utf-8")
+        (tmp_path / "excluded").mkdir()
+        vault = Vault(source_dir=tmp_path, exclude_patterns=["excluded/**"])
+        try:
+            vault.index.build_index()
+            (tmp_path / "excluded" / "bad.md").write_text(
+                "---\ntitle: [unclosed\n---\n", encoding="utf-8"
+            )
+            vault.index.reindex()
+            paths = {sf.path for sf in vault.index.skipped_files()}
+        finally:
+            vault.close()
+        assert "excluded/bad.md" not in paths
+
+    def test_fixed_file_removed_from_skip_reasons(self, tmp_path: Path) -> None:
+        (tmp_path / "seed.md").write_text("---\na: 1\n---\nx", encoding="utf-8")
+        bad = tmp_path / "bad.md"
+        bad.write_text("---\ntitle: [unclosed\n---\n", encoding="utf-8")
+        vault = self._build(tmp_path)
+        try:
+            vault.index.reindex()
+            assert "bad.md" in {sf.path for sf in vault.index.skipped_files()}
+            # Fix the YAML; the next reindex indexes it and clears the reason.
+            bad.write_text("---\ntitle: fixed\n---\nbody", encoding="utf-8")
+            vault.index.reindex()
+            assert "bad.md" not in {sf.path for sf in vault.index.skipped_files()}
+        finally:
+            vault.close()
