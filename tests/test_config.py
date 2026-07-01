@@ -127,6 +127,26 @@ def test_max_chunk_chars_override_rejects_zero(
         ProjectConfig.from_env()
 
 
+def test_max_chunk_chars_override_accepts_minus_one(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """MAX_CHUNK_CHARS=-1 is the sentinel for unbounded context-scaling."""
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_MAX_CHUNK_CHARS", "-1")
+    cfg = ProjectConfig.from_env()
+    assert cfg.search.max_chunk_chars_override == -1
+
+
+def test_max_chunk_chars_override_rejects_other_negative(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A negative other than -1 is invalid (only -1 is a sentinel)."""
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_MAX_CHUNK_CHARS", "-2")
+    with pytest.raises(ConfigurationError, match="max_chunk_chars"):
+        ProjectConfig.from_env()
+
+
 def test_max_chunk_chars_override_rejects_malformed(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

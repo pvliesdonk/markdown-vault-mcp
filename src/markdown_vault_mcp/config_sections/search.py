@@ -43,9 +43,11 @@ class SearchConfig:
         if (
             self.max_chunk_chars_override is not None
             and self.max_chunk_chars_override < 1
+            and self.max_chunk_chars_override != -1
         ):
             raise ConfigurationError(
-                f"max_chunk_chars must be >= 1, got {self.max_chunk_chars_override}"
+                "max_chunk_chars must be >= 1, or -1 for unbounded "
+                f"context-scaling; got {self.max_chunk_chars_override}"
             )
 
     @classmethod
