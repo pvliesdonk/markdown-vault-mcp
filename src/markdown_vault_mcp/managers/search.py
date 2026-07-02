@@ -1329,8 +1329,15 @@ class SearchManager:
                 similar_grouped = self.get_similar(
                     path, limit=similar_limit, chunks_per_file=1
                 )
-            except ValueError:
-                logger.debug("get_context: get_similar raised for %s, similar=[]", path)
+            except EmbeddingsNotConfiguredError:
+                # Guarded above, but stay quiet if embeddings go unconfigured mid-call.
+                logger.debug(
+                    "get_context: embeddings not configured for %s, similar=[]", path
+                )
+            except ValueError as exc:
+                # A genuine internal failure (e.g. corrupt vector sidecar) — surface
+                # it instead of silently reducing the dossier to similar=[] (#804).
+                logger.warning("get_context: get_similar failed for %s — %s", path, exc)
 
         # Folder peers — other notes in the same folder, capped.
         folder = row["folder"]

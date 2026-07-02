@@ -1027,3 +1027,44 @@ class TestSearchLoadVectorsSelfHeal:
         with pytest.raises(PermissionError, match="read denied"):
             mgr._load_vectors()
         assert rebuild_calls == []  # no rebuild attempted
+
+
+class TestGetContextSurfacesInternalFailure:
+    def test_get_context_warns_on_internal_get_similar_failure(
+        self,
+        search_mgr_with_embeddings: SearchManager,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog,
+    ) -> None:
+        import logging
+
+        def boom(*_args: object, **_kwargs: object) -> list[GroupedResult]:
+            # A genuine internal failure, NOT the not-configured case.
+            raise ValueError("Failed to load vector index after _load_vectors()")
+
+        monkeypatch.setattr(search_mgr_with_embeddings, "get_similar", boom)
+        with caplog.at_level(
+            logging.WARNING, logger="markdown_vault_mcp.managers.search"
+        ):
+            result = search_mgr_with_embeddings.get_context("alpha.md")
+        # Degraded, not failed: dossier returns with an empty similar list.
+        assert result.similar == []
+        # And the internal failure is visible at WARNING, not swallowed at DEBUG.
+        assert any(
+            "get_context: get_similar failed" in r.message
+            and r.levelno == logging.WARNING
+            for r in caplog.records
+        )
+
+    def test_get_context_unconfigured_is_quiet(
+        self, search_mgr: SearchManager, caplog
+    ) -> None:
+        import logging
+
+        # No embeddings configured: the guard skips get_similar; no WARNING, no raise.
+        with caplog.at_level(
+            logging.WARNING, logger="markdown_vault_mcp.managers.search"
+        ):
+            result = search_mgr.get_context("alpha.md")
+        assert result.similar == []
+        assert not any("get_similar failed" in r.message for r in caplog.records)
