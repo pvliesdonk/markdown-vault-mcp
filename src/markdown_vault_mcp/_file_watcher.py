@@ -194,6 +194,19 @@ def _derive_watch_roots(
     zero-``source_dir``-rooted-FSEvents guarantee exactly where the caller cannot
     observe it. The WARNING still logs.
 
+    Every returned root is resolved with :meth:`Path.resolve`. watchdog's
+    FSEvents emitter (macOS) resolves the scheduled watch path with
+    ``os.path.realpath`` and delivers events with realpath-prefixed
+    ``src_path``s, so a watch scheduled on a symlinked child (farm layouts) or
+    on a ``source_dir`` under a symlinked prefix (``/var`` vs ``/private/var``)
+    would filter every event against a root that is never a prefix of the
+    delivered paths — ``relative_to`` raises and each event is silently
+    dropped. Scheduling and filtering on the resolved root keeps the two in
+    agreement on every platform: inotify and ReadDirectoryChangesW deliver
+    events prefixed with the path as scheduled, which is then the resolved
+    path too. Prune rules still match the child's name *inside* ``source_dir``
+    (the vault-visible name), not its resolved target's basename.
+
     Reuses :func:`~markdown_vault_mcp.utils.fs._dir_prune_rules` and
     :func:`~markdown_vault_mcp.utils.fs._should_prune_dir` as the single source
     of truth for prune rules, matching ``iter_markdown_files``.
@@ -210,13 +223,15 @@ def _derive_watch_roots(
             that is or contains one of these is skipped entirely.
 
     Returns:
-        Watch roots to schedule, the non-recursive ``source_dir`` root last when
-        ``root_floor`` is True. On an unreadable or vanished ``source_dir``, the
-        single non-recursive ``source_dir`` root when ``root_floor`` is True, or
-        ``[]`` when it is False.
+        Resolved watch roots to schedule, the non-recursive resolved
+        ``source_dir`` root last when ``root_floor`` is True. On an unreadable
+        or vanished ``source_dir``, the single non-recursive resolved
+        ``source_dir`` root when ``root_floor`` is True, or ``[]`` when it is
+        False.
     """
     anchored, anydepth = _dir_prune_rules(exclude_patterns or ())
     protected = frozenset(_resolve_internal_dirs(internal_dirs))
+    source_dir = source_dir.resolve()
     roots: list[_WatchRoot] = []
     try:
         children = sorted(source_dir.iterdir())
@@ -239,7 +254,7 @@ def _derive_watch_roots(
             continue
         if _contains_internal_dir(child, protected):
             continue
-        roots.append(_WatchRoot(child, recursive=True))
+        roots.append(_WatchRoot(child.resolve(), recursive=True))
 
     if root_floor:
         roots.append(_WatchRoot(source_dir, recursive=False))

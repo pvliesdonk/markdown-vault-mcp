@@ -965,6 +965,110 @@ def test_symlink_farm_layout_does_not_crash(tmp_path: Path) -> None:
     watcher.stop()
 
 
+# ---------------------------------------------------------------------------
+# Symlinked watch roots resolve to their realpath (FSEvents realpath delivery)
+# ---------------------------------------------------------------------------
+
+
+def test_derive_watch_roots_resolves_symlinked_child_root(tmp_path: Path) -> None:
+    """A symlinked child becomes a recursive root on its resolved target.
+
+    macOS FSEvents resolves the scheduled watch path with realpath and delivers
+    events with target-prefixed src_paths; scheduling and filtering on the
+    symlink path makes ``relative_to`` raise and silently drop every event.
+    """
+    real = tmp_path / "targets" / "alpha"
+    real.mkdir(parents=True)
+    farm = tmp_path / "farm"
+    farm.mkdir()
+    (farm / "alpha").symlink_to(real, target_is_directory=True)
+
+    roots = _derive_watch_roots(farm, None)
+    assert _WatchRoot(real, recursive=True) in roots
+    assert _WatchRoot(farm / "alpha", recursive=True) not in roots
+
+
+def test_derive_watch_roots_resolves_source_dir_under_symlinked_prefix(
+    tmp_path: Path,
+) -> None:
+    """A source_dir given through a symlinked prefix resolves floor and children.
+
+    Mirrors a macOS source_dir given as ``/var/...`` (a symlink to
+    ``/private/var/...``): scans work through the link, but FSEvents delivers
+    realpath-prefixed events.
+    """
+    real_parent = tmp_path / "real"
+    (real_parent / "vault" / "notes").mkdir(parents=True)
+    link_parent = tmp_path / "link"
+    link_parent.symlink_to(real_parent, target_is_directory=True)
+
+    roots = _derive_watch_roots(link_parent / "vault", None)
+    assert roots[-1] == _WatchRoot(real_parent / "vault", recursive=False)
+    assert _WatchRoot(real_parent / "vault" / "notes", recursive=True) in roots
+
+
+def test_derive_watch_roots_fallback_resolves_source_dir(tmp_path: Path) -> None:
+    """The enumeration-error fallback floor is also resolved."""
+    real_parent = tmp_path / "real"
+    real_parent.mkdir()
+    link_parent = tmp_path / "link"
+    link_parent.symlink_to(real_parent, target_is_directory=True)
+
+    roots = _derive_watch_roots(link_parent / "gone", None)
+    assert roots == [_WatchRoot(real_parent / "gone", recursive=False)]
+
+
+def test_symlinked_watch_root_delivers_link_and_target_writes(tmp_path: Path) -> None:
+    """A recursive watch root that is a symlink delivers events for writes made
+    both through the link and directly via the target.
+
+    Regression: FSEvents delivered target-prefixed src_paths for a watch
+    scheduled on the symlink path, so ``relative_to`` against the unresolved
+    root raised and ``on_change`` never fired.
+    """
+    real = tmp_path / "targets" / "alpha"
+    real.mkdir(parents=True)
+    farm = tmp_path / "farm"
+    farm.mkdir()
+    link = farm / "alpha"
+    link.symlink_to(real, target_is_directory=True)
+
+    called = threading.Event()
+    watcher = _make_watcher(farm, lambda: called.set())
+    watcher.start()
+    try:
+        (link / "through_link.md").write_text("via link")
+        assert called.wait(timeout=2.0), "write through the symlink not delivered"
+        called.clear()
+        (real / "via_target.md").write_text("via target")
+        assert called.wait(timeout=2.0), "write via the link target not delivered"
+    finally:
+        watcher.stop()
+
+
+def test_source_dir_under_symlinked_prefix_delivers_events(tmp_path: Path) -> None:
+    """A source_dir reached through a symlinked ancestor still delivers events.
+
+    Regression: with source_dir given as e.g. ``/var/...`` on macOS, the floor
+    watch filtered realpath-prefixed events against the unresolved root and
+    dropped them all.
+    """
+    real_parent = tmp_path / "real"
+    (real_parent / "vault").mkdir(parents=True)
+    link_parent = tmp_path / "link"
+    link_parent.symlink_to(real_parent, target_is_directory=True)
+    source_dir = link_parent / "vault"
+
+    called = threading.Event()
+    watcher = _make_watcher(source_dir, lambda: called.set())
+    watcher.start()
+    try:
+        (source_dir / "note.md").write_text("hello")
+        assert called.wait(timeout=2.0), "write under symlinked prefix not delivered"
+    finally:
+        watcher.stop()
+
+
 def test_lifespan_skips_watcher_when_webhook_active(tmp_path: Path) -> None:
     """The lifespan does not start the watcher when a webhook secret is configured."""
     import asyncio
