@@ -7,6 +7,7 @@ HTML context card rendering.
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 import pytest
@@ -41,8 +42,9 @@ class TestContextCardHTML:
     async def test_context_header_elements(self) -> None:
         html = await get_app_html()
         assert 'id="ctx-title"' in html
-        assert 'id="ctx-path"' in html
-        assert 'id="ctx-folder"' in html
+        assert 'id="ctx-breadcrumb"' in html  # folder breadcrumb
+        assert 'id="ctx-chips"' in html  # type/status chips
+        assert 'id="ctx-modified"' in html  # relative timestamp
 
     async def test_collapsible_sections(self) -> None:
         html = await get_app_html()
@@ -61,6 +63,12 @@ class TestContextCardHTML:
         assert 'id="ctx-send-btn"' in html
         assert "sendToLLM" in html
 
+    async def test_copy_link_button(self) -> None:
+        html = await get_app_html()
+        assert 'id="ctx-copy-btn"' in html
+        assert 'id="ctx-copy-label"' in html
+        assert "clipboard" in html  # navigator.clipboard.writeText handler
+
     async def test_call_server_tool_for_context(self) -> None:
         html = await get_app_html()
         assert "callServerTool" in html
@@ -69,6 +77,7 @@ class TestContextCardHTML:
     async def test_clickable_link_items(self) -> None:
         html = await get_app_html()
         assert "link-item" in html
+        assert "sim-item" in html  # similar rows navigate too (delegated [data-path])
         assert "data-path" in html
 
     async def test_host_css_variables(self) -> None:
@@ -82,13 +91,15 @@ class TestContextCardHTML:
         assert "updateContext" in html
         assert "'context card'" in html
 
-    async def test_link_type_badges(self) -> None:
+    async def test_link_row_markers(self) -> None:
         html = await get_app_html()
-        assert "link-type-badge" in html
+        # Backlink rows carry a folder tag; missing outlinks carry a badge.
+        assert "li-tag" in html
+        assert "li-missing" in html
 
     async def test_similar_score_bar(self) -> None:
         html = await get_app_html()
-        assert "similar-score-fill" in html
+        assert "sim-bar-fill" in html
 
     async def test_tag_pills(self) -> None:
         html = await get_app_html()
@@ -197,13 +208,19 @@ class TestShowContextTool:
 class TestNoHardcodedColors:
     """Verify context card CSS uses variables instead of hardcoded hex colours."""
 
-    async def test_success_color_is_variable(self) -> None:
+    async def test_present_outlink_marker_uses_variable(self) -> None:
         html = await get_app_html()
-        assert "var(--color-text-success" in html
+        # The present-outlink dot's colour must come from a variable, not a hex —
+        # bind the assertion to the .li-dot rule itself, not a stray var(--accent).
+        m = re.search(r"\.li-dot\s*\{([^}]*)\}", html)
+        assert m is not None
+        assert "var(--accent)" in m.group(1)
+        assert "#" not in m.group(1)
 
-    async def test_error_color_is_variable(self) -> None:
+    async def test_missing_outlink_marker_uses_variable(self) -> None:
         html = await get_app_html()
-        assert "var(--color-text-danger" in html
+        # Missing outlinks use the --warn Paper var, not a hardcoded colour.
+        assert "var(--warn)" in html
 
     async def test_accent_fg_color_is_variable(self) -> None:
         html = await get_app_html()

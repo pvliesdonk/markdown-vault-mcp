@@ -12,15 +12,49 @@
       .replace(/'/g, '&#39;');
   }
 
+  const ICON_FILE = '<svg class="li-ico" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/></svg>';
+  const ICON_CHEVRON = '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>';
+
+  function baseName(p) {
+    if (!p) return p;
+    return p.split('/').pop().replace(/\.md$/i, '');
+  }
+  function folderTag(p) {
+    const i = String(p || '').lastIndexOf('/');
+    return i > 0 ? p.slice(0, i).split('/').pop() : '';
+  }
+  function relTime(unixSec) {
+    const s = Math.max(0, Date.now() / 1000 - unixSec);
+    const day = Math.floor(s / 86400);
+    if (day >= 365) return Math.floor(day / 365) + 'y ago';
+    if (day >= 30) return Math.floor(day / 30) + 'mo ago';
+    if (day >= 1) return day + 'd ago';
+    const h = Math.floor(s / 3600);
+    if (h >= 1) return h + 'h ago';
+    const m = Math.floor(s / 60);
+    if (m >= 1) return m + 'm ago';
+    return 'just now';
+  }
+
   function makeSection(id, title, count, bodyHtml) {
     const el = document.getElementById(id);
     if (!el) return;
     if (count === 0 && !bodyHtml) { el.style.display = 'none'; return; }
     el.style.display = '';
-    el.innerHTML = '<div class="section-header"><span>' + escapeHtml(title) + '</span><span class="badge">' + count + '</span></div>'
+    const label = escapeHtml(title) + (count != null ? ' <span class="sec-count">· ' + count + '</span>' : '');
+    el.innerHTML = '<div class="section-header"><span class="sec-label">' + label + '</span>'
+      + '<span class="sec-chevron">' + ICON_CHEVRON + '</span></div>'
       + '<div class="section-body">' + bodyHtml + '</div>';
     el.classList.add('collapsed-section');
     // toggle handled by delegated listener on #panel-context
+  }
+
+  function renderChips(fm) {
+    if (!fm) return '';
+    let html = '';
+    if (fm.type != null) html += '<span class="chip chip-primary">' + escapeHtml(String(fm.type)) + '</span>';
+    if (fm.status != null) html += '<span class="chip">' + escapeHtml(String(fm.status)) + '</span>';
+    return html;
   }
 
   function renderFrontmatter(fm) {
@@ -35,55 +69,56 @@
 
   function renderTags(tags) {
     if (!tags || Object.keys(tags).length === 0) return '';
-    let html = '';
-    for (const [field, values] of Object.entries(tags)) {
-      html += '<div class="tag-group"><div class="tag-group-label">' + escapeHtml(field) + '</div>';
-      for (const v of values) {
-        html += '<span class="tag-pill">' + escapeHtml(v) + '</span>';
-      }
-      html += '</div>';
-    }
-    return html;
+    const chips = Object.values(tags).flat()
+      .map(v => '<span class="tag-pill">' + escapeHtml(v) + '</span>').join('');
+    return '<div class="tag-row">' + chips + '</div>';
   }
 
   function renderBacklinks(backlinks) {
     if (!backlinks || backlinks.length === 0) return '';
-    return backlinks.map(bl =>
-      '<div class="link-item" data-path="' + escapeHtml(bl.source_path) + '">'
-      + '<span class="link-path">' + escapeHtml(bl.source_path) + '</span>'
-      + (bl.link_text ? '<span class="link-text">' + escapeHtml(bl.link_text) + '</span>' : '')
-      + '<span class="link-type-badge">' + escapeHtml(bl.link_type) + '</span>'
-      + '</div>'
-    ).join('');
+    return backlinks.map(bl => {
+      const title = bl.link_text || baseName(bl.source_path);
+      const folder = folderTag(bl.source_path);
+      return '<div class="link-item" data-path="' + escapeHtml(bl.source_path) + '">'
+        + ICON_FILE
+        + '<span class="li-title">' + escapeHtml(title) + '</span>'
+        + (folder ? '<span class="li-tag">' + escapeHtml(folder) + '</span>' : '')
+        + '</div>';
+    }).join('');
   }
 
   function renderOutlinks(outlinks) {
     if (!outlinks || outlinks.length === 0) return '';
-    return outlinks.map(ol =>
-      '<div class="link-item" data-path="' + escapeHtml(ol.target_path) + '">'
-      + '<span class="link-path">' + escapeHtml(ol.target_path) + '</span>'
-      + '<span class="' + (ol.exists ? 'link-exists-yes' : 'link-exists-no') + '">' + (ol.exists ? '\u2713' : '\u2717') + '</span>'
-      + '<span class="link-type-badge">' + escapeHtml(ol.link_type) + '</span>'
-      + '</div>'
-    ).join('');
+    return outlinks.map(ol => {
+      const missing = ol.exists === false;
+      return '<div class="link-item" data-path="' + escapeHtml(ol.target_path) + '">'
+        + '<span class="li-dot' + (missing ? ' li-dot--warn' : '') + '"></span>'
+        + '<span class="li-title' + (missing ? ' li-title--muted' : '') + '">' + escapeHtml(baseName(ol.target_path)) + '</span>'
+        + (missing ? '<span class="li-missing">missing</span>' : '')
+        + '</div>';
+    }).join('');
   }
 
   function renderSimilar(similar) {
     if (!similar || similar.length === 0) return '';
-    const maxScore = Math.max(...similar.map(s => s.score), 0.001);
-    return similar.map(s =>
-      '<div class="link-item" data-path="' + escapeHtml(s.path) + '">'
-      + '<span class="link-path">' + escapeHtml(s.title || s.path) + '</span>'
-      + '<div class="similar-score"><div class="similar-score-fill" style="width:' + Math.round((s.score / maxScore) * 100) + '%"></div></div>'
-      + '</div>'
-    ).join('');
+    return similar.map(s => {
+      const pct = Math.max(0, Math.min(100, Math.round((s.score || 0) * 100)));
+      const score = (s.score || 0).toFixed(2).replace(/^0/, '');
+      return '<div class="sim-item" data-path="' + escapeHtml(s.path) + '">'
+        + '<div class="sim-row"><span class="li-title">' + escapeHtml(s.title || baseName(s.path)) + '</span>'
+        + '<span class="sim-score">' + score + '</span></div>'
+        + '<div class="sim-bar"><div class="sim-bar-fill" style="width:' + pct + '%"></div></div>'
+        + '</div>';
+    }).join('');
   }
 
   function renderPeers(peers) {
     if (!peers || peers.length === 0) return '';
     return peers.map(p =>
       '<div class="link-item" data-path="' + escapeHtml(p) + '">'
-      + '<span class="link-path">' + escapeHtml(p) + '</span>'
+      + ICON_FILE
+      + '<span class="li-title">' + escapeHtml(baseName(p)) + '</span>'
+      + '<span class="li-tag">' + escapeHtml(folderTag(p)) + '</span>'
       + '</div>'
     ).join('');
   }
@@ -103,14 +138,12 @@
       currentContextData = data;
       currentPath = path; // sync shared state
 
-      document.getElementById('ctx-title').textContent = data.title || path;
-      document.getElementById('ctx-path').textContent = data.path;
-      document.getElementById('ctx-folder').textContent = data.folder ? '\uD83D\uDCC1 ' + data.folder : '';
-      document.getElementById('ctx-modified').textContent = '';
-      if (data.modified_at) {
-        const d = new Date(data.modified_at * 1000);
-        document.getElementById('ctx-modified').textContent = d.toLocaleString();
-      }
+      document.getElementById('ctx-title').textContent = data.title || baseName(path);
+      document.getElementById('ctx-breadcrumb').textContent =
+        data.folder ? data.folder.split('/').join(' / ') : '';
+      document.getElementById('ctx-modified').textContent =
+        data.modified_at ? relTime(data.modified_at) : '';
+      document.getElementById('ctx-chips').innerHTML = renderChips(data.frontmatter);
 
       const fmCount = data.frontmatter ? Object.keys(data.frontmatter).length : 0;
       makeSection('ctx-frontmatter', 'Frontmatter', fmCount, renderFrontmatter(data.frontmatter));
@@ -118,8 +151,8 @@
       makeSection('ctx-tags', 'Tags', tagCount, renderTags(data.tags));
       makeSection('ctx-backlinks', 'Backlinks', (data.backlinks || []).length, renderBacklinks(data.backlinks));
       makeSection('ctx-outlinks', 'Outlinks', (data.outlinks || []).length, renderOutlinks(data.outlinks));
-      makeSection('ctx-similar', 'Similar', (data.similar || []).length, renderSimilar(data.similar));
-      makeSection('ctx-peers', 'Folder Peers', (data.folder_notes || []).length, renderPeers(data.folder_notes));
+      makeSection('ctx-similar', 'Similar notes', (data.similar || []).length, renderSimilar(data.similar));
+      makeSection('ctx-peers', 'Folder peers', (data.folder_notes || []).length, renderPeers(data.folder_notes));
 
       // Auto-expand sections with content
       for (const id of ['ctx-backlinks', 'ctx-outlinks']) {
@@ -136,12 +169,24 @@
     }
   }
 
-  // Delegated handler: link-item navigation + section-header toggle
+  // Delegated handler: section-header toggle + row navigation
   document.getElementById('panel-context').addEventListener('click', (e) => {
     const header = e.target.closest('.section-header');
     if (header) { header.closest('.context-section')?.classList.toggle('collapsed-section'); return; }
-    const item = e.target.closest('.link-item[data-path]');
-    if (item) loadContext(item.dataset.path);
+    const item = e.target.closest('[data-path]');
+    if (item && item.dataset.path) loadContext(item.dataset.path);
+  });
+
+  // Copy vault link
+  document.getElementById('ctx-copy-btn').addEventListener('click', async () => {
+    if (!currentContextPath) return;
+    const label = document.getElementById('ctx-copy-label');
+    try {
+      await navigator.clipboard.writeText(currentContextPath);
+      if (label) { label.textContent = 'Copied ✓'; setTimeout(() => { label.textContent = 'Copy link'; }, 1500); }
+    } catch (err) {
+      window.showToast('Copy failed — ' + currentContextPath);
+    }
   });
 
   // Show in Graph

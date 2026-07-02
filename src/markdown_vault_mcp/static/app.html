@@ -281,17 +281,21 @@ if(__exports != exports)module.exports = exports;return module.exports}));
     z-index: 1000;
   }
   .toast.visible { opacity: 1; }
-  /* Context card styles */
-  .context-header { margin-bottom: 12px; }
-  .context-title-row {
-    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  /* Shared Paper buttons */
+  .ghost-btn, .accent-btn {
+    display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; cursor: pointer;
+    font: 600 11px/1 var(--font-body); padding: 6px 10px; border-radius: var(--radius-sm);
   }
-  .context-title-row h2 { font-family: var(--font-head); font-size: 18px; margin: 0; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .context-meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; font-size: 12px; color: var(--color-text-secondary); }
-  .meta-item::before { content: ''; }
+  .ghost-btn { background: var(--panel-2); border: 1px solid var(--border); color: var(--ink-2); }
+  .ghost-btn:hover { color: var(--ink); border-color: var(--muted); }
+  .accent-btn { background: var(--accent); border: 1px solid var(--accent); color: var(--accent-ink); }
+  .accent-btn:hover { opacity: 0.9; }
+  /* Legacy action buttons — still used by the graph toolbar and note preview;
+     they pick up Paper colors via the --color-* mapping until those views are
+     restyled. */
   .action-btn {
     background: var(--color-text-info); color: var(--color-text-inverse); border: none; padding: 4px 10px;
-    border-radius: 4px; cursor: pointer; font-size: 12px; font-family: inherit; white-space: nowrap;
+    border-radius: var(--radius-sm); cursor: pointer; font-size: 12px; font-family: var(--font-body); white-space: nowrap;
   }
   .action-btn:hover { opacity: 0.85; }
   .action-btn--secondary {
@@ -299,50 +303,58 @@ if(__exports != exports)module.exports = exports;return module.exports}));
     color: var(--color-text-primary);
     border: 1px solid var(--color-border-primary);
   }
-  .context-section { margin-bottom: 8px; border: 1px solid var(--color-border-primary); border-radius: 6px; overflow: hidden; }
+  /* Context card */
+  .context-header { margin-bottom: 6px; }
+  .context-title-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+  .ctx-head-main { min-width: 0; }
+  .context-title-row h2 { font-family: var(--font-head); font-weight: 600; font-size: 17px; margin: 0; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ctx-breadcrumb { font: 500 11px/1.4 var(--font-mono); color: var(--muted); margin-top: 5px; }
+  .ctx-head-side { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+  .ctx-time { font: 500 11px/1 var(--font-body); color: var(--muted); white-space: nowrap; }
+  .ctx-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+  .chip { font: 500 11px/1 var(--font-body); color: var(--ink-2); background: var(--panel-2); border: 1px solid var(--border-2); padding: 4px 9px; border-radius: 999px; }
+  .chip-primary { color: var(--accent); background: var(--accent-soft); border-color: transparent; font-weight: 600; }
+  .context-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+  /* Accordion sections */
+  .context-section { border-top: 1px solid var(--border-2); }
+  .context-section:first-of-type { border-top: none; }
   .section-header {
-    display: flex; align-items: center; justify-content: space-between; padding: 8px 12px;
-    background: var(--color-background-secondary); cursor: pointer; font-size: 13px; font-weight: 600;
-    user-select: none;
+    display: flex; align-items: center; justify-content: space-between; padding: 11px 0 8px;
+    cursor: pointer; user-select: none;
   }
-  .section-header .badge { background: var(--color-text-info); color: var(--color-text-inverse); padding: 1px 6px; border-radius: 10px; font-size: 11px; font-weight: 500; }
-  .section-body { padding: 8px 12px; font-size: 13px; display: none; }
+  .sec-label { font: 600 11px/1 var(--font-body); text-transform: uppercase; letter-spacing: .09em; color: var(--muted); }
+  .sec-count { letter-spacing: 0; }
+  .sec-chevron { display: inline-flex; color: var(--muted); transition: transform 0.15s; }
+  .context-section:not(.collapsed-section) .sec-chevron { transform: rotate(90deg); }
+  .section-body { padding: 0 0 11px; display: none; }
   .context-section:not(.collapsed-section) .section-body { display: block; }
-  .section-header::after { content: '\25B6'; font-size: 10px; transition: transform 0.15s; }
-  .context-section:not(.collapsed-section) .section-header::after { transform: rotate(90deg); }
-  /* Tag pills */
-  .tag-group { margin-bottom: 6px; }
-  .tag-group-label { font-size: 11px; color: var(--color-text-secondary); text-transform: uppercase; margin-bottom: 2px; }
-  .tag-pill {
-    display: inline-block; padding: 2px 8px; margin: 2px 4px 2px 0; border-radius: 12px; font-size: 12px;
-    font-family: var(--font-mono);
-    background: var(--color-background-secondary); border: 1px solid var(--color-border-primary);
-  }
-  /* Link lists */
-  .link-item {
-    display: flex; align-items: center; gap: 8px; padding: 4px 0; cursor: pointer;
-    border-bottom: 1px solid var(--color-border-primary);
-  }
-  .link-item:last-child { border-bottom: none; }
-  .link-item:hover { background: var(--color-background-secondary); }
-  .link-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-text-info); }
-  .link-type-badge {
-    font-size: 10px; padding: 1px 5px; border-radius: 3px;
-    background: var(--color-background-secondary); border: 1px solid var(--color-border-primary);
-    color: var(--color-text-secondary);
-  }
-  .link-exists-yes { color: var(--color-text-success); }
-  .link-exists-no { color: var(--color-text-danger); }
-  .link-text { font-size: 11px; color: var(--color-text-secondary); }
+  /* Rows */
+  .link-item { display: flex; align-items: center; gap: 9px; padding: 6px 8px; margin: 0 -8px; border-radius: var(--radius-sm); cursor: pointer; }
+  .link-item:hover, .sim-item:hover { background: var(--panel-2); }
+  .li-ico { color: var(--muted); flex: none; }
+  .li-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 13px/1.3 var(--font-body); color: var(--ink); }
+  .li-title--muted { color: var(--muted); }
+  .li-tag { flex: none; margin-left: auto; font: 500 10px/1 var(--font-mono); color: var(--muted); }
+  .li-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex: none; }
+  .li-dot--warn { background: var(--warn); }
+  .li-missing { flex: none; font: 600 9.5px/1 var(--font-mono); text-transform: uppercase; letter-spacing: .06em; color: var(--warn); background: var(--accent-soft); padding: 3px 6px; border-radius: 5px; }
   /* Similar notes */
-  .similar-score {
-    width: 60px; height: 6px; background: var(--color-border-primary); border-radius: 3px; overflow: hidden; flex-shrink: 0;
+  .sim-item { padding: 5px 8px; margin: 0 -8px; border-radius: var(--radius-sm); cursor: pointer; }
+  .sim-row { display: flex; align-items: center; gap: 8px; }
+  .sim-score { margin-left: auto; font: 600 11px/1 var(--font-mono); color: var(--accent); }
+  .sim-bar { height: 3px; border-radius: 2px; background: var(--border-2); margin-top: 6px; overflow: hidden; }
+  .sim-bar-fill { height: 100%; background: var(--accent); border-radius: 2px; }
+  /* Tags */
+  .tag-row { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tag-pill {
+    display: inline-block; font: 500 11px/1 var(--font-mono); color: var(--ink-2);
+    background: var(--panel-2); border: 1px solid var(--border-2); padding: 4px 8px; border-radius: 6px;
   }
-  .similar-score-fill { height: 100%; background: var(--color-text-info); border-radius: 3px; }
   /* Frontmatter table */
   .fm-table { width: 100%; border-collapse: collapse; }
-  .fm-table td { padding: 3px 8px; border-bottom: 1px solid var(--color-border-primary); font-size: 12px; vertical-align: top; }
-  .fm-table td:first-child { font-family: var(--font-mono); font-weight: 600; white-space: nowrap; width: 1%; color: var(--color-text-secondary); }
+  .fm-table td { padding: 4px 0; border-bottom: 1px solid var(--border-2); font-size: 12px; vertical-align: top; color: var(--ink); }
+  .fm-table tr:last-child td { border-bottom: none; }
+  .fm-table td:first-child { font-family: var(--font-mono); font-size: 11px; white-space: nowrap; width: 66px; padding-right: 12px; color: var(--muted); }
   /* Graph styles */
   .graph-toolbar { display: flex; gap: 8px; padding: 4px 0; flex-shrink: 0; }
   #graph-container { border: 1px solid var(--color-border-primary); border-radius: 6px; min-height: 200px; }
@@ -426,7 +438,7 @@ if(__exports != exports)module.exports = exports;return module.exports}));
     font-size: 12px; cursor: not-allowed; opacity: 0.6; font-family: inherit;
   }
 </style>
-<!-- vendor-spa-source-sha256:75d5db348598d5fb364496cb7aa037f89f9a61d6a7380e6ec30aa9a962dd8c09 -->
+<!-- vendor-spa-source-sha256:3aeae3c7fdf3007502d0a1161625b8eabe815b457a36bb2b0ca0d336df382b02 -->
 </head>
 <body>
 <div class="app-container">
@@ -445,17 +457,23 @@ if(__exports != exports)module.exports = exports;return module.exports}));
     <div id="context-card" style="display:none;">
       <div class="context-header">
         <div class="context-title-row">
-          <h2 id="ctx-title"></h2>
-          <div class="context-actions">
-            <button class="action-btn action-btn--secondary" id="ctx-graph-btn" title="Show in Graph">&#x1F517; Graph</button>
-            <button class="action-btn action-btn--secondary" id="ctx-browse-btn" title="Open in Browser">&#x1F4C4; Browse</button>
-            <button class="action-btn" id="ctx-send-btn" title="Send to Claude">&#x1F4AC; Send</button>
+          <div class="ctx-head-main">
+            <h2 id="ctx-title"></h2>
+            <div id="ctx-breadcrumb" class="ctx-breadcrumb"></div>
+          </div>
+          <div class="ctx-head-side">
+            <span id="ctx-modified" class="ctx-time"></span>
+            <button class="ghost-btn" id="ctx-copy-btn" title="Copy vault link">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>
+              <span id="ctx-copy-label">Copy link</span>
+            </button>
           </div>
         </div>
-        <div class="context-meta">
-          <span id="ctx-path" class="meta-item"></span>
-          <span id="ctx-folder" class="meta-item"></span>
-          <span id="ctx-modified" class="meta-item"></span>
+        <div id="ctx-chips" class="ctx-chips"></div>
+        <div class="context-actions">
+          <button class="ghost-btn" id="ctx-graph-btn" title="Show in Graph">Graph</button>
+          <button class="ghost-btn" id="ctx-browse-btn" title="Open in Browser">Browse</button>
+          <button class="accent-btn" id="ctx-send-btn" title="Send to Claude">Send</button>
         </div>
       </div>
       <div id="ctx-frontmatter" class="context-section collapsed-section"></div>
@@ -705,15 +723,49 @@ app.onteardown = () => {
       .replace(/'/g, '&#39;');
   }
 
+  const ICON_FILE = '<svg class="li-ico" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/></svg>';
+  const ICON_CHEVRON = '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>';
+
+  function baseName(p) {
+    if (!p) return p;
+    return p.split('/').pop().replace(/\.md$/i, '');
+  }
+  function folderTag(p) {
+    const i = String(p || '').lastIndexOf('/');
+    return i > 0 ? p.slice(0, i).split('/').pop() : '';
+  }
+  function relTime(unixSec) {
+    const s = Math.max(0, Date.now() / 1000 - unixSec);
+    const day = Math.floor(s / 86400);
+    if (day >= 365) return Math.floor(day / 365) + 'y ago';
+    if (day >= 30) return Math.floor(day / 30) + 'mo ago';
+    if (day >= 1) return day + 'd ago';
+    const h = Math.floor(s / 3600);
+    if (h >= 1) return h + 'h ago';
+    const m = Math.floor(s / 60);
+    if (m >= 1) return m + 'm ago';
+    return 'just now';
+  }
+
   function makeSection(id, title, count, bodyHtml) {
     const el = document.getElementById(id);
     if (!el) return;
     if (count === 0 && !bodyHtml) { el.style.display = 'none'; return; }
     el.style.display = '';
-    el.innerHTML = '<div class="section-header"><span>' + escapeHtml(title) + '</span><span class="badge">' + count + '</span></div>'
+    const label = escapeHtml(title) + (count != null ? ' <span class="sec-count">· ' + count + '</span>' : '');
+    el.innerHTML = '<div class="section-header"><span class="sec-label">' + label + '</span>'
+      + '<span class="sec-chevron">' + ICON_CHEVRON + '</span></div>'
       + '<div class="section-body">' + bodyHtml + '</div>';
     el.classList.add('collapsed-section');
     // toggle handled by delegated listener on #panel-context
+  }
+
+  function renderChips(fm) {
+    if (!fm) return '';
+    let html = '';
+    if (fm.type != null) html += '<span class="chip chip-primary">' + escapeHtml(String(fm.type)) + '</span>';
+    if (fm.status != null) html += '<span class="chip">' + escapeHtml(String(fm.status)) + '</span>';
+    return html;
   }
 
   function renderFrontmatter(fm) {
@@ -728,55 +780,56 @@ app.onteardown = () => {
 
   function renderTags(tags) {
     if (!tags || Object.keys(tags).length === 0) return '';
-    let html = '';
-    for (const [field, values] of Object.entries(tags)) {
-      html += '<div class="tag-group"><div class="tag-group-label">' + escapeHtml(field) + '</div>';
-      for (const v of values) {
-        html += '<span class="tag-pill">' + escapeHtml(v) + '</span>';
-      }
-      html += '</div>';
-    }
-    return html;
+    const chips = Object.values(tags).flat()
+      .map(v => '<span class="tag-pill">' + escapeHtml(v) + '</span>').join('');
+    return '<div class="tag-row">' + chips + '</div>';
   }
 
   function renderBacklinks(backlinks) {
     if (!backlinks || backlinks.length === 0) return '';
-    return backlinks.map(bl =>
-      '<div class="link-item" data-path="' + escapeHtml(bl.source_path) + '">'
-      + '<span class="link-path">' + escapeHtml(bl.source_path) + '</span>'
-      + (bl.link_text ? '<span class="link-text">' + escapeHtml(bl.link_text) + '</span>' : '')
-      + '<span class="link-type-badge">' + escapeHtml(bl.link_type) + '</span>'
-      + '</div>'
-    ).join('');
+    return backlinks.map(bl => {
+      const title = bl.link_text || baseName(bl.source_path);
+      const folder = folderTag(bl.source_path);
+      return '<div class="link-item" data-path="' + escapeHtml(bl.source_path) + '">'
+        + ICON_FILE
+        + '<span class="li-title">' + escapeHtml(title) + '</span>'
+        + (folder ? '<span class="li-tag">' + escapeHtml(folder) + '</span>' : '')
+        + '</div>';
+    }).join('');
   }
 
   function renderOutlinks(outlinks) {
     if (!outlinks || outlinks.length === 0) return '';
-    return outlinks.map(ol =>
-      '<div class="link-item" data-path="' + escapeHtml(ol.target_path) + '">'
-      + '<span class="link-path">' + escapeHtml(ol.target_path) + '</span>'
-      + '<span class="' + (ol.exists ? 'link-exists-yes' : 'link-exists-no') + '">' + (ol.exists ? '\u2713' : '\u2717') + '</span>'
-      + '<span class="link-type-badge">' + escapeHtml(ol.link_type) + '</span>'
-      + '</div>'
-    ).join('');
+    return outlinks.map(ol => {
+      const missing = ol.exists === false;
+      return '<div class="link-item" data-path="' + escapeHtml(ol.target_path) + '">'
+        + '<span class="li-dot' + (missing ? ' li-dot--warn' : '') + '"></span>'
+        + '<span class="li-title' + (missing ? ' li-title--muted' : '') + '">' + escapeHtml(baseName(ol.target_path)) + '</span>'
+        + (missing ? '<span class="li-missing">missing</span>' : '')
+        + '</div>';
+    }).join('');
   }
 
   function renderSimilar(similar) {
     if (!similar || similar.length === 0) return '';
-    const maxScore = Math.max(...similar.map(s => s.score), 0.001);
-    return similar.map(s =>
-      '<div class="link-item" data-path="' + escapeHtml(s.path) + '">'
-      + '<span class="link-path">' + escapeHtml(s.title || s.path) + '</span>'
-      + '<div class="similar-score"><div class="similar-score-fill" style="width:' + Math.round((s.score / maxScore) * 100) + '%"></div></div>'
-      + '</div>'
-    ).join('');
+    return similar.map(s => {
+      const pct = Math.max(0, Math.min(100, Math.round((s.score || 0) * 100)));
+      const score = (s.score || 0).toFixed(2).replace(/^0/, '');
+      return '<div class="sim-item" data-path="' + escapeHtml(s.path) + '">'
+        + '<div class="sim-row"><span class="li-title">' + escapeHtml(s.title || baseName(s.path)) + '</span>'
+        + '<span class="sim-score">' + score + '</span></div>'
+        + '<div class="sim-bar"><div class="sim-bar-fill" style="width:' + pct + '%"></div></div>'
+        + '</div>';
+    }).join('');
   }
 
   function renderPeers(peers) {
     if (!peers || peers.length === 0) return '';
     return peers.map(p =>
       '<div class="link-item" data-path="' + escapeHtml(p) + '">'
-      + '<span class="link-path">' + escapeHtml(p) + '</span>'
+      + ICON_FILE
+      + '<span class="li-title">' + escapeHtml(baseName(p)) + '</span>'
+      + '<span class="li-tag">' + escapeHtml(folderTag(p)) + '</span>'
       + '</div>'
     ).join('');
   }
@@ -796,14 +849,12 @@ app.onteardown = () => {
       currentContextData = data;
       currentPath = path; // sync shared state
 
-      document.getElementById('ctx-title').textContent = data.title || path;
-      document.getElementById('ctx-path').textContent = data.path;
-      document.getElementById('ctx-folder').textContent = data.folder ? '\uD83D\uDCC1 ' + data.folder : '';
-      document.getElementById('ctx-modified').textContent = '';
-      if (data.modified_at) {
-        const d = new Date(data.modified_at * 1000);
-        document.getElementById('ctx-modified').textContent = d.toLocaleString();
-      }
+      document.getElementById('ctx-title').textContent = data.title || baseName(path);
+      document.getElementById('ctx-breadcrumb').textContent =
+        data.folder ? data.folder.split('/').join(' / ') : '';
+      document.getElementById('ctx-modified').textContent =
+        data.modified_at ? relTime(data.modified_at) : '';
+      document.getElementById('ctx-chips').innerHTML = renderChips(data.frontmatter);
 
       const fmCount = data.frontmatter ? Object.keys(data.frontmatter).length : 0;
       makeSection('ctx-frontmatter', 'Frontmatter', fmCount, renderFrontmatter(data.frontmatter));
@@ -811,8 +862,8 @@ app.onteardown = () => {
       makeSection('ctx-tags', 'Tags', tagCount, renderTags(data.tags));
       makeSection('ctx-backlinks', 'Backlinks', (data.backlinks || []).length, renderBacklinks(data.backlinks));
       makeSection('ctx-outlinks', 'Outlinks', (data.outlinks || []).length, renderOutlinks(data.outlinks));
-      makeSection('ctx-similar', 'Similar', (data.similar || []).length, renderSimilar(data.similar));
-      makeSection('ctx-peers', 'Folder Peers', (data.folder_notes || []).length, renderPeers(data.folder_notes));
+      makeSection('ctx-similar', 'Similar notes', (data.similar || []).length, renderSimilar(data.similar));
+      makeSection('ctx-peers', 'Folder peers', (data.folder_notes || []).length, renderPeers(data.folder_notes));
 
       // Auto-expand sections with content
       for (const id of ['ctx-backlinks', 'ctx-outlinks']) {
@@ -829,12 +880,24 @@ app.onteardown = () => {
     }
   }
 
-  // Delegated handler: link-item navigation + section-header toggle
+  // Delegated handler: section-header toggle + row navigation
   document.getElementById('panel-context').addEventListener('click', (e) => {
     const header = e.target.closest('.section-header');
     if (header) { header.closest('.context-section')?.classList.toggle('collapsed-section'); return; }
-    const item = e.target.closest('.link-item[data-path]');
-    if (item) loadContext(item.dataset.path);
+    const item = e.target.closest('[data-path]');
+    if (item && item.dataset.path) loadContext(item.dataset.path);
+  });
+
+  // Copy vault link
+  document.getElementById('ctx-copy-btn').addEventListener('click', async () => {
+    if (!currentContextPath) return;
+    const label = document.getElementById('ctx-copy-label');
+    try {
+      await navigator.clipboard.writeText(currentContextPath);
+      if (label) { label.textContent = 'Copied ✓'; setTimeout(() => { label.textContent = 'Copy link'; }, 1500); }
+    } catch (err) {
+      window.showToast('Copy failed — ' + currentContextPath);
+    }
   });
 
   // Show in Graph

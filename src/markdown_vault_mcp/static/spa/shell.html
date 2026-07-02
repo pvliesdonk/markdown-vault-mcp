@@ -29,17 +29,23 @@
     <div id="context-card" style="display:none;">
       <div class="context-header">
         <div class="context-title-row">
-          <h2 id="ctx-title"></h2>
-          <div class="context-actions">
-            <button class="action-btn action-btn--secondary" id="ctx-graph-btn" title="Show in Graph">&#x1F517; Graph</button>
-            <button class="action-btn action-btn--secondary" id="ctx-browse-btn" title="Open in Browser">&#x1F4C4; Browse</button>
-            <button class="action-btn" id="ctx-send-btn" title="Send to Claude">&#x1F4AC; Send</button>
+          <div class="ctx-head-main">
+            <h2 id="ctx-title"></h2>
+            <div id="ctx-breadcrumb" class="ctx-breadcrumb"></div>
+          </div>
+          <div class="ctx-head-side">
+            <span id="ctx-modified" class="ctx-time"></span>
+            <button class="ghost-btn" id="ctx-copy-btn" title="Copy vault link">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>
+              <span id="ctx-copy-label">Copy link</span>
+            </button>
           </div>
         </div>
-        <div class="context-meta">
-          <span id="ctx-path" class="meta-item"></span>
-          <span id="ctx-folder" class="meta-item"></span>
-          <span id="ctx-modified" class="meta-item"></span>
+        <div id="ctx-chips" class="ctx-chips"></div>
+        <div class="context-actions">
+          <button class="ghost-btn" id="ctx-graph-btn" title="Show in Graph">Graph</button>
+          <button class="ghost-btn" id="ctx-browse-btn" title="Open in Browser">Browse</button>
+          <button class="accent-btn" id="ctx-send-btn" title="Send to Claude">Send</button>
         </div>
       </div>
       <div id="ctx-frontmatter" class="context-section collapsed-section"></div>
