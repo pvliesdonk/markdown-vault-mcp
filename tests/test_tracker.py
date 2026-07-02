@@ -653,6 +653,12 @@ class TestUnreadableFiles:
         assert changes.deleted == [], "an unreadable indexed file must not be purged"
         assert "keep.md" not in changes.modified
         assert changes.unchanged == 1  # carried forward as unchanged
+        assert any(
+            r.levelno == logging.WARNING
+            and "hash_read_failed_keeping_indexed" in r.getMessage()
+            and "keep.md" in r.getMessage()
+            for r in caplog.records
+        ), "the carry-forward must be visible in the log for operators"
 
     def test_non_transient_errno_is_not_retried(self, tmp_path: Path) -> None:
         """A non-transient OSError (EACCES) fails on the first attempt, no retry.
