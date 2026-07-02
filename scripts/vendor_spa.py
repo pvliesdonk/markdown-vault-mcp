@@ -2,11 +2,10 @@
 """Vendor CDN dependencies into static/app.html for offline use.
 
 Downloads pinned library versions and inlines them into the SPA HTML,
-eliminating runtime CDN dependencies.  The source is ``static/app.src.html``
-(with CDN ``<script src>`` tags and an ``ext-apps`` ES-module import); this
-script produces ``static/app.html`` (self-contained, committed).  Projects may
-assemble ``app.src.html`` from smaller sources ahead of this step (see
-``build_spa.py``), so treat it as an input artifact, not a hand-edited file.
+eliminating runtime CDN dependencies.  The source template is
+``static/app.src.html`` (human-editable, with CDN ``<script src>`` tags and
+an ``ext-apps`` ES-module import); this script produces ``static/app.html``
+(self-contained, committed).
 
 This script is template-owned and ships byte-identical to every project, so
 it discovers ``src/<module>/static/app.src.html`` at runtime rather than

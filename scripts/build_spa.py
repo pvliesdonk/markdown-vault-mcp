@@ -42,7 +42,8 @@ _MARKER = re.compile(r"/\*@@FILE:([^@]+?)@@\*/")
 _MAX_DEPTH = 64
 
 # The shell must open with this so the injected banner lands *after* the
-# doctype (a comment before the doctype forces the browser into quirks mode).
+# doctype: keeping the DOCTYPE the first line makes document mode unambiguous
+# across parsers (legacy engines treat pre-doctype content as a quirks trigger).
 _DOCTYPE = "<!DOCTYPE html>\n"
 
 # Injected into the generated output at assembly time (kept out of shell.html,
