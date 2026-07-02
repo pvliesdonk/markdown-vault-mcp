@@ -102,6 +102,16 @@ def test_assemble_rejects_missing_partial(spa_copy: Path) -> None:
         build_spa.assemble(spa_copy)
 
 
+def test_main_writes_assembled_source(
+    spa_copy: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Non-check ``main()`` writes the assembled app.src.html next to ``spa/``."""
+    monkeypatch.setattr(build_spa, "_find_spa_dir", lambda: spa_copy)
+    assert build_spa.main(["build_spa.py"]) == 0
+    written = (tmp_path / "app.src.html").read_text(encoding="utf-8")
+    assert written == build_spa.assemble(spa_copy)
+
+
 def test_check_reports_up_to_date(
     spa_copy: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

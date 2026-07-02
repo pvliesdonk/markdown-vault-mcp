@@ -129,7 +129,7 @@ def main(argv: list[str]) -> int:
         return 1
 
     out_path.write_text(assembled, encoding="utf-8")
-    print(f"Wrote {out_path.relative_to(spa_dir.parent.parent.parent.parent)}")
+    print(f"Wrote {out_path}")
     return 0
 
 

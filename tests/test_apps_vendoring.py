@@ -17,18 +17,22 @@ def test_app_html_is_served_with_tools_rewritten() -> None:
     assert "app___" not in html  # every literal rewritten
 
 
-def test_note_view_reaches_served_html() -> None:
-    """The extracted note-preview view (views/note.js) must reach the served
-    app.html.
+def test_all_view_modules_reach_served_html() -> None:
+    """Every view partial's ``/*@@FILE:views/*.js@@*/`` marker must survive
+    assembly into the served app.html.
 
-    Guards against its ``/*@@FILE:views/note.js@@*/`` marker being dropped from
-    core.js — a regression the build/vendor ``--check`` gates would not catch
-    (they compare committed vs freshly assembled, both of which would then lack
-    the view). Asserts on note.js body markers, not the shell's ``data-tab``
-    markup (which survives even if the view module is orphaned)."""
+    A dropped marker is invisible to the build/vendor ``--check`` gates (the
+    committed app.src.html and a fresh assembly would *both* lack the view), so
+    assert a banner string unique to each view module is present. Each phrase
+    below appears only in its own ``views/*.js`` partial."""
     html = apps._SPA_SHELL_HTML
-    assert "loadPreview" in html
-    assert "preview-browse-btn" in html
+    for banner in (
+        "Context Card View",
+        "Graph Explorer View",
+        "Vault Browser View",
+        "Note Preview View",
+    ):
+        assert banner in html, f"view module missing from served HTML: {banner}"
 
 
 def test_build_check_is_clean() -> None:
