@@ -527,6 +527,74 @@ class TestUnreadableFiles:
         assert changes.added == []
         assert any("File outside source_dir" in r.message for r in caplog.records)
 
+    def test_transient_fd_exhaustion_is_retried_within_the_scan(
+        self, tmp_path: Path
+    ) -> None:
+        """A momentary EMFILE while hashing does not drop the file for the scan.
+
+        File-descriptor exhaustion (errno EMFILE) is transient: the very next
+        open often succeeds. A single scan must retry rather than silently drop
+        a brand-new file — otherwise it is reported as neither added nor
+        unchanged and never reaches the index until a later scan happens to
+        hash it cleanly (the file-watcher reindex symptom).
+        """
+        import errno
+        from unittest.mock import patch as mock_patch
+
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        _write_md(vault, "new.md", "brand new\n")
+
+        real = ChangeTracker._compute_hash
+        calls: list[int] = []
+
+        def flaky(self: ChangeTracker, path: Path) -> str:
+            calls.append(1)
+            if len(calls) == 1:
+                raise OSError(errno.EMFILE, "Too many open files")
+            return real(self, path)
+
+        tracker = ChangeTracker(tmp_path / "state.json")
+        with mock_patch.object(ChangeTracker, "_compute_hash", flaky):
+            changes = tracker.detect_changes(vault)
+
+        assert changes.added == ["new.md"]  # recovered on retry, not dropped
+        assert len(calls) >= 2  # the first EMFILE was retried
+
+    def test_persistent_fd_exhaustion_is_dropped_and_logged_at_error(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A persistent EMFILE that survives the retries is surfaced at ERROR.
+
+        The file is still dropped for this scan (nothing can be done without a
+        successful read) and retried on the next scan, but the failure must be
+        visible at ERROR rather than lost among the many INFO reindex-summary
+        lines a busy watcher emits.
+        """
+        import errno
+        import logging
+        from unittest.mock import patch as mock_patch
+
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        _write_md(vault, "stuck.md", "cannot read\n")
+
+        def always_emfile(_self: ChangeTracker, _path: Path) -> str:
+            raise OSError(errno.EMFILE, "Too many open files")
+
+        tracker = ChangeTracker(tmp_path / "state.json")
+        with (
+            mock_patch.object(ChangeTracker, "_compute_hash", always_emfile),
+            caplog.at_level(logging.ERROR, logger="markdown_vault_mcp.tracker"),
+        ):
+            changes = tracker.detect_changes(vault)
+
+        assert changes.added == []  # dropped this scan; retried next scan
+        assert any(
+            r.levelno == logging.ERROR and "stuck.md" in r.getMessage()
+            for r in caplog.records
+        )
+
 
 class TestLegacyStateFormat:
     def test_legacy_flat_state_loads_as_indexed(self, tmp_path: Path) -> None:

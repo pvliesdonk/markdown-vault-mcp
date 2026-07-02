@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import errno
 import json
 import logging
 import os
 import tempfile
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -22,6 +24,15 @@ logger = logging.getLogger(__name__)
 # Current on-disk state file format version. Version 2 splits the flat
 # path → digest map into separate "indexed" and "skipped" maps (#665).
 _STATE_VERSION = 2
+
+# File-descriptor exhaustion is transient: a scan of a large tree under a busy
+# file watcher opens many files in quick succession, and the next open usually
+# succeeds. Retry the hash read a few times for these errnos before giving up
+# so a momentary spike does not silently drop a brand-new file for the whole
+# scan. Permanent OSErrors (EACCES, ENOENT, …) are not retried — a
+# retry cannot help and would only slow the scan.
+_TRANSIENT_HASH_ERRNOS = frozenset({errno.EMFILE, errno.ENFILE})
+_HASH_RETRY_SLEEPS_S = (0.05, 0.1, 0.2)
 
 
 class ChangeTracker:
@@ -130,9 +141,21 @@ class ChangeTracker:
             if is_path_excluded(rel_str, exclude_patterns):
                 continue
             try:
-                content_hash = self._compute_hash(abs_path)
+                content_hash = self._hash_with_retry(abs_path)
             except OSError as exc:
-                logger.warning("Cannot read %s, skipping: %s", abs_path, exc)
+                if exc.errno in _TRANSIENT_HASH_ERRNOS:
+                    # Retries were exhausted: file-descriptor pressure outlasted
+                    # the retry window. The file is dropped from this scan and
+                    # retried on the next one, but surface it at ERROR so it is
+                    # not lost among a busy watcher's INFO reindex summaries.
+                    logger.error(
+                        "hash_read_failed_after_retry path=%s errno=%s: %s",
+                        abs_path,
+                        exc.errno,
+                        exc,
+                    )
+                else:
+                    logger.warning("Cannot read %s, skipping: %s", abs_path, exc)
                 continue
             disk_state[rel_str] = content_hash
 
@@ -420,6 +443,42 @@ class ChangeTracker:
             len(skip_reasons),
             self._state_path,
         )
+
+    def _hash_with_retry(self, path: Path) -> str:
+        """Hash *path*, retrying briefly on transient file-descriptor exhaustion.
+
+        A busy file watcher rescans the whole tree on every event, opening many
+        files in quick succession; a momentary ``EMFILE``/``ENFILE`` should not
+        drop a file for the entire scan when the next open would succeed (#558).
+        Retries only the transient errnos in :data:`_TRANSIENT_HASH_ERRNOS`;
+        every other ``OSError`` (``EACCES``, ``ENOENT``, …) propagates on the
+        first failure, mirroring :func:`_retry_on_sqlite_locked`'s
+        discriminate-then-retry idiom.
+
+        Args:
+            path: Absolute path to the file to hash.
+
+        Returns:
+            Lowercase hex-encoded SHA256 digest.
+
+        Raises:
+            OSError: The last error if a transient failure outlasts every
+                retry, or immediately for any non-transient ``OSError``.
+        """
+        for sleep_s in _HASH_RETRY_SLEEPS_S:
+            try:
+                return self._compute_hash(path)
+            except OSError as exc:
+                if exc.errno not in _TRANSIENT_HASH_ERRNOS:
+                    raise
+                logger.debug(
+                    "hash_read_retry path=%s errno=%s backoff=%ss",
+                    path,
+                    exc.errno,
+                    sleep_s,
+                )
+                time.sleep(sleep_s)
+        return self._compute_hash(path)
 
     def _compute_hash(self, path: Path) -> str:
         """Compute the SHA256 hex digest of *path* using chunked reads.
