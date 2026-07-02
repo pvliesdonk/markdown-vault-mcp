@@ -126,7 +126,7 @@ class Vault:
     ``close()`` the vault must not be used. Cross-method atomicity
     (e.g. read-then-write without intervening concurrent write) is the
     caller's responsibility — pass ``if_match=`` to write methods for
-    optimistic concurrency. ``fork()`` is not supported. See ``docs/design.md``
+    optimistic concurrency. ``fork()`` is not supported. See ``docs/design/design.md``
     "Vault thread-safety contract" for the underlying per-thread
     SQLite-connection model.
 

@@ -4,7 +4,7 @@ Each facet is a thin view holding references to the collaborators it needs
 (managers + coordinator), grouping the formerly-flat ``Vault`` surface
 into ``reader`` / ``writer`` / ``graph`` / ``index``. The single ``Vault``
 root owns one shared core and constructs the facets once, exposing them via
-accessors of the same names (see the facet architecture in ``docs/design.md``).
+accessors of the same names (see the facet architecture in ``docs/design/design.md``).
 """
 
 from markdown_vault_mcp.facets.graph import GraphFacet

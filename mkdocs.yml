@@ -10,7 +10,6 @@ edit_uri: edit/main/docs/
 # the pre-commit `- id: vale` exclude); see the Documentation Conventions
 # section in CLAUDE.md. superpowers/ is also gitignored.
 exclude_docs: |
-  design.md
   design/**
   deployment.md
   decisions/**

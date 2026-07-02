@@ -244,7 +244,7 @@ the public network entirely.
 - If your OIDC provider requires PKCE, set the appropriate flag in the proxy
   config.
 - FastMCP has built-in OAuth support under evaluation as a future alternative
-  to mcp-auth-proxy (see `docs/design.md`).
+  to mcp-auth-proxy (see `docs/design/design.md`).
 
 ## Git-Backed Write Support
 

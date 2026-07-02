@@ -522,7 +522,7 @@ Resist pre-splitting or pre-merging before review. Claude does both in one pass.
 
 ## Next Steps
 
-- **Read the design document** for details on the linking system and search algorithms: [`docs/design.md`](../design.md)
+- **Read the design document** for details on the linking system and search algorithms: [`docs/design/design.md`](../design/design.md)
 - **Explore the MCP tools** to understand the full API: [`tools/index.md`](../tools/index.md)
 - **Review the examples** for templates and prompts: [`examples/zettelkasten/`](../../examples/zettelkasten/)
 - **Prefer an action-oriented workflow?** Try the [PARA guide](para.md): Projects, Areas, Resources, Archive with triage, kickoff, and weekly review prompts

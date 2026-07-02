@@ -117,9 +117,10 @@ repos:
         # the packs aren't populated, Vale prints E201 config errors and
         # exits 0 — silent pass.
         # Upstream hook has `types: [text]`; this `files:` scopes to docs/.
-        # Together: any text file under docs/ except the working-specs
-        # subtree. Matches the CI step's `vale ... --glob='!docs/superpowers/**' docs/`
+        # Together: any text file under docs/ except the internal dev-doc
+        # subtrees. Matches the CI step's
+        # `vale ... --glob='!docs/{superpowers,design,decisions}/**' docs/`
         # scope exactly (both lint markdown + asciidoc + rst + plain
         # text — every format Vale supports — under docs/).
         files: ^docs/
-        exclude: ^docs/superpowers/
+        exclude: ^docs/(superpowers|design|decisions)/

@@ -334,7 +334,7 @@ class FTSIndex:
     serialised by the single-owner :class:`IndexWriter` thread (#559),
     not by this class. After :meth:`close`,
     every public method raises ``sqlite3.ProgrammingError``. See
-    ``docs/design.md`` "Vault thread-safety contract" for the full
+    ``docs/design/design.md`` "Vault thread-safety contract" for the full
     contract.
 
     Tag indexing behaviour is controlled by ``indexed_frontmatter_fields``:
@@ -364,7 +364,7 @@ class FTSIndex:
         self._connect_uri, self._uses_uri, self._is_memory = _resolve_connect_uri(
             db_path
         )
-        # Thread-safety state — see #519 and docs/design.md.
+        # Thread-safety state — see #519 and docs/design/design.md.
         self._local = threading.local()
         self._all_conns: list[sqlite3.Connection] = []
         self._reg_lock = threading.Lock()

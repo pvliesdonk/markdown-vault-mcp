@@ -4,7 +4,7 @@ Generic markdown vault MCP server with FTS5 + semantic search, frontmatter-aware
 
 ## Design
 <!-- DOMAIN-START -->
-The authoritative design specification lives at [`docs/design.md`](docs/design.md). All implementation must conform to this spec. When in doubt, the design doc wins.
+The authoritative design specification lives at [`docs/design/design.md`](docs/design/design.md). All implementation must conform to this spec. When in doubt, the design doc wins.
 <!-- DOMAIN-END -->
 
 ## Project Structure
@@ -153,7 +153,7 @@ Always fetch both before declaring a review round complete.
 
 Every issue, PR, and code change must consider documentation impact. Before closing any issue or creating any PR, check whether the following need updating:
 
-- **`docs/design.md`** — the authoritative spec. Any new feature, changed behavior, or architectural decision must be reflected here. If the code diverges from the spec, update the spec.
+- **`docs/design/design.md`** — the authoritative spec. Any new feature, changed behavior, or architectural decision must be reflected here. If the code diverges from the spec, update the spec.
 - **`README.md`** — user-facing documentation. New env vars, tools, resources, prompts, CLI flags, or configuration options must be documented here.
 - **`docs/` site pages** — the published documentation site. These pages must stay in sync with the codebase:
     - `docs/tools/index.md` — new or changed MCP tools
@@ -317,5 +317,5 @@ If a conflict marker appears in a copier-update bot PR, the conflict itself ofte
 - Hybrid search: Reciprocal Rank Fusion (RRF)
 - Tool semantics: mirror Claude Code Read/Write/Edit patterns
 - Library is sync; MCP layer uses `asyncio.to_thread()`
-- Full decision log in `docs/design.md` appendix
+- Full decision log in `docs/design/design.md` appendix
 <!-- DOMAIN-END -->

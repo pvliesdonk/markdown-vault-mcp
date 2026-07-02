@@ -382,9 +382,13 @@ for built-in names, or pass a custom instance.
   get up to three in-scan retries with a short backoff (0.05 s, 0.1 s,
   0.2 s) before the file is dropped for that scan, and exhausted retries
   log at `ERROR` (`hash_read_failed_after_retry`); every other `OSError`
-  keeps the single-attempt `WARNING` path. A skipped file deleted from disk
-  is dropped silently; it was never indexed, so it is not counted as
-  `deleted`.
+  keeps the single-attempt `WARNING` path. A file that is already indexed and
+  fails to hash is not dropped: its previous hash is carried forward so it
+  counts as unchanged for that scan and is re-hashed on the next one, so a
+  read error that leaves the file in place never purges a live document. Only
+  a newly discovered file that fails to hash is dropped for the scan. A
+  skipped file deleted from disk is dropped silently; it was never indexed, so
+  it is not counted as `deleted`.
   The surfaced deterministic skips (parse / encoding / missing-frontmatter /
   internal-error, but not exclude-pattern or transient `OSError`) are also
   recorded with a `{category, detail}` reason in the state file's
@@ -2097,7 +2101,7 @@ When all four required vars are set (`BASE_URL`, `OIDC_CONFIG_URL`, `OIDC_CLIENT
 
 **Token verification:** By default the server verifies the upstream `id_token` (always a standard JWT per OIDC Core) rather than the `access_token`. This works with all providers, including those that issue opaque (non-JWT) access tokens (such as Authelia). Set `MARKDOWN_VAULT_MCP_OIDC_VERIFY_ACCESS_TOKEN=true` to revert to access-token JWT verification when audience-claim validation on that token is required.
 
-**Token lifetime recommendations:** MCP clients do not reliably refresh tokens (see [Known Limitations](guides/authentication.md#known-limitations-mcp-oauth-token-refresh)). Configure all token lifetimes on your identity provider: `access_token: '8h'`, `id_token: '8h'`, `refresh_token: '30d'`. The `id_token` lifetime is critical when using `verify_id_token` mode; if shorter than `access_token`, the session dies at the `id_token` expiry regardless of the access token setting. Include `offline_access` in provider-side scopes for when clients support refresh.
+**Token lifetime recommendations:** MCP clients do not reliably refresh tokens (see [Known Limitations](../guides/authentication.md#known-limitations-mcp-oauth-token-refresh)). Configure all token lifetimes on your identity provider: `access_token: '8h'`, `id_token: '8h'`, `refresh_token: '30d'`. The `id_token` lifetime is critical when using `verify_id_token` mode; if shorter than `access_token`, the session dies at the `id_token` expiry regardless of the access token setting. Include `offline_access` in provider-side scopes for when clients support refresh.
 
 **Authelia client registration** (in your Authelia `configuration.yml`):
 ```yaml

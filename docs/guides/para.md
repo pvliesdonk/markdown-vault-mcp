@@ -434,7 +434,7 @@ After a triage session produces 5-10 new projects, ask Claude to propose an `are
 
 ## Next Steps
 
-- **Read the design document** for details on the linking system and search algorithms: [`docs/design.md`](../design.md)
+- **Read the design document** for details on the linking system and search algorithms: [`docs/design/design.md`](../design/design.md)
 - **Explore the MCP tools** to understand the full API: [`tools/index.md`](../tools/index.md)
 - **Review the examples** for templates and prompts: [`examples/para/`](../../examples/para/)
 - **Prefer idea-centric knowledge management?** See the alternative workflow: [`docs/guides/zettelkasten.md`](zettelkasten.md)

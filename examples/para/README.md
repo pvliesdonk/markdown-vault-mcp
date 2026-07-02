@@ -87,5 +87,5 @@ The server does not enforce this layout. The prompts suggest these paths when th
 
 - **PARA Guide**: [`docs/guides/para.md`](../../docs/guides/para.md) — comprehensive walkthrough
 - **MCP Tools Reference**: [`docs/tools/index.md`](../../docs/tools/index.md) — all available tools
-- **Design Document**: [`docs/design.md`](../../docs/design.md) — linking system and search algorithms
+- **Design Document**: [`docs/design/design.md`](../../docs/design/design.md) — linking system and search algorithms
 - **Zettelkasten alternative**: [`docs/guides/zettelkasten.md`](../../docs/guides/zettelkasten.md) — for idea-centric knowledge management
