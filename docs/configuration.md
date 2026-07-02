@@ -165,6 +165,12 @@ Requires the optional `watchdog` dependency: `pip install 'markdown-vault-mcp[fi
 |----------|------|---------|-------------|
 | `MARKDOWN_VAULT_MCP_FILE_WATCHER` | bool | `true` | Enable filesystem-event watcher; auto-disabled when git pull or webhook is active |
 | `MARKDOWN_VAULT_MCP_FILE_WATCHER_DEBOUNCE_S` | float | `2.0` | Seconds of quiet after the last event before triggering reindex; tune down for faster response on small vaults |
+| `MARKDOWN_VAULT_MCP_FILE_WATCHER_ROOT_FLOOR` | bool | `true` | Keep the non-recursive watch on the vault root so root-level `*.md` changes trigger a reindex; set `false` to drop it (root-level files then rely on scans) |
+
+The watcher schedules one recursive watch per non-excluded immediate child directory of the source directory rather than a single recursive watch on the root, so excluded subtrees (`node_modules`, `.venv`, ...) are never registered and content under a deliberately-watched dot-directory (e.g. a vault rooted at `$HOME` with content under `.notes/`) delivers its own edits. New top-level directories created after start are not watched until the server restarts; the startup log line lists the scheduled root count and names.
+
+!!! note "macOS access prompts"
+    On macOS the root floor watch still opens an OS-level recursive FSEvents stream over the whole tree even though it delivers only direct entries, so a vault rooted at `$HOME` can trigger repeated "would like to access data from other apps" prompts. Set `MARKDOWN_VAULT_MCP_FILE_WATCHER_ROOT_FLOOR=false` to register zero source-directory-rooted FSEvents streams, accepting that root-level files are then only picked up by scans.
 
 !!! note "Mutual exclusion with git"
     When `GIT_PULL_INTERVAL_S > 0` or `GITHUB_WEBHOOK_SECRET` is set, the file watcher is automatically disabled even if `FILE_WATCHER=true`. This prevents mid-checkout partial scans where git is modifying the working tree.
