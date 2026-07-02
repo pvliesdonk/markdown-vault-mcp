@@ -162,7 +162,8 @@ class IndexFacet:
 
         Raises:
             IndexUnavailableError: If :meth:`IndexFacet.build_index` has not been called.
-            ValueError: If ``embedding_provider`` or ``embeddings_path`` is unset.
+            EmbeddingsNotConfiguredError: If ``embedding_provider`` or
+                ``embeddings_path`` is unset (a ``ValueError`` subclass).
         """
         return self._coordinator.build_embeddings(force=force)
 
