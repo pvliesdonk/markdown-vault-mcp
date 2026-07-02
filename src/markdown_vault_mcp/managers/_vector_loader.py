@@ -45,8 +45,7 @@ def load_or_self_heal(
 
     Args:
         embeddings_path: Base path for the sidecar files; the ``.npy``/``.json``
-            sidecar paths are derived with ``Path.with_suffix`` (a base that
-            already carries an extension has it replaced, not doubled).
+            paths are derived with ``Path.with_suffix`` as described above.
         embedding_provider: Provider attached to a freshly-built index.
         get_vectors: Reads the caller's cached index slot (``None`` if empty).
         set_vectors: Writes a loaded/empty index into the caller's slot.
