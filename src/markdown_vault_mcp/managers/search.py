@@ -1329,14 +1329,12 @@ class SearchManager:
                 similar_grouped = self.get_similar(
                     path, limit=similar_limit, chunks_per_file=1
                 )
-            except EmbeddingsNotConfiguredError:
-                # Guarded above, but stay quiet if embeddings go unconfigured mid-call.
-                logger.debug(
-                    "get_context: embeddings not configured for %s, similar=[]", path
-                )
             except ValueError as exc:
-                # A genuine internal failure (e.g. corrupt vector sidecar) — surface
-                # it instead of silently reducing the dossier to similar=[] (#804).
+                # The outer guard + get_similar's own not-configured check mean
+                # this only fires on a genuine internal failure (e.g. a corrupt
+                # vector sidecar surfaced by _load_vectors()) — surface it at
+                # WARNING instead of silently reducing the dossier to similar=[]
+                # (#804). Not broadened to Exception: unexpected types propagate.
                 logger.warning("get_context: get_similar failed for %s — %s", path, exc)
 
         # Folder peers — other notes in the same folder, capped.
