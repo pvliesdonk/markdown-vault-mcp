@@ -122,7 +122,7 @@ partial markdown reads (see the tip above).
       "path": "Journal/note.md",
       "title": "My Note",
       "folder": "Journal",
-      "content": "The markdown body...",
+      "content": "---\ntitle: My Note\ntags: [journal]\n---\n\nThe note body...",
       "frontmatter": {"title": "My Note", "tags": ["journal"]},
       "modified_at": 1741564800.0
     }

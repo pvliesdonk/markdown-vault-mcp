@@ -6,4 +6,4 @@ arguments:
     required: true
 icons: read
 ---
-Call the `read` tool with path='$path'. The result contains a `content` field (the markdown body) and a `frontmatter` field (metadata). Write a concise summary covering the document's main topics and key points. If `read` returns an error, report it and stop.
+Call the `read` tool with path='$path'. The result contains a `content` field (the full note including frontmatter) and a `frontmatter` field (the parsed metadata). Write a concise summary covering the document's main topics and key points. If `read` returns an error, report it and stop.

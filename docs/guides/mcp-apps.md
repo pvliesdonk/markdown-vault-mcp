@@ -38,8 +38,10 @@ Searchable, filterable file tree for browsing the vault without issuing tool cal
 
 Full-width markdown preview with:
 
-- Rendered markdown (via marked.js, sanitized with DOMPurify)
-- Frontmatter table
+- Rendered markdown (via marked.js, sanitized with DOMPurify), with the leading frontmatter block stripped so it renders only once
+- A **Contents** popover: an on-this-page table of contents built from the note's headings
+- Collapsible frontmatter properties (first few shown, the rest behind a toggle) and collapsible tags
+- **Copy markdown** (the full note, frontmatter included) and **Copy vault link** (the note's path) buttons
 - **Send to Claude** button: sends the note content to the LLM conversation
 - Navigation to Context Card or Graph Explorer for the same note
 

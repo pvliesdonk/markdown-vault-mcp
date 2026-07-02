@@ -290,9 +290,8 @@ if(__exports != exports)module.exports = exports;return module.exports}));
   .ghost-btn:hover { color: var(--ink); border-color: var(--muted); }
   .accent-btn { background: var(--accent); border: 1px solid var(--accent); color: var(--accent-ink); }
   .accent-btn:hover { opacity: 0.9; }
-  /* Legacy action buttons — still used by the graph toolbar and note preview;
-     they pick up Paper colors via the --color-* mapping until those views are
-     restyled. */
+  /* Legacy action buttons — still used by the graph toolbar; they pick up Paper
+     colors via the --color-* mapping until that view is restyled. */
   .action-btn {
     background: var(--color-text-info); color: var(--color-text-inverse); border: none; padding: 4px 10px;
     border-radius: var(--radius-sm); cursor: pointer; font-size: 12px; font-family: var(--font-body); white-space: nowrap;
@@ -425,30 +424,87 @@ if(__exports != exports)module.exports = exports;return module.exports}));
   /* Note tab styles */
   .tab-bar .note-tab-btn { display: none; }
   .tab-bar .note-tab-btn.visible { display: flex; }
-  /* Preview pane (now in Note tab) */
-  .browser-preview { flex: 1; overflow-y: auto; padding: 16px; min-width: 0; }
+  /* Preview pane (now in Note tab) — Paper design */
+  .browser-preview { flex: 1; overflow-y: auto; padding: var(--pad); min-width: 0; }
+  .preview { display: flex; flex-direction: column; }
   .preview-header {
-    display: flex; align-items: center; justify-content: space-between; gap: 8px;
-    margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--color-border-primary);
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
+    margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--border-2);
   }
-  .preview-header h1 { font-family: var(--font-head); font-size: 18px; margin: 0; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .preview-actions { display: flex; gap: 6px; flex-shrink: 0; }
-  .preview-fm { margin-bottom: 12px; }
-  .preview-content { font-size: 14px; line-height: 1.6; }
-  .preview-content h1, .preview-content h2, .preview-content h3 { font-family: var(--font-head); margin-top: 16px; margin-bottom: 8px; }
+  .preview-head-main { flex: 1; min-width: 0; }
+  .preview-title {
+    font-family: var(--font-head); font-weight: 600; font-size: 19px; line-height: 1.25;
+    margin: 0; color: var(--ink);
+  }
+  .preview-path {
+    font: 500 11px/1.4 var(--font-mono); color: var(--muted); margin-top: 5px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  /* Contents (table-of-contents) popover */
+  .preview-toc-wrap { position: relative; flex-shrink: 0; }
+  .preview-toc {
+    position: absolute; top: calc(100% + 6px); right: 0; z-index: 20; width: 240px;
+    max-height: 320px; overflow-y: auto; background: var(--panel); border: 1px solid var(--edge);
+    border-radius: var(--radius); box-shadow: var(--shadow); padding: 8px;
+  }
+  .preview-toc[hidden] { display: none; }
+  .toc-head {
+    font: 600 10px/1 var(--font-body); text-transform: uppercase; letter-spacing: .09em;
+    color: var(--muted); padding: 4px 8px 6px;
+  }
+  .toc-item {
+    display: block; padding: 5px 8px; border-radius: var(--radius-sm); cursor: pointer;
+    font: 500 12px/1.3 var(--font-body); color: var(--ink); text-decoration: none;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .toc-item:hover { background: var(--panel-2); }
+  .toc-l2 { padding-left: 18px; }
+  .toc-l3 { padding-left: 28px; color: var(--ink-2); }
+  /* Collapsible frontmatter properties */
+  .preview-props {
+    margin-bottom: 12px; padding: 4px 12px; background: var(--panel-2);
+    border: 1px solid var(--border-2); border-radius: var(--radius);
+  }
+  .prop-row { display: flex; gap: 12px; padding: 5px 0; border-bottom: 1px solid var(--border-2); font-size: 12px; }
+  .prop-row:last-of-type { border-bottom: none; }
+  .preview-props.collapsed .prop-extra { display: none; }
+  .prop-key { flex: none; width: 96px; font: 500 11px/1.5 var(--font-mono); color: var(--muted); }
+  .prop-val { flex: 1; min-width: 0; color: var(--ink); overflow-wrap: anywhere; }
+  .prop-toggle, .tag-toggle {
+    display: inline-flex; align-items: center; gap: 5px; cursor: pointer;
+    background: none; border: none; padding: 6px 0; color: var(--accent);
+    font: 600 11px/1 var(--font-body);
+  }
+  .prop-toggle svg { transition: transform 0.15s; }
+  .preview-props:not(.collapsed) .prop-toggle svg { transform: rotate(90deg); }
+  /* Collapsible tags */
+  .preview-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 14px; }
+  .preview-tags.collapsed .tag-extra { display: none; }
+  .tag-toggle { padding: 0 4px; }
+  /* Rendered markdown body */
+  .preview-content { font-size: 14px; line-height: 1.65; color: var(--ink); }
+  .preview-content h1, .preview-content h2, .preview-content h3 { font-family: var(--font-head); font-weight: 600; margin-top: 18px; margin-bottom: 8px; color: var(--ink); }
+  .preview-content h1 { font-size: 20px; }
+  .preview-content h2 { font-size: 17px; }
+  .preview-content h3 { font-size: 15px; }
   .preview-content p { margin: 8px 0; }
-  .preview-content code { font-family: var(--font-mono); background: var(--color-background-secondary); padding: 1px 4px; border-radius: 3px; font-size: 13px; }
-  .preview-content pre { font-family: var(--font-mono); background: var(--color-background-secondary); padding: 12px; border-radius: 6px; overflow-x: auto; }
+  .preview-content code { font-family: var(--font-mono); background: var(--panel-2); padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }
+  .preview-content pre { font-family: var(--font-mono); background: var(--panel-2); border: 1px solid var(--border-2); padding: 12px; border-radius: var(--radius-sm); overflow-x: auto; }
   .preview-content pre code { background: none; padding: 0; }
-  .preview-content blockquote { border-left: 3px solid var(--color-text-info); padding-left: 12px; color: var(--color-text-secondary); margin: 8px 0; }
-  .preview-content a { color: var(--color-text-info); }
+  .preview-content blockquote { border-left: 3px solid var(--edge); padding-left: 12px; color: var(--muted); margin: 8px 0; }
+  .preview-content a { color: var(--accent); }
+  /* Action footer */
+  .preview-footer {
+    display: flex; flex-wrap: wrap; gap: 7px; align-items: center;
+    margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--border-2);
+  }
   .edit-btn-disabled {
-    background: var(--color-background-secondary); color: var(--color-text-secondary);
-    border: 1px solid var(--color-border-primary); padding: 4px 10px; border-radius: 4px;
-    font-size: 12px; cursor: not-allowed; opacity: 0.6; font-family: inherit;
+    display: inline-flex; align-items: center; background: var(--panel-2); color: var(--muted);
+    border: 1px dashed var(--edge); padding: 6px 10px; border-radius: var(--radius-sm);
+    font: 600 11px/1 var(--font-body); cursor: not-allowed; opacity: 0.7; margin-left: auto;
   }
 </style>
-<!-- vendor-spa-source-sha256:eb2c4602c691df7d71812ca9e12b2f9542df999fce6660cc0cb38554f1a219d3 -->
+<!-- vendor-spa-source-sha256:7bbde69c611deeceb877201db41afdcf6382244844392d5a50bc5458c769d751 -->
 </head>
 <body>
 <div class="app-container">
@@ -1388,10 +1444,104 @@ app.onteardown = () => {
       .replace(/"/g, '&quot;');
   }
 
+  const ICON_LIST = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/></svg>';
+  const ICON_COPY = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>';
+  const ICON_LINK = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>';
+  const CHEVRON = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>';
+
+  const PROPS_SHOWN = 3;
+  const TAGS_SHOWN = 4;
+
   let currentPreviewPath = null;
   let currentPreviewData = null;
 
   const previewEl = document.getElementById('browser-preview');
+
+  // Strip a leading YAML frontmatter block so it isn't rendered twice: the
+  // frontmatter already shows in the properties panel, and vault_read's
+  // `content` is the whole file including frontmatter. The server's parser
+  // (python-frontmatter) fences on `^-{3,}\s*$`; this deliberately narrower
+  // `-{3,}[ \t]*` covers the realistic cases (`----` and `--- ` fences) so
+  // they strip too, while never over-stripping real body content.
+  function stripFrontmatter(text) {
+    return String(text || '').replace(/^﻿?-{3,}[ \t]*\r?\n[\s\S]*?\r?\n-{3,}[ \t]*\r?\n?/, '');
+  }
+
+  function normalizeTags(fm) {
+    const t = fm && fm.tags;
+    if (Array.isArray(t)) return t.map(String);
+    if (typeof t === 'string') return t.split(/[,\s]+/).filter(Boolean);
+    return [];
+  }
+
+  function propEntries(fm) {
+    if (!fm) return [];
+    return Object.entries(fm).filter(([k]) => k !== 'tags');
+  }
+
+  function renderProps(fm) {
+    const entries = propEntries(fm);
+    if (entries.length === 0) return '';
+    const rows = entries.map(([k, v], i) => {
+      const val = typeof v === 'object' ? JSON.stringify(v) : String(v);
+      const extra = i >= PROPS_SHOWN ? ' prop-extra' : '';
+      return '<div class="prop-row' + extra + '"><span class="prop-key">' + escHtml(k)
+        + '</span><span class="prop-val">' + escHtml(val) + '</span></div>';
+    }).join('');
+    const more = entries.length - PROPS_SHOWN;
+    const toggle = more > 0
+      ? '<button class="prop-toggle" id="preview-props-toggle">' + CHEVRON
+        + '<span id="preview-props-toggle-label">Show ' + more + ' more properties</span></button>'
+      : '';
+    return '<div class="preview-props collapsed" id="preview-props">' + rows + toggle + '</div>';
+  }
+
+  function renderTags(fm) {
+    const tags = normalizeTags(fm);
+    if (tags.length === 0) return '';
+    const chips = tags.map((t, i) =>
+      '<span class="tag-pill' + (i >= TAGS_SHOWN ? ' tag-extra' : '') + '">#' + escHtml(t) + '</span>'
+    ).join('');
+    const more = tags.length - TAGS_SHOWN;
+    const toggle = more > 0
+      ? '<button class="tag-toggle" id="preview-tags-toggle">+' + more + ' more</button>'
+      : '';
+    return '<div class="preview-tags collapsed" id="preview-tags">' + chips + toggle + '</div>';
+  }
+
+  function slugify(text, used) {
+    let base = String(text).toLowerCase().trim().replace(/[^\w]+/g, '-').replace(/^-+|-+$/g, '') || 'section';
+    let slug = base, n = 1;
+    while (used.has(slug)) { slug = base + '-' + (++n); }
+    used.add(slug);
+    return slug;
+  }
+
+  // Assign ids to rendered headings and return [{label, id, level}] for the ToC.
+  function buildToc(contentEl) {
+    const used = new Set();
+    const items = [];
+    contentEl.querySelectorAll('h1, h2, h3').forEach(h => {
+      const id = 'h-' + slugify(h.textContent || 'section', used);
+      h.id = id;
+      h.style.scrollMarginTop = '12px';
+      items.push({ id, label: h.textContent || '', level: Number(h.tagName[1]) });
+    });
+    return items;
+  }
+
+  async function copyToClipboard(text, labelEl, doneText, restoreText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      if (labelEl) {
+        labelEl.textContent = doneText;
+        setTimeout(() => { labelEl.textContent = restoreText; }, 1500);
+      }
+    } catch (err) {
+      console.warn('clipboard write failed', err);
+      window.showToast('Copy failed');
+    }
+  }
 
   async function loadPreview(path, { switchToNote = true } = {}) {
     currentPreviewPath = path;
@@ -1410,47 +1560,91 @@ app.onteardown = () => {
       if (!data) { previewEl.innerHTML = '<div class="placeholder">Note not found</div>'; return; }
       currentPreviewData = data;
 
-      let html = '<div class="preview-header">';
-      html += '<h2>' + escHtml(data.title || path) + '</h2>';
-      html += '<div class="preview-actions">';
-      html += '<button class="action-btn action-btn--secondary" id="preview-browse-btn" title="Back to Browse">← Browse</button>';
-      html += '<button class="action-btn" id="preview-send-btn" title="Send to Claude">💬 Send</button>';
-      html += '<button class="action-btn action-btn--secondary" id="preview-ctx-btn" title="Show Context">🔍 Context</button>';
-      html += '<button class="action-btn action-btn--secondary" id="preview-graph-btn" title="Show in Graph">🔗 Graph</button>';
-      html += '<button class="edit-btn-disabled" title="Coming soon" disabled>✏ Edit</button>';
-      html += '</div></div>';
-
-      // Frontmatter
-      if (data.frontmatter && Object.keys(data.frontmatter).length > 0) {
-        html += '<div class="preview-fm"><table class="fm-table">';
-        for (const [k, v] of Object.entries(data.frontmatter)) {
-          const val = typeof v === 'object' ? JSON.stringify(v) : String(v);
-          html += '<tr><td>' + escHtml(k) + '</td><td>' + escHtml(val) + '</td></tr>';
-        }
-        html += '</table></div>';
-      }
-
-      // Rendered markdown
-      let rendered = '';
-      if (typeof marked !== 'undefined' && data.content) {
-        rendered = marked.parse(data.content);
+      // Rendered markdown body (frontmatter stripped so it shows only in props).
+      const body = stripFrontmatter(data.content);
+      let rendered;
+      if (typeof marked !== 'undefined') {
+        rendered = marked.parse(body);
       } else {
-        rendered = '<pre>' + escHtml(data.content || '') + '</pre>';
+        rendered = '<pre>' + escHtml(body) + '</pre>';
       }
       if (typeof DOMPurify !== 'undefined') {
         rendered = DOMPurify.sanitize(rendered);
       }
+
+      let html = '<div class="preview">';
+      html += '<div class="preview-header">';
+      html += '<div class="preview-head-main"><h1 class="preview-title">' + escHtml(data.title || path) + '</h1>'
+        + '<div class="preview-path">' + escHtml(data.path || path) + '</div></div>';
+      html += '<div class="preview-toc-wrap">'
+        + '<button class="ghost-btn" id="preview-toc-btn" title="Contents">' + ICON_LIST + 'Contents</button>'
+        + '<div class="preview-toc" id="preview-toc" hidden></div>'
+        + '</div>';
+      html += '</div>';
+      html += renderProps(data.frontmatter);
+      html += renderTags(data.frontmatter);
       html += '<div class="preview-content">' + rendered + '</div>';
+      html += '<div class="preview-footer">';
+      html += '<button class="accent-btn" id="preview-copy-md">' + ICON_COPY + '<span id="preview-copy-md-label">Copy markdown</span></button>';
+      html += '<button class="ghost-btn" id="preview-copy-link">' + ICON_LINK + '<span id="preview-copy-link-label">Copy vault link</span></button>';
+      html += '<button class="ghost-btn" id="preview-send-btn" title="Send to Claude">Send</button>';
+      html += '<button class="ghost-btn" id="preview-browse-btn" title="Back to Browse">← Browse</button>';
+      html += '<button class="ghost-btn" id="preview-ctx-btn" title="Show Context">Context</button>';
+      html += '<button class="ghost-btn" id="preview-graph-btn" title="Show in Graph">Graph</button>';
+      html += '<button class="edit-btn-disabled" title="Coming soon" disabled>Edit</button>';
+      html += '</div></div>';
 
       previewEl.innerHTML = html;
 
-      // Wire action buttons
-      document.getElementById('preview-browse-btn')?.addEventListener('click', () => {
-        switchTab('browse');
+      // Build the ToC from the rendered headings.
+      const toc = buildToc(previewEl.querySelector('.preview-content'));
+      const tocEl = document.getElementById('preview-toc');
+      if (toc.length > 0) {
+        tocEl.innerHTML = '<div class="toc-head">On this page</div>'
+          + toc.map(it => '<a class="toc-item toc-l' + it.level + '" href="#' + it.id + '">' + escHtml(it.label) + '</a>').join('');
+      } else {
+        document.getElementById('preview-toc-btn').style.display = 'none';
+      }
+
+      // Contents popover
+      const tocBtn = document.getElementById('preview-toc-btn');
+      tocBtn?.addEventListener('click', (e) => { e.stopPropagation(); tocEl.hidden = !tocEl.hidden; });
+      tocEl.addEventListener('click', (e) => {
+        const link = e.target.closest('a.toc-item');
+        if (link) {
+          e.preventDefault();
+          document.getElementById(link.getAttribute('href').slice(1))?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          tocEl.hidden = true;
+        }
       });
+
+      // Collapsible properties + tags
+      document.getElementById('preview-props-toggle')?.addEventListener('click', () => {
+        const box = document.getElementById('preview-props');
+        const open = box.classList.toggle('collapsed') === false;
+        const label = document.getElementById('preview-props-toggle-label');
+        if (label) label.textContent = open ? 'Show less' : ('Show ' + (propEntries(data.frontmatter).length - PROPS_SHOWN) + ' more properties');
+      });
+      document.getElementById('preview-tags-toggle')?.addEventListener('click', () => {
+        const box = document.getElementById('preview-tags');
+        const open = box.classList.toggle('collapsed') === false;
+        const btn = document.getElementById('preview-tags-toggle');
+        btn.textContent = open ? 'Show less' : ('+' + (normalizeTags(data.frontmatter).length - TAGS_SHOWN) + ' more');
+      });
+
+      // Copy actions
+      document.getElementById('preview-copy-md')?.addEventListener('click', () => {
+        copyToClipboard(data.content || '', document.getElementById('preview-copy-md-label'), 'Copied ✓', 'Copy markdown');
+      });
+      document.getElementById('preview-copy-link')?.addEventListener('click', () => {
+        copyToClipboard(data.path || path, document.getElementById('preview-copy-link-label'), 'Copied ✓', 'Copy vault link');
+      });
+
+      // Preserved actions
       document.getElementById('preview-send-btn')?.addEventListener('click', () => {
         window.sendToLLM(data.path, data.content || '');
       });
+      document.getElementById('preview-browse-btn')?.addEventListener('click', () => { switchTab('browse'); });
       document.getElementById('preview-ctx-btn')?.addEventListener('click', () => {
         window.navigateTo('context', { path: data.path });
       });
@@ -1460,6 +1654,7 @@ app.onteardown = () => {
 
       window.updateContext('browser', path, data.title);
     } catch (err) {
+      console.error('note preview render failed for %s', path, err);
       const errDiv = document.createElement('div');
       errDiv.className = 'placeholder';
       errDiv.textContent = 'Error: ' + (err.message || err);
@@ -1467,6 +1662,18 @@ app.onteardown = () => {
       previewEl.appendChild(errDiv);
     }
   }
+
+  // Close the Contents popover on any outside click.
+  document.addEventListener('click', (e) => {
+    const toc = document.getElementById('preview-toc');
+    if (toc && !toc.hidden && !e.target.closest('.preview-toc-wrap')) toc.hidden = true;
+  });
+
+  // Close the popover when leaving the Note tab.
+  window.addEventListener('vault-tab-changed', () => {
+    const toc = document.getElementById('preview-toc');
+    if (toc) toc.hidden = true;
+  });
 
   // Listen for navigation events
   window.addEventListener('vault-navigate', (e) => {

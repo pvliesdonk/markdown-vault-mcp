@@ -2167,7 +2167,7 @@ The server supports reading and writing non-markdown binary files (PDFs, images,
 
 | Tool | .md path | Attachment path |
 |-|-|-|
-| `read(path)` | returns markdown body + frontmatter | returns `{path, mime_type, size_bytes, content_base64, modified_at}` |
+| `read(path)` | returns `content` (the full raw file including frontmatter) + parsed frontmatter | returns `{path, mime_type, size_bytes, content_base64, modified_at}` |
 | `write(path, content, frontmatter, content_base64)` | uses `content` + `frontmatter` | uses `content_base64` (base64-encoded bytes) |
 | `list_documents(include_attachments=False)` | notes only (unchanged) | also returns `AttachmentInfo` entries with `kind="attachment"`, `mime_type` |
 | `delete(path)` | removes file + index entries | removes file only (no index) |
@@ -2197,7 +2197,7 @@ MCP Apps are browser-based views that MCP clients supporting the protocol can re
 | Context Card | `context` | Note dossier: backlinks, outlinks, similar notes, tags, and last-modified time for the note in focus |
 | Graph Explorer | `graph` | Interactive force-directed link graph of the entire vault; nodes are notes, edges are links |
 | Vault Browser | `browse` | Searchable, filterable file tree for direct vault navigation without issuing tool calls |
-| Note Preview | `note` | Full-width rendered markdown preview with frontmatter table and action buttons |
+| Note Preview | `note` | Full-width rendered markdown preview with a Contents popover, collapsible frontmatter properties and tags, copy-markdown / copy-vault-link controls, and action buttons |
 
 **Primary tools** (visible to LLM, launch apps):
 

@@ -800,8 +800,9 @@ def register_apps(mcp: FastMCP) -> None:
             path: Relative note path.
 
         Returns:
-            Dict with path, title, frontmatter, content (markdown body), and
-            modified_at (Unix timestamp), or null if the note is not found.
+            Dict with path, title, frontmatter, content (the full raw file,
+            including the frontmatter block), and modified_at (Unix timestamp),
+            or null if the note is not found.
         """
         note = await asyncio.to_thread(vault.reader.read, path)
         if note is None:

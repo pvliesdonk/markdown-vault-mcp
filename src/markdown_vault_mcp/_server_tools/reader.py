@@ -152,7 +152,8 @@ def register(mcp: FastMCP) -> None:
     ) -> dict[str, Any]:
         """Read the full content of a document or attachment by path.
 
-        For .md documents: returns markdown body, frontmatter, title, folder.
+        For .md documents: returns content (the full raw file including
+        frontmatter), plus the parsed frontmatter, title, and folder.
         For attachments (pdf, png, etc.): returns base64-encoded binary content
         and MIME type. Use 'list_documents(include_attachments=True)' to
         discover attachment paths. Use 'stats' to see allowed extensions.
@@ -183,8 +184,9 @@ def register(mcp: FastMCP) -> None:
                 returns the whole document. Ignored for non-.md paths.
 
         Returns:
-            For .md: dict with path, title, folder, content (markdown body
-            or section text when section= is given), frontmatter (dict —
+            For .md: dict with path, title, folder, content (the full raw
+            file including frontmatter, or the section text when section= is
+            given), frontmatter (dict —
             empty {} when section= is provided; call read(path) without
             section= to get the full document's frontmatter),
             modified_at (Unix timestamp), etag (SHA-256 hex str or null).

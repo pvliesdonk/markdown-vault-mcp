@@ -466,7 +466,7 @@ The server ships four browser-based views that MCP clients supporting the MCP Ap
 | **Context Card** | Displays a note dossier (backlinks, outlinks, similar notes, tags) for the note currently in focus |
 | **Graph Explorer** | Interactive force-directed link graph of the vault, powered by vis-network |
 | **Vault Browser** | Searchable, filterable file tree for navigating the vault without issuing tool calls |
-| **Note Preview** | Full-width markdown preview with frontmatter table and "Send to Claude" button |
+| **Note Preview** | Full-width markdown preview with a Contents popover, collapsible frontmatter properties and tags, copy-markdown / copy-vault-link controls, and a "Send to Claude" button |
 
 The two primary tools exposed to MCP Apps clients are:
 
