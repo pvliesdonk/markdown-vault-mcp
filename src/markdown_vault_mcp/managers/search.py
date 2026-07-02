@@ -712,7 +712,15 @@ class SearchManager:
         snippet_words: int,
     ) -> list[GroupedResult]:
         vectors = self._load_vectors()
-        candidate_limit = max(limit * (chunks_per_file + 4), 50)
+        # Floor the candidate pool well above the caller's limit so recall of
+        # the best-scoring documents does not depend on how large a limit was
+        # passed. A small limit with a low floor lets many chunks from a few
+        # large documents crowd out a smaller document whose best chunk ranks
+        # just past the floor, hiding it from the grouped results entirely.
+        # vector search does a full linear scan and sort regardless (see
+        # VectorIndex.search), so a wider pool only costs the slice, not extra
+        # distance computations.
+        candidate_limit = max(limit * (chunks_per_file + 4), 1000)
         raw = vectors.search(query, limit=candidate_limit)
 
         filtered: list[dict[str, Any]] = []

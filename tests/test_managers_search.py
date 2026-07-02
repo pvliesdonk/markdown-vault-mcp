@@ -642,6 +642,102 @@ def test_semantic_search_applies_chunks_per_file_cap_and_snippet(
             assert len(s.content.split()) <= 10
 
 
+class _FixedQueryProvider:
+    """Embeds every query to the same unit vector along the first axis.
+
+    The stored document vectors are written directly onto the index, so the
+    cosine of each chunk against the query is just that chunk's first
+    coordinate. This gives a test exact control over chunk ranks.
+    """
+
+    provider_name = "fixed"
+    model_name = "fixed-model"
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        return [[1.0, 0.0] for _ in texts]
+
+
+def _semantic_mgr_with_ranked_chunks(base: Path) -> SearchManager:
+    """SearchManager over a store where a small TARGET doc's only chunk sits
+    at global cosine rank 51, behind 50 chunks from two large documents.
+
+    Only three documents exist, so a caller asking for as few as three results
+    wants TARGET among them. It is reachable only if the semantic candidate
+    pool extends past rank 51.
+    """
+    import numpy as np
+
+    from markdown_vault_mcp.vector_index import VectorIndex
+
+    provider = _FixedQueryProvider()
+    vi = VectorIndex(provider)
+    texts: list[str] = []
+    meta: list[dict[str, object]] = []
+    vecs: list[np.ndarray] = []
+
+    def unit(cos: float) -> np.ndarray:
+        v = np.array([cos, np.sqrt(max(0.0, 1 - cos * cos))], dtype=np.float32)
+        return v / np.linalg.norm(v)
+
+    cos = 0.7500
+    for doc in ("giantA", "giantB"):
+        for j in range(25):
+            texts.append(f"{doc} chunk {j}")
+            meta.append(
+                {
+                    "path": f"{doc}.md",
+                    "title": doc,
+                    "folder": "",
+                    "heading": f"h{j}",
+                    "content": f"{doc} chunk {j}",
+                }
+            )
+            vecs.append(unit(cos))
+            cos += 0.0005
+    texts.append("target unique answer")
+    meta.append(
+        {
+            "path": "TARGET.md",
+            "title": "Target",
+            "folder": "",
+            "heading": None,
+            "content": "target unique answer",
+        }
+    )
+    vecs.append(unit(0.7499))  # just below every giant chunk -> global rank 51
+
+    vi.add(texts, meta)
+    vi._embeddings = np.vstack(vecs).astype(np.float32)
+    vi.save(base)
+
+    fts = FTSIndex(db_path=":memory:")
+    mgr = SearchManager(
+        fts=fts,
+        source_dir=base.parent,
+        embeddings_path=base,
+        embedding_provider=provider,
+        indexed_frontmatter_fields=[],
+    )
+    mgr._vectors = vi
+    return mgr
+
+
+def test_semantic_recall_of_best_document_is_independent_of_limit(
+    tmp_path: Path,
+) -> None:
+    """The true-best document is returned at a small limit, not only a large one.
+
+    With three documents total and TARGET's only chunk at global cosine rank
+    51, a floor-50 candidate pool fills entirely with the two large documents'
+    chunks and drops TARGET at any small limit. Recall of a real document must
+    not depend on how large a limit the caller happened to pass.
+    """
+    mgr = _semantic_mgr_with_ranked_chunks(tmp_path / "embeddings")
+    results = mgr.search("q", mode="semantic", limit=5, chunks_per_file=2)
+    paths = [r.path for r in results]
+    assert "TARGET.md" in paths
+
+
 def test_hybrid_search_caps_per_file_after_rrf(
     search_mgr_with_embeddings: SearchManager,
 ) -> None:
