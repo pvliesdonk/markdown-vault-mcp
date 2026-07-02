@@ -684,7 +684,7 @@ ends the worker loop.
 
 **File watcher scoping (#823/#828/#830).** When the file watcher is
 active (neither git pull nor a webhook is configured), it does not place a
-single recursive watch on `source_dir`. On a home-directory vault that
+single recursive watch on `source_dir`, which on a home-directory vault
 would register an OS-level recursive stream over every unrelated subtree
 (and, on macOS, trigger repeated TCC consent prompts). Instead it derives
 its watch roots: each non-excluded immediate child directory of
