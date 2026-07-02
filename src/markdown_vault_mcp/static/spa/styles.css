@@ -252,38 +252,48 @@
     flex: 1; display: flex; flex-direction: column;
     overflow: hidden;
   }
-  .browser-search {
-    display: flex; padding: 6px; gap: 4px; border-bottom: 1px solid var(--color-border-primary); flex-shrink: 0;
+  .browser-search { padding: var(--pad); border-bottom: 1px solid var(--border-2); flex-shrink: 0; }
+  .search-field {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 9px 11px;
   }
+  .search-ico { color: var(--muted); flex: none; }
   .browser-search input {
-    flex: 1; padding: 4px 8px; border: 1px solid var(--color-border-primary); border-radius: 4px;
-    font-size: 12px; font-family: inherit; background: var(--color-background-primary); color: var(--color-text-primary);
+    flex: 1; min-width: 0; border: none; background: transparent; padding: 0;
+    font: 500 13px/1 var(--font-body); color: var(--ink);
   }
-  .browser-search button {
-    background: none; border: none; cursor: pointer; font-size: 16px; color: var(--color-text-secondary); padding: 0 4px;
+  .browser-search input:focus { outline: none; }
+  .browser-search input::placeholder { color: var(--muted); }
+  #browser-search-clear {
+    background: none; border: none; cursor: pointer; font-size: 15px; line-height: 1; color: var(--muted); padding: 0 2px; flex: none;
   }
-  .browser-tree { flex: 1; overflow-y: auto; padding: 4px; font-size: 12px; }
+  .hybrid-badge {
+    flex: none; font: 600 10px/1 var(--font-mono); text-transform: uppercase; letter-spacing: .05em;
+    color: var(--accent); background: var(--accent-soft); padding: 4px 7px; border-radius: 5px;
+  }
+  .browser-tree { flex: 1; overflow-y: auto; padding: 9px 10px 12px; }
   .tree-folder {
-    cursor: pointer; padding: 3px 4px; display: flex; align-items: center; gap: 4px;
-    font-weight: 600; color: var(--color-text-primary);
+    cursor: pointer; padding: 6px; display: flex; align-items: center; gap: 7px; border-radius: var(--radius-sm);
   }
-  .tree-folder:hover { background: var(--color-background-secondary); border-radius: 3px; }
-  .tree-folder .arrow { font-size: 10px; width: 12px; transition: transform 0.15s; display: inline-block; }
-  .tree-folder.expanded .arrow { transform: rotate(90deg); }
-  .tree-children { padding-left: 16px; display: none; }
+  .tree-folder .tree-label { font: 600 12.5px/1 var(--font-body); color: var(--ink); }
+  .tree-chevron { color: var(--muted); flex: none; transition: transform 0.15s; }
+  .tree-folder.expanded .tree-chevron { transform: rotate(90deg); }
+  .tree-children { padding-left: 14px; display: none; }
   .tree-folder.expanded + .tree-children { display: block; }
   .tree-note {
-    cursor: pointer; padding: 3px 4px 3px 20px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    color: var(--color-text-primary);
+    cursor: pointer; padding: 5px 6px 5px 26px; display: flex; align-items: center; gap: 8px; border-radius: var(--radius-sm);
   }
-  .tree-note:hover { background: var(--color-background-secondary); border-radius: 3px; }
-  .tree-note.active { background: var(--color-text-info); color: var(--color-text-inverse); border-radius: 3px; }
-  .search-result {
-    cursor: pointer; padding: 6px 8px; border-bottom: 1px solid var(--color-border-primary);
-  }
-  .search-result:hover { background: var(--color-background-secondary); }
-  .search-result-title { font-weight: 600; font-size: 13px; }
-  .search-result-snippet { font-size: 11px; color: var(--color-text-secondary); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tree-ico { color: var(--muted); flex: none; }
+  .tree-note .tree-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 12.5px/1 var(--font-body); color: var(--ink-2); }
+  .tree-folder:hover, .tree-note:hover { background: var(--panel-2); }
+  .tree-note.active { background: var(--accent-soft); box-shadow: inset 2px 0 0 var(--accent); }
+  .tree-note.active .tree-ico, .tree-note.active .tree-label { color: var(--accent); }
+  .tree-note.active .tree-label { font-weight: 600; }
+  .search-result { cursor: pointer; padding: 8px; border-radius: var(--radius-sm); border-bottom: 1px solid var(--border-2); }
+  .search-result:last-child { border-bottom: none; }
+  .search-result:hover { background: var(--panel-2); }
+  .search-result-title { font: 600 13px/1.3 var(--font-body); color: var(--ink); }
+  .search-result-snippet { font: 400 11px/1.4 var(--font-body); color: var(--muted); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* Note tab styles */
   .tab-bar .note-tab-btn { display: none; }
   .tab-bar .note-tab-btn.visible { display: flex; }

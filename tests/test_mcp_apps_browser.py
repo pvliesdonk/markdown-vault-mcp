@@ -66,6 +66,20 @@ class TestBrowserHTML:
         html = await get_app_html()
         assert 'id="browser-search-clear"' in html
 
+    async def test_search_field_paper(self) -> None:
+        html = await get_app_html()
+        # Paper search field: a container with a magnifier icon and a hybrid badge.
+        assert "search-field" in html
+        assert "search-ico" in html
+        assert "hybrid-badge" in html
+
+    async def test_tree_row_icons(self) -> None:
+        html = await get_app_html()
+        # Folders carry a rotatable chevron; files/attachments carry a leading icon.
+        assert "tree-chevron" in html
+        assert "tree-ico" in html
+        assert "tree-label" in html
+
     async def test_preview_panel(self) -> None:
         html = await get_app_html()
         assert 'id="browser-preview"' in html
@@ -92,9 +106,13 @@ class TestBrowserHTML:
         html = await get_app_html()
         assert "marked.parse" in html
 
-    async def test_host_font_inheritance(self) -> None:
+    async def test_paper_font_variables(self) -> None:
         html = await get_app_html()
-        assert "font-family: inherit" in html or "--font-sans" in html
+        # The Browser (and the wider SPA) applies the Paper type system via CSS
+        # font variables; the search input reads --font-body.
+        assert "var(--font-body)" in html
+        assert "--font-head" in html
+        assert "--font-mono" in html
 
     async def test_update_model_context(self) -> None:
         html = await get_app_html()

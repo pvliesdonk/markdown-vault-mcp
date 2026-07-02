@@ -8,6 +8,10 @@
       .replace(/"/g, '&quot;');
   }
 
+  const ICON_CHEVRON = '<svg class="tree-chevron" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>';
+  const ICON_FILE = '<svg class="tree-ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/></svg>';
+  const ICON_IMAGE = '<svg class="tree-ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="4" y="5" width="16" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M5 17l5-4 4 3 3-2 2 2"/></svg>';
+
   let treeDataCache = {};
   let isSearchMode = false;
 
@@ -37,7 +41,7 @@
       const name = f.includes('/') ? f.split('/').pop() : f;
       const folderDiv = document.createElement('div');
       folderDiv.className = 'tree-folder';
-      folderDiv.innerHTML = '<span class="arrow">\u25B6</span> \uD83D\uDCC1 ' + escHtml(name);
+      folderDiv.innerHTML = ICON_CHEVRON + '<span class="tree-label">' + escHtml(name) + '</span>';
       folderDiv.dataset.folder = f;
       parentEl.appendChild(folderDiv);
 
@@ -62,7 +66,8 @@
     for (const n of data.notes) {
       const noteDiv = document.createElement('div');
       noteDiv.className = 'tree-note';
-      noteDiv.textContent = n.title || n.path;
+      const icon = n.kind === 'attachment' ? ICON_IMAGE : ICON_FILE;
+      noteDiv.innerHTML = icon + '<span class="tree-label">' + escHtml(n.title || n.path) + '</span>';
       noteDiv.title = n.path;
       noteDiv.dataset.path = n.path;
       noteDiv.addEventListener('click', () => window.loadPreview(n.path));

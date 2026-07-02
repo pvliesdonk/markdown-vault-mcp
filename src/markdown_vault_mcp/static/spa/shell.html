@@ -70,8 +70,12 @@
     <div class="browser-layout">
       <div class="browser-sidebar">
         <div class="browser-search">
-          <input type="text" id="browser-search-input" placeholder="Search vault..." />
-          <button id="browser-search-clear" style="display:none;" title="Clear search">&times;</button>
+          <div class="search-field">
+            <svg class="search-ico" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+            <input type="text" id="browser-search-input" placeholder="Search vault&#8230;" />
+            <button id="browser-search-clear" style="display:none;" title="Clear search">&times;</button>
+            <span class="hybrid-badge">hybrid</span>
+          </div>
         </div>
         <div id="browser-tree" class="browser-tree"></div>
       </div>
