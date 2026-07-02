@@ -204,3 +204,7 @@ workspace
 write_attachment
 Zettelkasten
 Zotero
+
+# --- Fonts / typography ---
+Newsreader
+Plex

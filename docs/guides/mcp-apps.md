@@ -75,7 +75,7 @@ Override `APP_DOMAIN` if your deployment is behind a proxy that changes the appa
 
 ## Architecture
 
-The SPA is a self-contained HTML file with all dependencies vendored at build time (no runtime CDN requests):
+The SPA is a self-contained HTML file with its JavaScript dependencies vendored at build time (no runtime CDN requests for libraries; web fonts are the one exception, see [Visual identity](#visual-identity-paper)):
 
 | Library | Purpose |
 |---------|---------|
@@ -91,6 +91,20 @@ The app integrates with the host client via the ext-apps SDK:
 - **`app.updateModelContext()`**: keeps the LLM aware of which note the user is viewing
 - **`app.requestDisplayMode()`**: requests fullscreen or inline display
 - **Theme sync**: automatically adapts to the host's light/dark theme and CSS variables
+
+### Visual identity ("Paper")
+
+The views use a warm, editorial "Paper" theme (serif headings, a single warm
+accent, light and dark). The Paper palette is expressed as CSS custom properties
+that map onto the host's `--color-*` variables: a host that pushes its own theme
+overrides Paper, otherwise the Paper values show. Three font families load from
+Google Fonts and are exposed as `--font-head` / `--font-body` / `--font-mono`:
+Newsreader styles headings, Public Sans the body and UI, and IBM Plex Mono the
+code, property keys, and tags. (As each view is restyled, these families also
+reach the remaining mono metadata such as paths and scores.) The fonts are the
+one runtime network dependency the app keeps (the vendored libraries are embedded);
+if they fail to load, the app falls back to system fonts with no loss of
+function.
 
 ### Source layout and build
 

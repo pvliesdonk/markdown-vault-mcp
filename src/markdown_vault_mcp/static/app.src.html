@@ -6,42 +6,77 @@
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>Vault Explorer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&amp;family=Public+Sans:wght@400;500;600;700&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;display=swap"/>
 <script src="https://unpkg.com/vis-network@10.0.2/standalone/umd/vis-network.min.js"></script>
 <script src="https://unpkg.com/marked@17.0.5/lib/marked.umd.js"></script>
 <script src="https://unpkg.com/dompurify@3.3.3/dist/purify.min.js"></script>
 <style>
   :root {
-    /* Fallbacks when host does not provide style variables */
-    --color-background-primary: #ffffff;
-    --color-background-secondary: #f5f5f5;
-    --color-text-primary: #1a1a1a;
-    --color-text-secondary: #6b7280;
+    /* Host theme vars — the fallback VALUES carry the Paper "light" identity,
+       so a host that pushes its own --color-* overrides Paper; otherwise Paper
+       shows. The Paper semantic tokens below map onto these. */
+    --color-background-primary: #fbf8f1;
+    --color-background-secondary: #f2ecdf;
+    --color-text-primary: #2a2620;
+    --color-text-secondary: #928975;
     --color-text-inverse: #ffffff;
-    --color-text-info: #6366f1;
+    --color-text-info: #b25a35;
     --color-text-success: #22c55e;
-    --color-text-danger: #ef4444;
-    --color-border-primary: #e0e0e0;
-    --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --color-text-danger: #b4472c;
+    --color-border-primary: #e4dbc9;
+    /* Paper semantic tokens (map onto host vars so the host can override) */
+    --panel: var(--color-background-primary);
+    --panel-2: var(--color-background-secondary);
+    --ink: var(--color-text-primary);
+    --muted: var(--color-text-secondary);
+    --border: var(--color-border-primary);
+    --accent: var(--color-text-info);
+    --accent-ink: var(--color-text-inverse);
+    /* Paper-only tokens (no host equivalent; flip under [data-theme="dark"]) */
+    --page: #eceae4;
+    --ink-2: #5c5446;
+    --border-2: #efe8d9;
+    --edge: #d3c7ad;
+    --accent-soft: #f3e4d8;
+    --warn: #b4472c;
+    --radius: 11px;
+    --radius-sm: 7px;
+    --pad: 15px;
+    --shadow: 0 1px 2px rgba(70, 48, 24, .05), 0 14px 30px -18px rgba(70, 48, 24, .22);
+    --font-head: 'Newsreader', Georgia, serif;
+    --font-body: 'Public Sans', system-ui, -apple-system, sans-serif;
+    --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace;
+    --font-sans: var(--font-body);
   }
   [data-theme="dark"] {
-    --color-background-primary: #1a1a1a;
-    --color-background-secondary: #2a2a2a;
-    --color-text-primary: #e5e5e5;
-    --color-text-secondary: #9ca3af;
-    --color-text-inverse: #1a1a1a;
-    --color-text-info: #818cf8;
+    --color-background-primary: #252118;
+    --color-background-secondary: #2e281d;
+    --color-text-primary: #ece4d4;
+    --color-text-secondary: #8f8571;
+    --color-text-inverse: #241a12;
+    --color-text-info: #d68a5f;
     --color-text-success: #4ade80;
-    --color-text-danger: #f87171;
-    --color-border-primary: #404040;
+    --color-text-danger: #e08163;
+    --color-border-primary: #39311f;
+    --page: #111112;
+    --ink-2: #bcb29c;
+    --border-2: #433a26;
+    --edge: #4c4230;
+    --accent-soft: #39291d;
+    --warn: #e08163;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 18px 40px -20px rgba(0, 0, 0, .6);
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
-    font-family: var(--font-sans);
-    background: var(--color-background-primary);
-    color: var(--color-text-primary);
+    font-family: var(--font-body);
+    background: var(--panel);
+    color: var(--ink);
     line-height: 1.5;
     overflow: hidden;
     height: 100vh;
+    -webkit-font-smoothing: antialiased;
   }
   .app-container {
     display: flex;
@@ -51,29 +86,31 @@
   /* Tab bar */
   .tab-bar {
     display: flex;
-    border-bottom: 1px solid var(--color-border-primary);
-    background: var(--color-background-secondary);
+    border-bottom: 1px solid var(--border-2);
+    background: var(--panel-2);
     flex-shrink: 0;
+    overflow-x: auto;
   }
   .tab-bar button {
-    flex: 1;
-    padding: 8px 12px;
+    flex: 0 0 auto;
+    padding: 12px 15px;
     border: none;
     background: transparent;
-    color: var(--color-text-secondary);
+    color: var(--muted);
     cursor: pointer;
-    font-size: 13px;
-    font-family: inherit;
-    border-bottom: 2px solid transparent;
-    transition: color 0.15s, border-color 0.15s;
+    font: 600 12px/1 var(--font-body);
+    white-space: nowrap;
+    /* Active underline via inset box-shadow, not a border shorthand+longhand
+       mix (which caused stale styling in prototyping). */
+    box-shadow: none;
+    transition: color 0.15s, box-shadow 0.15s;
   }
   .tab-bar button:hover {
-    color: var(--color-text-primary);
+    color: var(--ink);
   }
   .tab-bar button.active {
-    color: var(--color-text-info);
-    border-bottom-color: var(--color-text-info);
-    font-weight: 600;
+    color: var(--accent);
+    box-shadow: inset 0 -2px 0 var(--accent);
   }
   /* Header with fullscreen toggle */
   .app-header {
@@ -84,18 +121,17 @@
     flex-shrink: 0;
   }
   .fullscreen-btn {
-    background: none;
-    border: 1px solid var(--color-border-primary);
-    color: var(--color-text-secondary);
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    color: var(--ink-2);
     cursor: pointer;
-    padding: 4px 8px;
-    border-radius: 4px;
-    font-size: 12px;
-    font-family: inherit;
+    padding: 6px 10px;
+    border-radius: var(--radius-sm);
+    font: 600 11px/1 var(--font-body);
   }
   .fullscreen-btn:hover {
-    color: var(--color-text-primary);
-    background: var(--color-background-secondary);
+    color: var(--ink);
+    border-color: var(--muted);
   }
   /* Tab panels */
   .tab-panel {
@@ -111,8 +147,8 @@
     align-items: center;
     justify-content: center;
     flex: 1;
-    color: var(--color-text-secondary);
-    font-size: 14px;
+    color: var(--muted);
+    font: 400 14px/1.5 var(--font-body);
   }
   /* Toast notifications */
   .toast {
@@ -120,11 +156,12 @@
     bottom: 16px;
     left: 50%;
     transform: translateX(-50%);
-    background: var(--color-text-primary);
-    color: var(--color-background-primary);
-    padding: 8px 16px;
-    border-radius: 6px;
-    font-size: 13px;
+    background: var(--ink);
+    color: var(--panel);
+    padding: 9px 16px;
+    border-radius: var(--radius-sm);
+    font: 500 13px/1 var(--font-body);
+    box-shadow: var(--shadow);
     opacity: 0;
     transition: opacity 0.3s;
     pointer-events: none;
@@ -136,7 +173,7 @@
   .context-title-row {
     display: flex; align-items: center; justify-content: space-between; gap: 8px;
   }
-  .context-title-row h2 { font-size: 18px; margin: 0; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .context-title-row h2 { font-family: var(--font-head); font-size: 18px; margin: 0; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .context-meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; font-size: 12px; color: var(--color-text-secondary); }
   .meta-item::before { content: ''; }
   .action-btn {
@@ -165,6 +202,7 @@
   .tag-group-label { font-size: 11px; color: var(--color-text-secondary); text-transform: uppercase; margin-bottom: 2px; }
   .tag-pill {
     display: inline-block; padding: 2px 8px; margin: 2px 4px 2px 0; border-radius: 12px; font-size: 12px;
+    font-family: var(--font-mono);
     background: var(--color-background-secondary); border: 1px solid var(--color-border-primary);
   }
   /* Link lists */
@@ -191,7 +229,7 @@
   /* Frontmatter table */
   .fm-table { width: 100%; border-collapse: collapse; }
   .fm-table td { padding: 3px 8px; border-bottom: 1px solid var(--color-border-primary); font-size: 12px; vertical-align: top; }
-  .fm-table td:first-child { font-weight: 600; white-space: nowrap; width: 1%; color: var(--color-text-secondary); }
+  .fm-table td:first-child { font-family: var(--font-mono); font-weight: 600; white-space: nowrap; width: 1%; color: var(--color-text-secondary); }
   /* Graph styles */
   .graph-toolbar { display: flex; gap: 8px; padding: 4px 0; flex-shrink: 0; }
   #graph-container { border: 1px solid var(--color-border-primary); border-radius: 6px; min-height: 200px; }
@@ -258,14 +296,14 @@
     display: flex; align-items: center; justify-content: space-between; gap: 8px;
     margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--color-border-primary);
   }
-  .preview-header h1 { font-size: 18px; margin: 0; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .preview-header h1 { font-family: var(--font-head); font-size: 18px; margin: 0; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .preview-actions { display: flex; gap: 6px; flex-shrink: 0; }
   .preview-fm { margin-bottom: 12px; }
   .preview-content { font-size: 14px; line-height: 1.6; }
-  .preview-content h1, .preview-content h2, .preview-content h3 { margin-top: 16px; margin-bottom: 8px; }
+  .preview-content h1, .preview-content h2, .preview-content h3 { font-family: var(--font-head); margin-top: 16px; margin-bottom: 8px; }
   .preview-content p { margin: 8px 0; }
-  .preview-content code { background: var(--color-background-secondary); padding: 1px 4px; border-radius: 3px; font-size: 13px; }
-  .preview-content pre { background: var(--color-background-secondary); padding: 12px; border-radius: 6px; overflow-x: auto; }
+  .preview-content code { font-family: var(--font-mono); background: var(--color-background-secondary); padding: 1px 4px; border-radius: 3px; font-size: 13px; }
+  .preview-content pre { font-family: var(--font-mono); background: var(--color-background-secondary); padding: 12px; border-radius: 6px; overflow-x: auto; }
   .preview-content pre code { background: none; padding: 0; }
   .preview-content blockquote { border-left: 3px solid var(--color-text-info); padding-left: 12px; color: var(--color-text-secondary); margin: 8px 0; }
   .preview-content a { color: var(--color-text-info); }

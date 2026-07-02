@@ -2198,6 +2198,12 @@ MCP Apps are browser-based views that MCP clients supporting the protocol can re
 - `DOMPurify`: XSS sanitization for all rendered HTML
 - `@modelcontextprotocol/ext-apps`: MCP Apps SDK lifecycle and theming
 
+**Web fonts** are the one dependency the app does not bundle inline: the "Paper"
+theme's type families (Newsreader, Public Sans, IBM Plex Mono) load at runtime from
+Google Fonts via a `<link>` in the shell, so the served `app.html` keeps a
+single external network dependency. The font stacks declare system fallbacks, so
+a load failure degrades to system fonts with no loss of function.
+
 **Source layout and build**: the SPA is authored as partials under `src/markdown_vault_mcp/static/spa/` (`shell.html`, `styles.css`, `core.js`, and one `views/*.js` per view). `scripts/build_spa.py` assembles them into `static/app.src.html` via recursive `/*@@FILE:path@@*/` include markers, then `scripts/vendor_spa.py` embeds the vendored libraries into the served `static/app.html`. Both `app.src.html` and `app.html` are generated, committed artifacts; edit the partials, not the generated files. Each script has a `--check` mode that gates the build in CI and pre-commit, so a stale artifact fails fast.
 
 **Domain configuration**: MCP Apps iframes are sandboxed to a specific Claude app domain. The server computes it from `MARKDOWN_VAULT_MCP_BASE_URL` via `_compute_claude_app_domain()`. Override with `MARKDOWN_VAULT_MCP_APP_DOMAIN` when `BASE_URL` does not reflect the actual hostname visible to the Claude client (such as behind a proxy, or on a custom domain).
