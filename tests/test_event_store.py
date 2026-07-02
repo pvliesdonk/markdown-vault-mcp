@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import pytest
-from fastmcp_pvl_core import ServerConfig
+from fastmcp_pvl_core import ServerConfig, build_event_store
 
-from markdown_vault_mcp.config import ProjectConfig
-from markdown_vault_mcp.server import build_event_store
+from markdown_vault_mcp.config import _ENV_PREFIX, ProjectConfig
 
 
 class TestBuildEventStore:
@@ -20,7 +19,7 @@ class TestBuildEventStore:
             "fastmcp_pvl_core._kv_store._DEFAULT_KV_STORE_DIR",
             str(tmp_path / "events"),
         ):
-            store = build_event_store(ServerConfig())
+            store = build_event_store(_ENV_PREFIX, ServerConfig())
 
         assert store is not None
         assert (tmp_path / "events").is_dir()
@@ -33,7 +32,7 @@ class TestBuildEventStore:
             "fastmcp_pvl_core._kv_store._DEFAULT_KV_STORE_DIR",
             str(tmp_path / "events"),
         ):
-            store = build_event_store(ServerConfig(event_store_url=""))
+            store = build_event_store(_ENV_PREFIX, ServerConfig(event_store_url=""))
 
         assert store is not None
         assert (tmp_path / "events").is_dir()
@@ -41,21 +40,26 @@ class TestBuildEventStore:
     def test_file_url_creates_directory(self, tmp_path):
         """file:// URL creates the specified directory and uses a file backend."""
         target = tmp_path / "custom" / "events"
-        store = build_event_store(ServerConfig(event_store_url=f"file://{target}"))
+        store = build_event_store(
+            _ENV_PREFIX, ServerConfig(event_store_url=f"file://{target}")
+        )
 
         assert store is not None
         assert target.is_dir()
 
     def test_memory_url_returns_in_memory_store(self):
         """memory:// URL returns an in-memory EventStore."""
-        store = build_event_store(ServerConfig(event_store_url="memory://"))
+        store = build_event_store(
+            _ENV_PREFIX, ServerConfig(event_store_url="memory://")
+        )
         assert store is not None
 
     def test_kv_store_url_takes_priority(self, tmp_path):
         """kv_store_url is honoured over the legacy event_store_url."""
         ignored = tmp_path / "should-not-exist"
         store = build_event_store(
-            ServerConfig(kv_store_url="memory://", event_store_url=f"file://{ignored}")
+            _ENV_PREFIX,
+            ServerConfig(kv_store_url="memory://", event_store_url=f"file://{ignored}"),
         )
 
         assert store is not None
@@ -65,12 +69,12 @@ class TestBuildEventStore:
     def test_unsupported_scheme_raises(self):
         """An unrecognised URL scheme propagates a ValueError from the core factory."""
         with pytest.raises(ValueError):
-            build_event_store(ServerConfig(event_store_url="bogus://host"))
+            build_event_store(_ENV_PREFIX, ServerConfig(event_store_url="bogus://host"))
 
     def test_file_url_without_path_raises(self):
         """pvl-core 3.x rejects a path-less file:// URL (use the file:///path form)."""
         with pytest.raises(ValueError):
-            build_event_store(ServerConfig(event_store_url="file://"))
+            build_event_store(_ENV_PREFIX, ServerConfig(event_store_url="file://"))
 
 
 class TestEventStoreConfig:
@@ -123,13 +127,13 @@ class TestFileEventStorePersistence:
         url = f"file://{store_dir}"
 
         # First store instance — write an event (None message = priming event)
-        store1 = build_event_store(ServerConfig(event_store_url=url))
+        store1 = build_event_store(_ENV_PREFIX, ServerConfig(event_store_url=url))
         stream_id = "test-session-1"
         event_id = await store1.store_event(stream_id, None)
         assert event_id  # UUID string returned
 
         # Second store instance — same path, simulating restart
-        store2 = build_event_store(ServerConfig(event_store_url=url))
+        store2 = build_event_store(_ENV_PREFIX, ServerConfig(event_store_url=url))
         # Verify the event is retrievable by replaying after it
         replayed_events: list = []
 

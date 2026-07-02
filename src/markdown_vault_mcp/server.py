@@ -14,23 +14,15 @@ from __future__ import annotations
 import logging
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from fastmcp.server.event_store import EventStore
 
 from fastmcp import FastMCP
 from fastmcp_pvl_core import (
-    ServerConfig,
     build_auth,
     build_kv_store,  # noqa: F401  — re-exported for downstream projects' convenience
     configure_logging_from_env,  # noqa: F401  — re-exported for downstream projects' convenience
     register_server_info_tool,
     resolve_auth_mode,
     wire_middleware_stack,
-)
-from fastmcp_pvl_core import (
-    build_event_store as _core_build_event_store,
 )
 from fastmcp_pvl_core import (
     build_instructions as _core_build_instructions,
@@ -49,32 +41,6 @@ from ._server_resources import register_resources
 from ._server_tools import register_tools
 
 logger = logging.getLogger(__name__)
-
-
-# ---------------------------------------------------------------------------
-# Event store
-# ---------------------------------------------------------------------------
-
-
-def build_event_store(config: ServerConfig) -> EventStore:
-    """Build an ``EventStore`` for SSE polling/resumability.
-
-    Thin shim over :func:`fastmcp_pvl_core.build_event_store`: forwards the
-    whole server config so the unified KV factory honours ``kv_store_url``
-    (preferred) or the legacy ``event_store_url`` per its own resolution
-    priority, then selects the backend from the URL scheme (``file://``,
-    ``memory://``, or any extra-installed backend — see the fastmcp-pvl-core
-    docs).
-
-    Args:
-        config: The server config; its ``kv_store_url`` / ``event_store_url``
-            fields (from ``MARKDOWN_VAULT_MCP_KV_STORE_URL`` /
-            ``MARKDOWN_VAULT_MCP_EVENT_STORE_URL``) select the backend.
-
-    Returns:
-        A configured :class:`~fastmcp.server.event_store.EventStore`.
-    """
-    return _core_build_event_store(_ENV_PREFIX, config)
 
 
 # ---------------------------------------------------------------------------
