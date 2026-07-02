@@ -17,6 +17,38 @@ def test_app_html_is_served_with_tools_rewritten() -> None:
     assert "app___" not in html  # every literal rewritten
 
 
+def test_build_check_is_clean() -> None:
+    """The committed app.src.html matches the spa/ partials (offline --check)."""
+    repo = Path(__file__).resolve().parent.parent
+    result = subprocess.run(
+        [sys.executable, str(repo / "scripts" / "build_spa.py"), "--check"],
+        capture_output=True,
+        text=True,
+        cwd=repo,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_build_check_detects_drift() -> None:
+    """Mutating a spa/ partial makes build --check fail (anti-drift gate works)."""
+    repo = Path(__file__).resolve().parent.parent
+    partial = (
+        repo / "src" / "markdown_vault_mcp" / "static" / "spa" / "views" / "context.js"
+    )
+    original = partial.read_text(encoding="utf-8")
+    try:
+        partial.write_text(original + "\n// drift\n", encoding="utf-8")
+        result = subprocess.run(
+            [sys.executable, str(repo / "scripts" / "build_spa.py"), "--check"],
+            capture_output=True,
+            text=True,
+            cwd=repo,
+        )
+        assert result.returncode == 1
+    finally:
+        partial.write_text(original, encoding="utf-8")
+
+
 def test_vendor_check_is_clean() -> None:
     """The committed app.html matches app.src.html (offline --check)."""
     repo = Path(__file__).resolve().parent.parent

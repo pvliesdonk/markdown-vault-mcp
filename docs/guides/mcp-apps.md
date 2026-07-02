@@ -92,6 +92,36 @@ The app integrates with the host client via the ext-apps SDK:
 - **`app.requestDisplayMode()`**: requests fullscreen or inline display
 - **Theme sync**: automatically adapts to the host's light/dark theme and CSS variables
 
+### Source layout and build
+
+The SPA source is authored as small partials under
+`src/markdown_vault_mcp/static/spa/`:
+
+| File | Contents |
+|------|----------|
+| `shell.html` | The HTML document: head, tab bar, view panels, toast |
+| `styles.css` | All styles |
+| `core.js` | App setup, theming, tab navigation, cross-view routing, shared helpers |
+| `views/context.js`, `views/graph.js`, `views/browser.js`, `views/note.js` | One file per view |
+
+Two build steps turn the partials into the served resource:
+
+```text
+spa/*  ->  build_spa.py  ->  app.src.html  ->  vendor_spa.py  ->  app.html
+```
+
+1. `python scripts/build_spa.py` assembles the partials into
+   `static/app.src.html`. Assembly is a recursive `/*@@FILE:path@@*/` include,
+   a valid comment in both CSS and JavaScript, so each partial stays
+   independently readable.
+2. `python scripts/vendor_spa.py` embeds the vendored libraries into the
+   self-contained `static/app.html` that the server serves.
+
+`app.src.html` and `app.html` are both generated, committed artifacts: edit the
+files under `static/spa/`, then run both scripts. Never hand-edit the generated
+files. `build_spa.py --check` and `vendor_spa.py --check` fail the build if
+either artifact is stale; both run in CI and as pre-commit hooks.
+
 ## Client support
 
 MCP Apps views require a client that supports the MCP Apps protocol. Currently supported by Claude on claude.ai. Clients without Apps support receive a text-only fallback from `browse_vault` and `show_context`.

@@ -37,6 +37,13 @@ repos:
         types: [python]
         stages: [pre-push]
 
+      - id: build-spa-check
+        name: assembled SPA source up-to-date
+        language: system
+        entry: uv run python scripts/build_spa.py --check
+        files: ^src/markdown_vault_mcp/static/spa/
+        pass_filenames: false
+
       - id: vendor-spa-check
         name: vendored SPA HTML up-to-date
         language: system
