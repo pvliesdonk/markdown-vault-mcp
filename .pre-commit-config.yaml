@@ -105,8 +105,8 @@ repos:
         files: ^(docs/|\.vale\.ini$)
         # Align trigger scope with the `vale` lint hook below — no point
         # checking sync state on commits that only touch the excluded
-        # working-specs subtree.
-        exclude: ^docs/superpowers/
+        # internal dev-doc subtrees.
+        exclude: ^docs/(superpowers|design|decisions)/
 
   - repo: https://github.com/vale-cli/vale
     rev: v3.14.2

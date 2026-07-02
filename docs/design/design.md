@@ -382,13 +382,9 @@ for built-in names, or pass a custom instance.
   get up to three in-scan retries with a short backoff (0.05 s, 0.1 s,
   0.2 s) before the file is dropped for that scan, and exhausted retries
   log at `ERROR` (`hash_read_failed_after_retry`); every other `OSError`
-  keeps the single-attempt `WARNING` path. A file that is already indexed and
-  fails to hash is not dropped: its previous hash is carried forward so it
-  counts as unchanged for that scan and is re-hashed on the next one, so a
-  read error that leaves the file in place never purges a live document. Only
-  a newly discovered file that fails to hash is dropped for the scan. A
-  skipped file deleted from disk is dropped silently; it was never indexed, so
-  it is not counted as `deleted`.
+  keeps the single-attempt `WARNING` path. A skipped file deleted from disk
+  is dropped silently; it was never indexed, so it is not counted as
+  `deleted`.
   The surfaced deterministic skips (parse / encoding / missing-frontmatter /
   internal-error, but not exclude-pattern or transient `OSError`) are also
   recorded with a `{category, detail}` reason in the state file's
