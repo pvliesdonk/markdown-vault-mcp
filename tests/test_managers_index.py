@@ -190,6 +190,26 @@ class TestBuildIndex:
             "excluded files must not enter the tracker's skipped state"
         )
 
+    def test_broken_symlink_md_is_skipped_not_hashed(
+        self, index_vault: Path, tmp_path: Path
+    ):
+        """A broken symlink named ``*.md`` is discovered but skipped, not hashed.
+
+        ``_discover_indexable_candidates`` drops non-files via ``is_file()`` so a
+        dangling link does not reach ``compute_file_hash``; the build must not
+        crash and the link must not be indexed.
+        """
+        dangling = index_vault / "dangling.md"
+        try:
+            dangling.symlink_to(index_vault / "does-not-exist-target.md")
+        except (OSError, NotImplementedError) as exc:
+            pytest.skip(f"symlink creation not supported here: {exc}")
+
+        mgr, fts, _ = _make_index_mgr(index_vault, tmp_path)
+        mgr.build_index()  # must not raise on the broken link
+        paths = {n["path"] for n in fts.list_notes()}
+        assert "dangling.md" not in paths
+
     def test_continues_on_upsert_error(self, index_vault: Path, tmp_path: Path):
         """If one document fails to upsert, others still get indexed."""
         fts = FTSIndex(db_path=":memory:")

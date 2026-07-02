@@ -134,8 +134,7 @@ class IndexManager:
         still needs the per-file check. Excluded files are therefore invisible
         everywhere — neither skip-counted nor recorded in ``skipped_state``
         (#257/#832) — matching ``detect_changes``. Non-files (such as broken
-        symlinks) and paths resolving outside ``source_dir`` are dropped with a
-        warning.
+        symlinks) are dropped.
 
         Returns:
             ``(absolute_path, relative_posix_path)`` pairs for non-excluded
@@ -145,12 +144,9 @@ class IndexManager:
         for abs_path in iter_markdown_files(self._source_dir, self._exclude_patterns):
             if not abs_path.is_file():
                 continue
-            try:
-                rel_str = abs_path.relative_to(self._source_dir).as_posix()
-            except ValueError:
-                # Symlink target outside the vault — mirror detect_changes.
-                logger.warning("File outside source_dir, skipping: %s", abs_path)
-                continue
+            # iter_markdown_files yields paths built as source_dir / rel, so
+            # relative_to always succeeds (no outside-source_dir guard needed).
+            rel_str = abs_path.relative_to(self._source_dir).as_posix()
             if self._is_path_excluded(rel_str):
                 continue
             candidates.append((abs_path, rel_str))
