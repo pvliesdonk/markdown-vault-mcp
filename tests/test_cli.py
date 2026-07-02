@@ -483,14 +483,18 @@ def test_index_builds_embeddings_when_configured() -> None:
     assert "20 chunks" in result.output
 
 
-def test_index_swallows_valueerror_from_embeddings() -> None:
-    """Embedding graceful-degradation: ValueError from build_embeddings exits 0."""
+def test_index_swallows_embeddings_not_configured_error() -> None:
+    """Embedding graceful-degradation: EmbeddingsNotConfiguredError exits 0 (#774)."""
+    from markdown_vault_mcp.exceptions import EmbeddingsNotConfiguredError
+
     mock_vault = MagicMock()
     mock_stats = MagicMock()
     mock_stats.documents_indexed = 5
     mock_stats.chunks_indexed = 20
     mock_vault.index.build_index.return_value = mock_stats
-    mock_vault.index.build_embeddings.side_effect = ValueError("not configured")
+    mock_vault.index.build_embeddings.side_effect = EmbeddingsNotConfiguredError(
+        "not configured"
+    )
 
     with patch("markdown_vault_mcp.cli._build_vault", return_value=mock_vault):
         result = runner.invoke(app, ["index"])
@@ -498,6 +502,23 @@ def test_index_swallows_valueerror_from_embeddings() -> None:
     assert result.exit_code == 0, result.output
     mock_vault.index.build_embeddings.assert_called_once()
     assert "5 documents" in result.output
+
+
+def test_index_surfaces_internal_valueerror_from_embeddings() -> None:
+    """An internal ValueError (not EmbeddingsNotConfiguredError) surfaces (#774)."""
+    mock_vault = MagicMock()
+    mock_stats = MagicMock()
+    mock_stats.documents_indexed = 5
+    mock_stats.chunks_indexed = 20
+    mock_vault.index.build_index.return_value = mock_stats
+    mock_vault.index.build_embeddings.side_effect = ValueError(
+        "Failed to load vector index after _load_vectors()"
+    )
+
+    with patch("markdown_vault_mcp.cli._build_vault", return_value=mock_vault):
+        result = runner.invoke(app, ["index"])
+
+    assert result.exit_code != 0
 
 
 # ---------------------------------------------------------------------------
@@ -683,8 +704,10 @@ def test_reindex_builds_embeddings_when_configured() -> None:
     mock_vault.index.build_embeddings.assert_called_once_with()
 
 
-def test_reindex_swallows_valueerror_from_embeddings() -> None:
-    """Embedding graceful-degradation: ValueError from build_embeddings exits 0."""
+def test_reindex_swallows_embeddings_not_configured_error() -> None:
+    """Embedding graceful-degradation: EmbeddingsNotConfiguredError exits 0 (#774)."""
+    from markdown_vault_mcp.exceptions import EmbeddingsNotConfiguredError
+
     mock_vault = MagicMock()
     mock_result = MagicMock()
     mock_result.added = mock_result.modified = mock_result.deleted = (
@@ -692,13 +715,34 @@ def test_reindex_swallows_valueerror_from_embeddings() -> None:
     ) = 0
     mock_result.unchanged = 5
     mock_vault.index.reindex.return_value = mock_result
-    mock_vault.index.build_embeddings.side_effect = ValueError("not configured")
+    mock_vault.index.build_embeddings.side_effect = EmbeddingsNotConfiguredError(
+        "not configured"
+    )
 
     with patch("markdown_vault_mcp.cli._build_vault", return_value=mock_vault):
         result = runner.invoke(app, ["reindex"])
 
     assert result.exit_code == 0, result.output
     mock_vault.index.build_embeddings.assert_called_once()
+
+
+def test_reindex_surfaces_internal_valueerror_from_embeddings() -> None:
+    """An internal ValueError (not EmbeddingsNotConfiguredError) surfaces (#774)."""
+    mock_vault = MagicMock()
+    mock_result = MagicMock()
+    mock_result.added = mock_result.modified = mock_result.deleted = (
+        mock_result.skipped
+    ) = 0
+    mock_result.unchanged = 5
+    mock_vault.index.reindex.return_value = mock_result
+    mock_vault.index.build_embeddings.side_effect = ValueError(
+        "Failed to load vector index after _load_vectors()"
+    )
+
+    with patch("markdown_vault_mcp.cli._build_vault", return_value=mock_vault):
+        result = runner.invoke(app, ["reindex"])
+
+    assert result.exit_code != 0
 
 
 def test_reindex_never_forces_embedding_rebuild() -> None:

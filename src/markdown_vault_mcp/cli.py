@@ -167,6 +167,8 @@ def index(
     force: bool = typer.Option(False, help="Drop and rebuild the index from scratch."),
 ) -> None:
     """Build the full-text search index."""
+    from markdown_vault_mcp.exceptions import EmbeddingsNotConfiguredError
+
     vault = _build_vault(source_dir, index_path)
     stats = vault.index.build_index(force=force)
     typer.echo(
@@ -175,7 +177,7 @@ def index(
     try:
         n = vault.index.build_embeddings(force=force)
         typer.echo(f"Embedded {n} chunks")
-    except ValueError:
+    except EmbeddingsNotConfiguredError:
         pass  # embeddings not configured
 
 
@@ -226,6 +228,8 @@ def reindex(
     ),
 ) -> None:
     """Incrementally reindex the vault."""
+    from markdown_vault_mcp.exceptions import EmbeddingsNotConfiguredError
+
     vault = _build_vault(source_dir, index_path)
     # reindex() needs a built index (#525); build_index() is a cheap no-op when
     # the index is already populated (a SQL row-count check, no filesystem scan).
@@ -239,7 +243,7 @@ def reindex(
     try:
         n = vault.index.build_embeddings()  # converges vectors to FTS chunks (#665)
         typer.echo(f"Embedded {n} chunks")
-    except ValueError:
+    except EmbeddingsNotConfiguredError:
         pass  # embeddings not configured
 
 

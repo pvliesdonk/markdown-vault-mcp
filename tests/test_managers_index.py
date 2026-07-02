@@ -97,6 +97,30 @@ def index_mgr(index_vault: Path, tmp_path: Path) -> tuple[IndexManager, FTSIndex
 
 
 # ---------------------------------------------------------------------------
+# EmbeddingsNotConfiguredError
+# ---------------------------------------------------------------------------
+
+
+class TestEmbeddingsNotConfiguredError:
+    def test_require_vectors_raises_embeddings_not_configured(
+        self, tmp_path: Path
+    ) -> None:
+        from markdown_vault_mcp.exceptions import EmbeddingsNotConfiguredError
+        from markdown_vault_mcp.vault import Vault
+
+        vault = Vault(source_dir=tmp_path)  # no embedding provider configured
+        try:
+            vault.index.build_index()
+            with pytest.raises(EmbeddingsNotConfiguredError):
+                vault.index.build_embeddings()
+            # Subclass of ValueError → back-compat catchers still work.
+            with pytest.raises(ValueError):
+                vault.index.build_embeddings()
+        finally:
+            vault.close()
+
+
+# ---------------------------------------------------------------------------
 # build_index
 # ---------------------------------------------------------------------------
 

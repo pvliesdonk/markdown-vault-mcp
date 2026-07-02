@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any
 
 import yaml
 
+from markdown_vault_mcp.exceptions import EmbeddingsNotConfiguredError
 from markdown_vault_mcp.fts_index import _derive_folder, should_optimize
 from markdown_vault_mcp.hashing import compute_file_hash
 from markdown_vault_mcp.managers._vector_loader import load_or_self_heal
@@ -125,9 +126,9 @@ class IndexManager:
         return is_path_excluded(path, self._exclude_patterns)
 
     def _require_vectors(self) -> None:
-        """Raise ValueError if embedding support is not configured."""
+        """Raise :class:`EmbeddingsNotConfiguredError` if embeddings are unconfigured."""
         if self._embedding_provider is None or self._embeddings_path is None:
-            raise ValueError(
+            raise EmbeddingsNotConfiguredError(
                 "Embeddings require both 'embedding_provider' and "
                 "'embeddings_path' to be configured."
             )

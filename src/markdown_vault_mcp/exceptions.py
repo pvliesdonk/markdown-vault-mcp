@@ -48,6 +48,17 @@ class EditConflictError(MarkdownMCPError):
         self.found_snippet = found_snippet
 
 
+class EmbeddingsNotConfiguredError(ValueError):
+    """Raised when an embeddings operation runs without a provider/path configured.
+
+    Subclasses :class:`ValueError` so callers that catch ``ValueError`` (the
+    historical "embeddings not configured" contract) still catch it, while
+    callers that want *only* this case — such as the ``index``/``reindex`` CLI
+    commands — can narrow to it and let genuine internal ``ValueError``s from a
+    corrupt vector index surface (#774).
+    """
+
+
 class DocumentExistsError(MarkdownMCPError):
     """Raised when the target path already exists (e.g. rename destination)."""
 
