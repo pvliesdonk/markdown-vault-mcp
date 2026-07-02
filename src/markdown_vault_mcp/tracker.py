@@ -152,11 +152,30 @@ class ChangeTracker:
             try:
                 content_hash = self._hash_with_retry(abs_path)
             except OSError as exc:
+                prior = indexed_state.get(rel_str)
+                if prior is not None:
+                    # Already indexed: a failed re-hash must NOT drop it, or the
+                    # file would be absent from disk_state and look "deleted"
+                    # below, purging a live document from FTS and its embedding
+                    # on a merely-unreadable-right-now file (transient EMFILE, or
+                    # a still-present EACCES). Carry the prior hash forward so it
+                    # counts as unchanged this scan and is re-hashed next scan
+                    # (#831). A genuinely deleted file is absent from discovery
+                    # on the next scan and reported deleted then.
+                    disk_state[rel_str] = prior
+                    logger.warning(
+                        "hash_read_failed_keeping_indexed path=%s errno=%s: %s",
+                        abs_path,
+                        exc.errno,
+                        exc,
+                    )
+                    continue
                 if exc.errno in _TRANSIENT_HASH_ERRNOS:
-                    # Retries were exhausted: file-descriptor pressure outlasted
-                    # the retry window. The file is dropped from this scan and
-                    # retried on the next one, but surface it at ERROR so it is
-                    # not lost among a busy watcher's INFO reindex summaries.
+                    # A brand-new (unindexed) file that failed even after
+                    # retries: nothing to carry forward, so it is dropped from
+                    # this scan and retried on the next one. Surface it at ERROR
+                    # so it is not lost among a busy watcher's INFO reindex
+                    # summaries.
                     logger.error(
                         "hash_read_failed_after_retry path=%s errno=%s: %s",
                         abs_path,

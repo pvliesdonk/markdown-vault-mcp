@@ -616,6 +616,69 @@ class TestUnreadableFiles:
             for r in caplog.records
         )
 
+    def test_indexed_file_failing_to_hash_is_kept_not_deleted(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """An already-indexed file that fails to re-hash is retained, not purged.
+
+        Dropping it from the disk snapshot would route it into ``deleted``,
+        purging a live document from FTS and its embedding on a transient (or
+        even a permanent-but-still-present, e.g. EACCES) read failure (#831).
+        The prior hash is carried forward so the file counts as unchanged this
+        scan and is re-hashed on the next one.
+        """
+        import errno
+        import hashlib
+        import logging
+        from unittest.mock import patch as mock_patch
+
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        md = _write_md(vault, "keep.md", "content\n")
+
+        tracker = ChangeTracker(tmp_path / "state.json")
+        tracker.detect_changes(vault)
+        note = _make_note("keep.md", hashlib.sha256(md.read_bytes()).hexdigest())
+        tracker.update_state([note])
+
+        def eacces(_self: ChangeTracker, _path: Path) -> str:
+            raise OSError(errno.EACCES, "Permission denied")
+
+        with (
+            mock_patch.object(ChangeTracker, "_compute_hash", eacces),
+            caplog.at_level(logging.WARNING, logger="markdown_vault_mcp.tracker"),
+        ):
+            changes = tracker.detect_changes(vault)
+
+        assert changes.deleted == [], "an unreadable indexed file must not be purged"
+        assert "keep.md" not in changes.modified
+        assert changes.unchanged == 1  # carried forward as unchanged
+
+    def test_non_transient_errno_is_not_retried(self, tmp_path: Path) -> None:
+        """A non-transient OSError (EACCES) fails on the first attempt, no retry.
+
+        Guards the discriminate-then-retry contract: only EMFILE/ENFILE retry;
+        if EACCES were added to the transient set, the EMFILE tests would still
+        pass (just slower), so this asserts the call count directly (#836).
+        """
+        import errno
+        from unittest.mock import patch as mock_patch
+
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        _write_md(vault, "new.md", "x\n")
+        calls: list[int] = []
+
+        def eacces(_self: ChangeTracker, _path: Path) -> str:
+            calls.append(1)
+            raise OSError(errno.EACCES, "Permission denied")
+
+        tracker = ChangeTracker(tmp_path / "state.json")
+        with mock_patch.object(ChangeTracker, "_compute_hash", eacces):
+            tracker.detect_changes(vault)
+
+        assert len(calls) == 1, "a non-transient errno must be attempted exactly once"
+
 
 class TestLegacyStateFormat:
     def test_legacy_flat_state_loads_as_indexed(self, tmp_path: Path) -> None:
