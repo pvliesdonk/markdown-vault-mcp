@@ -599,8 +599,10 @@ class IndexManager:
             newly embedded chunks — a fully converged index returns ``0``.
 
         Raises:
-            ValueError: If ``embedding_provider`` or ``embeddings_path`` is
-                not configured.
+            EmbeddingsNotConfiguredError: If ``embedding_provider`` or
+                ``embeddings_path`` is not configured. A ``ValueError``
+                subclass, so callers may catch either; narrow to it to let
+                genuine internal ``ValueError``s surface (#774).
         """
         self._require_vectors()
 
