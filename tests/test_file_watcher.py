@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import threading
 import time
-from typing import TYPE_CHECKING
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -35,15 +35,14 @@ from watchdog.events import (
 
 from markdown_vault_mcp._file_watcher import (
     VaultFileWatcher,
+    _derive_watch_roots,
     _has_hidden_component,
+    _is_hidden_relative_to_root,
     _VaultEventHandler,
+    _WatchRoot,
     should_start_file_watcher,
 )
 from markdown_vault_mcp._server_deps import make_vault_lifespan
-
-if TYPE_CHECKING:
-    from pathlib import Path
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -223,6 +222,55 @@ def test_double_start_does_not_leak_observer(tmp_path: Path) -> None:
         watcher.stop()
 
 
+def test_start_skips_root_whose_schedule_raises(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A single watch root that fails to schedule is logged and skipped.
+
+    A symlink-farm child whose recursive schedule raises must not abort
+    ``start()``; the remaining roots, notably the ``source_dir`` floor, are
+    still scheduled. Simulated by a fake observer whose first ``schedule`` call
+    raises and whose later calls succeed.
+    """
+    import logging
+
+    (tmp_path / "childA").mkdir()
+    (tmp_path / "childB").mkdir()
+
+    class _FlakyObserver:
+        def __init__(self) -> None:
+            self.scheduled: list[str] = []
+            self._calls = 0
+
+        def schedule(self, _handler: object, path: str, **_kwargs: object) -> None:
+            self._calls += 1
+            if self._calls == 1:
+                raise OSError("cannot watch this root")
+            self.scheduled.append(path)
+
+        def start(self) -> None:
+            pass
+
+        def stop(self) -> None:
+            pass
+
+        def join(self, timeout: float | None = None) -> None:
+            pass
+
+    fake = _FlakyObserver()
+    watcher = _make_watcher(tmp_path, lambda: None)
+    with (
+        patch("markdown_vault_mcp._file_watcher.Observer", lambda: fake),
+        caplog.at_level(logging.WARNING, logger="markdown_vault_mcp"),
+    ):
+        watcher.start()  # must not raise despite the first schedule failing
+        watcher.stop()
+
+    assert any("could not schedule watch" in r.getMessage() for r in caplog.records)
+    # The floor + the two children is three roots; one raised, so two scheduled.
+    assert len(fake.scheduled) == 2
+
+
 # ---------------------------------------------------------------------------
 # Hidden directory filtering
 # ---------------------------------------------------------------------------
@@ -369,6 +417,30 @@ def test_from_env_file_watcher_disabled_via_env(
     assert config.sync.file_watcher_enabled is False
 
 
+def test_from_env_root_floor_disabled_via_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """FILE_WATCHER_ROOT_FLOOR=false sets file_watcher_root_floor=False."""
+    from markdown_vault_mcp.config import ProjectConfig
+
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_FILE_WATCHER_ROOT_FLOOR", "false")
+    config = ProjectConfig.from_env()
+    assert config.sync.file_watcher_root_floor is False
+
+
+def test_from_env_root_floor_defaults_true(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An unset FILE_WATCHER_ROOT_FLOOR defaults to True."""
+    from markdown_vault_mcp.config import ProjectConfig
+
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    monkeypatch.delenv("MARKDOWN_VAULT_MCP_FILE_WATCHER_ROOT_FLOOR", raising=False)
+    config = ProjectConfig.from_env()
+    assert config.sync.file_watcher_root_floor is True
+
+
 def test_from_env_file_watcher_debounce_custom(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -482,6 +554,236 @@ def test_lifespan_skips_watcher_when_git_pull_active(tmp_path: Path) -> None:
     asyncio.run(_run())
 
 
+# ---------------------------------------------------------------------------
+# _derive_watch_roots (scoped watch-root computation)
+# ---------------------------------------------------------------------------
+
+
+def _root_names(roots: list[_WatchRoot]) -> set[str]:
+    """Return the basenames of the recursive roots in *roots*."""
+    return {root.path.name for root in roots if root.recursive}
+
+
+def test_derive_watch_roots_prunes_anchored_top_level_dir(tmp_path: Path) -> None:
+    """An anchored ``PREFIX/**`` exclude prunes that top-level dir's watch."""
+    (tmp_path / "go").mkdir()
+    (tmp_path / "notes").mkdir()
+    roots = _derive_watch_roots(tmp_path, ["go/**"])
+    names = _root_names(roots)
+    assert "go" not in names, "an anchored-excluded top-level dir must not be watched"
+    assert "notes" in names, "a non-excluded top-level dir must be watched recursively"
+
+
+def test_derive_watch_roots_keeps_top_level_anydepth_name(tmp_path: Path) -> None:
+    """A ``**/NAME/**`` exclude does NOT prune a *top-level* dir named NAME.
+
+    ``_should_prune_dir`` (the reused source of truth) only prunes ``NAME`` when
+    it is a non-leading component, because ``**/node_modules/**`` does not match
+    root-level ``node_modules/file.md``. A top-level ``node_modules`` therefore
+    still gets a recursive watch; locking this in guards the shared semantics.
+    """
+    (tmp_path / "node_modules").mkdir()
+    roots = _derive_watch_roots(tmp_path, ["**/node_modules/**"])
+    assert "node_modules" in _root_names(roots)
+
+
+def test_derive_watch_roots_keeps_dot_root_with_scoped_exclude(tmp_path: Path) -> None:
+    """A dot-root like ``.claude`` is watched recursively when only a subtree is
+    excluded (``.claude/plugins/**`` prunes ``.claude/plugins`` but not
+    ``.claude`` itself)."""
+    (tmp_path / ".claude").mkdir()
+    roots = _derive_watch_roots(tmp_path, [".claude/plugins/**"])
+    assert ".claude" in _root_names(roots)
+
+
+def test_derive_watch_roots_always_appends_non_recursive_source_dir(
+    tmp_path: Path,
+) -> None:
+    """The non-recursive ``source_dir`` root is always present and last."""
+    (tmp_path / "notes").mkdir()
+    roots = _derive_watch_roots(tmp_path, ["go/**"])
+    assert roots[-1] == _WatchRoot(tmp_path, recursive=False)
+    assert sum(1 for r in roots if not r.recursive) == 1
+
+
+def test_derive_watch_roots_skips_plain_files(tmp_path: Path) -> None:
+    """A plain (non-directory) child does not become a watch root."""
+    (tmp_path / "top.md").write_text("x")
+    (tmp_path / "notes").mkdir()
+    roots = _derive_watch_roots(tmp_path, None)
+    assert all(r.path.name != "top.md" for r in roots)
+    assert _root_names(roots) == {"notes"}
+
+
+def test_derive_watch_roots_falls_back_on_enumeration_error(tmp_path: Path) -> None:
+    """An unreadable/vanished source_dir yields just the non-recursive root."""
+    missing = tmp_path / "gone"
+    roots = _derive_watch_roots(missing, None)
+    assert roots == [_WatchRoot(missing, recursive=False)]
+
+
+def test_derive_watch_roots_root_floor_false_omits_non_recursive_root(
+    tmp_path: Path,
+) -> None:
+    """root_floor=False drops the non-recursive floor but keeps recursive roots.
+
+    The recursive roots derived from subdirs are identical to the root_floor=True
+    result; only the non-recursive ``source_dir`` floor is removed.
+    """
+    (tmp_path / "notes").mkdir()
+    with_floor = _derive_watch_roots(tmp_path, None)
+    without_floor = _derive_watch_roots(tmp_path, None, root_floor=False)
+    assert all(r.recursive for r in without_floor), "no non-recursive root expected"
+    assert _WatchRoot(tmp_path, recursive=False) not in without_floor
+    recursive_with = [r for r in with_floor if r.recursive]
+    assert without_floor == recursive_with, "recursive roots must be unchanged"
+
+
+def test_derive_watch_roots_root_floor_false_fallback_is_empty(tmp_path: Path) -> None:
+    """root_floor=False on a vanished source_dir yields [] (no floor re-added)."""
+    missing = tmp_path / "gone"
+    assert _derive_watch_roots(missing, None, root_floor=False) == []
+
+
+# ---------------------------------------------------------------------------
+# _is_hidden_relative_to_root (hiddenness relative to the delivering root)
+# ---------------------------------------------------------------------------
+
+
+def test_is_hidden_relative_to_root_dot_root_delivers_descendant() -> None:
+    """A non-dot descendant of a watched dot-root is delivered (not hidden)."""
+    assert (
+        _is_hidden_relative_to_root(
+            "/root/.claude/projects/x/memory/n.md", Path("/root/.claude")
+        )
+        is False
+    )
+
+
+def test_is_hidden_relative_to_root_dot_root_drops_git_child() -> None:
+    """A ``.git`` child below a watched dot-root is still ignored."""
+    assert (
+        _is_hidden_relative_to_root("/root/.claude/.git/HEAD", Path("/root/.claude"))
+        is True
+    )
+
+
+def test_is_hidden_relative_to_root_empty_remainder_is_dropped() -> None:
+    """The watched dir itself (empty remainder → DirModified) is ignored."""
+    assert _is_hidden_relative_to_root("/root/.claude", Path("/root/.claude")) is True
+
+
+def test_is_hidden_relative_to_root_outside_root_is_dropped() -> None:
+    """A path not under the watch root is ignored (delivered by another root)."""
+    assert _is_hidden_relative_to_root("/other/note.md", Path("/root/.claude")) is True
+
+
+# ---------------------------------------------------------------------------
+# Handler bound to a dot-root (the #558 delivery fix)
+# ---------------------------------------------------------------------------
+
+
+def test_handler_on_dot_root_delivers_non_dot_descendant(tmp_path: Path) -> None:
+    """A handler scheduled on a dot-root schedules for a non-dot descendant."""
+    dot_root = tmp_path / ".claude"
+    calls: list[int] = []
+    handler = _VaultEventHandler(lambda: calls.append(1), dot_root)
+    handler.on_any_event(
+        FileModifiedEvent(str(dot_root / "projects" / "x" / "memory" / "n.md"))
+    )
+    assert calls == [1], "dot-root descendant must schedule a reindex"
+
+
+def test_handler_on_dot_root_drops_git_child(tmp_path: Path) -> None:
+    """A handler on a dot-root does NOT schedule for a ``.git`` child under it."""
+    dot_root = tmp_path / ".claude"
+    calls: list[int] = []
+    handler = _VaultEventHandler(lambda: calls.append(1), dot_root)
+    handler.on_any_event(FileModifiedEvent(str(dot_root / ".git" / "HEAD")))
+    assert calls == [], ".git below a watched dot-root must not schedule"
+
+
+# ---------------------------------------------------------------------------
+# Preserved source_dir-rooted behavior (old single-watch code path)
+# ---------------------------------------------------------------------------
+
+
+def test_handler_on_source_dir_drops_git_head(tmp_path: Path) -> None:
+    """A handler bound to source_dir still drops ``.git/HEAD``."""
+    handler, calls = _record_handler(tmp_path)
+    handler.on_any_event(FileModifiedEvent(str(tmp_path / ".git" / "HEAD")))
+    assert calls == []
+
+
+def test_handler_on_source_dir_drops_root_dirmodified(tmp_path: Path) -> None:
+    """A handler bound to source_dir still drops the root DirModified (empty
+    remainder)."""
+    handler, calls = _record_handler(tmp_path)
+    handler.on_any_event(DirModifiedEvent(str(tmp_path)))
+    assert calls == []
+
+
+def test_handler_on_source_dir_delivers_root_note(tmp_path: Path) -> None:
+    """A handler bound to source_dir still delivers a root-level ``note.md``."""
+    handler, calls = _record_handler(tmp_path)
+    handler.on_any_event(FileModifiedEvent(str(tmp_path / "note.md")))
+    assert calls == [1]
+
+
+# ---------------------------------------------------------------------------
+# End-to-end: watched subdir created before start fires on_change
+# ---------------------------------------------------------------------------
+
+
+def test_file_in_watched_subdir_created_before_start_triggers(tmp_path: Path) -> None:
+    """A file written into a subdir that existed before start() fires on_change.
+
+    The subdir gets its own recursive watch root at start(), so mutations deep
+    inside it are delivered (the core #558 scoped-watch behavior).
+    """
+    subdir = tmp_path / "notes"
+    subdir.mkdir()
+    called = threading.Event()
+    watcher = _make_watcher(tmp_path, lambda: called.set())
+    watcher.start()
+    try:
+        (subdir / "deep.md").write_text("content")
+        assert called.wait(timeout=2.0), "on_change should fire for watched-subdir file"
+    finally:
+        watcher.stop()
+
+
+# ---------------------------------------------------------------------------
+# Farm layout: all-symlink children do not crash start() (#508)
+# ---------------------------------------------------------------------------
+
+
+def test_symlink_farm_layout_does_not_crash(tmp_path: Path) -> None:
+    """A source_dir whose children are symlinks to real dirs starts cleanly.
+
+    Whether watchdog's FSEvents observer follows the links to their targets is
+    platform-dependent; the contract here is only that start() does not raise
+    and the non-recursive source_dir floor watch is always scheduled.
+    """
+    targets = tmp_path / "targets"
+    targets.mkdir()
+    farm = tmp_path / "farm"
+    farm.mkdir()
+    for name in ("alpha", "beta", "gamma"):
+        real = targets / name
+        real.mkdir()
+        (real / "note.md").write_text("x")
+        (farm / name).symlink_to(real, target_is_directory=True)
+
+    # is_dir() follows the links, so each becomes a candidate recursive root.
+    roots = _derive_watch_roots(farm, None)
+    assert _WatchRoot(farm, recursive=False) in roots, "floor watch must be present"
+
+    watcher = _make_watcher(farm, lambda: None)
+    watcher.start()  # must not raise even if a symlinked-child schedule fails
+    watcher.stop()
+
+
 def test_lifespan_skips_watcher_when_webhook_active(tmp_path: Path) -> None:
     """The lifespan does not start the watcher when a webhook secret is configured."""
     import asyncio
@@ -505,3 +807,85 @@ def test_lifespan_skips_watcher_when_webhook_active(tmp_path: Path) -> None:
                 mock_start.assert_not_called()
 
     asyncio.run(_run())
+
+
+# ---------------------------------------------------------------------------
+# root_floor knob: start() log line observability
+# ---------------------------------------------------------------------------
+
+
+def test_start_log_line_reports_floor_on_by_default(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The default start() INFO line reports floor=on and lists the /(root) floor."""
+    import logging
+
+    (tmp_path / "notes").mkdir()
+    watcher = _make_watcher(tmp_path, lambda: None)
+    with caplog.at_level(logging.INFO, logger="markdown_vault_mcp._file_watcher"):
+        watcher.start()
+    watcher.stop()
+    assert "floor=on" in caplog.text
+    assert "/(root)" in caplog.text
+
+
+def test_start_log_line_reports_floor_off_when_disabled(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """With root_floor=False the INFO line reports floor=off and no /(root) root."""
+    import logging
+
+    (tmp_path / "notes").mkdir()
+    watcher = VaultFileWatcher(
+        tmp_path, lambda: None, debounce_s=_DEBOUNCE, root_floor=False
+    )  # type: ignore[arg-type]
+    with caplog.at_level(logging.INFO, logger="markdown_vault_mcp._file_watcher"):
+        watcher.start()
+    watcher.stop()
+    assert "floor=off" in caplog.text
+    assert "/(root)" not in caplog.text
+
+
+# ---------------------------------------------------------------------------
+# root_floor knob: end-to-end delivery behavior
+# ---------------------------------------------------------------------------
+
+
+def test_root_floor_false_still_delivers_watched_subdir_file(tmp_path: Path) -> None:
+    """With root_floor=False a file in a pre-existing subdir still fires on_change.
+
+    The subdir keeps its own recursive watch; only the source_dir floor is gone.
+    """
+    subdir = tmp_path / "notes"
+    subdir.mkdir()
+    called = threading.Event()
+    watcher = VaultFileWatcher(
+        tmp_path, lambda: called.set(), debounce_s=_DEBOUNCE, root_floor=False
+    )  # type: ignore[arg-type]
+    watcher.start()
+    try:
+        (subdir / "note.md").write_text("content")
+        assert called.wait(timeout=2.0), "on_change should fire for watched-subdir file"
+    finally:
+        watcher.stop()
+
+
+def test_root_floor_false_ignores_root_level_file(tmp_path: Path) -> None:
+    """With root_floor=False a root-level note.md does NOT fire on_change.
+
+    No watch is rooted at source_dir, so a direct-child write is not delivered
+    (root-level files rely on scans under this knob).
+    """
+    (tmp_path / "notes").mkdir()
+    called = threading.Event()
+    watcher = VaultFileWatcher(
+        tmp_path, lambda: called.set(), debounce_s=_DEBOUNCE, root_floor=False
+    )  # type: ignore[arg-type]
+    watcher.start()
+    try:
+        (tmp_path / "note.md").write_text("content")
+        assert not called.wait(timeout=0.4), (
+            "on_change must not fire for a root-level file when floor is off"
+        )
+    finally:
+        watcher.stop()

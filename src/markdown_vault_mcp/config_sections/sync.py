@@ -9,10 +9,18 @@ from markdown_vault_mcp.exceptions import ConfigurationError
 
 @dataclass(frozen=True)
 class SyncConfig:
-    """File-watcher + GitHub-webhook settings for external changes."""
+    """File-watcher + GitHub-webhook settings for external changes.
+
+    ``file_watcher_root_floor`` (default True) controls the non-recursive
+    ``source_dir`` floor watch. Disable it (env
+    ``MARKDOWN_VAULT_MCP_FILE_WATCHER_ROOT_FLOOR=false``) on deployments that
+    need zero ``source_dir``-rooted FSEvents registration (macOS TCC), accepting
+    that root-level files are then only picked up by scans.
+    """
 
     file_watcher_enabled: bool = True
     file_watcher_debounce_s: float = 2.0
+    file_watcher_root_floor: bool = True
     github_webhook_secret: str | None = None
 
     def __post_init__(self) -> None:
@@ -46,8 +54,12 @@ class SyncConfig:
         from markdown_vault_mcp.config_sections._helpers import env, env_float
 
         raw_fw = env(prefix, "FILE_WATCHER")
+        raw_floor = env(prefix, "FILE_WATCHER_ROOT_FLOOR")
         return cls(
             file_watcher_enabled=parse_bool(raw_fw) if raw_fw is not None else True,
             file_watcher_debounce_s=env_float(prefix, "FILE_WATCHER_DEBOUNCE_S", 2.0),
+            file_watcher_root_floor=(
+                parse_bool(raw_floor) if raw_floor is not None else True
+            ),
             github_webhook_secret=env(prefix, "GITHUB_WEBHOOK_SECRET") or None,
         )

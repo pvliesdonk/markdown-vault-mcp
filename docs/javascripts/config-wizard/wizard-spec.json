@@ -790,6 +790,14 @@
       "advancedGroup": "File watcher"
     },
     {
+      "id": "file_watcher_root_floor",
+      "label": "Watch the source directory root",
+      "help": "Keep the non-recursive watch on the vault root so root-level file changes trigger a reindex. Disable on macOS if the recursive FSEvents stream over the home tree triggers repeated 'access data from other apps' prompts; root-level files are then only picked up by scans.",
+      "type": "bool",
+      "var": "MARKDOWN_VAULT_MCP_FILE_WATCHER_ROOT_FLOOR",
+      "advancedGroup": "File watcher"
+    },
+    {
       "id": "transfer_ttl_default_s",
       "label": "Transfer TTL default (s)",
       "type": "number",

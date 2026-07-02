@@ -167,6 +167,8 @@ def make_vault_lifespan(config: ProjectConfig) -> Any:
                 config.source_dir,
                 _on_file_change,
                 debounce_s=config.sync.file_watcher_debounce_s,
+                exclude_patterns=config.indexing.exclude_patterns,
+                root_floor=config.sync.file_watcher_root_floor,
             )
             file_watcher.start()
         elif not config.sync.file_watcher_enabled:

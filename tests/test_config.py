@@ -1697,7 +1697,12 @@ class TestSyncConfigFromEnv:
     def test_defaults(self, monkeypatch):
         from markdown_vault_mcp.config_sections import SyncConfig
 
-        for k in ("FILE_WATCHER", "FILE_WATCHER_DEBOUNCE_S", "GITHUB_WEBHOOK_SECRET"):
+        for k in (
+            "FILE_WATCHER",
+            "FILE_WATCHER_DEBOUNCE_S",
+            "FILE_WATCHER_ROOT_FLOOR",
+            "GITHUB_WEBHOOK_SECRET",
+        ):
             monkeypatch.delenv(f"MARKDOWN_VAULT_MCP_{k}", raising=False)
         cfg = SyncConfig.from_env("MARKDOWN_VAULT_MCP")
         assert cfg == SyncConfig()
@@ -1707,6 +1712,22 @@ class TestSyncConfigFromEnv:
 
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_FILE_WATCHER", "false")
         assert SyncConfig.from_env("MARKDOWN_VAULT_MCP").file_watcher_enabled is False
+
+    def test_file_watcher_root_floor_false(self, monkeypatch):
+        """FILE_WATCHER_ROOT_FLOOR=false sets file_watcher_root_floor=False."""
+        from markdown_vault_mcp.config_sections import SyncConfig
+
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_FILE_WATCHER_ROOT_FLOOR", "false")
+        cfg = SyncConfig.from_env("MARKDOWN_VAULT_MCP")
+        assert cfg.file_watcher_root_floor is False
+
+    def test_file_watcher_root_floor_default_true(self, monkeypatch):
+        """An unset FILE_WATCHER_ROOT_FLOOR defaults to True."""
+        from markdown_vault_mcp.config_sections import SyncConfig
+
+        monkeypatch.delenv("MARKDOWN_VAULT_MCP_FILE_WATCHER_ROOT_FLOOR", raising=False)
+        cfg = SyncConfig.from_env("MARKDOWN_VAULT_MCP")
+        assert cfg.file_watcher_root_floor is True
 
     def test_debounce_invalid_raises(self, monkeypatch):
         """A non-numeric FILE_WATCHER_DEBOUNCE_S raises (no warn-and-default; #638)."""
