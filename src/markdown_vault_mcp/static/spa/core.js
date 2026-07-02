@@ -191,7 +191,7 @@ app.onteardown = () => {
   return {};
 };
 
-/*@@FILE:views/context.js@@*//*@@FILE:views/graph.js@@*//*@@FILE:views/browser.js@@*/// ── Connect ──────────────────────────────────────────────────────────────
+/*@@FILE:views/context.js@@*//*@@FILE:views/graph.js@@*//*@@FILE:views/browser.js@@*//*@@FILE:views/note.js@@*/// ── Connect ──────────────────────────────────────────────────────────────
 await app.connect();
 connected = true;
 const hostContext = app.getHostContext();

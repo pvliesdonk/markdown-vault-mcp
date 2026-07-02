@@ -1021,13 +1021,10 @@ app.onteardown = () => {
       .replace(/"/g, '&quot;');
   }
 
-  let currentPreviewPath = null;
-  let currentPreviewData = null;
   let treeDataCache = {};
   let isSearchMode = false;
 
   const treeEl = document.getElementById('browser-tree');
-  const previewEl = document.getElementById('browser-preview');
   const searchInput = document.getElementById('browser-search-input');
   const searchClear = document.getElementById('browser-search-clear');
 
@@ -1081,7 +1078,7 @@ app.onteardown = () => {
       noteDiv.textContent = n.title || n.path;
       noteDiv.title = n.path;
       noteDiv.dataset.path = n.path;
-      noteDiv.addEventListener('click', () => loadPreview(n.path));
+      noteDiv.addEventListener('click', () => window.loadPreview(n.path));
       parentEl.appendChild(noteDiv);
     }
   }
@@ -1092,14 +1089,81 @@ app.onteardown = () => {
     renderTree(data, treeEl);
   }
 
+  // Search
+  let searchTimeout = null;
+  searchInput.addEventListener('input', () => {
+    clearTimeout(searchTimeout);
+    const q = searchInput.value.trim();
+    if (!q) { exitSearch(); return; }
+    searchTimeout = setTimeout(() => doSearch(q), 300);
+  });
+
+  async function doSearch(query) {
+    isSearchMode = true;
+    searchClear.style.display = '';
+    try {
+      const result = await app.callServerTool({
+        name: 'vault___vault_search', arguments: { query, mode: 'hybrid', limit: 20 }
+      });
+      const data = parseToolResult(result) || [];
+      treeEl.innerHTML = '';
+      for (const r of data) {
+        const div = document.createElement('div');
+        div.className = 'search-result';
+        div.innerHTML = '<div class="search-result-title">' + escHtml(r.title || r.path) + '</div>'
+          + '<div class="search-result-snippet">' + escHtml(r.snippet || '') + '</div>';
+        div.addEventListener('click', () => window.loadPreview(r.path));
+        treeEl.appendChild(div);
+      }
+      if (data.length === 0) {
+        treeEl.innerHTML = '<div class="placeholder" style="padding:12px">No results</div>';
+      }
+    } catch (err) {
+      treeEl.innerHTML = '<div class="placeholder" style="padding:12px">Search error</div>';
+    }
+  }
+
+  function exitSearch() {
+    isSearchMode = false;
+    searchClear.style.display = 'none';
+    searchInput.value = '';
+    loadRootTree();
+  }
+
+  searchClear.addEventListener('click', exitSearch);
+
+  // Auto-load when browse tab is selected
+  window.addEventListener('vault-tab-changed', (e) => {
+    if (e.detail.tab === 'browse' && treeEl.children.length === 0 && !isSearchMode) {
+      loadRootTree();
+    }
+  });
+
+  window.loadBrowser = loadRootTree;
+})();
+// ── Note Preview View ────────────────────────────────────────────────────
+(function() {
+  function escHtml(s) {
+    return String(s ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  let currentPreviewPath = null;
+  let currentPreviewData = null;
+
+  const previewEl = document.getElementById('browser-preview');
+
   async function loadPreview(path, { switchToNote = true } = {}) {
     currentPreviewPath = path;
     currentPath = path; // sync shared state
     // Show the Note tab button; switch to it unless caller opts out
     document.getElementById('note-tab-btn').classList.add('visible');
     if (switchToNote) switchTab('note');
-    // Highlight active note in tree
-    treeEl.querySelectorAll('.tree-note').forEach(el => {
+    // Highlight active note in the browser tree
+    document.getElementById('browser-tree')?.querySelectorAll('.tree-note').forEach(el => {
       el.classList.toggle('active', el.dataset.path === path);
     });
 
@@ -1112,11 +1176,11 @@ app.onteardown = () => {
       let html = '<div class="preview-header">';
       html += '<h2>' + escHtml(data.title || path) + '</h2>';
       html += '<div class="preview-actions">';
-      html += '<button class="action-btn action-btn--secondary" id="preview-browse-btn" title="Back to Browse">\u2190 Browse</button>';
-      html += '<button class="action-btn" id="preview-send-btn" title="Send to Claude">\uD83D\uDCAC Send</button>';
-      html += '<button class="action-btn action-btn--secondary" id="preview-ctx-btn" title="Show Context">\uD83D\uDD0D Context</button>';
-      html += '<button class="action-btn action-btn--secondary" id="preview-graph-btn" title="Show in Graph">\uD83D\uDD17 Graph</button>';
-      html += '<button class="edit-btn-disabled" title="Coming soon" disabled>\u270F Edit</button>';
+      html += '<button class="action-btn action-btn--secondary" id="preview-browse-btn" title="Back to Browse">← Browse</button>';
+      html += '<button class="action-btn" id="preview-send-btn" title="Send to Claude">💬 Send</button>';
+      html += '<button class="action-btn action-btn--secondary" id="preview-ctx-btn" title="Show Context">🔍 Context</button>';
+      html += '<button class="action-btn action-btn--secondary" id="preview-graph-btn" title="Show in Graph">🔗 Graph</button>';
+      html += '<button class="edit-btn-disabled" title="Coming soon" disabled>✏ Edit</button>';
       html += '</div></div>';
 
       // Frontmatter
@@ -1167,49 +1231,6 @@ app.onteardown = () => {
     }
   }
 
-  // Search
-  let searchTimeout = null;
-  searchInput.addEventListener('input', () => {
-    clearTimeout(searchTimeout);
-    const q = searchInput.value.trim();
-    if (!q) { exitSearch(); return; }
-    searchTimeout = setTimeout(() => doSearch(q), 300);
-  });
-
-  async function doSearch(query) {
-    isSearchMode = true;
-    searchClear.style.display = '';
-    try {
-      const result = await app.callServerTool({
-        name: 'vault___vault_search', arguments: { query, mode: 'hybrid', limit: 20 }
-      });
-      const data = parseToolResult(result) || [];
-      treeEl.innerHTML = '';
-      for (const r of data) {
-        const div = document.createElement('div');
-        div.className = 'search-result';
-        div.innerHTML = '<div class="search-result-title">' + escHtml(r.title || r.path) + '</div>'
-          + '<div class="search-result-snippet">' + escHtml(r.snippet || '') + '</div>';
-        div.addEventListener('click', () => loadPreview(r.path));
-        treeEl.appendChild(div);
-      }
-      if (data.length === 0) {
-        treeEl.innerHTML = '<div class="placeholder" style="padding:12px">No results</div>';
-      }
-    } catch (err) {
-      treeEl.innerHTML = '<div class="placeholder" style="padding:12px">Search error</div>';
-    }
-  }
-
-  function exitSearch() {
-    isSearchMode = false;
-    searchClear.style.display = 'none';
-    searchInput.value = '';
-    loadRootTree();
-  }
-
-  searchClear.addEventListener('click', exitSearch);
-
   // Listen for navigation events
   window.addEventListener('vault-navigate', (e) => {
     if ((e.detail.view === 'browse' || e.detail.view === 'note') && e.detail.path) {
@@ -1219,14 +1240,6 @@ app.onteardown = () => {
     }
   });
 
-  // Auto-load when browse tab is selected
-  window.addEventListener('vault-tab-changed', (e) => {
-    if (e.detail.tab === 'browse' && treeEl.children.length === 0 && !isSearchMode) {
-      loadRootTree();
-    }
-  });
-
-  window.loadBrowser = loadRootTree;
   window.loadPreview = loadPreview;
 })();
 // ── Connect ──────────────────────────────────────────────────────────────
