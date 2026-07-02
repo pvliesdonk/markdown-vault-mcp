@@ -614,7 +614,7 @@ Two-layer model:
 | `EditConflictError` | `edit()` | `old_text` not found or appears more than once. Includes optional diagnostic fields: `closest_match_line`, `first_diff_char`, `expected_snippet`, `found_snippet` |
 | `DocumentExistsError` | `rename()` | `new_path` already exists |
 | `ConcurrentModificationError` | `write()`, `edit()`, `delete()`, `rename()`, `write_attachment()` | `if_match` provided and current file hash does not match |
-| `EmbeddingsNotConfiguredError` | `build_embeddings()` | No `embedding_provider` or `embeddings_path` configured (a `ValueError` subclass, so `except ValueError` still catches it) |
+| `EmbeddingsNotConfiguredError` | `build_embeddings()`, `search()` (semantic/hybrid mode) | No `embedding_provider` or `embeddings_path` configured (a `ValueError` subclass, so `except ValueError` still catches it) |
 | `None` return | `read()` | Path escapes `source_dir` (traversal attempt) or file does not exist on disk |
 | `ValueError` | `edit()` | `old_text` is empty string |
 
