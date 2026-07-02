@@ -263,9 +263,9 @@ Backward compatibility: `MARKDOWN_VAULT_MCP_GIT_TOKEN` without `GIT_REPO_URL` st
 |----------|---------|-------------|
 | `MARKDOWN_VAULT_MCP_FILE_WATCHER` | `true` | Enable filesystem-event watcher for external changes; auto-disabled when git pull or webhook is active |
 | `MARKDOWN_VAULT_MCP_FILE_WATCHER_DEBOUNCE_S` | `2.0` | Seconds of quiet after the last event before triggering reindex |
-| `MARKDOWN_VAULT_MCP_FILE_WATCHER_ROOT_FLOOR` | `true` | Keep the non-recursive watch on the vault root; set `false` to register zero source-directory-rooted FSEvents streams (avoids repeated macOS access prompts on a `$HOME`-rooted vault), at the cost of root-level files relying on scans |
+| `MARKDOWN_VAULT_MCP_FILE_WATCHER_ROOT_FLOOR` | `true` | Keep the non-recursive watch on the vault root; set `false` to register zero source-directory-rooted `FSEvents` streams (avoids repeated macOS access prompts on a `$HOME`-rooted vault), at the cost of root-level files relying on scans |
 
-Requires the `watchdog` optional extra: `pip install 'markdown-vault-mcp[file-watcher]'`. Automatically disabled when `GIT_PULL_INTERVAL_S > 0` or `GITHUB_WEBHOOK_SECRET` is set. The watcher scopes one recursive watch per non-excluded top-level directory (not a single recursive watch on the root), so excluded subtrees are never registered and content under a deliberately-watched dot-directory delivers its own edits. See [docs/configuration.md](docs/configuration.md#file-watcher) for details.
+Requires the `watchdog` optional extra: `pip install 'markdown-vault-mcp[file-watcher]'`. Automatically disabled when `GIT_PULL_INTERVAL_S > 0` or `GITHUB_WEBHOOK_SECRET` is set. The watcher scopes one recursive watch per non-excluded top-level directory (not a single recursive watch on the root), so excluded directories are never registered and content under a deliberately watched dot-directory delivers its own edits. See [docs/configuration.md](docs/configuration.md#file-watcher) for details.
 
 ### Attachments
 
