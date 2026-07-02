@@ -1,4 +1,6 @@
 <!DOCTYPE html>
+<!-- GENERATED FILE — do not edit. Source lives in static/spa/*; regenerate with
+     `python scripts/build_spa.py`, then vendor with `python scripts/vendor_spa.py`. -->
 <html lang="en">
 <head>
 <meta charset="utf-8"/>
@@ -726,7 +728,6 @@ app.onteardown = () => {
   // Expose for cross-view use
   window.loadContext = loadContext;
 })();
-
 // ── Graph Explorer View ──────────────────────────────────────────────────
 (function() {
   let network = null;
@@ -1010,7 +1011,6 @@ app.onteardown = () => {
 
   window.loadGraph = loadGraph;
 })();
-
 // ── Vault Browser View ──────────────────────────────────────────────────
 (function() {
   function escHtml(s) {
@@ -1229,7 +1229,6 @@ app.onteardown = () => {
   window.loadBrowser = loadRootTree;
   window.loadPreview = loadPreview;
 })();
-
 // ── Connect ──────────────────────────────────────────────────────────────
 await app.connect();
 connected = true;

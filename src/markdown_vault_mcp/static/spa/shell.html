@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<!-- GENERATED FILE — do not edit. Source lives in static/spa/*; regenerate with
+     `python scripts/build_spa.py`, then vendor with `python scripts/vendor_spa.py`. -->
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Vault Explorer</title>
+<script src="https://unpkg.com/vis-network@10.0.2/standalone/umd/vis-network.min.js"></script>
+<script src="https://unpkg.com/marked@17.0.5/lib/marked.umd.js"></script>
+<script src="https://unpkg.com/dompurify@3.3.3/dist/purify.min.js"></script>
+<style>/*@@FILE:styles.css@@*/</style>
+</head>
+<body>
+<div class="app-container">
+  <div class="app-header">
+    <button class="fullscreen-btn" id="fullscreenBtn" style="display:none;"
+            title="Toggle fullscreen">&#x26F6; Fullscreen</button>
+  </div>
+  <div class="tab-bar" id="tabBar">
+    <button data-tab="context" class="active">Context</button>
+    <button data-tab="graph">Graph</button>
+    <button data-tab="browse">Browse</button>
+    <button data-tab="note" id="note-tab-btn" class="note-tab-btn">Note</button>
+  </div>
+  <div class="tab-panel active" id="panel-context" data-tab="context">
+    <div class="placeholder" id="context-placeholder">Select a note to view its context</div>
+    <div id="context-card" style="display:none;">
+      <div class="context-header">
+        <div class="context-title-row">
+          <h2 id="ctx-title"></h2>
+          <div class="context-actions">
+            <button class="action-btn action-btn--secondary" id="ctx-graph-btn" title="Show in Graph">&#x1F517; Graph</button>
+            <button class="action-btn action-btn--secondary" id="ctx-browse-btn" title="Open in Browser">&#x1F4C4; Browse</button>
+            <button class="action-btn" id="ctx-send-btn" title="Send to Claude">&#x1F4AC; Send</button>
+          </div>
+        </div>
+        <div class="context-meta">
+          <span id="ctx-path" class="meta-item"></span>
+          <span id="ctx-folder" class="meta-item"></span>
+          <span id="ctx-modified" class="meta-item"></span>
+        </div>
+      </div>
+      <div id="ctx-frontmatter" class="context-section collapsed-section"></div>
+      <div id="ctx-tags" class="context-section collapsed-section"></div>
+      <div id="ctx-backlinks" class="context-section collapsed-section"></div>
+      <div id="ctx-outlinks" class="context-section collapsed-section"></div>
+      <div id="ctx-similar" class="context-section collapsed-section"></div>
+      <div id="ctx-peers" class="context-section collapsed-section"></div>
+    </div>
+  </div>
+  <div class="tab-panel" id="panel-graph" data-tab="graph">
+    <div class="graph-toolbar" id="graph-toolbar">
+      <button class="action-btn" id="graph-send-btn" title="Send graph summary to Claude">&#x1F4AC; Send</button>
+      <button class="action-btn action-btn--secondary" id="graph-semantic-btn" title="Toggle semantic similarity edges">&#x223C; Semantic</button>
+      <button class="action-btn action-btn--secondary" id="graph-fullscreen-btn" title="Request fullscreen for graph">&#x26F6; Expand</button>
+    </div>
+    <div id="graph-container" style="flex:1;position:relative;">
+      <div id="graph-mini-card" class="graph-mini-card" style="display:none;"></div>
+    </div>
+  </div>
+  <div class="tab-panel" id="panel-browse" data-tab="browse">
+    <div class="browser-layout">
+      <div class="browser-sidebar">
+        <div class="browser-search">
+          <input type="text" id="browser-search-input" placeholder="Search vault..." />
+          <button id="browser-search-clear" style="display:none;" title="Clear search">&times;</button>
+        </div>
+        <div id="browser-tree" class="browser-tree"></div>
+      </div>
+    </div>
+  </div>
+  <div class="tab-panel" id="panel-note" data-tab="note">
+    <div class="browser-preview" id="browser-preview">
+      <div class="placeholder">Select a note from Browse to view it</div>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script type="module">/*@@FILE:core.js@@*/</script>
+</body>
+</html>
