@@ -114,8 +114,8 @@ def register(mcp: FastMCP) -> None:
         creating a near-duplicate.
 
         Raises:
-            ValueError: If mode is "semantic" or "hybrid" and no embedding
-                provider is configured.
+            EmbeddingsNotConfiguredError: If mode is "semantic" or "hybrid" and
+                no embedding provider is configured (a ``ValueError`` subclass).
         """
         drained = await _maybe_wait_for_drain(vault, wait_for_pending_writes, "search")
         gen_before = vault.index.write_generation()

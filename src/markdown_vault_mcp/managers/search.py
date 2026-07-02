@@ -21,6 +21,7 @@ from dataclasses import replace as _dc_replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Protocol, TypeVar
 
+from markdown_vault_mcp.exceptions import EmbeddingsNotConfiguredError
 from markdown_vault_mcp.managers._vector_loader import load_or_self_heal
 from markdown_vault_mcp.types import (
     AttachmentInfo,
@@ -366,9 +367,9 @@ class SearchManager:
         validate_path(path, self._source_dir)
 
     def _require_vectors(self) -> None:
-        """Raise ValueError if semantic search is not configured."""
+        """Raise :class:`EmbeddingsNotConfiguredError` if semantic search is unconfigured."""
         if self._embedding_provider is None or self._embeddings_path is None:
-            raise ValueError(
+            raise EmbeddingsNotConfiguredError(
                 "Semantic search requires both 'embedding_provider' and "
                 "'embeddings_path' to be configured."
             )
@@ -525,8 +526,9 @@ class SearchManager:
             by descending file score (max of section scores).
 
         Raises:
-            ValueError: If *mode* is ``"semantic"`` or ``"hybrid"`` but no
-                embedding provider or embeddings path is configured.
+            EmbeddingsNotConfiguredError: If *mode* is ``"semantic"`` or
+                ``"hybrid"`` but no embedding provider or embeddings path is
+                configured (a ``ValueError`` subclass).
         """
         eff_cap = (
             chunks_per_file if chunks_per_file is not None else self._chunks_per_file

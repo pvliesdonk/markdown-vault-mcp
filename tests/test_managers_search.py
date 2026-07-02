@@ -148,6 +148,19 @@ class TestSemanticSearch:
             search_mgr.search("hello", mode="hybrid")
 
 
+class TestSearchRequiresEmbeddings:
+    def test_semantic_search_unconfigured_raises_embeddings_not_configured(
+        self, search_mgr: SearchManager
+    ) -> None:
+        from markdown_vault_mcp.exceptions import EmbeddingsNotConfiguredError
+
+        with pytest.raises(EmbeddingsNotConfiguredError):
+            search_mgr.search("alpha", mode="semantic")
+        # Subclass of ValueError → historical contract preserved.
+        with pytest.raises(ValueError):
+            search_mgr.search("alpha", mode="hybrid")
+
+
 # ---------------------------------------------------------------------------
 # list
 # ---------------------------------------------------------------------------
