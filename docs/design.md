@@ -378,8 +378,13 @@ for built-in names, or pass a custom instance.
   `ReindexResult` instead of `added`; it is re-evaluated (and indexed, if it
   gained valid frontmatter) only when its content hash changes. Transient
   `OSError` skips are deliberately not recorded, so those files retry on
-  every scan. A skipped file deleted from disk is dropped silently; it was
-  never indexed, so it is not counted as `deleted`.
+  every scan. Descriptor-exhaustion errors (`EMFILE`/`ENFILE`) additionally
+  get up to three in-scan retries with a short backoff (0.05 s, 0.1 s,
+  0.2 s) before the file is dropped for that scan, and exhausted retries
+  log at `ERROR` (`hash_read_failed_after_retry`); every other `OSError`
+  keeps the single-attempt `WARNING` path. A skipped file deleted from disk
+  is dropped silently; it was never indexed, so it is not counted as
+  `deleted`.
   The surfaced deterministic skips (parse / encoding / missing-frontmatter /
   internal-error, but not exclude-pattern or transient `OSError`) are also
   recorded with a `{category, detail}` reason in the state file's

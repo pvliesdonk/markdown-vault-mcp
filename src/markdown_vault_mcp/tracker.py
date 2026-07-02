@@ -465,12 +465,16 @@ class ChangeTracker:
             OSError: The last error if a transient failure outlasts every
                 retry, or immediately for any non-transient ``OSError``.
         """
-        for sleep_s in _HASH_RETRY_SLEEPS_S:
+        attempt = 0
+        while True:
             try:
                 return self._compute_hash(path)
             except OSError as exc:
                 if exc.errno not in _TRANSIENT_HASH_ERRNOS:
                     raise
+                if attempt >= len(_HASH_RETRY_SLEEPS_S):
+                    raise
+                sleep_s = _HASH_RETRY_SLEEPS_S[attempt]
                 logger.debug(
                     "hash_read_retry path=%s errno=%s backoff=%ss",
                     path,
@@ -478,7 +482,7 @@ class ChangeTracker:
                     sleep_s,
                 )
                 time.sleep(sleep_s)
-        return self._compute_hash(path)
+                attempt += 1
 
     def _compute_hash(self, path: Path) -> str:
         """Compute the SHA256 hex digest of *path* using chunked reads.
