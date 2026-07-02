@@ -386,7 +386,19 @@ def register_prompts(
             continue
         defn = _load_builtin_prompt(md_name)
         if defn is not None:
-            _register_one_builtin_prompt(mcp, md_name, defn)
+            # Per-prompt backstop: a malformed built-in (missing def-dict key, or
+            # a mcp.prompt rejection) must not abort registration of its siblings
+            # (#799). A broken first-party built-in is a packaging defect, so log
+            # at ERROR to make it loud in CI/startup.
+            try:
+                _register_one_builtin_prompt(mcp, md_name, defn)
+            except Exception:
+                logger.error(
+                    "Built-in prompt %r failed to register — this is a packaging "
+                    "defect, please file a bug",
+                    md_name,
+                    exc_info=True,
+                )
 
     if "create_from_template" not in user_prompt_defs:
 
@@ -441,4 +453,15 @@ def register_prompts(
 
     # --- Pass 3: register user-defined prompts ---
     for name, defn in user_prompt_defs.items():
-        _register_one_user_prompt(mcp, name, defn)
+        # Per-prompt backstop: one malformed user prompt (missing def-dict key, or
+        # a mcp.prompt rejection) is skipped with a WARNING rather than aborting
+        # registration of the rest (#799). The helpers' own narrow
+        # ``except ValueError`` handlers still fire first for invalid signatures.
+        try:
+            _register_one_user_prompt(mcp, name, defn)
+        except Exception:
+            logger.warning(
+                "User prompt %r failed to register — skipping",
+                name,
+                exc_info=True,
+            )

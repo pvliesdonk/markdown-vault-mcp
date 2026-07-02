@@ -718,3 +718,253 @@ class TestProposeLinks:
         assert "7" in text
         assert "$scope" not in text
         assert "$per_note_limit" not in text
+
+
+class TestRegisterPromptsPerPromptGuard:
+    """register_prompts skips a malformed prompt and keeps registering siblings.
+
+    The per-prompt helpers can raise *outside* their narrow ``except ValueError``
+    handlers — a def-dict missing a key (``KeyError``) or a ``mcp.prompt(...)``
+    rejection. The loop backstop in ``register_prompts`` catches these so one bad
+    prompt does not abort registration of the rest (#799).
+    """
+
+    async def test_user_prompt_registration_failure_skips_and_warns(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A user def missing ``content`` (KeyError in the helper) is skipped with
+        a WARNING naming it; sibling user prompts still register."""
+        import logging
+
+        from fastmcp import FastMCP
+
+        from markdown_vault_mcp import _server_prompts
+        from markdown_vault_mcp._server_prompts import register_prompts
+
+        monkeypatch.setattr(
+            _server_prompts,
+            "_load_user_prompt_defs",
+            lambda _folder: {
+                # Missing "content" -> _register_one_user_prompt raises KeyError.
+                "bad": {"description": "b", "arguments": [], "tags": []},
+                "good": {
+                    "description": "g",
+                    "arguments": [],
+                    "tags": [],
+                    "content": "hello",
+                },
+            },
+        )
+        mcp = FastMCP("test")
+        with caplog.at_level(
+            logging.WARNING, logger="markdown_vault_mcp._server_prompts"
+        ):
+            register_prompts(mcp, templates_folder=None, prompts_folder="/whatever")
+
+        assert "User prompt 'bad' failed to register" in caplog.text
+        async with Client(mcp) as client:
+            names = {p.name for p in await client.list_prompts()}
+        assert "good" in names
+        assert "bad" not in names
+
+    async def test_builtin_prompt_registration_failure_skips_and_errors(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A built-in whose defn is missing ``description`` (KeyError in the
+        helper) is skipped at ERROR (packaging defect); other built-ins still
+        register."""
+        import logging
+
+        from fastmcp import FastMCP
+
+        from markdown_vault_mcp import _server_prompts
+        from markdown_vault_mcp._server_prompts import register_prompts
+
+        original = _server_prompts._load_builtin_prompt
+
+        def _fake_load(name: str) -> dict[str, object] | None:
+            if name == "summarize":
+                # Missing "description" -> _register_one_builtin_prompt raises.
+                return {"arguments": [], "tags": [], "icons": "", "content": "x"}
+            return original(name)
+
+        monkeypatch.setattr(_server_prompts, "_load_builtin_prompt", _fake_load)
+        mcp = FastMCP("test")
+        with caplog.at_level(
+            logging.ERROR, logger="markdown_vault_mcp._server_prompts"
+        ):
+            register_prompts(mcp, templates_folder=None, prompts_folder=None)
+
+        assert "Built-in prompt 'summarize' failed to register" in caplog.text
+        assert "packaging defect" in caplog.text
+        async with Client(mcp) as client:
+            names = {p.name for p in await client.list_prompts()}
+        assert "summarize" not in names
+        # A sibling built-in loaded normally is still registered.
+        assert "related" in names
+
+    async def test_guard_does_not_mask_helper_valueerror(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """The helper's own narrow ``except ValueError`` (invalid signature) still
+        fires its specific WARNING and returns — the loop backstop does not
+        double-log a generic 'failed to register'."""
+        import logging
+
+        from fastmcp import FastMCP
+
+        from markdown_vault_mcp import _server_prompts
+        from markdown_vault_mcp._server_prompts import register_prompts
+
+        monkeypatch.setattr(
+            _server_prompts,
+            "_load_user_prompt_defs",
+            lambda _folder: {
+                # Duplicate arg name -> _build_prompt_fn raises ValueError, caught
+                # by the helper's own handler (not the loop backstop).
+                "dupe": {
+                    "description": "d",
+                    "arguments": [
+                        {"name": "x", "required": True},
+                        {"name": "x", "required": True},
+                    ],
+                    "tags": [],
+                    "content": "$x",
+                },
+                "good2": {
+                    "description": "g",
+                    "arguments": [],
+                    "tags": [],
+                    "content": "hello",
+                },
+            },
+        )
+        mcp = FastMCP("test")
+        with caplog.at_level(
+            logging.WARNING, logger="markdown_vault_mcp._server_prompts"
+        ):
+            register_prompts(mcp, templates_folder=None, prompts_folder="/whatever")
+
+        assert "cannot form a valid signature" in caplog.text
+        assert "failed to register" not in caplog.text
+        async with Client(mcp) as client:
+            names = {p.name for p in await client.list_prompts()}
+        assert "good2" in names
+        assert "dupe" not in names
+
+    async def test_user_prompt_mcp_rejection_skips_and_warns(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A ``mcp.prompt(...)`` rejection at decoration time (raised *outside*
+        the helper's narrow ``except ValueError``) is caught by the loop
+        backstop: the user prompt is skipped with a WARNING; siblings register."""
+        import logging
+
+        from fastmcp import FastMCP
+
+        from markdown_vault_mcp import _server_prompts
+        from markdown_vault_mcp._server_prompts import register_prompts
+
+        original_build = _server_prompts._build_prompt_fn
+
+        def _reject_marked(
+            template: str, arg_defs: list, derive: object = None
+        ) -> object:
+            # A prompt whose first argument is named "reject" gets a **kwargs
+            # callable, which FastMCP rejects at mcp.prompt() decoration time.
+            if arg_defs and arg_defs[0].get("name") == "reject":
+
+                def _bad(**_kwargs: object) -> str:
+                    return template
+
+                return _bad
+            return original_build(template, arg_defs, derive)
+
+        monkeypatch.setattr(_server_prompts, "_build_prompt_fn", _reject_marked)
+        # Kill Pass-2 built-in noise so only the user prompts are exercised.
+        monkeypatch.setattr(_server_prompts, "_load_builtin_prompt", lambda _name: None)
+        monkeypatch.setattr(
+            _server_prompts,
+            "_load_user_prompt_defs",
+            lambda _folder: {
+                "bad": {
+                    "description": "b",
+                    "arguments": [{"name": "reject", "required": True}],
+                    "tags": [],
+                    "content": "$reject",
+                },
+                "good": {
+                    "description": "g",
+                    "arguments": [],
+                    "tags": [],
+                    "content": "hello",
+                },
+            },
+        )
+        mcp = FastMCP("test")
+        with caplog.at_level(
+            logging.WARNING, logger="markdown_vault_mcp._server_prompts"
+        ):
+            register_prompts(mcp, templates_folder=None, prompts_folder="/whatever")
+
+        assert "User prompt 'bad' failed to register" in caplog.text
+        async with Client(mcp) as client:
+            names = {p.name for p in await client.list_prompts()}
+        assert "good" in names
+        assert "bad" not in names
+
+    async def test_builtin_prompt_mcp_rejection_skips_and_errors(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A ``mcp.prompt(...)`` rejection for a built-in (raised *outside* the
+        helper's narrow ``except ValueError``) is caught by the loop backstop at
+        ERROR; other built-ins still register."""
+        import logging
+
+        from fastmcp import FastMCP
+
+        from markdown_vault_mcp import _server_prompts
+        from markdown_vault_mcp._server_prompts import register_prompts
+
+        original_build = _server_prompts._build_prompt_fn
+        original_load = _server_prompts._load_builtin_prompt
+
+        def _reject_marked(
+            template: str, arg_defs: list, derive: object = None
+        ) -> object:
+            if arg_defs and arg_defs[0].get("name") == "reject":
+
+                def _bad(**_kwargs: object) -> str:
+                    return template
+
+                return _bad
+            return original_build(template, arg_defs, derive)
+
+        def _load_with_bad_summarize(name: str) -> dict | None:
+            if name == "summarize":
+                return {
+                    "description": "s",
+                    "arguments": [{"name": "reject", "required": True}],
+                    "tags": [],
+                    "icons": "",
+                    "content": "$reject",
+                }
+            return original_load(name)
+
+        monkeypatch.setattr(_server_prompts, "_build_prompt_fn", _reject_marked)
+        monkeypatch.setattr(
+            _server_prompts, "_load_builtin_prompt", _load_with_bad_summarize
+        )
+        mcp = FastMCP("test")
+        with caplog.at_level(
+            logging.ERROR, logger="markdown_vault_mcp._server_prompts"
+        ):
+            register_prompts(mcp, templates_folder=None, prompts_folder=None)
+
+        assert "Built-in prompt 'summarize' failed to register" in caplog.text
+        assert "packaging defect" in caplog.text
+        async with Client(mcp) as client:
+            names = {p.name for p in await client.list_prompts()}
+        assert "summarize" not in names
+        # A sibling built-in (registered via the real _build_prompt_fn) survives.
+        assert "related" in names

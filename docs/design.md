@@ -1960,6 +1960,15 @@ built-in, the built-in is skipped and the user's version is registered.
 Domain-specific prompts (such as ``zettelkasten`` or ``para-triage``)
 can live outside the core server and be mounted at deployment time.
 
+**Registration robustness**: ``register_prompts()`` guards each prompt
+registration independently, so one malformed prompt is logged and skipped rather
+than aborting registration of the remaining prompts. Invalid argument names or a
+signature that cannot be built are caught inside the per-prompt helper and logged
+at ``WARNING`` for both built-in and user prompts. A failure that propagates out
+of the helper, such as a missing definition key or a ``mcp.prompt`` rejection, is
+caught by the loop backstop: at ``WARNING`` for a user prompt, and at ``ERROR``
+for a built-in, since a broken first-party prompt is a packaging defect.
+
 ## Configuration
 
 ### Phase 1: Python API Only
