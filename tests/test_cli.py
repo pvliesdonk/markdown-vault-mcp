@@ -51,6 +51,7 @@ def test_root_keeps_httpx_quiet_at_default_visible_at_debug() -> None:
     httpx_log = logging.getLogger("httpx")
     httpcore_log = logging.getLogger("httpcore")
     saved = (root.level, httpx_log.level, httpcore_log.level)
+    original_handlers = root.handlers[:]
     try:
         _root(verbose=False)
         assert httpx_log.level == logging.WARNING
@@ -63,6 +64,7 @@ def test_root_keeps_httpx_quiet_at_default_visible_at_debug() -> None:
         root.setLevel(saved[0])
         httpx_log.setLevel(saved[1])
         httpcore_log.setLevel(saved[2])
+        root.handlers[:] = original_handlers
 
 
 def test_serve_help_exits_zero() -> None:

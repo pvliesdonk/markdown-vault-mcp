@@ -47,9 +47,9 @@ def _root(
         handler.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
         root.addHandler(handler)
     # Quiet httpx/httpcore per-request INFO at the default level (#792); -v shows them.
-    _http_level = logging.NOTSET if verbose else logging.WARNING
-    logging.getLogger("httpx").setLevel(_http_level)
-    logging.getLogger("httpcore").setLevel(_http_level)
+    http_level = logging.NOTSET if verbose else logging.WARNING
+    logging.getLogger("httpx").setLevel(http_level)
+    logging.getLogger("httpcore").setLevel(http_level)
 
 
 @app.command()
