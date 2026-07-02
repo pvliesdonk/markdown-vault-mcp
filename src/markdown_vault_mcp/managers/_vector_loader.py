@@ -33,7 +33,9 @@ def load_or_self_heal(
     """Load the vector sidecar into the caller's slot, self-healing corruption.
 
     Returns the cached index if ``get_vectors()`` is already populated.
-    Otherwise deserialises it from ``{embeddings_path}.npy``/``.json``; on an
+    Otherwise deserialises it from the ``.npy``/``.json`` sidecars derived via
+    ``Path.with_suffix`` (a base that already carries an extension has it
+    replaced, not doubled); on an
     incompatible, corrupt, or incomplete sidecar
     (``VectorIndexCompatibilityError``, ``VectorIndexCorruptError``,
     ``json.JSONDecodeError``/``ValueError``, ``EOFError``,
@@ -42,8 +44,9 @@ def load_or_self_heal(
     (e.g. ``PermissionError``) are not caught and propagate.
 
     Args:
-        embeddings_path: Base path for the sidecar files (``.npy``/``.json``
-            are appended).
+        embeddings_path: Base path for the sidecar files; the ``.npy``/``.json``
+            sidecar paths are derived with ``Path.with_suffix`` (a base that
+            already carries an extension has it replaced, not doubled).
         embedding_provider: Provider attached to a freshly-built index.
         get_vectors: Reads the caller's cached index slot (``None`` if empty).
         set_vectors: Writes a loaded/empty index into the caller's slot.
@@ -94,7 +97,7 @@ def load_or_self_heal(
     # (Path.with_suffix), so a base path that already carries an extension
     # (e.g. EMBEDDINGS_PATH=embeddings.npy) resolves to the same file that was
     # saved. A string-append would probe embeddings.npy.npy, miss the real
-    # store, cold-build an empty index, and later overwrite the store (#736).
+    # store, cold-build an empty index, and later overwrite the store (#819).
     npy_path = embeddings_path.with_suffix(".npy")
     if npy_path.exists():
         try:

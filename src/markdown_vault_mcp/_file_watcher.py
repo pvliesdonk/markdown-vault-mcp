@@ -87,9 +87,9 @@ def _is_hidden_relative_to_root(abs_path: str, watch_root: Path) -> bool:
     under*, not relative to ``source_dir``. A deliberately-watched dot-root such
     as ``.claude`` delivers its non-dot descendants (the remainder carries no dot
     component), while genuinely hidden noise below any root (``.git``,
-    ``.markdown_vault_mcp``, editor swap dirs) is still dropped, and the
-    ``DirModifiedEvent`` watchdog fires on the watched dir itself (empty
-    remainder) is dropped.
+    ``.markdown_vault_mcp``, editor swap dirs) is still dropped, as is the
+    ``DirModifiedEvent`` the watchdog fires on the watched dir itself (empty
+    remainder).
 
     When there is a single non-dot watch root equal to ``source_dir`` this
     reduces to the old ``rel = path.relative_to(source_dir)`` behavior exactly.
@@ -175,8 +175,10 @@ def _derive_watch_roots(
         return [_WatchRoot(source_dir, recursive=False)] if root_floor else []
 
     for child in children:
-        # is_dir() follows symlinks, matching the 3.13+ followlinks semantics
-        # iter_markdown_files uses so watched roots and indexed files agree.
+        # is_dir() follows symlinks on all versions; iter_markdown_files walks
+        # with followlinks only on 3.13+. So watched roots and indexed files
+        # agree on 3.13+; on 3.11/3.12 a symlinked top-level dir may be watched
+        # though its files are not indexed (harmless: an extra watch).
         if not child.is_dir():
             continue
         if _should_prune_dir(child.name, anchored, anydepth):

@@ -905,7 +905,7 @@ class IndexManager:
             # Derive sidecar paths the way VectorIndex.load/save do
             # (Path.with_suffix), so an EMBEDDINGS_PATH that carries an
             # extension resolves to the real files instead of {path}.npy.npy
-            # and misreporting chunk_count=0 (#736).
+            # and misreporting chunk_count=0 (#819).
             npy_path = self._embeddings_path.with_suffix(".npy")
             if npy_path.exists():
                 json_path = self._embeddings_path.with_suffix(".json")
