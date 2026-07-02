@@ -738,6 +738,25 @@ def test_semantic_recall_of_best_document_is_independent_of_limit(
     assert "TARGET.md" in paths
 
 
+def test_hybrid_recall_of_best_document_is_independent_of_limit(
+    tmp_path: Path,
+) -> None:
+    """Hybrid's vector channel floors its candidate pool like semantic does.
+
+    The store has an empty FTS index, so the keyword channel contributes
+    nothing and TARGET (no keyword overlap) is reachable only through the
+    vector channel. TARGET's only chunk sits at global cosine rank 51. If the
+    vector channel inherits the keyword channel's floor-50 candidate limit, the
+    pool fills with the two large documents' chunks and TARGET never enters the
+    RRF merge at a small limit. The vector-side floor must be sized like the
+    semantic path so recall does not depend on the caller's limit.
+    """
+    mgr = _semantic_mgr_with_ranked_chunks(tmp_path / "embeddings")
+    results = mgr.search("q", mode="hybrid", limit=5, chunks_per_file=2)
+    paths = [r.path for r in results]
+    assert "TARGET.md" in paths
+
+
 def test_hybrid_search_caps_per_file_after_rrf(
     search_mgr_with_embeddings: SearchManager,
 ) -> None:

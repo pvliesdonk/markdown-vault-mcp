@@ -56,6 +56,13 @@ logger = logging.getLogger(__name__)
 # RRF constant — standard value recommended in the original paper.
 _RRF_K = 60
 
+# Floor for the vector-search candidate pool, applied by both the semantic and
+# the hybrid path. Vector search does a full linear scan and sort regardless of
+# limit (see VectorIndex.search), so a wide floor only costs the final slice,
+# not extra distance work. It keeps recall of the best-scoring documents from
+# depending on how large a limit the caller passed.
+_SEMANTIC_CANDIDATE_FLOOR = 1000
+
 # Regex for extracting query tokens (alphanumeric sequences).
 _QUERY_TOKEN_RE = _re.compile(r"[A-Za-z0-9]+")
 
@@ -712,15 +719,7 @@ class SearchManager:
         snippet_words: int,
     ) -> list[GroupedResult]:
         vectors = self._load_vectors()
-        # Floor the candidate pool well above the caller's limit so recall of
-        # the best-scoring documents does not depend on how large a limit was
-        # passed. A small limit with a low floor lets many chunks from a few
-        # large documents crowd out a smaller document whose best chunk ranks
-        # just past the floor, hiding it from the grouped results entirely.
-        # vector search does a full linear scan and sort regardless (see
-        # VectorIndex.search), so a wider pool only costs the slice, not extra
-        # distance computations.
-        candidate_limit = max(limit * (chunks_per_file + 4), 1000)
+        candidate_limit = max(limit * (chunks_per_file + 4), _SEMANTIC_CANDIDATE_FLOOR)
         raw = vectors.search(query, limit=candidate_limit)
 
         filtered: list[dict[str, Any]] = []
@@ -793,11 +792,20 @@ class SearchManager:
         snippet_words: int,
     ) -> list[GroupedResult]:
         """RRF merge of keyword and semantic results, then field-collapse."""
-        candidate_limit = max(limit * (chunks_per_file + 4), 50)
+        # The two channels size their candidate pools independently. FTS keeps a
+        # floor of 50 (a BM25 query does real work per candidate). The vector
+        # channel uses the same full-scan floor as _semantic_search, since it
+        # goes through the identical VectorIndex.search and the same recall cap
+        # applies: a floor-50 pool drops a document whose best chunk ranks just
+        # past 50 from the RRF merge at small limits.
+        fts_candidate_limit = max(limit * (chunks_per_file + 4), 50)
+        vec_candidate_limit = max(
+            limit * (chunks_per_file + 4), _SEMANTIC_CANDIDATE_FLOOR
+        )
 
         fts_raw: list[FTSResult] = self._fts.search(
             query,
-            limit=candidate_limit,
+            limit=fts_candidate_limit,
             filters=filters,
             folder=folder,
             snippet_words=None,
@@ -807,7 +815,7 @@ class SearchManager:
         )
 
         vectors = self._load_vectors()
-        vec_raw = vectors.search(query, limit=candidate_limit)
+        vec_raw = vectors.search(query, limit=vec_candidate_limit)
         vec_filtered: list[dict[str, Any]] = []
         for r in vec_raw:
             if folder is not None:
@@ -923,7 +931,7 @@ class SearchManager:
                 snippet_words=snippet_words,
                 folder=folder,
                 filters=filters,
-                candidate_limit=candidate_limit,
+                candidate_limit=fts_candidate_limit,
             )
 
         out: list[GroupedResult] = []
