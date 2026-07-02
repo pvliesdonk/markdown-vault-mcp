@@ -123,20 +123,69 @@ class _WatchRoot:
     recursive: bool
 
 
+def _resolve_internal_dirs(internal_dirs: Sequence[Path]) -> list[Path]:
+    """Resolve *internal_dirs*, dropping any that cannot be resolved.
+
+    Resolving up front lets :func:`_contains_internal_dir` compare against
+    realpaths, so a symlinked state dir still matches its watch-root candidate.
+
+    Args:
+        internal_dirs: Vault-internal directories to protect from watching.
+
+    Returns:
+        The resolvable directories as resolved paths.
+    """
+    resolved: list[Path] = []
+    for d in internal_dirs:
+        try:
+            resolved.append(d.resolve())
+        except OSError:
+            continue
+    return resolved
+
+
+def _contains_internal_dir(child: Path, internal_dirs: frozenset[Path]) -> bool:
+    """Return ``True`` if *child* is, or contains, a vault-internal write dir.
+
+    ``internal_dirs`` must already be resolved. A recursive watch on a directory
+    that is or contains the state / index / embeddings dir (or ``.git``) would
+    deliver the writes ``reindex`` makes into those paths, re-triggering itself;
+    such a directory is skipped entirely so the loop cannot form (#830).
+
+    Args:
+        child: Candidate top-level watch-root directory.
+        internal_dirs: Resolved vault-internal directories to protect.
+
+    Returns:
+        ``True`` when *child* should not be watched.
+    """
+    try:
+        child_resolved = child.resolve()
+    except OSError:
+        return False
+    return any(
+        d == child_resolved or d.is_relative_to(child_resolved) for d in internal_dirs
+    )
+
+
 def _derive_watch_roots(
     source_dir: Path,
     exclude_patterns: Sequence[str] | None,
     *,
     root_floor: bool = True,
+    internal_dirs: Sequence[Path] = (),
 ) -> list[_WatchRoot]:
     """Compute the set of watch roots to schedule for *source_dir*.
 
     Each immediate child directory of ``source_dir`` that the exclude patterns
     do not fully prune becomes a recursive watch root, so events deep inside a
     deliberately-watched dot-root (e.g. ``.claude/projects/x/memory/n.md``) are
-    delivered. When ``root_floor`` is True (default) the ``source_dir`` itself is
-    appended last as a non-recursive floor watch so root-level ``*.md`` changes
-    still trigger.
+    delivered. A child that is, or contains, one of ``internal_dirs`` (the
+    vault's own state / index / embeddings dir or ``.git``) is skipped so the
+    watcher does not observe the writes ``reindex`` makes into them, which would
+    close a self-feedback reindex loop (#830). When ``root_floor`` is True
+    (default) the ``source_dir`` itself is appended last as a non-recursive
+    floor watch so root-level ``*.md`` changes still trigger.
 
     When ``root_floor`` is False the floor is omitted, so no watch is rooted at
     ``source_dir`` (root-level files are then only picked up by scans). This is
@@ -155,6 +204,10 @@ def _derive_watch_roots(
             prune rules. ``None`` or empty prunes nothing.
         root_floor: Whether to append the non-recursive ``source_dir`` floor
             watch. ``False`` omits it on every path, including the fallback.
+        internal_dirs: Vault-internal directories (state / index / embeddings
+            dir, ``.git``) that must never be watched, so the writes ``reindex``
+            makes into them do not re-trigger the watcher. A top-level child
+            that is or contains one of these is skipped entirely.
 
     Returns:
         Watch roots to schedule, the non-recursive ``source_dir`` root last when
@@ -163,6 +216,7 @@ def _derive_watch_roots(
         ``[]`` when it is False.
     """
     anchored, anydepth = _dir_prune_rules(exclude_patterns or ())
+    protected = frozenset(_resolve_internal_dirs(internal_dirs))
     roots: list[_WatchRoot] = []
     try:
         children = sorted(source_dir.iterdir())
@@ -180,6 +234,8 @@ def _derive_watch_roots(
         if not child.is_dir():
             continue
         if _should_prune_dir(child.name, anchored, anydepth):
+            continue
+        if _contains_internal_dir(child, protected):
             continue
         roots.append(_WatchRoot(child, recursive=True))
 
@@ -249,9 +305,11 @@ class VaultFileWatcher:
     """Watch a vault directory for external file changes and call *on_change*.
 
     Debounces rapid bursts of filesystem events into a single callback.
-    Changes inside hidden directories (e.g. ``.git/``, ``.markdown_vault_mcp/``)
-    are silently ignored so git operations and state-file writes do not
-    trigger spurious reindexes.
+    The vault's own internal write dirs (state / index / embeddings dir and
+    ``.git``, passed as ``internal_dirs``) are never watched, so git operations
+    and the state-file write ``reindex`` makes on every run do not trigger a
+    self-feedback reindex loop.  User dot-roots (e.g. ``.claude/``) are still
+    watched recursively.
 
     A ``_stopped`` flag prevents watchdog events delivered *during* ``stop()``
     from resurrecting the debounce timer or invoking ``on_change`` after the
@@ -271,6 +329,10 @@ class VaultFileWatcher:
             watch (default ``True``).  ``False`` omits it, so no watch is rooted
             at ``source_dir`` and root-level files rely on scans (see
             :func:`_derive_watch_roots`).
+        internal_dirs: Vault-internal directories (state / index / embeddings
+            dir, ``.git``) that must never be watched, so ``reindex``'s writes
+            into them do not re-trigger the watcher (see
+            :func:`_derive_watch_roots`).
     """
 
     def __init__(
@@ -280,12 +342,14 @@ class VaultFileWatcher:
         debounce_s: float = 2.0,
         exclude_patterns: Sequence[str] | None = None,
         root_floor: bool = True,
+        internal_dirs: Sequence[Path] = (),
     ) -> None:
         self._source_dir = source_dir
         self._on_change = on_change
         self._debounce_s = debounce_s
         self._exclude_patterns = exclude_patterns
         self._root_floor = root_floor
+        self._internal_dirs = tuple(internal_dirs)
         self._observer: Any = None
         self._timer: threading.Timer | None = None
         self._lock = threading.Lock()
@@ -333,7 +397,10 @@ class VaultFileWatcher:
             self._stopped = False
 
         roots = _derive_watch_roots(
-            self._source_dir, self._exclude_patterns, root_floor=self._root_floor
+            self._source_dir,
+            self._exclude_patterns,
+            root_floor=self._root_floor,
+            internal_dirs=self._internal_dirs,
         )
         observer = Observer()
         scheduled: list[_WatchRoot] = []

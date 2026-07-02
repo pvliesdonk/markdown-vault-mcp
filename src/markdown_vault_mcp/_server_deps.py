@@ -163,12 +163,32 @@ def make_vault_lifespan(config: ProjectConfig) -> Any:
                 except Exception:
                     logger.error("file_watcher: reindex failed", exc_info=True)
 
+            # Never watch the vault's own write targets: reindex() rewrites the
+            # state file on every run, and a watch on its dir would re-trigger
+            # the watcher into a self-feedback loop (#830). .git is protected
+            # too so local git-write commits don't storm reindexes.
+            from markdown_vault_mcp.vault import _DEFAULT_STATE_SUBDIR
+
+            state_dir = (
+                config.indexing.state_path.parent
+                if config.indexing.state_path is not None
+                else config.source_dir / _DEFAULT_STATE_SUBDIR
+            )
+            internal_dirs = [config.source_dir / ".git", state_dir]
+            for extra in (
+                config.indexing.index_path,
+                config.indexing.embeddings_path,
+            ):
+                if extra is not None:
+                    internal_dirs.append(extra.parent)
+
             file_watcher = VaultFileWatcher(
                 config.source_dir,
                 _on_file_change,
                 debounce_s=config.sync.file_watcher_debounce_s,
                 exclude_patterns=config.indexing.exclude_patterns,
                 root_floor=config.sync.file_watcher_root_floor,
+                internal_dirs=internal_dirs,
             )
             file_watcher.start()
         elif not config.sync.file_watcher_enabled:

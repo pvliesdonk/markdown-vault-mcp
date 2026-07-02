@@ -622,6 +622,86 @@ def test_derive_watch_roots_falls_back_on_enumeration_error(tmp_path: Path) -> N
     assert roots == [_WatchRoot(missing, recursive=False)]
 
 
+def test_derive_watch_roots_skips_internal_state_and_git_dirs(tmp_path: Path) -> None:
+    """The vault's own state dir and ``.git`` are never watch roots (#830).
+
+    With no ``exclude_patterns`` the scoped-watch change would otherwise promote
+    every top-level dir — including the default state dir ``.markdown_vault_mcp``
+    (which ``reindex`` writes ``state.json`` into on every run) and ``.git`` — to
+    a recursive watch root, closing a self-feedback reindex loop. A deliberately
+    watched *user* dot-root like ``.claude`` must still be watched; only the
+    vault's internal write targets are skipped.
+    """
+    (tmp_path / ".markdown_vault_mcp").mkdir()
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".claude").mkdir()
+    roots = _derive_watch_roots(
+        tmp_path,
+        None,
+        internal_dirs=[tmp_path / ".markdown_vault_mcp", tmp_path / ".git"],
+    )
+    names = _root_names(roots)
+    assert ".markdown_vault_mcp" not in names, "state dir must not be a watch root"
+    assert ".git" not in names, ".git must not be a watch root"
+    assert ".claude" in names, "a user dot-root must still be watched"
+
+
+def test_derive_watch_roots_skips_top_level_dir_containing_internal_dir(
+    tmp_path: Path,
+) -> None:
+    """A top-level dir that *contains* an internal write dir is not watched.
+
+    Guards against reintroducing the loop when the state dir is configured
+    beneath a top-level directory: watching that directory recursively would
+    still deliver the state-file writes. The whole subtree is skipped so the
+    loop can never form (a limitation documented for nested state paths).
+    """
+    state_dir = tmp_path / "data" / "state"
+    state_dir.mkdir(parents=True)
+    roots = _derive_watch_roots(tmp_path, None, internal_dirs=[state_dir])
+    assert "data" not in _root_names(roots)
+
+
+def test_start_does_not_schedule_watch_on_internal_state_dir(tmp_path: Path) -> None:
+    """``start()`` forwards ``internal_dirs`` so the state dir is never scheduled.
+
+    Exercises the wiring, not just ``_derive_watch_roots``: a pre-existing state
+    dir (present before the watcher starts, as at lifespan startup) must not get
+    a recursive watch, while a sibling content dir must (#830).
+    """
+    (tmp_path / ".markdown_vault_mcp").mkdir()
+    (tmp_path / "notes").mkdir()
+
+    class _RecordingObserver:
+        def __init__(self) -> None:
+            self.scheduled: list[str] = []
+
+        def schedule(self, _handler: object, path: str, **_kwargs: object) -> None:
+            self.scheduled.append(path)
+
+        def start(self) -> None:
+            pass
+
+        def stop(self) -> None:
+            pass
+
+        def join(self, timeout: float | None = None) -> None:
+            pass
+
+    fake = _RecordingObserver()
+    watcher = VaultFileWatcher(
+        tmp_path,
+        lambda: None,  # type: ignore[arg-type]
+        internal_dirs=[tmp_path / ".markdown_vault_mcp"],
+    )
+    with patch("markdown_vault_mcp._file_watcher.Observer", lambda: fake):
+        watcher.start()
+        watcher.stop()
+
+    assert str(tmp_path / ".markdown_vault_mcp") not in fake.scheduled
+    assert str(tmp_path / "notes") in fake.scheduled
+
+
 def test_derive_watch_roots_root_floor_false_omits_non_recursive_root(
     tmp_path: Path,
 ) -> None:
