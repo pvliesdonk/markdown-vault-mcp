@@ -130,3 +130,33 @@ def test_check_reports_stale(
     (tmp_path / "app.src.html").write_text("<!DOCTYPE html>\nstale\n", encoding="utf-8")
     monkeypatch.setattr(build_spa, "_find_spa_dir", lambda: spa_copy)
     assert build_spa.main(["build_spa.py", "--check"]) == 1
+
+
+def _point_discovery_at(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Relocate the module ``__file__`` so ``_find_spa_dir`` globs under ``tmp_path/src``."""
+    monkeypatch.setattr(
+        build_spa, "__file__", str(tmp_path / "scripts" / "build_spa.py")
+    )
+
+
+def test_find_spa_dir_errors_when_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No ``src/*/static/spa/shell.html`` under the repo → loud SystemExit."""
+    _point_discovery_at(tmp_path, monkeypatch)
+    (tmp_path / "src").mkdir()
+    with pytest.raises(SystemExit, match=r"no .*shell\.html found under"):
+        build_spa._find_spa_dir()
+
+
+def test_find_spa_dir_errors_when_multiple(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """More than one ``spa/shell.html`` under the repo → loud SystemExit."""
+    _point_discovery_at(tmp_path, monkeypatch)
+    for pkg in ("a", "b"):
+        d = tmp_path / "src" / pkg / "static" / "spa"
+        d.mkdir(parents=True)
+        (d / "shell.html").write_text("<!DOCTYPE html>\n", encoding="utf-8")
+    with pytest.raises(SystemExit, match=r"multiple .*shell\.html found"):
+        build_spa._find_spa_dir()
