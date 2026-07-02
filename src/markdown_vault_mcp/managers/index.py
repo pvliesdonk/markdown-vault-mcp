@@ -125,6 +125,37 @@ class IndexManager:
         """
         return is_path_excluded(path, self._exclude_patterns)
 
+    def _discover_indexable_candidates(self) -> list[tuple[Path, str]]:
+        """Discover markdown files eligible for indexing, with relative paths.
+
+        Applies the per-file :meth:`_is_path_excluded` filter as the correctness
+        layer: ``iter_markdown_files`` prunes only directory-shaped exclude
+        patterns, so a file-shaped exclude (such as ``notes/*`` or ``*.draft.md``)
+        still needs the per-file check. Excluded files are therefore invisible
+        everywhere — neither skip-counted nor recorded in ``skipped_state``
+        (#257/#832) — matching ``detect_changes``. Non-files (such as broken
+        symlinks) and paths resolving outside ``source_dir`` are dropped with a
+        warning.
+
+        Returns:
+            ``(absolute_path, relative_posix_path)`` pairs for non-excluded
+            files, in discovery order.
+        """
+        candidates: list[tuple[Path, str]] = []
+        for abs_path in iter_markdown_files(self._source_dir, self._exclude_patterns):
+            if not abs_path.is_file():
+                continue
+            try:
+                rel_str = abs_path.relative_to(self._source_dir).as_posix()
+            except ValueError:
+                # Symlink target outside the vault — mirror detect_changes.
+                logger.warning("File outside source_dir, skipping: %s", abs_path)
+                continue
+            if self._is_path_excluded(rel_str):
+                continue
+            candidates.append((abs_path, rel_str))
+        return candidates
+
     def _require_vectors(self) -> None:
         """Raise :class:`EmbeddingsNotConfiguredError` if embeddings are unconfigured."""
         if self._embedding_provider is None or self._embeddings_path is None:
@@ -260,13 +291,14 @@ class IndexManager:
             if should_optimize(purged, len(rows)):
                 self._fts.optimize()
 
-        # Count how many files were skipped due to required_frontmatter.
-        # Prune excluded subtrees during discovery (the same walk scan_directory
-        # used for `notes`) so excluded files are never walked, hashed into
-        # skipped_state, or skip-counted. This matches detect_changes and the
-        # "excluded files are invisible" contract (#257).
-        all_files = list(iter_markdown_files(self._source_dir, self._exclude_patterns))
-        skipped = len(all_files) - len(notes)
+        # Count how many files were skipped (e.g. for required_frontmatter).
+        # Discovery prunes excluded *subtrees* and then drops any remaining
+        # excluded file via the per-file filter, so excluded files are invisible
+        # everywhere — never skip-counted or recorded in skipped_state — matching
+        # detect_changes and the "excluded files are invisible" contract
+        # (#257/#832).
+        candidates = self._discover_indexable_candidates()
+        skipped = len(candidates) - len(notes)
 
         # Resolve vault-wide wikilinks now that all documents are indexed.
         self._fts.resolve_vault_wikilinks()
@@ -276,15 +308,7 @@ class IndexManager:
         # reconciliation pass after a cold build (#665) — does not re-report
         # them as added and re-log every skip.
         skipped_state: dict[str, str] = {}
-        for abs_path in all_files:
-            if not abs_path.is_file():
-                continue
-            try:
-                rel_str = abs_path.relative_to(self._source_dir).as_posix()
-            except ValueError:
-                # Symlink target outside the vault — mirror detect_changes.
-                logger.warning("File outside source_dir, skipping: %s", abs_path)
-                continue
+        for abs_path, rel_str in candidates:
             if rel_str in indexed_paths:
                 continue
             try:

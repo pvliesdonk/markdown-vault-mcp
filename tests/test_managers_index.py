@@ -167,6 +167,29 @@ class TestBuildIndex:
         assert "beta.md" in paths
         assert not any(p.startswith("notes/") for p in paths)
 
+    def test_excluded_files_invisible_for_non_prunable_pattern(
+        self, index_vault: Path, tmp_path: Path
+    ):
+        """Excluded files under a file-shaped pattern are not skip-counted or
+        recorded in skipped_state (the invisible-excluded contract, #257/#832).
+
+        ``notes/*`` is not a directory-prunable shape, so ``iter_markdown_files``
+        still descends ``notes/`` and yields its files; without the per-file
+        ``is_path_excluded`` filter they leak into ``IndexStats.skipped`` and the
+        tracker's skipped map, contradicting the contract and the comment.
+        """
+        mgr, _fts, _ = _make_index_mgr(
+            index_vault, tmp_path, exclude_patterns=["notes/*"]
+        )
+        result = mgr.build_index()
+
+        # Two indexable roots (alpha, beta); the two notes/ files are excluded.
+        assert result.skipped == 0
+        _indexed, skipped_state, _reasons = mgr._tracker._load_state()
+        assert not any(p.startswith("notes/") for p in skipped_state), (
+            "excluded files must not enter the tracker's skipped state"
+        )
+
     def test_continues_on_upsert_error(self, index_vault: Path, tmp_path: Path):
         """If one document fails to upsert, others still get indexed."""
         fts = FTSIndex(db_path=":memory:")
@@ -1040,6 +1063,48 @@ class TestEmbeddingsStatus:
         assert status["available"] is True
         assert status["provider"] == "MockEmbeddingProvider"
         assert status["path"] == str(embeddings_path)
+
+    def test_chunk_count_from_disk_sidecar_with_npy_extension(
+        self, index_vault: Path, tmp_path: Path
+    ):
+        """The disk-read branch reports the real count for a `.npy`-suffixed base.
+
+        With vectors unloaded, ``embeddings_status`` reads the sidecar count from
+        disk. This exercises the second copy of the #819 ``with_suffix`` fix (in
+        ``embeddings_status`` itself): a base carrying a ``.npy`` extension must
+        resolve to the real files, not ``{base}.npy.npy`` (which would misreport
+        0). Guards the previously-untested extension-carrying disk path (#836).
+        """
+        from markdown_vault_mcp.vector_index import VectorIndex
+        from tests.conftest import MockEmbeddingProvider
+
+        provider = MockEmbeddingProvider()
+        base = tmp_path / "embeddings.npy"
+        vi = VectorIndex(provider)
+        vi.add(
+            ["hello world"],
+            [
+                {
+                    "path": "a.md",
+                    "title": "A",
+                    "folder": "",
+                    "heading": None,
+                    "content": "hello world",
+                }
+            ],
+        )
+        vi.save(base)
+
+        # get_vectors defaults to None (unbuilt), forcing the disk-read branch.
+        mgr, _, holder = _make_index_mgr(
+            index_vault,
+            tmp_path,
+            embeddings_path=base,
+            embedding_provider=provider,
+        )
+        assert holder["vectors"] is None
+        status = mgr.embeddings_status()
+        assert status["chunk_count"] == 1
 
 
 # ---------------------------------------------------------------------------

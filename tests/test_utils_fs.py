@@ -93,6 +93,24 @@ class TestIterMarkdownFiles:
         _touch(tmp_path, ".claude/plugins/cache/x.md")
         assert _rels(tmp_path, LIVE_EXCLUDES) == {".claude/keep.md"}
 
+    def test_anchored_prefix_does_not_prune_prefix_colliding_sibling(
+        self, tmp_path: Path
+    ) -> None:
+        # ``go/**`` prunes ``go/`` but must NOT prune a sibling ``google/`` that
+        # merely shares the prefix. The boundary guard in _should_prune_dir
+        # (``rel == prefix or rel.startswith(prefix + "/")``) is load-bearing: a
+        # bare ``startswith`` would prune ``google/`` and silently drop
+        # ``google/keep.md`` (#836).
+        _touch(tmp_path, "go/pkg/x.md")
+        _touch(tmp_path, "google/keep.md")
+        discovered = _rels(tmp_path, ["go/**"])
+        assert "google/keep.md" in discovered
+        assert "go/pkg/x.md" not in discovered
+
+        anchored, anydepth = _dir_prune_rules(["go/**"])
+        assert _should_prune_dir("go", anchored, anydepth) is True
+        assert _should_prune_dir("google", anchored, anydepth) is False
+
     def test_top_level_anydepth_dir_not_pruned(self, tmp_path: Path) -> None:
         # ``**/node_modules/**`` needs a slash before the segment, so a
         # top-level ``node_modules`` is NOT excluded and must be discovered;
