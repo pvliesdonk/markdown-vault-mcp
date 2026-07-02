@@ -700,7 +700,18 @@ its directory would re-trigger the watcher into a self-feedback loop.
 Consequences: a top-level directory created after startup needs a restart
 to be watched, and a state/index/embeddings path configured beneath a
 content directory un-watches that whole top-level directory (keep those
-paths at the vault root or outside the vault).
+paths at the vault root or outside the vault). Every derived watch root
+(`source_dir`, its floor, and each kept child) is resolved to its realpath
+at derive time (#849), because watchdog's macOS FSEvents emitter resolves
+the scheduled path with `os.path.realpath` and delivers events whose
+`src_path` carries that realpath, so scheduling and the root-relative
+filter must agree on the resolved form or `relative_to` raises and every
+event is silently dropped; this keeps a `source_dir` reached through a
+symlinked ancestor (`/var` resolving to `/private/var`) and symlink-farm
+vaults whose top-level children are symlinks to real directories from being
+watched but blind (edits seen only by scans). Prune rules still match the
+child's vault-visible name inside `source_dir`, not the resolved target's
+basename, so exclude patterns keep working across the link.
 
 **Per-document write semantics.** `write()`, `edit()`, `delete()`,
 `rename()`, and `write_attachment()` perform the file mutation under a
