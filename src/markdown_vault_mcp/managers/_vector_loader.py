@@ -10,12 +10,12 @@ routine so the logic lives in a single place.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     import logging
     from collections.abc import Callable
+    from pathlib import Path
 
     from markdown_vault_mcp.providers import EmbeddingProvider
     from markdown_vault_mcp.vector_index import VectorIndex
@@ -90,7 +90,12 @@ def load_or_self_heal(
             )
             raise
 
-    npy_path = Path(str(embeddings_path) + ".npy")
+    # Derive the sidecar path exactly as VectorIndex.load/save do
+    # (Path.with_suffix), so a base path that already carries an extension
+    # (e.g. EMBEDDINGS_PATH=embeddings.npy) resolves to the same file that was
+    # saved. A string-append would probe embeddings.npy.npy, miss the real
+    # store, cold-build an empty index, and later overwrite the store (#736).
+    npy_path = embeddings_path.with_suffix(".npy")
     if npy_path.exists():
         try:
             set_vectors(VectorIndex.load(embeddings_path, embedding_provider))

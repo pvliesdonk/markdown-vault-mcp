@@ -13,7 +13,6 @@ import logging
 import sqlite3
 import time
 from collections import Counter
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import yaml
@@ -29,6 +28,7 @@ from markdown_vault_mcp.utils.fs import GLOB_SYMLINK_KWARGS
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+    from pathlib import Path
 
     from markdown_vault_mcp.fts_index import FTSIndex
     from markdown_vault_mcp.providers import EmbeddingProvider
@@ -898,9 +898,13 @@ class IndexManager:
         if vectors is not None:
             count = vectors.count
         else:
-            npy_path = Path(str(self._embeddings_path) + ".npy")
+            # Derive sidecar paths the way VectorIndex.load/save do
+            # (Path.with_suffix), so an EMBEDDINGS_PATH that carries an
+            # extension resolves to the real files instead of {path}.npy.npy
+            # and misreporting chunk_count=0 (#736).
+            npy_path = self._embeddings_path.with_suffix(".npy")
             if npy_path.exists():
-                json_path = Path(str(self._embeddings_path) + ".json")
+                json_path = self._embeddings_path.with_suffix(".json")
                 if json_path.exists():
                     try:
                         with json_path.open(encoding="utf-8") as fh:

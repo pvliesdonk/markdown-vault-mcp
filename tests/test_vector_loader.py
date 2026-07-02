@@ -329,6 +329,38 @@ def test_rebuild_that_raises_is_logged_then_propagates(
     )
 
 
+def test_load_finds_store_when_base_path_carries_npy_extension(
+    tmp_path: Path,
+) -> None:
+    """A real store saved at a ``.npy``-suffixed base is loaded, not hidden.
+
+    ``VectorIndex.save``/``load`` derive sidecar paths with
+    ``Path.with_suffix``, so a base of ``embeddings.npy`` writes/reads
+    ``embeddings.npy`` (the extension is replaced, not appended). The loader
+    must derive its existence check the same way; a string-append of ``.npy``
+    would probe ``embeddings.npy.npy``, miss the real store, cold-build an
+    empty index, and later overwrite the store (#736 regression).
+    """
+    provider = MockEmbeddingProvider()
+    base = tmp_path / "embeddings.npy"
+    _populated(provider).save(base)
+    box, get, set_ = _slot()
+    calls: list[int] = []
+
+    result = load_or_self_heal(
+        embeddings_path=base,
+        embedding_provider=provider,
+        get_vectors=get,
+        set_vectors=set_,
+        rebuild=lambda: calls.append(1),
+        logger=_LOG,
+    )
+
+    assert result.count == 1  # found the real store, did not cold-build empty
+    assert calls == []
+    assert box["v"] is result
+
+
 def test_compat_rebuild_that_raises_is_logged_then_propagates(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
