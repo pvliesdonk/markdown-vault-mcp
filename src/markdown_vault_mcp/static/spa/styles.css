@@ -34,7 +34,6 @@
     --font-head: 'Newsreader', Georgia, serif;
     --font-body: 'Public Sans', system-ui, -apple-system, sans-serif;
     --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace;
-    --font-sans: var(--font-body);
   }
   [data-theme="dark"] {
     --color-background-primary: #252118;
