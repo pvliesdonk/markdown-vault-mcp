@@ -524,6 +524,63 @@ def test_lifespan_starts_and_stops_watcher_when_no_git(tmp_path: Path) -> None:
     asyncio.run(_run())
 
 
+def test_lifespan_passes_configured_internal_dirs_to_watcher(tmp_path: Path) -> None:
+    """Explicit state/index/embeddings paths flow into the watcher's internal_dirs.
+
+    Covers the non-``None`` branches of the ``internal_dirs`` construction in
+    ``make_vault_lifespan`` (custom ``state_path`` fallback plus the
+    ``index_path``/``embeddings_path`` parent-append loop, #830): each configured
+    directory, and ``.git``, must be protected from watching so the watcher can
+    never observe the writes reindex makes into them.
+    """
+    import asyncio
+
+    from markdown_vault_mcp.config import ProjectConfig
+    from markdown_vault_mcp.config_sections import IndexingConfig
+
+    (tmp_path / "note.md").write_text("# note\n\nbody", encoding="utf-8")
+    state_dir = tmp_path / "state_area"
+    index_dir = tmp_path / "index_area"
+    emb_dir = tmp_path / "emb_area"
+    for d in (state_dir, index_dir, emb_dir):
+        d.mkdir()
+
+    config = ProjectConfig(
+        source_dir=tmp_path,
+        read_only=False,
+        indexing=IndexingConfig(
+            state_path=state_dir / "state.json",
+            index_path=index_dir / "index.db",
+            embeddings_path=emb_dir / "embeddings",
+        ),
+    )
+    lifespan_fn = make_vault_lifespan(config)
+
+    captured: dict[str, object] = {}
+    real_init = VaultFileWatcher.__init__
+
+    def spy_init(self: VaultFileWatcher, *args: object, **kwargs: object) -> None:
+        captured["internal_dirs"] = kwargs.get("internal_dirs")
+        real_init(self, *args, **kwargs)  # type: ignore[arg-type]
+
+    async def _run() -> None:
+        with (
+            patch.object(VaultFileWatcher, "__init__", spy_init),
+            patch.object(VaultFileWatcher, "start"),
+            patch.object(VaultFileWatcher, "stop"),
+        ):
+            async with lifespan_fn(None):  # type: ignore[arg-type]
+                pass
+
+    asyncio.run(_run())
+
+    internal = set(captured["internal_dirs"])  # type: ignore[arg-type]
+    assert state_dir in internal
+    assert index_dir in internal
+    assert emb_dir in internal
+    assert tmp_path / ".git" in internal
+
+
 def test_lifespan_skips_watcher_when_git_pull_active(tmp_path: Path) -> None:
     """The lifespan does not start the watcher when the git pull loop is active.
 

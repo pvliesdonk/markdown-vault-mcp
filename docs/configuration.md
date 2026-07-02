@@ -31,6 +31,12 @@ variables (`MARKDOWN_VAULT_MCP_TRANSPORT`, `MARKDOWN_VAULT_MCP_HOST`,
 | `MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER` | string | `_templates` | No | Relative folder path used by the `create_from_template` prompt to discover/read template files |
 | `MARKDOWN_VAULT_MCP_PROMPTS_FOLDER` | path | (none) | No | Path to a directory of `.md` prompt files that extend or override built-in prompts. Each declared argument name must be a plain Python identifier (letters, digits, underscore; not a keyword); a prompt with a non-conforming argument name is skipped with a logged warning. |
 
+The file watcher never watches the directories that hold `INDEX_PATH`,
+`EMBEDDINGS_PATH`, and `STATE_PATH` (or `.git`), so the writes the server makes
+while indexing do not trigger it again. If you place one of these paths inside a
+content directory, that whole top-level directory stops being watched, so keep
+them at the vault root or outside the vault to keep sibling content watched live.
+
 ## Index Build Timeout
 
 ### `MARKDOWN_VAULT_MCP_BUILD_TIMEOUT_S`
