@@ -382,9 +382,13 @@ for built-in names, or pass a custom instance.
   get up to three in-scan retries with a short backoff (0.05 s, 0.1 s,
   0.2 s) before the file is dropped for that scan, and exhausted retries
   log at `ERROR` (`hash_read_failed_after_retry`); every other `OSError`
-  keeps the single-attempt `WARNING` path. A skipped file deleted from disk
-  is dropped silently; it was never indexed, so it is not counted as
-  `deleted`.
+  keeps the single-attempt `WARNING` path. A file that is already indexed and
+  fails to hash is not dropped: its previous hash is carried forward so it
+  counts as unchanged for that scan and is re-hashed on the next one, so a
+  read error that leaves the file in place never purges a live document. Only
+  a newly discovered file that fails to hash is dropped for the scan. A
+  skipped file deleted from disk is dropped silently; it was never indexed, so
+  it is not counted as `deleted`.
   The surfaced deterministic skips (parse / encoding / missing-frontmatter /
   internal-error, but not exclude-pattern or transient `OSError`) are also
   recorded with a `{category, detail}` reason in the state file's
@@ -677,6 +681,26 @@ reconciled; no extra staleness bookkeeping is needed. Follow-up submissions issu
 itself succeed even during shutdown drain, so `ProcessDirtyPaths` can
 chain into `FlushDirtyEmbeddings` and both flush before the sentinel
 ends the worker loop.
+
+**File watcher scoping (#823/#828/#830).** When the file watcher is
+active (neither git pull nor a webhook is configured), it does not place a
+single recursive watch on `source_dir`. On a home-directory vault that
+would register an OS-level recursive stream over every unrelated subtree
+(and, on macOS, trigger repeated TCC consent prompts). Instead it derives
+its watch roots: each non-excluded immediate child directory of
+`source_dir` is watched recursively — so events deep inside a deliberately
+watched dot-root such as `.claude/` are delivered — and `source_dir`
+itself is watched non-recursively as a floor for root-level files. The
+floor is gated by `MARKDOWN_VAULT_MCP_FILE_WATCHER_ROOT_FLOOR` (default
+on); setting it false removes every `source_dir`-rooted registration, at
+the cost of root-level files being picked up only by scans. The vault's
+own state / index / embeddings directories and `.git` are never watched
+(#830): `reindex()` rewrites the state file on every run, so a watch on
+its directory would re-trigger the watcher into a self-feedback loop.
+Consequences: a top-level directory created after startup needs a restart
+to be watched, and a state/index/embeddings path configured beneath a
+content directory un-watches that whole top-level directory (keep those
+paths at the vault root or outside the vault).
 
 **Per-document write semantics.** `write()`, `edit()`, `delete()`,
 `rename()`, and `write_attachment()` perform the file mutation under a
