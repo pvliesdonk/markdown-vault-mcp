@@ -14,10 +14,14 @@ partial is replaced by the verbatim bytes of ``spa/relpath``.  The marker is a
 valid comment in both CSS (inside ``<style>``) and JavaScript (inside
 ``<script>``), so each partial stays independently parseable — ``core.js`` is
 the whole module with view markers inside its ``try`` block, and each
-``views/*.js`` is a self-contained IIFE.
+``views/*.js`` is an IIFE-wrapped view module (its free variables, e.g.
+``app``/``switchTab``, resolve to ``core.js`` scope once assembled).
 
-``static/app.src.html`` is a **generated, committed** artifact: edit the files
-under ``static/spa/`` and regenerate, never hand-edit ``app.src.html``.
+The generated ``static/app.src.html`` carries a "do not edit" banner that this
+script injects at assembly time (it is not stored in ``shell.html``, which is an
+editable source partial). ``static/app.src.html`` is a **generated, committed**
+artifact: edit the files under ``static/spa/`` and regenerate, never hand-edit
+it.
 
 Usage::
 
@@ -36,6 +40,17 @@ _MARKER = re.compile(r"/\*@@FILE:([^@]+?)@@\*/")
 
 # Guard against a partial including itself (directly or via a cycle).
 _MAX_DEPTH = 64
+
+# The shell must open with this so the injected banner lands *after* the
+# doctype (a comment before the doctype forces the browser into quirks mode).
+_DOCTYPE = "<!DOCTYPE html>\n"
+
+# Injected into the generated output at assembly time (kept out of shell.html,
+# which is an editable source partial).
+_GENERATED_BANNER = (
+    "<!-- GENERATED FILE — do not edit. Source lives in static/spa/*; regenerate with\n"
+    "     `python scripts/build_spa.py`, then vendor with `python scripts/vendor_spa.py`. -->\n"
+)
 
 
 def _find_spa_dir() -> Path:
@@ -78,10 +93,23 @@ def assemble(spa_dir: Path) -> str:
         )
 
     shell = _read_partial(spa_dir, "shell.html")
-    return expand(shell, 0)
+    result = expand(shell, 0)
+
+    # A malformed marker (e.g. a missing colon) never matches _MARKER, so it
+    # survives expansion as literal text — fail loudly rather than ship a file
+    # with a partial silently omitted.
+    if "@@FILE" in result:
+        raise SystemExit(
+            "ERROR: an @@FILE include marker survived assembly — check for a "
+            "malformed /*@@FILE:path@@*/ marker in the spa/ partials."
+        )
+    if not result.startswith(_DOCTYPE):
+        raise SystemExit("ERROR: spa/shell.html must begin with '<!DOCTYPE html>'.")
+    return _DOCTYPE + _GENERATED_BANNER + result[len(_DOCTYPE) :]
 
 
 def main(argv: list[str]) -> int:
+    """Entry point. Returns 0 on success, 1 on failure."""
     check = "--check" in argv[1:]
     spa_dir = _find_spa_dir()
     out_path = spa_dir.parent / "app.src.html"

@@ -49,6 +49,27 @@ def test_build_check_detects_drift() -> None:
         partial.write_text(original, encoding="utf-8")
 
 
+def test_build_rejects_malformed_marker() -> None:
+    """A malformed include marker fails the build loudly instead of silently
+    omitting the partial (residual @@FILE guard)."""
+    repo = Path(__file__).resolve().parent.parent
+    partial = repo / "src" / "markdown_vault_mcp" / "static" / "spa" / "styles.css"
+    original = partial.read_text(encoding="utf-8")
+    try:
+        # Missing colon -> never matches the marker regex -> survives expansion.
+        partial.write_text(original + "\n/*@@FILE styles.css@@*/\n", encoding="utf-8")
+        result = subprocess.run(
+            [sys.executable, str(repo / "scripts" / "build_spa.py"), "--check"],
+            capture_output=True,
+            text=True,
+            cwd=repo,
+        )
+        assert result.returncode != 0
+        assert "@@FILE include marker survived" in result.stderr
+    finally:
+        partial.write_text(original, encoding="utf-8")
+
+
 def test_vendor_check_is_clean() -> None:
     """The committed app.html matches app.src.html (offline --check)."""
     repo = Path(__file__).resolve().parent.parent
