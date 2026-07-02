@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
 from typing import TYPE_CHECKING, Any
@@ -9,6 +10,8 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator, Sequence
     from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 # pathlib's Path.glob / Path.rglob do not recurse into symlinked
 # subdirectories by default — the behavior was unspecified pre-3.13 and an
@@ -139,9 +142,10 @@ def iter_markdown_files(
     directory's own path is not otherwise filtered here.
 
     Symlink handling matches :data:`GLOB_SYMLINK_KWARGS`: symlinked
-    subdirectories are followed only on Python 3.13+. ``os.walk`` swallows
-    ``OSError`` from unreadable directories (permission denied, broken links)
-    by default, mirroring ``glob``'s suppression of the same.
+    subdirectories are followed only on Python 3.13+. An unreadable directory
+    (permission denied, broken link) is skipped rather than aborting the walk,
+    but — unlike ``glob``'s silent suppression — it is logged at WARNING so a
+    dropped subtree is observable instead of vanishing without a trace (#835).
 
     Yields paths in ``os.walk`` order (arbitrary within a directory); callers
     that need a stable order must sort, exactly as they did around the glob.
@@ -159,8 +163,15 @@ def iter_markdown_files(
     """
     anchored, anydepth = _dir_prune_rules(exclude_patterns or ())
     source_str = os.fspath(source_dir)
+
+    def _on_walk_error(exc: OSError) -> None:
+        # os.walk drops the offending directory and continues; surface it so a
+        # permission-denied or broken-link subtree does not silently disappear
+        # from discovery/indexing (#835).
+        logger.warning("markdown_walk_dir_unreadable path=%s: %s", exc.filename, exc)
+
     for dirpath, dirnames, filenames in os.walk(
-        source_str, followlinks=_WALK_FOLLOWLINKS
+        source_str, onerror=_on_walk_error, followlinks=_WALK_FOLLOWLINKS
     ):
         rel_dir = os.path.relpath(dirpath, source_str)
         rel_prefix = "" if rel_dir == "." else rel_dir.replace(os.sep, "/")

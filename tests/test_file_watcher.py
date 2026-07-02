@@ -271,6 +271,50 @@ def test_start_skips_root_whose_schedule_raises(
     assert len(fake.scheduled) == 2
 
 
+def test_start_logs_error_when_all_roots_fail_to_schedule(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A watcher that ends up watching nothing is surfaced at ERROR (#835).
+
+    If every derived root fails to schedule, the observer runs but watches
+    nothing, so no edit ever triggers a reindex. That degraded state must be
+    visible above the per-root WARNINGs and the INFO summary — distinct from the
+    legitimate "no roots at all" case.
+    """
+    import logging
+
+    (tmp_path / "childA").mkdir()
+
+    class _AllFailObserver:
+        def schedule(self, _handler: object, _path: str, **_kwargs: object) -> None:
+            raise OSError("cannot watch anything")
+
+        def start(self) -> None:
+            pass
+
+        def stop(self) -> None:
+            pass
+
+        def join(self, timeout: float | None = None) -> None:
+            pass
+
+    fake = _AllFailObserver()
+    watcher = _make_watcher(tmp_path, lambda: None)
+    with (
+        patch("markdown_vault_mcp._file_watcher.Observer", lambda: fake),
+        caplog.at_level(logging.ERROR, logger="markdown_vault_mcp._file_watcher"),
+    ):
+        watcher.start()  # must not raise
+        watcher.stop()
+
+    assert any(
+        r.levelno == logging.ERROR
+        and "live" in r.getMessage()
+        and "change detection is disabled" in r.getMessage()
+        for r in caplog.records
+    ), "a fully-blind watcher must be surfaced at ERROR"
+
+
 # ---------------------------------------------------------------------------
 # Hidden directory filtering
 # ---------------------------------------------------------------------------

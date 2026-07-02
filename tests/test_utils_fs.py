@@ -143,19 +143,38 @@ class TestIterMarkdownFiles:
         (tmp_path / "README.txt").write_text("text", encoding="utf-8")
         assert _rels(tmp_path, LIVE_EXCLUDES) == {"note.md"}
 
-    def test_permission_error_dir_suppressed(self, tmp_path: Path) -> None:
-        # os.walk swallows OSError from unreadable dirs, matching glob. The
-        # readable sibling is still discovered; the scan does not crash.
+    def test_permission_error_dir_logged_and_skipped(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        # An unreadable dir is skipped (the walk does not crash and the readable
+        # sibling is still discovered), but it is now logged at WARNING so the
+        # dropped subtree is observable instead of vanishing silently (#835).
+        import logging
+
         _touch(tmp_path, "readable/ok.md")
         locked = tmp_path / "locked"
         locked.mkdir()
         _touch(tmp_path, "locked/hidden.md")
         locked.chmod(0o000)
         try:
-            discovered = _rels(tmp_path, LIVE_EXCLUDES)
+            # Root bypasses permission bits, so chmod 0o000 does not block the
+            # read there — only assert the WARNING when the dir is truly locked.
+            try:
+                list(locked.iterdir())
+                unreadable = False
+            except OSError:
+                unreadable = True
+            with caplog.at_level(logging.WARNING, logger="markdown_vault_mcp.utils.fs"):
+                discovered = _rels(tmp_path, LIVE_EXCLUDES)
         finally:
             locked.chmod(0o755)
         assert "readable/ok.md" in discovered
+        if unreadable:
+            assert any(
+                "markdown_walk_dir_unreadable" in r.getMessage()
+                and "locked" in r.getMessage()
+                for r in caplog.records
+            ), "an unreadable subtree must be surfaced at WARNING"
 
     @pytest.mark.skipif(
         sys.version_info < (3, 13),

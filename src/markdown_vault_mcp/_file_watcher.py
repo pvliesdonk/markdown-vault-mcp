@@ -421,6 +421,22 @@ class VaultFileWatcher:
                 )
                 continue
             scheduled.append(root)
+
+        if roots and not scheduled:
+            # Every derived root failed to schedule: the observer will run but
+            # watch nothing, so no edit will ever trigger a reindex. Surface it
+            # above the per-root WARNINGs and the INFO summary so the degraded
+            # state is visible, not buried (#835). Distinct from the legitimate
+            # "no roots at all" case (root_floor off, no children), where roots
+            # is empty and this does not fire.
+            logger.error(
+                "file_watcher: all %d watch root(s) failed to schedule; live "
+                "change detection is disabled — changes are only picked up by "
+                "scans (source_dir=%s)",
+                len(roots),
+                self._source_dir,
+            )
+
         # Assign before start() so stop() can always see and stop it,
         # even if it races into the narrow window between schedule() and start().
         with self._lock:
