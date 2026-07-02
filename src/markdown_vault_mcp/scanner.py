@@ -13,11 +13,11 @@ import yaml
 
 from markdown_vault_mcp.hashing import compute_etag
 from markdown_vault_mcp.types import Chunk, LinkInfo, ParsedNote, SkippedFile
-from markdown_vault_mcp.utils.fs import GLOB_SYMLINK_KWARGS
+from markdown_vault_mcp.utils.fs import GLOB_SYMLINK_KWARGS, iter_markdown_files
 from markdown_vault_mcp.utils.text import decode_utf8
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterator
+    from collections.abc import Callable, Iterable, Iterator
     from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -1076,7 +1076,16 @@ def scan_directory(
     exclude_patterns = exclude_patterns or []
     skipped_required: int = 0
 
-    for abs_path in sorted(source_dir.glob(glob_pattern, **GLOB_SYMLINK_KWARGS)):
+    # For the default pattern, walk with directory pruning so excluded subtrees
+    # are never descended; a non-default glob_pattern keeps the raw glob so its
+    # semantics are unchanged. The per-file exclude filter below stays the
+    # correctness layer either way.
+    if glob_pattern == "**/*.md":
+        discovered: Iterable[Path] = iter_markdown_files(source_dir, exclude_patterns)
+    else:
+        discovered = source_dir.glob(glob_pattern, **GLOB_SYMLINK_KWARGS)
+
+    for abs_path in sorted(discovered):
         if not abs_path.is_file():
             continue
 

@@ -91,6 +91,23 @@ def test_scan_directory_follows_symlinked_subdirs(tmp_path: Path) -> None:
     assert "via_symlink/linked.md" in paths
 
 
+def test_scan_directory_non_default_glob_uses_raw_glob(tmp_path: Path) -> None:
+    """A non-default glob_pattern falls back to the raw glob, not the walker.
+
+    The pruning walker only serves the default ``**/*.md`` pattern; any other
+    pattern must keep the plain ``source_dir.glob`` so its semantics are
+    unchanged. Here a ``*.md`` (single-level) pattern must yield only the
+    top-level file, not the nested one a recursive walk would find.
+    """
+    (tmp_path / "top.md").write_text("# top\n", encoding="utf-8")
+    (tmp_path / "sub").mkdir()
+    (tmp_path / "sub" / "deep.md").write_text("# deep\n", encoding="utf-8")
+
+    paths = {n.path for n in scan_directory(tmp_path, glob_pattern="*.md")}
+
+    assert paths == {"top.md"}
+
+
 # ---------------------------------------------------------------------------
 # Frontmatter and title resolution
 # ---------------------------------------------------------------------------

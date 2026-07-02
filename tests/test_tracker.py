@@ -80,6 +80,24 @@ class TestFreshScan:
         assert changes.deleted == []
         assert changes.unchanged == 0
 
+    def test_non_default_glob_uses_raw_glob(self, tmp_path: Path) -> None:
+        """A non-default glob_pattern falls back to the raw glob, not the walker.
+
+        The pruning walker only serves the default ``**/*.md`` pattern; any
+        other pattern keeps the plain ``source_dir.glob`` so its semantics are
+        unchanged. A single-level ``*.md`` must discover only the top-level
+        file, not the nested one a recursive walk would find.
+        """
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        _write_md(vault, "top.md")
+        _write_md(vault, "sub/deep.md")
+
+        tracker = ChangeTracker(tmp_path / "state.json")
+        changes = tracker.detect_changes(vault, glob_pattern="*.md")
+
+        assert changes.added == ["top.md"]
+
 
 class TestModifiedFile:
     def test_modified_file_detected(self, tmp_path: Path) -> None:
@@ -505,7 +523,7 @@ class TestUnreadableFiles:
     def test_file_outside_source_dir_skipped(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """A glob hit resolving outside source_dir is skipped with a warning."""
+        """A discovered path resolving outside source_dir is skipped + warned."""
         import logging
         from unittest.mock import patch as mock_patch
 
@@ -515,11 +533,14 @@ class TestUnreadableFiles:
 
         tracker = ChangeTracker(tmp_path / "state.json")
 
-        def fake_glob(self, pattern, **kwargs):  # noqa: ARG001
+        def fake_discover(source_dir, exclude_patterns):  # noqa: ARG001
             return iter([outside])
 
         with (
-            mock_patch.object(type(vault), "glob", fake_glob),
+            mock_patch(
+                "markdown_vault_mcp.tracker.iter_markdown_files",
+                side_effect=fake_discover,
+            ),
             caplog.at_level(logging.WARNING, logger="markdown_vault_mcp.tracker"),
         ):
             changes = tracker.detect_changes(vault)

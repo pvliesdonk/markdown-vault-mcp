@@ -12,10 +12,10 @@ from typing import TYPE_CHECKING
 from markdown_vault_mcp.hashing import compute_file_hash
 from markdown_vault_mcp.types import ChangeSet, ParsedNote
 from markdown_vault_mcp.utils import is_path_excluded
-from markdown_vault_mcp.utils.fs import GLOB_SYMLINK_KWARGS
+from markdown_vault_mcp.utils.fs import GLOB_SYMLINK_KWARGS, iter_markdown_files
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Iterable, Sequence
 
 logger = logging.getLogger(__name__)
 
@@ -116,8 +116,17 @@ class ChangeTracker:
         indexed_state, skipped_state, skip_reasons_state = self._load_state()
 
         # Build a mapping of relative path → sha256 for current disk contents.
+        # For the default pattern, walk with directory pruning so excluded
+        # subtrees (node_modules, .venv, …) are never descended; a non-default
+        # glob_pattern falls back to the raw glob to preserve its semantics.
+        if glob_pattern == "**/*.md":
+            discovered: Iterable[Path] = iter_markdown_files(
+                source_dir, exclude_patterns
+            )
+        else:
+            discovered = source_dir.glob(glob_pattern, **GLOB_SYMLINK_KWARGS)
         disk_state: dict[str, str] = {}
-        for abs_path in sorted(source_dir.glob(glob_pattern, **GLOB_SYMLINK_KWARGS)):
+        for abs_path in sorted(discovered):
             if not abs_path.is_file():
                 continue
             try:

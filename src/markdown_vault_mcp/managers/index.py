@@ -25,7 +25,7 @@ from markdown_vault_mcp.managers._vector_loader import load_or_self_heal
 from markdown_vault_mcp.scanner import parse_note, scan_directory
 from markdown_vault_mcp.types import IndexStats, ParsedNote, ReindexResult, SkippedFile
 from markdown_vault_mcp.utils import is_path_excluded
-from markdown_vault_mcp.utils.fs import GLOB_SYMLINK_KWARGS
+from markdown_vault_mcp.utils.fs import iter_markdown_files
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -261,7 +261,11 @@ class IndexManager:
                 self._fts.optimize()
 
         # Count how many files were skipped due to required_frontmatter.
-        all_files = list(self._source_dir.glob("**/*.md", **GLOB_SYMLINK_KWARGS))
+        # Prune excluded subtrees during discovery (the same walk scan_directory
+        # used for `notes`) so excluded files are never walked, hashed into
+        # skipped_state, or skip-counted. This matches detect_changes and the
+        # "excluded files are invisible" contract (#257).
+        all_files = list(iter_markdown_files(self._source_dir, self._exclude_patterns))
         skipped = len(all_files) - len(notes)
 
         # Resolve vault-wide wikilinks now that all documents are indexed.
