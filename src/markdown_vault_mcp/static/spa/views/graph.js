@@ -350,6 +350,11 @@
     if (network) network.moveTo({ scale: network.getScale() / 1.3 });
   });
 
+  // Narrow-panel legend collapse chip
+  document.getElementById('graph-legend-chip')?.addEventListener('click', () => {
+    document.getElementById('graph-legend')?.classList.toggle('open');
+  });
+
   // Send graph summary to Claude
   document.getElementById('graph-send-btn').addEventListener('click', () => {
     if (!nodesDS || nodesDS.length === 0) return;

@@ -174,6 +174,27 @@ class TestGraphExplorerHTML:
         assert 'id="graph-count"' in html
         assert "updateCountChip" in html
 
+    async def test_graph_legend_matches_drawing(self) -> None:
+        html = await get_app_html()
+        assert 'id="graph-legend"' in html
+        # "semantic" and "more" also occur elsewhere in the bundle (Paper
+        # semantic tokens, "N more properties"), so pin the exact legend
+        # entry markup rather than the bare words.
+        for entry_markup in (
+            '<span class="lg-line lg-solid"></span>wikilink',
+            '<span class="lg-line lg-dashed"></span>semantic',
+            '<span class="lg-pill lg-focus"></span>focus note',
+            '<span class="lg-pill lg-linked"></span>linked note',
+            '<span class="lg-dot"></span>more (hover)',
+        ):
+            assert entry_markup in html
+
+    async def test_graph_legend_collapse_chip(self) -> None:
+        html = await get_app_html()
+        assert 'id="graph-legend-chip"' in html
+        assert "graph-legend-chip" in html
+        assert "legend" in html
+
 
 # ---------------------------------------------------------------------------
 # Graph data tools

@@ -227,6 +227,7 @@
   .fm-table tr:last-child td { border-bottom: none; }
   .fm-table td:first-child { font-family: var(--font-mono); font-size: 11px; white-space: nowrap; width: 66px; padding-right: 12px; color: var(--muted); }
   /* Graph styles */
+  #panel-graph { container-type: inline-size; }
   .graph-toolbar { display: flex; gap: 8px; padding: 4px 0; flex-shrink: 0; }
   #graph-container {
     border: 1px solid var(--border-2); border-radius: var(--radius); min-height: 200px;
@@ -266,6 +267,28 @@
   }
   .graph-zoom button:hover { background: var(--panel-2); color: var(--ink); }
   .graph-zoom button + button { border-left: 1px solid var(--border); }
+  .graph-legend {
+    display: flex; flex-wrap: wrap; gap: 12px; padding: 8px 10px; flex-shrink: 0;
+    font: 500 11px/1 var(--font-body); color: var(--muted);
+  }
+  .graph-legend .lg-item { display: inline-flex; align-items: center; gap: 6px; }
+  .lg-line { width: 16px; height: 0; border-top: 1.6px solid var(--edge); }
+  .lg-dashed { border-top: 1.6px dashed var(--accent); }
+  .lg-pill { width: 14px; height: 9px; border-radius: 999px; }
+  .lg-focus { background: var(--accent); }
+  .lg-linked { background: var(--panel); border: 1px solid var(--border); }
+  .lg-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--panel); border: 1.5px solid var(--edge); }
+  .graph-legend-chip {
+    display: none; align-self: flex-start; margin: 6px 10px;
+    background: var(--panel-2); border: 1px solid var(--border); color: var(--ink-2);
+    font: 600 11px/1 var(--font-body); padding: 6px 10px; border-radius: var(--radius-sm); cursor: pointer;
+  }
+  /* Content-first shedding: on a narrow panel the legend collapses to the chip. */
+  @container (max-width: 420px) {
+    .graph-legend { display: none; }
+    .graph-legend.open { display: flex; }
+    .graph-legend-chip { display: inline-block; }
+  }
   /* Browser styles */
   .browser-layout { display: flex; flex-direction: column; flex: 1; min-height: 0; gap: 0; }
   .browser-sidebar {
