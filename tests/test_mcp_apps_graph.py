@@ -162,6 +162,18 @@ class TestGraphExplorerHTML:
         assert "v('--accent'" in html
         assert "v('--edge'" in html
 
+    async def test_graph_resolves_canvas_colors_via_probe(self) -> None:
+        """#856: canvas node colors must be resolved to concrete rgb() through a
+        probe element (assign ``var(token)`` to a real ``color`` property, read
+        the computed value). Reading Paper tokens straight off documentElement
+        via ``getPropertyValue`` returns the literal ``var(--color-...)`` for
+        indirection tokens in older Chromium (Claude Desktop's Electron), which
+        canvas fillStyle can't parse -> nodes paint black. ``probe`` is a
+        view-specific name (not vendored-library text)."""
+        html = await get_app_html()
+        assert "probe.style.color" in html
+        assert "getComputedStyle(probe)" in html
+
     async def test_graph_semantic_match_labelled(self) -> None:
         html = await get_app_html()
         # _semanticMatch drives the dashed-pill styling in styleNodes.

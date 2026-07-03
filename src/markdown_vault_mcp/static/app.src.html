@@ -994,9 +994,23 @@ app.onteardown = () => {
   // Paper palette for edges and canvas chrome, read from CSS vars so the graph
   // re-themes when the host flips theme (see refreshColors / vault-theme-changed).
   function getColors() {
-    const s = getComputedStyle(document.documentElement);
-    const v = (name, fallback) => s.getPropertyValue(name).trim() || fallback;
-    return {
+    // Resolve each token to a concrete rgb() string via a probe element.
+    // getComputedStyle(documentElement).getPropertyValue('--panel') can return
+    // the literal "var(--color-background-primary)" when a Paper token is an
+    // indirection (styles.css maps --panel/--ink/--accent/... onto --color-*).
+    // Modern Chromium resolves that, but older Chromium (Claude Desktop's
+    // Electron) returns the unresolved string, which canvas fillStyle can't
+    // parse -> vis-network paints black. Assigning `var(...)` to a real
+    // property (color) forces full var() substitution in every engine and
+    // still honors host overrides + theme flips.
+    const probe = document.createElement('span');
+    probe.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none';
+    document.body.appendChild(probe);
+    const v = (name, fallback) => {
+      probe.style.color = `var(${name}, ${fallback})`;
+      return getComputedStyle(probe).color; // always a resolved rgb(...)
+    };
+    const c = {
       panel:      v('--panel', '#fbf8f1'),
       panel2:     v('--panel-2', '#f2ecdf'),
       ink:        v('--ink', '#2a2620'),
@@ -1008,6 +1022,8 @@ app.onteardown = () => {
       accentSoft: v('--accent-soft', '#f3e4d8'),
       border:     v('--border', '#e4dbc9'),
     };
+    probe.remove();
+    return c;
   }
 
   // Edge styling: solid --edge for link edges (thinner + lower opacity when the
@@ -1030,6 +1046,7 @@ app.onteardown = () => {
       physics: { enabled: true, solver: 'forceAtlas2Based', forceAtlas2Based: { gravitationalConstant: -40 } },
       nodes: {
         shape: 'dot',
+        widthConstraint: { maximum: 180 }, // wrap long titles -> compact pills, not full-width bars
         scaling: { min: 8, max: 30, label: { enabled: true, min: 10, max: 16, drawThreshold: 6 } },
       },
       edges: {
