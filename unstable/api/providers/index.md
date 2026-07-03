@@ -282,9 +282,9 @@ Checks `config.embeddings.provider` for an explicit selection. When that field i
 
 Parameters:
 
-| Name     | Type          | Description                                        | Default    |
-| -------- | ------------- | -------------------------------------------------- | ---------- |
-| `config` | `VaultConfig` | Vault configuration containing embedding settings. | *required* |
+| Name     | Type            | Description                                        | Default    |
+| -------- | --------------- | -------------------------------------------------- | ---------- |
+| `config` | `ProjectConfig` | Vault configuration containing embedding settings. | *required* |
 
 Returns:
 

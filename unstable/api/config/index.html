@@ -1594,19 +1594,19 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#markdown_vault_mcp.config.VaultConfig" class="md-nav__link">
+  <a href="#markdown_vault_mcp.config.ProjectConfig" class="md-nav__link">
     <span class="md-ellipsis">
       
-        VaultConfig
+        ProjectConfig
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="VaultConfig">
+    <nav class="md-nav" aria-label="ProjectConfig">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#markdown_vault_mcp.config.VaultConfig.to_vault_kwargs" class="md-nav__link">
+  <a href="#markdown_vault_mcp.config.ProjectConfig.to_vault_kwargs" class="md-nav__link">
     <span class="md-ellipsis">
       
         to_vault_kwargs
@@ -1617,7 +1617,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#markdown_vault_mcp.config.VaultConfig.from_env" class="md-nav__link">
+  <a href="#markdown_vault_mcp.config.ProjectConfig.from_env" class="md-nav__link">
     <span class="md-ellipsis">
       
         from_env
@@ -1781,19 +1781,19 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#markdown_vault_mcp.config.VaultConfig" class="md-nav__link">
+  <a href="#markdown_vault_mcp.config.ProjectConfig" class="md-nav__link">
     <span class="md-ellipsis">
       
-        VaultConfig
+        ProjectConfig
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="VaultConfig">
+    <nav class="md-nav" aria-label="ProjectConfig">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#markdown_vault_mcp.config.VaultConfig.to_vault_kwargs" class="md-nav__link">
+  <a href="#markdown_vault_mcp.config.ProjectConfig.to_vault_kwargs" class="md-nav__link">
     <span class="md-ellipsis">
       
         to_vault_kwargs
@@ -1804,7 +1804,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#markdown_vault_mcp.config.VaultConfig.from_env" class="md-nav__link">
+  <a href="#markdown_vault_mcp.config.ProjectConfig.from_env" class="md-nav__link">
     <span class="md-ellipsis">
       
         from_env
@@ -1843,10 +1843,10 @@
 <p>The <code>config</code> module loads configuration from environment variables and provides a typed dataclass for all settings.</p>
 <h2 id="quick-start">Quick Start<a class="headerlink" href="#quick-start" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">markdown_vault_mcp</span><span class="w"> </span><span class="kn">import</span> <span class="n">Vault</span><span class="p">,</span> <span class="n">VaultConfig</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">markdown_vault_mcp</span><span class="w"> </span><span class="kn">import</span> <span class="n">Vault</span><span class="p">,</span> <span class="n">ProjectConfig</span>
 
 <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">&quot;MARKDOWN_VAULT_MCP_SOURCE_DIR&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;/path/to/vault&quot;</span>
-<span class="n">config</span> <span class="o">=</span> <span class="n">VaultConfig</span><span class="o">.</span><span class="n">from_env</span><span class="p">()</span>
+<span class="n">config</span> <span class="o">=</span> <span class="n">ProjectConfig</span><span class="o">.</span><span class="n">from_env</span><span class="p">()</span>
 <span class="n">vault</span> <span class="o">=</span> <span class="n">Vault</span><span class="p">(</span><span class="o">**</span><span class="n">config</span><span class="o">.</span><span class="n">to_vault_kwargs</span><span class="p">())</span>
 </code></pre></div>
 <h2 id="api-reference">API Reference<a class="headerlink" href="#api-reference" title="Permanent link">&para;</a></h2>
@@ -1857,14 +1857,14 @@
 
 
 
-<h2 id="markdown_vault_mcp.config.VaultConfig" class="doc doc-heading">
-              <code class="highlight language-python"><span class="n">VaultConfig</span><span class="p">(</span><span class="n">source_dir</span><span class="p">,</span> <span class="n">read_only</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">server_name</span><span class="o">=</span><span class="s1">&#39;markdown-vault-mcp&#39;</span><span class="p">,</span> <span class="n">instructions</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">git</span><span class="o">=</span><span class="n">GitConfig</span><span class="p">(),</span> <span class="n">indexing</span><span class="o">=</span><span class="n">IndexingConfig</span><span class="p">(),</span> <span class="n">embeddings</span><span class="o">=</span><span class="n">EmbeddingsConfig</span><span class="p">(),</span> <span class="n">search</span><span class="o">=</span><span class="n">SearchConfig</span><span class="p">(),</span> <span class="n">sync</span><span class="o">=</span><span class="n">SyncConfig</span><span class="p">(),</span> <span class="n">content</span><span class="o">=</span><span class="n">ContentConfig</span><span class="p">(),</span> <span class="n">transfer</span><span class="o">=</span><span class="n">TransferConfig</span><span class="p">(),</span> <span class="n">disable_apps_ui</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">server</span><span class="o">=</span><span class="n">ServerConfig</span><span class="p">())</span></code>
+<h2 id="markdown_vault_mcp.config.ProjectConfig" class="doc doc-heading">
+              <code class="highlight language-python"><span class="n">ProjectConfig</span><span class="p">(</span><span class="n">source_dir</span><span class="p">,</span> <span class="n">read_only</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">server_name</span><span class="o">=</span><span class="s1">&#39;markdown-vault-mcp&#39;</span><span class="p">,</span> <span class="n">instructions</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">git</span><span class="o">=</span><span class="n">GitConfig</span><span class="p">(),</span> <span class="n">indexing</span><span class="o">=</span><span class="n">IndexingConfig</span><span class="p">(),</span> <span class="n">embeddings</span><span class="o">=</span><span class="n">EmbeddingsConfig</span><span class="p">(),</span> <span class="n">search</span><span class="o">=</span><span class="n">SearchConfig</span><span class="p">(),</span> <span class="n">sync</span><span class="o">=</span><span class="n">SyncConfig</span><span class="p">(),</span> <span class="n">content</span><span class="o">=</span><span class="n">ContentConfig</span><span class="p">(),</span> <span class="n">transfer</span><span class="o">=</span><span class="n">TransferConfig</span><span class="p">(),</span> <span class="n">disable_apps_ui</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">server</span><span class="o">=</span><span class="n">ServerConfig</span><span class="p">())</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
   </span>
 
-<a href="#markdown_vault_mcp.config.VaultConfig" class="headerlink" title="Permanent link">&para;</a></h2>
+<a href="#markdown_vault_mcp.config.ProjectConfig" class="headerlink" title="Permanent link">&para;</a></h2>
 
 
     <div class="doc doc-contents first">
@@ -1885,7 +1885,7 @@
       </thead>
       <tbody>
           <tr class="doc-section-item">
-            <td><code><span title="markdown_vault_mcp.config.VaultConfig.source_dir">source_dir</span></code></td>
+            <td><code><span title="markdown_vault_mcp.config.ProjectConfig.source_dir">source_dir</span></code></td>
             <td>
                   <code><span title="pathlib.Path">Path</span></code>
             </td>
@@ -1896,7 +1896,7 @@
             </td>
           </tr>
           <tr class="doc-section-item">
-            <td><code><span title="markdown_vault_mcp.config.VaultConfig.read_only">read_only</span></code></td>
+            <td><code><span title="markdown_vault_mcp.config.ProjectConfig.read_only">read_only</span></code></td>
             <td>
                   <code><span title="bool">bool</span></code>
             </td>
@@ -1908,7 +1908,7 @@
             </td>
           </tr>
           <tr class="doc-section-item">
-            <td><code><span title="markdown_vault_mcp.config.VaultConfig.server_name">server_name</span></code></td>
+            <td><code><span title="markdown_vault_mcp.config.ProjectConfig.server_name">server_name</span></code></td>
             <td>
                   <code><span title="str">str</span></code>
             </td>
@@ -1920,7 +1920,7 @@
             </td>
           </tr>
           <tr class="doc-section-item">
-            <td><code><span title="markdown_vault_mcp.config.VaultConfig.instructions">instructions</span></code></td>
+            <td><code><span title="markdown_vault_mcp.config.ProjectConfig.instructions">instructions</span></code></td>
             <td>
                   <code><span title="str">str</span> | None</code>
             </td>
@@ -1931,7 +1931,7 @@
             </td>
           </tr>
           <tr class="doc-section-item">
-            <td><code><span title="markdown_vault_mcp.config.VaultConfig.git">git</span></code></td>
+            <td><code><span title="markdown_vault_mcp.config.ProjectConfig.git">git</span></code></td>
             <td>
                   <code><span title="markdown_vault_mcp.config_sections.GitConfig">GitConfig</span></code>
             </td>
@@ -1942,7 +1942,7 @@
             </td>
           </tr>
           <tr class="doc-section-item">
-            <td><code><span title="markdown_vault_mcp.config.VaultConfig.indexing">indexing</span></code></td>
+            <td><code><span title="markdown_vault_mcp.config.ProjectConfig.indexing">indexing</span></code></td>
             <td>
                   <code><span title="markdown_vault_mcp.config_sections.IndexingConfig">IndexingConfig</span></code>
             </td>
@@ -1953,7 +1953,7 @@
             </td>
           </tr>
           <tr class="doc-section-item">
-            <td><code><span title="markdown_vault_mcp.config.VaultConfig.embeddings">embeddings</span></code></td>
+            <td><code><span title="markdown_vault_mcp.config.ProjectConfig.embeddings">embeddings</span></code></td>
             <td>
                   <code><span title="markdown_vault_mcp.config_sections.EmbeddingsConfig">EmbeddingsConfig</span></code>
             </td>
@@ -1964,7 +1964,7 @@
             </td>
           </tr>
           <tr class="doc-section-item">
-            <td><code><span title="markdown_vault_mcp.config.VaultConfig.search">search</span></code></td>
+            <td><code><span title="markdown_vault_mcp.config.ProjectConfig.search">search</span></code></td>
             <td>
                   <code><span title="markdown_vault_mcp.config_sections.SearchConfig">SearchConfig</span></code>
             </td>
@@ -1975,7 +1975,7 @@
             </td>
           </tr>
           <tr class="doc-section-item">
-            <td><code><span title="markdown_vault_mcp.config.VaultConfig.sync">sync</span></code></td>
+            <td><code><span title="markdown_vault_mcp.config.ProjectConfig.sync">sync</span></code></td>
             <td>
                   <code><span title="markdown_vault_mcp.config_sections.SyncConfig">SyncConfig</span></code>
             </td>
@@ -1986,7 +1986,7 @@
             </td>
           </tr>
           <tr class="doc-section-item">
-            <td><code><span title="markdown_vault_mcp.config.VaultConfig.content">content</span></code></td>
+            <td><code><span title="markdown_vault_mcp.config.ProjectConfig.content">content</span></code></td>
             <td>
                   <code><span title="markdown_vault_mcp.config_sections.ContentConfig">ContentConfig</span></code>
             </td>
@@ -1997,7 +1997,7 @@
             </td>
           </tr>
           <tr class="doc-section-item">
-            <td><code><span title="markdown_vault_mcp.config.VaultConfig.transfer">transfer</span></code></td>
+            <td><code><span title="markdown_vault_mcp.config.ProjectConfig.transfer">transfer</span></code></td>
             <td>
                   <code><span title="markdown_vault_mcp.config_sections.TransferConfig">TransferConfig</span></code>
             </td>
@@ -2008,7 +2008,7 @@
             </td>
           </tr>
           <tr class="doc-section-item">
-            <td><code><span title="markdown_vault_mcp.config.VaultConfig.disable_apps_ui">disable_apps_ui</span></code></td>
+            <td><code><span title="markdown_vault_mcp.config.ProjectConfig.disable_apps_ui">disable_apps_ui</span></code></td>
             <td>
                   <code><span title="bool">bool</span></code>
             </td>
@@ -2022,7 +2022,7 @@ clients that don't render MCP Apps panels don't see them
             </td>
           </tr>
           <tr class="doc-section-item">
-            <td><code><span title="markdown_vault_mcp.config.VaultConfig.server">server</span></code></td>
+            <td><code><span title="markdown_vault_mcp.config.ProjectConfig.server">server</span></code></td>
             <td>
                   <code><span title="fastmcp_pvl_core.ServerConfig">ServerConfig</span></code>
             </td>
@@ -2038,7 +2038,7 @@ from <code>MARKDOWN_VAULT_MCP_*</code> env vars by
       </tbody>
     </table>
         <p>Example::</p>
-<div class="highlight"><pre><span></span><code>config = VaultConfig.from_env()
+<div class="highlight"><pre><span></span><code>config = ProjectConfig.from_env()
 vault = Vault(**config.to_vault_kwargs())
 </code></pre></div>
 
@@ -2066,10 +2066,10 @@ vault = Vault(**config.to_vault_kwargs())
 <div class="doc doc-object doc-function">
 
 
-<h3 id="markdown_vault_mcp.config.VaultConfig.to_vault_kwargs" class="doc doc-heading">
+<h3 id="markdown_vault_mcp.config.ProjectConfig.to_vault_kwargs" class="doc doc-heading">
             <code class="highlight language-python"><span class="n">to_vault_kwargs</span><span class="p">()</span></code>
 
-<a href="#markdown_vault_mcp.config.VaultConfig.to_vault_kwargs" class="headerlink" title="Permanent link">&para;</a></h3>
+<a href="#markdown_vault_mcp.config.ProjectConfig.to_vault_kwargs" class="headerlink" title="Permanent link">&para;</a></h3>
 
 
     <div class="doc doc-contents ">
@@ -2111,7 +2111,7 @@ is set) and creates a :class:<code>~markdown_vault_mcp.git.GitWriteStrategy</cod
       </tbody>
     </table>
         <p>Example::</p>
-<div class="highlight"><pre><span></span><code>config = VaultConfig.from_env()
+<div class="highlight"><pre><span></span><code>config = ProjectConfig.from_env()
 vault = Vault(**config.to_vault_kwargs())
 </code></pre></div>
 
@@ -2123,14 +2123,14 @@ vault = Vault(**config.to_vault_kwargs())
 <div class="doc doc-object doc-function">
 
 
-<h3 id="markdown_vault_mcp.config.VaultConfig.from_env" class="doc doc-heading">
+<h3 id="markdown_vault_mcp.config.ProjectConfig.from_env" class="doc doc-heading">
             <code class="highlight language-python"><span class="n">from_env</span><span class="p">(</span><span class="n">prefix</span><span class="o">=</span><span class="n">_ENV_PREFIX</span><span class="p">)</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-classmethod"><code>classmethod</code></small>
   </span>
 
-<a href="#markdown_vault_mcp.config.VaultConfig.from_env" class="headerlink" title="Permanent link">&para;</a></h3>
+<a href="#markdown_vault_mcp.config.ProjectConfig.from_env" class="headerlink" title="Permanent link">&para;</a></h3>
 
 
     <div class="doc doc-contents ">
@@ -2280,15 +2280,15 @@ into <code>config.server</code> by
       <tbody>
           <tr class="doc-section-item">
             <td>
-                  <code><a class="autorefs autorefs-internal" title="VaultConfig(source_dir, read_only=True, server_name='markdown-vault-mcp', instructions=None, git=GitConfig(), indexing=IndexingConfig(), embeddings=EmbeddingsConfig(), search=SearchConfig(), sync=SyncConfig(), content=ContentConfig(), transfer=TransferConfig(), disable_apps_ui=False, server=ServerConfig())
+                  <code><a class="autorefs autorefs-internal" title="ProjectConfig(source_dir, read_only=True, server_name='markdown-vault-mcp', instructions=None, git=GitConfig(), indexing=IndexingConfig(), embeddings=EmbeddingsConfig(), search=SearchConfig(), sync=SyncConfig(), content=ContentConfig(), transfer=TransferConfig(), disable_apps_ui=False, server=ServerConfig())
 
   
       dataclass
-   (markdown_vault_mcp.config.VaultConfig)" href="#markdown_vault_mcp.config.VaultConfig">VaultConfig</a></code>
+   (markdown_vault_mcp.config.ProjectConfig)" href="#markdown_vault_mcp.config.ProjectConfig">ProjectConfig</a></code>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>A fully populated :class:<code>VaultConfig</code> instance.</p>
+                <p>A fully populated :class:<code>ProjectConfig</code> instance.</p>
               </div>
             </td>
           </tr>
@@ -2321,7 +2321,7 @@ or if a search-ranking env var is non-numeric or out of range.</p>
         <p>Example::</p>
 <div class="highlight"><pre><span></span><code>import os
 os.environ[&quot;MARKDOWN_VAULT_MCP_SOURCE_DIR&quot;] = &quot;/home/user/vault&quot;
-config = VaultConfig.from_env()
+config = ProjectConfig.from_env()
 vault = Vault(**config.to_vault_kwargs())
 </code></pre></div>
 

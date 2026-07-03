@@ -240,12 +240,16 @@ For very large vaults (thousands of notes), the first startup may take several m
 
 The chunker (shared by keyword and semantic search) bounds every chunk by a word cap (`MARKDOWN_VAULT_MCP_MAX_CHUNK_WORDS`, default `400`) and a character cap (`MARKDOWN_VAULT_MCP_MAX_CHUNK_CHARS`). The character cap exists because a chunk that fits the word cap can still exceed the embedding model's **token** limit; token-dense content (tables, code, CJK) packs far more tokens per word. Without it, such a chunk would abort the build (Ollama returns HTTP 400) or be silently truncated (FastEmbed), producing degraded embeddings.
 
-`MAX_CHUNK_CHARS` is derived from the embedding model's token context when you don't set it explicitly: `round(context_length × 2.8)` (deliberately conservative for dense content):
+When you don't set `MAX_CHUNK_CHARS` explicitly, the default is `min(1500, round(context_length × 2.8))`: retrieval quality peaks at ~256 to 512 tokens per chunk regardless of the model's context, and the 1500-char ceiling keeps the fastembed/ONNX path clear of the out-of-memory regime seen with oversize chunks (issue [#306](https://github.com/pvliesdonk/markdown-vault-mcp/issues/306)). The result:
 
-- `bge-small-en-v1.5` (512-token context) → ~1,434 chars
-- `nomic-embed-text` (Ollama default, 2048-token context) → ~5,734 chars
-- an 8192-token model → ~22,938 chars
-- unknown context (no provider, or Ollama unreachable at startup) → a fixed `6000`-char fallback
+- `bge-small-en-v1.5` (512-token context) → ~1,434 chars (below the ceiling, used as is)
+- a shorter-context model (below ~536 tokens) uses its own smaller value, `round(context_length × 2.8)`
+- a longer-context model (2048, 8192, …) is capped at the `1500`-char ceiling
+- unknown context (no provider, or Ollama unreachable at startup) → the `1500`-char ceiling
+
+Set a positive value to force an exact cap. Set `-1` to opt into unbounded context-scaling (`round(context_length × 2.8)` with no ceiling, or `1500` when the model context is unknown). This reproduces the pre-bounded context-scaling and **can OOM the host** on the fastembed/ONNX path with a long-context model, so use it only with Ollama (out-of-process) or a remote provider.
+
+`MARKDOWN_VAULT_MCP_CHUNK_OVERLAP_WORDS` (default `40`, `0` disables) adds a few words from the end of the previous fragment to the start of each fragment when a section is too large for the caps and gets split on paragraph, line, or word boundaries. This improves retrieval recall at those arbitrary split points. An overlapped fragment can exceed the word or character cap by up to the overlap word count. Overlap applies to new and re-indexed notes, so run `reindex` to apply it across an existing vault; it does not force a rebuild on its own.
 
 Changing the embedding model triggers a one-time cold rebuild
 

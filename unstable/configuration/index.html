@@ -2094,16 +2094,22 @@
 
 
 <h1 id="configuration">Configuration<a class="headerlink" href="#configuration" title="Permanent link">&para;</a></h1>
+<p>Markdown Vault MCP is configured via environment variables with the
+<code>MARKDOWN_VAULT_MCP_</code> prefix.</p>
+<p>See <code>fastmcp-pvl-core</code>'s README for the full list of universal
+variables (<code>MARKDOWN_VAULT_MCP_TRANSPORT</code>, <code>MARKDOWN_VAULT_MCP_HOST</code>,
+<code>MARKDOWN_VAULT_MCP_PORT</code>, <code>MARKDOWN_VAULT_MCP_HTTP_PATH</code>,
+<code>MARKDOWN_VAULT_MCP_BASE_URL</code>, auth vars, etc.).</p>
 <div class="admonition tip">
 <p class="admonition-title">Prefer a guided setup?</p>
 <p>Use the <a href="../configuration-generator/">Configuration Generator</a> to answer a few
 questions and copy a ready-made <code>.env</code>, Docker, or Claude config.</p>
 </div>
-<p>All configuration is via environment variables. Most use the <code>MARKDOWN_VAULT_MCP_</code> prefix. <code>OLLAMA_HOST</code> and <code>OPENAI_API_KEY</code> are bare ecosystem-standard names; all other variables use the <code>MARKDOWN_VAULT_MCP_</code> prefix.</p>
 <div class="admonition note">
 <p class="admonition-title">Configuration is validated at startup</p>
 <p>Numeric variables are validated against the <strong>Type</strong> column below (such as <code>int ≥ 1</code>). A non-numeric or out-of-range value makes the server <strong>fail fast</strong> at startup with a <code>ConfigurationError</code> naming the offending setting, rather than silently falling back to a default. A typo in an env var surfaces immediately instead of producing surprising behavior later.</p>
 </div>
+<!-- DOMAIN-CONFIG-VARS-START -->
 <h2 id="core">Core<a class="headerlink" href="#core" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -2184,10 +2190,15 @@ questions and copy a ready-made <code>.env</code>, Docker, or Claude config.</p>
 <td>path</td>
 <td>(none)</td>
 <td>No</td>
-<td>Path to a directory of <code>.md</code> prompt files that extend or override built-in prompts</td>
+<td>Path to a directory of <code>.md</code> prompt files that extend or override built-in prompts. Each declared argument name must be a plain Python identifier (letters, digits, underscore; not a keyword); a prompt with a non-conforming argument name is skipped with a logged warning.</td>
 </tr>
 </tbody>
 </table>
+<p>The file watcher never watches the directories that hold <code>INDEX_PATH</code>,
+<code>EMBEDDINGS_PATH</code>, and <code>STATE_PATH</code> (or <code>.git</code>), so the writes the server makes
+while indexing do not trigger it again. If you place one of these paths inside a
+content directory, that whole top-level directory stops being watched, so keep
+them at the vault root or outside the vault to keep sibling content watched live.</p>
 <h2 id="index-build-timeout">Index Build Timeout<a class="headerlink" href="#index-build-timeout" title="Permanent link">&para;</a></h2>
 <h3 id="markdown_vault_mcp_build_timeout_s"><code>MARKDOWN_VAULT_MCP_BUILD_TIMEOUT_S</code><a class="headerlink" href="#markdown_vault_mcp_build_timeout_s" title="Permanent link">&para;</a></h3>
 <p>Default: <code>60</code> (seconds).</p>
@@ -2209,7 +2220,6 @@ timeout the tool answers from the current index rather than raising
 <code>_meta</code>. Increase for large vaults where reindex / build_embeddings
 jobs take longer; decrease for faster client feedback when the index has
 chronic backlog.</p>
-<!-- DOMAIN-CONFIG-VARS-START -->
 <h2 id="server-identity">Server Identity<a class="headerlink" href="#server-identity" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -2316,17 +2326,23 @@ chronic backlog.</p>
 <td><code>MARKDOWN_VAULT_MCP_MAX_CHUNK_WORDS</code></td>
 <td><code>400</code></td>
 <td>int ≥ 1</td>
-<td>Hard cap on chunk word count. The adaptive chunker recursively re-splits at deeper heading levels (H1 → H6); anything still oversize (preambles and no-headings documents included) is further fragmented on paragraph and word boundaries. Match this to the embedding model's context window. The default FastEmbed model <code>BAAI/bge-small-en-v1.5</code> has only a 512-token context, so the default <code>400</code> words (≈ 600 tokens) <strong>could exceed it</strong>; <code>MAX_CHUNK_CHARS</code> (derived as ~1434 chars for this 512-token model) caps each chunk to the model's context, so manual adjustment is not needed. For long-context models such as <code>nomic-embed-text-v1.5</code> (8192 tokens natively; Ollama serves it with <code>n_ctx_train=2048</code> by default, see <code>OLLAMA_HOST</code>) the default <code>400</code> is comfortable. Setting a high value (such as <code>100000</code>) effectively disables the cap.</td>
+<td>Hard cap on chunk word count. The adaptive chunker recursively re-splits at deeper heading levels (H1 → H6); anything still oversize (preambles and no-headings documents included) is further fragmented on paragraph and word boundaries. Match this to the embedding model's context window. The default FastEmbed model <code>BAAI/bge-small-en-v1.5</code> has only a 512-token context, so the default <code>400</code> words (≈ 600 tokens) <strong>could exceed it</strong>; <code>MAX_CHUNK_CHARS</code> (derived as ~1434 chars for this 512-token model) caps each chunk to the model's context, so manual adjustment is not needed. For long-context models such as <code>nomic-embed-text-v1.5</code> (8192 tokens natively; Ollama serves it with <code>n_ctx_train=2048</code> by default, see <code>OLLAMA_HOST</code>) the default <code>400</code> is comfortable. Setting a high value (such as <code>100000</code>) effectively disables the cap. When <code>CHUNK_OVERLAP_WORDS</code> is non-zero, an overlapped fragment can exceed this cap by up to the overlap word count.</td>
 </tr>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_MAX_CHUNK_CHARS</code></td>
-<td><em>(derived)</em></td>
-<td>int ≥ 1</td>
-<td>Hard cap on chunk <strong>character</strong> count, enforced by the same chunker alongside the word cap (whichever budget is hit first triggers a split). Applies to token-dense content (CJK, code, tables) that fits the word cap yet exceeds the embedding model's token context. When unset, the cap is <strong>derived from the embedding model's context length</strong> as <code>round(context_length × 2.8)</code> (an 8192-token model yields 22938 chars; the default <code>BAAI/bge-small-en-v1.5</code> model, 512-token context, yields ~1434 chars); if the model's context length is unknown (no provider, or an unreachable Ollama instance) a conservative fixed fallback of <code>6000</code> chars is used. Set this to override the derived value. Like <code>MAX_CHUNK_WORDS</code>, it changes the chunk <em>index</em>, so a reindex is required for a new value to take effect.</td>
+<td><em>(bounded default)</em></td>
+<td>int ≥ 1, or <code>-1</code></td>
+<td>Hard cap on chunk <strong>character</strong> count, enforced by the chunker alongside the word cap (whichever budget is hit first triggers a split). Applies to token-dense content (CJK, code, tables). <strong>Unset</strong> uses the safe default <code>min(1500, round(context_length × 2.8))</code>: retrieval quality peaks at ~256 to 512 tokens per chunk regardless of the model's context, and 1500 chars keeps the fastembed/ONNX path clear of the out-of-memory regime seen with oversize chunks (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/306">#306</a>). For <code>BAAI/bge-small-en-v1.5</code> (512-token context) this derives to ~1434 chars (unchanged from prior releases). A model with a shorter context (below ~536 tokens) uses its own smaller <code>round(context_length × 2.8)</code> value; a longer-context model is capped at the <code>1500</code> ceiling; an unknown context (no provider, or an unreachable Ollama instance) falls back to <code>1500</code>. Set a <strong>positive integer</strong> to force an exact cap. Set <strong><code>-1</code></strong> to opt into unbounded context-scaling (<code>round(context_length × 2.8)</code> with no ceiling, or <code>1500</code> when the context is unknown), which reproduces the pre-#790 context-scaling and <strong>can OOM-kill the host</strong> on the fastembed/ONNX path with a long-context model; use only with Ollama (out-of-process) or a remote provider. Like <code>MAX_CHUNK_WORDS</code>, this changes the chunk <em>index</em>, so a reindex is required for a new value to take effect. When <code>CHUNK_OVERLAP_WORDS</code> is non-zero, an overlapped fragment can exceed this cap by up to the overlap word count.</td>
+</tr>
+<tr>
+<td><code>MARKDOWN_VAULT_MCP_CHUNK_OVERLAP_WORDS</code></td>
+<td><code>40</code></td>
+<td>int ≥ 0</td>
+<td>Words of overlap copied from the previous fragment onto each budget-split fragment of the <strong>same heading section</strong>. Improves retrieval recall at arbitrary (non-heading) split points; <code>0</code> disables. Overlap applies only where heading-based splitting has been exhausted and the chunker falls back to paragraph, line, or word splitting, never across a heading boundary. It is excluded from the warm-restart key, so changing it (or the default on upgrade) applies to new builds and any note re-indexed after an edit, without forcing a rebuild. Run <code>reindex</code> to apply a new value to an existing vault. A non-zero value can push an overlapped fragment past <code>MAX_CHUNK_WORDS</code> or <code>MAX_CHUNK_CHARS</code> by up to this many words; the excess is small and does not risk an out-of-memory condition.</td>
 </tr>
 </tbody>
 </table>
-<p>The first three knobs adjust <em>ranking and rendering</em> and take effect immediately. <code>MAX_CHUNK_WORDS</code> and <code>MAX_CHUNK_CHARS</code> change the chunk <em>index</em>; a reindex is required for a new value to take effect. Because the char cap is <strong>derived from the embedding model</strong>, changing the embedding model also changes the effective chunk boundaries: the FTS index is re-chunked, not just the embeddings. Changing the embedding model (or the explicit <code>MAX_CHUNK_CHARS</code> override) rejects the warm-restart short-circuit and triggers an automatic cold rebuild of the index on the next startup. No manual <code>reindex</code> is needed. <strong>One-time rebuild on upgrade:</strong> an existing <em>embedding-enabled</em> vault upgrading from a release before this one will also cold-rebuild once on next startup, because builds now record chunking provenance (embedding model + override) that older builds did not track. No action is required; subsequent restarts warm-restart as normal. FTS-only vaults (no embedding provider) are unaffected. <strong>Upgrading note:</strong> <code>search</code> now returns snippets (≤ ~200 words) by default. Set <code>snippet_words=0</code> per call or <code>MARKDOWN_VAULT_MCP_SNIPPET_WORDS=0</code> globally to restore full-chunk output. Existing vaults are also re-chunked on the next <code>reindex</code> when <code>MAX_CHUNK_WORDS</code> is set.</p>
+<p>The first three knobs adjust <em>ranking and rendering</em> and take effect immediately. <code>MAX_CHUNK_WORDS</code> and <code>MAX_CHUNK_CHARS</code> change the chunk <em>index</em>; a reindex is required for a new value to take effect. Because the char cap is <strong>derived from the embedding model</strong>, changing the embedding model also changes the effective chunk boundaries: the FTS index is re-chunked, not just the embeddings. Changing the embedding model (or the explicit <code>MAX_CHUNK_CHARS</code> override) rejects the warm-restart short-circuit and triggers an automatic cold rebuild of the index on the next startup. No manual <code>reindex</code> is needed. <strong>One-time rebuild on upgrade:</strong> an existing <em>embedding-enabled</em> vault upgrading from a release before this one will also cold-rebuild once on next startup, because builds now record chunking provenance (embedding model + override) that older builds did not track. No action is required; subsequent restarts warm-restart as normal. FTS-only vaults (no embedding provider) are unaffected. <strong>Upgrading note:</strong> <code>search</code> now returns snippets (≤ ~200 words) by default. Set <code>snippet_words=0</code> per call or <code>MARKDOWN_VAULT_MCP_SNIPPET_WORDS=0</code> globally to restore full-chunk output. Existing vaults are also re-chunked on the next <code>reindex</code> when <code>MAX_CHUNK_WORDS</code> is set. <strong>Bounded-cap upgrade (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/790">#790</a>):</strong> the smaller default (<code>min(1500, round(context_length × 2.8))</code>, reduced from the old unbounded <code>round(context_length × 2.8)</code>) applies to new builds and whenever the embedding model or an explicit <code>MAX_CHUNK_CHARS</code> changes. It does not auto-apply on upgrade. The warm-restart key is the model name together with the explicit override rather than the derived cap, so an existing vault on a long-context model with no explicit <code>MAX_CHUNK_CHARS</code> keeps its current coarser chunk boundaries. That old index stays usable; it is only larger-chunked. Run <code>reindex</code> when you want the smaller default to take effect, noting that a full re-embed can take many minutes on a large vault. bge-small vaults are unaffected. To keep unbounded scaling, set <code>MAX_CHUNK_CHARS=-1</code>.</p>
 <h2 id="search-and-embeddings">Search and Embeddings<a class="headerlink" href="#search-and-embeddings" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -2544,8 +2560,19 @@ chronic backlog.</p>
 <td><code>2.0</code></td>
 <td>Seconds of quiet after the last event before triggering reindex; tune down for faster response on small vaults</td>
 </tr>
+<tr>
+<td><code>MARKDOWN_VAULT_MCP_FILE_WATCHER_ROOT_FLOOR</code></td>
+<td>bool</td>
+<td><code>true</code></td>
+<td>Keep the non-recursive watch on the vault root so root-level <code>*.md</code> changes trigger a reindex; set <code>false</code> to drop it (root-level files then rely on scans)</td>
+</tr>
 </tbody>
 </table>
+<p>The watcher schedules one recursive watch per non-excluded immediate child directory of the source directory rather than a single recursive watch on the root, so excluded directories (<code>node_modules</code>, <code>.venv</code>, and similar) are never registered and content under a deliberately watched dot-directory (a vault rooted at <code>$HOME</code> with content under <code>.notes/</code>) delivers its own edits. New top-level directories created after start are not watched until the server restarts; the startup log line lists the scheduled root count and names.</p>
+<div class="admonition note">
+<p class="admonition-title">macOS access prompts</p>
+<p>On macOS the root floor watch still opens an OS-level recursive <code>FSEvents</code> stream over the whole tree even though it delivers only direct entries, so a vault rooted at <code>$HOME</code> can trigger repeated "would like to access data from other apps" prompts. Set <code>MARKDOWN_VAULT_MCP_FILE_WATCHER_ROOT_FLOOR=false</code> to register zero source-directory-rooted <code>FSEvents</code> streams, accepting that root-level files are then only picked up by scans.</p>
+</div>
 <div class="admonition note">
 <p class="admonition-title">Mutual exclusion with git</p>
 <p>When <code>GIT_PULL_INTERVAL_S &gt; 0</code> or <code>GITHUB_WEBHOOK_SECRET</code> is set, the file watcher is automatically disabled even if <code>FILE_WATCHER=true</code>. This prevents mid-checkout partial scans where git is modifying the working tree.</p>

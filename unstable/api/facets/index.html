@@ -1765,6 +1765,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.facets.writer.WriterFacet.move_folder" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        move_folder
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#markdown_vault_mcp.facets.writer.WriterFacet.write_attachment" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2056,6 +2067,17 @@
     <span class="md-ellipsis">
       
         embeddings_status
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.facets.index.IndexFacet.skipped_files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        skipped_files
       
     </span>
   </a>
@@ -2499,6 +2521,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.facets.writer.WriterFacet.move_folder" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        move_folder
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#markdown_vault_mcp.facets.writer.WriterFacet.write_attachment" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2790,6 +2823,17 @@
     <span class="md-ellipsis">
       
         embeddings_status
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.facets.index.IndexFacet.skipped_files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        skipped_files
       
     </span>
   </a>
@@ -3580,17 +3624,20 @@ includes <code>kind="attachment"</code> and <code>mime_type</code>.</p>
 
 
 <h3 id="markdown_vault_mcp.facets.reader.ReaderFacet.get_toc" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">get_toc</span><span class="p">(</span><span class="n">path</span><span class="p">)</span></code>
+            <code class="highlight language-python"><span class="n">get_toc</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">max_level</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">max_notes</span><span class="o">=</span><span class="mi">200</span><span class="p">)</span></code>
 
 <a href="#markdown_vault_mcp.facets.reader.ReaderFacet.get_toc" class="headerlink" title="Permanent link">&para;</a></h3>
 
 
     <div class="doc doc-contents ">
 
-        <p>Return table of contents for a document.</p>
-<p>Queries the FTS sections table for headings and prepends the document
-title as a synthetic H1 entry. The result depends on the FTS index, so
-cold-start callers must build the index first (bucket 3).</p>
+        <p>Return a table of contents for a note or a folder subtree.</p>
+<p>Note paths (ending in <code>.md</code>) return a flat
+:class:<code>~markdown_vault_mcp.types.TocEntry</code> list with the title as a
+synthetic H1. Folder paths return a
+:class:<code>~markdown_vault_mcp.types.SubtreeToc</code>. The result
+depends on the FTS index, so cold-start callers must build the index
+first (bucket 3).</p>
 
 
 <p><span class="doc-section-title">Parameters:</span></p>
@@ -3613,11 +3660,43 @@ cold-start callers must build the index first (bucket 3).</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Relative path to the document (e.g. <code>"notes/intro.md"</code>).</p>
+                <p>Note path or folder prefix.</p>
               </div>
             </td>
             <td>
                 <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>max_level</code>
+            </td>
+            <td>
+                  <code><span title="int">int</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Drop headings with <code>level</code> above this (both modes).</p>
+              </div>
+            </td>
+            <td>
+                  <code>None</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>max_notes</code>
+            </td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Folder mode cap on distinct notes (default 200).</p>
+              </div>
+            </td>
+            <td>
+                  <code>200</code>
             </td>
           </tr>
       </tbody>
@@ -3635,21 +3714,21 @@ cold-start callers must build the index first (bucket 3).</p>
       <tbody>
           <tr class="doc-section-item">
             <td>
-                  <code><span title="list">list</span>[<span title="dict">dict</span>[<span title="str">str</span>, <span title="typing.Any">Any</span>]]</code>
+                  <code><span title="list">list</span>[<span title="markdown_vault_mcp.types.TocEntry">TocEntry</span>] | <span title="markdown_vault_mcp.types.SubtreeToc">SubtreeToc</span></code>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>List of <code>{"heading": str, "level": int}</code> dicts ordered by</p>
+                <p>Note path → <code>list[TocEntry]</code> with the document title prepended</p>
               </div>
             </td>
           </tr>
           <tr class="doc-section-item">
             <td>
-                  <code><span title="list">list</span>[<span title="dict">dict</span>[<span title="str">str</span>, <span title="typing.Any">Any</span>]]</code>
+                  <code><span title="list">list</span>[<span title="markdown_vault_mcp.types.TocEntry">TocEntry</span>] | <span title="markdown_vault_mcp.types.SubtreeToc">SubtreeToc</span></code>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>position, with the document title prepended as level 1.</p>
+                <p>as a synthetic H1. Folder path → :class:<code>~markdown_vault_mcp.types.SubtreeToc</code>.</p>
               </div>
             </td>
           </tr>
@@ -3682,7 +3761,7 @@ cold-start callers must build the index first (bucket 3).</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>If no document exists at the given path.</p>
+                <p>Note path with no document; invalid folder path.</p>
               </div>
             </td>
           </tr>
@@ -5606,6 +5685,168 @@ directory.</p>
 <div class="doc doc-object doc-function">
 
 
+<h3 id="markdown_vault_mcp.facets.writer.WriterFacet.move_folder" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">move_folder</span><span class="p">(</span><span class="n">old_dir</span><span class="p">,</span> <span class="n">new_dir</span><span class="p">)</span></code>
+
+<a href="#markdown_vault_mcp.facets.writer.WriterFacet.move_folder" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Move a folder subtree to a new prefix, rewriting links vault-wide.</p>
+<p>Moves every file under <em>old_dir</em> (notes, attachments, and other
+files) to the matching path under <em>new_dir</em> and rewrites all links
+across the vault that point into the moved subtree, including links
+between documents inside it.</p>
+<p>The move is atomic at the gate (a destination-file collision aborts
+before anything moves); link rewrites are best-effort.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>old_dir</code>
+            </td>
+            <td>
+                  <code><span title="str">str</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Relative source folder prefix (e.g. <code>"drafts"</code>).</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>new_dir</code>
+            </td>
+            <td>
+                  <code><span title="str">str</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Relative target folder prefix (e.g. <code>"archive/2026"</code>).</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="markdown_vault_mcp.types.MoveFolderResult">MoveFolderResult</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>class:<code>~markdown_vault_mcp.types.MoveFolderResult</code>.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="ReadOnlyError (markdown_vault_mcp.exceptions.ReadOnlyError)" href="../exceptions/#markdown_vault_mcp.exceptions.ReadOnlyError">ReadOnlyError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If the vault is read-only.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="DocumentNotFoundError (markdown_vault_mcp.exceptions.DocumentNotFoundError)" href="../exceptions/#markdown_vault_mcp.exceptions.DocumentNotFoundError">DocumentNotFoundError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If <em>old_dir</em> is missing, not a directory,
+or empty.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="DocumentExistsError (markdown_vault_mcp.exceptions.DocumentExistsError)" href="../exceptions/#markdown_vault_mcp.exceptions.DocumentExistsError">DocumentExistsError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If any destination file already exists.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="ValueError">ValueError</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If either path escapes the vault or the two paths are
+nested.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="OSError">OSError</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If the OS raises during the move phase (e.g. a permission
+error or full disk). The collision gate prevents pre-existing
+destination clashes, but a mid-move OS error leaves the subtree
+partially moved with the index unchanged; reindex recovers.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
 <h3 id="markdown_vault_mcp.facets.writer.WriterFacet.write_attachment" class="doc doc-heading">
             <code class="highlight language-python"><span class="n">write_attachment</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">content</span><span class="p">,</span> <span class="n">if_match</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
 
@@ -6691,15 +6932,19 @@ detect a write cycle inside a read window.</p>
 
     <div class="doc doc-contents ">
 
-        <p>Return a non-blocking eleven-key snapshot of build + writer state.</p>
+        <p>Return a non-blocking twelve-key snapshot of build + writer state.</p>
 <p>Keys: <code>status</code> (<code>"queryable"</code> | <code>"building"</code> | <code>"failed"</code>),
 <code>documents_indexed</code>, <code>documents_indexed_error</code>, <code>error</code>,
 <code>last_reindex_error</code>, <code>last_build_embeddings_error</code>, plus
 <code>queue_depth</code>, <code>in_flight</code>, <code>dirty_paths</code>, <code>dirty_embeddings</code>,
-<code>write_generation</code> merged from the writer. A captured build error
-appears in <code>error</code> as diagnostic context without demoting a
-<code>queryable</code> status; <code>documents_indexed_error</code> carries a SQLite
-read failure (<code>documents_indexed</code> stays <code>0</code>) (#583).</p>
+<code>write_generation</code> merged from the writer, and <code>skipped_files</code> — a
+list of <code>{path, category, detail}</code> dicts for files dropped from the
+index for a surfaced deterministic reason (parse / encoding /
+missing-frontmatter / internal-error), read from tracker state
+(#775, #802). A captured build error appears in <code>error</code> as
+diagnostic context without demoting a <code>queryable</code> status;
+<code>documents_indexed_error</code> carries a SQLite read failure
+(<code>documents_indexed</code> stays <code>0</code>) (#583).</p>
 
 
     </div>
@@ -6959,11 +7204,12 @@ already exists on disk.</p>
           </tr>
           <tr class="doc-section-item">
             <td>
-                  <code><span title="ValueError">ValueError</span></code>
+                  <code><span title="markdown_vault_mcp.exceptions.EmbeddingsNotConfiguredError">EmbeddingsNotConfiguredError</span></code>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>If <code>embedding_provider</code> or <code>embeddings_path</code> is unset.</p>
+                <p>If <code>embedding_provider</code> or
+<code>embeddings_path</code> is unset (a <code>ValueError</code> subclass).</p>
               </div>
             </td>
           </tr>
@@ -7136,6 +7382,50 @@ via :meth:<code>IndexFacet.get_index_status</code> (#561).</p>
             <td>
               <div class="doc-md-description">
                 <p><code>available</code>.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="markdown_vault_mcp.facets.index.IndexFacet.skipped_files" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">skipped_files</span><span class="p">()</span></code>
+
+<a href="#markdown_vault_mcp.facets.index.IndexFacet.skipped_files" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Return files dropped from the index for a surfaced reason (#775).</p>
+<p>Delegates to :meth:<code>IndexManager.skipped_files</code>; also merged, as
+plain dicts, into :meth:<code>IndexFacet.get_index_status</code>'s
+<code>skipped_files</code> key.</p>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="list">list</span>[<span title="markdown_vault_mcp.types.SkippedFile">SkippedFile</span>]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Path-sorted list of :class:<code>~markdown_vault_mcp.types.SkippedFile</code>.</p>
               </div>
             </td>
           </tr>

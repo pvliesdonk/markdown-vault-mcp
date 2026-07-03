@@ -6,16 +6,16 @@ The `config` module loads configuration from environment variables and provides 
 
 ```
 import os
-from markdown_vault_mcp import Vault, VaultConfig
+from markdown_vault_mcp import Vault, ProjectConfig
 
 os.environ["MARKDOWN_VAULT_MCP_SOURCE_DIR"] = "/path/to/vault"
-config = VaultConfig.from_env()
+config = ProjectConfig.from_env()
 vault = Vault(**config.to_vault_kwargs())
 ```
 
 ## API Reference
 
-## `VaultConfig(source_dir, read_only=True, server_name='markdown-vault-mcp', instructions=None, git=GitConfig(), indexing=IndexingConfig(), embeddings=EmbeddingsConfig(), search=SearchConfig(), sync=SyncConfig(), content=ContentConfig(), transfer=TransferConfig(), disable_apps_ui=False, server=ServerConfig())`
+## `ProjectConfig(source_dir, read_only=True, server_name='markdown-vault-mcp', instructions=None, git=GitConfig(), indexing=IndexingConfig(), embeddings=EmbeddingsConfig(), search=SearchConfig(), sync=SyncConfig(), content=ContentConfig(), transfer=TransferConfig(), disable_apps_ui=False, server=ServerConfig())`
 
 Configuration for a :class:`~markdown_vault_mcp.vault.Vault`.
 
@@ -40,7 +40,7 @@ Attributes:
 Example::
 
 ```
-config = VaultConfig.from_env()
+config = ProjectConfig.from_env()
 vault = Vault(**config.to_vault_kwargs())
 ```
 
@@ -60,7 +60,7 @@ Returns:
 Example::
 
 ```
-config = VaultConfig.from_env()
+config = ProjectConfig.from_env()
 vault = Vault(**config.to_vault_kwargs())
 ```
 
@@ -135,9 +135,9 @@ Parameters:
 
 Returns:
 
-| Type          | Description                                    |
-| ------------- | ---------------------------------------------- |
-| `VaultConfig` | A fully populated :class:VaultConfig instance. |
+| Type            | Description                                      |
+| --------------- | ------------------------------------------------ |
+| `ProjectConfig` | A fully populated :class:ProjectConfig instance. |
 
 Raises:
 
@@ -150,6 +150,6 @@ Example::
 ```
 import os
 os.environ["MARKDOWN_VAULT_MCP_SOURCE_DIR"] = "/home/user/vault"
-config = VaultConfig.from_env()
+config = ProjectConfig.from_env()
 vault = Vault(**config.to_vault_kwargs())
 ```

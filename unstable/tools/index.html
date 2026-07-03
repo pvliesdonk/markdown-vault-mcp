@@ -1353,6 +1353,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#move_folder" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        move_folder
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#fetch" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1429,6 +1440,17 @@
     <span class="md-ellipsis">
       
         get_similar
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get_toc" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_toc
       
     </span>
   </a>
@@ -2363,6 +2385,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#move_folder" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        move_folder
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#fetch" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2439,6 +2472,17 @@
     <span class="md-ellipsis">
       
         get_similar
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get_toc" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_toc
       
     </span>
   </a>
@@ -2629,7 +2673,7 @@
 <p>markdown-vault-mcp exposes MCP tools across several categories. Write tools are only available when <code>MARKDOWN_VAULT_MCP_READ_ONLY=false</code>.</p>
 <div class="admonition note">
 <p class="admonition-title">Index freshness on read tools (<code>wait_for_pending_writes</code> + <code>_meta.index_stale</code>)</p>
-<p>Every read tool that queries the FTS index (<code>search</code>, <code>list_documents</code>, <code>list_folders</code>, <code>list_tags</code>, <code>stats</code>, <code>get_recent</code>, <code>get_backlinks</code>, <code>get_outlinks</code>, <code>get_broken_links</code>, <code>get_similar</code>, <code>get_context</code>, <code>get_orphan_notes</code>, <code>get_most_linked</code>, and <code>get_connection_path</code>) accepts an optional <strong><code>wait_for_pending_writes</code></strong> (<code>bool</code>, default <code>false</code>) parameter and reports index freshness <strong>out-of-band in the MCP response's <code>_meta.index_stale</code> field</strong> rather than wrapping the payload in a <code>{stale, data}</code> envelope. The data payload is a <strong>bare list/dict, identical whether the index is fresh or stale</strong>; clients that do not care about drift ignore <code>_meta</code> entirely. Clients that need a fresh-read guarantee either inspect <code>result._meta.index_stale</code>, or pass <code>wait_for_pending_writes=true</code> to block until the writer drains (bounded by <code>MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S</code>, default 60&nbsp;s; on timeout it answers from the current index rather than raising). <code>index_stale</code> is <code>true</code> when the IndexWriter had pending or in-flight work. The relevant conditions are: the optional <code>wait_for_pending_writes</code> timed out; a write completed inside the read window; the writer was non-idle at response time. The same <code>_meta.index_stale</code> field rides on the index-querying MCP <strong>resources</strong> (<code>config://</code>, <code>stats://</code>, <code>folders://</code>, <code>tags://</code>, <code>recent://</code>, <code>toc://</code>, <code>similar://</code>), readable via the resource read's <code>_meta</code> (resources carry no <code>wait_for_pending_writes</code> parameter; they signal only).</p>
+<p>Every read tool that queries the FTS index (<code>search</code>, <code>list_documents</code>, <code>list_folders</code>, <code>list_tags</code>, <code>stats</code>, <code>get_recent</code>, <code>get_backlinks</code>, <code>get_outlinks</code>, <code>get_broken_links</code>, <code>get_similar</code>, <code>get_toc</code>, <code>get_context</code>, <code>get_orphan_notes</code>, <code>get_most_linked</code>, and <code>get_connection_path</code>) accepts an optional <strong><code>wait_for_pending_writes</code></strong> (<code>bool</code>, default <code>false</code>) parameter and reports index freshness <strong>out-of-band in the MCP response's <code>_meta.index_stale</code> field</strong> rather than wrapping the payload in a <code>{stale, data}</code> envelope. The data payload is a <strong>bare list/dict, identical whether the index is fresh or stale</strong>; clients that do not care about drift ignore <code>_meta</code> entirely. Clients that need a fresh-read guarantee either inspect <code>result._meta.index_stale</code>, or pass <code>wait_for_pending_writes=true</code> to block until the writer drains (bounded by <code>MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S</code>, default 60&nbsp;s; on timeout it answers from the current index rather than raising). <code>index_stale</code> is <code>true</code> when the IndexWriter had pending or in-flight work. The relevant conditions are: the optional <code>wait_for_pending_writes</code> timed out; a write completed inside the read window; the writer was non-idle at response time. The same <code>_meta.index_stale</code> field rides on the index-querying MCP <strong>resources</strong> (<code>config://</code>, <code>stats://</code>, <code>folders://</code>, <code>tags://</code>, <code>recent://</code>, <code>toc://</code>, <code>similar://</code>), readable via the resource read's <code>_meta</code> (resources carry no <code>wait_for_pending_writes</code> parameter; they signal only).</p>
 </div>
 <!-- DOMAIN-TOOLS-LIST-START -->
 
@@ -2638,6 +2682,7 @@
 <thead>
 <tr>
 <th>Tool</th>
+<th>Title</th>
 <th>Category</th>
 <th>Description</th>
 </tr>
@@ -2645,156 +2690,199 @@
 <tbody>
 <tr>
 <td><a href="#search"><code>search</code></a></td>
+<td>Search Vault</td>
 <td>Read</td>
 <td>Hybrid full-text + semantic search with optional frontmatter filters</td>
 </tr>
 <tr>
 <td><a href="#read"><code>read</code></a></td>
+<td>Read Note</td>
 <td>Read</td>
 <td>Read a document or attachment by relative path</td>
 </tr>
 <tr>
 <td><a href="#list_documents"><code>list_documents</code></a></td>
+<td>List Documents</td>
 <td>Read</td>
 <td>List indexed documents and optionally attachments</td>
 </tr>
 <tr>
 <td><a href="#list_folders"><code>list_folders</code></a></td>
+<td>List Folders</td>
 <td>Read</td>
 <td>List all folder paths in the vault</td>
 </tr>
 <tr>
 <td><a href="#list_tags"><code>list_tags</code></a></td>
+<td>List Tags</td>
 <td>Read</td>
 <td>List all unique frontmatter tag values</td>
 </tr>
 <tr>
 <td><a href="#stats"><code>stats</code></a></td>
+<td>Vault Stats</td>
 <td>Read</td>
 <td>Get vault statistics and capabilities</td>
 </tr>
 <tr>
 <td><a href="#embeddings_status"><code>embeddings_status</code></a></td>
+<td>Embeddings Status</td>
 <td>Read</td>
 <td>Check embedding provider and vector index status</td>
 </tr>
 <tr>
 <td><a href="#get_index_status"><code>get_index_status</code></a></td>
+<td>Index Status</td>
 <td>Read</td>
 <td>Check background FTS build state (queryable / building / failed)</td>
 </tr>
 <tr>
 <td><a href="#get_backlinks"><code>get_backlinks</code></a></td>
+<td>Backlinks</td>
 <td>Read</td>
 <td>Find all documents that link to a given document</td>
 </tr>
 <tr>
 <td><a href="#get_outlinks"><code>get_outlinks</code></a></td>
+<td>Outlinks</td>
 <td>Read</td>
 <td>Find all links from a document, with existence check</td>
 </tr>
 <tr>
 <td><a href="#get_broken_links"><code>get_broken_links</code></a></td>
+<td>Broken Links</td>
 <td>Read</td>
 <td>Find all links pointing to non-existent documents</td>
 </tr>
 <tr>
 <td><a href="#get_similar"><code>get_similar</code></a></td>
+<td>Similar Notes</td>
 <td>Read</td>
 <td>Find semantically similar notes by document path</td>
 </tr>
 <tr>
+<td><a href="#get_toc"><code>get_toc</code></a></td>
+<td>Table of Contents</td>
+<td>Read</td>
+<td>Heading outline for a note or a folder subtree</td>
+</tr>
+<tr>
 <td><a href="#get_recent"><code>get_recent</code></a></td>
+<td>Recent Notes</td>
 <td>Read</td>
 <td>Get the most recently modified notes</td>
 </tr>
 <tr>
 <td><a href="#get_context"><code>get_context</code></a></td>
+<td>Note Context</td>
 <td>Read</td>
 <td>Get a consolidated context dossier for a note</td>
 </tr>
 <tr>
 <td><a href="#get_orphan_notes"><code>get_orphan_notes</code></a></td>
+<td>Orphan Notes</td>
 <td>Read</td>
 <td>Find notes with no inbound or outbound links</td>
 </tr>
 <tr>
 <td><a href="#get_most_linked"><code>get_most_linked</code></a></td>
+<td>Most-Linked Notes</td>
 <td>Read</td>
 <td>Find the most-linked-to notes ranked by backlink count</td>
 </tr>
 <tr>
 <td><a href="#get_connection_path"><code>get_connection_path</code></a></td>
+<td>Connection Path</td>
 <td>Read</td>
 <td>Find the shortest path between two notes via link graph</td>
 </tr>
 <tr>
 <td><a href="#get_history"><code>get_history</code></a></td>
+<td>Note History</td>
 <td>Read (git)</td>
 <td>List commits that touched a note, attachment, or the whole vault</td>
 </tr>
 <tr>
 <td><a href="#get_diff"><code>get_diff</code></a></td>
+<td>Note Diff</td>
 <td>Read (git)</td>
 <td>Return a diff of a note or attachment between two points in history</td>
 </tr>
 <tr>
 <td><a href="#reindex"><code>reindex</code></a></td>
+<td>Reindex Vault</td>
 <td>Admin</td>
 <td>Force a full reindex of the vault</td>
 </tr>
 <tr>
 <td><a href="#build_embeddings"><code>build_embeddings</code></a></td>
+<td>Build Embeddings</td>
 <td>Admin</td>
 <td>Build or rebuild vector embeddings</td>
 </tr>
 <tr>
 <td><a href="#write"><code>write</code></a></td>
+<td>Write Note</td>
 <td>Write</td>
 <td>Create or overwrite a document or attachment</td>
 </tr>
 <tr>
 <td><a href="#edit"><code>edit</code></a></td>
+<td>Edit Note</td>
 <td>Write</td>
 <td>Replace a unique text span in a document</td>
 </tr>
 <tr>
 <td><a href="#delete"><code>delete</code></a></td>
+<td>Delete Note</td>
 <td>Write</td>
 <td>Delete a document or attachment</td>
 </tr>
 <tr>
 <td><a href="#rename"><code>rename</code></a></td>
+<td>Rename Note</td>
 <td>Write</td>
 <td>Rename/move a document or attachment</td>
 </tr>
 <tr>
+<td><a href="#move_folder"><code>move_folder</code></a></td>
+<td>Move Folder</td>
+<td>Write</td>
+<td>Move an entire folder subtree and rewrite vault links</td>
+</tr>
+<tr>
 <td><a href="#fetch"><code>fetch</code></a></td>
+<td>Fetch to Vault</td>
 <td>Write</td>
 <td>Download from URL and save to vault</td>
 </tr>
 <tr>
 <td><a href="#git_sync"><code>git_sync</code></a></td>
+<td>Sync with Git</td>
 <td>Write (git)</td>
 <td>Force an immediate git pull / push / both, bypassing the periodic loops</td>
 </tr>
 <tr>
 <td><a href="#create_download_link"><code>create_download_link</code></a></td>
+<td>Download Link</td>
 <td>Transfer</td>
 <td>Mint a one-time capability URL to download a vault file (HTTP/SSE only)</td>
 </tr>
 <tr>
 <td><a href="#create_upload_link"><code>create_upload_link</code></a></td>
+<td>Upload Link</td>
 <td>Transfer</td>
 <td>Mint a one-time capability URL to upload bytes to a fixed vault path (HTTP/SSE only)</td>
 </tr>
 <tr>
 <td><a href="#browse_vault"><code>browse_vault</code></a></td>
+<td>Browse Vault</td>
 <td>Apps</td>
 <td>Open the vault explorer SPA</td>
 </tr>
 <tr>
 <td><a href="#show_context"><code>show_context</code></a></td>
+<td>Context Card</td>
 <td>Apps</td>
 <td>Open the Context Card for a note</td>
 </tr>
@@ -2866,7 +2954,7 @@
 </div>
 <div class="admonition note">
 <p class="admonition-title">Snippet content and full-chunk recovery</p>
-<p>By default, each section's <code>content</code> is a snippet of approximately 200 words centered on the query terms (not the full chunk). Pass <code>snippet_words=0</code> to receive the complete chunk. To read the full section after receiving a search result, call <code>read(path=result["path"], section=result["sections"][0]["heading"])</code>; this returns the entire chunk from the index without re-reading the whole document.</p>
+<p>By default, each section's <code>content</code> is a snippet of approximately 200 words centered on the query terms (not the full chunk). Pass <code>snippet_words=0</code> to receive the complete chunk. To read the full section after receiving a search result, call <code>read(path=result["path"], section=result["sections"][0]["heading"])</code>; this returns the entire section (body plus any sub-sections) reconstructed from the document.</p>
 </div>
 <div class="admonition tip">
 <p class="admonition-title">Choosing a search mode</p>
@@ -2886,7 +2974,7 @@
 <span class="p">}</span>
 </code></pre></div>
 <h3 id="read"><code>read</code><a class="headerlink" href="#read" title="Permanent link">&para;</a></h3>
-<p>Read the full content of a document or attachment by path. When combined with search, the optional <code>section</code> parameter lets you retrieve the full content of a specific chunk without loading the entire document.</p>
+<p>Read the full content of a document or attachment by path. When combined with search, the optional <code>section</code> parameter lets you retrieve a single section in full (its body and any sub-sections) without loading the entire document.</p>
 <p><strong>Parameters:</strong></p>
 <table>
 <thead>
@@ -2908,13 +2996,13 @@
 <td><code>section</code></td>
 <td>string</td>
 <td><code>null</code></td>
-<td>Optional heading to select a single section chunk. Pass the <code>heading</code> field from a <code>search</code> result to retrieve the full chunk content. Matching collapses internal whitespace on both sides: <code>"1.3.  Reducing..."</code> (two spaces) matches a stored <code>"1.3. Reducing..."</code> (one space) and vice versa. On miss, the error lists the document's actual stored headings so callers can recover. Raises an error if the heading is not found or is empty.</td>
+<td>Optional heading selecting one section. The whole section is returned (every paragraph, list, and sub-section from the heading up to the next heading at the same or higher level), reconstructed from the document on disk, so a section longer than the chunk budget comes back intact rather than truncated to its first chunk. Pass the <code>heading</code> field from a <code>search</code> result. Matching collapses internal whitespace on both sides: <code>"1.3.  Reducing..."</code> (two spaces) matches a stored <code>"1.3. Reducing..."</code> (one space) and vice versa. On miss, the error lists the document's actual headings so callers can recover. Raises an error if the heading is not found or is empty.</td>
 </tr>
 </tbody>
 </table>
 <div class="admonition tip">
-<p class="admonition-title">Recovering full chunks after search</p>
-<p>When <code>search</code> returns a snippet result, pass <code>result["heading"]</code> as the <code>section</code> parameter to recover the complete chunk: <code>read(path=result["path"], section=result["heading"])</code>. If the document has no sub-headings (preamble content), omit <code>section</code> to read the whole document.</p>
+<p class="admonition-title">Recovering the full section after search</p>
+<p>When <code>search</code> returns a snippet result, pass <code>result["heading"]</code> as the <code>section</code> parameter to recover the complete section: <code>read(path=result["path"], section=result["heading"])</code>. If the document has no sub-headings (preamble content), omit <code>section</code> to read the whole document.</p>
 </div>
 <div class="admonition note">
 <p class="admonition-title">Heading matching tolerates whitespace differences</p>
@@ -2933,7 +3021,7 @@ partial markdown reads (see the tip above).</p>
 <span class="w">  </span><span class="nt">&quot;path&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Journal/note.md&quot;</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">&quot;title&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;My Note&quot;</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">&quot;folder&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Journal&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;content&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;The markdown body...&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;content&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;---\ntitle: My Note\ntags: [journal]\n---\n\nThe note body...&quot;</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">&quot;frontmatter&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;title&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;My Note&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;tags&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;journal&quot;</span><span class="p">]},</span>
 <span class="w">  </span><span class="nt">&quot;modified_at&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">1741564800.0</span>
 <span class="p">}</span>
@@ -3050,7 +3138,14 @@ build attempt.</p>
   message when the document count could not be read (such as a locked or
   closed database), in which case <code>documents_indexed</code> is <code>0</code>.
 - <code>error</code>: <code>null</code> unless the background build raised; otherwise the
-  exception message.</p>
+  exception message.
+- <code>skipped_files</code>: list of files dropped from the index for a surfaced
+  deterministic reason. Each entry is <code>{"path", "category", "detail"}</code>, with
+  <code>category</code> one of <code>parse_error</code>, <code>encoding_error</code>, <code>missing_frontmatter</code>, or
+  <code>internal_error</code> (an unexpected indexer error rather than a content problem).
+  Empty when nothing was skipped. This tells a parse-dropped note apart from
+  one that simply has not synced yet, without reading container logs.
+  Exclude-pattern matches and transient I/O skips are intentionally omitted.</p>
 <p><strong>Tags:</strong> read-only.</p>
 <hr />
 <h2 id="index-management">Index Management<a class="headerlink" href="#index-management" title="Permanent link">&para;</a></h2>
@@ -3260,6 +3355,74 @@ by ~33%.</p>
 </tbody>
 </table>
 <p><strong>Returns:</strong> <code>{"old_path": "drafts/idea.md", "new_path": "projects/idea.md"}</code></p>
+<h3 id="move_folder"><code>move_folder</code><a class="headerlink" href="#move_folder" title="Permanent link">&para;</a></h3>
+<p>Move an entire folder subtree to a new prefix and rewrite all vault links that point into the moved subtree. This is the folder-level analogue of <code>rename</code>.</p>
+<p><strong>Parameters:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>old_dir</code></td>
+<td>string</td>
+<td>Current folder path (relative, no trailing slash, such as <code>"drafts/2024"</code>)</td>
+</tr>
+<tr>
+<td><code>new_dir</code></td>
+<td>string</td>
+<td>Target folder path (relative, such as <code>"archive/2024"</code>)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Returns:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>old_dir</code></td>
+<td>string</td>
+<td>Source folder path (echoed back)</td>
+</tr>
+<tr>
+<td><code>new_dir</code></td>
+<td>string</td>
+<td>Destination folder path (echoed back)</td>
+</tr>
+<tr>
+<td><code>files_moved</code></td>
+<td>integer</td>
+<td>Number of files moved on disk</td>
+</tr>
+<tr>
+<td><code>updated_links</code></td>
+<td>integer</td>
+<td>Number of source documents whose links were rewritten</td>
+</tr>
+<tr>
+<td><code>failed_links</code></td>
+<td>array of strings</td>
+<td>Paths of documents whose link rewrite failed (best-effort)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Atomicity:</strong> before any file is moved, every destination path is checked. If any single destination file already exists the call raises and <strong>nothing is moved</strong>. Merging into a pre-existing target directory is allowed as long as no per-file collision exists.</p>
+<p><strong>Link rewrites:</strong> after the move, all vault links pointing into the subtree (markdown links and wikilinks, including links between documents inside the moved subtree and backlinks from outside) are rewritten in a single pass. Rewriting is best-effort; a document that cannot be rewritten is listed in <code>failed_links</code> and does not abort the move.</p>
+<p><strong>Index:</strong> updated immediately after the call; no <code>reindex</code> needed.</p>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>Link rewrites are not rolled back if the process is interrupted after the move phase begins. The move phase itself is not OS-failure-atomic: an OS error during file moves (permission error, full disk, concurrent removal) can leave the subtree partially moved with the index unchanged; run <code>reindex</code> to recover. Use <code>rename</code> for single-file moves where full atomicity is required.</p>
+</div>
 <h3 id="fetch"><code>fetch</code><a class="headerlink" href="#fetch" title="Permanent link">&para;</a></h3>
 <p>Download a file from a URL and save it to the vault as a note or attachment. Designed for MCP-to-MCP file transfer when content is too large for the LLM context window.</p>
 <p><strong>Parameters:</strong></p>
@@ -3445,12 +3608,12 @@ failures; <code>null</code> for clean fast-forwards and dry-runs):</p>
 </tr>
 <tr>
 <td><code>"no_remote"</code></td>
-<td>Neither <code>@{upstream}</code> nor <code>origin/HEAD</code> could be resolved on the local clone.</td>
+<td>No remote-tracking ref (<code>origin/&lt;branch&gt;</code>, or <code>origin/HEAD</code> for a detached checkout) could be resolved on the local clone.</td>
 <td><code>false</code></td>
 </tr>
 <tr>
 <td><code>"rebased"</code></td>
-<td>Local and remote diverged but <code>git rebase @{upstream}</code> replayed local commits cleanly. <code>conflict_files</code> empty.</td>
+<td>Local and remote diverged but <code>git rebase origin/&lt;branch&gt;</code> replayed local commits cleanly. <code>conflict_files</code> empty.</td>
 <td><code>true</code></td>
 </tr>
 <tr>
@@ -3488,7 +3651,7 @@ already-up-to-date no-op):</p>
 </tr>
 <tr>
 <td><code>"no_remote"</code></td>
-<td>Upstream tracking branch could not be resolved (no <code>@{upstream}</code> and no <code>origin/HEAD</code>). Push not attempted.</td>
+<td>No remote-tracking ref could be resolved (no <code>origin/&lt;branch&gt;</code> and no <code>origin/HEAD</code>). Push not attempted.</td>
 <td><code>false</code></td>
 </tr>
 <tr>
@@ -3663,6 +3826,51 @@ see the <a href="../guides/git-integration/#provider-username-reference">Git Int
 <p class="admonition-title">Grouped result shape</p>
 <p>Returns one entry per file with up to <code>chunks_per_file</code> best-matching sections. Default is 2 sections per file; pass <code>chunks_per_file=1</code> for compact dossiers.</p>
 </div>
+<h3 id="get_toc"><code>get_toc</code><a class="headerlink" href="#get_toc" title="Permanent link">&para;</a></h3>
+<p>Heading outline for a single note or an entire folder subtree. Mirrors the <a href="../resources/#tocvaultpath"><code>toc://vault/{path}</code></a> resource, adding <code>max_level</code> and <code>max_notes</code> controls. Dispatch is by suffix: paths ending in <code>.md</code> are treated as notes; all other paths are treated as folder prefixes.</p>
+<p><strong>Parameters:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>path</code></td>
+<td>string</td>
+<td>required</td>
+<td>Note path (such as <code>"a/b.md"</code>) or folder prefix (such as <code>"a/b"</code>)</td>
+</tr>
+<tr>
+<td><code>max_level</code></td>
+<td>int</td>
+<td><code>null</code></td>
+<td>Drop headings deeper than this level (such as <code>2</code> to keep H1 and H2). The synthetic H1 title always survives. <code>null</code> returns all levels.</td>
+</tr>
+<tr>
+<td><code>max_notes</code></td>
+<td>int</td>
+<td><code>200</code></td>
+<td>Folder mode only. Cap on distinct notes. When more notes match, the first <code>max_notes</code> (sorted by path) are returned and <code>truncated</code> is <code>true</code>.</td>
+</tr>
+<tr>
+<td><code>wait_for_pending_writes</code></td>
+<td>bool</td>
+<td><code>false</code></td>
+<td>Block until the IndexWriter drains before answering, then report freshness via <code>_meta.index_stale</code> (see the <em>Index freshness on read tools</em> note at the top of this page).</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Returns:</strong></p>
+<ul>
+<li><strong>Note mode</strong> (<code>path</code> ends in <code>.md</code>): flat ordered <code>list</code> of <code>{heading (str), level (int)}</code>. The document title is included as a synthetic H1 entry.</li>
+<li><strong>Folder mode</strong> (<code>path</code> is a folder prefix): <code>{path (str), notes (list), truncated (bool)}</code> where each entry in <code>notes</code> is <code>{path, title, headings}</code> and <code>headings</code> is a list of <code>{heading, level}</code> for that note. An empty or nonexistent folder returns an empty <code>notes</code> list with <code>truncated: false</code>.</li>
+</ul>
+<p>Index freshness is reported in <code>_meta.index_stale</code> (see the freshness note at the top of this page).</p>
 <h3 id="get_recent"><code>get_recent</code><a class="headerlink" href="#get_recent" title="Permanent link">&para;</a></h3>
 <p>Get the most recently modified notes.</p>
 <p><strong>Parameters:</strong></p>

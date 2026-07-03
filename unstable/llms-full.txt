@@ -222,17 +222,15 @@ export MARKDOWN_VAULT_MCP_SOURCE_DIR=/path/to/your/markdown/files
 markdown-vault-mcp search "hello world"
 ```
 
-## Project-specific notes
-
-*Add domain-specific install notes here, such as system dependencies, optional extras, or custom configuration steps.*
-
 # Configuration
+
+Markdown Vault MCP is configured via environment variables with the `MARKDOWN_VAULT_MCP_` prefix.
+
+See `fastmcp-pvl-core`'s README for the full list of universal variables (`MARKDOWN_VAULT_MCP_TRANSPORT`, `MARKDOWN_VAULT_MCP_HOST`, `MARKDOWN_VAULT_MCP_PORT`, `MARKDOWN_VAULT_MCP_HTTP_PATH`, `MARKDOWN_VAULT_MCP_BASE_URL`, auth vars, etc.).
 
 Prefer a guided setup?
 
 Use the [Configuration Generator](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/configuration-generator/index.md) to answer a few questions and copy a ready-made `.env`, Docker, or Claude config.
-
-All configuration is via environment variables. Most use the `MARKDOWN_VAULT_MCP_` prefix. `OLLAMA_HOST` and `OPENAI_API_KEY` are bare ecosystem-standard names; all other variables use the `MARKDOWN_VAULT_MCP_` prefix.
 
 Configuration is validated at startup
 
@@ -240,18 +238,20 @@ Numeric variables are validated against the **Type** column below (such as `int 
 
 ## Core
 
-| Variable                              | Type   | Default                                       | Required | Description                                                                                                                                                                                                |
-| ------------------------------------- | ------ | --------------------------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `MARKDOWN_VAULT_MCP_SOURCE_DIR`       | path   | (none)                                        | **Yes**  | Path to the markdown vault directory. Symbolic links inside the vault are followed on Python 3.13+ (3.11/3.12 do not follow symlinks); cyclic links hang the scan, so symlink-farm layouts must be acyclic |
-| `MARKDOWN_VAULT_MCP_READ_ONLY`        | bool   | `true`                                        | No       | Set to `false` to enable write operations                                                                                                                                                                  |
-| `MARKDOWN_VAULT_MCP_INDEX_PATH`       | path   | in-memory                                     | No       | Path to the SQLite FTS5 index file; set for persistence across restarts                                                                                                                                    |
-| `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH`  | path   | disabled                                      | No       | Path to the numpy embeddings file; required to enable semantic search                                                                                                                                      |
-| `MARKDOWN_VAULT_MCP_STATE_PATH`       | path   | `{SOURCE_DIR}/.markdown_vault_mcp/state.json` | No       | Path to the change-tracking state file                                                                                                                                                                     |
-| `MARKDOWN_VAULT_MCP_INDEXED_FIELDS`   | csv    | (none)                                        | No       | Comma-separated frontmatter fields to promote to the tag index for structured filtering                                                                                                                    |
-| `MARKDOWN_VAULT_MCP_REQUIRED_FIELDS`  | csv    | (none)                                        | No       | Comma-separated frontmatter fields required on every document; documents missing any are excluded from the index                                                                                           |
-| `MARKDOWN_VAULT_MCP_EXCLUDE`          | csv    | (none)                                        | No       | Comma-separated glob patterns to exclude from scanning (such as `.obsidian/**,.trash/**`)                                                                                                                  |
-| `MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER` | string | `_templates`                                  | No       | Relative folder path used by the `create_from_template` prompt to discover/read template files                                                                                                             |
-| `MARKDOWN_VAULT_MCP_PROMPTS_FOLDER`   | path   | (none)                                        | No       | Path to a directory of `.md` prompt files that extend or override built-in prompts                                                                                                                         |
+| Variable                              | Type   | Default                                       | Required | Description                                                                                                                                                                                                                                                                    |
+| ------------------------------------- | ------ | --------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `MARKDOWN_VAULT_MCP_SOURCE_DIR`       | path   | (none)                                        | **Yes**  | Path to the markdown vault directory. Symbolic links inside the vault are followed on Python 3.13+ (3.11/3.12 do not follow symlinks); cyclic links hang the scan, so symlink-farm layouts must be acyclic                                                                     |
+| `MARKDOWN_VAULT_MCP_READ_ONLY`        | bool   | `true`                                        | No       | Set to `false` to enable write operations                                                                                                                                                                                                                                      |
+| `MARKDOWN_VAULT_MCP_INDEX_PATH`       | path   | in-memory                                     | No       | Path to the SQLite FTS5 index file; set for persistence across restarts                                                                                                                                                                                                        |
+| `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH`  | path   | disabled                                      | No       | Path to the numpy embeddings file; required to enable semantic search                                                                                                                                                                                                          |
+| `MARKDOWN_VAULT_MCP_STATE_PATH`       | path   | `{SOURCE_DIR}/.markdown_vault_mcp/state.json` | No       | Path to the change-tracking state file                                                                                                                                                                                                                                         |
+| `MARKDOWN_VAULT_MCP_INDEXED_FIELDS`   | csv    | (none)                                        | No       | Comma-separated frontmatter fields to promote to the tag index for structured filtering                                                                                                                                                                                        |
+| `MARKDOWN_VAULT_MCP_REQUIRED_FIELDS`  | csv    | (none)                                        | No       | Comma-separated frontmatter fields required on every document; documents missing any are excluded from the index                                                                                                                                                               |
+| `MARKDOWN_VAULT_MCP_EXCLUDE`          | csv    | (none)                                        | No       | Comma-separated glob patterns to exclude from scanning (such as `.obsidian/**,.trash/**`)                                                                                                                                                                                      |
+| `MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER` | string | `_templates`                                  | No       | Relative folder path used by the `create_from_template` prompt to discover/read template files                                                                                                                                                                                 |
+| `MARKDOWN_VAULT_MCP_PROMPTS_FOLDER`   | path   | (none)                                        | No       | Path to a directory of `.md` prompt files that extend or override built-in prompts. Each declared argument name must be a plain Python identifier (letters, digits, underscore; not a keyword); a prompt with a non-conforming argument name is skipped with a logged warning. |
+
+The file watcher never watches the directories that hold `INDEX_PATH`, `EMBEDDINGS_PATH`, and `STATE_PATH` (or `.git`), so the writes the server makes while indexing do not trigger it again. If you place one of these paths inside a content directory, that whole top-level directory stops being watched, so keep them at the vault root or outside the vault to keep sibling content watched live.
 
 ## Index Build Timeout
 
@@ -284,15 +284,16 @@ Maximum time an index-querying read tool (`search`, `list_documents`, `list_fold
 
 ## Search Ranking and Snippet Truncation
 
-| Env var                                      | Default     | Type      | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| -------------------------------------------- | ----------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `MARKDOWN_VAULT_MCP_CHUNKS_PER_FILE`         | `2`         | int ≥ 1   | Maximum number of matching sections returned per file (field collapsing). `0` is rejected. Per-call override available on the `search` and `get_similar` tools; `get_context` defaults to `1` for compact dossiers.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| `MARKDOWN_VAULT_MCP_SNIPPET_WORDS`           | `200`       | int ≥ 0   | Approximate word budget for `SearchResult.content`. `0` returns the full chunk. Per-call override on the `search` tool.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| `MARKDOWN_VAULT_MCP_LENGTH_DOWNWEIGHT_ALPHA` | `0.25`      | float ≥ 0 | Strength of the per-channel length downweight: `score / (1 + alpha · log(chunk_count))`. `0` disables. Applied only to `search` modes (keyword/semantic/hybrid); `get_similar` and `get_context.similar` skip the downweight because grouping already handles multi-chunk dedup (see [#472](https://github.com/pvliesdonk/markdown-vault-mcp/issues/472)). Operator-only (no per-call override).                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `MARKDOWN_VAULT_MCP_MAX_CHUNK_WORDS`         | `400`       | int ≥ 1   | Hard cap on chunk word count. The adaptive chunker recursively re-splits at deeper heading levels (H1 → H6); anything still oversize (preambles and no-headings documents included) is further fragmented on paragraph and word boundaries. Match this to the embedding model's context window. The default FastEmbed model `BAAI/bge-small-en-v1.5` has only a 512-token context, so the default `400` words (≈ 600 tokens) **could exceed it**; `MAX_CHUNK_CHARS` (derived as ~1434 chars for this 512-token model) caps each chunk to the model's context, so manual adjustment is not needed. For long-context models such as `nomic-embed-text-v1.5` (8192 tokens natively; Ollama serves it with `n_ctx_train=2048` by default, see `OLLAMA_HOST`) the default `400` is comfortable. Setting a high value (such as `100000`) effectively disables the cap. |
-| `MARKDOWN_VAULT_MCP_MAX_CHUNK_CHARS`         | *(derived)* | int ≥ 1   | Hard cap on chunk **character** count, enforced by the same chunker alongside the word cap (whichever budget is hit first triggers a split). Applies to token-dense content (CJK, code, tables) that fits the word cap yet exceeds the embedding model's token context. When unset, the cap is **derived from the embedding model's context length** as `round(context_length × 2.8)` (an 8192-token model yields 22938 chars; the default `BAAI/bge-small-en-v1.5` model, 512-token context, yields ~1434 chars); if the model's context length is unknown (no provider, or an unreachable Ollama instance) a conservative fixed fallback of `6000` chars is used. Set this to override the derived value. Like `MAX_CHUNK_WORDS`, it changes the chunk *index*, so a reindex is required for a new value to take effect.                                       |
+| Env var                                      | Default             | Type             | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| -------------------------------------------- | ------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MARKDOWN_VAULT_MCP_CHUNKS_PER_FILE`         | `2`                 | int ≥ 1          | Maximum number of matching sections returned per file (field collapsing). `0` is rejected. Per-call override available on the `search` and `get_similar` tools; `get_context` defaults to `1` for compact dossiers.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `MARKDOWN_VAULT_MCP_SNIPPET_WORDS`           | `200`               | int ≥ 0          | Approximate word budget for `SearchResult.content`. `0` returns the full chunk. Per-call override on the `search` tool.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `MARKDOWN_VAULT_MCP_LENGTH_DOWNWEIGHT_ALPHA` | `0.25`              | float ≥ 0        | Strength of the per-channel length downweight: `score / (1 + alpha · log(chunk_count))`. `0` disables. Applied only to `search` modes (keyword/semantic/hybrid); `get_similar` and `get_context.similar` skip the downweight because grouping already handles multi-chunk dedup (see [#472](https://github.com/pvliesdonk/markdown-vault-mcp/issues/472)). Operator-only (no per-call override).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `MARKDOWN_VAULT_MCP_MAX_CHUNK_WORDS`         | `400`               | int ≥ 1          | Hard cap on chunk word count. The adaptive chunker recursively re-splits at deeper heading levels (H1 → H6); anything still oversize (preambles and no-headings documents included) is further fragmented on paragraph and word boundaries. Match this to the embedding model's context window. The default FastEmbed model `BAAI/bge-small-en-v1.5` has only a 512-token context, so the default `400` words (≈ 600 tokens) **could exceed it**; `MAX_CHUNK_CHARS` (derived as ~1434 chars for this 512-token model) caps each chunk to the model's context, so manual adjustment is not needed. For long-context models such as `nomic-embed-text-v1.5` (8192 tokens natively; Ollama serves it with `n_ctx_train=2048` by default, see `OLLAMA_HOST`) the default `400` is comfortable. Setting a high value (such as `100000`) effectively disables the cap. When `CHUNK_OVERLAP_WORDS` is non-zero, an overlapped fragment can exceed this cap by up to the overlap word count.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `MARKDOWN_VAULT_MCP_MAX_CHUNK_CHARS`         | *(bounded default)* | int ≥ 1, or `-1` | Hard cap on chunk **character** count, enforced by the chunker alongside the word cap (whichever budget is hit first triggers a split). Applies to token-dense content (CJK, code, tables). **Unset** uses the safe default `min(1500, round(context_length × 2.8))`: retrieval quality peaks at ~256 to 512 tokens per chunk regardless of the model's context, and 1500 chars keeps the fastembed/ONNX path clear of the out-of-memory regime seen with oversize chunks ([#306](https://github.com/pvliesdonk/markdown-vault-mcp/issues/306)). For `BAAI/bge-small-en-v1.5` (512-token context) this derives to ~1434 chars (unchanged from prior releases). A model with a shorter context (below ~536 tokens) uses its own smaller `round(context_length × 2.8)` value; a longer-context model is capped at the `1500` ceiling; an unknown context (no provider, or an unreachable Ollama instance) falls back to `1500`. Set a **positive integer** to force an exact cap. Set **`-1`** to opt into unbounded context-scaling (`round(context_length × 2.8)` with no ceiling, or `1500` when the context is unknown), which reproduces the pre-#790 context-scaling and **can OOM-kill the host** on the fastembed/ONNX path with a long-context model; use only with Ollama (out-of-process) or a remote provider. Like `MAX_CHUNK_WORDS`, this changes the chunk *index*, so a reindex is required for a new value to take effect. When `CHUNK_OVERLAP_WORDS` is non-zero, an overlapped fragment can exceed this cap by up to the overlap word count. |
+| `MARKDOWN_VAULT_MCP_CHUNK_OVERLAP_WORDS`     | `40`                | int ≥ 0          | Words of overlap copied from the previous fragment onto each budget-split fragment of the **same heading section**. Improves retrieval recall at arbitrary (non-heading) split points; `0` disables. Overlap applies only where heading-based splitting has been exhausted and the chunker falls back to paragraph, line, or word splitting, never across a heading boundary. It is excluded from the warm-restart key, so changing it (or the default on upgrade) applies to new builds and any note re-indexed after an edit, without forcing a rebuild. Run `reindex` to apply a new value to an existing vault. A non-zero value can push an overlapped fragment past `MAX_CHUNK_WORDS` or `MAX_CHUNK_CHARS` by up to this many words; the excess is small and does not risk an out-of-memory condition.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 
-The first three knobs adjust *ranking and rendering* and take effect immediately. `MAX_CHUNK_WORDS` and `MAX_CHUNK_CHARS` change the chunk *index*; a reindex is required for a new value to take effect. Because the char cap is **derived from the embedding model**, changing the embedding model also changes the effective chunk boundaries: the FTS index is re-chunked, not just the embeddings. Changing the embedding model (or the explicit `MAX_CHUNK_CHARS` override) rejects the warm-restart short-circuit and triggers an automatic cold rebuild of the index on the next startup. No manual `reindex` is needed. **One-time rebuild on upgrade:** an existing *embedding-enabled* vault upgrading from a release before this one will also cold-rebuild once on next startup, because builds now record chunking provenance (embedding model + override) that older builds did not track. No action is required; subsequent restarts warm-restart as normal. FTS-only vaults (no embedding provider) are unaffected. **Upgrading note:** `search` now returns snippets (≤ ~200 words) by default. Set `snippet_words=0` per call or `MARKDOWN_VAULT_MCP_SNIPPET_WORDS=0` globally to restore full-chunk output. Existing vaults are also re-chunked on the next `reindex` when `MAX_CHUNK_WORDS` is set.
+The first three knobs adjust *ranking and rendering* and take effect immediately. `MAX_CHUNK_WORDS` and `MAX_CHUNK_CHARS` change the chunk *index*; a reindex is required for a new value to take effect. Because the char cap is **derived from the embedding model**, changing the embedding model also changes the effective chunk boundaries: the FTS index is re-chunked, not just the embeddings. Changing the embedding model (or the explicit `MAX_CHUNK_CHARS` override) rejects the warm-restart short-circuit and triggers an automatic cold rebuild of the index on the next startup. No manual `reindex` is needed. **One-time rebuild on upgrade:** an existing *embedding-enabled* vault upgrading from a release before this one will also cold-rebuild once on next startup, because builds now record chunking provenance (embedding model + override) that older builds did not track. No action is required; subsequent restarts warm-restart as normal. FTS-only vaults (no embedding provider) are unaffected. **Upgrading note:** `search` now returns snippets (≤ ~200 words) by default. Set `snippet_words=0` per call or `MARKDOWN_VAULT_MCP_SNIPPET_WORDS=0` globally to restore full-chunk output. Existing vaults are also re-chunked on the next `reindex` when `MAX_CHUNK_WORDS` is set. **Bounded-cap upgrade ([#790](https://github.com/pvliesdonk/markdown-vault-mcp/issues/790)):** the smaller default (`min(1500, round(context_length × 2.8))`, reduced from the old unbounded `round(context_length × 2.8)`) applies to new builds and whenever the embedding model or an explicit `MAX_CHUNK_CHARS` changes. It does not auto-apply on upgrade. The warm-restart key is the model name together with the explicit override rather than the derived cap, so an existing vault on a long-context model with no explicit `MAX_CHUNK_CHARS` keeps its current coarser chunk boundaries. That old index stays usable; it is only larger-chunked. Run `reindex` when you want the smaller default to take effect, noting that a full re-embed can take many minutes on a large vault. bge-small vaults are unaffected. To keep unbounded scaling, set `MAX_CHUNK_CHARS=-1`.
 
 ## Search and Embeddings
 
@@ -371,10 +372,17 @@ Detects external file changes (edits by a local editor, sync daemon, or `cp -r`)
 
 Requires the optional `watchdog` dependency: `pip install 'markdown-vault-mcp[file-watcher]'`.
 
-| Variable                                     | Type  | Default | Description                                                                                                    |
-| -------------------------------------------- | ----- | ------- | -------------------------------------------------------------------------------------------------------------- |
-| `MARKDOWN_VAULT_MCP_FILE_WATCHER`            | bool  | `true`  | Enable filesystem-event watcher; auto-disabled when git pull or webhook is active                              |
-| `MARKDOWN_VAULT_MCP_FILE_WATCHER_DEBOUNCE_S` | float | `2.0`   | Seconds of quiet after the last event before triggering reindex; tune down for faster response on small vaults |
+| Variable                                     | Type  | Default | Description                                                                                                                                                 |
+| -------------------------------------------- | ----- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MARKDOWN_VAULT_MCP_FILE_WATCHER`            | bool  | `true`  | Enable filesystem-event watcher; auto-disabled when git pull or webhook is active                                                                           |
+| `MARKDOWN_VAULT_MCP_FILE_WATCHER_DEBOUNCE_S` | float | `2.0`   | Seconds of quiet after the last event before triggering reindex; tune down for faster response on small vaults                                              |
+| `MARKDOWN_VAULT_MCP_FILE_WATCHER_ROOT_FLOOR` | bool  | `true`  | Keep the non-recursive watch on the vault root so root-level `*.md` changes trigger a reindex; set `false` to drop it (root-level files then rely on scans) |
+
+The watcher schedules one recursive watch per non-excluded immediate child directory of the source directory rather than a single recursive watch on the root, so excluded directories (`node_modules`, `.venv`, and similar) are never registered and content under a deliberately watched dot-directory (a vault rooted at `$HOME` with content under `.notes/`) delivers its own edits. New top-level directories created after start are not watched until the server restarts; the startup log line lists the scheduled root count and names.
+
+macOS access prompts
+
+On macOS the root floor watch still opens an OS-level recursive `FSEvents` stream over the whole tree even though it delivers only direct entries, so a vault rooted at `$HOME` can trigger repeated "would like to access data from other apps" prompts. Set `MARKDOWN_VAULT_MCP_FILE_WATCHER_ROOT_FLOOR=false` to register zero source-directory-rooted `FSEvents` streams, accepting that root-level files are then only picked up by scans.
 
 Mutual exclusion with git
 
@@ -1466,12 +1474,16 @@ For very large vaults (thousands of notes), the first startup may take several m
 
 The chunker (shared by keyword and semantic search) bounds every chunk by a word cap (`MARKDOWN_VAULT_MCP_MAX_CHUNK_WORDS`, default `400`) and a character cap (`MARKDOWN_VAULT_MCP_MAX_CHUNK_CHARS`). The character cap exists because a chunk that fits the word cap can still exceed the embedding model's **token** limit; token-dense content (tables, code, CJK) packs far more tokens per word. Without it, such a chunk would abort the build (Ollama returns HTTP 400) or be silently truncated (FastEmbed), producing degraded embeddings.
 
-`MAX_CHUNK_CHARS` is derived from the embedding model's token context when you don't set it explicitly: `round(context_length × 2.8)` (deliberately conservative for dense content):
+When you don't set `MAX_CHUNK_CHARS` explicitly, the default is `min(1500, round(context_length × 2.8))`: retrieval quality peaks at ~256 to 512 tokens per chunk regardless of the model's context, and the 1500-char ceiling keeps the fastembed/ONNX path clear of the out-of-memory regime seen with oversize chunks (issue [#306](https://github.com/pvliesdonk/markdown-vault-mcp/issues/306)). The result:
 
-- `bge-small-en-v1.5` (512-token context) → ~1,434 chars
-- `nomic-embed-text` (Ollama default, 2048-token context) → ~5,734 chars
-- an 8192-token model → ~22,938 chars
-- unknown context (no provider, or Ollama unreachable at startup) → a fixed `6000`-char fallback
+- `bge-small-en-v1.5` (512-token context) → ~1,434 chars (below the ceiling, used as is)
+- a shorter-context model (below ~536 tokens) uses its own smaller value, `round(context_length × 2.8)`
+- a longer-context model (2048, 8192, …) is capped at the `1500`-char ceiling
+- unknown context (no provider, or Ollama unreachable at startup) → the `1500`-char ceiling
+
+Set a positive value to force an exact cap. Set `-1` to opt into unbounded context-scaling (`round(context_length × 2.8)` with no ceiling, or `1500` when the model context is unknown). This reproduces the pre-bounded context-scaling and **can OOM the host** on the fastembed/ONNX path with a long-context model, so use it only with Ollama (out-of-process) or a remote provider.
+
+`MARKDOWN_VAULT_MCP_CHUNK_OVERLAP_WORDS` (default `40`, `0` disables) adds a few words from the end of the previous fragment to the start of each fragment when a section is too large for the caps and gets split on paragraph, line, or word boundaries. This improves retrieval recall at those arbitrary split points. An overlapped fragment can exceed the word or character cap by up to the overlap word count. Overlap applies to new and re-indexed notes, so run `reindex` to apply it across an existing vault; it does not force a rebuild on its own.
 
 Changing the embedding model triggers a one-time cold rebuild
 
@@ -1559,8 +1571,6 @@ The bearer-token mode above shares one subject across every authenticated caller
 
 Each token resolves to a distinct subject string for downstream attribution. Subject strings are opaque: the `<kind>:<id>` convention (`user:`, `service:`, `token:`) is documentation only. When `BEARER_TOKENS_FILE` is set it overrides `BEARER_TOKEN` (a `WARNING` is logged if both are present). A missing or malformed file aborts startup with `ConfigurationError` rather than silently denying every request.
 
-For the per-tool authorization that consumes these subjects, see [Authorization (opt-in)](https://github.com/pvliesdonk/markdown-vault-mcp/blob/main/README.md#authorization-opt-in) in the project README.
-
 ______________________________________________________________________
 
 ## OIDC
@@ -1596,10 +1606,10 @@ Client → markdown-vault-mcp (present JWT → validate via JWKS)
 
 ### How it works (oidc-proxy mode)
 
-The server uses FastMCP's built-in `OIDCProxy` (no external auth sidecar needed):
+The server proxies OIDC itself, with no external auth sidecar to deploy:
 
 ```
-Client → markdown-vault-mcp (OIDCProxy) → OIDC Provider
+Client → mcp-server → OIDC Provider
 ```
 
 1. Client connects to the server
@@ -3165,7 +3175,7 @@ Resist pre-splitting or pre-merging before review. Claude does both in one pass.
 
 ## Next Steps
 
-- **Read the design document** for details on the linking system and search algorithms: [`docs/design.md`](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/design/index.md)
+- **Read the design document** for details on the linking system and search algorithms: [`docs/design/design.md`](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/design/design/index.md)
 - **Explore the MCP tools** to understand the full API: [`tools/index.md`](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/tools/index.md)
 - **Review the examples** for templates and prompts: [`examples/zettelkasten/`](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/examples/zettelkasten/index.md)
 - **Prefer an action-oriented workflow?** Try the [PARA guide](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/para/index.md): Projects, Areas, Resources, Archive with triage, kickoff, and weekly review prompts
@@ -3610,7 +3620,7 @@ After a triage session produces 5-10 new projects, ask Claude to propose an `are
 
 ## Next Steps
 
-- **Read the design document** for details on the linking system and search algorithms: [`docs/design.md`](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/design/index.md)
+- **Read the design document** for details on the linking system and search algorithms: [`docs/design/design.md`](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/design/design/index.md)
 - **Explore the MCP tools** to understand the full API: [`tools/index.md`](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/tools/index.md)
 - **Review the examples** for templates and prompts: [`examples/para/`](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/examples/para/index.md)
 - **Prefer idea-centric knowledge management?** See the alternative workflow: [`docs/guides/zettelkasten.md`](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/zettelkasten/index.md)
@@ -3643,7 +3653,9 @@ Interactive force-directed link graph of the vault, powered by vis-network. Two 
 - **Neighborhood**: shows a note and its direct connections (configurable depth, soft-capped at `max_nodes=200` by default; the response carries `truncated=true` when the BFS hit the cap so the SPA can warn the user)
 - **Hubs**: shows the most-linked notes in the vault and their connections
 
-Click a node to view that note's context card. Toggle semantic similarity edges when embeddings are available.
+Click a node to view that note's context card. Toggle semantic similarity edges when embeddings are available (semantic edges render as dashed accent-colored lines, distinct from the solid wikilink edges).
+
+Node labels follow a level-of-detail rule. The focus note, its direct neighbors, and hub notes keep their labels; other farther-out notes render as unlabelled dots (their names appear on hover, or once you zoom in past a threshold). A separate hover text with the note's title and backlink count is always available, regardless of zoom level. A count chip in the top-right corner of the canvas reports how many notes are currently visible, next to zoom-in and zoom-out buttons. A legend below the canvas explains the edge and node styles; on a narrow panel it collapses behind an "ⓘ legend" chip to save space.
 
 ### Vault Browser
 
@@ -3657,8 +3669,10 @@ Searchable, filterable file tree for browsing the vault without issuing tool cal
 
 Full-width markdown preview with:
 
-- Rendered markdown (via marked.js, sanitized with DOMPurify)
-- Frontmatter table
+- Rendered markdown (via marked.js, sanitized with DOMPurify), with the leading frontmatter block stripped so it renders only once
+- A **Contents** popover: an on-this-page table of contents built from the note's headings
+- Collapsible frontmatter properties (first few shown, the rest behind a toggle) and collapsible tags
+- **Copy markdown** (the full note, frontmatter included) and **Copy vault link** (the note's path) buttons
 - **Send to Claude** button: sends the note content to the LLM conversation
 - Navigation to Context Card or Graph Explorer for the same note
 
@@ -3694,7 +3708,7 @@ Override `APP_DOMAIN` if your deployment is behind a proxy that changes the appa
 
 ## Architecture
 
-The SPA is a self-contained HTML file with all dependencies vendored at build time (no runtime CDN requests):
+The SPA is a self-contained HTML file with its JavaScript dependencies vendored at build time (no runtime CDN requests for libraries; web fonts are the one exception, see [Visual identity](#visual-identity-paper)):
 
 | Library                        | Purpose                                    |
 | ------------------------------ | ------------------------------------------ |
@@ -3710,6 +3724,32 @@ The app integrates with the host client via the ext-apps SDK:
 - **`app.updateModelContext()`**: keeps the LLM aware of which note the user is viewing
 - **`app.requestDisplayMode()`**: requests fullscreen or inline display
 - **Theme sync**: automatically adapts to the host's light/dark theme and CSS variables
+
+### Visual identity ("Paper")
+
+The views use a warm, editorial "Paper" theme (serif headings, a single warm accent, light and dark). The Paper palette is expressed as CSS custom properties that map onto the host's `--color-*` variables: a host that pushes its own theme overrides Paper, otherwise the Paper values show. Three font families load from Google Fonts and are exposed as `--font-head` / `--font-body` / `--font-mono`: Newsreader styles headings, Public Sans the body and UI, and IBM Plex Mono the code, property keys, and tags. (As each view is restyled, these families also reach the remaining mono metadata such as paths and scores.) The fonts are the one runtime network dependency the app keeps (the vendored libraries are embedded); if they fail to load, the app falls back to system fonts with no loss of function.
+
+### Source layout and build
+
+The SPA source is authored as small partials under `src/markdown_vault_mcp/static/spa/`:
+
+| File                                                                      | Contents                                                               |
+| ------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `shell.html`                                                              | The HTML document: head, tab bar, view panels, toast                   |
+| `styles.css`                                                              | All styles                                                             |
+| `core.js`                                                                 | App setup, theming, tab navigation, cross-view routing, shared helpers |
+| `views/context.js`, `views/graph.js`, `views/browser.js`, `views/note.js` | One file per view                                                      |
+
+Two build steps turn the partials into the served resource:
+
+```
+spa/*  ->  build_spa.py  ->  app.src.html  ->  vendor_spa.py  ->  app.html
+```
+
+1. `python scripts/build_spa.py` assembles the partials into `static/app.src.html`. Assembly is a recursive `/*@@FILE:path@@*/` include, a valid comment in both CSS and JavaScript, so each partial stays independently readable.
+1. `python scripts/vendor_spa.py` embeds the vendored libraries into the self-contained `static/app.html` that the server serves.
+
+`app.src.html` and `app.html` are both generated, committed artifacts: edit the files under `static/spa/`, then run both scripts. Never hand-edit the generated files. `build_spa.py --check` and `vendor_spa.py --check` fail the build if either artifact is stale; both run in CI and as pre-commit hooks.
 
 ## Client support
 
@@ -3958,43 +3998,45 @@ markdown-vault-mcp exposes MCP tools across several categories. Write tools are 
 
 Index freshness on read tools (`wait_for_pending_writes` + `_meta.index_stale`)
 
-Every read tool that queries the FTS index (`search`, `list_documents`, `list_folders`, `list_tags`, `stats`, `get_recent`, `get_backlinks`, `get_outlinks`, `get_broken_links`, `get_similar`, `get_context`, `get_orphan_notes`, `get_most_linked`, and `get_connection_path`) accepts an optional **`wait_for_pending_writes`** (`bool`, default `false`) parameter and reports index freshness **out-of-band in the MCP response's `_meta.index_stale` field** rather than wrapping the payload in a `{stale, data}` envelope. The data payload is a **bare list/dict, identical whether the index is fresh or stale**; clients that do not care about drift ignore `_meta` entirely. Clients that need a fresh-read guarantee either inspect `result._meta.index_stale`, or pass `wait_for_pending_writes=true` to block until the writer drains (bounded by `MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S`, default 60 s; on timeout it answers from the current index rather than raising). `index_stale` is `true` when the IndexWriter had pending or in-flight work. The relevant conditions are: the optional `wait_for_pending_writes` timed out; a write completed inside the read window; the writer was non-idle at response time. The same `_meta.index_stale` field rides on the index-querying MCP **resources** (`config://`, `stats://`, `folders://`, `tags://`, `recent://`, `toc://`, `similar://`), readable via the resource read's `_meta` (resources carry no `wait_for_pending_writes` parameter; they signal only).
+Every read tool that queries the FTS index (`search`, `list_documents`, `list_folders`, `list_tags`, `stats`, `get_recent`, `get_backlinks`, `get_outlinks`, `get_broken_links`, `get_similar`, `get_toc`, `get_context`, `get_orphan_notes`, `get_most_linked`, and `get_connection_path`) accepts an optional **`wait_for_pending_writes`** (`bool`, default `false`) parameter and reports index freshness **out-of-band in the MCP response's `_meta.index_stale` field** rather than wrapping the payload in a `{stale, data}` envelope. The data payload is a **bare list/dict, identical whether the index is fresh or stale**; clients that do not care about drift ignore `_meta` entirely. Clients that need a fresh-read guarantee either inspect `result._meta.index_stale`, or pass `wait_for_pending_writes=true` to block until the writer drains (bounded by `MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S`, default 60 s; on timeout it answers from the current index rather than raising). `index_stale` is `true` when the IndexWriter had pending or in-flight work. The relevant conditions are: the optional `wait_for_pending_writes` timed out; a write completed inside the read window; the writer was non-idle at response time. The same `_meta.index_stale` field rides on the index-querying MCP **resources** (`config://`, `stats://`, `folders://`, `tags://`, `recent://`, `toc://`, `similar://`), readable via the resource read's `_meta` (resources carry no `wait_for_pending_writes` parameter; they signal only).
 
 ## Quick Reference
 
-| Tool                                            | Category    | Description                                                                          |
-| ----------------------------------------------- | ----------- | ------------------------------------------------------------------------------------ |
-| [`search`](#search)                             | Read        | Hybrid full-text + semantic search with optional frontmatter filters                 |
-| [`read`](#read)                                 | Read        | Read a document or attachment by relative path                                       |
-| [`list_documents`](#list_documents)             | Read        | List indexed documents and optionally attachments                                    |
-| [`list_folders`](#list_folders)                 | Read        | List all folder paths in the vault                                                   |
-| [`list_tags`](#list_tags)                       | Read        | List all unique frontmatter tag values                                               |
-| [`stats`](#stats)                               | Read        | Get vault statistics and capabilities                                                |
-| [`embeddings_status`](#embeddings_status)       | Read        | Check embedding provider and vector index status                                     |
-| [`get_index_status`](#get_index_status)         | Read        | Check background FTS build state (queryable / building / failed)                     |
-| [`get_backlinks`](#get_backlinks)               | Read        | Find all documents that link to a given document                                     |
-| [`get_outlinks`](#get_outlinks)                 | Read        | Find all links from a document, with existence check                                 |
-| [`get_broken_links`](#get_broken_links)         | Read        | Find all links pointing to non-existent documents                                    |
-| [`get_similar`](#get_similar)                   | Read        | Find semantically similar notes by document path                                     |
-| [`get_recent`](#get_recent)                     | Read        | Get the most recently modified notes                                                 |
-| [`get_context`](#get_context)                   | Read        | Get a consolidated context dossier for a note                                        |
-| [`get_orphan_notes`](#get_orphan_notes)         | Read        | Find notes with no inbound or outbound links                                         |
-| [`get_most_linked`](#get_most_linked)           | Read        | Find the most-linked-to notes ranked by backlink count                               |
-| [`get_connection_path`](#get_connection_path)   | Read        | Find the shortest path between two notes via link graph                              |
-| [`get_history`](#get_history)                   | Read (git)  | List commits that touched a note, attachment, or the whole vault                     |
-| [`get_diff`](#get_diff)                         | Read (git)  | Return a diff of a note or attachment between two points in history                  |
-| [`reindex`](#reindex)                           | Admin       | Force a full reindex of the vault                                                    |
-| [`build_embeddings`](#build_embeddings)         | Admin       | Build or rebuild vector embeddings                                                   |
-| [`write`](#write)                               | Write       | Create or overwrite a document or attachment                                         |
-| [`edit`](#edit)                                 | Write       | Replace a unique text span in a document                                             |
-| [`delete`](#delete)                             | Write       | Delete a document or attachment                                                      |
-| [`rename`](#rename)                             | Write       | Rename/move a document or attachment                                                 |
-| [`fetch`](#fetch)                               | Write       | Download from URL and save to vault                                                  |
-| [`git_sync`](#git_sync)                         | Write (git) | Force an immediate git pull / push / both, bypassing the periodic loops              |
-| [`create_download_link`](#create_download_link) | Transfer    | Mint a one-time capability URL to download a vault file (HTTP/SSE only)              |
-| [`create_upload_link`](#create_upload_link)     | Transfer    | Mint a one-time capability URL to upload bytes to a fixed vault path (HTTP/SSE only) |
-| [`browse_vault`](#browse_vault)                 | Apps        | Open the vault explorer SPA                                                          |
-| [`show_context`](#show_context)                 | Apps        | Open the Context Card for a note                                                     |
+| Tool                                            | Title             | Category    | Description                                                                          |
+| ----------------------------------------------- | ----------------- | ----------- | ------------------------------------------------------------------------------------ |
+| [`search`](#search)                             | Search Vault      | Read        | Hybrid full-text + semantic search with optional frontmatter filters                 |
+| [`read`](#read)                                 | Read Note         | Read        | Read a document or attachment by relative path                                       |
+| [`list_documents`](#list_documents)             | List Documents    | Read        | List indexed documents and optionally attachments                                    |
+| [`list_folders`](#list_folders)                 | List Folders      | Read        | List all folder paths in the vault                                                   |
+| [`list_tags`](#list_tags)                       | List Tags         | Read        | List all unique frontmatter tag values                                               |
+| [`stats`](#stats)                               | Vault Stats       | Read        | Get vault statistics and capabilities                                                |
+| [`embeddings_status`](#embeddings_status)       | Embeddings Status | Read        | Check embedding provider and vector index status                                     |
+| [`get_index_status`](#get_index_status)         | Index Status      | Read        | Check background FTS build state (queryable / building / failed)                     |
+| [`get_backlinks`](#get_backlinks)               | Backlinks         | Read        | Find all documents that link to a given document                                     |
+| [`get_outlinks`](#get_outlinks)                 | Outlinks          | Read        | Find all links from a document, with existence check                                 |
+| [`get_broken_links`](#get_broken_links)         | Broken Links      | Read        | Find all links pointing to non-existent documents                                    |
+| [`get_similar`](#get_similar)                   | Similar Notes     | Read        | Find semantically similar notes by document path                                     |
+| [`get_toc`](#get_toc)                           | Table of Contents | Read        | Heading outline for a note or a folder subtree                                       |
+| [`get_recent`](#get_recent)                     | Recent Notes      | Read        | Get the most recently modified notes                                                 |
+| [`get_context`](#get_context)                   | Note Context      | Read        | Get a consolidated context dossier for a note                                        |
+| [`get_orphan_notes`](#get_orphan_notes)         | Orphan Notes      | Read        | Find notes with no inbound or outbound links                                         |
+| [`get_most_linked`](#get_most_linked)           | Most-Linked Notes | Read        | Find the most-linked-to notes ranked by backlink count                               |
+| [`get_connection_path`](#get_connection_path)   | Connection Path   | Read        | Find the shortest path between two notes via link graph                              |
+| [`get_history`](#get_history)                   | Note History      | Read (git)  | List commits that touched a note, attachment, or the whole vault                     |
+| [`get_diff`](#get_diff)                         | Note Diff         | Read (git)  | Return a diff of a note or attachment between two points in history                  |
+| [`reindex`](#reindex)                           | Reindex Vault     | Admin       | Force a full reindex of the vault                                                    |
+| [`build_embeddings`](#build_embeddings)         | Build Embeddings  | Admin       | Build or rebuild vector embeddings                                                   |
+| [`write`](#write)                               | Write Note        | Write       | Create or overwrite a document or attachment                                         |
+| [`edit`](#edit)                                 | Edit Note         | Write       | Replace a unique text span in a document                                             |
+| [`delete`](#delete)                             | Delete Note       | Write       | Delete a document or attachment                                                      |
+| [`rename`](#rename)                             | Rename Note       | Write       | Rename/move a document or attachment                                                 |
+| [`move_folder`](#move_folder)                   | Move Folder       | Write       | Move an entire folder subtree and rewrite vault links                                |
+| [`fetch`](#fetch)                               | Fetch to Vault    | Write       | Download from URL and save to vault                                                  |
+| [`git_sync`](#git_sync)                         | Sync with Git     | Write (git) | Force an immediate git pull / push / both, bypassing the periodic loops              |
+| [`create_download_link`](#create_download_link) | Download Link     | Transfer    | Mint a one-time capability URL to download a vault file (HTTP/SSE only)              |
+| [`create_upload_link`](#create_upload_link)     | Upload Link       | Transfer    | Mint a one-time capability URL to upload bytes to a fixed vault path (HTTP/SSE only) |
+| [`browse_vault`](#browse_vault)                 | Browse Vault      | Apps        | Open the vault explorer SPA                                                          |
+| [`show_context`](#show_context)                 | Context Card      | Apps        | Open the Context Card for a note                                                     |
 
 ______________________________________________________________________
 
@@ -4024,7 +4066,7 @@ Each file appears at most once in results, with up to `chunks_per_file` sections
 
 Snippet content and full-chunk recovery
 
-By default, each section's `content` is a snippet of approximately 200 words centered on the query terms (not the full chunk). Pass `snippet_words=0` to receive the complete chunk. To read the full section after receiving a search result, call `read(path=result["path"], section=result["sections"][0]["heading"])`; this returns the entire chunk from the index without re-reading the whole document.
+By default, each section's `content` is a snippet of approximately 200 words centered on the query terms (not the full chunk). Pass `snippet_words=0` to receive the complete chunk. To read the full section after receiving a search result, call `read(path=result["path"], section=result["sections"][0]["heading"])`; this returns the entire section (body plus any sub-sections) reconstructed from the document.
 
 Choosing a search mode
 
@@ -4046,18 +4088,18 @@ Choosing a search mode
 
 ### `read`
 
-Read the full content of a document or attachment by path. When combined with search, the optional `section` parameter lets you retrieve the full content of a specific chunk without loading the entire document.
+Read the full content of a document or attachment by path. When combined with search, the optional `section` parameter lets you retrieve a single section in full (its body and any sub-sections) without loading the entire document.
 
 **Parameters:**
 
-| Parameter | Type   | Default  | Description                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| --------- | ------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `path`    | string | required | Relative path to the document or attachment (such as `"Journal/note.md"` or `"assets/diagram.pdf"`)                                                                                                                                                                                                                                                                                                                                              |
-| `section` | string | `null`   | Optional heading to select a single section chunk. Pass the `heading` field from a `search` result to retrieve the full chunk content. Matching collapses internal whitespace on both sides: `"1.3. Reducing..."` (two spaces) matches a stored `"1.3. Reducing..."` (one space) and vice versa. On miss, the error lists the document's actual stored headings so callers can recover. Raises an error if the heading is not found or is empty. |
+| Parameter | Type   | Default  | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| --------- | ------ | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `path`    | string | required | Relative path to the document or attachment (such as `"Journal/note.md"` or `"assets/diagram.pdf"`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `section` | string | `null`   | Optional heading selecting one section. The whole section is returned (every paragraph, list, and sub-section from the heading up to the next heading at the same or higher level), reconstructed from the document on disk, so a section longer than the chunk budget comes back intact rather than truncated to its first chunk. Pass the `heading` field from a `search` result. Matching collapses internal whitespace on both sides: `"1.3. Reducing..."` (two spaces) matches a stored `"1.3. Reducing..."` (one space) and vice versa. On miss, the error lists the document's actual headings so callers can recover. Raises an error if the heading is not found or is empty. |
 
-Recovering full chunks after search
+Recovering the full section after search
 
-When `search` returns a snippet result, pass `result["heading"]` as the `section` parameter to recover the complete chunk: `read(path=result["path"], section=result["heading"])`. If the document has no sub-headings (preamble content), omit `section` to read the whole document.
+When `search` returns a snippet result, pass `result["heading"]` as the `section` parameter to recover the complete section: `read(path=result["path"], section=result["heading"])`. If the document has no sub-headings (preamble content), omit `section` to read the whole document.
 
 Heading matching tolerates whitespace differences
 
@@ -4072,7 +4114,7 @@ The `section` lookup compares heading strings after collapsing all whitespace ru
   "path": "Journal/note.md",
   "title": "My Note",
   "folder": "Journal",
-  "content": "The markdown body...",
+  "content": "---\ntitle: My Note\ntags: [journal]\n---\n\nThe note body...",
   "frontmatter": {"title": "My Note", "tags": ["journal"]},
   "modified_at": 1741564800.0
 }
@@ -4162,6 +4204,7 @@ Returns background-build state of the FTS index. Use this when `initialize` retu
 - `documents_indexed`: count of documents committed to the FTS index right now (rises during `"building"`). `0` both for an empty index and when the count could not be read; check `documents_indexed_error` to tell them apart.
 - `documents_indexed_error`: `null` on a normal read; the SQLite error message when the document count could not be read (such as a locked or closed database), in which case `documents_indexed` is `0`.
 - `error`: `null` unless the background build raised; otherwise the exception message.
+- `skipped_files`: list of files dropped from the index for a surfaced deterministic reason. Each entry is `{"path", "category", "detail"}`, with `category` one of `parse_error`, `encoding_error`, `missing_frontmatter`, or `internal_error` (an unexpected indexer error rather than a content problem). Empty when nothing was skipped. This tells a parse-dropped note apart from one that simply has not synced yet, without reading container logs. Exclude-pattern matches and transient I/O skips are intentionally omitted.
 
 **Tags:** read-only.
 
@@ -4296,6 +4339,37 @@ Rename a document or attachment, or move it to a different folder. Parent direct
 
 **Returns:** `{"old_path": "drafts/idea.md", "new_path": "projects/idea.md"}`
 
+### `move_folder`
+
+Move an entire folder subtree to a new prefix and rewrite all vault links that point into the moved subtree. This is the folder-level analogue of `rename`.
+
+**Parameters:**
+
+| Parameter | Type   | Description                                                                |
+| --------- | ------ | -------------------------------------------------------------------------- |
+| `old_dir` | string | Current folder path (relative, no trailing slash, such as `"drafts/2024"`) |
+| `new_dir` | string | Target folder path (relative, such as `"archive/2024"`)                    |
+
+**Returns:**
+
+| Field           | Type             | Description                                                |
+| --------------- | ---------------- | ---------------------------------------------------------- |
+| `old_dir`       | string           | Source folder path (echoed back)                           |
+| `new_dir`       | string           | Destination folder path (echoed back)                      |
+| `files_moved`   | integer          | Number of files moved on disk                              |
+| `updated_links` | integer          | Number of source documents whose links were rewritten      |
+| `failed_links`  | array of strings | Paths of documents whose link rewrite failed (best-effort) |
+
+**Atomicity:** before any file is moved, every destination path is checked. If any single destination file already exists the call raises and **nothing is moved**. Merging into a pre-existing target directory is allowed as long as no per-file collision exists.
+
+**Link rewrites:** after the move, all vault links pointing into the subtree (markdown links and wikilinks, including links between documents inside the moved subtree and backlinks from outside) are rewritten in a single pass. Rewriting is best-effort; a document that cannot be rewritten is listed in `failed_links` and does not abort the move.
+
+**Index:** updated immediately after the call; no `reindex` needed.
+
+Warning
+
+Link rewrites are not rolled back if the process is interrupted after the move phase begins. The move phase itself is not OS-failure-atomic: an OS error during file moves (permission error, full disk, concurrent removal) can leave the subtree partially moved with the index unchanged; run `reindex` to recover. Use `rename` for single-file moves where full atomicity is required.
+
 ### `fetch`
 
 Download a file from a URL and save it to the vault as a note or attachment. Designed for MCP-to-MCP file transfer when content is too large for the LLM context window.
@@ -4408,8 +4482,8 @@ Push rejected as non-fast-forward:
 | Reason                               | Meaning                                                                                                                                                | `applied` |
 | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ | --------- |
 | `"fetch_failed"`                     | `git fetch origin` exited non-zero (network / auth / proxy). HEAD did not move.                                                                        | `false`   |
-| `"no_remote"`                        | Neither `@{upstream}` nor `origin/HEAD` could be resolved on the local clone.                                                                          | `false`   |
-| `"rebased"`                          | Local and remote diverged but `git rebase @{upstream}` replayed local commits cleanly. `conflict_files` empty.                                         | `true`    |
+| `"no_remote"`                        | No remote-tracking ref (`origin/<branch>`, or `origin/HEAD` for a detached checkout) could be resolved on the local clone.                             | `false`   |
+| `"rebased"`                          | Local and remote diverged but `git rebase origin/<branch>` replayed local commits cleanly. `conflict_files` empty.                                     | `true`    |
 | `"conflicts_resolved_with_siblings"` | Rebase hit real conflicts; resolved by accepting upstream and writing local versions as `.conflict-mcp-*` siblings (#232). `conflict_files` populated. | `true`    |
 | `"conflict_resolution_failed"`       | The conflict-resolution loop could not produce a recoverable working tree; rebase was aborted. HEAD did not move.                                      | `false`   |
 | `"non_fast_forward_with_conflicts"`  | Rare catastrophic fallback when even the conflict-resolution path could not stabilise the working tree. HEAD did not move.                             | `false`   |
@@ -4419,7 +4493,7 @@ Push rejected as non-fast-forward:
 | Reason                  | Meaning                                                                                                                                                           | `applied` |
 | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
 | `"dry_run_unsupported"` | Caller passed `dry_run=true`. Git has no safe local probe for "would the remote accept this," so the push leg is a deliberate no-op.                              | `false`   |
-| `"no_remote"`           | Upstream tracking branch could not be resolved (no `@{upstream}` and no `origin/HEAD`). Push not attempted.                                                       | `false`   |
+| `"no_remote"`           | No remote-tracking ref could be resolved (no `origin/<branch>` and no `origin/HEAD`). Push not attempted.                                                         | `false`   |
 | `"non_fast_forward"`    | Remote rejected the push because the local branch is not a strict descendant of the remote tip. `hint` points at `git_sync(direction='pull')` to reconcile first. | `false`   |
 | `"push_failed"`         | `git push origin` exited non-zero for any other reason (network, auth, server-side hook). `hint` carries the truncated stderr.                                    | `false`   |
 
@@ -4501,6 +4575,26 @@ Find semantically similar notes by document path. Requires embeddings to be buil
 Grouped result shape
 
 Returns one entry per file with up to `chunks_per_file` best-matching sections. Default is 2 sections per file; pass `chunks_per_file=1` for compact dossiers.
+
+### `get_toc`
+
+Heading outline for a single note or an entire folder subtree. Mirrors the [`toc://vault/{path}`](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/resources/#tocvaultpath) resource, adding `max_level` and `max_notes` controls. Dispatch is by suffix: paths ending in `.md` are treated as notes; all other paths are treated as folder prefixes.
+
+**Parameters:**
+
+| Parameter                 | Type   | Default  | Description                                                                                                                                                                |
+| ------------------------- | ------ | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `path`                    | string | required | Note path (such as `"a/b.md"`) or folder prefix (such as `"a/b"`)                                                                                                          |
+| `max_level`               | int    | `null`   | Drop headings deeper than this level (such as `2` to keep H1 and H2). The synthetic H1 title always survives. `null` returns all levels.                                   |
+| `max_notes`               | int    | `200`    | Folder mode only. Cap on distinct notes. When more notes match, the first `max_notes` (sorted by path) are returned and `truncated` is `true`.                             |
+| `wait_for_pending_writes` | bool   | `false`  | Block until the IndexWriter drains before answering, then report freshness via `_meta.index_stale` (see the *Index freshness on read tools* note at the top of this page). |
+
+**Returns:**
+
+- **Note mode** (`path` ends in `.md`): flat ordered `list` of `{heading (str), level (int)}`. The document title is included as a synthetic H1 entry.
+- **Folder mode** (`path` is a folder prefix): `{path (str), notes (list), truncated (bool)}` where each entry in `notes` is `{path, title, headings}` and `headings` is a list of `{heading, level}` for that note. An empty or nonexistent folder returns an empty `notes` list with `truncated: false`.
+
+Index freshness is reported in `_meta.index_stale` (see the freshness note at the top of this page).
 
 ### `get_recent`
 
@@ -4752,17 +4846,17 @@ The index-querying resources (`config://vault`, `stats://vault`, `tags://vault`,
 
 ## Quick Reference
 
-| URI                                           | Description                               |
-| --------------------------------------------- | ----------------------------------------- |
-| [`config://vault`](#configvault)              | Current vault configuration               |
-| [`stats://vault`](#statsvault)                | Vault statistics                          |
-| [`tags://vault`](#tagsvault)                  | All tags grouped by indexed field         |
-| [`tags://vault/{field}`](#tagsvaultfield)     | Tags for a specific field                 |
-| [`folders://vault`](#foldersvault)            | All folder paths                          |
-| [`toc://vault/{path}`](#tocvaultpath)         | Table of contents for a document          |
-| [`similar://vault/{path}`](#similarvaultpath) | Semantically similar notes for a document |
-| [`recent://vault`](#recentvault)              | Most recently modified notes              |
-| [`ui://vault/app.html`](#uivaultapphtml)      | Interactive vault explorer SPA (MCP Apps) |
+| URI                                           | Description                                    |
+| --------------------------------------------- | ---------------------------------------------- |
+| [`config://vault`](#configvault)              | Current vault configuration                    |
+| [`stats://vault`](#statsvault)                | Vault statistics                               |
+| [`tags://vault`](#tagsvault)                  | All tags grouped by indexed field              |
+| [`tags://vault/{field}`](#tagsvaultfield)     | Tags for a specific field                      |
+| [`folders://vault`](#foldersvault)            | All folder paths                               |
+| [`toc://vault/{path}`](#tocvaultpath)         | Table of contents for a note or folder subtree |
+| [`similar://vault/{path}`](#similarvaultpath) | Semantically similar notes for a document      |
+| [`recent://vault`](#recentvault)              | Most recently modified notes                   |
+| [`ui://vault/app.html`](#uivaultapphtml)      | Interactive vault explorer SPA (MCP Apps)      |
 
 ______________________________________________________________________
 
@@ -4840,11 +4934,13 @@ The empty string `""` represents the root folder (top-level documents).
 
 ## `toc://vault/{path}`
 
-Table of contents (heading outline) for a specific document. This is a URI template: replace `{path}` with the document's relative path.
+Table of contents (heading outline) for a note or a folder subtree. This is a URI template: replace `{path}` with a document path (ending in `.md`) or a folder path.
 
 Cold-start blocking
 
 Calls during a cold-start background FTS build block via the tool-layer `needs_queryable` decorator and may surface `IndexUnavailableError(reason="build_failed")` if a scheduled background build ran and failed (the captured error message is available via `get_index_status`'s `error` field), or `IndexUnavailableError(reason="timeout")` if the decorator's bounded wait elapsed first. The decorator also remaps a SQLite `OperationalError` from the resource handler to `IndexUnavailableError(reason="broken")` (corruption / I/O failure / unknown codes) or `reason="busy"` (SQLITE_BUSY/LOCKED, lock contention); inspect the exception's `__cause__` for the underlying SQLite error. Poll `get_index_status` to observe build state without blocking.
+
+**Note path** (ending in `.md`): returns a flat ordered list of `{heading, level}` entries. The title is added as a synthetic H1 and deduplicated if the first real heading matches it.
 
 **Example:** `toc://vault/Journal/note.md`
 
@@ -4852,15 +4948,36 @@ Calls during a cold-start background FTS build block via the tool-layer `needs_q
 
 ```
 [
-  {"level": 1, "title": "My Note"},
-  {"level": 2, "title": "Introduction"},
-  {"level": 2, "title": "Main Points"},
-  {"level": 3, "title": "First Point"},
-  {"level": 2, "title": "Conclusion"}
+  {"level": 1, "heading": "My Note"},
+  {"level": 2, "heading": "Introduction"},
+  {"level": 2, "heading": "Main Points"},
+  {"level": 3, "heading": "First Point"},
+  {"level": 2, "heading": "Conclusion"}
 ]
 ```
 
-The TOC prepends a synthetic H1 from the document title and deduplicates if the first real heading matches the title.
+**Folder path**: returns a nested-per-note object aggregating the subtree (capped at 200 notes by default). Use the `get_toc` tool for the same data with `max_level` / `max_notes` controls.
+
+**Example:** `toc://vault/Journal`
+
+**Response:**
+
+```
+{
+  "path": "Journal",
+  "notes": [
+    {
+      "path": "Journal/note.md",
+      "title": "My Note",
+      "headings": [
+        {"level": 1, "heading": "My Note"},
+        {"level": 2, "heading": "Introduction"}
+      ]
+    }
+  ],
+  "truncated": false
+}
+```
 
 ## `similar://vault/{path}`
 
@@ -5756,31 +5873,35 @@ sudo systemctl restart markdown-vault-mcp
 
 # Claude Desktop
 
-markdown-vault-mcp integrates with [Claude Desktop](https://claude.ai/download) via the stdio transport.
+Markdown Vault MCP integrates with [Claude Desktop](https://claude.ai/download) via the stdio transport.
 
 ## Setup
 
 ### 1. Install
 
-```
-pip install markdown-vault-mcp[all]
-```
-
-Or with uv:
+From PyPI:
 
 ```
-uv tool install markdown-vault-mcp[all]
+pip install markdown-vault-mcp
 ```
+
+Or with uv (installs `markdown-vault-mcp` as a global command on your PATH):
+
+```
+uv tool install markdown-vault-mcp
+```
+
+Or download the `.mcpb` bundle from the [GitHub Releases](https://github.com/pvliesdonk/markdown-vault-mcp/releases) page and double-click to install; Claude Desktop prompts for required env vars via a GUI wizard, no manual JSON editing needed.
 
 ### 2. Configure Claude Desktop
 
-Add the server to your Claude Desktop configuration file:
+If you installed via `.mcpb`, skip this step. Claude Desktop was configured automatically by the wizard.
 
-Edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
+Otherwise, add the server to your Claude Desktop configuration file. The path varies by operating system:
 
-Edit `%APPDATA%\Claude\claude_desktop_config.json`:
-
-Edit `~/.config/Claude/claude_desktop_config.json`:
+- **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
+- **Linux:** `~/.config/Claude/claude_desktop_config.json`
 
 ```
 {
@@ -5789,7 +5910,7 @@ Edit `~/.config/Claude/claude_desktop_config.json`:
       "command": "markdown-vault-mcp",
       "args": ["serve"],
       "env": {
-        "MARKDOWN_VAULT_MCP_SOURCE_DIR": "/path/to/your/vault"
+        "MARKDOWN_VAULT_MCP_READ_ONLY": "true"
       }
     }
   }
@@ -5798,9 +5919,9 @@ Edit `~/.config/Claude/claude_desktop_config.json`:
 
 ### 3. Restart Claude Desktop
 
-Restart the application to pick up the new configuration. You should see the markdown-vault-mcp tools available in Claude's tool list.
+Restart the application to pick up the new configuration. If the server connects successfully, `Markdown Vault MCP` tools appear in Claude's tool list. If not, see [Troubleshooting](#troubleshooting) below.
 
-## Configuration Examples
+## Configuration examples
 
 ### Read-only with Ollama embeddings
 
@@ -5896,24 +6017,6 @@ Naming instances
 
 Use `MARKDOWN_VAULT_MCP_SERVER_NAME` to give each instance a descriptive name. This helps Claude distinguish between vaults when multiple instances are configured.
 
-## Using with uv
-
-If you installed with `uv tool install`, the command is already on your PATH. If you installed in a project with `uv pip install`, point to the uv-managed binary:
-
-```
-{
-  "mcpServers": {
-    "my-vault": {
-      "command": "uv",
-      "args": ["run", "markdown-vault-mcp", "serve"],
-      "env": {
-        "MARKDOWN_VAULT_MCP_SOURCE_DIR": "/path/to/vault"
-      }
-    }
-  }
-}
-```
-
 ## Troubleshooting
 
 ### Server not appearing in Claude Desktop
@@ -5925,17 +6028,39 @@ If you installed with `uv tool install`, the command is already on your PATH. If
 
 ### "Command not found"
 
-Ensure `markdown-vault-mcp` is on your PATH. If installed in a virtualenv, use the full path:
+Ensure `markdown-vault-mcp` is on your PATH. If installed in a virtualenv, use the full path to the binary. Replace only the `"command"` value in your existing config and keep `"args"` and `"env"` as-is.
+
+macOS/Linux:
 
 ```
 {
-  "command": "/Users/me/.venvs/mcp/bin/markdown-vault-mcp"
+  "mcpServers": {
+    "markdown-vault-mcp": {
+      "command": "/Users/me/.venvs/mcp/bin/markdown-vault-mcp",
+      "args": ["serve"],
+      "env": {
+        "MARKDOWN_VAULT_MCP_READ_ONLY": "true"
+      }
+    }
+  }
 }
 ```
 
-### Slow startup
+Windows (`Scripts\` not `bin\`, `.exe` suffix):
 
-The first startup builds the full-text index. Set `MARKDOWN_VAULT_MCP_INDEX_PATH` to persist the index between restarts; subsequent starts will only process changed files.
+```
+{
+  "mcpServers": {
+    "markdown-vault-mcp": {
+      "command": "C:\\Users\\me\\.venvs\\mcp\\Scripts\\markdown-vault-mcp.exe",
+      "args": ["serve"],
+      "env": {
+        "MARKDOWN_VAULT_MCP_READ_ONLY": "true"
+      }
+    }
+  }
+}
+```
 
 # OIDC Authentication
 
@@ -6232,8 +6357,6 @@ This works when `markdown-vault-mcp` is the **only** OAuth service on the hostna
 
 - **Dedicated hostname** (preferred): give `markdown-vault-mcp` its own hostname (such as `vault.example.com`) so discovery routes do not collide.
 - **External auth gateway**: use `mcp-auth-proxy` as a sidecar instead of native OIDC. The MCP server runs unauthenticated behind the proxy, and the proxy handles OAuth discovery at its own routes.
-
-## Project-specific notes
 # Python API
 
 # Vault
@@ -6263,7 +6386,7 @@ print(note.content)
 
 ## API Reference
 
-## `Vault(*, source_dir, index_path=None, embeddings_path=None, embedding_provider=None, read_only=True, state_path=None, indexed_frontmatter_fields=None, required_frontmatter=None, chunk_strategy='heading', on_write=None, git_strategy=None, git_pull_interval_s=0, exclude_patterns=None, attachment_extensions=None, max_attachment_size_mb=1.0, max_note_read_bytes=262144, chunks_per_file=2, snippet_words=200, length_downweight_alpha=0.25, max_chunk_words=400, max_chunk_chars=None, max_chunk_chars_override=None)`
+## `Vault(*, source_dir, index_path=None, embeddings_path=None, embedding_provider=None, read_only=True, state_path=None, indexed_frontmatter_fields=None, required_frontmatter=None, chunk_strategy='heading', on_write=None, git_strategy=None, git_pull_interval_s=0, exclude_patterns=None, attachment_extensions=None, max_attachment_size_mb=1.0, max_note_read_bytes=262144, chunks_per_file=2, snippet_words=200, length_downweight_alpha=0.25, max_chunk_words=400, max_chunk_chars=None, max_chunk_chars_override=None, chunk_overlap_words=0)`
 
 Facade over FTS5 index, vector index, and change tracker.
 
@@ -6273,7 +6396,7 @@ Callers must invoke :meth:`IndexFacet.build_index` before bucket-3 relational/FT
 
 **Index lifecycle (issues #513, #526, #559).** The MCP server lifespan submits a :class:`~markdown_vault_mcp.indexing.BuildIndex` job to the single-owner :class:`~markdown_vault_mcp.indexing.IndexWriter` via :meth:`IndexFacet.build_index_async` and yields immediately. On a warm restart the persisted FTS completeness sentinel (PR #526) causes :meth:`IndexFacet.build_index_async` to return an already-resolved `Future` in O(1) without touching the writer queue. On a cold restart the writer thread runs the job asynchronously while the lifespan yields; bucket-3/4 MCP tool *clients* block on the :class:`markdown_vault_mcp._server_queryable.needs_queryable` decorator, which calls :meth:`IndexFacet.wait_until_queryable` with a bounded default timeout (`MARKDOWN_VAULT_MCP_BUILD_TIMEOUT_S`, default 60s). The library stays honest: bucket-3/4 *methods* keep the PR #525 raise-immediately contract via :meth:`_require_built`. Internal callers (lifespan, git pull loop, CLI, direct library users) get the raise contract and handle "not ready" with caller-appropriate logic — never block.
 
-**Thread safety (issue #519):** every facet operation and lifecycle method is safe to call from any thread, concurrently with other reads and writes from any other thread. Index mutations (FTS + vector index) are serialised by the single-owner :class:`~markdown_vault_mcp.indexing.IndexWriter` thread (#559); file-mutation operations on disk are serialised via `_file_write_lock` (RLock) so two MCP write tools racing on the same path do not tear. `close()` is safe from any thread; after `close()` the vault must not be used. Cross-method atomicity (e.g. read-then-write without intervening concurrent write) is the caller's responsibility — pass `if_match=` to write methods for optimistic concurrency. `fork()` is not supported. See `docs/design.md` "Vault thread-safety contract" for the underlying per-thread SQLite-connection model.
+**Thread safety (issue #519):** every facet operation and lifecycle method is safe to call from any thread, concurrently with other reads and writes from any other thread. Index mutations (FTS + vector index) are serialised by the single-owner :class:`~markdown_vault_mcp.indexing.IndexWriter` thread (#559); file-mutation operations on disk are serialised via `_file_write_lock` (RLock) so two MCP write tools racing on the same path do not tear. `close()` is safe from any thread; after `close()` the vault must not be used. Cross-method atomicity (e.g. read-then-write without intervening concurrent write) is the caller's responsibility — pass `if_match=` to write methods for optimistic concurrency. `fork()` is not supported. See `docs/design/design.md` "Vault thread-safety contract" for the underlying per-thread SQLite-connection model.
 
 Parameters:
 
@@ -6507,31 +6630,33 @@ Returns:
 | ----------- | -------------------------------------- |
 | `list[str]` | Sorted list of distinct value strings. |
 
-### `get_toc(path)`
+### `get_toc(path, *, max_level=None, max_notes=200)`
 
-Return table of contents for a document.
+Return a table of contents for a note or a folder subtree.
 
-Queries the FTS sections table for headings and prepends the document title as a synthetic H1 entry. The result depends on the FTS index, so cold-start callers must build the index first (bucket 3).
+Note paths (ending in `.md`) return a flat :class:`~markdown_vault_mcp.types.TocEntry` list with the title as a synthetic H1. Folder paths return a :class:`~markdown_vault_mcp.types.SubtreeToc`. The result depends on the FTS index, so cold-start callers must build the index first (bucket 3).
 
 Parameters:
 
-| Name   | Type  | Description                                            | Default    |
-| ------ | ----- | ------------------------------------------------------ | ---------- |
-| `path` | `str` | Relative path to the document (e.g. "notes/intro.md"). | *required* |
+| Name        | Type  | Description                                      | Default                                           |
+| ----------- | ----- | ------------------------------------------------ | ------------------------------------------------- |
+| `path`      | `str` | Note path or folder prefix.                      | *required*                                        |
+| `max_level` | \`int | None\`                                           | Drop headings with level above this (both modes). |
+| `max_notes` | `int` | Folder mode cap on distinct notes (default 200). | `200`                                             |
 
 Returns:
 
-| Type                   | Description                                             |
-| ---------------------- | ------------------------------------------------------- |
-| `list[dict[str, Any]]` | List of {"heading": str, "level": int} dicts ordered by |
-| `list[dict[str, Any]]` | position, with the document title prepended as level 1. |
+| Type             | Description  |
+| ---------------- | ------------ |
+| \`list[TocEntry] | SubtreeToc\` |
+| \`list[TocEntry] | SubtreeToc\` |
 
 Raises:
 
 | Type                    | Description                                          |
 | ----------------------- | ---------------------------------------------------- |
 | `IndexUnavailableError` | If :meth:IndexFacet.build_index has not been called. |
-| `ValueError`            | If no document exists at the given path.             |
+| `ValueError`            | Note path with no document; invalid folder path.     |
 
 ### `get_recent(*, limit=20, folder=None)`
 
@@ -6839,6 +6964,37 @@ Raises:
 | `DocumentExistsError`         | If new_path already exists.                           |
 | `ValueError`                  | If old_path or new_path escapes the source directory. |
 
+### `move_folder(old_dir, new_dir)`
+
+Move a folder subtree to a new prefix, rewriting links vault-wide.
+
+Moves every file under *old_dir* (notes, attachments, and other files) to the matching path under *new_dir* and rewrites all links across the vault that point into the moved subtree, including links between documents inside it.
+
+The move is atomic at the gate (a destination-file collision aborts before anything moves); link rewrites are best-effort.
+
+Parameters:
+
+| Name      | Type  | Description                                          | Default    |
+| --------- | ----- | ---------------------------------------------------- | ---------- |
+| `old_dir` | `str` | Relative source folder prefix (e.g. "drafts").       | *required* |
+| `new_dir` | `str` | Relative target folder prefix (e.g. "archive/2026"). | *required* |
+
+Returns:
+
+| Type               | Description                                       |
+| ------------------ | ------------------------------------------------- |
+| `MoveFolderResult` | class:~markdown_vault_mcp.types.MoveFolderResult. |
+
+Raises:
+
+| Type                    | Description                                                                                                                                                                                                                                         |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ReadOnlyError`         | If the vault is read-only.                                                                                                                                                                                                                          |
+| `DocumentNotFoundError` | If old_dir is missing, not a directory, or empty.                                                                                                                                                                                                   |
+| `DocumentExistsError`   | If any destination file already exists.                                                                                                                                                                                                             |
+| `ValueError`            | If either path escapes the vault or the two paths are nested.                                                                                                                                                                                       |
+| `OSError`               | If the OS raises during the move phase (e.g. a permission error or full disk). The collision gate prevents pre-existing destination clashes, but a mid-move OS error leaves the subtree partially moved with the index unchanged; reindex recovers. |
+
 ### `write_attachment(path, content, if_match=None)`
 
 Create or overwrite a non-.md attachment.
@@ -7057,9 +7213,9 @@ Block until :meth:`IndexFacet.is_drained`; `True` if drained, `False` on timeout
 
 ### `get_index_status()`
 
-Return a non-blocking eleven-key snapshot of build + writer state.
+Return a non-blocking twelve-key snapshot of build + writer state.
 
-Keys: `status` (`"queryable"` | `"building"` | `"failed"`), `documents_indexed`, `documents_indexed_error`, `error`, `last_reindex_error`, `last_build_embeddings_error`, plus `queue_depth`, `in_flight`, `dirty_paths`, `dirty_embeddings`, `write_generation` merged from the writer. A captured build error appears in `error` as diagnostic context without demoting a `queryable` status; `documents_indexed_error` carries a SQLite read failure (`documents_indexed` stays `0`) (#583).
+Keys: `status` (`"queryable"` | `"building"` | `"failed"`), `documents_indexed`, `documents_indexed_error`, `error`, `last_reindex_error`, `last_build_embeddings_error`, plus `queue_depth`, `in_flight`, `dirty_paths`, `dirty_embeddings`, `write_generation` merged from the writer, and `skipped_files` — a list of `{path, category, detail}` dicts for files dropped from the index for a surfaced deterministic reason (parse / encoding / missing-frontmatter / internal-error), read from tracker state (#775, #802). A captured build error appears in `error` as diagnostic context without demoting a `queryable` status; `documents_indexed_error` carries a SQLite read failure (`documents_indexed` stays `0`) (#583).
 
 ### `wait_until_queryable(timeout=None)`
 
@@ -7119,10 +7275,10 @@ Returns:
 
 Raises:
 
-| Type                    | Description                                          |
-| ----------------------- | ---------------------------------------------------- |
-| `IndexUnavailableError` | If :meth:IndexFacet.build_index has not been called. |
-| `ValueError`            | If embedding_provider or embeddings_path is unset.   |
+| Type                           | Description                                                                |
+| ------------------------------ | -------------------------------------------------------------------------- |
+| `IndexUnavailableError`        | If :meth:IndexFacet.build_index has not been called.                       |
+| `EmbeddingsNotConfiguredError` | If embedding_provider or embeddings_path is unset (a ValueError subclass). |
 
 ### `build_index_async(*, force=False)`
 
@@ -7164,6 +7320,18 @@ Returns:
 | ---------------- | ------------------------------------------- |
 | `dict[str, Any]` | Dict with keys provider, chunk_count, path, |
 | `dict[str, Any]` | available.                                  |
+
+### `skipped_files()`
+
+Return files dropped from the index for a surfaced reason (#775).
+
+Delegates to :meth:`IndexManager.skipped_files`; also merged, as plain dicts, into :meth:`IndexFacet.get_index_status`'s `skipped_files` key.
+
+Returns:
+
+| Type                | Description                                                       |
+| ------------------- | ----------------------------------------------------------------- |
+| `list[SkippedFile]` | Path-sorted list of :class:~markdown_vault_mcp.types.SkippedFile. |
 
 # Git Integration
 
@@ -7249,7 +7417,7 @@ WriteCallback interface: stage + commit, then schedule push.
 
 Pull from `origin` synchronously and return a structured result.
 
-The remote-tracking branch is identified by reading the upstream of the current branch (`@{upstream}`) so this method works even when `origin/HEAD` has not been set on the local clone.
+The remote-tracking branch is resolved as `origin/<current-branch>` (see :meth:`_tracking_ref`) so this method works even when branch tracking (`@{upstream}`) was never configured on the local clone — falling back to `origin/HEAD` for a detached checkout.
 
 Acquires :attr:`_lock` for the duration so the periodic pull loop and the per-write commit path cannot race against the fetch / merge / rebase pipeline. This blocks writes for the network round-trip; that is acceptable for the interactive `git_sync` tool and mirrors what :meth:`sync_once` already does.
 
@@ -7438,16 +7606,16 @@ The `config` module loads configuration from environment variables and provides 
 
 ```
 import os
-from markdown_vault_mcp import Vault, VaultConfig
+from markdown_vault_mcp import Vault, ProjectConfig
 
 os.environ["MARKDOWN_VAULT_MCP_SOURCE_DIR"] = "/path/to/vault"
-config = VaultConfig.from_env()
+config = ProjectConfig.from_env()
 vault = Vault(**config.to_vault_kwargs())
 ```
 
 ## API Reference
 
-## `VaultConfig(source_dir, read_only=True, server_name='markdown-vault-mcp', instructions=None, git=GitConfig(), indexing=IndexingConfig(), embeddings=EmbeddingsConfig(), search=SearchConfig(), sync=SyncConfig(), content=ContentConfig(), transfer=TransferConfig(), disable_apps_ui=False, server=ServerConfig())`
+## `ProjectConfig(source_dir, read_only=True, server_name='markdown-vault-mcp', instructions=None, git=GitConfig(), indexing=IndexingConfig(), embeddings=EmbeddingsConfig(), search=SearchConfig(), sync=SyncConfig(), content=ContentConfig(), transfer=TransferConfig(), disable_apps_ui=False, server=ServerConfig())`
 
 Configuration for a :class:`~markdown_vault_mcp.vault.Vault`.
 
@@ -7472,7 +7640,7 @@ Attributes:
 Example::
 
 ```
-config = VaultConfig.from_env()
+config = ProjectConfig.from_env()
 vault = Vault(**config.to_vault_kwargs())
 ```
 
@@ -7492,7 +7660,7 @@ Returns:
 Example::
 
 ```
-config = VaultConfig.from_env()
+config = ProjectConfig.from_env()
 vault = Vault(**config.to_vault_kwargs())
 ```
 
@@ -7567,9 +7735,9 @@ Parameters:
 
 Returns:
 
-| Type          | Description                                    |
-| ------------- | ---------------------------------------------- |
-| `VaultConfig` | A fully populated :class:VaultConfig instance. |
+| Type            | Description                                      |
+| --------------- | ------------------------------------------------ |
+| `ProjectConfig` | A fully populated :class:ProjectConfig instance. |
 
 Raises:
 
@@ -7582,7 +7750,7 @@ Example::
 ```
 import os
 os.environ["MARKDOWN_VAULT_MCP_SOURCE_DIR"] = "/home/user/vault"
-config = VaultConfig.from_env()
+config = ProjectConfig.from_env()
 vault = Vault(**config.to_vault_kwargs())
 ```
 
@@ -7870,9 +8038,9 @@ Checks `config.embeddings.provider` for an explicit selection. When that field i
 
 Parameters:
 
-| Name     | Type          | Description                                        | Default    |
-| -------- | ------------- | -------------------------------------------------- | ---------- |
-| `config` | `VaultConfig` | Vault configuration containing embedding settings. | *required* |
+| Name     | Type            | Description                                        | Default    |
+| -------- | --------------- | -------------------------------------------------- | ---------- |
+| `config` | `ProjectConfig` | Vault configuration containing embedding settings. | *required* |
 
 Returns:
 

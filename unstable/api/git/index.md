@@ -82,7 +82,7 @@ WriteCallback interface: stage + commit, then schedule push.
 
 Pull from `origin` synchronously and return a structured result.
 
-The remote-tracking branch is identified by reading the upstream of the current branch (`@{upstream}`) so this method works even when `origin/HEAD` has not been set on the local clone.
+The remote-tracking branch is resolved as `origin/<current-branch>` (see :meth:`_tracking_ref`) so this method works even when branch tracking (`@{upstream}`) was never configured on the local clone — falling back to `origin/HEAD` for a detached checkout.
 
 Acquires :attr:`_lock` for the duration so the periodic pull loop and the per-write commit path cannot race against the fetch / merge / rebase pipeline. This blocks writes for the network round-trip; that is acceptable for the interactive `git_sync` tool and mirrors what :meth:`sync_once` already does.
 

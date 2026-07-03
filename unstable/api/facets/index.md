@@ -138,31 +138,33 @@ Returns:
 | ----------- | -------------------------------------- |
 | `list[str]` | Sorted list of distinct value strings. |
 
-### `get_toc(path)`
+### `get_toc(path, *, max_level=None, max_notes=200)`
 
-Return table of contents for a document.
+Return a table of contents for a note or a folder subtree.
 
-Queries the FTS sections table for headings and prepends the document title as a synthetic H1 entry. The result depends on the FTS index, so cold-start callers must build the index first (bucket 3).
+Note paths (ending in `.md`) return a flat :class:`~markdown_vault_mcp.types.TocEntry` list with the title as a synthetic H1. Folder paths return a :class:`~markdown_vault_mcp.types.SubtreeToc`. The result depends on the FTS index, so cold-start callers must build the index first (bucket 3).
 
 Parameters:
 
-| Name   | Type  | Description                                            | Default    |
-| ------ | ----- | ------------------------------------------------------ | ---------- |
-| `path` | `str` | Relative path to the document (e.g. "notes/intro.md"). | *required* |
+| Name        | Type  | Description                                      | Default                                           |
+| ----------- | ----- | ------------------------------------------------ | ------------------------------------------------- |
+| `path`      | `str` | Note path or folder prefix.                      | *required*                                        |
+| `max_level` | \`int | None\`                                           | Drop headings with level above this (both modes). |
+| `max_notes` | `int` | Folder mode cap on distinct notes (default 200). | `200`                                             |
 
 Returns:
 
-| Type                   | Description                                             |
-| ---------------------- | ------------------------------------------------------- |
-| `list[dict[str, Any]]` | List of {"heading": str, "level": int} dicts ordered by |
-| `list[dict[str, Any]]` | position, with the document title prepended as level 1. |
+| Type             | Description  |
+| ---------------- | ------------ |
+| \`list[TocEntry] | SubtreeToc\` |
+| \`list[TocEntry] | SubtreeToc\` |
 
 Raises:
 
 | Type                    | Description                                          |
 | ----------------------- | ---------------------------------------------------- |
 | `IndexUnavailableError` | If :meth:IndexFacet.build_index has not been called. |
-| `ValueError`            | If no document exists at the given path.             |
+| `ValueError`            | Note path with no document; invalid folder path.     |
 
 ### `get_recent(*, limit=20, folder=None)`
 
@@ -470,6 +472,37 @@ Raises:
 | `DocumentExistsError`         | If new_path already exists.                           |
 | `ValueError`                  | If old_path or new_path escapes the source directory. |
 
+### `move_folder(old_dir, new_dir)`
+
+Move a folder subtree to a new prefix, rewriting links vault-wide.
+
+Moves every file under *old_dir* (notes, attachments, and other files) to the matching path under *new_dir* and rewrites all links across the vault that point into the moved subtree, including links between documents inside it.
+
+The move is atomic at the gate (a destination-file collision aborts before anything moves); link rewrites are best-effort.
+
+Parameters:
+
+| Name      | Type  | Description                                          | Default    |
+| --------- | ----- | ---------------------------------------------------- | ---------- |
+| `old_dir` | `str` | Relative source folder prefix (e.g. "drafts").       | *required* |
+| `new_dir` | `str` | Relative target folder prefix (e.g. "archive/2026"). | *required* |
+
+Returns:
+
+| Type               | Description                                       |
+| ------------------ | ------------------------------------------------- |
+| `MoveFolderResult` | class:~markdown_vault_mcp.types.MoveFolderResult. |
+
+Raises:
+
+| Type                    | Description                                                                                                                                                                                                                                         |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ReadOnlyError`         | If the vault is read-only.                                                                                                                                                                                                                          |
+| `DocumentNotFoundError` | If old_dir is missing, not a directory, or empty.                                                                                                                                                                                                   |
+| `DocumentExistsError`   | If any destination file already exists.                                                                                                                                                                                                             |
+| `ValueError`            | If either path escapes the vault or the two paths are nested.                                                                                                                                                                                       |
+| `OSError`               | If the OS raises during the move phase (e.g. a permission error or full disk). The collision gate prevents pre-existing destination clashes, but a mid-move OS error leaves the subtree partially moved with the index unchanged; reindex recovers. |
+
 ### `write_attachment(path, content, if_match=None)`
 
 Create or overwrite a non-.md attachment.
@@ -688,9 +721,9 @@ Block until :meth:`IndexFacet.is_drained`; `True` if drained, `False` on timeout
 
 ### `get_index_status()`
 
-Return a non-blocking eleven-key snapshot of build + writer state.
+Return a non-blocking twelve-key snapshot of build + writer state.
 
-Keys: `status` (`"queryable"` | `"building"` | `"failed"`), `documents_indexed`, `documents_indexed_error`, `error`, `last_reindex_error`, `last_build_embeddings_error`, plus `queue_depth`, `in_flight`, `dirty_paths`, `dirty_embeddings`, `write_generation` merged from the writer. A captured build error appears in `error` as diagnostic context without demoting a `queryable` status; `documents_indexed_error` carries a SQLite read failure (`documents_indexed` stays `0`) (#583).
+Keys: `status` (`"queryable"` | `"building"` | `"failed"`), `documents_indexed`, `documents_indexed_error`, `error`, `last_reindex_error`, `last_build_embeddings_error`, plus `queue_depth`, `in_flight`, `dirty_paths`, `dirty_embeddings`, `write_generation` merged from the writer, and `skipped_files` — a list of `{path, category, detail}` dicts for files dropped from the index for a surfaced deterministic reason (parse / encoding / missing-frontmatter / internal-error), read from tracker state (#775, #802). A captured build error appears in `error` as diagnostic context without demoting a `queryable` status; `documents_indexed_error` carries a SQLite read failure (`documents_indexed` stays `0`) (#583).
 
 ### `wait_until_queryable(timeout=None)`
 
@@ -750,10 +783,10 @@ Returns:
 
 Raises:
 
-| Type                    | Description                                          |
-| ----------------------- | ---------------------------------------------------- |
-| `IndexUnavailableError` | If :meth:IndexFacet.build_index has not been called. |
-| `ValueError`            | If embedding_provider or embeddings_path is unset.   |
+| Type                           | Description                                                                |
+| ------------------------------ | -------------------------------------------------------------------------- |
+| `IndexUnavailableError`        | If :meth:IndexFacet.build_index has not been called.                       |
+| `EmbeddingsNotConfiguredError` | If embedding_provider or embeddings_path is unset (a ValueError subclass). |
 
 ### `build_index_async(*, force=False)`
 
@@ -795,3 +828,15 @@ Returns:
 | ---------------- | ------------------------------------------- |
 | `dict[str, Any]` | Dict with keys provider, chunk_count, path, |
 | `dict[str, Any]` | available.                                  |
+
+### `skipped_files()`
+
+Return files dropped from the index for a surfaced reason (#775).
+
+Delegates to :meth:`IndexManager.skipped_files`; also merged, as plain dicts, into :meth:`IndexFacet.get_index_status`'s `skipped_files` key.
+
+Returns:
+
+| Type                | Description                                                       |
+| ------------------- | ----------------------------------------------------------------- |
+| `list[SkippedFile]` | Path-sorted list of :class:~markdown_vault_mcp.types.SkippedFile. |

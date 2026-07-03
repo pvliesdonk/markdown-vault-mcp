@@ -1974,7 +1974,7 @@
 </tr>
 <tr>
 <td><a href="#tocvaultpath"><code>toc://vault/{path}</code></a></td>
-<td>Table of contents for a document</td>
+<td>Table of contents for a note or folder subtree</td>
 </tr>
 <tr>
 <td><a href="#similarvaultpath"><code>similar://vault/{path}</code></a></td>
@@ -2037,22 +2037,40 @@
 </code></pre></div>
 <p>The empty string <code>""</code> represents the root folder (top-level documents).</p>
 <h2 id="tocvaultpath"><code>toc://vault/{path}</code><a class="headerlink" href="#tocvaultpath" title="Permanent link">&para;</a></h2>
-<p>Table of contents (heading outline) for a specific document. This is a URI template: replace <code>{path}</code> with the document's relative path.</p>
+<p>Table of contents (heading outline) for a note or a folder subtree. This is a URI template: replace <code>{path}</code> with a document path (ending in <code>.md</code>) or a folder path.</p>
 <div class="admonition note">
 <p class="admonition-title">Cold-start blocking</p>
 <p>Calls during a cold-start background FTS build block via the tool-layer <code>needs_queryable</code> decorator and may surface <code>IndexUnavailableError(reason="build_failed")</code> if a scheduled background build ran and failed (the captured error message is available via <code>get_index_status</code>'s <code>error</code> field), or <code>IndexUnavailableError(reason="timeout")</code> if the decorator's bounded wait elapsed first. The decorator also remaps a SQLite <code>OperationalError</code> from the resource handler to <code>IndexUnavailableError(reason="broken")</code> (corruption / I/O failure / unknown codes) or <code>reason="busy"</code> (SQLITE_BUSY/LOCKED, lock contention); inspect the exception's <code>__cause__</code> for the underlying SQLite error. Poll <code>get_index_status</code> to observe build state without blocking.</p>
 </div>
+<p><strong>Note path</strong> (ending in <code>.md</code>): returns a flat ordered list of <code>{heading, level}</code> entries. The title is added as a synthetic H1 and deduplicated if the first real heading matches it.</p>
 <p><strong>Example:</strong> <code>toc://vault/Journal/note.md</code></p>
 <p><strong>Response:</strong></p>
 <div class="highlight"><pre><span></span><code><span class="p">[</span>
-<span class="w">  </span><span class="p">{</span><span class="nt">&quot;level&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;title&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;My Note&quot;</span><span class="p">},</span>
-<span class="w">  </span><span class="p">{</span><span class="nt">&quot;level&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;title&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Introduction&quot;</span><span class="p">},</span>
-<span class="w">  </span><span class="p">{</span><span class="nt">&quot;level&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;title&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Main Points&quot;</span><span class="p">},</span>
-<span class="w">  </span><span class="p">{</span><span class="nt">&quot;level&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;title&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;First Point&quot;</span><span class="p">},</span>
-<span class="w">  </span><span class="p">{</span><span class="nt">&quot;level&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;title&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Conclusion&quot;</span><span class="p">}</span>
+<span class="w">  </span><span class="p">{</span><span class="nt">&quot;level&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;heading&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;My Note&quot;</span><span class="p">},</span>
+<span class="w">  </span><span class="p">{</span><span class="nt">&quot;level&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;heading&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Introduction&quot;</span><span class="p">},</span>
+<span class="w">  </span><span class="p">{</span><span class="nt">&quot;level&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;heading&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Main Points&quot;</span><span class="p">},</span>
+<span class="w">  </span><span class="p">{</span><span class="nt">&quot;level&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;heading&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;First Point&quot;</span><span class="p">},</span>
+<span class="w">  </span><span class="p">{</span><span class="nt">&quot;level&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;heading&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Conclusion&quot;</span><span class="p">}</span>
 <span class="p">]</span>
 </code></pre></div>
-<p>The TOC prepends a synthetic H1 from the document title and deduplicates if the first real heading matches the title.</p>
+<p><strong>Folder path</strong>: returns a nested-per-note object aggregating the subtree (capped at 200 notes by default). Use the <code>get_toc</code> tool for the same data with <code>max_level</code> / <code>max_notes</code> controls.</p>
+<p><strong>Example:</strong> <code>toc://vault/Journal</code></p>
+<p><strong>Response:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;path&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Journal&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;notes&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;path&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Journal/note.md&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;title&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;My Note&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;headings&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">        </span><span class="p">{</span><span class="nt">&quot;level&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;heading&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;My Note&quot;</span><span class="p">},</span>
+<span class="w">        </span><span class="p">{</span><span class="nt">&quot;level&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;heading&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Introduction&quot;</span><span class="p">}</span>
+<span class="w">      </span><span class="p">]</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">],</span>
+<span class="w">  </span><span class="nt">&quot;truncated&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span>
+<span class="p">}</span>
+</code></pre></div>
 <h2 id="similarvaultpath"><code>similar://vault/{path}</code><a class="headerlink" href="#similarvaultpath" title="Permanent link">&para;</a></h2>
 <p>Top 10 semantically similar notes for a document. Requires embeddings to be built. This is a URI template: replace <code>{path}</code> with the document's relative path.</p>
 <div class="admonition note">

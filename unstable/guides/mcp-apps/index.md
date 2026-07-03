@@ -24,7 +24,9 @@ Interactive force-directed link graph of the vault, powered by vis-network. Two 
 - **Neighborhood**: shows a note and its direct connections (configurable depth, soft-capped at `max_nodes=200` by default; the response carries `truncated=true` when the BFS hit the cap so the SPA can warn the user)
 - **Hubs**: shows the most-linked notes in the vault and their connections
 
-Click a node to view that note's context card. Toggle semantic similarity edges when embeddings are available.
+Click a node to view that note's context card. Toggle semantic similarity edges when embeddings are available (semantic edges render as dashed accent-colored lines, distinct from the solid wikilink edges).
+
+Node labels follow a level-of-detail rule. The focus note, its direct neighbors, and hub notes keep their labels; other farther-out notes render as unlabelled dots (their names appear on hover, or once you zoom in past a threshold). A separate hover text with the note's title and backlink count is always available, regardless of zoom level. A count chip in the top-right corner of the canvas reports how many notes are currently visible, next to zoom-in and zoom-out buttons. A legend below the canvas explains the edge and node styles; on a narrow panel it collapses behind an "ⓘ legend" chip to save space.
 
 ### Vault Browser
 
@@ -38,8 +40,10 @@ Searchable, filterable file tree for browsing the vault without issuing tool cal
 
 Full-width markdown preview with:
 
-- Rendered markdown (via marked.js, sanitized with DOMPurify)
-- Frontmatter table
+- Rendered markdown (via marked.js, sanitized with DOMPurify), with the leading frontmatter block stripped so it renders only once
+- A **Contents** popover: an on-this-page table of contents built from the note's headings
+- Collapsible frontmatter properties (first few shown, the rest behind a toggle) and collapsible tags
+- **Copy markdown** (the full note, frontmatter included) and **Copy vault link** (the note's path) buttons
 - **Send to Claude** button: sends the note content to the LLM conversation
 - Navigation to Context Card or Graph Explorer for the same note
 
@@ -75,7 +79,7 @@ Override `APP_DOMAIN` if your deployment is behind a proxy that changes the appa
 
 ## Architecture
 
-The SPA is a self-contained HTML file with all dependencies vendored at build time (no runtime CDN requests):
+The SPA is a self-contained HTML file with its JavaScript dependencies vendored at build time (no runtime CDN requests for libraries; web fonts are the one exception, see [Visual identity](#visual-identity-paper)):
 
 | Library                        | Purpose                                    |
 | ------------------------------ | ------------------------------------------ |
@@ -91,6 +95,32 @@ The app integrates with the host client via the ext-apps SDK:
 - **`app.updateModelContext()`**: keeps the LLM aware of which note the user is viewing
 - **`app.requestDisplayMode()`**: requests fullscreen or inline display
 - **Theme sync**: automatically adapts to the host's light/dark theme and CSS variables
+
+### Visual identity ("Paper")
+
+The views use a warm, editorial "Paper" theme (serif headings, a single warm accent, light and dark). The Paper palette is expressed as CSS custom properties that map onto the host's `--color-*` variables: a host that pushes its own theme overrides Paper, otherwise the Paper values show. Three font families load from Google Fonts and are exposed as `--font-head` / `--font-body` / `--font-mono`: Newsreader styles headings, Public Sans the body and UI, and IBM Plex Mono the code, property keys, and tags. (As each view is restyled, these families also reach the remaining mono metadata such as paths and scores.) The fonts are the one runtime network dependency the app keeps (the vendored libraries are embedded); if they fail to load, the app falls back to system fonts with no loss of function.
+
+### Source layout and build
+
+The SPA source is authored as small partials under `src/markdown_vault_mcp/static/spa/`:
+
+| File                                                                      | Contents                                                               |
+| ------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `shell.html`                                                              | The HTML document: head, tab bar, view panels, toast                   |
+| `styles.css`                                                              | All styles                                                             |
+| `core.js`                                                                 | App setup, theming, tab navigation, cross-view routing, shared helpers |
+| `views/context.js`, `views/graph.js`, `views/browser.js`, `views/note.js` | One file per view                                                      |
+
+Two build steps turn the partials into the served resource:
+
+```
+spa/*  ->  build_spa.py  ->  app.src.html  ->  vendor_spa.py  ->  app.html
+```
+
+1. `python scripts/build_spa.py` assembles the partials into `static/app.src.html`. Assembly is a recursive `/*@@FILE:path@@*/` include, a valid comment in both CSS and JavaScript, so each partial stays independently readable.
+1. `python scripts/vendor_spa.py` embeds the vendored libraries into the self-contained `static/app.html` that the server serves.
+
+`app.src.html` and `app.html` are both generated, committed artifacts: edit the files under `static/spa/`, then run both scripts. Never hand-edit the generated files. `build_spa.py --check` and `vendor_spa.py --check` fail the build if either artifact is stale; both run in CI and as pre-commit hooks.
 
 ## Client support
 

@@ -436,7 +436,7 @@ After a triage session produces 5-10 new projects, ask Claude to propose an `are
 
 ## Next Steps
 
-- **Read the design document** for details on the linking system and search algorithms: [`docs/design.md`](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/design/index.md)
+- **Read the design document** for details on the linking system and search algorithms: [`docs/design/design.md`](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/design/design/index.md)
 - **Explore the MCP tools** to understand the full API: [`tools/index.md`](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/tools/index.md)
 - **Review the examples** for templates and prompts: [`examples/para/`](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/examples/para/index.md)
 - **Prefer idea-centric knowledge management?** See the alternative workflow: [`docs/guides/zettelkasten.md`](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/zettelkasten/index.md)

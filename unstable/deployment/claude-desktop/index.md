@@ -1,30 +1,34 @@
 # Claude Desktop
 
-markdown-vault-mcp integrates with [Claude Desktop](https://claude.ai/download) via the stdio transport.
+Markdown Vault MCP integrates with [Claude Desktop](https://claude.ai/download) via the stdio transport.
 
 ## Setup
 
 ### 1. Install
 
-```
-pip install markdown-vault-mcp[all]
-```
-
-Or with uv:
+From PyPI:
 
 ```
-uv tool install markdown-vault-mcp[all]
+pip install markdown-vault-mcp
 ```
+
+Or with uv (installs `markdown-vault-mcp` as a global command on your PATH):
+
+```
+uv tool install markdown-vault-mcp
+```
+
+Or download the `.mcpb` bundle from the [GitHub Releases](https://github.com/pvliesdonk/markdown-vault-mcp/releases) page and double-click to install; Claude Desktop prompts for required env vars via a GUI wizard, no manual JSON editing needed.
 
 ### 2. Configure Claude Desktop
 
-Add the server to your Claude Desktop configuration file:
+If you installed via `.mcpb`, skip this step. Claude Desktop was configured automatically by the wizard.
 
-Edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
+Otherwise, add the server to your Claude Desktop configuration file. The path varies by operating system:
 
-Edit `%APPDATA%\Claude\claude_desktop_config.json`:
-
-Edit `~/.config/Claude/claude_desktop_config.json`:
+- **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
+- **Linux:** `~/.config/Claude/claude_desktop_config.json`
 
 ```
 {
@@ -33,7 +37,7 @@ Edit `~/.config/Claude/claude_desktop_config.json`:
       "command": "markdown-vault-mcp",
       "args": ["serve"],
       "env": {
-        "MARKDOWN_VAULT_MCP_SOURCE_DIR": "/path/to/your/vault"
+        "MARKDOWN_VAULT_MCP_READ_ONLY": "true"
       }
     }
   }
@@ -42,9 +46,9 @@ Edit `~/.config/Claude/claude_desktop_config.json`:
 
 ### 3. Restart Claude Desktop
 
-Restart the application to pick up the new configuration. You should see the markdown-vault-mcp tools available in Claude's tool list.
+Restart the application to pick up the new configuration. If the server connects successfully, `Markdown Vault MCP` tools appear in Claude's tool list. If not, see [Troubleshooting](#troubleshooting) below.
 
-## Configuration Examples
+## Configuration examples
 
 ### Read-only with Ollama embeddings
 
@@ -140,24 +144,6 @@ Naming instances
 
 Use `MARKDOWN_VAULT_MCP_SERVER_NAME` to give each instance a descriptive name. This helps Claude distinguish between vaults when multiple instances are configured.
 
-## Using with uv
-
-If you installed with `uv tool install`, the command is already on your PATH. If you installed in a project with `uv pip install`, point to the uv-managed binary:
-
-```
-{
-  "mcpServers": {
-    "my-vault": {
-      "command": "uv",
-      "args": ["run", "markdown-vault-mcp", "serve"],
-      "env": {
-        "MARKDOWN_VAULT_MCP_SOURCE_DIR": "/path/to/vault"
-      }
-    }
-  }
-}
-```
-
 ## Troubleshooting
 
 ### Server not appearing in Claude Desktop
@@ -169,14 +155,36 @@ If you installed with `uv tool install`, the command is already on your PATH. If
 
 ### "Command not found"
 
-Ensure `markdown-vault-mcp` is on your PATH. If installed in a virtualenv, use the full path:
+Ensure `markdown-vault-mcp` is on your PATH. If installed in a virtualenv, use the full path to the binary. Replace only the `"command"` value in your existing config and keep `"args"` and `"env"` as-is.
+
+macOS/Linux:
 
 ```
 {
-  "command": "/Users/me/.venvs/mcp/bin/markdown-vault-mcp"
+  "mcpServers": {
+    "markdown-vault-mcp": {
+      "command": "/Users/me/.venvs/mcp/bin/markdown-vault-mcp",
+      "args": ["serve"],
+      "env": {
+        "MARKDOWN_VAULT_MCP_READ_ONLY": "true"
+      }
+    }
+  }
 }
 ```
 
-### Slow startup
+Windows (`Scripts\` not `bin\`, `.exe` suffix):
 
-The first startup builds the full-text index. Set `MARKDOWN_VAULT_MCP_INDEX_PATH` to persist the index between restarts; subsequent starts will only process changed files.
+```
+{
+  "mcpServers": {
+    "markdown-vault-mcp": {
+      "command": "C:\\Users\\me\\.venvs\\mcp\\Scripts\\markdown-vault-mcp.exe",
+      "args": ["serve"],
+      "env": {
+        "MARKDOWN_VAULT_MCP_READ_ONLY": "true"
+      }
+    }
+  }
+}
+```

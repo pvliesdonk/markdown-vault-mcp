@@ -540,7 +540,7 @@ Resist pre-splitting or pre-merging before review. Claude does both in one pass.
 
 ## Next Steps
 
-- **Read the design document** for details on the linking system and search algorithms: [`docs/design.md`](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/design/index.md)
+- **Read the design document** for details on the linking system and search algorithms: [`docs/design/design.md`](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/design/design/index.md)
 - **Explore the MCP tools** to understand the full API: [`tools/index.md`](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/tools/index.md)
 - **Review the examples** for templates and prompts: [`examples/zettelkasten/`](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/examples/zettelkasten/index.md)
 - **Prefer an action-oriented workflow?** Try the [PARA guide](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/para/index.md): Projects, Areas, Resources, Archive with triage, kickoff, and weekly review prompts

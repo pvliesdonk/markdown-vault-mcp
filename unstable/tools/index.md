@@ -4,43 +4,45 @@ markdown-vault-mcp exposes MCP tools across several categories. Write tools are 
 
 Index freshness on read tools (`wait_for_pending_writes` + `_meta.index_stale`)
 
-Every read tool that queries the FTS index (`search`, `list_documents`, `list_folders`, `list_tags`, `stats`, `get_recent`, `get_backlinks`, `get_outlinks`, `get_broken_links`, `get_similar`, `get_context`, `get_orphan_notes`, `get_most_linked`, and `get_connection_path`) accepts an optional **`wait_for_pending_writes`** (`bool`, default `false`) parameter and reports index freshness **out-of-band in the MCP response's `_meta.index_stale` field** rather than wrapping the payload in a `{stale, data}` envelope. The data payload is a **bare list/dict, identical whether the index is fresh or stale**; clients that do not care about drift ignore `_meta` entirely. Clients that need a fresh-read guarantee either inspect `result._meta.index_stale`, or pass `wait_for_pending_writes=true` to block until the writer drains (bounded by `MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S`, default 60 s; on timeout it answers from the current index rather than raising). `index_stale` is `true` when the IndexWriter had pending or in-flight work. The relevant conditions are: the optional `wait_for_pending_writes` timed out; a write completed inside the read window; the writer was non-idle at response time. The same `_meta.index_stale` field rides on the index-querying MCP **resources** (`config://`, `stats://`, `folders://`, `tags://`, `recent://`, `toc://`, `similar://`), readable via the resource read's `_meta` (resources carry no `wait_for_pending_writes` parameter; they signal only).
+Every read tool that queries the FTS index (`search`, `list_documents`, `list_folders`, `list_tags`, `stats`, `get_recent`, `get_backlinks`, `get_outlinks`, `get_broken_links`, `get_similar`, `get_toc`, `get_context`, `get_orphan_notes`, `get_most_linked`, and `get_connection_path`) accepts an optional **`wait_for_pending_writes`** (`bool`, default `false`) parameter and reports index freshness **out-of-band in the MCP response's `_meta.index_stale` field** rather than wrapping the payload in a `{stale, data}` envelope. The data payload is a **bare list/dict, identical whether the index is fresh or stale**; clients that do not care about drift ignore `_meta` entirely. Clients that need a fresh-read guarantee either inspect `result._meta.index_stale`, or pass `wait_for_pending_writes=true` to block until the writer drains (bounded by `MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S`, default 60 s; on timeout it answers from the current index rather than raising). `index_stale` is `true` when the IndexWriter had pending or in-flight work. The relevant conditions are: the optional `wait_for_pending_writes` timed out; a write completed inside the read window; the writer was non-idle at response time. The same `_meta.index_stale` field rides on the index-querying MCP **resources** (`config://`, `stats://`, `folders://`, `tags://`, `recent://`, `toc://`, `similar://`), readable via the resource read's `_meta` (resources carry no `wait_for_pending_writes` parameter; they signal only).
 
 ## Quick Reference
 
-| Tool                                            | Category    | Description                                                                          |
-| ----------------------------------------------- | ----------- | ------------------------------------------------------------------------------------ |
-| [`search`](#search)                             | Read        | Hybrid full-text + semantic search with optional frontmatter filters                 |
-| [`read`](#read)                                 | Read        | Read a document or attachment by relative path                                       |
-| [`list_documents`](#list_documents)             | Read        | List indexed documents and optionally attachments                                    |
-| [`list_folders`](#list_folders)                 | Read        | List all folder paths in the vault                                                   |
-| [`list_tags`](#list_tags)                       | Read        | List all unique frontmatter tag values                                               |
-| [`stats`](#stats)                               | Read        | Get vault statistics and capabilities                                                |
-| [`embeddings_status`](#embeddings_status)       | Read        | Check embedding provider and vector index status                                     |
-| [`get_index_status`](#get_index_status)         | Read        | Check background FTS build state (queryable / building / failed)                     |
-| [`get_backlinks`](#get_backlinks)               | Read        | Find all documents that link to a given document                                     |
-| [`get_outlinks`](#get_outlinks)                 | Read        | Find all links from a document, with existence check                                 |
-| [`get_broken_links`](#get_broken_links)         | Read        | Find all links pointing to non-existent documents                                    |
-| [`get_similar`](#get_similar)                   | Read        | Find semantically similar notes by document path                                     |
-| [`get_recent`](#get_recent)                     | Read        | Get the most recently modified notes                                                 |
-| [`get_context`](#get_context)                   | Read        | Get a consolidated context dossier for a note                                        |
-| [`get_orphan_notes`](#get_orphan_notes)         | Read        | Find notes with no inbound or outbound links                                         |
-| [`get_most_linked`](#get_most_linked)           | Read        | Find the most-linked-to notes ranked by backlink count                               |
-| [`get_connection_path`](#get_connection_path)   | Read        | Find the shortest path between two notes via link graph                              |
-| [`get_history`](#get_history)                   | Read (git)  | List commits that touched a note, attachment, or the whole vault                     |
-| [`get_diff`](#get_diff)                         | Read (git)  | Return a diff of a note or attachment between two points in history                  |
-| [`reindex`](#reindex)                           | Admin       | Force a full reindex of the vault                                                    |
-| [`build_embeddings`](#build_embeddings)         | Admin       | Build or rebuild vector embeddings                                                   |
-| [`write`](#write)                               | Write       | Create or overwrite a document or attachment                                         |
-| [`edit`](#edit)                                 | Write       | Replace a unique text span in a document                                             |
-| [`delete`](#delete)                             | Write       | Delete a document or attachment                                                      |
-| [`rename`](#rename)                             | Write       | Rename/move a document or attachment                                                 |
-| [`fetch`](#fetch)                               | Write       | Download from URL and save to vault                                                  |
-| [`git_sync`](#git_sync)                         | Write (git) | Force an immediate git pull / push / both, bypassing the periodic loops              |
-| [`create_download_link`](#create_download_link) | Transfer    | Mint a one-time capability URL to download a vault file (HTTP/SSE only)              |
-| [`create_upload_link`](#create_upload_link)     | Transfer    | Mint a one-time capability URL to upload bytes to a fixed vault path (HTTP/SSE only) |
-| [`browse_vault`](#browse_vault)                 | Apps        | Open the vault explorer SPA                                                          |
-| [`show_context`](#show_context)                 | Apps        | Open the Context Card for a note                                                     |
+| Tool                                            | Title             | Category    | Description                                                                          |
+| ----------------------------------------------- | ----------------- | ----------- | ------------------------------------------------------------------------------------ |
+| [`search`](#search)                             | Search Vault      | Read        | Hybrid full-text + semantic search with optional frontmatter filters                 |
+| [`read`](#read)                                 | Read Note         | Read        | Read a document or attachment by relative path                                       |
+| [`list_documents`](#list_documents)             | List Documents    | Read        | List indexed documents and optionally attachments                                    |
+| [`list_folders`](#list_folders)                 | List Folders      | Read        | List all folder paths in the vault                                                   |
+| [`list_tags`](#list_tags)                       | List Tags         | Read        | List all unique frontmatter tag values                                               |
+| [`stats`](#stats)                               | Vault Stats       | Read        | Get vault statistics and capabilities                                                |
+| [`embeddings_status`](#embeddings_status)       | Embeddings Status | Read        | Check embedding provider and vector index status                                     |
+| [`get_index_status`](#get_index_status)         | Index Status      | Read        | Check background FTS build state (queryable / building / failed)                     |
+| [`get_backlinks`](#get_backlinks)               | Backlinks         | Read        | Find all documents that link to a given document                                     |
+| [`get_outlinks`](#get_outlinks)                 | Outlinks          | Read        | Find all links from a document, with existence check                                 |
+| [`get_broken_links`](#get_broken_links)         | Broken Links      | Read        | Find all links pointing to non-existent documents                                    |
+| [`get_similar`](#get_similar)                   | Similar Notes     | Read        | Find semantically similar notes by document path                                     |
+| [`get_toc`](#get_toc)                           | Table of Contents | Read        | Heading outline for a note or a folder subtree                                       |
+| [`get_recent`](#get_recent)                     | Recent Notes      | Read        | Get the most recently modified notes                                                 |
+| [`get_context`](#get_context)                   | Note Context      | Read        | Get a consolidated context dossier for a note                                        |
+| [`get_orphan_notes`](#get_orphan_notes)         | Orphan Notes      | Read        | Find notes with no inbound or outbound links                                         |
+| [`get_most_linked`](#get_most_linked)           | Most-Linked Notes | Read        | Find the most-linked-to notes ranked by backlink count                               |
+| [`get_connection_path`](#get_connection_path)   | Connection Path   | Read        | Find the shortest path between two notes via link graph                              |
+| [`get_history`](#get_history)                   | Note History      | Read (git)  | List commits that touched a note, attachment, or the whole vault                     |
+| [`get_diff`](#get_diff)                         | Note Diff         | Read (git)  | Return a diff of a note or attachment between two points in history                  |
+| [`reindex`](#reindex)                           | Reindex Vault     | Admin       | Force a full reindex of the vault                                                    |
+| [`build_embeddings`](#build_embeddings)         | Build Embeddings  | Admin       | Build or rebuild vector embeddings                                                   |
+| [`write`](#write)                               | Write Note        | Write       | Create or overwrite a document or attachment                                         |
+| [`edit`](#edit)                                 | Edit Note         | Write       | Replace a unique text span in a document                                             |
+| [`delete`](#delete)                             | Delete Note       | Write       | Delete a document or attachment                                                      |
+| [`rename`](#rename)                             | Rename Note       | Write       | Rename/move a document or attachment                                                 |
+| [`move_folder`](#move_folder)                   | Move Folder       | Write       | Move an entire folder subtree and rewrite vault links                                |
+| [`fetch`](#fetch)                               | Fetch to Vault    | Write       | Download from URL and save to vault                                                  |
+| [`git_sync`](#git_sync)                         | Sync with Git     | Write (git) | Force an immediate git pull / push / both, bypassing the periodic loops              |
+| [`create_download_link`](#create_download_link) | Download Link     | Transfer    | Mint a one-time capability URL to download a vault file (HTTP/SSE only)              |
+| [`create_upload_link`](#create_upload_link)     | Upload Link       | Transfer    | Mint a one-time capability URL to upload bytes to a fixed vault path (HTTP/SSE only) |
+| [`browse_vault`](#browse_vault)                 | Browse Vault      | Apps        | Open the vault explorer SPA                                                          |
+| [`show_context`](#show_context)                 | Context Card      | Apps        | Open the Context Card for a note                                                     |
 
 ______________________________________________________________________
 
@@ -70,7 +72,7 @@ Each file appears at most once in results, with up to `chunks_per_file` sections
 
 Snippet content and full-chunk recovery
 
-By default, each section's `content` is a snippet of approximately 200 words centered on the query terms (not the full chunk). Pass `snippet_words=0` to receive the complete chunk. To read the full section after receiving a search result, call `read(path=result["path"], section=result["sections"][0]["heading"])`; this returns the entire chunk from the index without re-reading the whole document.
+By default, each section's `content` is a snippet of approximately 200 words centered on the query terms (not the full chunk). Pass `snippet_words=0` to receive the complete chunk. To read the full section after receiving a search result, call `read(path=result["path"], section=result["sections"][0]["heading"])`; this returns the entire section (body plus any sub-sections) reconstructed from the document.
 
 Choosing a search mode
 
@@ -92,18 +94,18 @@ Choosing a search mode
 
 ### `read`
 
-Read the full content of a document or attachment by path. When combined with search, the optional `section` parameter lets you retrieve the full content of a specific chunk without loading the entire document.
+Read the full content of a document or attachment by path. When combined with search, the optional `section` parameter lets you retrieve a single section in full (its body and any sub-sections) without loading the entire document.
 
 **Parameters:**
 
-| Parameter | Type   | Default  | Description                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| --------- | ------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `path`    | string | required | Relative path to the document or attachment (such as `"Journal/note.md"` or `"assets/diagram.pdf"`)                                                                                                                                                                                                                                                                                                                                              |
-| `section` | string | `null`   | Optional heading to select a single section chunk. Pass the `heading` field from a `search` result to retrieve the full chunk content. Matching collapses internal whitespace on both sides: `"1.3. Reducing..."` (two spaces) matches a stored `"1.3. Reducing..."` (one space) and vice versa. On miss, the error lists the document's actual stored headings so callers can recover. Raises an error if the heading is not found or is empty. |
+| Parameter | Type   | Default  | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| --------- | ------ | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `path`    | string | required | Relative path to the document or attachment (such as `"Journal/note.md"` or `"assets/diagram.pdf"`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `section` | string | `null`   | Optional heading selecting one section. The whole section is returned (every paragraph, list, and sub-section from the heading up to the next heading at the same or higher level), reconstructed from the document on disk, so a section longer than the chunk budget comes back intact rather than truncated to its first chunk. Pass the `heading` field from a `search` result. Matching collapses internal whitespace on both sides: `"1.3. Reducing..."` (two spaces) matches a stored `"1.3. Reducing..."` (one space) and vice versa. On miss, the error lists the document's actual headings so callers can recover. Raises an error if the heading is not found or is empty. |
 
-Recovering full chunks after search
+Recovering the full section after search
 
-When `search` returns a snippet result, pass `result["heading"]` as the `section` parameter to recover the complete chunk: `read(path=result["path"], section=result["heading"])`. If the document has no sub-headings (preamble content), omit `section` to read the whole document.
+When `search` returns a snippet result, pass `result["heading"]` as the `section` parameter to recover the complete section: `read(path=result["path"], section=result["heading"])`. If the document has no sub-headings (preamble content), omit `section` to read the whole document.
 
 Heading matching tolerates whitespace differences
 
@@ -118,7 +120,7 @@ The `section` lookup compares heading strings after collapsing all whitespace ru
   "path": "Journal/note.md",
   "title": "My Note",
   "folder": "Journal",
-  "content": "The markdown body...",
+  "content": "---\ntitle: My Note\ntags: [journal]\n---\n\nThe note body...",
   "frontmatter": {"title": "My Note", "tags": ["journal"]},
   "modified_at": 1741564800.0
 }
@@ -208,6 +210,7 @@ Returns background-build state of the FTS index. Use this when `initialize` retu
 - `documents_indexed`: count of documents committed to the FTS index right now (rises during `"building"`). `0` both for an empty index and when the count could not be read; check `documents_indexed_error` to tell them apart.
 - `documents_indexed_error`: `null` on a normal read; the SQLite error message when the document count could not be read (such as a locked or closed database), in which case `documents_indexed` is `0`.
 - `error`: `null` unless the background build raised; otherwise the exception message.
+- `skipped_files`: list of files dropped from the index for a surfaced deterministic reason. Each entry is `{"path", "category", "detail"}`, with `category` one of `parse_error`, `encoding_error`, `missing_frontmatter`, or `internal_error` (an unexpected indexer error rather than a content problem). Empty when nothing was skipped. This tells a parse-dropped note apart from one that simply has not synced yet, without reading container logs. Exclude-pattern matches and transient I/O skips are intentionally omitted.
 
 **Tags:** read-only.
 
@@ -342,6 +345,37 @@ Rename a document or attachment, or move it to a different folder. Parent direct
 
 **Returns:** `{"old_path": "drafts/idea.md", "new_path": "projects/idea.md"}`
 
+### `move_folder`
+
+Move an entire folder subtree to a new prefix and rewrite all vault links that point into the moved subtree. This is the folder-level analogue of `rename`.
+
+**Parameters:**
+
+| Parameter | Type   | Description                                                                |
+| --------- | ------ | -------------------------------------------------------------------------- |
+| `old_dir` | string | Current folder path (relative, no trailing slash, such as `"drafts/2024"`) |
+| `new_dir` | string | Target folder path (relative, such as `"archive/2024"`)                    |
+
+**Returns:**
+
+| Field           | Type             | Description                                                |
+| --------------- | ---------------- | ---------------------------------------------------------- |
+| `old_dir`       | string           | Source folder path (echoed back)                           |
+| `new_dir`       | string           | Destination folder path (echoed back)                      |
+| `files_moved`   | integer          | Number of files moved on disk                              |
+| `updated_links` | integer          | Number of source documents whose links were rewritten      |
+| `failed_links`  | array of strings | Paths of documents whose link rewrite failed (best-effort) |
+
+**Atomicity:** before any file is moved, every destination path is checked. If any single destination file already exists the call raises and **nothing is moved**. Merging into a pre-existing target directory is allowed as long as no per-file collision exists.
+
+**Link rewrites:** after the move, all vault links pointing into the subtree (markdown links and wikilinks, including links between documents inside the moved subtree and backlinks from outside) are rewritten in a single pass. Rewriting is best-effort; a document that cannot be rewritten is listed in `failed_links` and does not abort the move.
+
+**Index:** updated immediately after the call; no `reindex` needed.
+
+Warning
+
+Link rewrites are not rolled back if the process is interrupted after the move phase begins. The move phase itself is not OS-failure-atomic: an OS error during file moves (permission error, full disk, concurrent removal) can leave the subtree partially moved with the index unchanged; run `reindex` to recover. Use `rename` for single-file moves where full atomicity is required.
+
 ### `fetch`
 
 Download a file from a URL and save it to the vault as a note or attachment. Designed for MCP-to-MCP file transfer when content is too large for the LLM context window.
@@ -454,8 +488,8 @@ Push rejected as non-fast-forward:
 | Reason                               | Meaning                                                                                                                                                | `applied` |
 | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ | --------- |
 | `"fetch_failed"`                     | `git fetch origin` exited non-zero (network / auth / proxy). HEAD did not move.                                                                        | `false`   |
-| `"no_remote"`                        | Neither `@{upstream}` nor `origin/HEAD` could be resolved on the local clone.                                                                          | `false`   |
-| `"rebased"`                          | Local and remote diverged but `git rebase @{upstream}` replayed local commits cleanly. `conflict_files` empty.                                         | `true`    |
+| `"no_remote"`                        | No remote-tracking ref (`origin/<branch>`, or `origin/HEAD` for a detached checkout) could be resolved on the local clone.                             | `false`   |
+| `"rebased"`                          | Local and remote diverged but `git rebase origin/<branch>` replayed local commits cleanly. `conflict_files` empty.                                     | `true`    |
 | `"conflicts_resolved_with_siblings"` | Rebase hit real conflicts; resolved by accepting upstream and writing local versions as `.conflict-mcp-*` siblings (#232). `conflict_files` populated. | `true`    |
 | `"conflict_resolution_failed"`       | The conflict-resolution loop could not produce a recoverable working tree; rebase was aborted. HEAD did not move.                                      | `false`   |
 | `"non_fast_forward_with_conflicts"`  | Rare catastrophic fallback when even the conflict-resolution path could not stabilise the working tree. HEAD did not move.                             | `false`   |
@@ -465,7 +499,7 @@ Push rejected as non-fast-forward:
 | Reason                  | Meaning                                                                                                                                                           | `applied` |
 | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
 | `"dry_run_unsupported"` | Caller passed `dry_run=true`. Git has no safe local probe for "would the remote accept this," so the push leg is a deliberate no-op.                              | `false`   |
-| `"no_remote"`           | Upstream tracking branch could not be resolved (no `@{upstream}` and no `origin/HEAD`). Push not attempted.                                                       | `false`   |
+| `"no_remote"`           | No remote-tracking ref could be resolved (no `origin/<branch>` and no `origin/HEAD`). Push not attempted.                                                         | `false`   |
 | `"non_fast_forward"`    | Remote rejected the push because the local branch is not a strict descendant of the remote tip. `hint` points at `git_sync(direction='pull')` to reconcile first. | `false`   |
 | `"push_failed"`         | `git push origin` exited non-zero for any other reason (network, auth, server-side hook). `hint` carries the truncated stderr.                                    | `false`   |
 
@@ -547,6 +581,26 @@ Find semantically similar notes by document path. Requires embeddings to be buil
 Grouped result shape
 
 Returns one entry per file with up to `chunks_per_file` best-matching sections. Default is 2 sections per file; pass `chunks_per_file=1` for compact dossiers.
+
+### `get_toc`
+
+Heading outline for a single note or an entire folder subtree. Mirrors the [`toc://vault/{path}`](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/resources/#tocvaultpath) resource, adding `max_level` and `max_notes` controls. Dispatch is by suffix: paths ending in `.md` are treated as notes; all other paths are treated as folder prefixes.
+
+**Parameters:**
+
+| Parameter                 | Type   | Default  | Description                                                                                                                                                                |
+| ------------------------- | ------ | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `path`                    | string | required | Note path (such as `"a/b.md"`) or folder prefix (such as `"a/b"`)                                                                                                          |
+| `max_level`               | int    | `null`   | Drop headings deeper than this level (such as `2` to keep H1 and H2). The synthetic H1 title always survives. `null` returns all levels.                                   |
+| `max_notes`               | int    | `200`    | Folder mode only. Cap on distinct notes. When more notes match, the first `max_notes` (sorted by path) are returned and `truncated` is `true`.                             |
+| `wait_for_pending_writes` | bool   | `false`  | Block until the IndexWriter drains before answering, then report freshness via `_meta.index_stale` (see the *Index freshness on read tools* note at the top of this page). |
+
+**Returns:**
+
+- **Note mode** (`path` ends in `.md`): flat ordered `list` of `{heading (str), level (int)}`. The document title is included as a synthetic H1 entry.
+- **Folder mode** (`path` is a folder prefix): `{path (str), notes (list), truncated (bool)}` where each entry in `notes` is `{path, title, headings}` and `headings` is a list of `{heading, level}` for that note. An empty or nonexistent folder returns an empty `notes` list with `truncated: false`.
+
+Index freshness is reported in `_meta.index_stale` (see the freshness note at the top of this page).
 
 ### `get_recent`
 

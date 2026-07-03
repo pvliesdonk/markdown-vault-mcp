@@ -1105,6 +1105,34 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Architecture">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#visual-identity-paper" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Visual identity ("Paper")
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#source-layout-and-build" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Source layout and build
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1945,6 +1973,34 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Architecture">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#visual-identity-paper" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Visual identity ("Paper")
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#source-layout-and-build" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Source layout and build
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -2015,7 +2071,8 @@
 <li><strong>Neighborhood</strong>: shows a note and its direct connections (configurable depth, soft-capped at <code>max_nodes=200</code> by default; the response carries <code>truncated=true</code> when the BFS hit the cap so the SPA can warn the user)</li>
 <li><strong>Hubs</strong>: shows the most-linked notes in the vault and their connections</li>
 </ul>
-<p>Click a node to view that note's context card. Toggle semantic similarity edges when embeddings are available.</p>
+<p>Click a node to view that note's context card. Toggle semantic similarity edges when embeddings are available (semantic edges render as dashed accent-colored lines, distinct from the solid wikilink edges).</p>
+<p>Node labels follow a level-of-detail rule. The focus note, its direct neighbors, and hub notes keep their labels; other farther-out notes render as unlabelled dots (their names appear on hover, or once you zoom in past a threshold). A separate hover text with the note's title and backlink count is always available, regardless of zoom level. A count chip in the top-right corner of the canvas reports how many notes are currently visible, next to zoom-in and zoom-out buttons. A legend below the canvas explains the edge and node styles; on a narrow panel it collapses behind an "ⓘ legend" chip to save space.</p>
 <h3 id="vault-browser">Vault Browser<a class="headerlink" href="#vault-browser" title="Permanent link">&para;</a></h3>
 <p>Searchable, filterable file tree for browsing the vault without issuing tool calls. Features:</p>
 <ul>
@@ -2026,8 +2083,10 @@
 <h3 id="note-preview">Note Preview<a class="headerlink" href="#note-preview" title="Permanent link">&para;</a></h3>
 <p>Full-width markdown preview with:</p>
 <ul>
-<li>Rendered markdown (via marked.js, sanitized with DOMPurify)</li>
-<li>Frontmatter table</li>
+<li>Rendered markdown (via marked.js, sanitized with DOMPurify), with the leading frontmatter block stripped so it renders only once</li>
+<li>A <strong>Contents</strong> popover: an on-this-page table of contents built from the note's headings</li>
+<li>Collapsible frontmatter properties (first few shown, the rest behind a toggle) and collapsible tags</li>
+<li><strong>Copy markdown</strong> (the full note, frontmatter included) and <strong>Copy vault link</strong> (the note's path) buttons</li>
 <li><strong>Send to Claude</strong> button: sends the note content to the LLM conversation</li>
 <li>Navigation to Context Card or Graph Explorer for the same note</li>
 </ul>
@@ -2084,7 +2143,7 @@
 </ol>
 <p>Override <code>APP_DOMAIN</code> if your deployment is behind a proxy that changes the apparent hostname.</p>
 <h2 id="architecture">Architecture<a class="headerlink" href="#architecture" title="Permanent link">&para;</a></h2>
-<p>The SPA is a self-contained HTML file with all dependencies vendored at build time (no runtime CDN requests):</p>
+<p>The SPA is a self-contained HTML file with its JavaScript dependencies vendored at build time (no runtime CDN requests for libraries; web fonts are the one exception, see <a href="#visual-identity-paper">Visual identity</a>):</p>
 <table>
 <thead>
 <tr>
@@ -2119,6 +2178,62 @@
 <li><strong><code>app.requestDisplayMode()</code></strong>: requests fullscreen or inline display</li>
 <li><strong>Theme sync</strong>: automatically adapts to the host's light/dark theme and CSS variables</li>
 </ul>
+<h3 id="visual-identity-paper">Visual identity ("Paper")<a class="headerlink" href="#visual-identity-paper" title="Permanent link">&para;</a></h3>
+<p>The views use a warm, editorial "Paper" theme (serif headings, a single warm
+accent, light and dark). The Paper palette is expressed as CSS custom properties
+that map onto the host's <code>--color-*</code> variables: a host that pushes its own theme
+overrides Paper, otherwise the Paper values show. Three font families load from
+Google Fonts and are exposed as <code>--font-head</code> / <code>--font-body</code> / <code>--font-mono</code>:
+Newsreader styles headings, Public Sans the body and UI, and IBM Plex Mono the
+code, property keys, and tags. (As each view is restyled, these families also
+reach the remaining mono metadata such as paths and scores.) The fonts are the
+one runtime network dependency the app keeps (the vendored libraries are embedded);
+if they fail to load, the app falls back to system fonts with no loss of
+function.</p>
+<h3 id="source-layout-and-build">Source layout and build<a class="headerlink" href="#source-layout-and-build" title="Permanent link">&para;</a></h3>
+<p>The SPA source is authored as small partials under
+<code>src/markdown_vault_mcp/static/spa/</code>:</p>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Contents</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>shell.html</code></td>
+<td>The HTML document: head, tab bar, view panels, toast</td>
+</tr>
+<tr>
+<td><code>styles.css</code></td>
+<td>All styles</td>
+</tr>
+<tr>
+<td><code>core.js</code></td>
+<td>App setup, theming, tab navigation, cross-view routing, shared helpers</td>
+</tr>
+<tr>
+<td><code>views/context.js</code>, <code>views/graph.js</code>, <code>views/browser.js</code>, <code>views/note.js</code></td>
+<td>One file per view</td>
+</tr>
+</tbody>
+</table>
+<p>Two build steps turn the partials into the served resource:</p>
+<div class="highlight"><pre><span></span><code>spa/*  -&gt;  build_spa.py  -&gt;  app.src.html  -&gt;  vendor_spa.py  -&gt;  app.html
+</code></pre></div>
+<ol>
+<li><code>python scripts/build_spa.py</code> assembles the partials into
+   <code>static/app.src.html</code>. Assembly is a recursive <code>/*@@FILE:path@@*/</code> include,
+   a valid comment in both CSS and JavaScript, so each partial stays
+   independently readable.</li>
+<li><code>python scripts/vendor_spa.py</code> embeds the vendored libraries into the
+   self-contained <code>static/app.html</code> that the server serves.</li>
+</ol>
+<p><code>app.src.html</code> and <code>app.html</code> are both generated, committed artifacts: edit the
+files under <code>static/spa/</code>, then run both scripts. Never hand-edit the generated
+files. <code>build_spa.py --check</code> and <code>vendor_spa.py --check</code> fail the build if
+either artifact is stale; both run in CI and as pre-commit hooks.</p>
 <h2 id="client-support">Client support<a class="headerlink" href="#client-support" title="Permanent link">&para;</a></h2>
 <p>MCP Apps views require a client that supports the MCP Apps protocol. Currently supported by Claude on claude.ai. Clients without Apps support receive a text-only fallback from <code>browse_vault</code> and <code>show_context</code>.</p>
 <p>To hide <code>browse_vault</code> and <code>show_context</code> from the tool listing entirely (for clients that never render Apps panels), set <code>MARKDOWN_VAULT_MCP_DISABLE_APPS_UI=true</code>. See <a href="../../configuration/">Configuration</a>.</p>
