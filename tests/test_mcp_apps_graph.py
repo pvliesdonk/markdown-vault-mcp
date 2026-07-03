@@ -154,9 +154,24 @@ class TestGraphExplorerHTML:
     async def test_graph_reads_paper_tokens(self) -> None:
         html = await get_app_html()
         assert "getColors" in html
-        # getColors reads Paper semantic tokens for the canvas chrome.
-        assert "--accent" in html
-        assert "--edge" in html
+        # Pin the actual getColors read sites, not the shared CSS tokens.
+        assert "v('--accent'" in html
+        assert "v('--edge'" in html
+
+    async def test_graph_semantic_match_labelled(self) -> None:
+        html = await get_app_html()
+        # _semanticMatch drives the dashed-pill styling in styleNodes.
+        assert "_semanticMatch" in html
+
+    async def test_graph_edge_lod_fade(self) -> None:
+        html = await get_app_html()
+        # edgeStyle fades link edges once the farthest endpoint is >= depth 2.
+        assert "depthMax >= 2" in html
+
+    async def test_graph_hub_labels_always_visible(self) -> None:
+        html = await get_app_html()
+        # labelVisible must treat hub nodes as always-labelled (Fix for #815).
+        assert "n._group === 'hub'" in html
 
     async def test_graph_dotted_grid_surface(self) -> None:
         html = await get_app_html()

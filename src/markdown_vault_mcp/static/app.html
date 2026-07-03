@@ -548,7 +548,7 @@ if(__exports != exports)module.exports = exports;return module.exports}));
     font: 600 11px/1 var(--font-body); cursor: not-allowed; opacity: 0.7; margin-left: auto;
   }
 </style>
-<!-- vendor-spa-source-sha256:037398953834ac9c3c3474b29e86755c299387a18eff52f2897df1aa6b6c6b54 -->
+<!-- vendor-spa-source-sha256:46f11e0cdcf072e1550691117cd83a88f680a52a088ceda3862a79e17fb2a452 -->
 </head>
 <body>
 <div class="app-container">
@@ -1251,15 +1251,16 @@ app.onteardown = () => {
     return depths;
   }
 
-  // A node is "semantic-match" if it is reachable from focus only via semantic edges.
+  // A node is "semantic-match" if every edge touching it is a semantic edge.
   function _semanticMatch(id) {
     const touching = edgesDS.get().filter(e => e.from === id || e.to === id);
     return touching.length > 0 && touching.every(e => e.title === 'semantic');
   }
 
-  // Map each node to its Paper role by distance. Label gate: focus, depth-1,
-  // and semantic-match nodes are labelled here; distant nodes get `label: ''`.
-  // Task 3's applyLOD promotes/demotes by zoom/hover.
+  // Map each node to its Paper role by distance. Focus, depth-1, and hub nodes
+  // are labelled box pills (semantic-match ones get the dashed-pill styling);
+  // all other nodes are dots with `label: ''`. applyLOD then promotes/demotes
+  // labels by zoom/hover.
   function styleNodes(depths) {
     if (!nodesDS) return;
     const c = getColors();
@@ -1282,7 +1283,7 @@ app.onteardown = () => {
           u = { id: n.id, shape: 'box', shapeProperties: { borderRadius: 20 },
                 color: { background: folder, border: c.border },
                 borderWidth: n._group === 'hub' ? 3 : 1,
-                font: { color: c.ink2, size: 12, face: 'inherit' },
+                font: { color: c.accentInk, size: 12, face: 'inherit' },
                 shadow: { enabled: true, size: 6, x: 0, y: 1, color: 'rgba(0,0,0,0.12)' },
                 label: n._label };
         }
@@ -1297,18 +1298,19 @@ app.onteardown = () => {
     nodesDS.update(updates);
   }
 
-  // Coherence predicate: a node's label shows iff it is near the focus, OR the
-  // graph is zoomed in past the threshold, OR the node is currently hovered.
-  function labelVisible(id) {
-    const d = _depths.has(id) ? _depths.get(id) : Infinity;
-    return d <= 1 || _zoomedIn || id === _hoveredId;
+  // Coherence predicate: a node's label shows iff it is near the focus, OR it
+  // is a hub node, OR the graph is zoomed in past the threshold, OR the node
+  // is currently hovered.
+  function labelVisible(n) {
+    const d = _depths.has(n.id) ? _depths.get(n.id) : Infinity;
+    return d <= 1 || n._group === 'hub' || _zoomedIn || n.id === _hoveredId;
   }
 
   // Re-derive every node's label from labelVisible (never toggled ad hoc).
   function applyLOD() {
     if (!nodesDS) return;
     const updates = nodesDS.get().map(n => ({
-      id: n.id, label: labelVisible(n.id) ? n._label : '',
+      id: n.id, label: labelVisible(n) ? n._label : '',
     }));
     nodesDS.update(updates);
   }
