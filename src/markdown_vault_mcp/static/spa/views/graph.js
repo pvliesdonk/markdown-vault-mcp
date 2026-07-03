@@ -166,8 +166,9 @@
     return touching.length > 0 && touching.every(e => e.title === 'semantic');
   }
 
-  // Map each node to its Paper role by distance. Label gate: only distance ≤ 1
-  // is labelled here; Task 3's applyLOD promotes/demotes the rest by zoom/hover.
+  // Map each node to its Paper role by distance. Label gate: focus, depth-1,
+  // and semantic-match nodes are labelled here; distant nodes get `label: ''`.
+  // Task 3's applyLOD promotes/demotes by zoom/hover.
   function styleNodes(depths) {
     if (!nodesDS) return;
     const c = getColors();
@@ -207,7 +208,7 @@
     if (!edgesDS) return;
     const c = getColors();
     const updates = edgesDS.get().map(e => {
-      const dm = Math.max(depths.get(e.from) ?? 0, depths.get(e.to) ?? 0);
+      const dm = Math.max(depths.get(e.from) ?? Infinity, depths.get(e.to) ?? Infinity);
       const es = edgeStyle(e.title, dm, c);
       return { id: e.id, color: es.color, dashes: es.dashes, width: es.width };
     });

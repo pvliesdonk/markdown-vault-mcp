@@ -509,7 +509,7 @@ if(__exports != exports)module.exports = exports;return module.exports}));
     font: 600 11px/1 var(--font-body); cursor: not-allowed; opacity: 0.7; margin-left: auto;
   }
 </style>
-<!-- vendor-spa-source-sha256:1d9c8ccc84775e1ad93e205308b4e85c447cfe9b542ab93dfc5532704ee9b4b7 -->
+<!-- vendor-spa-source-sha256:c3832bcde5a6089e8cb1dc01f072850fe15e7e668d2d274cc666b9ae647c2ac3 -->
 </head>
 <body>
 <div class="app-container">
@@ -1189,8 +1189,9 @@ app.onteardown = () => {
     return touching.length > 0 && touching.every(e => e.title === 'semantic');
   }
 
-  // Map each node to its Paper role by distance. Label gate: only distance ≤ 1
-  // is labelled here; Task 3's applyLOD promotes/demotes the rest by zoom/hover.
+  // Map each node to its Paper role by distance. Label gate: focus, depth-1,
+  // and semantic-match nodes are labelled here; distant nodes get `label: ''`.
+  // Task 3's applyLOD promotes/demotes by zoom/hover.
   function styleNodes(depths) {
     if (!nodesDS) return;
     const c = getColors();
@@ -1230,7 +1231,7 @@ app.onteardown = () => {
     if (!edgesDS) return;
     const c = getColors();
     const updates = edgesDS.get().map(e => {
-      const dm = Math.max(depths.get(e.from) ?? 0, depths.get(e.to) ?? 0);
+      const dm = Math.max(depths.get(e.from) ?? Infinity, depths.get(e.to) ?? Infinity);
       const es = edgeStyle(e.title, dm, c);
       return { id: e.id, color: es.color, dashes: es.dashes, width: es.width };
     });
