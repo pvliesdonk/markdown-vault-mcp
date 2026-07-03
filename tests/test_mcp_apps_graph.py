@@ -185,6 +185,21 @@ class TestGraphExplorerHTML:
             in html
         )
 
+    async def test_edge_lod_fade_outcome(self) -> None:
+        html = await get_app_html()
+        # Pin the fade itself, not just the `depthMax >= 2` threshold.
+        assert "opacity: far ? 0.5 : 1" in html
+        assert "width: far ? 1 : 1.6" in html
+
+    async def test_semantic_match_dashed_pill_styling(self) -> None:
+        html = await get_app_html()
+        assert "borderDashes: [4, 3]" in html
+        assert "background: c.accentSoft, border: c.accent" in html
+
+    async def test_zoom_crossing_triggers_relabel(self) -> None:
+        html = await get_app_html()
+        assert "if (zoomed !== _zoomedIn) { _zoomedIn = zoomed; applyLOD(); }" in html
+
     async def test_legend_chip_toggle_wired(self) -> None:
         html = await get_app_html()
         assert "classList.toggle('open')" in html

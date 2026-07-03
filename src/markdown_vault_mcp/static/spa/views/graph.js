@@ -178,10 +178,10 @@
     return touching.length > 0 && touching.every(e => e.title === 'semantic');
   }
 
-  // Map each node to its Paper role by distance. Focus, depth-1, and hub nodes
-  // are labelled box pills (semantic-match ones get the dashed-pill styling);
-  // all other nodes are dots with `label: ''`. applyLOD then promotes/demotes
-  // labels by zoom/hover.
+  // Map each node to its Paper role by distance. Focus is the accent pill;
+  // depth-1 and hub nodes are box pills, and among those the semantic-match ones
+  // (every touching edge semantic) get the dashed-pill styling; all other nodes
+  // are dots with `label: ''`. applyLOD then promotes/demotes labels by zoom/hover.
   function styleNodes(depths) {
     if (!nodesDS) return;
     const c = getColors();
