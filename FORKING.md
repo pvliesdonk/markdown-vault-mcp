@@ -29,7 +29,6 @@ This removes the link copier uses to reattach. The weekly cron that ran
 rm -f .github/workflows/copier-update.yml \
       .github/workflows/claude.yml \
       .github/workflows/claude-code-review.yml
-rm -rf .gemini
 rm -f scripts/copier_update_aggregator.py
 rm -rf scripts/copier_update_prompts
 ```
@@ -38,7 +37,6 @@ What this removes and why:
 
 - `copier-update.yml` — template-update automation; meaningless once detached.
 - `claude.yml`, `claude-code-review.yml` — fleet review-bot wiring.
-- `.gemini/` — gemini-code-assist fleet scope control.
 - `scripts/copier_update_aggregator.py`, `scripts/copier_update_prompts/` —
   the orchestration that only `copier-update.yml` invoked; dead weight once
   that workflow is gone.

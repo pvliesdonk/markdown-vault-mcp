@@ -43,17 +43,25 @@ jobs:
         id: detect-rc
         run: |
           latest_rc=$(git tag --sort=-version:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$' | head -1 || true)
+          latest_stable=$(git tag --sort=-version:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1 || true)
+          in_rc_series=false
           if [ -n "$latest_rc" ]; then
             rc_base="${latest_rc%-rc.*}"
-            if ! git tag --list | grep -qx "$rc_base"; then
-              echo "in_rc_series=true" >> "$GITHUB_OUTPUT"
+            # Active only when the rc's stable base is not yet tagged AND the
+            # series targets a version newer than the latest stable release. An
+            # rc whose base is <= the latest stable is an abandoned/superseded
+            # series (e.g. a v2.0.0-rc left behind when the project jumped to
+            # v3.x); it must not trigger the force=prerelease revision bump,
+            # which from a stable base produces <current>-rc.1 instead of a
+            # bumped version.
+            newest=$(printf '%s\n%s\n' "$rc_base" "${latest_stable:-v0.0.0}" | sort -V | tail -1)
+            if ! git tag --list | grep -qx "$rc_base" \
+               && [ "$newest" = "$rc_base" ] && [ "$rc_base" != "${latest_stable:-v0.0.0}" ]; then
+              in_rc_series=true
               echo "rc_series_target=$rc_base" >> "$GITHUB_OUTPUT"
-            else
-              echo "in_rc_series=false" >> "$GITHUB_OUTPUT"
             fi
-          else
-            echo "in_rc_series=false" >> "$GITHUB_OUTPUT"
           fi
+          echo "in_rc_series=$in_rc_series" >> "$GITHUB_OUTPUT"
 
       - name: Compute effective PSR force
         id: compute-force
