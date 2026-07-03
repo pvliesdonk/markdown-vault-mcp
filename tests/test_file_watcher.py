@@ -35,9 +35,12 @@ from watchdog.events import (
 
 from markdown_vault_mcp._file_watcher import (
     VaultFileWatcher,
+    _contains_internal_dir,
     _derive_watch_roots,
     _has_hidden_component,
     _is_hidden_relative_to_root,
+    _resolve_internal_dirs,
+    _resolve_or_original,
     _VaultEventHandler,
     _WatchRoot,
     should_start_file_watcher,
@@ -703,7 +706,7 @@ def test_derive_watch_roots_always_appends_non_recursive_source_dir(
     """The non-recursive ``source_dir`` root is always present and last."""
     (tmp_path / "notes").mkdir()
     roots = _derive_watch_roots(tmp_path, ["go/**"])
-    assert roots[-1] == _WatchRoot(tmp_path, recursive=False)
+    assert roots[-1] == _WatchRoot(tmp_path.resolve(), recursive=False)
     assert sum(1 for r in roots if not r.recursive) == 1
 
 
@@ -720,7 +723,7 @@ def test_derive_watch_roots_falls_back_on_enumeration_error(tmp_path: Path) -> N
     """An unreadable/vanished source_dir yields just the non-recursive root."""
     missing = tmp_path / "gone"
     roots = _derive_watch_roots(missing, None)
-    assert roots == [_WatchRoot(missing, recursive=False)]
+    assert roots == [_WatchRoot(missing.resolve(), recursive=False)]
 
 
 def test_derive_watch_roots_skips_internal_state_and_git_dirs(tmp_path: Path) -> None:
@@ -958,7 +961,9 @@ def test_symlink_farm_layout_does_not_crash(tmp_path: Path) -> None:
 
     # is_dir() follows the links, so each becomes a candidate recursive root.
     roots = _derive_watch_roots(farm, None)
-    assert _WatchRoot(farm, recursive=False) in roots, "floor watch must be present"
+    assert _WatchRoot(farm.resolve(), recursive=False) in roots, (
+        "floor watch must be present"
+    )
 
     watcher = _make_watcher(farm, lambda: None)
     watcher.start()  # must not raise even if a symlinked-child schedule fails
@@ -968,6 +973,108 @@ def test_symlink_farm_layout_does_not_crash(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 # Symlinked watch roots resolve to their realpath (FSEvents realpath delivery)
 # ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("exc", [OSError("boom"), RuntimeError("Symlink loop")])
+def test_resolve_or_original_falls_back_and_warns(
+    caplog: pytest.LogCaptureFixture, exc: Exception
+) -> None:
+    """A path whose ``resolve()`` raises is returned unresolved, with a WARNING.
+
+    Guards the degradation contract for both real failure modes: ``Path.resolve``
+    raises ``OSError`` on a pathological path and ``RuntimeError`` on a symlink
+    loop (Python < 3.13). Neither may drop the watch or crash ``start()``; both
+    fall back to the unresolved path (correct on inotify / ReadDirectoryChangesW).
+    """
+    import logging
+
+    p = Path("/some/watch/root")
+    with (
+        patch.object(Path, "resolve", side_effect=exc),
+        caplog.at_level(logging.WARNING),
+    ):
+        result = _resolve_or_original(p)
+    assert result == p
+    assert "could not resolve watch path" in caplog.text
+
+
+def test_derive_watch_roots_survives_symlink_loop_source_dir(tmp_path: Path) -> None:
+    """A ``source_dir`` that is a symlink loop degrades instead of crashing.
+
+    On Python < 3.13 ``resolve()`` raises ``RuntimeError`` on the loop, which the
+    ``_resolve_or_original`` guard keeps from propagating out of ``start()``; on
+    3.13+ ``resolve`` returns and the loop is caught by the ``iterdir`` fallback
+    instead. Either way ``_derive_watch_roots`` must return exactly the
+    non-recursive floor watch and never raise. Uses a real on-disk loop rather
+    than a mock, so it exercises whichever path the running interpreter takes.
+    """
+    a = tmp_path / "a"
+    b = tmp_path / "b"
+    a.symlink_to(b)
+    b.symlink_to(a)
+
+    roots = _derive_watch_roots(a, None)  # must not raise on the loop
+
+    assert len(roots) == 1
+    assert roots[0].recursive is False
+
+
+def test_resolve_internal_dirs_skips_on_resolve_error(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """An internal dir whose ``resolve()`` raises is dropped with a WARNING.
+
+    ``resolve()`` raises ``RuntimeError`` on a symlink loop (Python < 3.13); the
+    guard must drop the unresolvable dir rather than crash startup, and warn
+    because dropping a protected dir fails open on the #830 guard. Forced via
+    mock so the ``RuntimeError`` branch is covered on every interpreter.
+    """
+    import logging
+
+    with (
+        patch.object(Path, "resolve", side_effect=RuntimeError("Symlink loop")),
+        caplog.at_level(logging.WARNING),
+    ):
+        assert _resolve_internal_dirs([Path("/x")]) == []
+    assert "will not be protected from watching" in caplog.text
+
+
+def test_contains_internal_dir_false_on_resolve_error(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """An unresolvable child returns ``False`` (non-internal), not raised, + DEBUG.
+
+    Branch coverage for the widened ``except (OSError, RuntimeError)``. In
+    production the realistic trigger is ``OSError`` — a symlink-loop child is
+    screened by ``is_dir()`` before this is reached — so ``RuntimeError`` is
+    mocked purely to exercise the branch on every interpreter.
+    """
+    import logging
+
+    with (
+        patch.object(Path, "resolve", side_effect=RuntimeError("Symlink loop")),
+        caplog.at_level(logging.DEBUG),
+    ):
+        assert _contains_internal_dir(Path("/x"), frozenset()) is False
+    assert "treating as non-internal" in caplog.text
+
+
+def test_derive_watch_roots_survives_symlink_loop_internal_dir(tmp_path: Path) -> None:
+    """A symlink-loop configured ``internal_dir`` does not crash derivation.
+
+    The internal-dir resolution runs at the top of ``_derive_watch_roots``; a
+    loop there (``RuntimeError`` on < 3.13) must degrade, not propagate. Wired
+    end-to-end through ``_derive_watch_roots`` per the #830 protection path.
+    """
+    a = tmp_path / "a"
+    b = tmp_path / "b"
+    a.symlink_to(b)
+    b.symlink_to(a)
+    (tmp_path / "notes").mkdir()
+
+    roots = _derive_watch_roots(tmp_path, None, internal_dirs=[a])  # must not raise
+
+    assert "notes" in _root_names(roots)
 
 
 def test_derive_watch_roots_resolves_symlinked_child_root(tmp_path: Path) -> None:
@@ -984,8 +1091,38 @@ def test_derive_watch_roots_resolves_symlinked_child_root(tmp_path: Path) -> Non
     (farm / "alpha").symlink_to(real, target_is_directory=True)
 
     roots = _derive_watch_roots(farm, None)
-    assert _WatchRoot(real, recursive=True) in roots
+    assert _WatchRoot(real.resolve(), recursive=True) in roots
     assert _WatchRoot(farm / "alpha", recursive=True) not in roots
+
+
+def test_derive_watch_roots_prunes_by_link_name_not_resolved_basename(
+    tmp_path: Path,
+) -> None:
+    """Prune matches the vault-visible child name, not the resolved target base.
+
+    Locks the ordering invariant the docstring promises: ``_should_prune_dir``
+    runs on ``child.name`` (the symlink's own name) *before* the child is
+    resolved, so a link named ``drop`` pointing at target ``keep`` is pruned by
+    ``drop/**`` and untouched by ``keep/**``. A regression that resolved before
+    pruning would match on the target basename and invert both assertions; the
+    same-name fixtures elsewhere in this file cannot catch that.
+    """
+    target = tmp_path / "targets" / "keep"
+    target.mkdir(parents=True)
+    farm = tmp_path / "farm"
+    farm.mkdir()
+    (farm / "drop").symlink_to(target, target_is_directory=True)
+
+    # Excluding the resolved target's basename must NOT prune the link.
+    kept = _derive_watch_roots(farm, ["keep/**"])
+    assert _WatchRoot(target.resolve(), recursive=True) in kept, (
+        "prune must match link name 'drop', not resolved basename 'keep'"
+    )
+
+    # Excluding the vault-visible link name DOES prune it.
+    pruned = _derive_watch_roots(farm, ["drop/**"])
+    assert _WatchRoot(target.resolve(), recursive=True) not in pruned
+    assert "drop" not in _root_names(pruned)
 
 
 def test_derive_watch_roots_resolves_source_dir_under_symlinked_prefix(
@@ -1003,8 +1140,10 @@ def test_derive_watch_roots_resolves_source_dir_under_symlinked_prefix(
     link_parent.symlink_to(real_parent, target_is_directory=True)
 
     roots = _derive_watch_roots(link_parent / "vault", None)
-    assert roots[-1] == _WatchRoot(real_parent / "vault", recursive=False)
-    assert _WatchRoot(real_parent / "vault" / "notes", recursive=True) in roots
+    assert roots[-1] == _WatchRoot((real_parent / "vault").resolve(), recursive=False)
+    assert (
+        _WatchRoot((real_parent / "vault" / "notes").resolve(), recursive=True) in roots
+    )
 
 
 def test_derive_watch_roots_fallback_resolves_source_dir(tmp_path: Path) -> None:
@@ -1015,16 +1154,61 @@ def test_derive_watch_roots_fallback_resolves_source_dir(tmp_path: Path) -> None
     link_parent.symlink_to(real_parent, target_is_directory=True)
 
     roots = _derive_watch_roots(link_parent / "gone", None)
-    assert roots == [_WatchRoot(real_parent / "gone", recursive=False)]
+    assert roots == [_WatchRoot((real_parent / "gone").resolve(), recursive=False)]
+
+
+def test_resolved_root_admits_realpath_prefixed_event(tmp_path: Path) -> None:
+    """A handler on the resolved root admits a realpath-prefixed event; one on
+    the unresolved symlink root drops it.
+
+    Characterizes *why* ``_derive_watch_roots`` resolves its roots, at the filter
+    boundary: watchdog's FSEvents emitter delivers ``src_path`` prefixed with the
+    resolved watch path, so the handler's ``relative_to`` check matches only when
+    the scheduled root is itself resolved. It drives the filter directly and does
+    not call ``_derive_watch_roots``, so it is not itself the end-to-end
+    regression guard — those are the derive-level resolution tests above and
+    ``test_symlinked_watch_root_delivers_link_and_target_writes`` (which fails
+    pre-fix on Linux). This one is platform-independent.
+    """
+    real = tmp_path / "targets" / "alpha"
+    real.mkdir(parents=True)
+    link = tmp_path / "alpha"
+    link.symlink_to(real, target_is_directory=True)
+    assert link.resolve() == real.resolve()  # the symlink's realpath is the target
+
+    # FSEvents delivers events prefixed with the resolved (realpath) watch path.
+    event = FileModifiedEvent(str(real / "note.md"))
+
+    calls = 0
+
+    def _schedule() -> None:
+        nonlocal calls
+        calls += 1
+
+    # Resolved root (what _derive_watch_roots now schedules): event admitted.
+    _VaultEventHandler(_schedule, real).on_any_event(event)
+    assert calls == 1, "realpath-prefixed event must pass under the resolved root"
+
+    # Unresolved symlink root (the pre-fix state): the same event is dropped.
+    calls = 0
+    _VaultEventHandler(_schedule, link).on_any_event(event)
+    assert calls == 0, "realpath-prefixed event is dropped by an unresolved root"
 
 
 def test_symlinked_watch_root_delivers_link_and_target_writes(tmp_path: Path) -> None:
-    """A recursive watch root that is a symlink delivers events for writes made
-    both through the link and directly via the target.
+    """End-to-end: a symlinked recursive watch root delivers events for writes
+    made both through the link and directly via the target.
 
-    Regression: FSEvents delivered target-prefixed src_paths for a watch
-    scheduled on the symlink path, so ``relative_to`` against the unresolved
-    root raised and ``on_change`` never fired.
+    A genuine regression guard on Linux too, not only macOS: without the
+    resolved-root fix a recursive watch scheduled on the unresolved symlinked
+    child does not deliver the writes made under it, so ``on_change`` never fires
+    (verified: fails deterministically here pre-fix). The exact internal reason
+    differs by platform — macOS FSEvents delivers realpath-prefixed ``src_path``s
+    that miss the unresolved root's ``relative_to`` filter, while Linux inotify
+    yields no events for that watch — but resolving the root fixes both. The
+    sibling ``test_source_dir_under_symlinked_prefix_delivers_events`` is the
+    Linux-agnostic case; ``test_resolved_root_admits_realpath_prefixed_event``
+    is the platform-independent filter-level proof.
     """
     real = tmp_path / "targets" / "alpha"
     real.mkdir(parents=True)
@@ -1047,11 +1231,15 @@ def test_symlinked_watch_root_delivers_link_and_target_writes(tmp_path: Path) ->
 
 
 def test_source_dir_under_symlinked_prefix_delivers_events(tmp_path: Path) -> None:
-    """A source_dir reached through a symlinked ancestor still delivers events.
+    """End-to-end: a source_dir reached through a symlinked ancestor still
+    delivers events.
 
-    Regression: with source_dir given as e.g. ``/var/...`` on macOS, the floor
-    watch filtered realpath-prefixed events against the unresolved root and
-    dropped them all.
+    Reproduces the macOS ``/var`` → ``/private/var`` FSEvents case (#849).
+    Unlike ``test_symlinked_watch_root_delivers_link_and_target_writes`` (which
+    fails on Linux without the fix), the inotify watch here is scheduled on the
+    symlinked-ancestor path and still delivers, so this passes on Linux with or
+    without the fix; the platform-independent filter-level check is
+    ``test_resolved_root_admits_realpath_prefixed_event``.
     """
     real_parent = tmp_path / "real"
     (real_parent / "vault").mkdir(parents=True)

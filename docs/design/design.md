@@ -711,7 +711,13 @@ symlinked ancestor (`/var` resolving to `/private/var`) and symlink-farm
 vaults whose top-level children are symlinks to real directories from being
 watched but blind (edits seen only by scans). Prune rules still match the
 child's vault-visible name inside `source_dir`, not the resolved target's
-basename, so exclude patterns keep working across the link.
+basename, so exclude patterns keep working across the link. `Path.resolve`
+(`strict=False`) resolves best-effort and does not raise on a broken symlink or
+a missing component, so this is not about missing targets; when it does fail on
+a genuinely unresolvable path — a symlink loop raises `RuntimeError` on Python <
+3.13, and a pathological path raises `OSError` — the root is kept unresolved
+with a WARNING rather than dropped, degrading to the pre-resolution behavior
+(correct on inotify / ReadDirectoryChangesW) instead of crashing `start()`.
 
 **Per-document write semantics.** `write()`, `edit()`, `delete()`,
 `rename()`, and `write_attachment()` perform the file mutation under a
