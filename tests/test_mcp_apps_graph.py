@@ -423,13 +423,18 @@ class TestSemanticGraphHTML:
 
     async def test_graph_refreshes_on_theme_change(self) -> None:
         html = await get_app_html()
-        assert "vault-theme-changed" in html
-        assert "refreshColors" in html
+        # Pins the actual event binding, not just the vocabulary (which
+        # pre-existed in a forward-reference comment).
+        assert "window.addEventListener('vault-theme-changed', refreshColors)" in html
+        # Pins core.js's dispatch specifically, not only graph.js's listener.
+        assert "new CustomEvent('vault-theme-changed'" in html
 
     async def test_semantic_toggle_active_is_accent(self) -> None:
         html = await get_app_html()
-        # Active semantic toggle uses accent-soft/accent, not the old purple.
-        assert "accent-soft" in html
+        # Pins the toggle wiring + the CSS rule (accent-soft alone is a
+        # shared token used by other components).
+        assert "classList.toggle('active', semanticEnabled)" in html
+        assert ".action-btn.active {" in html
 
 
 # ---------------------------------------------------------------------------
