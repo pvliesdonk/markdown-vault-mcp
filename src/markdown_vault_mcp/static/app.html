@@ -548,7 +548,7 @@ if(__exports != exports)module.exports = exports;return module.exports}));
     font: 600 11px/1 var(--font-body); cursor: not-allowed; opacity: 0.7; margin-left: auto;
   }
 </style>
-<!-- vendor-spa-source-sha256:0bd5ce1dbea6fba032bfe6b96518c9c4da39269094fae955e19d21a2b6380e1d -->
+<!-- vendor-spa-source-sha256:f79cbf22485c272ae241ab7e88712b7616485e955c76e41281620200b0282c03 -->
 </head>
 <body>
 <div class="app-container">
@@ -1228,7 +1228,8 @@ app.onteardown = () => {
     updateCountChip();
   }
 
-  // BFS distance-from-focus over the accumulated edge set. Unreachable → Infinity.
+  // BFS distance-from-focus over the accumulated edge set. Unreachable nodes are
+  // absent from the returned map; callers treat a missing entry as Infinity.
   function computeDepths() {
     const depths = new Map();
     if (!nodesDS || !graphCenterPath || !nodesDS.get(graphCenterPath)) return depths;
@@ -1291,6 +1292,7 @@ app.onteardown = () => {
         u = { id: n.id, shape: 'dot', value: Math.max(n._backlinks, 1),
               color: { background: folder, border: c.edge }, borderWidth: 1.5,
               shapeProperties: n._group === 'orphan' ? { borderDashes: [5, 5] } : {},
+              font: { color: c.ink2 },
               label: '' };
       }
       updates.push(u);

@@ -105,6 +105,10 @@ class TestGraphExplorerHTML:
         # Label gate: distant nodes get an empty label.
         assert "label: ''" in html or "label:''" in html
 
+    async def test_focus_node_accent_pill(self) -> None:
+        html = await get_app_html()
+        assert "background: c.accent, border: c.accent" in html
+
     async def test_lod_zoom_reveal(self) -> None:
         html = await get_app_html()
         assert "network.on('zoom'" in html
@@ -432,6 +436,10 @@ class TestSemanticGraphHTML:
         assert "_SEMANTIC_EDGE_COLOR" not in html
         assert "isSemantic" in html
         assert "dashes" in html
+
+    async def test_semantic_edge_accent_color(self) -> None:
+        html = await get_app_html()
+        assert "color: c.accent, opacity: 0.75" in html
 
     async def test_semantic_edge_dashed(self) -> None:
         html = await get_app_html()

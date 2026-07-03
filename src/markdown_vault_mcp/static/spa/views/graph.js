@@ -148,7 +148,8 @@
     updateCountChip();
   }
 
-  // BFS distance-from-focus over the accumulated edge set. Unreachable → Infinity.
+  // BFS distance-from-focus over the accumulated edge set. Unreachable nodes are
+  // absent from the returned map; callers treat a missing entry as Infinity.
   function computeDepths() {
     const depths = new Map();
     if (!nodesDS || !graphCenterPath || !nodesDS.get(graphCenterPath)) return depths;
@@ -211,6 +212,7 @@
         u = { id: n.id, shape: 'dot', value: Math.max(n._backlinks, 1),
               color: { background: folder, border: c.edge }, borderWidth: 1.5,
               shapeProperties: n._group === 'orphan' ? { borderDashes: [5, 5] } : {},
+              font: { color: c.ink2 },
               label: '' };
       }
       updates.push(u);
