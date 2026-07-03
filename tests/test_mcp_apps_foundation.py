@@ -162,6 +162,72 @@ class TestSPAShellResource:
             assert "fullscreenBtn" in html
             assert "requestDisplayMode" in html
 
+    async def test_html_sizing_is_container_dimensions_aware(self) -> None:
+        """#859: the app must derive its size mode from the host's
+        containerDimensions (fixed height -> fill/scroll; flexible -> grow to
+        content) instead of hard-pinning height:100vh. Anchored to the
+        view-specific applySizeMode logic and the flexible CSS branch, not
+        vendored-library text."""
+        server = make_server()
+        async with Client(server) as client:
+            resource = await client.read_resource("ui://vault/app.html")
+            html = (
+                resource[0].text if hasattr(resource[0], "text") else str(resource[0])
+            )
+            assert "applySizeMode" in html
+            assert "containerDimensions" in html
+            assert "data-size-mode" in html
+            # Must derive size mode from the merged host snapshot, not the
+            # partial onhostcontextchanged delta — else a theme-only delta
+            # (no containerDimensions) would reset the mode. This also pins the
+            # call site, so deleting the wiring can't stay green.
+            assert "applySizeMode(app.getHostContext() || ctx)" in html
+            # The flexible branch must relax the height pin so content drives —
+            # assert the actual declaration, not just the selector, so a revert
+            # to height:100vh in that branch can't stay green (would reintroduce
+            # the collapsed-to-top-third bug).
+            assert 'html[data-size-mode="flexible"] body { height: auto' in html
+
+    async def test_html_enables_autoresize(self) -> None:
+        """#859: autoResize must be on so the SDK reports the app's content
+        height and the host can size the iframe. The old `autoResize: false`
+        (which left mobile hosts unable to learn our height) must be gone."""
+        server = make_server()
+        async with Client(server) as client:
+            resource = await client.read_resource("ui://vault/app.html")
+            html = (
+                resource[0].text if hasattr(resource[0], "text") else str(resource[0])
+            )
+            assert "autoResize: true" in html
+            assert "autoResize: false" not in html
+
+    async def test_html_auto_fullscreen_skips_mobile(self) -> None:
+        """#859: auto-fullscreen on load must be gated off mobile, where
+        fullscreen has no reliable return path and the inline layout is the
+        right default."""
+        server = make_server()
+        async with Client(server) as client:
+            resource = await client.read_resource("ui://vault/app.html")
+            html = (
+                resource[0].text if hasattr(resource[0], "text") else str(resource[0])
+            )
+            assert "platform !== 'mobile'" in html
+
+    async def test_html_applies_safe_area_insets(self) -> None:
+        """#859: the app must consume the host's safeAreaInsets so content
+        clears mobile notches / system UI."""
+        server = make_server()
+        async with Client(server) as client:
+            resource = await client.read_resource("ui://vault/app.html")
+            html = (
+                resource[0].text if hasattr(resource[0], "text") else str(resource[0])
+            )
+            assert "safeAreaInsets" in html
+            # The layout must actually consume the insets, not just define the
+            # vars — assert the padding declaration so dropping it (while the JS
+            # still sets --safe-*) can't stay green.
+            assert "padding: var(--safe-top" in html
+
     async def test_html_contains_ontoolinput(self) -> None:
         server = make_server()
         async with Client(server) as client:

@@ -54,6 +54,13 @@
     --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 18px 40px -20px rgba(0, 0, 0, .6);
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
+  /* Sizing model (#859): the host tells us via containerDimensions whether it
+     gives a fixed-height frame or a flexible/unbounded one; core.js sets
+     html[data-size-mode] and the safe-area vars accordingly. Base (attribute
+     unset) = fixed/fill; it is the pre-context default (no collapsed-content
+     flash before the host context arrives) and also the steady state for a
+     fixed-height host. The mode is chosen from the reported dimensions, not the
+     platform. */
   body {
     font-family: var(--font-body);
     background: var(--panel);
@@ -67,7 +74,15 @@
     display: flex;
     flex-direction: column;
     height: 100vh;
+    /* safe-area insets (mobile notches / system UI); 0 until the host reports
+       them. border-box (set globally) keeps the box at 100vh incl. padding. */
+    padding: var(--safe-top, 0px) var(--safe-right, 0px) var(--safe-bottom, 0px) var(--safe-left, 0px);
   }
+  /* Flexible/unbounded frame (mobile inline, sidebars): grow to content and let
+     the SDK's autoResize report our height so the host sizes the iframe. Do NOT
+     pin to 100vh here — inside a content-sized iframe vh is circular. */
+  html[data-size-mode="flexible"] body { height: auto; overflow: visible; }
+  html[data-size-mode="flexible"] .app-container { height: auto; }
   /* Tab bar */
   .tab-bar {
     display: flex;

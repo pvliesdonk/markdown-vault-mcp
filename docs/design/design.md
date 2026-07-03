@@ -2207,6 +2207,8 @@ MCP Apps are browser-based views that MCP clients supporting the protocol can re
 - **Inline**: rendered in a client sidebar or panel alongside the conversation
 - **Fullscreen**: rendered in a dedicated tab or window
 
+**Sizing model** (#859): the app derives a size mode from the host's reported `containerDimensions` (part of the host context) rather than hard-pinning `height: 100vh`. A fixed height axis means the host owns the frame size, so the app fills it and scrolls internally; a flexible (`maxHeight`) or unbounded axis means the app controls its own height — it grows to content and, with the ext-apps SDK's `autoResize` enabled, reports its size via `size-changed` so the host sizes the iframe to it. The size mode is derived from the reported dimensions alone, not from `platform` (which only gates auto-fullscreen). This is what makes the views usable in a flexible or unbounded frame — as used by mobile inline hosts and sidebars — where a hard `100vh` collapsed content to the top of an over-tall iframe. The app also consumes `safeAreaInsets` (padding to clear mobile notches / system UI) and only auto-expands to fullscreen on first load off mobile (`platform !== 'mobile'`), where fullscreen has no reliable inline return path.
+
 **Four views** are bundled in the single resource:
 
 | View | `view` value | Description |

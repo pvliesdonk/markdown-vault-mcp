@@ -7,10 +7,16 @@ import { App, applyDocumentTheme, applyHostStyleVariables, applyHostFonts }
 try {
 
 // ── Globals ──────────────────────────────────────────────────────────────
+// autoResize:true (the SDK default) — the SDK observes our content size and
+// reports it to the host via size-changed so the host can size the iframe. The
+// app pairs this with containerDimensions-aware CSS (see applySizeMode): a
+// fixed-height host frame is filled with internal scroll; a flexible/unbounded
+// frame (mobile inline, sidebars) grows to content. Disabling autoResize + a
+// hard height:100vh left mobile hosts unable to learn our height (#859).
 const app = new App(
   { name: "Vault Explorer", version: "1.0.0" },
   {},
-  { autoResize: false }
+  { autoResize: true }
 );
 let currentTab = 'context';
 let isFullscreen = false;
@@ -43,9 +49,38 @@ function parseToolResult(result) {
   return null;
 }
 
+// ── Host-driven sizing ────────────────────────────────────────────────────
+// The host reports containerDimensions (per-axis: a fixed `height`/`width`, or a
+// `maxHeight`/`maxWidth` cap, or neither = unbounded) and safeAreaInsets. We
+// derive a size mode from the height axis: a fixed height means the host owns
+// our frame size and we fill it (internal scroll); anything else means the app
+// controls its own height and the SDK's autoResize reports it so the host sizes
+// the iframe to content. The CSS branches on html[data-size-mode]; the base
+// (attribute unset) is the fixed/fill layout, so before the first context
+// arrives there is no collapsed-content flash. The steady-state mode is chosen
+// here from the reported height axis, independent of `platform`. Must receive
+// the complete (merged) host context — see the call in handleHostContext. #859.
+function applySizeMode(ctx) {
+  const cd = ctx.containerDimensions;
+  const fixedHeight = !!cd && typeof cd.height === 'number';
+  document.documentElement.dataset.sizeMode = fixedHeight ? 'fixed' : 'flexible';
+  const s = ctx.safeAreaInsets;
+  const root = document.documentElement.style;
+  root.setProperty('--safe-top', (s?.top || 0) + 'px');
+  root.setProperty('--safe-right', (s?.right || 0) + 'px');
+  root.setProperty('--safe-bottom', (s?.bottom || 0) + 'px');
+  root.setProperty('--safe-left', (s?.left || 0) + 'px');
+}
+
 // ── Host theming ─────────────────────────────────────────────────────────
 function handleHostContext(ctx) {
   if (!ctx) return;
+  // onhostcontextchanged delivers a PARTIAL delta (only the changed fields);
+  // the SDK has already merged it into getHostContext(). Derive size mode +
+  // insets from the merged snapshot, not the delta, so an unrelated change
+  // (e.g. a theme-only delta) can't reset them to their absent-field defaults.
+  // Fall back to ctx if no snapshot is available yet.
+  applySizeMode(app.getHostContext() || ctx);
   if (ctx.theme) {
     applyDocumentTheme(ctx.theme);
     window.dispatchEvent(new CustomEvent('vault-theme-changed', { detail: { theme: ctx.theme } }));
@@ -202,8 +237,12 @@ if (hostContext) handleHostContext(hostContext);
 
 const fullscreenAvailable = hostContext?.availableDisplayModes?.includes('fullscreen') === true;
 updateFullscreenButton(fullscreenAvailable);
-// Auto-expand on first load — complex multi-view app benefits from more space
-if (fullscreenAvailable && !isFullscreen) {
+// Auto-expand on first load — a complex multi-view app benefits from more space
+// on desktop/web. NOT on mobile: there fullscreen is the whole screen with no
+// working return path on some hosts (leaving it can tear the app down), and the
+// content-driven inline layout is the right default (#859). platform may be
+// undefined on older hosts — treat that as non-mobile so desktop is unchanged.
+if (fullscreenAvailable && !isFullscreen && hostContext?.platform !== 'mobile') {
   app.requestDisplayMode({ mode: 'fullscreen' }).catch(() => {});
 }
 
