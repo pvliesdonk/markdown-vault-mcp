@@ -6,6 +6,8 @@
   let graphCenterPath = null;
   let selectedNodeId = null;
   let semanticEnabled = false;
+  let _depths = new Map();
+  const LABEL_ZOOM_THRESHOLD = 1.35;
 
   // Folder-based node colors — chosen to stand out on both light and dark backgrounds
   const _FOLDER_COLORS = [
@@ -106,21 +108,12 @@
     for (const n of data.nodes) {
       if (!nodesDS.get(n.id)) {
         const bc = n.backlink_count || 0;
-        const baseColor = n.group === 'orphan' ? '#94a3b8' : _folderColor(n.folder);
         nodesDS.add({
           id: n.id, label: n.label,
-          value: Math.max(bc, 1),
           title: n.label + (n.folder ? ' (' + n.folder + ')' : '') + (bc > 0 ? ' \u2014 ' + bc + ' backlinks' : ''),
-          color: {
-            background: baseColor,
-            border: n.group === 'hub' ? '#ffffff' : baseColor,
-            highlight: { background: baseColor, border: '#ffffff' },
-            hover: { background: baseColor, border: '#ffffff' },
-          },
-          font: { color: '#ffffff', size: 12 },
-          borderWidth: n.group === 'hub' ? 3 : (n.group === 'orphan' ? 1 : 2),
-          borderWidthSelected: 4,
-          shapeProperties: n.group === 'orphan' ? { borderDashes: [5, 5] } : {},
+          _label: n.label, _folder: n.folder, _group: n.group,
+          _folderColor: n.group === 'orphan' ? '#94a3b8' : _folderColor(n.folder),
+          _backlinks: bc,
         });
       }
     }
@@ -139,6 +132,86 @@
         });
       }
     }
+    _depths = computeDepths();
+    styleNodes(_depths);
+    styleEdges(_depths);
+  }
+
+  // BFS distance-from-focus over the accumulated edge set. Unreachable → Infinity.
+  function computeDepths() {
+    const depths = new Map();
+    if (!nodesDS || !graphCenterPath || !nodesDS.get(graphCenterPath)) return depths;
+    const adj = new Map();
+    for (const e of edgesDS.get()) {
+      if (!adj.has(e.from)) adj.set(e.from, []);
+      if (!adj.has(e.to)) adj.set(e.to, []);
+      adj.get(e.from).push(e.to);
+      adj.get(e.to).push(e.from);
+    }
+    const queue = [graphCenterPath];
+    depths.set(graphCenterPath, 0);
+    while (queue.length) {
+      const id = queue.shift();
+      const d = depths.get(id);
+      for (const nb of adj.get(id) || []) {
+        if (!depths.has(nb)) { depths.set(nb, d + 1); queue.push(nb); }
+      }
+    }
+    return depths;
+  }
+
+  // A node is "semantic-match" if it is reachable from focus only via semantic edges.
+  function _semanticMatch(id) {
+    const touching = edgesDS.get().filter(e => e.from === id || e.to === id);
+    return touching.length > 0 && touching.every(e => e.title === 'semantic');
+  }
+
+  // Map each node to its Paper role by distance. Label gate: only distance ≤ 1
+  // is labelled here; Task 3's applyLOD promotes/demotes the rest by zoom/hover.
+  function styleNodes(depths) {
+    if (!nodesDS) return;
+    const c = getColors();
+    const updates = [];
+    for (const n of nodesDS.get()) {
+      const d = depths.has(n.id) ? depths.get(n.id) : Infinity;
+      const folder = n._folderColor || _folderColor(n._folder);
+      let u;
+      if (d === 0) {
+        u = { id: n.id, shape: 'box', shapeProperties: { borderRadius: 20 },
+              color: { background: c.accent, border: c.accent }, borderWidth: 2,
+              font: { color: c.accentInk, size: 13, face: 'inherit' },
+              label: n._label };
+      } else if (d === 1 || (n._group === 'hub')) {
+        u = { id: n.id, shape: 'box', shapeProperties: { borderRadius: 20 },
+              color: { background: folder, border: c.border },
+              borderWidth: n._group === 'hub' ? 3 : 1,
+              font: { color: c.ink2, size: 12, face: 'inherit' },
+              shadow: { enabled: true, size: 6, x: 0, y: 1, color: 'rgba(0,0,0,0.12)' },
+              label: n._label };
+      } else if (_semanticMatch(n.id)) {
+        u = { id: n.id, shape: 'box', shapeProperties: { borderRadius: 20, borderDashes: [4, 3] },
+              color: { background: c.accentSoft, border: c.accent }, borderWidth: 1.5,
+              font: { color: c.ink2, size: 12, face: 'inherit' }, label: n._label };
+      } else {
+        u = { id: n.id, shape: 'dot', value: Math.max(n._backlinks, 1),
+              color: { background: folder, border: c.edge }, borderWidth: 1.5,
+              shapeProperties: n._group === 'orphan' ? { borderDashes: [5, 5] } : {},
+              label: '' };
+      }
+      updates.push(u);
+    }
+    nodesDS.update(updates);
+  }
+
+  function styleEdges(depths) {
+    if (!edgesDS) return;
+    const c = getColors();
+    const updates = edgesDS.get().map(e => {
+      const dm = Math.max(depths.get(e.from) ?? 0, depths.get(e.to) ?? 0);
+      const es = edgeStyle(e.title, dm, c);
+      return { id: e.id, color: es.color, dashes: es.dashes, width: es.width };
+    });
+    edgesDS.update(updates);
   }
 
   async function expandNode(path) {

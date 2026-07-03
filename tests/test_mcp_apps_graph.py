@@ -85,6 +85,25 @@ class TestGraphExplorerHTML:
         assert "edgeStyle" in html
         # Orphan dashed border
         assert "borderDashes" in html
+        # Edge styling applied via styleEdges
+        assert "styleEdges" in html
+
+    async def test_bfs_distance_computed(self) -> None:
+        html = await get_app_html()
+        assert "computeDepths" in html
+        # BFS from the center over the current edge set.
+        assert "graphCenterPath" in html
+
+    async def test_node_roles_pills_and_dots(self) -> None:
+        html = await get_app_html()
+        assert "styleNodes" in html
+        # Focus/neighbor nodes are box pills; distant nodes are dots.
+        assert "'box'" in html
+        assert "shapeProperties" in html
+        # Folder colors preserved for node fills.
+        assert "_folderColor" in html
+        # Label gate: distant nodes get an empty label.
+        assert "label: ''" in html or "label:''" in html
 
     async def test_send_to_claude_button(self) -> None:
         html = await get_app_html()
