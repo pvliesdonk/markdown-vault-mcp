@@ -473,8 +473,8 @@ class TestSemanticGraphHTML:
 
     async def test_graph_refreshes_on_theme_change(self) -> None:
         html = await get_app_html()
-        # Pins the actual event binding, not just the vocabulary (which
-        # pre-existed in a forward-reference comment).
+        # Pin the actual event binding (listener + dispatch), not just the
+        # string, so a stub can't satisfy the test.
         assert "window.addEventListener('vault-theme-changed', refreshColors)" in html
         # Pins core.js's dispatch specifically, not only graph.js's listener.
         assert "new CustomEvent('vault-theme-changed'" in html

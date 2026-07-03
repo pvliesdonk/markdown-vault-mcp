@@ -548,7 +548,7 @@ if(__exports != exports)module.exports = exports;return module.exports}));
     font: 600 11px/1 var(--font-body); cursor: not-allowed; opacity: 0.7; margin-left: auto;
   }
 </style>
-<!-- vendor-spa-source-sha256:3f9964b5117296cedcca02e89fd372e5c29852daaccf2940b32c62be3bc9c8ec -->
+<!-- vendor-spa-source-sha256:179472c7e40373f35e097a280f1198551e125281df24ef92ab43a074c2e1276f -->
 </head>
 <body>
 <div class="app-container">
@@ -1142,7 +1142,6 @@ app.onteardown = () => {
     if (network) return;
     const container = document.getElementById('graph-container');
     if (!container || typeof vis === 'undefined') return;
-    const c = getColors();
     nodesDS = new vis.DataSet();
     edgesDS = new vis.DataSet();
     const options = {

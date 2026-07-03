@@ -62,7 +62,6 @@
     if (network) return;
     const container = document.getElementById('graph-container');
     if (!container || typeof vis === 'undefined') return;
-    const c = getColors();
     nodesDS = new vis.DataSet();
     edgesDS = new vis.DataSet();
     const options = {
