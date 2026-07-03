@@ -302,6 +302,7 @@ if(__exports != exports)module.exports = exports;return module.exports}));
     color: var(--color-text-primary);
     border: 1px solid var(--color-border-primary);
   }
+  .action-btn.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
   /* Context card */
   .context-header { margin-bottom: 6px; }
   .context-title-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
@@ -365,20 +366,19 @@ if(__exports != exports)module.exports = exports;return module.exports}));
   }
   .graph-mini-card {
     position: absolute; bottom: 16px; right: 16px; width: 280px; max-height: 200px; overflow-y: auto;
-    background: var(--color-background-primary); border: 1px solid var(--color-border-primary);
-    border-radius: 8px; padding: 12px; font-size: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); z-index: 10;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: var(--pad); font-size: 12px; box-shadow: var(--shadow); z-index: 10;
   }
-  .graph-mini-card h4 { margin: 0 0 6px; font-size: 14px; }
+  .graph-mini-card h4 { margin: 0 0 6px; font-family: var(--font-head, inherit); font-size: 14px; color: var(--ink); }
   .graph-mini-card .mini-links { margin: 4px 0; }
-  .graph-mini-card .mini-link { color: var(--color-text-info); cursor: pointer; padding: 1px 0; }
+  .graph-mini-card .mini-link { color: var(--accent); cursor: pointer; padding: 1px 0; }
   .graph-mini-card .mini-link:hover { text-decoration: underline; }
   .graph-mini-card .mini-actions { margin-top: 8px; display: flex; gap: 6px; }
   .graph-mini-card .mini-actions button {
-    font-size: 11px; padding: 3px 8px; border-radius: 3px; cursor: pointer;
-    background: var(--color-background-secondary); border: 1px solid var(--color-border-primary);
-    color: var(--color-text-primary); font-family: inherit;
+    font: 600 11px/1 var(--font-body); padding: 5px 9px; border-radius: var(--radius-sm); cursor: pointer;
+    background: var(--panel-2); border: 1px solid var(--border); color: var(--ink-2);
   }
-  .graph-mini-card .mini-actions button:hover { background: var(--color-border-primary); }
+  .graph-mini-card .mini-actions button:hover { color: var(--ink); border-color: var(--muted); }
   .graph-overlay {
     position: absolute; top: 10px; right: 10px; z-index: 10;
     display: flex; align-items: center; gap: 8px;
@@ -548,7 +548,7 @@ if(__exports != exports)module.exports = exports;return module.exports}));
     font: 600 11px/1 var(--font-body); cursor: not-allowed; opacity: 0.7; margin-left: auto;
   }
 </style>
-<!-- vendor-spa-source-sha256:76d3d01c7faf33559047a5fd0ffe1ee79fb964f00140c41e17ede02675c120c1 -->
+<!-- vendor-spa-source-sha256:037398953834ac9c3c3474b29e86755c299387a18eff52f2897df1aa6b6c6b54 -->
 </head>
 <body>
 <div class="app-container">
@@ -693,7 +693,10 @@ function parseToolResult(result) {
 // ── Host theming ─────────────────────────────────────────────────────────
 function handleHostContext(ctx) {
   if (!ctx) return;
-  if (ctx.theme) applyDocumentTheme(ctx.theme);
+  if (ctx.theme) {
+    applyDocumentTheme(ctx.theme);
+    window.dispatchEvent(new CustomEvent('vault-theme-changed', { detail: { theme: ctx.theme } }));
+  }
   if (ctx.styles?.variables) applyHostStyleVariables(ctx.styles.variables);
   if (ctx.styles?.css?.fonts) applyHostFonts(ctx.styles.css.fonts);
   if (ctx.displayMode !== undefined) {
@@ -1321,6 +1324,16 @@ app.onteardown = () => {
     edgesDS.update(updates);
   }
 
+  // Re-read Paper vars and restyle everything (a canvas doesn't inherit CSS-var
+  // changes, so the graph must re-read on host theme flips).
+  function refreshColors() {
+    if (!nodesDS) return;
+    styleNodes(_depths);
+    styleEdges(_depths);
+    applyLOD();
+  }
+  window.addEventListener('vault-theme-changed', refreshColors);
+
   async function expandNode(path) {
     try {
       const result = await app.callServerTool({
@@ -1451,15 +1464,7 @@ app.onteardown = () => {
   document.getElementById('graph-semantic-btn').addEventListener('click', () => {
     semanticEnabled = !semanticEnabled;
     const btn = document.getElementById('graph-semantic-btn');
-    if (semanticEnabled) {
-      btn.style.background = 'var(--accent)';
-      btn.style.color = 'var(--accent-ink)';
-      btn.style.border = 'none';
-    } else {
-      btn.style.background = 'var(--panel-2)';
-      btn.style.color = 'var(--ink)';
-      btn.style.border = '1px solid var(--border)';
-    }
+    btn.classList.toggle('active', semanticEnabled);
     // Reload current graph with updated setting
     if (graphCenterPath) loadGraph(graphCenterPath);
   });

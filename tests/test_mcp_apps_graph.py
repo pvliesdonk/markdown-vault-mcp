@@ -421,6 +421,16 @@ class TestSemanticGraphHTML:
         html = await get_app_html()
         assert "currentPath" in html
 
+    async def test_graph_refreshes_on_theme_change(self) -> None:
+        html = await get_app_html()
+        assert "vault-theme-changed" in html
+        assert "refreshColors" in html
+
+    async def test_semantic_toggle_active_is_accent(self) -> None:
+        html = await get_app_html()
+        # Active semantic toggle uses accent-soft/accent, not the old purple.
+        assert "accent-soft" in html
+
 
 # ---------------------------------------------------------------------------
 # Semantic edges with embeddings enabled

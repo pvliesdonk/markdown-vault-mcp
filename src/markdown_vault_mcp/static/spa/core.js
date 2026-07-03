@@ -46,7 +46,10 @@ function parseToolResult(result) {
 // ── Host theming ─────────────────────────────────────────────────────────
 function handleHostContext(ctx) {
   if (!ctx) return;
-  if (ctx.theme) applyDocumentTheme(ctx.theme);
+  if (ctx.theme) {
+    applyDocumentTheme(ctx.theme);
+    window.dispatchEvent(new CustomEvent('vault-theme-changed', { detail: { theme: ctx.theme } }));
+  }
   if (ctx.styles?.variables) applyHostStyleVariables(ctx.styles.variables);
   if (ctx.styles?.css?.fonts) applyHostFonts(ctx.styles.css.fonts);
   if (ctx.displayMode !== undefined) {

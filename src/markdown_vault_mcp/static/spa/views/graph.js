@@ -244,6 +244,16 @@
     edgesDS.update(updates);
   }
 
+  // Re-read Paper vars and restyle everything (a canvas doesn't inherit CSS-var
+  // changes, so the graph must re-read on host theme flips).
+  function refreshColors() {
+    if (!nodesDS) return;
+    styleNodes(_depths);
+    styleEdges(_depths);
+    applyLOD();
+  }
+  window.addEventListener('vault-theme-changed', refreshColors);
+
   async function expandNode(path) {
     try {
       const result = await app.callServerTool({
@@ -374,15 +384,7 @@
   document.getElementById('graph-semantic-btn').addEventListener('click', () => {
     semanticEnabled = !semanticEnabled;
     const btn = document.getElementById('graph-semantic-btn');
-    if (semanticEnabled) {
-      btn.style.background = 'var(--accent)';
-      btn.style.color = 'var(--accent-ink)';
-      btn.style.border = 'none';
-    } else {
-      btn.style.background = 'var(--panel-2)';
-      btn.style.color = 'var(--ink)';
-      btn.style.border = '1px solid var(--border)';
-    }
+    btn.classList.toggle('active', semanticEnabled);
     // Reload current graph with updated setting
     if (graphCenterPath) loadGraph(graphCenterPath);
   });
