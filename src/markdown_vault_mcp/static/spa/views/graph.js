@@ -25,24 +25,33 @@
     return _FOLDER_COLORS[h % _FOLDER_COLORS.length];
   }
 
-  // Color scheme for edges and UI chrome
+  // Paper palette for edges and canvas chrome, read from CSS vars so the graph
+  // re-themes when the host flips theme (see refreshColors / vault-theme-changed).
   function getColors() {
     const s = getComputedStyle(document.documentElement);
+    const v = (name, fallback) => s.getPropertyValue(name).trim() || fallback;
     return {
-      fg: s.getPropertyValue('--color-text-primary').trim() || '#1a1a1a',
-      accent: s.getPropertyValue('--color-text-info').trim() || '#6366f1',
-      muted: s.getPropertyValue('--color-text-secondary').trim() || '#6b7280',
-      border: s.getPropertyValue('--color-border-primary').trim() || '#e0e0e0',
+      panel:      v('--panel', '#fbf8f1'),
+      panel2:     v('--panel-2', '#f2ecdf'),
+      ink:        v('--ink', '#2a2620'),
+      ink2:       v('--ink-2', '#5c5446'),
+      muted:      v('--muted', '#928975'),
+      edge:       v('--edge', '#d3c7ad'),
+      accent:     v('--accent', '#b25a35'),
+      accentInk:  v('--accent-ink', '#ffffff'),
+      accentSoft: v('--accent-soft', '#f3e4d8'),
+      border:     v('--border', '#e4dbc9'),
     };
   }
 
-  const _SEMANTIC_EDGE_COLOR = '#a855f7'; // purple — distinct from folder node colors
-
-  function edgeColorByType(type, c) {
-    if (type === 'semantic') return _SEMANTIC_EDGE_COLOR;
-    if (type === 'wikilink') return c.accent;
-    if (type === 'reference') return c.muted;
-    return c.border; // markdown = default
+  // Edge styling: solid --edge for link edges (thinner + lower opacity when the
+  // farthest endpoint is distant), dashed --accent for semantic similarity.
+  function edgeStyle(type, depthMax, c) {
+    if (type === 'semantic') {
+      return { color: { color: c.accent, opacity: 0.75 }, dashes: [5, 4], width: 1 };
+    }
+    const far = depthMax >= 2;
+    return { color: { color: c.edge, opacity: far ? 0.5 : 1 }, dashes: false, width: far ? 1 : 1.6 };
   }
 
   function initNetwork() {
@@ -122,12 +131,10 @@
         ? 'sem:' + [e.from, e.to].sort().join('<>')
         : e.from + '->' + e.to;
       if (!edgesDS.get(edgeId)) {
+        const es = edgeStyle(e.type, 0, c);
         edgesDS.add({
           id: edgeId, from: e.from, to: e.to,
-          color: { color: edgeColorByType(e.type, c), highlight: _SEMANTIC_EDGE_COLOR },
-          title: e.type,
-          dashes: isSemantic,
-          width: isSemantic ? 1 : 1.5,
+          color: es.color, title: e.type, dashes: es.dashes, width: es.width,
           arrows: isSemantic ? '' : { to: { enabled: true, scaleFactor: 0.5 } },
         });
       }
@@ -249,13 +256,13 @@
     semanticEnabled = !semanticEnabled;
     const btn = document.getElementById('graph-semantic-btn');
     if (semanticEnabled) {
-      btn.style.background = _SEMANTIC_EDGE_COLOR;
-      btn.style.color = '#ffffff';
+      btn.style.background = 'var(--accent)';
+      btn.style.color = 'var(--accent-ink)';
       btn.style.border = 'none';
     } else {
-      btn.style.background = 'var(--color-background-secondary)';
-      btn.style.color = 'var(--color-text-primary)';
-      btn.style.border = '1px solid var(--color-border-primary)';
+      btn.style.background = 'var(--panel-2)';
+      btn.style.color = 'var(--ink)';
+      btn.style.border = '1px solid var(--border)';
     }
     // Reload current graph with updated setting
     if (graphCenterPath) loadGraph(graphCenterPath);

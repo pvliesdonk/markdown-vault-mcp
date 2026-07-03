@@ -81,8 +81,8 @@ class TestGraphExplorerHTML:
         html = await get_app_html()
         # Node size proportional to backlink_count via value
         assert "backlink_count" in html
-        # Edge color by type
-        assert "edgeColorByType" in html
+        # Edge color/style by type
+        assert "edgeStyle" in html
         # Orphan dashed border
         assert "borderDashes" in html
 
@@ -113,7 +113,18 @@ class TestGraphExplorerHTML:
     async def test_host_css_variables_in_graph(self) -> None:
         html = await get_app_html()
         assert "getColors" in html
-        assert "--color-text-info" in html
+
+    async def test_graph_reads_paper_tokens(self) -> None:
+        html = await get_app_html()
+        assert "getColors" in html
+        # getColors reads Paper semantic tokens for the canvas chrome.
+        assert "--accent" in html
+        assert "--edge" in html
+
+    async def test_graph_dotted_grid_surface(self) -> None:
+        html = await get_app_html()
+        assert "radial-gradient" in html
+        assert "#graph-container" in html
 
 
 # ---------------------------------------------------------------------------
@@ -318,9 +329,13 @@ class TestSemanticGraphHTML:
         assert "include_semantic" in html
         assert "semanticEnabled" in html
 
-    async def test_semantic_edge_color_constant(self) -> None:
+    async def test_semantic_edge_is_dashed_accent_not_purple(self) -> None:
         html = await get_app_html()
-        assert "_SEMANTIC_EDGE_COLOR" in html
+        # The old purple semantic constant is gone; semantic reads as dashed accent.
+        assert "#a855f7" not in html
+        assert "_SEMANTIC_EDGE_COLOR" not in html
+        assert "isSemantic" in html
+        assert "dashes" in html
 
     async def test_semantic_edge_dashed(self) -> None:
         html = await get_app_html()
