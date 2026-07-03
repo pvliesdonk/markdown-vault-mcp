@@ -509,7 +509,7 @@ if(__exports != exports)module.exports = exports;return module.exports}));
     font: 600 11px/1 var(--font-body); cursor: not-allowed; opacity: 0.7; margin-left: auto;
   }
 </style>
-<!-- vendor-spa-source-sha256:c3832bcde5a6089e8cb1dc01f072850fe15e7e668d2d274cc666b9ae647c2ac3 -->
+<!-- vendor-spa-source-sha256:308a3f139fafaaa707828d68bec0ce83b97c6880cc05e377b95e9e36ad1ed8cf -->
 </head>
 <body>
 <div class="app-container">
@@ -1031,6 +1031,8 @@ app.onteardown = () => {
   let semanticEnabled = false;
   let _depths = new Map();
   const LABEL_ZOOM_THRESHOLD = 1.35;
+  let _zoomedIn = false;
+  let _hoveredId = null;
 
   // Folder-based node colors — chosen to stand out on both light and dark backgrounds
   const _FOLDER_COLORS = [
@@ -1090,7 +1092,7 @@ app.onteardown = () => {
       physics: { enabled: true, solver: 'forceAtlas2Based', forceAtlas2Based: { gravitationalConstant: -40 } },
       nodes: {
         shape: 'dot',
-        scaling: { min: 8, max: 30, label: { enabled: true, min: 10, max: 16 } },
+        scaling: { min: 8, max: 30, label: { enabled: true, min: 10, max: 16, drawThreshold: 6 } },
       },
       edges: {
         arrows: { to: { enabled: true, scaleFactor: 0.5 } }, font: { size: 9 }, smooth: { type: 'continuous' },
@@ -1123,6 +1125,13 @@ app.onteardown = () => {
         loadGraph(nodeId);
       }
     });
+
+    network.on('zoom', (params) => {
+      const zoomed = params.scale >= LABEL_ZOOM_THRESHOLD;
+      if (zoomed !== _zoomedIn) { _zoomedIn = zoomed; applyLOD(); }  // only on crossing
+    });
+    network.on('hoverNode', (params) => { _hoveredId = params.node; applyLOD(); });
+    network.on('blurNode', () => { _hoveredId = null; applyLOD(); });
   }
 
   function addGraphData(data) {
@@ -1158,6 +1167,7 @@ app.onteardown = () => {
     _depths = computeDepths();
     styleNodes(_depths);
     styleEdges(_depths);
+    applyLOD();
   }
 
   // BFS distance-from-focus over the accumulated edge set. Unreachable → Infinity.
@@ -1224,6 +1234,22 @@ app.onteardown = () => {
       }
       updates.push(u);
     }
+    nodesDS.update(updates);
+  }
+
+  // Coherence predicate: a node's label shows iff it is near the focus, OR the
+  // graph is zoomed in past the threshold, OR the node is currently hovered.
+  function labelVisible(id) {
+    const d = _depths.has(id) ? _depths.get(id) : Infinity;
+    return d <= 1 || _zoomedIn || id === _hoveredId;
+  }
+
+  // Re-derive every node's label from labelVisible (never toggled ad hoc).
+  function applyLOD() {
+    if (!nodesDS) return;
+    const updates = nodesDS.get().map(n => ({
+      id: n.id, label: labelVisible(n.id) ? n._label : '',
+    }));
     nodesDS.update(updates);
   }
 
