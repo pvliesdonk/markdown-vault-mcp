@@ -113,14 +113,15 @@ class TestGraphExplorerHTML:
 
     async def test_lod_hover_reveal(self) -> None:
         html = await get_app_html()
-        assert "hoverNode" in html
-        assert "blurNode" in html
+        assert "network.on('hoverNode'" in html
+        assert "network.on('blurNode'" in html
+        assert "_hoveredId = params.node" in html
         assert "applyLOD" in html
 
     async def test_lod_graceful_font_floor(self) -> None:
         html = await get_app_html()
         # scaling.label acts as a graceful adjunct, not the mechanism.
-        assert "drawThreshold" in html
+        assert "drawThreshold: 6" in html
 
     async def test_send_to_claude_button(self) -> None:
         html = await get_app_html()
