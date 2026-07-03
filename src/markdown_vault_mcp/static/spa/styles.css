@@ -250,6 +250,22 @@
     color: var(--color-text-primary); font-family: inherit;
   }
   .graph-mini-card .mini-actions button:hover { background: var(--color-border-primary); }
+  .graph-overlay {
+    position: absolute; top: 10px; right: 10px; z-index: 10;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .graph-count {
+    font: 600 11px/1 var(--font-mono); color: var(--muted);
+    background: var(--panel); border: 1px solid var(--border);
+    padding: 5px 9px; border-radius: var(--radius-sm);
+  }
+  .graph-zoom { display: flex; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
+  .graph-zoom button {
+    background: none; border: none; cursor: pointer; color: var(--ink-2);
+    font: 600 15px/1 var(--font-body); padding: 4px 10px;
+  }
+  .graph-zoom button:hover { background: var(--panel-2); color: var(--ink); }
+  .graph-zoom button + button { border-left: 1px solid var(--border); }
   /* Browser styles */
   .browser-layout { display: flex; flex-direction: column; flex: 1; min-height: 0; gap: 0; }
   .browser-sidebar {

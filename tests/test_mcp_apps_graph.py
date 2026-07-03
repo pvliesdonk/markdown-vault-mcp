@@ -163,6 +163,17 @@ class TestGraphExplorerHTML:
         assert "radial-gradient" in html
         assert "#graph-container" in html
 
+    async def test_zoom_control_overlay(self) -> None:
+        html = await get_app_html()
+        assert 'id="graph-zoom-in"' in html
+        assert 'id="graph-zoom-out"' in html
+        assert "network.moveTo" in html
+
+    async def test_node_count_chip(self) -> None:
+        html = await get_app_html()
+        assert 'id="graph-count"' in html
+        assert "updateCountChip" in html
+
 
 # ---------------------------------------------------------------------------
 # Graph data tools

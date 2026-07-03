@@ -264,6 +264,22 @@
     color: var(--color-text-primary); font-family: inherit;
   }
   .graph-mini-card .mini-actions button:hover { background: var(--color-border-primary); }
+  .graph-overlay {
+    position: absolute; top: 10px; right: 10px; z-index: 10;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .graph-count {
+    font: 600 11px/1 var(--font-mono); color: var(--muted);
+    background: var(--panel); border: 1px solid var(--border);
+    padding: 5px 9px; border-radius: var(--radius-sm);
+  }
+  .graph-zoom { display: flex; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
+  .graph-zoom button {
+    background: none; border: none; cursor: pointer; color: var(--ink-2);
+    font: 600 15px/1 var(--font-body); padding: 4px 10px;
+  }
+  .graph-zoom button:hover { background: var(--panel-2); color: var(--ink); }
+  .graph-zoom button + button { border-left: 1px solid var(--border); }
   /* Browser styles */
   .browser-layout { display: flex; flex-direction: column; flex: 1; min-height: 0; gap: 0; }
   .browser-sidebar {
@@ -448,6 +464,13 @@
     </div>
     <div id="graph-container" style="flex:1;position:relative;">
       <div id="graph-mini-card" class="graph-mini-card" style="display:none;"></div>
+      <div class="graph-overlay" id="graph-overlay">
+        <span class="graph-count" id="graph-count">0 notes</span>
+        <div class="graph-zoom">
+          <button id="graph-zoom-out" title="Zoom out">&#8722;</button>
+          <button id="graph-zoom-in" title="Zoom in">&#43;</button>
+        </div>
+      </div>
     </div>
   </div>
   <div class="tab-panel" id="panel-browse" data-tab="browse">
@@ -1050,6 +1073,7 @@ app.onteardown = () => {
     styleNodes(_depths);
     styleEdges(_depths);
     applyLOD();
+    updateCountChip();
   }
 
   // BFS distance-from-focus over the accumulated edge set. Unreachable → Infinity.
@@ -1242,6 +1266,17 @@ app.onteardown = () => {
   function hideMiniCard() {
     document.getElementById('graph-mini-card').style.display = 'none';
   }
+
+  function updateCountChip() {
+    const chip = document.getElementById('graph-count');
+    if (chip && nodesDS) chip.textContent = nodesDS.length + (nodesDS.length === 1 ? ' note' : ' notes');
+  }
+  document.getElementById('graph-zoom-in')?.addEventListener('click', () => {
+    if (network) network.moveTo({ scale: network.getScale() * 1.3 });
+  });
+  document.getElementById('graph-zoom-out')?.addEventListener('click', () => {
+    if (network) network.moveTo({ scale: network.getScale() / 1.3 });
+  });
 
   // Send graph summary to Claude
   document.getElementById('graph-send-btn').addEventListener('click', () => {

@@ -145,6 +145,7 @@
     styleNodes(_depths);
     styleEdges(_depths);
     applyLOD();
+    updateCountChip();
   }
 
   // BFS distance-from-focus over the accumulated edge set. Unreachable → Infinity.
@@ -337,6 +338,17 @@
   function hideMiniCard() {
     document.getElementById('graph-mini-card').style.display = 'none';
   }
+
+  function updateCountChip() {
+    const chip = document.getElementById('graph-count');
+    if (chip && nodesDS) chip.textContent = nodesDS.length + (nodesDS.length === 1 ? ' note' : ' notes');
+  }
+  document.getElementById('graph-zoom-in')?.addEventListener('click', () => {
+    if (network) network.moveTo({ scale: network.getScale() * 1.3 });
+  });
+  document.getElementById('graph-zoom-out')?.addEventListener('click', () => {
+    if (network) network.moveTo({ scale: network.getScale() / 1.3 });
+  });
 
   // Send graph summary to Claude
   document.getElementById('graph-send-btn').addEventListener('click', () => {
