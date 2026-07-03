@@ -170,8 +170,20 @@ class TestGraphExplorerHTML:
 
     async def test_graph_hub_labels_always_visible(self) -> None:
         html = await get_app_html()
-        # labelVisible must treat hub nodes as always-labelled (Fix for #815).
+        # labelVisible must treat hub nodes as always-labelled.
         assert "n._group === 'hub'" in html
+
+    async def test_lod_predicate_pinned(self) -> None:
+        html = await get_app_html()
+        # Pin the whole label-visibility decision so it can't be gutted silently.
+        assert (
+            "return d <= 1 || n._group === 'hub' || _zoomedIn || n.id === _hoveredId"
+            in html
+        )
+
+    async def test_legend_chip_toggle_wired(self) -> None:
+        html = await get_app_html()
+        assert "classList.toggle('open')" in html
 
     async def test_graph_dotted_grid_surface(self) -> None:
         html = await get_app_html()

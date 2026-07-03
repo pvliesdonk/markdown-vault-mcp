@@ -548,7 +548,7 @@ if(__exports != exports)module.exports = exports;return module.exports}));
     font: 600 11px/1 var(--font-body); cursor: not-allowed; opacity: 0.7; margin-left: auto;
   }
 </style>
-<!-- vendor-spa-source-sha256:46f11e0cdcf072e1550691117cd83a88f680a52a088ceda3862a79e17fb2a452 -->
+<!-- vendor-spa-source-sha256:0bd5ce1dbea6fba032bfe6b96518c9c4da39269094fae955e19d21a2b6380e1d -->
 </head>
 <body>
 <div class="app-container">
@@ -1272,18 +1272,18 @@ app.onteardown = () => {
       if (d === 0) {
         u = { id: n.id, shape: 'box', shapeProperties: { borderRadius: 20 },
               color: { background: c.accent, border: c.accent }, borderWidth: 2,
-              font: { color: c.accentInk, size: 13, face: 'inherit' },
+              font: { color: c.accentInk, size: 13 },
               label: n._label };
       } else if (d === 1 || (n._group === 'hub')) {
         if (_semanticMatch(n.id)) {
           u = { id: n.id, shape: 'box', shapeProperties: { borderRadius: 20, borderDashes: [4, 3] },
                 color: { background: c.accentSoft, border: c.accent }, borderWidth: 1.5,
-                font: { color: c.ink2, size: 12, face: 'inherit' }, label: n._label };
+                font: { color: c.ink2, size: 12 }, label: n._label };
         } else {
           u = { id: n.id, shape: 'box', shapeProperties: { borderRadius: 20 },
-                color: { background: folder, border: c.border },
-                borderWidth: n._group === 'hub' ? 3 : 1,
-                font: { color: c.accentInk, size: 12, face: 'inherit' },
+                color: { background: c.panel, border: folder },
+                borderWidth: n._group === 'hub' ? 3 : 1.5,
+                font: { color: c.ink2, size: 12 },
                 shadow: { enabled: true, size: 6, x: 0, y: 1, color: 'rgba(0,0,0,0.12)' },
                 label: n._label };
         }

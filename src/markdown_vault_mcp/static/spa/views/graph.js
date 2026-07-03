@@ -192,18 +192,18 @@
       if (d === 0) {
         u = { id: n.id, shape: 'box', shapeProperties: { borderRadius: 20 },
               color: { background: c.accent, border: c.accent }, borderWidth: 2,
-              font: { color: c.accentInk, size: 13, face: 'inherit' },
+              font: { color: c.accentInk, size: 13 },
               label: n._label };
       } else if (d === 1 || (n._group === 'hub')) {
         if (_semanticMatch(n.id)) {
           u = { id: n.id, shape: 'box', shapeProperties: { borderRadius: 20, borderDashes: [4, 3] },
                 color: { background: c.accentSoft, border: c.accent }, borderWidth: 1.5,
-                font: { color: c.ink2, size: 12, face: 'inherit' }, label: n._label };
+                font: { color: c.ink2, size: 12 }, label: n._label };
         } else {
           u = { id: n.id, shape: 'box', shapeProperties: { borderRadius: 20 },
-                color: { background: folder, border: c.border },
-                borderWidth: n._group === 'hub' ? 3 : 1,
-                font: { color: c.accentInk, size: 12, face: 'inherit' },
+                color: { background: c.panel, border: folder },
+                borderWidth: n._group === 'hub' ? 3 : 1.5,
+                font: { color: c.ink2, size: 12 },
                 shadow: { enabled: true, size: 6, x: 0, y: 1, color: 'rgba(0,0,0,0.12)' },
                 label: n._label };
         }
