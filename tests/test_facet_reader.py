@@ -35,6 +35,18 @@ class TestReaderFacetBehaviour:
     def test_read_missing_returns_none(self, built: Vault) -> None:
         assert built.reader.read("does/not/exist.md") is None
 
+    def test_get_metadata_returns_document_meta(self, built: Vault) -> None:
+        meta = built.reader.get_metadata("full_frontmatter.md")
+        assert meta is not None
+        assert meta.path == "full_frontmatter.md"
+        assert meta.title
+        assert isinstance(meta.folder, str)
+        assert isinstance(meta.frontmatter, dict)
+        assert meta.frontmatter, "full_frontmatter.md has frontmatter"
+
+    def test_get_metadata_missing_returns_none(self, built: Vault) -> None:
+        assert built.reader.get_metadata("does/not/exist.md") is None
+
     def test_list_documents_returns_list(self, built: Vault) -> None:
         assert isinstance(built.reader.list_documents(), list)
 

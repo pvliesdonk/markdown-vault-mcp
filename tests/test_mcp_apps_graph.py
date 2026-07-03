@@ -269,6 +269,28 @@ class TestGraphDataTools:
                 assert "group" in node
                 assert "folder" in node
 
+    async def test_neighborhood_tolerates_oversize_node(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A node whose document exceeds MAX_NOTE_READ_BYTES must not crash the
+        graph — node labels come from indexed metadata, not a size-capped read.
+
+        Regression: the tool read each node's full document only for its
+        title/folder, so a single oversize note raised ValueError and failed
+        the whole tool call.
+        """
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES", "10")
+        server = make_server()
+        async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
+            result = await client.call_tool(
+                _hashed("vault_graph_neighborhood"), {"path": "simple.md"}
+            )
+            data = _parse_tool_data(result)
+        focus = next((n for n in data["nodes"] if n["id"] == "simple.md"), None)
+        assert focus is not None, "focus node must be present despite the size cap"
+        assert focus["label"], "label must come from metadata, not a failed read"
+
     async def test_neighborhood_with_depth(self) -> None:
         server = make_server()
         async with Client(server) as client:
@@ -293,20 +315,34 @@ class TestGraphDataTools:
             assert "nodes" in data
             assert "edges" in data
 
+    async def test_hubs_tolerates_oversize_backlink_source(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A backlink-source note over MAX_NOTE_READ_BYTES must not crash the hub
+        graph — labels come from indexed metadata, not a size-capped read."""
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES", "10")
+        server = make_server()
+        async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
+            result = await client.call_tool(_hashed("vault_graph_hubs"), {})
+            data = _parse_tool_data(result)
+        assert "nodes" in data
+        assert all(n["label"] for n in data["nodes"])
+
     async def test_hubs_does_not_read_hub_documents(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """vault_graph_hubs uses MostLinkedNote.folder, not per-hub vault.reader.read."""
+        """vault_graph_hubs uses MostLinkedNote.folder, not a per-hub metadata fetch."""
         from markdown_vault_mcp.facets.reader import ReaderFacet
 
-        original_read = ReaderFacet.read
-        read_paths: list[str] = []
+        original = ReaderFacet.get_metadata
+        fetched: list[str] = []
 
         def _spy(self: ReaderFacet, path: str) -> Any:
-            read_paths.append(path)
-            return original_read(self, path)
+            fetched.append(path)
+            return original(self, path)
 
-        monkeypatch.setattr(ReaderFacet, "read", _spy)
+        monkeypatch.setattr(ReaderFacet, "get_metadata", _spy)
         server = make_server()
         async with Client(server) as client:
             await wait_for_mcp_writer_drain(client)
@@ -314,31 +350,31 @@ class TestGraphDataTools:
             data = _parse_tool_data(result)
         hub_paths = {n["id"] for n in data["nodes"] if n["group"] == "hub"}
         assert hub_paths, "fixture should produce at least one hub"
-        assert not (hub_paths & set(read_paths)), (
-            f"hub documents should not be read directly; read={read_paths}"
+        assert not (hub_paths & set(fetched)), (
+            f"hub documents should not be fetched directly; fetched={fetched}"
         )
 
     async def test_hubs_reads_each_backlink_source_once(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """#285: the parallelized hub fetch still de-duplicates note reads — a
-        source backlinking several hubs is read at most once."""
+        """#285: the parallelized hub fetch still de-duplicates per-source metadata
+        lookups — a source backlinking several hubs is fetched at most once."""
         from markdown_vault_mcp.facets.reader import ReaderFacet
 
-        original_read = ReaderFacet.read
-        read_paths: list[str] = []
+        original = ReaderFacet.get_metadata
+        fetched: list[str] = []
 
         def _spy(self: ReaderFacet, path: str) -> Any:
-            read_paths.append(path)
-            return original_read(self, path)
+            fetched.append(path)
+            return original(self, path)
 
-        monkeypatch.setattr(ReaderFacet, "read", _spy)
+        monkeypatch.setattr(ReaderFacet, "get_metadata", _spy)
         server = make_server()
         async with Client(server) as client:
             await wait_for_mcp_writer_drain(client)
             await client.call_tool(_hashed("vault_graph_hubs"), {})
-        assert len(read_paths) == len(set(read_paths)), (
-            f"backlink sources should be read once each; reads={read_paths}"
+        assert len(fetched) == len(set(fetched)), (
+            f"backlink sources should be fetched once each; fetched={fetched}"
         )
 
     async def test_hubs_tolerates_backlinks_valueerror(
@@ -530,6 +566,33 @@ class TestIncludeSemanticEdges:
             assert "from" in edge
             assert "to" in edge
             assert edge["from"] != edge["to"]
+
+    async def test_semantic_tolerates_oversize_similar_node(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A similar note over MAX_NOTE_READ_BYTES must not crash semantic
+        expansion — its label comes from indexed metadata, not a capped read."""
+        from .conftest import MockEmbeddingProvider
+
+        monkeypatch.setenv(
+            "MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH", str(tmp_path / "embeddings")
+        )
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES", "10")
+        with patch(
+            "markdown_vault_mcp.providers.get_embedding_provider",
+            return_value=MockEmbeddingProvider(),
+        ):
+            server = make_server()
+            async with Client(server) as client:
+                await wait_for_mcp_writer_drain(client)
+                result = await client.call_tool(
+                    _hashed("vault_graph_neighborhood"),
+                    {"path": "simple.md", "include_semantic": True},
+                )
+        data = _parse_tool_data(result)
+        assert all(n["label"] for n in data["nodes"])
 
     async def test_semantic_edges_no_duplicate_pairs(
         self,

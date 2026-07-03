@@ -1523,7 +1523,7 @@ operations to them. No manager holds a back-reference to Vault.
 | Manager | Responsibility | Dependencies |
 |-|-|-|
 | ``LinkManager`` | Backlinks, outlinks, broken links, orphans, hubs, connection paths | ``FTSIndex``, ``source_dir`` |
-| ``SearchManager`` | Keyword/semantic/hybrid search, list, folders, tags, recent, similar, context, stats | ``FTSIndex``, ``source_dir``, embedding config, ``LinkManager`` |
+| ``SearchManager`` | Keyword/semantic/hybrid search, list, folders, tags, recent, similar, context, stats, get_metadata | ``FTSIndex``, ``source_dir``, embedding config, ``LinkManager`` |
 | ``IndexManager`` | build_index, reindex, build_embeddings, process_dirty_paths, flush_dirty_embeddings | ``FTSIndex``, ``ChangeTracker``, ``source_dir``, chunk strategy (no lock; driven by the single-owner :class:`~markdown_vault_mcp.indexing.IndexWriter`, #559) |
 | ``DocumentManager`` | read, write, edit, delete, rename, attachments, TOC | ``FTSIndex``, ``source_dir``, ``_file_write_lock`` (file-mutation atomicity only; see #559), ``mark_paths_dirty`` hook, callbacks |
 | ``GitQueryManager`` | Git history / diff reads (read-only, #610) | ``GitWriteStrategy`` (or ``None`` when not a git repo), ``source_dir`` |
@@ -1541,7 +1541,7 @@ root already owns:
 
 | Facet | Surface | Collaborators |
 |-|-|-|
-| ``ReaderFacet`` | search, read, list, folders, tags, toc, recent, similar, context, stats, history, diff, read_attachment | ``SearchManager``, ``DocumentManager``, ``GitQueryManager``, ``require_built`` |
+| ``ReaderFacet`` | search, read, get_metadata, list, folders, tags, toc, recent, similar, context, stats, history, diff, read_attachment | ``SearchManager``, ``DocumentManager``, ``GitQueryManager``, ``require_built`` |
 | ``WriterFacet`` | write, edit, delete, rename, write_attachment | ``DocumentManager`` |
 | ``GraphFacet`` | backlinks, outlinks, broken_links, orphans, most_linked, connection_path | ``LinkManager``, ``require_built`` |
 | ``IndexFacet`` | build/reindex/embeddings (sync + async), readiness, writer status, embeddings_status | ``IndexWriteCoordinator`` (public subset only), ``IndexManager`` (embeddings_status) |

@@ -26,6 +26,7 @@ from markdown_vault_mcp.managers._vector_loader import load_or_self_heal
 from markdown_vault_mcp.types import (
     AttachmentInfo,
     BacklinkInfo,
+    DocumentMeta,
     GroupedResult,
     NoteContext,
     NoteInfo,
@@ -426,19 +427,54 @@ class SearchManager:
         row = self._fts.get_note(path)
         if row is None:
             return {}
-        raw = row.get("frontmatter_json")
+        return self._parse_frontmatter_json(row.get("frontmatter_json"), path)
+
+    @staticmethod
+    def _parse_frontmatter_json(raw: Any, path: str) -> dict[str, Any]:
+        """Decode a ``frontmatter_json`` cell into a dict.
+
+        Returns ``{}`` when the cell is empty or does not parse.
+
+        Args:
+            raw: The ``frontmatter_json`` column value.
+            path: Document path, for the warning message only.
+
+        Returns:
+            Parsed frontmatter dict, or ``{}``.
+        """
         if not raw:
             return {}
         try:
             result: dict[str, Any] = json.loads(raw)
             return result
         except (json.JSONDecodeError, TypeError) as exc:
-            logger.warning(
-                "_get_frontmatter: invalid JSON for %s — %s",
-                row.get("path"),
-                exc,
-            )
+            logger.warning("invalid frontmatter JSON for %s — %s", path, exc)
             return {}
+
+    def get_metadata(self, path: str) -> DocumentMeta | None:
+        """Return lightweight metadata for *path* without reading the document.
+
+        Reads only the FTS ``documents`` row — no file I/O and no
+        ``max_note_read_bytes`` cap — so it is the right call for consumers that
+        need a title / folder / frontmatter (e.g. graph node labels) rather than
+        the document body.
+
+        Args:
+            path: Relative document path.
+
+        Returns:
+            A :class:`~markdown_vault_mcp.types.DocumentMeta`, or ``None`` if the
+            document is not indexed.
+        """
+        row = self._fts.get_note(path)
+        if row is None:
+            return None
+        return DocumentMeta(
+            path=row["path"],
+            title=row["title"],
+            folder=row["folder"],
+            frontmatter=self._parse_frontmatter_json(row.get("frontmatter_json"), path),
+        )
 
     def _row_matches_filters(self, path: str, filters: dict[str, str]) -> bool:
         """Return ``True`` if the document at *path* satisfies all *filters*.

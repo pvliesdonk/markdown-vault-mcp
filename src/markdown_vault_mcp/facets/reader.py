@@ -25,6 +25,7 @@ if TYPE_CHECKING:
         AttachmentContent,
         AttachmentInfo,
         CommitDiff,
+        DocumentMeta,
         GroupedResult,
         HistoryEntry,
         NoteContent,
@@ -124,6 +125,22 @@ class ReaderFacet:
             if the file does not exist.
         """
         return self._doc_mgr.read(path, section=section)
+
+    def get_metadata(self, path: str) -> DocumentMeta | None:
+        """Return indexed metadata (title/folder/frontmatter) without a read.
+
+        Unlike :meth:`read`, this hits only the index — no file I/O, no
+        ``max_note_read_bytes`` cap — so it is the right call for consumers that
+        need a label rather than the document body (e.g. graph node rendering).
+
+        Args:
+            path: Relative document path.
+
+        Returns:
+            A :class:`~markdown_vault_mcp.types.DocumentMeta`, or ``None`` if the
+            document is not indexed.
+        """
+        return self._search_mgr.get_metadata(path)
 
     def list_documents(
         self,

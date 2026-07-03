@@ -557,6 +557,10 @@ class TestAppToolData:
     async def test_browse_vault_with_path(self) -> None:
         server = make_server()
         async with Client(server) as client:
+            # The summary's title/frontmatter now come from the index (metadata,
+            # not a size-capped disk read), so wait for the build like the
+            # sibling data-level tests.
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool(
                 "browse_vault", {"path": "full_frontmatter.md", "view": "browse"}
             )
@@ -564,6 +568,22 @@ class TestAppToolData:
             assert data["path"] == "full_frontmatter.md"
             assert data["view"] == "browse"
             assert "Frontmatter:" in data["summary"]
+
+    async def test_browse_vault_with_path_oversize(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The path summary is index-sourced, so a note over MAX_NOTE_READ_BYTES
+        must not crash browse_vault (it did when the summary used read())."""
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES", "10")
+        server = make_server()
+        async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
+            result = await client.call_tool(
+                "browse_vault", {"path": "full_frontmatter.md", "view": "browse"}
+            )
+            data = _parse_tool_data(result)
+        assert data["path"] == "full_frontmatter.md"
+        assert "Note:" in data["summary"]
 
     async def test_browse_vault_no_path(self) -> None:
         server = make_server()

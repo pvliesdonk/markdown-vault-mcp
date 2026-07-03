@@ -280,12 +280,12 @@ def register_apps(mcp: FastMCP) -> None:
         summary_parts: list[str] = []
 
         if path:
-            note = await asyncio.to_thread(vault.reader.read, path)
-            if note:
-                summary_parts.append(f"Note: {note.title} ({path})")
-                summary_parts.append(f"Folder: {note.folder}")
-                if note.frontmatter:
-                    fm_keys = ", ".join(note.frontmatter.keys())
+            meta = await asyncio.to_thread(vault.reader.get_metadata, path)
+            if meta:
+                summary_parts.append(f"Note: {meta.title} ({path})")
+                summary_parts.append(f"Folder: {meta.folder}")
+                if meta.frontmatter:
+                    fm_keys = ", ".join(meta.frontmatter.keys())
                     summary_parts.append(f"Frontmatter: {fm_keys}")
             else:
                 summary_parts.append(f"Note not found: {path}")
@@ -468,12 +468,14 @@ def register_apps(mcp: FastMCP) -> None:
                 continue
             visited.add(current)
 
-            # Add node
-            note = await asyncio.to_thread(vault.reader.read, current)
+            # Add node — indexed metadata only (title/folder); reading the full
+            # document here would load it into memory and, for a note over
+            # MAX_NOTE_READ_BYTES, raise and fail the whole graph.
+            meta = await asyncio.to_thread(vault.reader.get_metadata, current)
             label = (
-                note.title if note else current.rsplit("/", 1)[-1].replace(".md", "")
+                meta.title if meta else current.rsplit("/", 1)[-1].replace(".md", "")
             )
-            folder = note.folder if note else ""
+            folder = meta.folder if meta else ""
 
             if d >= depth:
                 # Boundary nodes are reachable by definition — skip DB calls
@@ -570,13 +572,15 @@ def register_apps(mcp: FastMCP) -> None:
                         if len(nodes) >= max_nodes:
                             truncated = True
                             break
-                        sim_note = await asyncio.to_thread(vault.reader.read, sr.path)
+                        sim_meta = await asyncio.to_thread(
+                            vault.reader.get_metadata, sr.path
+                        )
                         sim_label = (
-                            sim_note.title
-                            if sim_note
+                            sim_meta.title
+                            if sim_meta
                             else sr.path.rsplit("/", 1)[-1].replace(".md", "")
                         )
-                        sim_folder = sim_note.folder if sim_note else ""
+                        sim_folder = sim_meta.folder if sim_meta else ""
                         nodes[sr.path] = {
                             "id": sr.path,
                             "label": sim_label,
@@ -660,10 +664,10 @@ def register_apps(mcp: FastMCP) -> None:
 
         backlinks_per_hub = await asyncio.gather(*(_backlinks(h.path) for h in hubs))
 
-        # Collect the non-hub source paths that need a note read, preserving
+        # Collect the non-hub source paths that need a label, preserving
         # first-seen order so labels/folders are assigned deterministically,
-        # then read them all concurrently (deduplicated — a source linking
-        # several hubs is read once).
+        # then fetch their metadata concurrently (deduplicated — a source linking
+        # several hubs is fetched once).
         to_read: list[str] = []
         seen_read: set[str] = set()
         for backlinks in backlinks_per_hub:
@@ -671,23 +675,23 @@ def register_apps(mcp: FastMCP) -> None:
                 if bl.source_path not in nodes and bl.source_path not in seen_read:
                     seen_read.add(bl.source_path)
                     to_read.append(bl.source_path)
-        read_results = await asyncio.gather(
-            *(asyncio.to_thread(vault.reader.read, p) for p in to_read)
+        meta_results = await asyncio.gather(
+            *(asyncio.to_thread(vault.reader.get_metadata, p) for p in to_read)
         )
-        notes_by_path = dict(zip(to_read, read_results, strict=True))
+        meta_by_path = dict(zip(to_read, meta_results, strict=True))
 
         # Build nodes + edges in the original (hub, backlink) order so the
         # output is identical to the sequential version.
         for hub, backlinks in zip(hubs, backlinks_per_hub, strict=True):
             for bl in backlinks:
                 if bl.source_path not in nodes:
-                    note = notes_by_path.get(bl.source_path)
+                    meta = meta_by_path.get(bl.source_path)
                     label = (
-                        note.title
-                        if note
+                        meta.title
+                        if meta
                         else bl.source_path.rsplit("/", 1)[-1].replace(".md", "")
                     )
-                    folder = note.folder if note else ""
+                    folder = meta.folder if meta else ""
                     nodes[bl.source_path] = {
                         "id": bl.source_path,
                         "label": label,

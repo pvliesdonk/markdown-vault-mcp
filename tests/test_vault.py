@@ -4016,9 +4016,7 @@ class TestLoggingAuditSilentPaths:
         ):
             result = col._search_mgr._get_frontmatter("note.md")
         assert result == {}
-        assert any(
-            "_get_frontmatter: invalid JSON" in rec.message for rec in caplog.records
-        )
+        assert any("invalid frontmatter JSON" in rec.message for rec in caplog.records)
 
 
 def test_vault_constructs_chunker_with_max_chunk_words(tmp_path):

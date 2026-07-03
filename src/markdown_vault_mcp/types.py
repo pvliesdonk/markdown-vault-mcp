@@ -96,6 +96,30 @@ class ParsedNote:
 
 
 @dataclass
+class DocumentMeta:
+    """Lightweight document metadata from the index, without loading content.
+
+    Returned by :meth:`~markdown_vault_mcp.facets.reader.ReaderFacet.get_metadata`.
+    Sourced from the FTS ``documents`` row, so callers that need only a title /
+    folder / frontmatter (e.g. graph node labels) avoid the full, size-capped
+    :meth:`~markdown_vault_mcp.facets.reader.ReaderFacet.read`. Like
+    :class:`NoteInfo` but without ``modified_at`` / ``kind`` — a pure label
+    source, not a directory-listing entry.
+
+    Attributes:
+        path: Relative document path.
+        title: Document title (frontmatter title, first H1, or filename).
+        folder: Parent folder path.
+        frontmatter: Parsed YAML frontmatter.
+    """
+
+    path: str
+    title: str
+    folder: str
+    frontmatter: dict[str, Any]
+
+
+@dataclass
 class SearchResult:
     """A search result from :meth:`~markdown_vault_mcp.facets.reader.ReaderFacet.search`.
 
