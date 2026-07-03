@@ -2175,7 +2175,8 @@
 <li><strong><code>app.callServerTool()</code></strong>: calls app-only tools to fetch data</li>
 <li><strong><code>app.sendMessage()</code></strong>: sends note content to the LLM conversation</li>
 <li><strong><code>app.updateModelContext()</code></strong>: keeps the LLM aware of which note the user is viewing</li>
-<li><strong><code>app.requestDisplayMode()</code></strong>: requests fullscreen or inline display</li>
+<li><strong><code>app.requestDisplayMode()</code></strong>: requests fullscreen or inline display (auto-expands to fullscreen on first load on desktop and web, but stays inline on mobile)</li>
+<li><strong>Adaptive sizing</strong>: honors the host's reported container dimensions and safe-area insets. It fills a fixed-height frame with internal scrolling, or, when the host reports a flexible or unbounded frame (as mobile inline hosts and sidebars typically do), grows to its content and reports its height so the host can size the view</li>
 <li><strong>Theme sync</strong>: automatically adapts to the host's light/dark theme and CSS variables</li>
 </ul>
 <h3 id="visual-identity-paper">Visual identity ("Paper")<a class="headerlink" href="#visual-identity-paper" title="Permanent link">&para;</a></h3>

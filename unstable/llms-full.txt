@@ -3722,7 +3722,8 @@ The app integrates with the host client via the ext-apps SDK:
 - **`app.callServerTool()`**: calls app-only tools to fetch data
 - **`app.sendMessage()`**: sends note content to the LLM conversation
 - **`app.updateModelContext()`**: keeps the LLM aware of which note the user is viewing
-- **`app.requestDisplayMode()`**: requests fullscreen or inline display
+- **`app.requestDisplayMode()`**: requests fullscreen or inline display (auto-expands to fullscreen on first load on desktop and web, but stays inline on mobile)
+- **Adaptive sizing**: honors the host's reported container dimensions and safe-area insets. It fills a fixed-height frame with internal scrolling, or, when the host reports a flexible or unbounded frame (as mobile inline hosts and sidebars typically do), grows to its content and reports its height so the host can size the view
 - **Theme sync**: automatically adapts to the host's light/dark theme and CSS variables
 
 ### Visual identity ("Paper")
@@ -6581,6 +6582,25 @@ Returns:
 | ---- | ------------- | ----------- |
 | `A`  | \`NoteContent | None\`      |
 |      | \`NoteContent | None\`      |
+
+### `get_metadata(path)`
+
+Return indexed metadata (title/folder/frontmatter) without a read.
+
+Unlike :meth:`read`, this hits only the index — no file I/O, no `max_note_read_bytes` cap — so it is the right call for consumers that need a label rather than the document body (e.g. graph node rendering).
+
+Parameters:
+
+| Name   | Type  | Description             | Default    |
+| ------ | ----- | ----------------------- | ---------- |
+| `path` | `str` | Relative document path. | *required* |
+
+Returns:
+
+| Name | Type           | Description |
+| ---- | -------------- | ----------- |
+| `A`  | \`DocumentMeta | None\`      |
+|      | \`DocumentMeta | None\`      |
 
 ### `list_documents(*, folder=None, pattern=None, include_attachments=False)`
 

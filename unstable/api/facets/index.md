@@ -90,6 +90,25 @@ Returns:
 | `A`  | \`NoteContent | None\`      |
 |      | \`NoteContent | None\`      |
 
+### `get_metadata(path)`
+
+Return indexed metadata (title/folder/frontmatter) without a read.
+
+Unlike :meth:`read`, this hits only the index — no file I/O, no `max_note_read_bytes` cap — so it is the right call for consumers that need a label rather than the document body (e.g. graph node rendering).
+
+Parameters:
+
+| Name   | Type  | Description             | Default    |
+| ------ | ----- | ----------------------- | ---------- |
+| `path` | `str` | Relative document path. | *required* |
+
+Returns:
+
+| Name | Type           | Description |
+| ---- | -------------- | ----------- |
+| `A`  | \`DocumentMeta | None\`      |
+|      | \`DocumentMeta | None\`      |
+
 ### `list_documents(*, folder=None, pattern=None, include_attachments=False)`
 
 List documents (and optionally attachments) in the vault.

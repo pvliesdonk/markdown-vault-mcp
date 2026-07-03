@@ -93,7 +93,8 @@ The app integrates with the host client via the ext-apps SDK:
 - **`app.callServerTool()`**: calls app-only tools to fetch data
 - **`app.sendMessage()`**: sends note content to the LLM conversation
 - **`app.updateModelContext()`**: keeps the LLM aware of which note the user is viewing
-- **`app.requestDisplayMode()`**: requests fullscreen or inline display
+- **`app.requestDisplayMode()`**: requests fullscreen or inline display (auto-expands to fullscreen on first load on desktop and web, but stays inline on mobile)
+- **Adaptive sizing**: honors the host's reported container dimensions and safe-area insets. It fills a fixed-height frame with internal scrolling, or, when the host reports a flexible or unbounded frame (as mobile inline hosts and sidebars typically do), grows to its content and reports its height so the host can size the view
 - **Theme sync**: automatically adapts to the host's light/dark theme and CSS variables
 
 ### Visual identity ("Paper")

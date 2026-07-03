@@ -1561,6 +1561,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.facets.reader.ReaderFacet.get_metadata" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_metadata
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#markdown_vault_mcp.facets.reader.ReaderFacet.list_documents" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2310,6 +2321,17 @@
     <span class="md-ellipsis">
       
         read
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.facets.reader.ReaderFacet.get_metadata" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_metadata
       
     </span>
   </a>
@@ -3342,6 +3364,91 @@ a <code>search</code> result unchanged for guaranteed match. <code>None</code>
             <td>
               <div class="doc-md-description">
                 <p>if the file does not exist.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="markdown_vault_mcp.facets.reader.ReaderFacet.get_metadata" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">get_metadata</span><span class="p">(</span><span class="n">path</span><span class="p">)</span></code>
+
+<a href="#markdown_vault_mcp.facets.reader.ReaderFacet.get_metadata" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Return indexed metadata (title/folder/frontmatter) without a read.</p>
+<p>Unlike :meth:<code>read</code>, this hits only the index — no file I/O, no
+<code>max_note_read_bytes</code> cap — so it is the right call for consumers that
+need a label rather than the document body (e.g. graph node rendering).</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>path</code>
+            </td>
+            <td>
+                  <code><span title="str">str</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Relative document path.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+<th>Name</th>          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+<td><code>A</code></td>            <td>
+                  <code><span title="markdown_vault_mcp.types.DocumentMeta">DocumentMeta</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>class:<code>~markdown_vault_mcp.types.DocumentMeta</code>, or <code>None</code> if the</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+<td></td>            <td>
+                  <code><span title="markdown_vault_mcp.types.DocumentMeta">DocumentMeta</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>document is not indexed.</p>
               </div>
             </td>
           </tr>
