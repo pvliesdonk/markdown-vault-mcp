@@ -82,9 +82,12 @@ class TestContextCardHTML:
 
     async def test_host_css_variables(self) -> None:
         html = await get_app_html()
-        assert "var(--color-text-info" in html
+        # Neutral chrome inherits the host's --color-* tokens (with Paper
+        # fallbacks). The accent is NOT among them: aliasing it to the semantic
+        # --color-text-info slot leaked the host's blue into links/tabs/buttons.
         assert "var(--color-border-primary" in html
         assert "var(--color-text-secondary" in html
+        assert "--color-text-info" not in html
 
     async def test_update_model_context_on_view(self) -> None:
         html = await get_app_html()
@@ -224,4 +227,7 @@ class TestNoHardcodedColors:
 
     async def test_accent_fg_color_is_variable(self) -> None:
         html = await get_app_html()
-        assert "var(--color-text-inverse" in html
+        # Accent-on-accent text is consumed via the Paper --accent-ink token
+        # (a literal), not a hardcoded colour or a host semantic slot.
+        assert "var(--accent-ink)" in html
+        assert "--color-text-inverse" not in html

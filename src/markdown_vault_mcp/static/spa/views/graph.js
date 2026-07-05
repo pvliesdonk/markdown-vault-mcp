@@ -35,7 +35,7 @@
     // Resolve each token to a concrete rgb() string via a probe element.
     // getComputedStyle(documentElement).getPropertyValue('--panel') can return
     // the literal "var(--color-background-primary)" when a Paper token is an
-    // indirection (styles.css maps --panel/--ink/--accent/... onto --color-*).
+    // indirection (styles.css maps --panel/--ink/... onto host --color-* tokens).
     // Modern Chromium resolves that, but older Chromium (Claude Desktop's
     // Electron) returns the unresolved string, which canvas fillStyle can't
     // parse -> vis-network paints black. Assigning `var(...)` to a real

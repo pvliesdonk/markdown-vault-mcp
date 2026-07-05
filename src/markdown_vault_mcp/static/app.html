@@ -128,33 +128,27 @@ if(__exports != exports)module.exports = exports;return module.exports}));
 </script>
 <style>
   :root {
-    /* Host theme vars — the fallback VALUES carry the Paper "light" identity,
-       so a host that pushes its own --color-* overrides Paper; otherwise Paper
-       shows. The Paper semantic tokens below map onto these. */
-    --color-background-primary: #fbf8f1;
-    --color-background-secondary: #f2ecdf;
-    --color-text-primary: #2a2620;
-    --color-text-secondary: #7a7161;
-    --color-text-inverse: #ffffff;
-    --color-text-info: #b25a35;
-    --color-text-success: #22c55e;
-    --color-text-danger: #b4472c;
-    --color-border-primary: #e4dbc9;
-    /* Paper semantic tokens (map onto host vars so the host can override) */
-    --panel: var(--color-background-primary);
-    --panel-2: var(--color-background-secondary);
-    --ink: var(--color-text-primary);
-    --muted: var(--color-text-secondary);
-    --border: var(--color-border-primary);
-    --accent: var(--color-text-info);
-    --accent-ink: var(--color-text-inverse);
-    /* Paper-only tokens (no host equivalent; flip under [data-theme="dark"]) */
-    --page: #eceae4;
-    --ink-2: #5c5446;
-    --border-2: #efe8d9;
-    --edge: #d3c7ad;
+    /* Neutrals: inherit the host's chrome, fall back to Paper "light". A host
+       that pushes its own --color-* wins; otherwise the Paper fallback shows. */
+    --panel:     var(--color-background-primary,   #fbf8f1);
+    --panel-2:   var(--color-background-secondary, #f2ecdf);
+    --ink:       var(--color-text-primary,         #2a2620);
+    --ink-2:     var(--color-text-secondary,       #5c5446);
+    --muted:     var(--color-text-tertiary,        #928975);
+    --border:    var(--color-border-primary,       #e4dbc9);
+    --border-2:  var(--color-border-secondary,     #efe8d9);
+    --edge:      var(--color-border-primary,       #d3c7ad);   /* graph link color */
+    /* Accent: ALWAYS Paper terracotta — never aliased to a host semantic slot,
+       or the host's blue "info" color leaks into links/tabs/buttons. By SDK
+       convention the host supplies the neutral/semantic ramp; the accent is the
+       app's own token (ext-apps ref theme: basic-server-*/global.css). */
+    --accent:      #b25a35;
+    --accent-ink:  #ffffff;
     --accent-soft: #f3e4d8;
-    --warn: #b4472c;
+    /* Semantic state: host danger with a Paper fallback (the "missing" badge). */
+    --warn: var(--color-text-danger, #b4472c);
+    /* Paper-only structural tokens (no host equivalent; some flip in dark). */
+    --page: #eceae4;
     --radius: 11px;
     --radius-sm: 7px;
     --pad: 15px;
@@ -164,21 +158,19 @@ if(__exports != exports)module.exports = exports;return module.exports}));
     --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace;
   }
   [data-theme="dark"] {
-    --color-background-primary: #252118;
-    --color-background-secondary: #2e281d;
-    --color-text-primary: #ece4d4;
-    --color-text-secondary: #978d78;
-    --color-text-inverse: #241a12;
-    --color-text-info: #d68a5f;
-    --color-text-success: #4ade80;
-    --color-text-danger: #e08163;
-    --color-border-primary: #39311f;
-    --page: #111112;
-    --ink-2: #bcb29c;
-    --border-2: #433a26;
-    --edge: #4c4230;
+    --panel:     var(--color-background-primary,   #252118);
+    --panel-2:   var(--color-background-secondary, #2e281d);
+    --ink:       var(--color-text-primary,         #ece4d4);
+    --ink-2:     var(--color-text-secondary,       #bcb29c);
+    --muted:     var(--color-text-tertiary,        #8f8571);
+    --border:    var(--color-border-primary,       #39311f);
+    --border-2:  var(--color-border-secondary,     #433a26);
+    --edge:      var(--color-border-primary,       #4c4230);
+    --accent:      #d68a5f;
+    --accent-ink:  #241a12;
     --accent-soft: #39291d;
-    --warn: #e08163;
+    --warn: var(--color-text-danger, #e08163);
+    --page: #111112;
     --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 18px 40px -20px rgba(0, 0, 0, .6);
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -305,17 +297,17 @@ if(__exports != exports)module.exports = exports;return module.exports}));
   .ghost-btn:hover { color: var(--ink); border-color: var(--muted); }
   .accent-btn { background: var(--accent); border: 1px solid var(--accent); color: var(--accent-ink); }
   .accent-btn:hover { opacity: 0.9; }
-  /* Legacy action buttons — still used by the graph toolbar; they pick up Paper
-     colors via the --color-* mapping until that view is restyled. */
+  /* Legacy action buttons — graph toolbar. Primary uses the Paper accent, the
+     secondary variant uses Paper neutrals. */
   .action-btn {
-    background: var(--color-text-info); color: var(--color-text-inverse); border: none; padding: 4px 10px;
+    background: var(--accent); color: var(--accent-ink); border: none; padding: 4px 10px;
     border-radius: var(--radius-sm); cursor: pointer; font-size: 12px; font-family: var(--font-body); white-space: nowrap;
   }
   .action-btn:hover { opacity: 0.85; }
   .action-btn--secondary {
-    background: var(--color-background-secondary);
-    color: var(--color-text-primary);
-    border: 1px solid var(--color-border-primary);
+    background: var(--panel-2);
+    color: var(--ink);
+    border: 1px solid var(--border);
   }
   .action-btn.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
   /* Context card */
@@ -563,7 +555,7 @@ if(__exports != exports)module.exports = exports;return module.exports}));
     font: 600 11px/1 var(--font-body); cursor: not-allowed; opacity: 0.7; margin-left: auto;
   }
 </style>
-<!-- vendor-spa-source-sha256:83085409fa2bf5c61dda3482773cc0fcabd5a0ca9df956d356443efe6634ca97 -->
+<!-- vendor-spa-source-sha256:e8555bd8d64375296df643dce5b238985c98f41fe756497a40cb17f2e7978b9b -->
 </head>
 <body>
 <div class="app-container">
@@ -1165,7 +1157,7 @@ app.onteardown = () => {
     // Resolve each token to a concrete rgb() string via a probe element.
     // getComputedStyle(documentElement).getPropertyValue('--panel') can return
     // the literal "var(--color-background-primary)" when a Paper token is an
-    // indirection (styles.css maps --panel/--ink/--accent/... onto --color-*).
+    // indirection (styles.css maps --panel/--ink/... onto host --color-* tokens).
     // Modern Chromium resolves that, but older Chromium (Claude Desktop's
     // Electron) returns the unresolved string, which canvas fillStyle can't
     // parse -> vis-network paints black. Assigning `var(...)` to a real
@@ -1980,7 +1972,7 @@ console.log('Vault Explorer connected');
   console.error('Vault Explorer error:', err);
   const container = document.querySelector('.app-container');
   const el = document.createElement('div');
-  el.style.cssText = 'padding:24px;text-align:center;color:var(--color-text-secondary);';
+  el.style.cssText = 'padding:24px;text-align:center;color:var(--ink-2);';
   const h = document.createElement('h2');
   h.textContent = 'Vault Explorer';
   const p1 = document.createElement('p');

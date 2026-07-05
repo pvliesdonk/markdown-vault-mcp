@@ -140,6 +140,75 @@ class TestSPAShellResource:
             assert "--color-background-primary" in html
             assert "--color-text-primary" in html
 
+    async def test_accent_is_paper_literal_not_host_semantic(self) -> None:
+        """The Paper accent ramp is terracotta literals in both themes, never
+        aliased to a host semantic slot (aliasing ``--accent`` to
+        ``--color-text-info`` leaked the host's blue into links/tabs/buttons)."""
+        server = make_server()
+        async with Client(server) as client:
+            resource = await client.read_resource("ui://vault/app.html")
+            html = (
+                resource[0].text if hasattr(resource[0], "text") else str(resource[0])
+            )
+            # Whole class purged — the semantic info/inverse slots must not appear
+            # anywhere (the accent alias and the graph .action-btn both used them).
+            assert "--color-text-info" not in html
+            assert "--color-text-inverse" not in html
+            # The whole accent ramp is Paper literals in both themes. Collapse
+            # whitespace so column alignment in the source isn't load-bearing.
+            norm = " ".join(html.split())
+            accent_literals = [
+                "--accent: #b25a35",  # light
+                "--accent-ink: #ffffff",
+                "--accent-soft: #f3e4d8",
+                "--accent: #d68a5f",  # dark
+                "--accent-ink: #241a12",
+                "--accent-soft: #39291d",
+            ]
+            for decl in accent_literals:
+                assert decl in norm, f"accent not a Paper literal: {decl}"
+            # The graph toolbar's primary button uses the Paper accent.
+            assert "background: var(--accent); color: var(--accent-ink)" in norm
+
+    async def test_neutrals_inherit_host_with_paper_fallback(self) -> None:
+        """Every neutral chrome token (and the ``--warn`` state) inherits its host
+        ``--color-*`` slot with a Paper fallback, in both the light (``:root``)
+        and dark (``[data-theme="dark"]``) blocks. Each is pinned with its
+        theme's fallback hex, so a revert of any token to a hardcoded literal in
+        either theme fails here."""
+        server = make_server()
+        async with Client(server) as client:
+            resource = await client.read_resource("ui://vault/app.html")
+            html = (
+                resource[0].text if hasattr(resource[0], "text") else str(resource[0])
+            )
+            # Collapse whitespace so column alignment in the source isn't load-bearing.
+            norm = " ".join(html.split())
+            host_inherited = [
+                # light (:root) block
+                "--panel: var(--color-background-primary, #fbf8f1)",
+                "--panel-2: var(--color-background-secondary, #f2ecdf)",
+                "--ink: var(--color-text-primary, #2a2620)",
+                "--ink-2: var(--color-text-secondary, #5c5446)",
+                "--muted: var(--color-text-tertiary, #928975)",
+                "--border: var(--color-border-primary, #e4dbc9)",
+                "--border-2: var(--color-border-secondary, #efe8d9)",
+                "--edge: var(--color-border-primary, #d3c7ad)",
+                "--warn: var(--color-text-danger, #b4472c)",
+                # dark ([data-theme="dark"]) block
+                "--panel: var(--color-background-primary, #252118)",
+                "--panel-2: var(--color-background-secondary, #2e281d)",
+                "--ink: var(--color-text-primary, #ece4d4)",
+                "--ink-2: var(--color-text-secondary, #bcb29c)",
+                "--muted: var(--color-text-tertiary, #8f8571)",
+                "--border: var(--color-border-primary, #39311f)",
+                "--border-2: var(--color-border-secondary, #433a26)",
+                "--edge: var(--color-border-primary, #4c4230)",
+                "--warn: var(--color-text-danger, #e08163)",
+            ]
+            for decl in host_inherited:
+                assert decl in norm, f"neutral not host-inherited: {decl}"
+
     async def test_html_handlers_before_connect(self) -> None:
         server = make_server()
         async with Client(server) as client:

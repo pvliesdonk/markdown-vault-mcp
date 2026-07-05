@@ -263,7 +263,7 @@ console.log('Vault Explorer connected');
   console.error('Vault Explorer error:', err);
   const container = document.querySelector('.app-container');
   const el = document.createElement('div');
-  el.style.cssText = 'padding:24px;text-align:center;color:var(--color-text-secondary);';
+  el.style.cssText = 'padding:24px;text-align:center;color:var(--ink-2);';
   const h = document.createElement('h2');
   h.textContent = 'Vault Explorer';
   const p1 = document.createElement('p');
