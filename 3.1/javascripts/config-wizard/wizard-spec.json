@@ -1,0 +1,906 @@
+{
+  "version": 1,
+  "meta": {
+    "projectName": "markdown-vault-mcp",
+    "dockerImage": "ghcr.io/pvliesdonk/markdown-vault-mcp:latest",
+    "envPrefix": "MARKDOWN_VAULT_MCP"
+  },
+  "secretKeys": [
+    "MARKDOWN_VAULT_MCP_GIT_TOKEN",
+    "OPENAI_API_KEY",
+    "MARKDOWN_VAULT_MCP_BEARER_TOKEN",
+    "MARKDOWN_VAULT_MCP_OIDC_CLIENT_SECRET",
+    "MARKDOWN_VAULT_MCP_GITHUB_WEBHOOK_SECRET",
+    "MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY"
+  ],
+  "questions": [
+    {
+      "id": "deployment",
+      "label": "Where will the server run?",
+      "help": "Local stdio for Claude Desktop/Code, or an HTTP server for Docker/systemd.",
+      "type": "select",
+      "options": [
+        {
+          "value": "local",
+          "label": "Local (Claude Desktop / Claude Code, stdio)",
+          "emit": {
+            "MARKDOWN_VAULT_MCP_TRANSPORT": "stdio"
+          }
+        },
+        {
+          "value": "server",
+          "label": "Server (HTTP — Docker / Compose / systemd)",
+          "emit": {
+            "MARKDOWN_VAULT_MCP_TRANSPORT": "http"
+          }
+        }
+      ]
+    },
+    {
+      "id": "host",
+      "label": "Bind host",
+      "help": "Interface the HTTP server binds to. Default 127.0.0.1.",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_HOST",
+      "showIf": {
+        "deployment": [
+          "server"
+        ]
+      },
+      "advancedGroup": "Server"
+    },
+    {
+      "id": "port",
+      "label": "Port",
+      "help": "TCP port for the HTTP server. Default 8000.",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_PORT",
+      "showIf": {
+        "deployment": [
+          "server"
+        ]
+      },
+      "advancedGroup": "Server"
+    },
+    {
+      "id": "source_dir",
+      "label": "Vault directory (host path)",
+      "help": "Absolute path to your markdown vault on the host.",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_SOURCE_DIR",
+      "dockerVolume": "/data/vault"
+    },
+    {
+      "id": "read_only",
+      "label": "Access mode",
+      "help": "Read-only is safest; read-write enables write/edit/delete and git commits.",
+      "type": "select",
+      "options": [
+        {
+          "value": "true",
+          "label": "Read-only",
+          "emit": {
+            "MARKDOWN_VAULT_MCP_READ_ONLY": "true"
+          }
+        },
+        {
+          "value": "false",
+          "label": "Read-write",
+          "emit": {
+            "MARKDOWN_VAULT_MCP_READ_ONLY": "false"
+          }
+        }
+      ]
+    },
+    {
+      "id": "embeddings",
+      "label": "Semantic search (embeddings)",
+      "help": "FTS-only needs no model. fastembed is local & zero-config. ollama/openai need a backend.",
+      "type": "select",
+      "options": [
+        {
+          "value": "none",
+          "label": "None (keyword/FTS only)"
+        },
+        {
+          "value": "fastembed",
+          "label": "fastembed (local, zero-config)",
+          "emit": {
+            "MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER": "fastembed"
+          }
+        },
+        {
+          "value": "ollama",
+          "label": "Ollama",
+          "emit": {
+            "MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER": "ollama"
+          }
+        },
+        {
+          "value": "openai",
+          "label": "OpenAI / compatible",
+          "emit": {
+            "MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER": "openai"
+          }
+        }
+      ]
+    },
+    {
+      "id": "embeddings_path",
+      "label": "Embeddings file path",
+      "help": "Required to persist semantic vectors. On Docker this is fixed to the state volume.",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH",
+      "showIf": {
+        "embeddings": [
+          "fastembed",
+          "ollama",
+          "openai"
+        ]
+      },
+      "dockerPath": "/data/state/embeddings/embeddings"
+    },
+    {
+      "id": "ollama_host",
+      "label": "Ollama host",
+      "help": "Ollama server URL (bare OLLAMA_HOST, not prefixed).",
+      "type": "text",
+      "var": "OLLAMA_HOST",
+      "showIf": {
+        "embeddings": [
+          "ollama"
+        ]
+      }
+    },
+    {
+      "id": "ollama_model",
+      "label": "Ollama embedding model",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_OLLAMA_MODEL",
+      "showIf": {
+        "embeddings": [
+          "ollama"
+        ]
+      }
+    },
+    {
+      "id": "ollama_cpu_only",
+      "label": "Force Ollama CPU-only",
+      "type": "bool",
+      "var": "MARKDOWN_VAULT_MCP_OLLAMA_CPU_ONLY",
+      "showIf": {
+        "embeddings": [
+          "ollama"
+        ]
+      },
+      "advancedGroup": "Embeddings"
+    },
+    {
+      "id": "openai_api_key",
+      "label": "OpenAI API key",
+      "help": "Browser-only; never sent anywhere and never put in the shareable link.",
+      "type": "text",
+      "var": "OPENAI_API_KEY",
+      "showIf": {
+        "embeddings": [
+          "openai"
+        ]
+      }
+    },
+    {
+      "id": "openai_base_url",
+      "label": "OpenAI-compatible base URL",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_OPENAI_BASE_URL",
+      "showIf": {
+        "embeddings": [
+          "openai"
+        ]
+      },
+      "advancedGroup": "Embeddings"
+    },
+    {
+      "id": "openai_model",
+      "label": "OpenAI embedding model",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_OPENAI_EMBEDDING_MODEL",
+      "showIf": {
+        "embeddings": [
+          "openai"
+        ]
+      },
+      "advancedGroup": "Embeddings"
+    },
+    {
+      "id": "fastembed_model",
+      "label": "FastEmbed model",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_FASTEMBED_MODEL",
+      "showIf": {
+        "embeddings": [
+          "fastembed"
+        ]
+      },
+      "advancedGroup": "Embeddings"
+    },
+    {
+      "id": "fastembed_cache_dir",
+      "label": "FastEmbed cache dir",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR",
+      "showIf": {
+        "embeddings": [
+          "fastembed"
+        ]
+      },
+      "advancedGroup": "Embeddings",
+      "dockerPath": "/data/state/fastembed"
+    },
+    {
+      "id": "git",
+      "label": "Git integration",
+      "help": "no-git: plain dir. commit-only: local commits. managed: server clones/pulls/pushes.",
+      "type": "select",
+      "options": [
+        {
+          "value": "none",
+          "label": "No git"
+        },
+        {
+          "value": "commit",
+          "label": "Commit-only (unmanaged)"
+        },
+        {
+          "value": "managed",
+          "label": "Managed (clone / pull / push)"
+        }
+      ]
+    },
+    {
+      "id": "git_repo_url",
+      "label": "Git repo URL (HTTPS)",
+      "help": "HTTPS only — token auth rejects SSH remotes.",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_GIT_REPO_URL",
+      "showIf": {
+        "git": [
+          "managed"
+        ]
+      }
+    },
+    {
+      "id": "git_token",
+      "label": "Git token",
+      "help": "Browser-only; never in the shareable link.",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_GIT_TOKEN",
+      "showIf": {
+        "git": [
+          "managed"
+        ]
+      }
+    },
+    {
+      "id": "git_username",
+      "label": "Git username",
+      "help": "x-access-token (GitHub), oauth2 (GitLab), account name (Bitbucket).",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_GIT_USERNAME",
+      "showIf": {
+        "git": [
+          "managed"
+        ]
+      },
+      "advancedGroup": "Git"
+    },
+    {
+      "id": "git_commit_name",
+      "label": "Commit author name",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_GIT_COMMIT_NAME",
+      "showIf": {
+        "git": [
+          "commit",
+          "managed"
+        ]
+      }
+    },
+    {
+      "id": "git_commit_email",
+      "label": "Commit author email",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_GIT_COMMIT_EMAIL",
+      "showIf": {
+        "git": [
+          "commit",
+          "managed"
+        ]
+      }
+    },
+    {
+      "id": "git_commit_name_claim",
+      "label": "Commit name OIDC claim",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_GIT_COMMIT_NAME_CLAIM",
+      "showIf": {
+        "git": [
+          "managed"
+        ]
+      },
+      "advancedGroup": "Git"
+    },
+    {
+      "id": "git_commit_email_claim",
+      "label": "Commit email OIDC claim",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_GIT_COMMIT_EMAIL_CLAIM",
+      "showIf": {
+        "git": [
+          "managed"
+        ]
+      },
+      "advancedGroup": "Git"
+    },
+    {
+      "id": "git_pull_interval_s",
+      "label": "Pull interval (s)",
+      "type": "number",
+      "var": "MARKDOWN_VAULT_MCP_GIT_PULL_INTERVAL_S",
+      "showIf": {
+        "git": [
+          "managed"
+        ]
+      },
+      "advancedGroup": "Git"
+    },
+    {
+      "id": "git_push_delay_s",
+      "label": "Push delay (s)",
+      "type": "number",
+      "var": "MARKDOWN_VAULT_MCP_GIT_PUSH_DELAY_S",
+      "showIf": {
+        "git": [
+          "managed"
+        ]
+      },
+      "advancedGroup": "Git"
+    },
+    {
+      "id": "git_lfs",
+      "label": "Run git-lfs pull on startup",
+      "type": "bool",
+      "var": "MARKDOWN_VAULT_MCP_GIT_LFS",
+      "showIf": {
+        "git": [
+          "commit",
+          "managed"
+        ]
+      },
+      "advancedGroup": "Git"
+    },
+    {
+      "id": "github_webhook_secret",
+      "label": "GitHub webhook secret",
+      "help": "Enables POST /github-webhook for push-triggered pull. Browser-only.",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_GITHUB_WEBHOOK_SECRET",
+      "showIf": {
+        "deployment": [
+          "server"
+        ],
+        "git": [
+          "managed"
+        ]
+      },
+      "advancedGroup": "Git"
+    },
+    {
+      "id": "base_url",
+      "label": "Public base URL",
+      "help": "e.g. https://mcp.example.com — required for OIDC, transfer links, MCP Apps.",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_BASE_URL",
+      "showIf": {
+        "deployment": [
+          "server"
+        ]
+      }
+    },
+    {
+      "id": "http_path",
+      "label": "HTTP endpoint path",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_HTTP_PATH",
+      "showIf": {
+        "deployment": [
+          "server"
+        ]
+      },
+      "advancedGroup": "Server"
+    },
+    {
+      "id": "auth",
+      "label": "Authentication",
+      "type": "select",
+      "showIf": {
+        "deployment": [
+          "server"
+        ]
+      },
+      "options": [
+        {
+          "value": "none",
+          "label": "None"
+        },
+        {
+          "value": "bearer",
+          "label": "Bearer token"
+        },
+        {
+          "value": "oidc",
+          "label": "OIDC"
+        },
+        {
+          "value": "both",
+          "label": "Bearer + OIDC"
+        }
+      ]
+    },
+    {
+      "id": "bearer_token",
+      "label": "Bearer token",
+      "help": "Any non-empty string enables bearer auth. Browser-only.",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_BEARER_TOKEN",
+      "showIf": {
+        "deployment": [
+          "server"
+        ],
+        "auth": [
+          "bearer",
+          "both"
+        ]
+      }
+    },
+    {
+      "id": "bearer_tokens_file",
+      "label": "Bearer tokens file (TOML)",
+      "help": "Path to a TOML file of per-token subjects; overrides the single BEARER_TOKEN.",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_BEARER_TOKENS_FILE",
+      "showIf": {
+        "deployment": [
+          "server"
+        ],
+        "auth": [
+          "bearer",
+          "both"
+        ]
+      },
+      "advancedGroup": "Auth"
+    },
+    {
+      "id": "bearer_default_subject",
+      "label": "Bearer default subject",
+      "help": "Subject assigned to the single bearer token. Default bearer-anon.",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_BEARER_DEFAULT_SUBJECT",
+      "showIf": {
+        "deployment": [
+          "server"
+        ],
+        "auth": [
+          "bearer",
+          "both"
+        ]
+      },
+      "advancedGroup": "Auth"
+    },
+    {
+      "id": "oidc_config_url",
+      "label": "OIDC discovery URL",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL",
+      "showIf": {
+        "deployment": [
+          "server"
+        ],
+        "auth": [
+          "oidc",
+          "both"
+        ]
+      }
+    },
+    {
+      "id": "oidc_client_id",
+      "label": "OIDC client ID",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_OIDC_CLIENT_ID",
+      "showIf": {
+        "deployment": [
+          "server"
+        ],
+        "auth": [
+          "oidc",
+          "both"
+        ]
+      }
+    },
+    {
+      "id": "oidc_client_secret",
+      "label": "OIDC client secret",
+      "help": "Browser-only; never in the shareable link.",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_OIDC_CLIENT_SECRET",
+      "showIf": {
+        "deployment": [
+          "server"
+        ],
+        "auth": [
+          "oidc",
+          "both"
+        ]
+      }
+    },
+    {
+      "id": "oidc_jwt_signing_key",
+      "label": "OIDC JWT signing key",
+      "help": "Required on Linux/Docker — default is ephemeral. Generate: openssl rand -hex 32.",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY",
+      "showIf": {
+        "deployment": [
+          "server"
+        ],
+        "auth": [
+          "oidc",
+          "both"
+        ]
+      }
+    },
+    {
+      "id": "oidc_audience",
+      "label": "OIDC audience",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_OIDC_AUDIENCE",
+      "showIf": {
+        "deployment": [
+          "server"
+        ],
+        "auth": [
+          "oidc",
+          "both"
+        ]
+      },
+      "advancedGroup": "Auth"
+    },
+    {
+      "id": "oidc_required_scopes",
+      "label": "OIDC required scopes (CSV)",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_OIDC_REQUIRED_SCOPES",
+      "showIf": {
+        "deployment": [
+          "server"
+        ],
+        "auth": [
+          "oidc",
+          "both"
+        ]
+      },
+      "advancedGroup": "Auth"
+    },
+    {
+      "id": "oidc_verify_access_token",
+      "label": "Verify access token (not id token)",
+      "type": "bool",
+      "var": "MARKDOWN_VAULT_MCP_OIDC_VERIFY_ACCESS_TOKEN",
+      "showIf": {
+        "deployment": [
+          "server"
+        ],
+        "auth": [
+          "oidc",
+          "both"
+        ]
+      },
+      "advancedGroup": "Auth"
+    },
+    {
+      "id": "index_path",
+      "label": "FTS index path",
+      "help": "Set for persistence across restarts. Fixed on Docker to the state volume.",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_INDEX_PATH",
+      "advancedGroup": "Persistence",
+      "dockerPath": "/data/state/index.db"
+    },
+    {
+      "id": "state_path",
+      "label": "Change-tracking state path",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_STATE_PATH",
+      "advancedGroup": "Persistence",
+      "dockerPath": "/data/state/state.json"
+    },
+    {
+      "id": "kv_store_url",
+      "label": "KV store URL (HTTP session persistence)",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_KV_STORE_URL",
+      "showIf": {
+        "deployment": [
+          "server"
+        ]
+      },
+      "advancedGroup": "Persistence"
+    },
+    {
+      "id": "event_store_url",
+      "label": "Event store URL (HTTP resumability)",
+      "help": "Alternative event-store URL for HTTP resumability; prefer KV_STORE_URL for new deployments.",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_EVENT_STORE_URL",
+      "showIf": {
+        "deployment": [
+          "server"
+        ]
+      },
+      "advancedGroup": "Persistence"
+    },
+    {
+      "id": "app_domain",
+      "label": "MCP Apps domain",
+      "help": "Public domain that serves MCP Apps UI resources.",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_APP_DOMAIN",
+      "showIf": {
+        "deployment": [
+          "server"
+        ]
+      },
+      "advancedGroup": "MCP Apps"
+    },
+    {
+      "id": "indexed_fields",
+      "label": "Indexed frontmatter fields (CSV)",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_INDEXED_FIELDS",
+      "advancedGroup": "Frontmatter"
+    },
+    {
+      "id": "required_fields",
+      "label": "Required frontmatter fields (CSV)",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_REQUIRED_FIELDS",
+      "advancedGroup": "Frontmatter"
+    },
+    {
+      "id": "exclude",
+      "label": "Exclude globs (CSV)",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_EXCLUDE",
+      "advancedGroup": "Frontmatter"
+    },
+    {
+      "id": "templates_folder",
+      "label": "Templates folder",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER",
+      "advancedGroup": "Frontmatter"
+    },
+    {
+      "id": "prompts_folder",
+      "label": "Prompts folder",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_PROMPTS_FOLDER",
+      "advancedGroup": "Frontmatter"
+    },
+    {
+      "id": "build_timeout_s",
+      "label": "Index build timeout (s)",
+      "type": "number",
+      "var": "MARKDOWN_VAULT_MCP_BUILD_TIMEOUT_S",
+      "advancedGroup": "Timeouts"
+    },
+    {
+      "id": "drain_timeout_s",
+      "label": "Index drain timeout (s)",
+      "type": "number",
+      "var": "MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S",
+      "advancedGroup": "Timeouts"
+    },
+    {
+      "id": "chunks_per_file",
+      "label": "Chunks per file",
+      "type": "number",
+      "var": "MARKDOWN_VAULT_MCP_CHUNKS_PER_FILE",
+      "advancedGroup": "Search & chunking"
+    },
+    {
+      "id": "snippet_words",
+      "label": "Snippet word budget",
+      "type": "number",
+      "var": "MARKDOWN_VAULT_MCP_SNIPPET_WORDS",
+      "advancedGroup": "Search & chunking"
+    },
+    {
+      "id": "length_downweight_alpha",
+      "label": "Length downweight alpha",
+      "type": "number",
+      "var": "MARKDOWN_VAULT_MCP_LENGTH_DOWNWEIGHT_ALPHA",
+      "advancedGroup": "Search & chunking"
+    },
+    {
+      "id": "max_chunk_words",
+      "label": "Max chunk words",
+      "type": "number",
+      "var": "MARKDOWN_VAULT_MCP_MAX_CHUNK_WORDS",
+      "advancedGroup": "Search & chunking"
+    },
+    {
+      "id": "max_chunk_chars",
+      "label": "Max chunk chars",
+      "type": "number",
+      "var": "MARKDOWN_VAULT_MCP_MAX_CHUNK_CHARS",
+      "help": "Character cap per chunk. Leave unset for the safe default (the smaller of 1500 and the model's context length x 2.8). Enter a positive number to force an exact cap. Enter -1 to scale with the model's full context with no ceiling (or 1500 when the model context is unknown) - this can exhaust memory and crash the host on the fastembed/ONNX path with a long-context model.",
+      "advancedGroup": "Search & chunking"
+    },
+    {
+      "id": "chunk_overlap_words",
+      "label": "Chunk overlap (words)",
+      "type": "number",
+      "var": "MARKDOWN_VAULT_MCP_CHUNK_OVERLAP_WORDS",
+      "help": "Words of overlap prepended to adjacent fragments of an oversize section (default 40; 0 disables). Improves retrieval recall at arbitrary split points; applies to new and re-indexed notes, so run reindex to apply it to an existing vault.",
+      "advancedGroup": "Search & chunking"
+    },
+    {
+      "id": "attachment_extensions",
+      "label": "Attachment extensions (CSV)",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS",
+      "advancedGroup": "Attachments"
+    },
+    {
+      "id": "max_attachment_size_mb",
+      "label": "Max attachment size (MB)",
+      "type": "number",
+      "var": "MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB",
+      "advancedGroup": "Attachments"
+    },
+    {
+      "id": "max_note_read_bytes",
+      "label": "Max note read bytes",
+      "type": "number",
+      "var": "MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES",
+      "advancedGroup": "Attachments"
+    },
+    {
+      "id": "file_watcher",
+      "label": "File watcher",
+      "type": "bool",
+      "var": "MARKDOWN_VAULT_MCP_FILE_WATCHER",
+      "advancedGroup": "File watcher"
+    },
+    {
+      "id": "file_watcher_debounce_s",
+      "label": "File watcher debounce (s)",
+      "type": "number",
+      "var": "MARKDOWN_VAULT_MCP_FILE_WATCHER_DEBOUNCE_S",
+      "advancedGroup": "File watcher"
+    },
+    {
+      "id": "file_watcher_root_floor",
+      "label": "Watch the source directory root",
+      "help": "Keep the non-recursive watch on the vault root so root-level file changes trigger a reindex. Disable on macOS if the recursive FSEvents stream over the home tree triggers repeated 'access data from other apps' prompts; root-level files are then only picked up by scans.",
+      "type": "bool",
+      "var": "MARKDOWN_VAULT_MCP_FILE_WATCHER_ROOT_FLOOR",
+      "advancedGroup": "File watcher"
+    },
+    {
+      "id": "transfer_ttl_default_s",
+      "label": "Transfer TTL default (s)",
+      "type": "number",
+      "var": "MARKDOWN_VAULT_MCP_TRANSFER_TTL_DEFAULT_S",
+      "showIf": {
+        "deployment": [
+          "server"
+        ]
+      },
+      "advancedGroup": "Transfer links"
+    },
+    {
+      "id": "transfer_ttl_max_s",
+      "label": "Transfer TTL max (s)",
+      "type": "number",
+      "var": "MARKDOWN_VAULT_MCP_TRANSFER_TTL_MAX_S",
+      "showIf": {
+        "deployment": [
+          "server"
+        ]
+      },
+      "advancedGroup": "Transfer links"
+    },
+    {
+      "id": "transfer_max_upload_bytes",
+      "label": "Transfer max upload bytes",
+      "type": "number",
+      "var": "MARKDOWN_VAULT_MCP_TRANSFER_MAX_UPLOAD_BYTES",
+      "showIf": {
+        "deployment": [
+          "server"
+        ]
+      },
+      "advancedGroup": "Transfer links"
+    },
+    {
+      "id": "server_name",
+      "label": "Server name",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_SERVER_NAME",
+      "advancedGroup": "Server identity"
+    },
+    {
+      "id": "instructions",
+      "label": "Server instructions",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_INSTRUCTIONS",
+      "advancedGroup": "Server identity"
+    },
+    {
+      "id": "disable_apps_ui",
+      "label": "Hide MCP-Apps UI tools",
+      "help": "Hide browse_vault and show_context from the tool listing for clients that don't render MCP Apps panels.",
+      "type": "bool",
+      "var": "MARKDOWN_VAULT_MCP_DISABLE_APPS_UI",
+      "advancedGroup": "Server identity"
+    },
+    {
+      "id": "log_level",
+      "label": "Log level",
+      "type": "text",
+      "var": "FASTMCP_LOG_LEVEL",
+      "advancedGroup": "Logging"
+    },
+    {
+      "id": "rich_logging",
+      "label": "Rich logging",
+      "type": "bool",
+      "var": "FASTMCP_ENABLE_RICH_LOGGING",
+      "advancedGroup": "Logging"
+    }
+  ],
+  "guards": [
+    {
+      "when": {
+        "git": [
+          "managed"
+        ]
+      },
+      "level": "warning",
+      "message": "Token auth requires an HTTPS repo URL — SSH remotes are rejected."
+    },
+    {
+      "when": {
+        "deployment": [
+          "server"
+        ],
+        "auth": [
+          "oidc",
+          "both"
+        ]
+      },
+      "level": "warning",
+      "message": "OIDC needs BASE_URL set and (on Linux/Docker) OIDC_JWT_SIGNING_KEY — the default key is ephemeral and invalidates tokens on restart."
+    },
+    {
+      "when": {
+        "git": [
+          "managed"
+        ]
+      },
+      "level": "info",
+      "message": "When the git pull loop is active the file watcher is automatically disabled."
+    }
+  ]
+}

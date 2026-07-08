@@ -1,0 +1,205 @@
+# MCP Resources
+
+MCP resources expose vault metadata that clients can read directly without invoking tools. Most resources return `application/json`; `ui://vault/app.html` is an exception that returns a self-contained HTML SPA for MCP Apps clients.
+
+Index freshness (`_meta.index_stale`)
+
+The index-querying resources (`config://vault`, `stats://vault`, `tags://vault`, `tags://vault/{field}`, `folders://vault`, `toc://vault/{path}`, `similar://vault/{path}`, and `recent://vault`) keep their bare JSON contents unchanged and report index freshness out-of-band in the resource read's **`_meta.index_stale`** field (read it via `read_resource_mcp(uri).meta`). It is `true` when a write landed during the read or the IndexWriter was non-idle at response time. Resources carry no `wait_for_pending_writes` parameter (they signal only); use the equivalent MCP tool with `wait_for_pending_writes=true` when you need to block for a fresh read.
+
+## Quick Reference
+
+| URI                                           | Description                                    |
+| --------------------------------------------- | ---------------------------------------------- |
+| [`config://vault`](#configvault)              | Current vault configuration                    |
+| [`stats://vault`](#statsvault)                | Vault statistics                               |
+| [`tags://vault`](#tagsvault)                  | All tags grouped by indexed field              |
+| [`tags://vault/{field}`](#tagsvaultfield)     | Tags for a specific field                      |
+| [`folders://vault`](#foldersvault)            | All folder paths                               |
+| [`toc://vault/{path}`](#tocvaultpath)         | Table of contents for a note or folder subtree |
+| [`similar://vault/{path}`](#similarvaultpath) | Semantically similar notes for a document      |
+| [`recent://vault`](#recentvault)              | Most recently modified notes                   |
+| [`ui://vault/app.html`](#uivaultapphtml)      | Interactive vault explorer SPA (MCP Apps)      |
+
+______________________________________________________________________
+
+## `config://vault`
+
+Current vault configuration and runtime state.
+
+**Response:**
+
+```
+{
+  "source_dir": "/data/vault",
+  "read_only": true,
+  "indexed_fields": ["tags", "cluster"],
+  "required_fields": [],
+  "exclude_patterns": [".obsidian/**", ".trash/**"],
+  "semantic_search_available": true,
+  "attachment_extensions": ["pdf", "png", "jpg"]
+}
+```
+
+## `stats://vault`
+
+Vault statistics including document count, chunk count, and index capabilities.
+
+**Response:**
+
+```
+{
+  "document_count": 42,
+  "chunk_count": 156,
+  "folder_count": 5,
+  "semantic_search_available": true,
+  "indexed_frontmatter_fields": ["tags", "cluster"],
+  "attachment_extensions": ["pdf", "png", "jpg"]
+}
+```
+
+## `tags://vault`
+
+All frontmatter tag values grouped by indexed field.
+
+**Response:**
+
+```
+{
+  "tags": ["craft", "pacing", "worldbuilding"],
+  "cluster": ["fiction", "non-fiction"]
+}
+```
+
+## `tags://vault/{field}`
+
+Tag values for a specific indexed frontmatter field. This is a URI template: replace `{field}` with the field name.
+
+**Example:** `tags://vault/tags`
+
+**Response:**
+
+```
+["craft", "pacing", "worldbuilding"]
+```
+
+## `folders://vault`
+
+All folder paths in the vault.
+
+**Response:**
+
+```
+["", "Journal", "Projects", "Research"]
+```
+
+The empty string `""` represents the root folder (top-level documents).
+
+## `toc://vault/{path}`
+
+Table of contents (heading outline) for a note or a folder subtree. This is a URI template: replace `{path}` with a document path (ending in `.md`) or a folder path.
+
+Cold-start blocking
+
+Calls during a cold-start background FTS build block via the tool-layer `needs_queryable` decorator and may surface `IndexUnavailableError(reason="build_failed")` if a scheduled background build ran and failed (the captured error message is available via `get_index_status`'s `error` field), or `IndexUnavailableError(reason="timeout")` if the decorator's bounded wait elapsed first. The decorator also remaps a SQLite `OperationalError` from the resource handler to `IndexUnavailableError(reason="broken")` (corruption / I/O failure / unknown codes) or `reason="busy"` (SQLITE_BUSY/LOCKED, lock contention); inspect the exception's `__cause__` for the underlying SQLite error. Poll `get_index_status` to observe build state without blocking.
+
+**Note path** (ending in `.md`): returns a flat ordered list of `{heading, level}` entries. The title is added as a synthetic H1 and deduplicated if the first real heading matches it.
+
+**Example:** `toc://vault/Journal/note.md`
+
+**Response:**
+
+```
+[
+  {"level": 1, "heading": "My Note"},
+  {"level": 2, "heading": "Introduction"},
+  {"level": 2, "heading": "Main Points"},
+  {"level": 3, "heading": "First Point"},
+  {"level": 2, "heading": "Conclusion"}
+]
+```
+
+**Folder path**: returns a nested-per-note object aggregating the subtree (capped at 200 notes by default). Use the `get_toc` tool for the same data with `max_level` / `max_notes` controls.
+
+**Example:** `toc://vault/Journal`
+
+**Response:**
+
+```
+{
+  "path": "Journal",
+  "notes": [
+    {
+      "path": "Journal/note.md",
+      "title": "My Note",
+      "headings": [
+        {"level": 1, "heading": "My Note"},
+        {"level": 2, "heading": "Introduction"}
+      ]
+    }
+  ],
+  "truncated": false
+}
+```
+
+## `similar://vault/{path}`
+
+Top 10 semantically similar notes for a document. Requires embeddings to be built. This is a URI template: replace `{path}` with the document's relative path.
+
+Cold-start blocking
+
+Calls during a cold-start background FTS build block via the tool-layer `needs_queryable` decorator and may surface `IndexUnavailableError(reason="build_failed")` if a scheduled background build ran and failed (the captured error message is available via `get_index_status`'s `error` field), or `IndexUnavailableError(reason="timeout")` if the decorator's bounded wait elapsed first. The decorator also remaps a SQLite `OperationalError` from the resource handler to `IndexUnavailableError(reason="broken")` (corruption / I/O failure / unknown codes) or `reason="busy"` (SQLITE_BUSY/LOCKED, lock contention); inspect the exception's `__cause__` for the underlying SQLite error. Poll `get_index_status` to observe build state without blocking.
+
+Results are **grouped per file**: each file appears at most once, with up to `chunks_per_file` (server default `2`) best-matching sections in a `sections` array. Each entry is a `GroupedResult` dict with `path`, `title`, `folder`, `score` (max section score), `search_type` (`"semantic"`), `frontmatter`, and `sections` (a list of `{heading, content, score}` dicts sorted by score then document order).
+
+Index freshness via `_meta.index_stale`
+
+This resource returns a flat JSON array as its contents, and reports index freshness out-of-band in the read's `_meta.index_stale` field (the same mechanism the `get_similar` MCP tool uses; see #534, #645). Resources carry no `wait_for_pending_writes` parameter (a resource URI template binds only address path segments, not ad-hoc control parameters), so they signal only: read `_meta.index_stale` and re-read or fall back to the `get_similar` tool with `wait_for_pending_writes=true` if you need a fresh-read guarantee.
+
+**Example:** `similar://vault/Journal/note.md`
+
+**Response:**
+
+```
+[
+  {
+    "path": "Journal/related-note.md",
+    "title": "Related Note",
+    "folder": "Journal",
+    "score": 0.87,
+    "search_type": "semantic",
+    "frontmatter": {},
+    "sections": [
+      {"heading": "Overview", "content": "...", "score": 0.87},
+      {"heading": "Details", "content": "...", "score": 0.81}
+    ]
+  },
+  {
+    "path": "Research/topic.md",
+    "title": "Topic Overview",
+    "folder": "Research",
+    "score": 0.82,
+    "search_type": "semantic",
+    "frontmatter": {},
+    "sections": [
+      {"heading": null, "content": "...", "score": 0.82}
+    ]
+  }
+]
+```
+
+## `recent://vault`
+
+The 20 most recently modified notes. Each entry is a full `NoteInfo` object with an added `modified_at_iso` field. The original `modified_at` is preserved as a Unix timestamp float.
+
+**Response:**
+
+```
+[
+  {"path": "Journal/2024-01-15.md", "title": "Daily Note", "folder": "Journal", "frontmatter": {}, "kind": "note", "modified_at": 1705314600.0, "modified_at_iso": "2024-01-15T10:30:00+00:00"},
+  {"path": "Projects/roadmap.md", "title": "Roadmap", "folder": "Projects", "frontmatter": {}, "kind": "note", "modified_at": 1705250700.0, "modified_at_iso": "2024-01-14T16:45:00+00:00"}
+]
+```
+
+## `ui://vault/app.html`
+
+Interactive vault explorer delivered as a single self-contained HTML resource. This is an [MCP Apps](https://modelcontextprotocol.io/specification/2025-06-18/server/apps) resource; clients that support the MCP Apps protocol render it as an interactive iframe. See the [MCP Apps guide](https://pvliesdonk.github.io/markdown-vault-mcp/3.1/guides/mcp-apps/index.md) for details on the four views (Context Card, Graph Explorer, Vault Browser, Note Preview).

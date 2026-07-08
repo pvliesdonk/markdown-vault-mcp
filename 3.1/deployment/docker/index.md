@@ -1,0 +1,285 @@
+# Docker Deployment
+
+## Quick Start
+
+```
+# Pull the image
+docker pull ghcr.io/pvliesdonk/markdown-vault-mcp:latest
+
+# Copy an example env file
+cp examples/obsidian-readonly.env .env
+
+# Edit .env (set MARKDOWN_VAULT_MCP_SOURCE_DIR to the vault path on the host)
+# Then start the service
+docker compose up -d
+
+# Check it's running
+curl http://localhost:8000/health
+```
+
+## Docker Compose Configuration
+
+The `compose.yml` defines a single service:
+
+```
+services:
+  markdown-vault-mcp:
+    image: ghcr.io/pvliesdonk/markdown-vault-mcp:latest
+    build: .
+    env_file: .env
+    volumes:
+      - ${MARKDOWN_VAULT_MCP_SOURCE_DIR:?Set MARKDOWN_VAULT_MCP_SOURCE_DIR}:/data/vault
+      - state-data:/data/state
+    environment:
+      MARKDOWN_VAULT_MCP_SOURCE_DIR: /data/vault
+      MARKDOWN_VAULT_MCP_INDEX_PATH: /data/state/index.db
+      MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH: /data/state/embeddings/embeddings
+      MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR: /data/state/fastembed
+      FASTMCP_HOME: /data/state/fastmcp
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.markdown-vault-mcp.rule=Host(`${MARKDOWN_VAULT_MCP_HOST:-markdown-vault-mcp.local}`)"
+      - "traefik.http.services.markdown-vault-mcp.loadbalancer.server.port=8000"
+
+volumes:
+  state-data:
+```
+
+### Volume Mounts
+
+| Container Path | Type                       | Purpose                                                                                                                                    |
+| -------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `/data/vault`  | Bind mount or named volume | Your Markdown vault; pre-created in the image for managed repo mode                                                                        |
+| `/data/state`  | Named volume               | All server-managed internal state (SQLite FTS index, embedding vectors, FastEmbed model cache, OIDC proxy state, HTTP session event store) |
+
+All `/data/*` directories are pre-created and owned by the runtime user in the image. For managed repo mode (where the server clones a git repo on first start), `/data/vault` must be writable (this works automatically with named volumes or when UID/GID match the bind-mount owner). The first startup triggers a full index build; subsequent starts only reindex changed files.
+
+Upgrading from v1.8.x
+
+Versions before v1.9.0 used three separate state volumes (`index-data`, `embeddings-data`, `fastembed-data`). These have been consolidated into a single `state-data` volume mounted at `/data/state`. Existing state is **not automatically migrated**: the index and embeddings will be rebuilt on first startup (the index rebuild is incremental; the embeddings rebuild may take several minutes for large vaults). The FastEmbed model cache will be re-downloaded (~100 MB). To avoid the rebuild, copy data from the old volumes into `state-data` before starting the new container.
+
+## Traefik Reverse Proxy
+
+The `compose.yml` includes Traefik labels out of the box. When Traefik is running and watching Docker, it picks up these labels and routes traffic automatically.
+
+**What the labels do:**
+
+- `traefik.enable=true`: opts this service in to Traefik discovery
+- `traefik.http.routers.markdown-vault-mcp.rule`: defines the `Host` rule; defaults to `markdown-vault-mcp.local`
+- `traefik.http.services.markdown-vault-mcp.loadbalancer.server.port`: tells Traefik the container listens on port 8000
+
+### Prerequisites
+
+1. Traefik running in Docker with the Docker provider enabled
+
+1. Both Traefik and this service on the same Docker network:
+
+   ```
+   services:
+     markdown-vault-mcp:
+       networks:
+         - traefik
+
+   networks:
+     traefik:
+       external: true
+   ```
+
+1. A DNS entry (or `/etc/hosts` line) resolving the hostname to your host
+
+### Custom Hostname
+
+Set `MARKDOWN_VAULT_MCP_HOST` in your `.env`:
+
+```
+MARKDOWN_VAULT_MCP_HOST=vault.example.com
+```
+
+### Mounting Under a Subpath
+
+To serve MCP at `https://mcp.example.com/vault/mcp`, set:
+
+```
+MARKDOWN_VAULT_MCP_HTTP_PATH=/vault/mcp
+```
+
+And use a path-aware Traefik rule:
+
+```
+labels:
+  - "traefik.http.routers.markdown-vault-mcp.rule=Host(`mcp.example.com`) && PathPrefix(`/vault/mcp`)"
+  - "traefik.http.services.markdown-vault-mcp.loadbalancer.server.port=8000"
+```
+
+OIDC subpath deployments use a different pattern
+
+When OIDC is enabled, omit the subpath from `HTTP_PATH`. Put the subpath in `BASE_URL` instead and configure the reverse proxy to strip the prefix. See the [OIDC subpath deployment guide](https://pvliesdonk.github.io/markdown-vault-mcp/3.1/deployment/oidc/#subpath-deployments) for details.
+
+### TLS with Let's Encrypt
+
+Add a `certificatesResolvers` block to your Traefik static config and these labels to the service:
+
+```
+- "traefik.http.routers.markdown-vault-mcp.tls.certresolver=letsencrypt"
+- "traefik.http.routers.markdown-vault-mcp.entrypoints=websecure"
+```
+
+See the [Traefik ACME documentation](https://doc.traefik.io/traefik/https/acme/) for the full setup.
+
+## Git-Backed Write Support
+
+Git integration supports three modes:
+
+- **Managed** (`GIT_REPO_URL` + `GIT_TOKEN`): clone/pull/commit/push
+- **Unmanaged / commit-only** (no `GIT_REPO_URL`, existing git repo): commit only
+- **No-git**: no git operations
+
+### Setup
+
+1. For managed mode, set a remote URL and credentials:
+
+   ```
+   MARKDOWN_VAULT_MCP_GIT_REPO_URL=https://github.com/your-org/your-vault.git
+   MARKDOWN_VAULT_MCP_GIT_USERNAME=x-access-token
+   MARKDOWN_VAULT_MCP_GIT_TOKEN=ghp_your_personal_access_token
+   ```
+
+1. For unmanaged/commit-only mode, omit `GIT_REPO_URL` and `GIT_TOKEN`. If the vault path is a git repo, writes are committed locally only.
+
+1. The vault mount must include `.git` when using managed or unmanaged mode:
+
+   ```
+   volumes:
+     - /path/to/your/vault:/data/vault
+   ```
+
+For managed mode, the token needs `repo` scope (or `contents: write` for fine-grained tokens).
+
+Without auto-push
+
+Use unmanaged/commit-only mode: omit `MARKDOWN_VAULT_MCP_GIT_REPO_URL`. Writes are committed locally; run `git pull`/`git push` externally.
+
+## UID/GID Configuration
+
+The container runs as a non-root `appuser` (UID 1000 / GID 1000 by default). On startup, the entrypoint automatically fixes ownership of all `/data/*` directories before dropping privileges, so **named volumes work out of the box** regardless of how Docker initialised them.
+
+This is the same entrypoint + `gosu` pattern used by the official PostgreSQL, Redis, and MySQL Docker images.
+
+### Runtime UID/GID override
+
+To match a specific host user (such as for bind-mounted vaults), set `PUID` and `PGID`:
+
+```
+services:
+  markdown-vault-mcp:
+    environment:
+      PUID: 1001
+      PGID: 1001
+```
+
+The entrypoint updates `appuser`'s UID/GID to the specified values and chowns `/data` to match.
+
+### Build-time UID/GID (alternative for bind mounts)
+
+If you prefer to bake the UID/GID into the image:
+
+```
+docker compose build --build-arg APP_UID=$(id -u) --build-arg APP_GID=$(id -g)
+```
+
+### Fix host permissions (bind mounts only)
+
+For bind-mounted vaults where the host user doesn't match, fix host-side:
+
+```
+chown -R 1000:1000 /path/to/vault
+```
+
+## Troubleshooting
+
+### Traefik network not found
+
+```
+network traefik declared as external, but could not be found
+```
+
+Create the network first: `docker network create traefik`
+
+### Git push failures
+
+Check logs: `docker compose logs markdown-vault-mcp`
+
+Common causes:
+
+- Token lacks `repo` scope: regenerate with the right permissions
+- Remote URL is SSH-based: the PAT strategy only works with HTTPS remotes. Convert: `git remote set-url origin https://github.com/user/repo.git`
+- In unmanaged/commit-only mode, the vault directory is not a git repo: run `git init` on the host first
+
+### Stale index after adding files outside the server
+
+The server reindexes on startup. Restart the container:
+
+```
+docker compose restart markdown-vault-mcp
+```
+
+For continuous sync, use the MCP `reindex` tool instead of restarting.
+
+### Ollama on Linux without Docker Desktop
+
+Add `extra_hosts` to `compose.yml` for `host.docker.internal` to resolve:
+
+```
+services:
+  markdown-vault-mcp:
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+```
+
+## Remote debugging
+
+Production images ship without `debugpy` to keep the image lean. To attach a remote Python debugger from VS Code or PyCharm:
+
+1. **Build with the debug extra:**
+
+   ```
+   docker build --build-arg DEBUG=true -t markdown-vault-mcp:debug .
+   ```
+
+   This installs the `[debug]` optional-dependency group (which pulls `debugpy` transitively from `fastmcp-pvl-core`). Default builds (`DEBUG=false`) skip it.
+
+1. **Run with the debug env vars set and the port mapped:**
+
+   ```
+   docker run --rm \
+     -e MARKDOWN_VAULT_MCP_DEBUG_PORT=5678 \
+     -e MARKDOWN_VAULT_MCP_DEBUG_WAIT=true \
+     -p 127.0.0.1:5678:5678 \
+     -p 8000:8000 \
+     markdown-vault-mcp:debug
+   ```
+
+   | Env var                         | Effect                                                                                                                                            |
+   | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+   | `MARKDOWN_VAULT_MCP_DEBUG_PORT` | TCP port the debugger listens on (any value parsing to `0` disables; non-numeric or out-of-range values log a WARNING and the listener stays off) |
+   | `MARKDOWN_VAULT_MCP_DEBUG_WAIT` | When truthy (`1`/`true`/`yes`/`on`), block startup until the IDE attaches. Default is non-blocking.                                               |
+
+1. **Attach from VS Code:** add a launch config:
+
+   ```
+   {
+     "name": "Attach to markdown-vault-mcp",
+     "type": "debugpy",
+     "request": "attach",
+     "connect": { "host": "localhost", "port": 5678 }
+   }
+   ```
+
+   PyCharm uses *Run → Edit Configurations → Python Debug Server* with the same host/port.
+
+Never publish the debug port on a public network
+
+The debug listener binds `0.0.0.0` inside the container so the IDE can reach it from the host, but **debugpy's DAP protocol is unauthenticated**: any peer that can reach the port has arbitrary code execution as the server process. Always bind the port mapping to localhost (`-p 127.0.0.1:5678:5678`) or tunnel via `kubectl port-forward` / SSH. Production images should be built with default `DEBUG=false`.
+
+When the helper is invoked but `debugpy` isn't installed (such as when `DEBUG_PORT` is set on a non-debug image), it logs a WARNING and continues: safe failure mode.

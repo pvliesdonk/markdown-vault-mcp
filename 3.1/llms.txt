@@ -1,0 +1,55 @@
+# markdown-vault-mcp
+
+> Generic markdown vault MCP server with FTS5 + semantic search
+
+markdown-vault-mcp is a generic markdown vault MCP server with FTS5 full-text search, semantic search via embeddings, frontmatter-aware indexing, and incremental reindexing. It exposes 31 LLM-visible tools (plus 6 app-only tools), 9 resources, and 6 prompts over the Model Context Protocol.
+
+
+## Getting Started
+
+- [Home](https://pvliesdonk.github.io/markdown-vault-mcp/3.1/index.md): Overview — features, quick start, and project links
+- [Installation](https://pvliesdonk.github.io/markdown-vault-mcp/3.1/installation/index.md): Installation from PyPI, uv, source, or Docker
+- [Configuration](https://pvliesdonk.github.io/markdown-vault-mcp/3.1/configuration/index.md): All environment variables with types and defaults
+- [Configuration Generator](https://pvliesdonk.github.io/markdown-vault-mcp/3.1/configuration-generator/index.md): In-browser generator for config, Docker, and systemd artifacts
+
+## Guides
+
+- [Overview](https://pvliesdonk.github.io/markdown-vault-mcp/3.1/guides/index.md): Guide overview — which guide to read
+- [Git Integration](https://pvliesdonk.github.io/markdown-vault-mcp/3.1/guides/git-integration/index.md): Git modes — managed, unmanaged (commit-only), and no-git
+- [Claude Desktop](https://pvliesdonk.github.io/markdown-vault-mcp/3.1/guides/claude-desktop/index.md): Claude Desktop setup (read-only, git write, semantic search)
+- [Docker](https://pvliesdonk.github.io/markdown-vault-mcp/3.1/guides/docker/index.md): Docker deployment (basic, git write, bearer token, OIDC)
+- [Embeddings](https://pvliesdonk.github.io/markdown-vault-mcp/3.1/guides/embeddings/index.md): Embedding providers (Ollama, sentence-transformers, OpenAI)
+- [Authentication](https://pvliesdonk.github.io/markdown-vault-mcp/3.1/guides/authentication/index.md): Authentication modes — bearer token, OIDC, and troubleshooting
+- [OIDC Providers](https://pvliesdonk.github.io/markdown-vault-mcp/3.1/guides/oidc-providers/index.md): OIDC provider setup (Authelia, Keycloak, Google, GitHub via broker)
+- [Obsidian Everywhere](https://pvliesdonk.github.io/markdown-vault-mcp/3.1/guides/obsidian-everywhere/index.md): Reference architecture for desktop + mobile + Claude on one vault
+- [Research Workflows](https://pvliesdonk.github.io/markdown-vault-mcp/3.1/guides/research-workflows/index.md): Research workflows (seed → ground → absorb → interconnect → produce, with optional scholar-mcp integration)
+- [Zettelkasten](https://pvliesdonk.github.io/markdown-vault-mcp/3.1/guides/zettelkasten/index.md): Zettelkasten workflow (fleeting → literature → permanent notes, MOCs, graph navigation)
+- [PARA](https://pvliesdonk.github.io/markdown-vault-mcp/3.1/guides/para/index.md): PARA workflow (Projects/Areas/Resources/Archive with triage, kickoff, and weekly review prompts)
+- [MCP Apps](https://pvliesdonk.github.io/markdown-vault-mcp/3.1/guides/mcp-apps/index.md): MCP Apps — Context Card, Graph Explorer, Vault Browser, and Note Preview views
+- [Transfer Links](https://pvliesdonk.github.io/markdown-vault-mcp/3.1/guides/transfer-links/index.md): One-time transfer links — capability-URL download and upload without inflating LLM context
+- [Claude Code Plugin](https://pvliesdonk.github.io/markdown-vault-mcp/3.1/guides/claude-code-plugin/index.md): Claude Code plugin — install via /plugin marketplace
+
+## MCP Interface
+
+- [Tools](https://pvliesdonk.github.io/markdown-vault-mcp/3.1/tools/index.md): MCP tools with parameters and examples (search, read, write, link graph, MCP Apps)
+- [Resources](https://pvliesdonk.github.io/markdown-vault-mcp/3.1/resources/index.md): MCP resources with URI patterns (config, stats, tags, folders, toc, similar, recent, ui)
+- [Prompts](https://pvliesdonk.github.io/markdown-vault-mcp/3.1/prompts/index.md): All 6 MCP prompts with workflow descriptions
+
+## Deployment
+
+- [Overview](https://pvliesdonk.github.io/markdown-vault-mcp/3.1/deployment/index.md): Deployment overview
+- [Docker](https://pvliesdonk.github.io/markdown-vault-mcp/3.1/deployment/docker/index.md): Docker Compose, Traefik, volumes, UID/GID
+- [systemd](https://pvliesdonk.github.io/markdown-vault-mcp/3.1/deployment/systemd/index.md): systemd service — package install, manual install, security hardening
+- [Claude Desktop](https://pvliesdonk.github.io/markdown-vault-mcp/3.1/deployment/claude-desktop/index.md): Claude Desktop configuration reference
+- [OIDC Authentication](https://pvliesdonk.github.io/markdown-vault-mcp/3.1/deployment/oidc/index.md): OIDC authentication setup with Authelia
+
+## Python API
+
+- [Vault](https://pvliesdonk.github.io/markdown-vault-mcp/3.1/api/vault/index.md): Vault class API reference
+- [Facets](https://pvliesdonk.github.io/markdown-vault-mcp/3.1/api/facets/index.md): Reader/Writer/Graph/Index facet API reference
+- [Git Integration](https://pvliesdonk.github.io/markdown-vault-mcp/3.1/api/git/index.md): GitWriteStrategy API reference
+- [Configuration](https://pvliesdonk.github.io/markdown-vault-mcp/3.1/api/config/index.md): Configuration loading API reference
+- [Embedding Providers](https://pvliesdonk.github.io/markdown-vault-mcp/3.1/api/providers/index.md): Embedding provider API reference
+- [Types](https://pvliesdonk.github.io/markdown-vault-mcp/3.1/api/types/index.md): All data types returned by the Vault API
+- [Exceptions](https://pvliesdonk.github.io/markdown-vault-mcp/3.1/api/exceptions/index.md): All exceptions raised by the library
+

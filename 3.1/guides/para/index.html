@@ -1,0 +1,2744 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Generic markdown vault MCP server with FTS5 + semantic search">
+      
+      
+      
+        <link rel="canonical" href="https://pvliesdonk.github.io/markdown-vault-mcp/3.1/guides/para/">
+      
+      
+        <link rel="prev" href="../zettelkasten/">
+      
+      
+        <link rel="next" href="../mcp-apps/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>PARA - markdown-vault-mcp</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+      <link rel="stylesheet" href="../../stylesheets/config-wizard.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#para-with-markdown-vault-mcp" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="markdown-vault-mcp" class="md-header__button md-logo" aria-label="markdown-vault-mcp" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            markdown-vault-mcp
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              PARA
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/pvliesdonk/markdown-vault-mcp" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    pvliesdonk/markdown-vault-mcp
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../installation/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../" class="md-tabs__link">
+          
+  
+  
+  Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../tools/" class="md-tabs__link">
+          
+  
+  
+  MCP Interface
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../deployment/" class="md-tabs__link">
+          
+  
+  
+  Deployment
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../api/vault/" class="md-tabs__link">
+          
+  
+  
+  Python API
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="markdown-vault-mcp" class="md-nav__button md-logo" aria-label="markdown-vault-mcp" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    markdown-vault-mcp
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/pvliesdonk/markdown-vault-mcp" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    pvliesdonk/markdown-vault-mcp
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration-generator/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration Generator
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../git-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Git Integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../claude-desktop/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Claude Desktop
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../docker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Docker
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../embeddings/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Embeddings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../authentication/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Authentication
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../oidc-providers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OIDC Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../obsidian-everywhere/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Obsidian Everywhere
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../research-workflows/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Research Workflows
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../zettelkasten/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Zettelkasten
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PARA
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PARA
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#vault-setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Vault Setup
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Vault Setup">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#recommended-folder-structure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recommended folder structure
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#frontmatter-schemas" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Frontmatter schemas
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#make-frontmatter-fields-searchable" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Make frontmatter fields searchable
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#filename-conventions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Filename conventions
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#workflow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Workflow
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Workflow">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-capture-inbox" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Capture (Inbox)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-triage-inbox-par" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Triage (Inbox → P/A/R)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-project-work-para-project-kickoff" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Project Work (para-project-kickoff)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-weekly-review-para-weekly-review" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Weekly Review (para-weekly-review)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#5-archive-lifecycle-transition" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Archive (lifecycle transition)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#using-templates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Using Templates
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#using-the-para-prompts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Using the PARA Prompts
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Using the PARA Prompts">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#para-capture-chats" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        para-capture-chats
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#para-triage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        para-triage
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#para-project-kickoff" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        para-project-kickoff
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#para-weekly-review" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        para-weekly-review
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tips-and-best-practices" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tips and Best Practices
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Tips and Best Practices">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#filter-on-status-not-folder" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Filter on status, not folder
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#archive-by-flipping-status-then-moving" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Archive by flipping status, then moving
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#link-projects-to-areas-via-the-area-frontmatter-field" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Link projects to areas via the area frontmatter field
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#deadlines-arent-indexed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deadlines aren't indexed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#link-aggressively-within-related" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Link aggressively within ## Related
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#let-claude-split-or-merge-captures" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Let Claude split or merge captures
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ask-claude-for-area-assignments-in-batches" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ask Claude for area assignments in batches
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#future-enhancements" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Future Enhancements
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#next-steps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Next Steps
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../mcp-apps/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Apps
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../transfer-links/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Transfer Links
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../claude-code-plugin/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Claude Code Plugin
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Interface
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    MCP Interface
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tools/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tools
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../resources/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Resources
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../prompts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Prompts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deployment
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Deployment
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deployment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deployment/docker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Docker
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deployment/systemd/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    systemd
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deployment/claude-desktop/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Claude Desktop
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deployment/oidc/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OIDC Authentication
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Python API
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Python API
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/vault/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Vault
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/facets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Facets
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/git/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Git Integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/providers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Embedding Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/exceptions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Exceptions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#vault-setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Vault Setup
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Vault Setup">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#recommended-folder-structure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recommended folder structure
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#frontmatter-schemas" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Frontmatter schemas
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#make-frontmatter-fields-searchable" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Make frontmatter fields searchable
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#filename-conventions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Filename conventions
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#workflow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Workflow
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Workflow">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-capture-inbox" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Capture (Inbox)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-triage-inbox-par" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Triage (Inbox → P/A/R)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-project-work-para-project-kickoff" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Project Work (para-project-kickoff)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-weekly-review-para-weekly-review" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Weekly Review (para-weekly-review)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#5-archive-lifecycle-transition" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Archive (lifecycle transition)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#using-templates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Using Templates
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#using-the-para-prompts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Using the PARA Prompts
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Using the PARA Prompts">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#para-capture-chats" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        para-capture-chats
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#para-triage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        para-triage
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#para-project-kickoff" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        para-project-kickoff
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#para-weekly-review" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        para-weekly-review
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tips-and-best-practices" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tips and Best Practices
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Tips and Best Practices">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#filter-on-status-not-folder" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Filter on status, not folder
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#archive-by-flipping-status-then-moving" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Archive by flipping status, then moving
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#link-projects-to-areas-via-the-area-frontmatter-field" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Link projects to areas via the area frontmatter field
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#deadlines-arent-indexed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deadlines aren't indexed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#link-aggressively-within-related" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Link aggressively within ## Related
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#let-claude-split-or-merge-captures" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Let Claude split or merge captures
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ask-claude-for-area-assignments-in-batches" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ask Claude for area assignments in batches
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#future-enhancements" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Future Enhancements
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#next-steps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Next Steps
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="para-with-markdown-vault-mcp">PARA with markdown-vault-mcp<a class="headerlink" href="#para-with-markdown-vault-mcp" title="Permanent link">&para;</a></h1>
+<p>PARA (Projects, Areas, Resources, Archive) is Tiago Forte's system for organizing digital information around action (what you are doing, responsible for, or referencing). Where a Zettelkasten is idea-centric and emergent, PARA is action-oriented and top-down: every note has a home determined by what you do with it. This guide shows how to use markdown-vault-mcp as a PARA backend, using its frontmatter-aware search, linking, and templating to run the canonical Capture → Triage → Project Work → Weekly Review → Archive loop.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>This is one of many ways to organize a vault with markdown-vault-mcp. The server is a generic markdown vault backend; PARA conventions are applied in this guide but not required or enforced by the server.</p>
+</div>
+<p>This guide assumes you're working with a PARA vault through Claude (or another MCP client) as the primary interface. The four PARA prompts (capture-from-chats, triage, kickoff, and weekly review) are where most of the value lives; Claude handles surfacing, classification, and batch operations you'd otherwise skip or defer. The Python and CLI examples scattered throughout are the scripting escape hatch, not the day-to-day pattern.</p>
+<h2 id="vault-setup">Vault Setup<a class="headerlink" href="#vault-setup" title="Permanent link">&para;</a></h2>
+<h3 id="recommended-folder-structure">Recommended folder structure<a class="headerlink" href="#recommended-folder-structure" title="Permanent link">&para;</a></h3>
+<p>A canonical PARA vault with markdown-vault-mcp uses five top-level folders plus a templates folder:</p>
+<div class="highlight"><pre><span></span><code>vault/
+  0-Inbox/        # quick capture, untyped
+  1-Projects/     # active projects with outcomes
+  2-Areas/        # ongoing responsibilities
+  3-Resources/    # reference material
+  4-Archive/      # status=archived items (any type)
+  _templates/     # pointed at by MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER
+</code></pre></div>
+<p>The numeric prefixes (<code>0-</code>, <code>1-</code>, <code>…</code>) keep the buckets sorting in the canonical PARA order in any file explorer. <code>0-Inbox/</code> is added because triage is a named workflow step and deserves a dedicated location: notes land here first and move out once they are classified.</p>
+<p><strong>The server does not enforce this layout.</strong> You can flatten it, rename folders, or skip folders entirely and rely on the <code>type</code> and <code>status</code> frontmatter fields to drive queries. The prompts shipped with this pack assume the canonical layout but fall back to asking you when they encounter a different structure.</p>
+<h3 id="frontmatter-schemas">Frontmatter schemas<a class="headerlink" href="#frontmatter-schemas" title="Permanent link">&para;</a></h3>
+<p>PARA has four note shapes. Each uses a distinct frontmatter block. The templates in <code>examples/para/templates/</code> provide these exactly:</p>
+<p><strong>Inbox:</strong> untyped quick capture. Triage assigns the <code>type</code> later.</p>
+<div class="highlight"><pre><span></span><code><span class="nn">---</span>
+<span class="nt">title</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;{{title}}&quot;</span>
+<span class="nt">tags</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[]</span>
+<span class="nt">created</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;{{date}}&quot;</span>
+<span class="nn">---</span>
+</code></pre></div>
+<p><strong>Project:</strong> a concrete outcome with a deadline.</p>
+<div class="highlight"><pre><span></span><code><span class="nn">---</span>
+<span class="nt">title</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;{{title}}&quot;</span>
+<span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">project</span>
+<span class="nt">status</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">active</span>
+<span class="nt">outcome</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;&lt;one-sentence</span><span class="nv"> </span><span class="s">definition</span><span class="nv"> </span><span class="s">of</span><span class="nv"> </span><span class="s">done&gt;&quot;</span>
+<span class="nt">deadline</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">YYYY-MM-DD</span>
+<span class="nt">area</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;&lt;parent</span><span class="nv"> </span><span class="s">area</span><span class="nv"> </span><span class="s">name,</span><span class="nv"> </span><span class="s">or</span><span class="nv"> </span><span class="s">empty&gt;&quot;</span>
+<span class="nt">tags</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[]</span>
+<span class="nt">created</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;{{date}}&quot;</span>
+<span class="nn">---</span>
+</code></pre></div>
+<p><strong>Area:</strong> an ongoing responsibility with no end state.</p>
+<div class="highlight"><pre><span></span><code><span class="nn">---</span>
+<span class="nt">title</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;{{title}}&quot;</span>
+<span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">area</span>
+<span class="nt">status</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">active</span>
+<span class="nt">standard</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;&lt;what</span><span class="nv"> </span><span class="s">&#39;healthy&#39;</span><span class="nv"> </span><span class="s">looks</span><span class="nv"> </span><span class="s">like</span><span class="nv"> </span><span class="s">for</span><span class="nv"> </span><span class="s">this</span><span class="nv"> </span><span class="s">area&gt;&quot;</span>
+<span class="nt">review_cadence</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;&lt;weekly</span><span class="nv"> </span><span class="s">|</span><span class="nv"> </span><span class="s">monthly</span><span class="nv"> </span><span class="s">|</span><span class="nv"> </span><span class="s">quarterly&gt;&quot;</span>
+<span class="nt">tags</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[]</span>
+<span class="nt">created</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;{{date}}&quot;</span>
+<span class="nn">---</span>
+</code></pre></div>
+<p><strong>Resource:</strong> reference material, not requiring action.</p>
+<div class="highlight"><pre><span></span><code><span class="nn">---</span>
+<span class="nt">title</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;{{title}}&quot;</span>
+<span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">resource</span>
+<span class="nt">status</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">active</span>
+<span class="nt">tags</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[]</span>
+<span class="nt">created</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;{{date}}&quot;</span>
+<span class="nn">---</span>
+</code></pre></div>
+<p><strong>Field meanings:</strong></p>
+<ul>
+<li><code>title</code>: The note's heading. Used for display in lists and searches.</li>
+<li><code>type</code>: One of <code>project</code>, <code>area</code>, <code>resource</code>. Stable across the note's lifetime.</li>
+<li><code>status</code>: Lifecycle state: <code>active</code>, <code>on-hold</code>, <code>completed</code>, or <code>archived</code>. Flipped as the note transitions.</li>
+<li><code>outcome</code>: Project-only. A specific, one-sentence definition of done. "Ship v2 with feature Y by date Z," not "improve v2."</li>
+<li><code>deadline</code>: Project-only. Target date. Stored as ISO <code>YYYY-MM-DD</code> but not indexed for range queries (see <a href="#future-enhancements">Future Enhancements</a>).</li>
+<li><code>area</code>: Project-only. Names the parent Area for rollups (such as <code>"Health"</code>). This field is the authoritative signal for area→project linkage; wikilinks between them are supplementary.</li>
+<li><code>standard</code>: Area-only. Describes what "healthy" looks like for the area. Used during the Weekly Review.</li>
+<li><code>review_cadence</code>: Area-only. Informational hint about how often this area should be reviewed (<code>weekly</code>, <code>monthly</code>, <code>quarterly</code>). The <code>para-weekly-review</code> prompt does not yet act on this field; it audits all active areas each run. Tracked as a Future Enhancement.</li>
+<li><code>tags</code>: Free-form list. Searchable via <code>filters={"tags": "value"}</code>.</li>
+<li><code>created</code>: ISO date the note was written. Useful for reviewing note age.</li>
+</ul>
+<div class="admonition note">
+<p class="admonition-title">Archive is a status, not a type</p>
+<p>Forte's original PARA treats Archive as the fourth top-level category. Mechanically this is awkward: an archived project is still a project; archiving is a lifecycle transition, not a reclassification. This pack models archive as <code>status=archived</code>, with <code>type</code> preserved across the lifecycle. Queries like <code>type=project status=archived</code> remain useful, and the Weekly Review filters cleanly on <code>status=active</code> without union queries across types. The <code>4-Archive/</code> folder is a convenience location for browsing; the authoritative "is this archived" signal is the <code>status</code> field.</p>
+</div>
+<h3 id="make-frontmatter-fields-searchable">Make frontmatter fields searchable<a class="headerlink" href="#make-frontmatter-fields-searchable" title="Permanent link">&para;</a></h3>
+<p>Configure <code>MARKDOWN_VAULT_MCP_INDEXED_FIELDS</code> so that <code>type</code>, <code>status</code>, <code>tags</code>, and <code>area</code> become structured filters in the search API:</p>
+<div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">MARKDOWN_VAULT_MCP_INDEXED_FIELDS</span><span class="o">=</span>type,status,tags,area
+</code></pre></div>
+<p>Then you can run targeted queries via the Python API:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># All active projects</span>
+<span class="n">results</span> <span class="o">=</span> <span class="n">vault</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">search</span><span class="p">(</span>
+    <span class="s2">&quot;project&quot;</span><span class="p">,</span>
+    <span class="n">filters</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;project&quot;</span><span class="p">,</span> <span class="s2">&quot;status&quot;</span><span class="p">:</span> <span class="s2">&quot;active&quot;</span><span class="p">},</span>
+    <span class="n">limit</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="c1"># All active projects in the Health area</span>
+<span class="n">results</span> <span class="o">=</span> <span class="n">vault</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">search</span><span class="p">(</span>
+    <span class="s2">&quot;project&quot;</span><span class="p">,</span>
+    <span class="n">filters</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;project&quot;</span><span class="p">,</span> <span class="s2">&quot;status&quot;</span><span class="p">:</span> <span class="s2">&quot;active&quot;</span><span class="p">,</span> <span class="s2">&quot;area&quot;</span><span class="p">:</span> <span class="s2">&quot;Health&quot;</span><span class="p">},</span>
+    <span class="n">limit</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span>
+<span class="p">)</span>
+</code></pre></div>
+<p>The server treats each indexed field as an equality filter. Ranges (such as deadlines within the next week) are not yet supported; see <a href="#future-enhancements">Future Enhancements</a>.</p>
+<h3 id="filename-conventions">Filename conventions<a class="headerlink" href="#filename-conventions" title="Permanent link">&para;</a></h3>
+<p>The server uses the file's path (relative to the vault root) as its identity. Any naming scheme works, but for PARA a title-based lowercase-hyphen form is clearest:</p>
+<ul>
+<li><code>1-Projects/ship-v2-launch.md</code></li>
+<li><code>2-Areas/health.md</code></li>
+<li><code>3-Resources/postgres-connection-pooling.md</code></li>
+</ul>
+<p>Do not embed dates in filenames. PARA uses the <code>deadline</code> and <code>created</code> frontmatter fields for dates, and the folder for lifecycle. A project's filename should describe its identity, not its moment in time.</p>
+<h2 id="workflow">Workflow<a class="headerlink" href="#workflow" title="Permanent link">&para;</a></h2>
+<p>The canonical PARA loop: <strong>Capture → Triage → Project Work → Weekly Review → Archive</strong>. Each stage has a corresponding prompt or manual action.</p>
+<h3 id="1-capture-inbox">1. Capture (Inbox)<a class="headerlink" href="#1-capture-inbox" title="Permanent link">&para;</a></h3>
+<p>Capture whatever's in your head into <code>0-Inbox/</code> without worrying about classification. The <code>inbox.md</code> template exists for this: Claude can create notes from it on request ("create an inbox note titled X with content Y"), or you can drop files directly into the folder via Obsidian or the CLI. Review the inbox daily or every few days by invoking the triage prompt; Claude reads each note and proposes a target path.</p>
+<p>Capture doesn't have to be something you type. If your MCP client exposes chat-history tools (Claude.ai has <code>conversation_search</code> and <code>recent_chats</code>), the vault can ingest ideas you've already discussed. The <code>para-capture-chats</code> prompt does this in one pass: it distills recent conversations into topic-scoped Inbox notes ready for triage. On Claude.ai you can fire it directly from the compose area's <code>+</code> menu once the MCP server is added as a connector (no typing required).</p>
+<p><strong>Via Claude:</strong></p>
+<div class="highlight"><pre><span></span><code>Use the create_from_template prompt with template_name=&quot;inbox&quot;
+</code></pre></div>
+<p><strong>Programmatically (scripting escape hatch):</strong></p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">markdown_vault_mcp</span><span class="w"> </span><span class="kn">import</span> <span class="n">Vault</span>
+
+<span class="n">vault</span> <span class="o">=</span> <span class="n">Vault</span><span class="p">(</span><span class="n">source_dir</span><span class="o">=</span><span class="s2">&quot;/path/to/vault&quot;</span><span class="p">)</span>
+<span class="n">vault</span><span class="o">.</span><span class="n">writer</span><span class="o">.</span><span class="n">write</span><span class="p">(</span>
+    <span class="s2">&quot;0-Inbox/migrate-postgres.md&quot;</span><span class="p">,</span>
+    <span class="n">content</span><span class="o">=</span><span class="s2">&quot;We should look into migrating to Postgres 16.&quot;</span><span class="p">,</span>
+    <span class="n">frontmatter</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;tags&quot;</span><span class="p">:</span> <span class="p">[],</span> <span class="s2">&quot;created&quot;</span><span class="p">:</span> <span class="s2">&quot;2026-04-19&quot;</span><span class="p">},</span>
+<span class="p">)</span>
+</code></pre></div>
+<p><strong>Goals for this stage:</strong></p>
+<ul>
+<li>Capture without deciding type or folder</li>
+<li>One idea per note</li>
+<li>Review the Inbox at least once per week</li>
+</ul>
+<h3 id="2-triage-inbox-par">2. Triage (Inbox → P/A/R)<a class="headerlink" href="#2-triage-inbox-par" title="Permanent link">&para;</a></h3>
+<p>Triage is the decision step: every Inbox note either becomes a Project, Area, or Resource, or gets deleted. The <code>para-triage</code> prompt codifies the decision procedure. Give Claude the entire <code>0-Inbox/</code> folder and it processes each note sequentially, pausing for your call on anything ambiguous. What would take an hour of manual review runs in minutes.</p>
+<p><strong>What Claude does autonomously:</strong> classify unambiguous notes into their bucket, slug the filename from the title, fill type-specific frontmatter fields (<code>outcome</code>, <code>deadline</code>, <code>area</code>, <code>standard</code>) from the note body, and execute the rename and write on confirmation.</p>
+<p><strong>What Claude asks about:</strong> anything that could fit two buckets ("is this a one-off project or an ongoing responsibility?") or needs a slug when the title is generic ("thoughts"). Two shape decisions are also worth calling out:</p>
+<ul>
+<li><strong>Split.</strong> When an Inbox note contains two distinct ideas, tell Claude to split. It creates two notes (one per idea) and triages each separately. Don't pre-split before triage; Claude handles it in one pass.</li>
+<li><strong>Merge.</strong> Before classifying, Claude can search for existing notes covering the same ground. If a strong match exists, it proposes merging the inbox content into the existing note as a new section (or extending an existing section) and deleting the inbox note. This prevents the vault from accumulating near-duplicates.</li>
+</ul>
+<p>The prompt walks through five steps:</p>
+<ol>
+<li><strong>Load the note or notes.</strong> If given a folder, enumerate with <code>list_documents</code> and iterate. If given a single note path, read it directly.</li>
+<li><strong>Read and extract the central intent.</strong> Call <code>read(path=note)</code> and identify the central subject. Ask whether the note describes a concrete deliverable with a deadline, an ongoing responsibility, or reference material.</li>
+<li><strong>Classify</strong> into one of three buckets:</li>
+<li><strong>Project:</strong> concrete outcome plus a plausible deadline; something that can be completed.</li>
+<li><strong>Area:</strong> ongoing responsibility with no end state (such as "Health" or "Team Management").</li>
+<li><strong>Resource:</strong> reference material, not requiring action.</li>
+<li><strong>Ambiguous:</strong> ask the user. Do not guess.</li>
+<li><strong>Propose the move.</strong> Present the proposed target path (<code>1-Projects/&lt;slug&gt;.md</code>, <code>2-Areas/&lt;slug&gt;.md</code>, <code>3-Resources/&lt;slug&gt;.md</code>) and the typed frontmatter block filled in from the note body.</li>
+<li><strong>Execute on confirmation.</strong><ol>
+<li><code>rename(old, new, update_links=True)</code> preserves backlinks from other notes.</li>
+<li><code>read(new)</code> loads the body at the new path.</li>
+<li><code>write(new, content=&lt;body from read&gt;, frontmatter=&lt;typed frontmatter dict&gt;)</code> rewrites the file with the typed frontmatter, preserving the body.</li>
+</ol>
+</li>
+</ol>
+<p>See the full prompt body in <code>examples/para/prompts/para-triage.md</code>.</p>
+<p>The prompt enforces a simple safety rule: <strong>never rename or edit without explicit user confirmation</strong>. When the note is ambiguous (a task that could be either a one-off Project or a recurring Area), the prompt asks the user rather than picking.</p>
+<h3 id="3-project-work-para-project-kickoff">3. Project Work (<code>para-project-kickoff</code>)<a class="headerlink" href="#3-project-work-para-project-kickoff" title="Permanent link">&para;</a></h3>
+<p>Once a note has been classified as a Project, the <code>para-project-kickoff</code> prompt turns it into a concrete plan. This is the research work you'd otherwise skip: most people defining a project don't go back through archived work to check what's been tried, don't look across resources to find relevant reference material, don't re-read similar past projects for lessons. Claude does. You give Claude the project note; Claude does the homework and surfaces what's relevant; you approve the links to add.</p>
+<p>The prompt walks through six steps:</p>
+<ol>
+<li><strong>Verify the project is well-defined.</strong> Read the note, check that <code>outcome</code> is a specific one-sentence definition of done (not a placeholder) and that <code>deadline</code> is a real date. If either is missing, ask the user.</li>
+<li><strong>Survey the existing neighborhood.</strong> Call <code>get_context(path=project)</code> to see existing backlinks, outlinks, similar notes, and tags.</li>
+<li><strong>Resurface related material.</strong> Run two searches:</li>
+<li>If <code>stats()</code> reports <code>semantic_search_available=True</code>, call <code>search(query=outcome_text, mode='hybrid', limit=15)</code>. Otherwise fall back to <code>search(query=outcome_text, mode='keyword', limit=15)</code>.</li>
+<li><code>get_similar(path=project, limit=10)</code>: returns an empty list when embeddings aren't configured, so it is always safe to call.</li>
+<li><strong>Classify results into three buckets.</strong> For each result, use the <strong>folder prefix fast path</strong> when the vault follows the canonical layout:</li>
+<li><code>3-Resources/</code> → Resource</li>
+<li><code>4-Archive/</code> → archived project (similar past work)</li>
+<li><code>2-Areas/</code> → linkable Area
+   Folder-prefix classification is one step; reading each note's frontmatter is N steps. Prefer the fast path, fall back to a targeted <code>search(filters={"type": "resource"})</code> per bucket when the layout is non-canonical.</li>
+<li><strong>Propose links.</strong> Present a <code>## Related</code> section grouped by bucket, with a one-sentence "why this is relevant" per link. Prefer <code>[[wikilinks]]</code>.</li>
+<li><strong>Apply on confirmation.</strong> On confirmation, <code>write</code> the note back with the <code>## Related</code> section added (tolerant of trailing whitespace), or use <code>edit</code> if you prefer to avoid rewriting the full file and can match the section heading precisely.</li>
+</ol>
+<p>See the full prompt body in <code>examples/para/prompts/para-project-kickoff.md</code>.</p>
+<p>The kickoff prompt isn't just for project start. Re-invoke it mid-project when you're stuck: Claude will resurface whatever's changed in the vault since kickoff and propose additional links as context evolves.</p>
+<div class="admonition note">
+<p class="admonition-title">Hybrid mode needs embeddings</p>
+<p><code>search(mode='hybrid')</code> combines BM25 keyword ranking with vector similarity via Reciprocal Rank Fusion. It requires embeddings to be built. If embeddings aren't configured, the prompt falls back to <code>mode='keyword'</code>, which still works but misses semantic matches (paraphrases, conceptual neighbors). Check <code>stats().semantic_search_available</code> before picking the mode.</p>
+</div>
+<h3 id="4-weekly-review-para-weekly-review">4. Weekly Review (<code>para-weekly-review</code>)<a class="headerlink" href="#4-weekly-review-para-weekly-review" title="Permanent link">&para;</a></h3>
+<p>The Weekly Review is a 10-minute guided session. Invoke the prompt, answer Claude's questions as they come, and decide on the archive candidates it surfaces. The stale-scan, area audit, and archive candidate list are what a manual review would take an hour to produce; the prompt does it in minutes so you just make the calls.</p>
+<p>Invoke it in Claude with no arguments: it figures out the current ISO week and defaults everything:</p>
+<div class="highlight"><pre><span></span><code>In Claude, call: para-weekly-review()
+</code></pre></div>
+<p>Here is Claude's internal process across seven steps:</p>
+<ol>
+<li><strong>Determine the review path.</strong> Default is <code>3-Resources/reviews/&lt;YYYY-WW&gt;.md</code> (ISO week), or a user-supplied <code>review_path</code>.</li>
+<li><strong>Enumerate active projects</strong> with <code>list_documents(folder='1-Projects')</code> and filter client-side for <code>frontmatter.status == 'active'</code>. Record each project's path, title, deadline, and <code>modified_at</code> timestamp.</li>
+<li><strong>Stale scan:</strong> compute a threshold of <code>now - 14 * 86400</code> seconds and flag any active project whose <code>modified_at</code> is older (these are the candidates that need attention).</li>
+<li><strong>Area audit.</strong> <code>list_documents(folder='2-Areas')</code>, filter for <code>status=active</code>. For each Area, count active projects whose <code>area</code> frontmatter field matches the Area's title. Any Area with <strong>zero</strong> active projects is flagged as a candidate for archive or reassessment. The <code>area</code> frontmatter field is the authoritative signal; wikilinks between projects and areas are supplementary.</li>
+<li><strong>Archive candidates.</strong> Projects with <code>status=completed</code> still sitting in <code>1-Projects/</code> (should be moved to <code>4-Archive/</code>), plus projects stale for 30+ days (user may want to archive or revive).</li>
+<li><strong>Write the review note</strong> to the path from Step 1 via a direct <code>write()</code> call. The frontmatter matches the <code>weekly-review</code> template (Resource type, tagged <code>review</code>) and the body contains the seeded sections: <code>## Active projects</code>, <code>## Stale projects</code>, <code>## Area audit</code>, <code>## Archive candidates</code>, <code>## New projects / ideas</code>. The review note's section structure matches the <code>weekly-review.md</code> template (for consistency and for users who want to create reviews manually via <code>create_from_template</code>), but the prompt writes the note directly.</li>
+<li><strong>Offer next actions.</strong> Ask the user which archive candidates to act on. For each confirmed one: <code>read</code> the project to get the current body and frontmatter, <code>write</code> it back with <code>status=archived</code> and <code>archived_at=&lt;today&gt;</code> added, then <code>rename</code> it into <code>4-Archive/</code>.</li>
+</ol>
+<p>See the full prompt body in <code>examples/para/prompts/para-weekly-review.md</code>.</p>
+<p>The prompt presents all findings before asking for any action. It never archives, renames, or edits notes without explicit confirmation, and when the user confirms a batch ("archive all 5"), it still performs each operation individually so failures are isolated.</p>
+<h3 id="5-archive-lifecycle-transition">5. Archive (lifecycle transition)<a class="headerlink" href="#5-archive-lifecycle-transition" title="Permanent link">&para;</a></h3>
+<p>Archiving is a two-step operation: flip the <code>status</code> to <code>archived</code> (and set <code>archived_at</code>), then move the file to <code>4-Archive/</code>. The order matters. The <code>status</code> field is what matters for queries; the folder is for browsing.</p>
+<p>The easiest path is to use <code>para-weekly-review</code> Step 7, which handles the full lifecycle (surface candidates, flip status, move) with user confirmation. You can also invoke archiving ad-hoc outside the review cadence: "Claude, list everything with <code>status=completed</code> in <code>1-Projects/</code> and archive them." Claude runs <code>list_documents(folder='1-Projects')</code>, filters client-side on the frontmatter, and proposes each move for your confirmation (or batch confirmation if you prefer).</p>
+<p>For scripting outside the prompt:</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">date</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">markdown_vault_mcp</span><span class="w"> </span><span class="kn">import</span> <span class="n">Vault</span>
+
+<span class="n">vault</span> <span class="o">=</span> <span class="n">Vault</span><span class="p">(</span><span class="n">source_dir</span><span class="o">=</span><span class="s2">&quot;/path/to/vault&quot;</span><span class="p">)</span>
+
+<span class="n">today</span> <span class="o">=</span> <span class="n">date</span><span class="o">.</span><span class="n">today</span><span class="p">()</span><span class="o">.</span><span class="n">isoformat</span><span class="p">()</span>
+
+<span class="c1"># Flip status and add archived_at. One targeted replacement each.</span>
+<span class="n">vault</span><span class="o">.</span><span class="n">writer</span><span class="o">.</span><span class="n">edit</span><span class="p">(</span>
+    <span class="s2">&quot;1-Projects/ship-v2.md&quot;</span><span class="p">,</span>
+    <span class="n">old_text</span><span class="o">=</span><span class="s2">&quot;status: active&quot;</span><span class="p">,</span>
+    <span class="n">new_text</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;status: archived</span><span class="se">\n</span><span class="s2">archived_at: </span><span class="si">{</span><span class="n">today</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="c1"># Move to the archive folder, preserving backlinks.</span>
+<span class="n">vault</span><span class="o">.</span><span class="n">writer</span><span class="o">.</span><span class="n">rename</span><span class="p">(</span>
+    <span class="s2">&quot;1-Projects/ship-v2.md&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;4-Archive/ship-v2.md&quot;</span><span class="p">,</span>
+    <span class="n">update_links</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+<span class="p">)</span>
+</code></pre></div>
+<p>After this sequence, <code>search(filters={"type": "project", "status": "archived"})</code> surfaces the note, and <code>search(filters={"type": "project", "status": "active"})</code> excludes it, regardless of what folder it physically lives in.</p>
+<h2 id="using-templates">Using Templates<a class="headerlink" href="#using-templates" title="Permanent link">&para;</a></h2>
+<p>Templates accelerate note creation. The five PARA templates (<code>inbox</code>, <code>project</code>, <code>area</code>, <code>resource</code>, <code>weekly-review</code>) live in <code>examples/para/templates/</code>.</p>
+<p><strong>Configure the templates folder:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER</span><span class="o">=</span>/path/to/examples/para/templates
+markdown-vault-mcp<span class="w"> </span>serve
+</code></pre></div>
+<p><strong>Use in Claude via the <code>create_from_template</code> prompt:</strong></p>
+<p>The prompt will:</p>
+<ol>
+<li>List available templates</li>
+<li>Ask you to choose one</li>
+<li>Gather required values (title, outcome, deadline, area, etc.)</li>
+<li>Create the note with filled-in frontmatter</li>
+</ol>
+<p><strong>Invoke via MCP prompt:</strong></p>
+<p><code>create_from_template</code> is an MCP prompt, not a Python API method. Invoke it through your MCP client (such as Claude):</p>
+<div class="highlight"><pre><span></span><code>Use the create_from_template prompt with template_name=&quot;project&quot;
+</code></pre></div>
+<p>The prompt calls <code>list_documents</code> on the templates folder to enumerate choices, <code>read</code>s the chosen template, substitutes placeholders, and <code>write</code>s the filled note, all through vault tools.</p>
+<h2 id="using-the-para-prompts">Using the PARA Prompts<a class="headerlink" href="#using-the-para-prompts" title="Permanent link">&para;</a></h2>
+<p>The four PARA prompts live in <code>examples/para/prompts/</code> and are loaded via <code>MARKDOWN_VAULT_MCP_PROMPTS_FOLDER</code>:</p>
+<div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">MARKDOWN_VAULT_MCP_PROMPTS_FOLDER</span><span class="o">=</span>/path/to/examples/para/prompts
+markdown-vault-mcp<span class="w"> </span>serve
+</code></pre></div>
+<p>Then in Claude, the <code>para-capture-chats</code>, <code>para-triage</code>, <code>para-project-kickoff</code>, and <code>para-weekly-review</code> prompts are available. On Claude.ai they also appear in the compose area's <code>+</code> menu after adding the MCP server as a connector.</p>
+<h3 id="para-capture-chats"><code>para-capture-chats</code><a class="headerlink" href="#para-capture-chats" title="Permanent link">&para;</a></h3>
+<p><strong>When to use:</strong> at the end of a day or week, when you want ideas from your recent conversations captured into the vault without retyping them. Requires a client that exposes chat-history tools (such as Claude.ai's <code>conversation_search</code> and <code>recent_chats</code>); the prompt stops gracefully if they're not available.</p>
+<div class="highlight"><pre><span></span><code>In Claude, call: para-capture-chats()
+</code></pre></div>
+<p>Or with an explicit window:</p>
+<div class="highlight"><pre><span></span><code>In Claude, call: para-capture-chats(window=&#39;this week&#39;)
+</code></pre></div>
+<p>The prompt gathers relevant conversations and distills them topic by topic into one proposed Inbox note per topic. After you confirm, it suggests running <code>para-triage</code> on the fresh Inbox entries.</p>
+<h3 id="para-triage"><code>para-triage</code><a class="headerlink" href="#para-triage" title="Permanent link">&para;</a></h3>
+<p><strong>When to use:</strong> after capturing one or more notes in <code>0-Inbox/</code>, or any time you want to classify an untyped note into Project, Area, or Resource. Run it as part of a daily or weekly inbox sweep.</p>
+<div class="highlight"><pre><span></span><code>In Claude, call: para-triage(path=&#39;0-Inbox/&#39;)
+</code></pre></div>
+<p>Or for a single note:</p>
+<div class="highlight"><pre><span></span><code>In Claude, call: para-triage(path=&#39;0-Inbox/migrate-postgres.md&#39;)
+</code></pre></div>
+<p>The prompt iterates over the folder (or acts on the single note) and proposes a classification and target path for each note. On confirmation, it moves them.</p>
+<h3 id="para-project-kickoff"><code>para-project-kickoff</code><a class="headerlink" href="#para-project-kickoff" title="Permanent link">&para;</a></h3>
+<p><strong>When to use:</strong> right after creating a new Project note, or any time you want to define the outcome and pull in related context before starting work. Run it once per project: it's the onboarding step for the project itself.</p>
+<div class="highlight"><pre><span></span><code>In Claude, call: para-project-kickoff(path=&#39;1-Projects/ship-v2.md&#39;)
+</code></pre></div>
+<p>The prompt verifies the outcome and deadline are real, resurfaces related Resources and past archived Projects, and on confirmation adds a <code>## Related</code> section.</p>
+<h3 id="para-weekly-review"><code>para-weekly-review</code><a class="headerlink" href="#para-weekly-review" title="Permanent link">&para;</a></h3>
+<p><strong>When to use:</strong> weekly (or whenever you run your review cadence). Produces a dated review note and flags stale projects, zero-project Areas, and Archive candidates.</p>
+<div class="highlight"><pre><span></span><code>In Claude, call: para-weekly-review()
+</code></pre></div>
+<p>Or with an explicit path:</p>
+<div class="highlight"><pre><span></span><code>In Claude, call: para-weekly-review(review_path=&#39;3-Resources/reviews/2026-W17.md&#39;)
+</code></pre></div>
+<p>The review note is written as a Resource under <code>3-Resources/reviews/</code>, so it is searchable and linkable from other notes. Past reviews form a trail of how the vault has evolved.</p>
+<h2 id="tips-and-best-practices">Tips and Best Practices<a class="headerlink" href="#tips-and-best-practices" title="Permanent link">&para;</a></h2>
+<h3 id="filter-on-status-not-folder">Filter on status, not folder<a class="headerlink" href="#filter-on-status-not-folder" title="Permanent link">&para;</a></h3>
+<p>The authoritative signal for "is this archived" is <code>status=archived</code>. The <code>4-Archive/</code> folder is a convenience (nice for browsing in a file explorer, nice for ambient separation), but a query that only checks the folder will miss archived items that haven't been moved yet and will mis-flag active items that happen to sit in an archive-adjacent folder. Always filter on <code>status</code>, not path, when writing automations.</p>
+<h3 id="archive-by-flipping-status-then-moving">Archive by flipping status, then moving<a class="headerlink" href="#archive-by-flipping-status-then-moving" title="Permanent link">&para;</a></h3>
+<p>When archiving a note, update <code>status=archived</code> and set <code>archived_at</code> <strong>first</strong>, then <code>rename</code> into <code>4-Archive/</code>. If you do the rename first, anyone querying <code>status=active</code> between the two steps will still see it as active. The <code>para-weekly-review</code> prompt enforces this order; if you archive manually, follow the same sequence.</p>
+<h3 id="link-projects-to-areas-via-the-area-frontmatter-field">Link projects to areas via the <code>area</code> frontmatter field<a class="headerlink" href="#link-projects-to-areas-via-the-area-frontmatter-field" title="Permanent link">&para;</a></h3>
+<p>The <code>area</code> field on a project is indexed (via <code>MARKDOWN_VAULT_MCP_INDEXED_FIELDS</code>) and makes area rollups reliable: <code>search(filters={"type": "project", "area": "Health", "status": "active"})</code> is precise and fast. Wikilinks from the project note to the area note (such as <code>[[health]]</code>) are optional and supplementary: they show up in <code>get_context(path)</code> as outlinks and help visual exploration, but the <code>area</code> field is the source of truth.</p>
+<h3 id="deadlines-arent-indexed">Deadlines aren't indexed<a class="headerlink" href="#deadlines-arent-indexed" title="Permanent link">&para;</a></h3>
+<p>You can store <code>deadline: YYYY-MM-DD</code> in project frontmatter, and the date round-trips cleanly, but the server does not yet support range queries like "projects with <code>deadline &lt;= next week</code>." To spot upcoming deadlines, either:</p>
+<ul>
+<li>Filter the active-project list from <code>list_documents(folder='1-Projects')</code> client-side by parsing the <code>deadline</code> field</li>
+<li>Sort results by title if you use a date prefix (not recommended, as it complicates renames)</li>
+<li>Run the <code>para-weekly-review</code> prompt, which surfaces project deadlines in the review note</li>
+</ul>
+<p>Date-range filters are tracked as a planned follow-up; see <a href="#future-enhancements">Future Enhancements</a>.</p>
+<h3 id="link-aggressively-within-related">Link aggressively within <code>## Related</code><a class="headerlink" href="#link-aggressively-within-related" title="Permanent link">&para;</a></h3>
+<p>Same spirit as Zettelkasten: over-linking is better than under-linking. If a Resource touches on a Project's outcome, link it. If an Area has three projects that reference a common book, link the book from each. <code>get_context(path)</code> will surface these connections later when you're editing, and <code>para-project-kickoff</code> will resurface them when you start a new related project. Don't agonize; the tools will help you rediscover what you linked.</p>
+<h3 id="let-claude-split-or-merge-captures">Let Claude split or merge captures<a class="headerlink" href="#let-claude-split-or-merge-captures" title="Permanent link">&para;</a></h3>
+<p>Two shape operations the triage prompt handles that manual workflows usually skip:</p>
+<ul>
+<li><strong>Split:</strong> when an Inbox note contains two ideas, tell the triage prompt to split. Claude creates two notes, one per idea, and classifies each separately.</li>
+<li><strong>Merge:</strong> when an Inbox note extends or restates something already in the vault, Claude proposes merging it into the existing note rather than creating a duplicate. This prevents near-duplicate accumulation, which is the main failure mode of long-lived PARA vaults.</li>
+</ul>
+<p>Don't pre-split or pre-merge before triage; Claude handles both in one pass.</p>
+<h3 id="ask-claude-for-area-assignments-in-batches">Ask Claude for area assignments in batches<a class="headerlink" href="#ask-claude-for-area-assignments-in-batches" title="Permanent link">&para;</a></h3>
+<p>After a triage session produces 5-10 new projects, ask Claude to propose an <code>area</code> value for each based on the project's outcome. It's a one-shot operation that keeps the rollup queries useful and saves you from clicking through each note.</p>
+<h2 id="future-enhancements">Future Enhancements<a class="headerlink" href="#future-enhancements" title="Permanent link">&para;</a></h2>
+<p><strong>Date-range filter support</strong> would enable deadline queries like <code>filters={"deadline": {"lte": "2026-05-01"}}</code>. This requires extending the FTS query layer to parse range operators on indexed date fields. Tracked as a planned follow-up issue.</p>
+<p><strong>Review-cadence-aware weekly review.</strong> The <code>review_cadence</code> frontmatter on Areas is currently informational. A future version of the <code>para-weekly-review</code> prompt could skip areas whose cadence is <code>monthly</code> or <code>quarterly</code> and it isn't their week.</p>
+<p><strong>Consolidated triage-and-create prompt.</strong> Today, triage classifies an existing Inbox note and moves it; <code>create_from_template</code> creates a new note from a template. A combined "triage a thought and create a typed note directly" prompt (with auto-suggested target folder based on classification) is possible as a <code>create_from_template</code> extension. It's a usability improvement, not a capability gap.</p>
+<h2 id="next-steps">Next Steps<a class="headerlink" href="#next-steps" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Read the design document</strong> for details on the linking system and search algorithms: <a href="../../design/design/"><code>docs/design/design.md</code></a></li>
+<li><strong>Explore the MCP tools</strong> to understand the full API: <a href="../../tools/"><code>tools/index.md</code></a></li>
+<li><strong>Review the examples</strong> for templates and prompts: <a href="../../examples/para/"><code>examples/para/</code></a></li>
+<li><strong>Prefer idea-centric knowledge management?</strong> See the alternative workflow: <a href="../zettelkasten/"><code>docs/guides/zettelkasten.md</code></a></li>
+<li><strong>Ambient patterns</strong>: <a href="../../prompts/#ambient-patterns-without-prompts"><code>docs/prompts.md</code></a> (flows the LLM handles from prose alone: URL capture, research, ad-hoc link proposal)</li>
+<li><strong>Research workflows</strong>: <a href="../research-workflows/">research-workflows.md</a> (literature grounding, fact-checking, and writing papers from notes)</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.suggest", "search.highlight", "content.code.copy", "content.tabs.link"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+        <script src="../../javascripts/config-wizard/wizard.js" type="module"></script>
+      
+    
+  </body>
+</html>
