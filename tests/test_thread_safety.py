@@ -155,7 +155,7 @@ def test_pragmas_applied_per_connection(fts: FTSIndex) -> None:
 def test_pragmas_applied_before_schema(
     monkeypatch: pytest.MonkeyPatch, tmp_db: Path
 ) -> None:
-    """`_apply_pragmas` must run BEFORE `_init_schema` so busy_timeout is active
+    """`SqliteConnectionRegistry.apply_pragmas` must run BEFORE `_init_schema` so busy_timeout is active
     during ALTER TABLE migrations.
 
     Capture the call order by patching both methods on the class.
@@ -487,7 +487,7 @@ def test_init_baseexception_cleanup_clears_tls_slot(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """If __init__ raises AFTER the primary's TLS assignment (e.g. during
-    `_probe_shared_cache`), the cleanup must clear ``self._local.conn`` —
+    `_probe_shared_cache`), the cleanup must clear ``registry.local.conn`` —
     otherwise a caller holding the partially-built instance would fast-path
     a closed connection instead of seeing ProgrammingError.
 
@@ -548,7 +548,7 @@ def test_conn_slow_path_baseexception_cleanup(
     fts: FTSIndex,
     close_tracker: tuple[list[object], type],
 ) -> None:
-    """If _apply_pragmas fails on a per-thread open, the new connection
+    """If apply_pragmas fails on a per-thread open, the new connection
     must be closed and the TLS slot left unset so a retry re-opens."""
 
     closed, tracker_cls = close_tracker
@@ -584,13 +584,13 @@ def test_conn_slow_path_baseexception_cleanup(
 
 
 def test_conn_slow_path_failure_clears_tls_slot(fts: FTSIndex) -> None:
-    """If the slow-path open fails AFTER ``self._local.conn`` was set but
+    """If the slow-path open fails AFTER ``registry.local.conn`` was set but
     BEFORE registration completes (e.g. a BaseException between the two
     writes inside the lock), the cleanup MUST clear the TLS slot so the
     next ``_conn()`` call does not fast-path return a closed connection.
 
-    Regression for the bug where ``self._local.conn = new_conn`` was
-    assigned and a BaseException between that and ``_all_conns.append``
+    Regression for the bug where ``registry.local.conn = new_conn`` was
+    assigned and a BaseException between that and ``registry.all_conns.append``
     left a closed conn in TLS for subsequent silent reuse.
 
     Injection method: patch ``list.append`` on the registry's ``all_conns`` so the
