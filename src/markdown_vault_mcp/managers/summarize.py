@@ -143,7 +143,10 @@ class SummarizeManager:
         """Resolve one input path to note paths (single note or subtree)."""
         if path.endswith(".md"):
             return [path], False
-        toc = self._doc_mgr.get_toc(path)
+        # Pass the configured cap through: get_toc defaults max_notes to 200,
+        # which would silently override a SUMMARIZE_MAX_NOTES set above it (the
+        # post-hoc cap in _resolve_paths only masks this when max_notes < 200).
+        toc = self._doc_mgr.get_toc(path, max_notes=self._max_notes)
         if isinstance(toc, SubtreeToc):
             return [note.path for note in toc.notes], toc.truncated
         return [], False
@@ -179,12 +182,16 @@ class SummarizeManager:
         return notes, truncated
 
     def _read_note(self, path: str) -> NoteContent | None:
-        """Read a note, skipping (with a debug log) missing/oversized/unparseable ones."""
+        """Read a note, skipping missing/oversized/unparseable ones.
+
+        Two skip paths converge on ``None``: ``read`` returns ``None`` for a
+        missing or unparseable file, and raises ``ValueError`` only for an
+        oversized note (``MAX_NOTE_READ_BYTES``), which we catch here so one
+        large note does not abort a whole subtree summary.
+        """
         try:
             return self._doc_mgr.read(path)
         except ValueError as exc:
-            # Oversized notes (MAX_NOTE_READ_BYTES) raise; skip rather than
-            # abort a whole subtree summary on one large note.
             logger.debug("summarize_skip_note path=%s reason=%s", path, exc)
             return None
 

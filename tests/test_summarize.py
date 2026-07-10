@@ -354,6 +354,21 @@ class TestSummarizeFacet:
         assert [s.path for s in result.sources] == ["a.md"]
         assert result.truncated is True
 
+    def test_subtree_cap_honours_configured_max_notes_above_200(
+        self, make_vault: VaultFactory
+    ) -> None:
+        # get_toc defaults max_notes to 200; a configured cap above that must
+        # win, not be silently clamped to 200 by the subtree expansion.
+        notes = {f"big/n{i:03d}.md": f"# N{i}\n\nbody {i}" for i in range(205)}
+        vault = make_vault(
+            summarizer=FakeSummarizer(),
+            notes=notes,
+            summarize_max_notes=250,
+        )
+        result = vault.summarizer.summarize(["big"])
+        assert len(result.sources) == 205
+        assert result.truncated is False
+
     def test_empty_subtree_raises_no_notes_found(
         self, make_vault: VaultFactory
     ) -> None:
