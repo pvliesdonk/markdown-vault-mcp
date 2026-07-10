@@ -2,105 +2,30 @@
 
 from __future__ import annotations
 
-import contextlib
 import datetime
-import functools
 import json
 import logging
 import sqlite3
-import threading
-import time
-import uuid
 from collections import deque
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, NamedTuple, TypeVar
+from typing import TYPE_CHECKING, Any, NamedTuple
 
+from markdown_vault_mcp._fts_connection import (
+    SqliteConnectionRegistry,
+)
+from markdown_vault_mcp._fts_connection import (
+    retry_on_locked as _retry_on_locked,
+)
+from markdown_vault_mcp._fts_connection import (
+    retry_on_sqlite_locked as _retry_on_sqlite_locked,
+)
 from markdown_vault_mcp.embed_text import fields_text as _fields_text
 from markdown_vault_mcp.types import FTSResult, ParsedNote, SubtreeNote, TocEntry
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable
+    from collections.abc import Iterable
 
 logger = logging.getLogger(__name__)
-
-
-_T = TypeVar("_T")
-
-# Match the busy_timeout setting; SQLITE_LOCKED needs application-level retry
-# because sqlite3.OperationalError("...locked...") is error code 6 (LOCKED)
-# rather than 5 (BUSY), and Python's sqlite3 / SQLite C-level busy_handler
-# only handles BUSY. See https://www.sqlite.org/rescode.html#locked.
-_SQLITE_LOCKED_RETRY_TIMEOUT_S = 5.0
-_SQLITE_LOCKED_INITIAL_SLEEP_S = 0.01
-_SQLITE_LOCKED_MAX_SLEEP_S = 0.5
-
-
-def _retry_on_sqlite_locked(
-    operation: Callable[[], _T],
-    *,
-    timeout: float = _SQLITE_LOCKED_RETRY_TIMEOUT_S,
-) -> _T:
-    """Retry *operation* on transient SQLite "locked" errors.
-
-    Python's ``sqlite3.Connection``'s ``busy_timeout`` only retries on
-    ``SQLITE_BUSY`` (error code 5). FTS5 virtual-table internal locking
-    raises ``SQLITE_LOCKED`` (error code 6) which is never retried by the
-    SQLite C-level busy handler — see #560. This helper provides
-    application-level retry with exponential backoff so transient FTS5
-    locks (writer mid-upsert blocking a concurrent reader, or vice
-    versa) don't surface as user-visible failures.
-
-    Non-"locked" ``OperationalError``s propagate immediately.
-
-    Args:
-        operation: Callable to invoke. Re-invoked on each retry, so the
-            caller is responsible for any state reset (e.g. running
-            inside a fresh ``with conn:`` transaction that auto-rolls
-            back on exception).
-        timeout: Maximum total wall-clock retry budget in seconds.
-
-    Returns:
-        Whatever *operation* returns on success.
-
-    Raises:
-        sqlite3.OperationalError: If the operation continues to raise a
-            "locked" error past *timeout*, or if it raises an
-            ``OperationalError`` that does not mention "locked".
-    """
-    deadline = time.monotonic() + timeout
-    sleep = _SQLITE_LOCKED_INITIAL_SLEEP_S
-    while True:
-        try:
-            return operation()
-        except sqlite3.OperationalError as exc:
-            if "locked" not in str(exc).lower():
-                raise
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise
-            # Cap the sleep to the remaining budget so the contract
-            # "retry for at most *timeout* seconds" is honoured even
-            # near the deadline — without this, the final sleep could
-            # push us up to _SQLITE_LOCKED_MAX_SLEEP_S past *timeout*.
-            time.sleep(min(sleep, _SQLITE_LOCKED_MAX_SLEEP_S, remaining))
-            sleep *= 2
-
-
-def _retry_on_locked(method: Callable[..., _T]) -> Callable[..., _T]:
-    """Method decorator: retry the method body on SQLITE_LOCKED.
-
-    Wraps the method so the entire body (including any ``with conn:``
-    transaction) is re-invoked on a locked error. This is safe because
-    Python's sqlite3 ``with conn:`` block rolls back the transaction on
-    exception before the wrapper sees it — the retry starts from a
-    clean state.
-    """
-
-    @functools.wraps(method)
-    def wrapper(self: object, *args: object, **kwargs: object) -> _T:
-        return _retry_on_sqlite_locked(lambda: method(self, *args, **kwargs))
-
-    return wrapper
 
 
 # Thresholds for running FTS5 'optimize' after a bulk purge.  Deleting rows
@@ -316,23 +241,6 @@ def _derive_folder(path: str) -> str:
     return "" if folder == "." else folder
 
 
-def _resolve_connect_uri(db_path: Path | str) -> tuple[str, bool, bool]:
-    """Resolve a db_path into (connect_string, uses_uri, is_memory).
-
-    For ``":memory:"`` returns a shared-cache URI unique to this call so that
-    every per-thread ``sqlite3.connect()`` joins the same in-memory database
-    (required for the per-thread connection model — see #519). For file paths
-    returns the path string directly.
-
-    The shared-cache URI is unique per ``FTSIndex`` instance (uuid4 token) so
-    distinct in-process vaults do not collide.
-    """
-    if str(db_path) == ":memory:":
-        token = uuid.uuid4().hex
-        return f"file:fts_{token}?mode=memory&cache=shared", True, True
-    return str(db_path), False, False
-
-
 class FTSIndex:
     """SQLite FTS5 index providing BM25 search and tag filtering.
 
@@ -403,79 +311,12 @@ class FTSIndex:
                 sorted(unknown_weight_cols),
                 ", ".join(self._FTS_COLUMNS),
             )
-        # Resolve URI (translates ``:memory:`` to a shared-cache URI so that
-        # per-thread opens see the same in-memory DB).
-        self._connect_uri, self._uses_uri, self._is_memory = _resolve_connect_uri(
-            db_path
-        )
-        # Thread-safety state — see #519 and docs/design/design.md.
-        self._local = threading.local()
-        self._all_conns: list[sqlite3.Connection] = []
-        self._reg_lock = threading.Lock()
-        self._closed = False
-        self._primary_conn: sqlite3.Connection | None = None
-
-        # Open primary connection on the constructing thread. The whole
-        # init-schema + probe sequence runs under one BaseException cleanup
-        # block so any failure (pragma, ALTER TABLE, or the shared-cache
-        # probe) closes the primary connection — symmetric with the
-        # slow-path cleanup in _conn().
-        primary = self._connect()
-        try:
-            # PRAGMAS FIRST — busy_timeout must be active for ALTER TABLE migrations
-            # in _init_schema (per #519 carryover).
-            self._apply_pragmas(primary)
-            self._init_schema(primary)
-            self._local.conn = primary
-            self._primary_conn = primary
-            self._all_conns.append(primary)
-            # Fail-fast probe: if shared-cache ``:memory:`` translation is in
-            # use but SQLITE_ENABLE_SHARED_CACHE was disabled at build time, a
-            # second connection to the URI will see an empty DB. Surface that
-            # immediately instead of letting per-thread reads fail mysteriously
-            # downstream.
-            if self._is_memory:
-                self._probe_shared_cache()
-        except BaseException:
-            # Close the primary regardless of how far init progressed (the
-            # probe call may fail after append, leaving primary in
-            # _all_conns; reset both paths to a clean state).
-            try:
-                primary.close()
-            except Exception:
-                logger.debug(
-                    "fts_index.__init__ cleanup: error closing primary",
-                    exc_info=True,
-                )
-            # Mirror the _conn() slow-path TLS clear: if a partially-built
-            # FTSIndex's _local.conn still pointed at the now-closed primary,
-            # a caller holding the instance after __init__ raised would
-            # fast-path the closed conn instead of getting ProgrammingError.
-            self._local.conn = None
-            self._all_conns.clear()
-            self._primary_conn = None
-            raise
-
-    def _connect(self) -> sqlite3.Connection:
-        """Open a raw sqlite3 connection to this index's URI."""
-        conn = sqlite3.connect(
-            self._connect_uri,
-            check_same_thread=False,
-            uri=self._uses_uri,
-        )
-        conn.row_factory = sqlite3.Row
-        return conn
-
-    def _apply_pragmas(self, conn: sqlite3.Connection) -> None:
-        """Apply per-connection pragmas (foreign_keys, busy_timeout, synchronous).
-
-        Called on every ``sqlite3.connect()`` — the primary connection and
-        every per-thread open. These are per-connection settings that do NOT
-        persist across opens.
-        """
-        conn.execute("PRAGMA foreign_keys = ON")
-        conn.execute("PRAGMA busy_timeout = 5000")
-        conn.execute("PRAGMA synchronous = NORMAL")
+        # Thread-safety core (#519): per-thread connections, the strong-ref
+        # close registry, and the BaseException-hardened bootstrap live in
+        # the extracted SqliteConnectionRegistry (#760). Schema DDL and the
+        # shared-cache probe stay FTSIndex-owned and run via callbacks.
+        self._registry = SqliteConnectionRegistry(db_path)
+        self._registry.open_primary(self._init_schema, self._probe_shared_cache)
 
     def _init_schema(self, conn: sqlite3.Connection) -> None:
         """Run DDL, migrations, and WAL on the primary connection.
@@ -532,7 +373,7 @@ class FTSIndex:
         self._persist_rank_config(conn)
         # WAL is a DB-header pragma — persists across opens. Skip for in-memory
         # databases (SQLite silently falls back to 'memory' journal mode there).
-        if not self._is_memory:
+        if not self._registry.is_memory:
             result = conn.execute("PRAGMA journal_mode = WAL").fetchone()
             if result is None or str(result[0]).lower() != "wal":
                 logger.warning(
@@ -638,11 +479,11 @@ class FTSIndex:
         would then fail with confusing OperationalErrors. Surface that
         condition immediately with an operator-actionable error.
         """
-        # The probe connection intentionally bypasses _all_conns: it is opened
-        # and closed entirely within this method before the FTSIndex instance
-        # is exposed to any caller, so the registry-based close() machinery is
-        # not needed for it.
-        probe = self._connect()
+        # The probe connection intentionally bypasses the close registry: it
+        # is opened and closed entirely within this method before the FTSIndex
+        # instance is exposed to any caller, so the registry-based close()
+        # machinery is not needed for it.
+        probe = self._registry.connect()
         try:
             row = probe.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name='documents'"
@@ -665,51 +506,14 @@ class FTSIndex:
     def _conn(self) -> sqlite3.Connection:
         """Return this thread's sqlite3 connection, opening one on first touch.
 
-        Uses double-checked locking: the fast path is lock-free; the slow path
-        re-checks ``_closed`` under ``_reg_lock`` so a concurrent ``close()``
-        cannot race with a new-thread open.
+        Delegates to :meth:`SqliteConnectionRegistry.conn` — see there for
+        the double-checked-locking contract and the note on connection
+        accumulation.
 
         Raises:
             sqlite3.ProgrammingError: If ``close()`` has been called.
-
-        Note on connection accumulation: dead-thread connections remain in
-        ``_all_conns`` (strong refs) until ``close()``. This is bounded for
-        the MCP server's workload (long-lived lifespan thread + bounded
-        ``asyncio.to_thread`` pool) and is preferred over weakrefs (see
-        ``feedback_519_weakref_whackamole.md``).
         """
-        if self._closed:
-            raise sqlite3.ProgrammingError("Cannot operate on a closed FTSIndex")
-        existing: sqlite3.Connection | None = getattr(self._local, "conn", None)
-        if existing is not None:
-            return existing
-        new_conn = self._connect()
-        try:
-            self._apply_pragmas(new_conn)
-            with self._reg_lock:
-                if self._closed:
-                    raise sqlite3.ProgrammingError(
-                        "Cannot operate on a closed FTSIndex"
-                    )
-                self._local.conn = new_conn
-                self._all_conns.append(new_conn)
-        except BaseException:
-            # Cover KeyboardInterrupt / SystemExit / asyncio.CancelledError —
-            # sqlite3.Error alone would leak the open connection on teardown.
-            # Clear the TLS slot first: CPython delivers signals at bytecode
-            # boundaries, so an interrupt between the _local.conn assignment
-            # and the registry append would otherwise leave a closed conn in
-            # TLS for the next fast-path call to silently return.
-            self._local.conn = None
-            # Re-acquire _reg_lock for the registry mutation: a concurrent
-            # close() iterates _all_conns under the lock, so an unguarded
-            # remove() here could trigger "list changed size during iteration"
-            # in close().
-            with self._reg_lock, contextlib.suppress(ValueError):
-                self._all_conns.remove(new_conn)
-            new_conn.close()
-            raise
-        return new_conn
+        return self._registry.conn()
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -2202,32 +2006,9 @@ class FTSIndex:
     def close(self) -> None:
         """Close every per-thread connection and mark this index closed.
 
-        Idempotent: a second call finds an empty registry and performs no
-        connection closes. After ``close()``, any thread calling a public
-        method raises ``sqlite3.ProgrammingError`` from ``_conn()``.
+        Idempotent — delegates to :meth:`SqliteConnectionRegistry.close`.
+        After ``close()``, any thread calling a public method raises
+        ``sqlite3.ProgrammingError`` from ``_conn()``.
         """
-        with self._reg_lock:
-            self._closed = True
-            try:
-                for conn in self._all_conns:
-                    try:
-                        conn.close()
-                    except sqlite3.ProgrammingError:
-                        logger.debug("fts_index.close: connection already closed")
-                    except Exception:
-                        # Catch non-sqlite3.Error subclasses too (e.g. OSError
-                        # from underlying file handle, RuntimeError from C
-                        # wrappers) so the loop never exits mid-iteration and
-                        # leaves connections un-closed. KeyboardInterrupt /
-                        # SystemExit still propagate.
-                        logger.error(
-                            "fts_index.close: error closing connection",
-                            exc_info=True,
-                        )
-            finally:
-                # Ensure the registry is cleared even if a BaseException
-                # (KeyboardInterrupt / SystemExit) interrupts the loop, so a
-                # subsequent close() retry sees a clean state.
-                self._all_conns.clear()
-                self._primary_conn = None
+        self._registry.close()
         logger.debug("FTSIndex closed (db_path=%s)", self._db_path)

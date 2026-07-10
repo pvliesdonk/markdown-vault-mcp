@@ -925,13 +925,15 @@ This is the contract that issue #513 (non-blocking MCP initialize via
 background indexing) depends on; PRs #510, #515, #516, #518 all failed
 because the single-connection model violated it on Python 3.12+.
 
-The mechanism is **per-thread `sqlite3.Connection` instances** managed by
-`FTSIndex`:
+The mechanism is **per-thread `sqlite3.Connection` instances** owned by
+`SqliteConnectionRegistry` (`_fts_connection.py`, extracted from
+`FTSIndex` in #760); `FTSIndex` composes the registry and delegates
+`_conn()`/`close()` to it:
 
 - Each thread that touches the index opens its own connection on first
   call, via `_conn()` (which routes through `threading.local`).
-- A side registry (`_all_conns: list[sqlite3.Connection]`, guarded by
-  `_reg_lock`) holds strong references to every opened connection so
+- A side registry (`all_conns: list[sqlite3.Connection]`, guarded by
+  `reg_lock`) holds strong references to every opened connection so
   `close()` can close all of them, including those opened by threads
   that have since exited. `check_same_thread=False` is set on every
   connection so `close()` can iterate cross-thread.
@@ -940,8 +942,8 @@ The mechanism is **per-thread `sqlite3.Connection` instances** managed by
   Per-thread opens apply only per-connection pragmas (`foreign_keys=ON`,
   `busy_timeout=5000`, `synchronous=NORMAL`); **pragmas apply BEFORE
   schema/migrations** so `busy_timeout` is active during `ALTER TABLE`.
-- `_closed: bool` uses double-checked locking: the fast path is lock-free;
-  the slow path re-checks under `_reg_lock` so a concurrent `close()`
+- `closed: bool` uses double-checked locking: the fast path is lock-free;
+  the slow path re-checks under `reg_lock` so a concurrent `close()`
   cannot race with a new-thread connection open.
 - Slow-path open + pragma + register is wrapped in `except BaseException`
   so `KeyboardInterrupt` / `SystemExit` / `asyncio.CancelledError` during
@@ -955,7 +957,7 @@ The mechanism is **per-thread `sqlite3.Connection` instances** managed by
   connection to the URI and raises `RuntimeError` with a clear error
   message if `SQLITE_ENABLE_SHARED_CACHE` is unavailable.
 
-Dead-thread connections accumulate in `_all_conns` until `close()`. This
+Dead-thread connections accumulate in `all_conns` until `close()`. This
 is bounded for the MCP server's threading model (long-lived lifespan
 thread + bounded `asyncio.to_thread` pool of ~30 recycled workers) and
 is preferred over the `weakref` approach that introduced a 3-finding

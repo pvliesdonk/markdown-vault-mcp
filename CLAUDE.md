@@ -38,6 +38,7 @@ src/markdown_vault_mcp/
     routes.py          -- ASGI handler for the /transfer/{token} download/upload route (#622)
   scanner.py           -- file discovery, frontmatter parsing, chunking
   fts_index.py         -- SQLite FTS5 schema, BM25 search
+  _fts_connection.py   -- per-thread sqlite connection registry + SQLITE_LOCKED retry (#760)
   vector_index.py      -- numpy embeddings, cosine similarity
   providers.py         -- embedding provider ABC + implementations
   tracker.py           -- hash-based change detection
