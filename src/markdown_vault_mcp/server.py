@@ -48,12 +48,20 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-def _build_default_instructions(*, read_only: bool) -> str:
+def _build_default_instructions(
+    *, read_only: bool, conventions_file: str | None = None
+) -> str:
     """Build the default instructions string based on read-only state.
 
     Composes MV's domain-specific guidance into a ``domain_line`` and
     delegates to :func:`fastmcp_pvl_core.build_instructions` for the
     read-only/read-write line and operator override hint.
+
+    The folder-conventions sentence is emitted whenever *conventions_file*
+    is configured, not gated on convention files existing on disk: in
+    managed-git mode the clone happens inside the server lifespan, after
+    instructions are composed, so a file-presence check here would silently
+    miss on first boot.
     """
     prelude = (
         "A searchable markdown document vault. "
@@ -79,7 +87,17 @@ def _build_default_instructions(*, read_only: bool) -> str:
         "user — do not call them to retrieve vault content; use 'search', 'read', "
         "'list_documents', or 'get_context' instead."
     )
-    domain_line = f"{prelude}{write_guidance}{search_guidance}"
+    conventions_guidance = (
+        ""
+        if conventions_file is None
+        else (
+            f" Folders may carry authoring conventions in '{conventions_file}' "
+            "files; call 'get_conventions(path)' before creating or "
+            "restructuring notes, and follow any 'conventions' returned by "
+            "write/edit results."
+        )
+    )
+    domain_line = f"{prelude}{write_guidance}{search_guidance}{conventions_guidance}"
     return _core_build_instructions(
         read_only=read_only,
         env_prefix=_ENV_PREFIX,
@@ -128,7 +146,10 @@ def make_server(
     if config.instructions is not None:
         instructions = config.instructions
     else:
-        instructions = _build_default_instructions(read_only=is_read_only)
+        instructions = _build_default_instructions(
+            read_only=is_read_only,
+            conventions_file=config.content.conventions_file,
+        )
 
     auth = build_auth(config.server)
     # build_auth returns None only for mode="none" or precondition-miss inside an

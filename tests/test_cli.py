@@ -375,7 +375,13 @@ def test_build_vault_exclude_patterns_from_env(
 
     result = _build_vault()
     assert isinstance(result, Vault)
-    assert result._exclude_patterns == ("**/*.log.md", ".obsidian/**")
+    # Configured patterns plus the derived folder-conventions excludes.
+    assert result._exclude_patterns == [
+        "**/*.log.md",
+        ".obsidian/**",
+        "_conventions.md",
+        "**/_conventions.md",
+    ]
 
 
 def test_build_vault_attachment_fields_from_env(

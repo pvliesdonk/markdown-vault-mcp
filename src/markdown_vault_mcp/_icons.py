@@ -50,6 +50,7 @@ _TOOL_ICONS: dict[str, list[Icon]] = {
         "get_similar",
         "get_broken_links",
         "get_context",
+        "get_conventions",
         "get_orphan_notes",
         "get_most_linked",
         "get_connection_path",

@@ -24,10 +24,11 @@ Point it at a directory of Markdown files (an Obsidian vault, a docs folder, a Z
 - **Frontmatter-aware** — indexes YAML frontmatter fields, supports required field enforcement
 - **Incremental reindexing** — hash-based change detection, only re-processes modified files; an automatic boot-time reconciliation pass picks up changes made while no server was running, and the vector index converges to the reconciled chunk set (embedding exactly the delta)
 - **Write operations** — create, edit, delete, rename documents, and move entire folder subtrees with automatic index updates
+- **Folder conventions** — per-folder `_conventions.md` files carry your authoring rules (for example "reference notes stay self-contained"); the server surfaces them to LLM clients at write time via the `get_conventions` tool and in `write`/`edit` results, without interpreting them
 - **Attachment support** — read, write, delete, and list non-markdown files (PDFs, images, etc.)
 - **Git integration** — optional auto-commit and push on every write via `GIT_ASKPASS`
 - **OIDC authentication** — optional token-based auth for HTTP deployments (Authelia, Keycloak, etc.)
-- **MCP tools** — 32 LLM-visible tools including search, read, write, edit, delete, rename, move_folder, git history, manual git sync, one-time transfer links, and admin operations; plus 6 app-only tools for MCP Apps clients
+- **MCP tools** — 33 LLM-visible tools including search, read, write, edit, delete, rename, move_folder, git history, manual git sync, one-time transfer links, and admin operations; plus 6 app-only tools for MCP Apps clients
 - **MCP resources** — 9 resources exposing vault configuration, statistics, tags, folders, document outlines, similar notes, recent notes, and an interactive SPA
 - **MCP prompts** — 7 prompt templates including template-driven note creation
 <!-- DOMAIN-END -->
@@ -188,6 +189,7 @@ All configuration is via environment variables with the `MARKDOWN_VAULT_MCP_` pr
 | `MARKDOWN_VAULT_MCP_EXCLUDE` | — | No | Comma-separated glob patterns to exclude from scanning (e.g. `.obsidian/**,.trash/**`) |
 | `MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER` | `_templates` | No | Relative folder path where note templates live (used by the `create_from_template` prompt) |
 | `MARKDOWN_VAULT_MCP_PROMPTS_FOLDER` | — | No | Path to a directory of `.md` prompt files that extend or override built-in prompts (see [User-defined prompts](#user-defined-prompts)) |
+| `MARKDOWN_VAULT_MCP_CONVENTIONS_FILE` | `_conventions.md` | No | Filename of the per-folder conventions files surfaced to clients at write time (bare `.md` filename; `none` disables). Convention files are excluded from the search index but stay readable |
 | `MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S` | `60` | No | Maximum seconds an index-querying read tool waits for the IndexWriter to drain when called with `wait_for_pending_writes=True`. On timeout the tool answers from the current index rather than raising and reports `index_stale=True` in the response's `_meta`. |
 | `MARKDOWN_VAULT_MCP_BUILD_TIMEOUT_S` | `60` | No | Maximum seconds a relational/FTS-backed tool or resource waits for the index to become queryable during a cold-start background build before raising `IndexUnavailableError(reason="timeout")`. Increase for very large vaults. |
 

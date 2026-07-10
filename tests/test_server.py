@@ -244,6 +244,7 @@ class TestToolManifest:
             "get_broken_links",
             "get_connection_path",
             "get_context",
+            "get_conventions",
             "get_diff",
             "get_history",
             "get_index_status",

@@ -34,10 +34,18 @@ Current vault configuration and runtime state.
   "indexed_fields": ["tags", "cluster"],
   "required_fields": [],
   "exclude_patterns": [".obsidian/**", ".trash/**"],
+  "templates_folder": "_templates",
+  "conventions_file": "_conventions.md",
+  "convention_folders": ["", "3-Resources"],
   "semantic_search_available": true,
   "attachment_extensions": ["pdf", "png", "jpg"]
 }
 ```
+
+`conventions_file` is the configured per-folder conventions filename (`null`
+when the feature is disabled); `convention_folders` lists every folder
+carrying such a file (`""` is the vault root). See the
+[`get_conventions` tool](tools/index.md#get_conventions).
 
 ## `stats://vault`
 

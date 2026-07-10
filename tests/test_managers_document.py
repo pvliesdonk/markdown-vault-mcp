@@ -543,6 +543,27 @@ class TestValidation:
         assert mgr._is_path_excluded("drafts/foo.md") is True
         assert mgr._is_path_excluded("alpha.md") is False
 
+    def test_write_to_excluded_path_skips_dirty_mark(self, doc_vault: Path) -> None:
+        """Writes to excluded paths must not queue index work (#conventions)."""
+        fts = FTSIndex(db_path=":memory:")
+        marked: list[str] = []
+        mgr = DocumentManager(
+            fts=fts,
+            source_dir=doc_vault,
+            write_lock=threading.RLock(),
+            chunk_strategy=HeadingChunker(),
+            read_only=False,
+            exclude_patterns=["_conventions.md", "**/_conventions.md"],
+            mark_paths_dirty=lambda paths: marked.extend(paths),
+        )
+        mgr.write("sub/_conventions.md", "Folder rules.")
+        assert marked == []
+        mgr.write("sub/normal.md", "Body.")
+        assert marked == ["sub/normal.md"]
+        marked.clear()
+        mgr.delete("sub/_conventions.md")
+        assert marked == []
+
 
 # ---------------------------------------------------------------------------
 # Callback wiring tests

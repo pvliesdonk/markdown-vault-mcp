@@ -11,6 +11,7 @@ import logging
 import threading
 from typing import TYPE_CHECKING
 
+from markdown_vault_mcp.conventions import ConventionsResolver
 from markdown_vault_mcp.facets import (
     GraphFacet,
     IndexFacet,
@@ -176,6 +177,11 @@ class Vault:
             (subtree expansion is truncated to this many notes; default 50).
         summarize_max_input_chars: Aggregate cap on note characters sent to the
             summarization backend per call (default 200000).
+        conventions_file: Well-known per-folder conventions filename resolved
+            by :attr:`conventions` (default ``"_conventions.md"``); ``None``
+            disables folder conventions. Callers are expected to also list the
+            filename in *exclude_patterns* so convention files stay out of the
+            index (``ProjectConfig.to_vault_kwargs`` does this automatically).
     """
 
     def __init__(
@@ -207,6 +213,7 @@ class Vault:
         summarizer: Summarizer | None = None,
         summarize_max_notes: int = 50,
         summarize_max_input_chars: int = 200_000,
+        conventions_file: str | None = "_conventions.md",
     ) -> None:
         self._source_dir = source_dir
         self._index_path = index_path
@@ -251,6 +258,7 @@ class Vault:
         self._summarizer = summarizer
         self._summarize_max_notes = summarize_max_notes
         self._summarize_max_input_chars = summarize_max_input_chars
+        self._conventions = ConventionsResolver(source_dir, conventions_file)
 
         # Default state path: {source_dir}/.markdown_vault_mcp/state.json
         if state_path is None:
@@ -444,6 +452,11 @@ class Vault:
                 "install the SDK with: pip install 'markdown-vault-mcp[summarize]'"
             )
         return self._summarize_facet
+
+    @property
+    def conventions(self) -> ConventionsResolver:
+        """Folder-conventions resolver (disk-read, index-independent)."""
+        return self._conventions
 
     @property
     def source_dir(self) -> Path:

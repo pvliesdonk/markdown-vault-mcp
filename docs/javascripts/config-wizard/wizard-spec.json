@@ -777,6 +777,13 @@
       "advancedGroup": "Frontmatter"
     },
     {
+      "id": "conventions_file",
+      "label": "Folder-conventions filename",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_CONVENTIONS_FILE",
+      "advancedGroup": "Frontmatter"
+    },
+    {
       "id": "build_timeout_s",
       "label": "Index build timeout (s)",
       "type": "number",

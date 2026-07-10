@@ -11,6 +11,7 @@ from markdown_vault_mcp.config import (
     derive_max_chunk_chars,
 )
 from markdown_vault_mcp.config_sections import (
+    ContentConfig,
     EmbeddingsConfig,
     GitConfig,
     IndexingConfig,
@@ -354,8 +355,25 @@ class TestToVaultKwargs:
             indexing=IndexingConfig(exclude_patterns=[".obsidian/**"]),
         )
         kwargs = config.to_vault_kwargs()
-        assert kwargs["exclude_patterns"] == (".obsidian/**",)
+        # Configured patterns come first; the conventions filename is
+        # appended in both fnmatch forms (bare name for root level, **/
+        # for nested) so convention files never enter the index.
+        assert kwargs["exclude_patterns"] == [
+            ".obsidian/**",
+            "_conventions.md",
+            "**/_conventions.md",
+        ]
         assert kwargs["source_dir"] == Path("/tmp/vault")
+        assert kwargs["conventions_file"] == "_conventions.md"
+
+    def test_conventions_disabled_adds_no_exclude_patterns(self) -> None:
+        config = ProjectConfig(
+            source_dir=Path("/tmp/vault"),
+            content=ContentConfig(conventions_file=None),
+        )
+        kwargs = config.to_vault_kwargs()
+        assert kwargs["exclude_patterns"] is None
+        assert kwargs["conventions_file"] is None
 
     def test_excludes_git_token(self) -> None:
         config = ProjectConfig(
@@ -397,7 +415,11 @@ class TestToVaultKwargs:
         assert kwargs["state_path"] == Path("/tmp/state.json")
         assert kwargs["indexed_frontmatter_fields"] == ("cluster",)
         assert kwargs["required_frontmatter"] == ("title",)
-        assert kwargs["exclude_patterns"] == (".obsidian/**",)
+        assert kwargs["exclude_patterns"] == [
+            ".obsidian/**",
+            "_conventions.md",
+            "**/_conventions.md",
+        ]
         assert kwargs["attachment_extensions"] is None
         assert kwargs["max_attachment_size_mb"] == 1.0
         assert kwargs["git_pull_interval_s"] == 0
@@ -1808,6 +1830,36 @@ class TestContentConfigFromEnv:
             monkeypatch.delenv(f"MARKDOWN_VAULT_MCP_{k}", raising=False)
         cfg = ContentConfig.from_env("MARKDOWN_VAULT_MCP", tmp_path)
         assert cfg == ContentConfig()
+
+    def test_conventions_file_default(self, monkeypatch, tmp_path):
+        monkeypatch.delenv("MARKDOWN_VAULT_MCP_CONVENTIONS_FILE", raising=False)
+        cfg = ContentConfig.from_env("MARKDOWN_VAULT_MCP", tmp_path)
+        assert cfg.conventions_file == "_conventions.md"
+
+    def test_conventions_file_custom(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_CONVENTIONS_FILE", "AGENTS.md")
+        cfg = ContentConfig.from_env("MARKDOWN_VAULT_MCP", tmp_path)
+        assert cfg.conventions_file == "AGENTS.md"
+
+    @pytest.mark.parametrize("raw", ["none", "None", " NONE "])
+    def test_conventions_file_none_sentinel_disables(
+        self, monkeypatch, tmp_path, raw: str
+    ):
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_CONVENTIONS_FILE", raw)
+        cfg = ContentConfig.from_env("MARKDOWN_VAULT_MCP", tmp_path)
+        assert cfg.conventions_file is None
+
+    def test_conventions_file_empty_keeps_default(self, monkeypatch, tmp_path):
+        # The shared env() helper treats empty-as-unset, so an empty value
+        # falls back to the default rather than disabling.
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_CONVENTIONS_FILE", "")
+        cfg = ContentConfig.from_env("MARKDOWN_VAULT_MCP", tmp_path)
+        assert cfg.conventions_file == "_conventions.md"
+
+    @pytest.mark.parametrize("bad", ["a/b.md", "a\\b.md", "conventions.txt"])
+    def test_conventions_file_rejects_paths_and_non_md(self, bad: str):
+        with pytest.raises(ConfigurationError, match="conventions_file"):
+            ContentConfig(conventions_file=bad)
 
     def test_attachment_extensions_wildcard(self, monkeypatch, tmp_path):
         from markdown_vault_mcp.config_sections import ContentConfig

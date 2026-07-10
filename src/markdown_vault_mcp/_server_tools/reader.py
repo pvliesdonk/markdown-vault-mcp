@@ -13,7 +13,7 @@ from markdown_vault_mcp.vault import Vault
 from .._icons import _TOOL_ICONS
 from .._server_deps import get_vault
 from .._server_queryable import needs_queryable
-from ._common import _maybe_wait_for_drain, _staleness_result
+from ._common import _maybe_wait_for_drain, _staleness_result, conventions_payload
 
 
 def register(mcp: FastMCP) -> None:
@@ -786,6 +786,11 @@ def register(mcp: FastMCP) -> None:
               folder (up to 20). Plain strings, not dicts.
             - tags (dict[str, list[str]]): Indexed frontmatter field →
               distinct values for this note.
+            - conventions (list, optional): the user's authoring conventions
+              for the note's folder (root-first list of {folder, path,
+              content}). Present only when convention files apply. Honor
+              them when writing to or proposing links involving this note —
+              some folders are self-contained by design.
 
             Index freshness is reported out-of-band in the response's
             ``_meta.index_stale`` field — True when the IndexWriter had
@@ -810,6 +815,70 @@ def register(mcp: FastMCP) -> None:
             similar_limit=similar_limit,
             link_limit=link_limit,
         )
+        data = asdict(result)
+        conventions = await asyncio.to_thread(conventions_payload, vault, path)
+        if conventions:
+            data["conventions"] = conventions
         return _staleness_result(
-            vault, asdict(result), drained_on_request=drained, gen_before=gen_before
+            vault, data, drained_on_request=drained, gen_before=gen_before
         )
+
+    @mcp.tool(
+        icons=_TOOL_ICONS["get_conventions"],
+        annotations={
+            "title": "Folder Conventions",
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+        },
+    )
+    async def get_conventions(
+        path: str = "",
+        vault: Vault = Depends(get_vault),
+    ) -> dict[str, Any]:
+        """Get the user's authoring conventions that apply to a note or folder.
+
+        Vaults may carry per-folder convention files (by default
+        '_conventions.md') describing how notes in that folder should be
+        authored — for example "reference material: keep notes
+        self-contained; do not link out to project or journal notes".
+        Conventions accumulate down the tree: a vault-root file applies
+        everywhere and nested files add to it, so entries are returned
+        root-first with the most specific guidance last.
+
+        Call this before creating, restructuring, or linking notes so the
+        result follows the vault owner's rules. The write/edit tools also
+        echo applicable conventions in their responses for a post-write
+        compliance check. Reads directly from disk — works even while the
+        search index is still building.
+
+        Args:
+            path: Relative note path (e.g. "3-Resources/topic.md") or folder
+                path (e.g. "3-Resources"). A note path resolves to its
+                parent folder. Pass "" (default) for vault-root conventions
+                plus the full list of folders carrying convention files.
+
+        Returns:
+            Dict with:
+
+            - path (str): The path that was queried.
+            - conventions (list): Applicable convention entries, root-first.
+              Each has folder (str, "" for vault root), path (str, the
+              convention file's own path), and content (str, its markdown
+              body).
+            - convention_folders (list[str]): All folders carrying a
+              convention file ("" = vault root). Use to discover which
+              parts of the vault have authoring rules.
+
+        Raises:
+            ValueError: If the path escapes the vault root.
+        """
+        entries = await asyncio.to_thread(
+            lambda: [asdict(e) for e in vault.conventions.for_path(path)]
+        )
+        folders = await asyncio.to_thread(vault.conventions.list_folders)
+        return {
+            "path": path,
+            "conventions": entries,
+            "convention_folders": folders,
+        }

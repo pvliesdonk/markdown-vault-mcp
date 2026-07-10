@@ -14,13 +14,18 @@ from markdown_vault_mcp.exceptions import ConfigurationError
 
 @dataclass(frozen=True)
 class ContentConfig:
-    """Attachment/note-read limits and template/prompt folder paths."""
+    """Attachment/note-read limits, template/prompt folders, conventions file.
+
+    ``conventions_file`` names the well-known per-folder conventions file
+    (``None`` disables the folder-conventions feature entirely).
+    """
 
     attachment_extensions: Sequence[str] | None = None
     max_attachment_size_mb: float = 1.0  # MB; 0 = unlimited
     max_note_read_bytes: int = 262144  # 256 KB; 0 = unlimited
     templates_folder: str = "_templates"
     prompts_folder: str | None = None
+    conventions_file: str | None = "_conventions.md"
 
     def __post_init__(self) -> None:
         """Validate size limits (#638) and freeze attachment_extensions (#639).
@@ -55,6 +60,13 @@ class ContentConfig:
             raise ConfigurationError(
                 f"max_note_read_bytes must be >= 0, got {self.max_note_read_bytes}"
             )
+        if self.conventions_file is not None:
+            cf = self.conventions_file
+            if "/" in cf or "\\" in cf or not cf.endswith(".md"):
+                raise ConfigurationError(
+                    "conventions_file must be a bare '.md' filename "
+                    f"(no path separators), got {cf!r}"
+                )
 
     @classmethod
     def from_env(cls, prefix: str, source_dir: Path) -> ContentConfig:
@@ -62,6 +74,8 @@ class ContentConfig:
 
         ``TEMPLATES_FOLDER`` has backslash and trailing-slash normalization
         applied. ``PROMPTS_FOLDER`` is joined to ``source_dir`` when relative.
+        ``CONVENTIONS_FILE`` defaults to ``_conventions.md`` when unset or
+        empty; the sentinel ``none`` disables folder conventions.
 
         Args:
             prefix: Env var prefix, e.g. ``"MARKDOWN_VAULT_MCP"``.
@@ -91,6 +105,17 @@ class ContentConfig:
         raw_templates = (env(prefix, "TEMPLATES_FOLDER") or "").strip()
         templates_folder = raw_templates.replace("\\", "/").strip("/") or "_templates"
 
+        # --- conventions_file ---
+        # Unset/empty -> default "_conventions.md" (the shared env() helper
+        # treats empty-as-unset, so "none" is the only disable sentinel).
+        raw_conventions = (env(prefix, "CONVENTIONS_FILE") or "").strip()
+        if not raw_conventions:
+            conventions_file: str | None = "_conventions.md"
+        elif raw_conventions.lower() == "none":
+            conventions_file = None
+        else:
+            conventions_file = raw_conventions
+
         # --- prompts_folder ---
         raw_prompts = (env(prefix, "PROMPTS_FOLDER") or "").strip()
         if raw_prompts:
@@ -107,4 +132,5 @@ class ContentConfig:
             max_note_read_bytes=env_int(prefix, "MAX_NOTE_READ_BYTES", 262144),
             templates_folder=templates_folder,
             prompts_folder=prompts_folder,
+            conventions_file=conventions_file,
         )

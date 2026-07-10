@@ -184,6 +184,23 @@ class DocumentManager:
         """
         return is_path_excluded(path, self._exclude_patterns)
 
+    def _mark_dirty_filtered(self, paths: list[str]) -> None:
+        """Queue *paths* for incremental reindex, skipping excluded paths.
+
+        Scans and reconciles honour ``exclude_patterns``, but the write-path
+        dirty-marking previously did not — an MCP write to an excluded file
+        (e.g. a ``_conventions.md``) would enter the index until the next
+        reconcile purged it. Filtering here closes that hole.
+
+        Args:
+            paths: Relative POSIX paths touched by a write operation.
+        """
+        if self._mark_paths_dirty is None:
+            return
+        eligible = [p for p in paths if not self._is_path_excluded(p)]
+        if eligible:
+            self._mark_paths_dirty(eligible)
+
     def _validate_path(self, path: str) -> Path:
         """Resolve a relative path and validate it is inside source_dir.
 
@@ -649,8 +666,7 @@ class DocumentManager:
                 Path(tmp_name).unlink(missing_ok=True)
                 raise
 
-            if self._mark_paths_dirty is not None:
-                self._mark_paths_dirty([path])
+            self._mark_dirty_filtered([path])
 
             result = WriteResult(path=path, created=created)
             self._on_write_callback(abs_path, file_content, "write")
@@ -845,8 +861,7 @@ class DocumentManager:
                 Path(tmp_name).unlink(missing_ok=True)
                 raise
 
-            if self._mark_paths_dirty is not None:
-                self._mark_paths_dirty([path])
+            self._mark_dirty_filtered([path])
 
             self._on_write_callback(abs_path, new_content, "edit")
 
@@ -999,8 +1014,7 @@ class DocumentManager:
                             path, expected=if_match, actual=current_hash
                         )
                 abs_path.unlink()
-                if self._mark_paths_dirty is not None:
-                    self._mark_paths_dirty([path])
+                self._mark_dirty_filtered([path])
             else:
                 abs_path = self._validate_attachment_path(path)
                 if not abs_path.is_file():
@@ -1097,10 +1111,9 @@ class DocumentManager:
                 )
                 updated_links = len(backlink_callbacks)
 
-                if self._mark_paths_dirty is not None:
-                    dirty: list[str] = [old_path, note.path]
-                    dirty.extend(backlink_paths)
-                    self._mark_paths_dirty(dirty)
+                dirty: list[str] = [old_path, note.path]
+                dirty.extend(backlink_paths)
+                self._mark_dirty_filtered(dirty)
             else:
                 old_abs = self._validate_attachment_path(old_path)
                 new_abs = self._validate_attachment_path(new_path)
@@ -1421,12 +1434,11 @@ class DocumentManager:
             # 6. Index: purge old note paths, reparse new note paths, plus the
             #    rewritten sources. A single mark_paths_dirty batch makes the
             #    writer run resolve_vault_wikilinks() once.
-            if self._mark_paths_dirty is not None:
-                dirty: list[str] = []
-                dirty.extend(md_map.keys())  # old paths -> purged
-                dirty.extend(md_map.values())  # new paths -> reparsed
-                dirty.extend(dirty_paths)  # rewritten sources
-                self._mark_paths_dirty(dirty)
+            move_dirty: list[str] = []
+            move_dirty.extend(md_map.keys())  # old paths -> purged
+            move_dirty.extend(md_map.values())  # new paths -> reparsed
+            move_dirty.extend(dirty_paths)  # rewritten sources
+            self._mark_dirty_filtered(move_dirty)
 
             # 7. Callbacks: rename for every moved note + allowlisted attachment,
             #    edit for every rewritten source. A source inside the moved

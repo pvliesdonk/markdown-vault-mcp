@@ -13,6 +13,7 @@ Point it at a directory of Markdown files (an Obsidian vault, a docs folder, a Z
 - **Frontmatter-aware**: indexes YAML frontmatter fields, supports required field enforcement
 - **Incremental reindexing**: hash-based change detection, only re-processes modified files
 - **Write operations**: create, edit, delete, rename documents with automatic index updates
+- **Folder conventions**: per-folder `_conventions.md` files carry your authoring rules, surfaced to LLM clients at write time via [`get_conventions`](tools/index.md#get_conventions) and in `write`/`edit` results
 - **Attachment support**: read, write, delete, and list non-markdown files (PDFs, images, and so on)
 - **LLM summarization**: optional `summarize` tool condenses a note, a set of notes, or a subtree with a language model (Anthropic Claude Haiku is the first supported backend); the synthesis references the individual source notes by path. Gated on `ANTHROPIC_API_KEY`.
 - **Git integration**: optional auto-commit and push on every write via `GIT_ASKPASS`

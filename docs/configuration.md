@@ -30,6 +30,7 @@ variables (`MARKDOWN_VAULT_MCP_TRANSPORT`, `MARKDOWN_VAULT_MCP_HOST`,
 | `MARKDOWN_VAULT_MCP_EXCLUDE` | csv | (none) | No | Comma-separated glob patterns to exclude from scanning (such as `.obsidian/**,.trash/**`) |
 | `MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER` | string | `_templates` | No | Relative folder path used by the `create_from_template` prompt to discover/read template files |
 | `MARKDOWN_VAULT_MCP_PROMPTS_FOLDER` | path | (none) | No | Path to a directory of `.md` prompt files that extend or override built-in prompts. Each declared argument name must be a plain Python identifier (letters, digits, underscore; not a keyword); a prompt with a non-conforming argument name is skipped with a logged warning. |
+| `MARKDOWN_VAULT_MCP_CONVENTIONS_FILE` | string | `_conventions.md` | No | Filename of the per-folder [conventions files](tools/index.md#get_conventions) surfaced to clients at write time. Must be a bare `.md` filename. Set to `none` to disable folder conventions. Convention files are excluded from the search index but stay readable. Note: setting `MARKDOWN_VAULT_MCP_INSTRUCTIONS` replaces the default server instructions entirely, including the sentence that points clients at `get_conventions` — mention conventions in your custom instructions if you rely on them. |
 
 The file watcher never watches the directories that hold `INDEX_PATH`,
 `EMBEDDINGS_PATH`, and `STATE_PATH` (or `.git`), so the writes the server makes
