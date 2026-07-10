@@ -1280,7 +1280,7 @@ class DocumentManager:
         return pending_callbacks, dirty_paths
 
     def _plan_folder_move(
-        self, old_abs: Path, old_rel: str, new_rel: str
+        self, old_abs: Path, old_dir: str, new_dir: str
     ) -> tuple[list[tuple[Path, Path]], dict[str, str], list[tuple[Path, str]]]:
         """Enumerate the subtree under *old_abs* and gate on collisions.
 
@@ -1290,8 +1290,9 @@ class DocumentManager:
 
         Args:
             old_abs: Absolute path of the source folder.
-            old_rel: Normalized vault-relative source prefix.
-            new_rel: Normalized vault-relative target prefix.
+            old_dir: Vault-relative source prefix, as passed by the caller
+                (used verbatim in error messages).
+            new_dir: Vault-relative target prefix.
 
         Returns:
             Tuple ``(moves, md_map, attachment_moves)``:
@@ -1305,6 +1306,8 @@ class DocumentManager:
             DocumentNotFoundError: If the folder contains no files.
             DocumentExistsError: If any destination file already exists.
         """
+        old_rel = old_dir.strip("/")
+        new_rel = new_dir.strip("/")
         attachment_exts = self._effective_attachment_extensions()
         moves: list[tuple[Path, Path]] = []  # (src_abs, dst_abs)
         md_map: dict[str, str] = {}  # old_rel_path -> new_rel_path (.md only)
@@ -1325,7 +1328,7 @@ class DocumentManager:
                     attachment_moves.append((dst_abs, new_path))
 
         if not moves:
-            raise DocumentNotFoundError(f"Folder is empty: {old_rel}")
+            raise DocumentNotFoundError(f"Folder is empty: {old_dir}")
 
         # Atomic collision gate — fail before moving anything.
         for _src_abs, dst_abs in moves:
@@ -1422,10 +1425,8 @@ class DocumentManager:
 
             # 1+2. Enumerate the subtree, build the old->new path map, and
             #      gate on destination collisions before moving anything.
-            old_rel = old_dir.strip("/")
-            new_rel = new_dir.strip("/")
             moves, md_map, attachment_moves = self._plan_folder_move(
-                old_abs, old_rel, new_rel
+                old_abs, old_dir, new_dir
             )
 
             # 3. Capture backlinks for every moved note BEFORE the move, while
