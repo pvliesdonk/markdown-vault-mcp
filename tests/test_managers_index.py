@@ -1208,6 +1208,52 @@ class TestProcessDirtyPaths:
         mgr2.process_dirty_paths({"alpha.md"})
         assert fts.get_note("alpha.md") is None
 
+    def test_stale_purge_loads_vectors_only_when_needed(self, index_vault, tmp_path):
+        """The upgrade-scenario purge loads the vector sidecar and deletes
+        the excluded doc's vectors; without stale rows the sidecar stays
+        unloaded (lazy-loading regression guard)."""
+        from tests.conftest import MockEmbeddingProvider
+
+        provider = MockEmbeddingProvider()
+        embeddings_path = tmp_path / "embeddings"
+        mgr, fts, holder = _make_index_mgr(
+            index_vault,
+            tmp_path,
+            embeddings_path=embeddings_path,
+            embedding_provider=provider,
+        )
+        mgr.build_index()
+        mgr.flush_dirty_embeddings({"alpha.md", "beta.md"})
+        holder["vectors"].save(embeddings_path)
+
+        # Same index, alpha.md now excluded: build purges FTS AND vectors.
+        mgr2, _, holder2 = _make_index_mgr(
+            index_vault,
+            tmp_path,
+            fts=fts,
+            embeddings_path=embeddings_path,
+            embedding_provider=provider,
+            exclude_patterns=["alpha.md"],
+        )
+        mgr2.build_index()
+        assert fts.get_note("alpha.md") is None
+        vectors = holder2["vectors"]
+        assert vectors is not None  # loaded because stale rows existed
+        assert all(m["path"] != "alpha.md" for m in vectors._metadata)
+
+        # A follow-up manager with the same exclusion but nothing stale
+        # must NOT load the sidecar just because patterns are configured.
+        mgr3, _, holder3 = _make_index_mgr(
+            index_vault,
+            tmp_path,
+            fts=fts,
+            embeddings_path=embeddings_path,
+            embedding_provider=provider,
+            exclude_patterns=["alpha.md"],
+        )
+        mgr3.build_index()
+        assert holder3["vectors"] is None
+
     def test_continues_after_per_path_failure(self, index_vault, tmp_path):
         mgr, fts, _ = _make_index_mgr(index_vault, tmp_path)
         mgr.build_index()
@@ -1258,6 +1304,29 @@ class TestFlushDirtyEmbeddingsWithSnapshot:
         mgr.flush_dirty_embeddings(set())
         # No-op: nothing should change
         assert vectors_holder["vectors"] is None  # _load_vectors was not called
+
+    def test_excluded_path_gets_no_vectors_and_purges_stale_ones(
+        self, index_vault, tmp_path
+    ):
+        """Excluded paths are treated as deletions in the vector flush."""
+        from tests.conftest import MockEmbeddingProvider
+
+        provider = MockEmbeddingProvider()
+        mgr, _, vectors_holder = _make_index_mgr(
+            index_vault,
+            tmp_path,
+            embeddings_path=tmp_path / "embeddings",
+            embedding_provider=provider,
+            exclude_patterns=["_conventions.md", "**/_conventions.md"],
+        )
+        mgr.build_index()
+        (index_vault / "_conventions.md").write_text("Rules.", encoding="utf-8")
+        mgr.flush_dirty_embeddings({"_conventions.md", "alpha.md"})
+        vectors = vectors_holder["vectors"]
+        assert vectors is not None
+        paths_with_vectors = {m["path"] for m in vectors._metadata}
+        assert "alpha.md" in paths_with_vectors
+        assert "_conventions.md" not in paths_with_vectors
 
     def test_parse_failure_preserves_existing_vectors(
         self, index_vault, tmp_path, monkeypatch

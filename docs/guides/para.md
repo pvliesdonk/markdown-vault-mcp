@@ -449,11 +449,11 @@ You can store `deadline: YYYY-MM-DD` in project frontmatter, and the date round-
 
 Date-range filters are tracked as a planned follow-up; see [Future Enhancements](#future-enhancements).
 
-### Link aggressively within `## Related` — but respect direction
+### Link aggressively within `## Related`, but respect direction
 
 Same spirit as Zettelkasten: over-linking is better than under-linking. If an Area has three projects that reference a common book, link the book from each. `get_context(path)` will surface these connections later when you're editing, and `para-project-kickoff` will resurface them when you start a new related project. Don't agonize; the tools will help you rediscover what you linked.
 
-The one rule worth keeping: link *from* projects and areas *to* resources, not the reverse — a Resource stays self-contained and `get_backlinks` recovers who cites it. Encode this in [folder conventions](#folder-conventions) so LLM clients honor it automatically.
+The one rule worth keeping: link *from* projects and areas *to* resources, not the reverse. A Resource stays self-contained and `get_backlinks` recovers who cites it. Encode this in [folder conventions](#folder-conventions) so LLM clients honor it automatically.
 
 ### Let Claude split or merge captures
 

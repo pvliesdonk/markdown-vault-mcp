@@ -94,6 +94,8 @@ class TestForPath:
         resolver = ConventionsResolver(vault_dir, None)
         assert resolver.enabled is False
         assert resolver.for_path("3-Resources/CRA.md") == []
+        # The private loader's defensive guard mirrors the public behavior.
+        assert resolver._load("") is None
 
     def test_oversized_content_truncated(self, tmp_path: Path) -> None:
         (tmp_path / "_conventions.md").write_text(
@@ -153,6 +155,18 @@ class TestListFolders:
             vault_dir, "_conventions.md", exclude_patterns=["4-Archive/**"]
         )
         assert resolver.list_folders() == ["", "3-Resources"]
+
+    def test_file_level_exclude_pattern_filters_unpruned_walk(
+        self, vault_dir: Path
+    ) -> None:
+        # A file-exact pattern cannot be directory-pruned; the per-file
+        # correctness filter must catch it.
+        resolver = ConventionsResolver(
+            vault_dir,
+            "_conventions.md",
+            exclude_patterns=["3-Resources/_conventions.md"],
+        )
+        assert resolver.list_folders() == [""]
 
 
 class TestVaultDerivedExclusion:
