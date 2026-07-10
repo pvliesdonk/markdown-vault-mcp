@@ -80,3 +80,108 @@ class TestGraphFacetLimit:
             assert len(col.graph.get_outlinks("a.md", limit=1)) == 1
         finally:
             col.close()
+
+
+class TestGraphViews:
+    """Direct facet-level coverage of the graph-view assembly (#880)."""
+
+    @staticmethod
+    def _linked_vault(tmp_path: Path) -> Path:
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        (vault / "center.md").write_text(
+            "# Center\n\nSee [a](a.md).\n", encoding="utf-8"
+        )
+        (vault / "a.md").write_text(
+            "# A\n\nBack to [c](center.md).\n", encoding="utf-8"
+        )
+        (vault / "lonely.md").write_text("# Lonely\n\nno links\n", encoding="utf-8")
+        return vault
+
+    def test_neighborhood_nodes_edges_and_groups(self, tmp_path: Path) -> None:
+        col = Vault(source_dir=self._linked_vault(tmp_path))
+        col.index.build_index()
+        try:
+            view = col.graph.get_neighborhood("center.md", depth=1)
+            ids = {n.id for n in view.nodes}
+            assert "center.md" in ids
+            assert "a.md" in ids
+            by_id = {n.id: n for n in view.nodes}
+            assert by_id["center.md"].group == "note"
+            assert by_id["center.md"].label == "Center"
+            edge_pairs = {(e.source, e.target) for e in view.edges}
+            assert ("center.md", "a.md") in edge_pairs
+            assert ("a.md", "center.md") in edge_pairs
+            assert view.truncated is False
+        finally:
+            col.close()
+
+    def test_neighborhood_orphan_group(self, tmp_path: Path) -> None:
+        col = Vault(source_dir=self._linked_vault(tmp_path))
+        col.index.build_index()
+        try:
+            view = col.graph.get_neighborhood("lonely.md", depth=1)
+            by_id = {n.id: n for n in view.nodes}
+            assert by_id["lonely.md"].group == "orphan"
+            assert view.edges == []
+        finally:
+            col.close()
+
+    def test_neighborhood_max_nodes_truncates(self, tmp_path: Path) -> None:
+        col = Vault(source_dir=self._linked_vault(tmp_path))
+        col.index.build_index()
+        try:
+            view = col.graph.get_neighborhood("center.md", depth=2, max_nodes=1)
+            assert len(view.nodes) == 1
+            assert view.truncated is True
+        finally:
+            col.close()
+
+    def test_neighborhood_boundary_nodes_not_expanded(self, tmp_path: Path) -> None:
+        col = Vault(source_dir=self._linked_vault(tmp_path))
+        col.index.build_index()
+        try:
+            view = col.graph.get_neighborhood("center.md", depth=1)
+            by_id = {n.id: n for n in view.nodes}
+            # a.md sits at the depth boundary: present, but not expanded.
+            assert by_id["a.md"].backlink_count == 0
+        finally:
+            col.close()
+
+    def test_neighborhood_semantic_skipped_without_embeddings(
+        self, tmp_path: Path
+    ) -> None:
+        col = Vault(source_dir=self._linked_vault(tmp_path))
+        col.index.build_index()
+        try:
+            view = col.graph.get_neighborhood(
+                "center.md", depth=1, include_semantic=True
+            )
+            assert all(e.link_type != "semantic" for e in view.edges)
+        finally:
+            col.close()
+
+    def test_neighborhood_gates_on_cold_index(self, tmp_path: Path) -> None:
+        # depth=0 + include_semantic never reaches the gated link queries;
+        # the up-front gate must still surface the documented error (#891).
+        col = Vault(source_dir=self._linked_vault(tmp_path))
+        try:
+            with pytest.raises(IndexUnavailableError):
+                col.graph.get_neighborhood("center.md", depth=0, include_semantic=True)
+        finally:
+            col.close()
+
+    def test_hub_graph_nodes_and_edges(self, tmp_path: Path) -> None:
+        col = Vault(source_dir=self._linked_vault(tmp_path))
+        col.index.build_index()
+        try:
+            view = col.graph.get_hub_graph(limit=5)
+            by_id = {n.id: n for n in view.nodes}
+            # center.md and a.md each have one backlink -> both are hubs.
+            assert by_id["center.md"].group == "hub"
+            assert by_id["center.md"].backlink_count == 1
+            edge_pairs = {(e.source, e.target) for e in view.edges}
+            assert ("a.md", "center.md") in edge_pairs
+            assert view.truncated is False
+        finally:
+            col.close()

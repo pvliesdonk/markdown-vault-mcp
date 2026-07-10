@@ -601,7 +601,7 @@ class GraphEdge:
 
     source: str
     target: str
-    link_type: str
+    link_type: Literal["markdown", "wikilink", "reference", "semantic"]
 
 
 @dataclass

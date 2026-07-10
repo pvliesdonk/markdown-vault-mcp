@@ -319,6 +319,11 @@ class GraphFacet:
             IndexUnavailableError: If :meth:`IndexFacet.build_index` has not
                 been called.
         """
+        # Gate up front: with depth=0 the traversal never reaches the gated
+        # get_backlinks/get_outlinks calls, and the semantic pass swallows
+        # exceptions by design — without this, the documented
+        # IndexUnavailableError contract would silently degrade (#891 review).
+        self._require_built()
         nodes: dict[str, GraphNode] = {}
         edges: list[GraphEdge] = []
         visited: set[str] = set()
