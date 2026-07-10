@@ -5,6 +5,7 @@ from __future__ import annotations
 import fnmatch
 import logging
 import re
+from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
@@ -1056,6 +1057,27 @@ def parse_note(
     return note
 
 
+@dataclass(frozen=True)
+class CategorizedSkip:
+    """A deterministic skip from :func:`parse_note_categorized`.
+
+    Wraps the surfaced :class:`~markdown_vault_mcp.types.SkippedFile` with
+    the parsed note's ``content_hash`` when parsing itself succeeded (the
+    ``missing_frontmatter`` category), so callers can record the hash of
+    the exact bytes that were evaluated instead of re-hashing from disk —
+    a second read could capture newer, now-valid content and stick the
+    file in the skip state (#888 review). ``content_hash`` is ``None``
+    for the exception categories, where no parsed note exists.
+
+    Kept scanner-internal (not in ``types.py``): ``SkippedFile`` itself is
+    serialized into the ``get_index_status`` tool output, and this wrapper
+    must not widen that schema.
+    """
+
+    skip: SkippedFile
+    content_hash: str | None = None
+
+
 def parse_note_categorized(
     abs_path: Path,
     source_dir: Path,
@@ -1065,17 +1087,18 @@ def parse_note_categorized(
     title_field: str = "title",
     required_frontmatter: list[str] | None = None,
     log_context: str = "scan",
-) -> ParsedNote | SkippedFile | None:
+) -> ParsedNote | CategorizedSkip | None:
     """Parse one markdown file, classifying failures into the skip taxonomy.
 
     The single owner of the deterministic-skip policy shared by
     :func:`scan_directory` and ``IndexManager.reindex`` (#762): decode,
     YAML, and unexpected parse failures surface as categorized
-    :class:`~markdown_vault_mcp.types.SkippedFile` values, while a
-    possibly-transient ``OSError`` returns ``None`` — callers must record
-    nothing for it, so the file retries on the next scan (#775). A
-    ``required_frontmatter`` miss returns a ``missing_frontmatter``
-    ``SkippedFile``.
+    :class:`CategorizedSkip` values, while a possibly-transient
+    ``OSError`` returns ``None`` — callers must record nothing for it, so
+    the file retries on the next scan (#775). A ``required_frontmatter``
+    miss returns a ``missing_frontmatter`` skip carrying the parsed
+    note's ``content_hash``, so callers can record the hash of the exact
+    bytes that were evaluated without a second (raceable) disk read.
 
     Exception arms are logged here, prefixed with *log_context* (WARNING
     for decode/I/O/YAML; ERROR with traceback for unexpected failures).
@@ -1094,7 +1117,7 @@ def parse_note_categorized(
         log_context: Prefix identifying the calling pipeline in logs.
 
     Returns:
-        The parsed note on success, a categorized ``SkippedFile`` for a
+        The parsed note on success, a :class:`CategorizedSkip` for a
         deterministic skip, or ``None`` for a transient I/O failure.
     """
     try:
@@ -1106,14 +1129,18 @@ def parse_note_categorized(
             rel_path,
             exc,
         )
-        return SkippedFile(path=rel_path, category="encoding_error", detail=str(exc))
+        return CategorizedSkip(
+            SkippedFile(path=rel_path, category="encoding_error", detail=str(exc))
+        )
     except OSError as exc:
         # Possibly transient (I/O error) — do not surface; retry next scan.
         logger.warning("%s: skipping %s — I/O error (%s)", log_context, rel_path, exc)
         return None
     except yaml.YAMLError as exc:
         logger.warning("%s: skipping %s — parse error (%s)", log_context, rel_path, exc)
-        return SkippedFile(path=rel_path, category="parse_error", detail=str(exc))
+        return CategorizedSkip(
+            SkippedFile(path=rel_path, category="parse_error", detail=str(exc))
+        )
     except Exception as exc:
         logger.error(
             "%s: skipping %s — unexpected error (%s)",
@@ -1122,15 +1149,20 @@ def parse_note_categorized(
             exc,
             exc_info=True,
         )
-        return SkippedFile(path=rel_path, category="internal_error", detail=str(exc))
+        return CategorizedSkip(
+            SkippedFile(path=rel_path, category="internal_error", detail=str(exc))
+        )
 
     if required_frontmatter:
         missing = [f for f in required_frontmatter if f not in note.frontmatter]
         if missing:
-            return SkippedFile(
-                path=rel_path,
-                category="missing_frontmatter",
-                detail=f"missing: {missing}",
+            return CategorizedSkip(
+                SkippedFile(
+                    path=rel_path,
+                    category="missing_frontmatter",
+                    detail=f"missing: {missing}",
+                ),
+                content_hash=note.content_hash,
             )
     return note
 
@@ -1226,16 +1258,16 @@ def scan_directory(
         if outcome is None:
             # Transient I/O failure (already logged) — retry next scan.
             continue
-        if isinstance(outcome, SkippedFile):
-            if outcome.category == "missing_frontmatter":
+        if isinstance(outcome, CategorizedSkip):
+            if outcome.skip.category == "missing_frontmatter":
                 logger.debug(
                     "Skipping %s: missing required frontmatter fields (%s)",
                     rel,
-                    outcome.detail,
+                    outcome.skip.detail,
                 )
                 skipped_required += 1
             if on_skip is not None:
-                on_skip(outcome)
+                on_skip(outcome.skip)
             continue
 
         yield outcome

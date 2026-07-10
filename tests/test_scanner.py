@@ -933,3 +933,47 @@ class TestTitleField:
         )
         titles = {n.path: n.title for n in scan_directory(tmp_path, title_field="name")}
         assert titles == {"a.md": "A Name", "b.md": "B Title"}
+
+
+class TestParseNoteCategorized:
+    """The shared parse-and-categorize skip primitive (#762)."""
+
+    def test_missing_frontmatter_carries_parse_time_hash(self, tmp_path: Path) -> None:
+        """The skip reuses the parsed note's hash — no second disk read.
+
+        Recording the hash of the exact bytes that were evaluated keeps a
+        file that gains valid frontmatter mid-scan from getting stuck in
+        the skip state (#888 review).
+        """
+        from markdown_vault_mcp.hashing import compute_file_hash
+        from markdown_vault_mcp.scanner import (
+            CategorizedSkip,
+            parse_note_categorized,
+        )
+
+        note = tmp_path / "nofm.md"
+        note.write_text("# No frontmatter\n\nbody\n", encoding="utf-8")
+        outcome = parse_note_categorized(
+            note,
+            tmp_path,
+            None,
+            rel_path="nofm.md",
+            required_frontmatter=["title"],
+        )
+        assert isinstance(outcome, CategorizedSkip)
+        assert outcome.skip.category == "missing_frontmatter"
+        assert outcome.content_hash == compute_file_hash(note)
+
+    def test_exception_categories_have_no_hash(self, tmp_path: Path) -> None:
+        """Exception skips carry no hash — parsing never produced a note."""
+        from markdown_vault_mcp.scanner import (
+            CategorizedSkip,
+            parse_note_categorized,
+        )
+
+        binary = tmp_path / "binary.md"
+        binary.write_bytes(b"\xff\xfe\x00\x00 not utf-8")
+        outcome = parse_note_categorized(binary, tmp_path, None, rel_path="binary.md")
+        assert isinstance(outcome, CategorizedSkip)
+        assert outcome.skip.category == "encoding_error"
+        assert outcome.content_hash is None

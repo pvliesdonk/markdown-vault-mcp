@@ -23,6 +23,7 @@ from markdown_vault_mcp.fts_index import _derive_folder, should_optimize
 from markdown_vault_mcp.hashing import compute_file_hash
 from markdown_vault_mcp.managers._vector_loader import load_or_self_heal
 from markdown_vault_mcp.scanner import (
+    CategorizedSkip,
     parse_note,
     parse_note_categorized,
     scan_directory,
@@ -677,19 +678,29 @@ class IndexManager:
             if outcome is None:
                 # Possibly transient (already logged) — retry next scan.
                 continue
-            if isinstance(outcome, SkippedFile):
-                if outcome.category == "missing_frontmatter":
+            if isinstance(outcome, CategorizedSkip):
+                sf = outcome.skip
+                if sf.category == "missing_frontmatter":
                     logger.info(
                         "reindex: skipping %s — missing frontmatter (%s)",
                         path,
-                        outcome.detail,
+                        sf.detail,
                     )
-                if self._record_skip_hash(
-                    newly_skipped, path, abs_path, event="reindex", surfaced=False
-                ):
+                if outcome.content_hash is not None:
+                    # Parsing succeeded (missing frontmatter): record the
+                    # hash of the exact bytes that were evaluated — a fresh
+                    # disk read could capture newer, now-valid content and
+                    # stick the file in the skip state.
+                    newly_skipped[path] = outcome.content_hash
+                    recorded = True
+                else:
+                    recorded = self._record_skip_hash(
+                        newly_skipped, path, abs_path, event="reindex", surfaced=False
+                    )
+                if recorded:
                     newly_skip_reasons[path] = {
-                        "category": outcome.category,
-                        "detail": outcome.detail,
+                        "category": sf.category,
+                        "detail": sf.detail,
                     }
                 continue
             parsed.append((path, outcome))
