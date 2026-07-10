@@ -771,20 +771,20 @@ Exactly one of `since_sha` / `since_timestamp` must be supplied.
 
 Summarize a note, a set of notes, or a folder subtree with a language model. In the default `synthesis` mode the result is one cohesive summary that synthesizes across all the notes and **references the individual source notes by path**, so each point can be traced back to its origin. In `per_note` mode it returns a separate summary for each note instead.
 
-The tool is only registered when a summarization backend is configured (an `ANTHROPIC_API_KEY`); otherwise it does not appear in the tool listing. The backend is pluggable — Anthropic Claude (Haiku by default) is the first implementation.
+The tool is only registered when a summarization backend is configured (an `ANTHROPIC_API_KEY`); otherwise it does not appear in the tool listing. The backend can be swapped: Anthropic Claude (Haiku by default) is the first supported one, and others can be added later.
 
 **Parameters:**
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `paths` | array of string | required | Note paths (`"notes/topic.md"`) and/or folder prefixes (`"notes/project"`). Folders expand to every note in the subtree (capped by the server's summarize limits). Duplicates are de-duplicated. |
-| `focus` | string | `null` | Optional free-text instruction that steers the summary, e.g. `"extract action items"` or `"focus on decisions and their rationale"`. Omit for a general-purpose summary. |
+| `focus` | string | `null` | Optional free-text instruction that steers the summary, for example `"extract action items"` or `"focus on decisions and their rationale"`. Omit for a general-purpose summary. |
 | `mode` | `"synthesis"` \| `"per_note"` | `"synthesis"` | `synthesis` for one cross-note summary that references sources; `per_note` for one summary per note. |
 
 **Returns:** Dict with:
 
 - `summary` (string): the generated summary text.
-- `sources` (list of `{path, title}`): the notes that were summarised — always populated so individual notes are attributable even when the prose does not name every one.
+- `sources` (list of `{path, title}`): the notes that were summarised, always populated so individual notes are attributable even when the prose does not name every one.
 - `mode` (string): the mode used.
 - `truncated` (bool): `true` when the input was capped (a subtree had more notes than the server limit, or the aggregate note text exceeded the character budget and was cut).
 
@@ -794,7 +794,7 @@ The tool is only registered when a summarization backend is configured (an `ANTH
     The referenced notes are sent to the external model provider to generate the summary. Do not summarize notes whose content must not leave your environment.
 
 !!! note "Dependency"
-    Requires the `anthropic` SDK and an `ANTHROPIC_API_KEY`. Install with `pip install 'markdown-vault-mcp[summarize]'` (or `[all]`). Configure the model and limits via the `MARKDOWN_VAULT_MCP_SUMMARIZE_*` env vars — see [Configuration](../configuration.md).
+    Requires the `anthropic` SDK and an `ANTHROPIC_API_KEY`. Install with `pip install 'markdown-vault-mcp[summarize]'` (or `[all]`). Configure the model and limits via the `MARKDOWN_VAULT_MCP_SUMMARIZE_*` env vars. See [Configuration](../configuration.md).
 
 ---
 

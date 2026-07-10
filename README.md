@@ -415,7 +415,7 @@ markdown-vault-mcp reindex [--source-dir PATH] [--index-path PATH]
 
 Write tools (`write`, `edit`, `delete`, `rename`, `move_folder`, `fetch`, `git_sync`, `create_upload_link`) are only available when `MARKDOWN_VAULT_MCP_READ_ONLY=false`. `git_sync` additionally requires managed git mode (`MARKDOWN_VAULT_MCP_GIT_REPO_URL` set).
 
-`summarize` is registered only when a summarization backend is configured (an `ANTHROPIC_API_KEY`); it needs the `anthropic` SDK (`pip install 'markdown-vault-mcp[summarize]'`) and sends note content to the model provider. The backend is pluggable — Anthropic Claude (Haiku by default) is the first implementation.
+`summarize` is registered only when a summarization backend is configured (an `ANTHROPIC_API_KEY`); it needs the `anthropic` SDK (`pip install 'markdown-vault-mcp[summarize]'`) and sends note content to the model provider. Anthropic Claude (Haiku by default) is the first supported backend, and others can be added later.
 
 `browse_vault` and `show_context` are LLM-visible in all clients; when called in an MCP Apps-capable client they open the interactive SPA. Six additional internal tools (`vault_context`, `vault_list`, `vault_read`, `vault_search`, `vault_graph_neighborhood`, `vault_graph_hubs`) use `visibility="app"` and are used by the SPA only — they are never visible to the LLM.
 

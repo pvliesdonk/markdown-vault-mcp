@@ -118,7 +118,7 @@ The first three knobs adjust *ranking and rendering* and take effect immediately
 
 ## Summarization
 
-Powers the optional [`summarize`](tools/index.md#summarize) tool. The backend is pluggable; Anthropic Claude (Haiku by default) is the first implementation. The tool is only registered when a backend is configured (an `ANTHROPIC_API_KEY`). Requires the `anthropic` SDK: `pip install 'markdown-vault-mcp[summarize]'`.
+Powers the optional [`summarize`](tools/index.md#summarize) tool. Anthropic Claude (Haiku by default) is the first supported backend, and others can be added later. The tool is only registered when a backend is configured (an `ANTHROPIC_API_KEY`). Requires the `anthropic` SDK: `pip install 'markdown-vault-mcp[summarize]'`.
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
