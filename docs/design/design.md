@@ -310,7 +310,9 @@ warm.
 Adaptive chunking can produce multiple high-scoring rows from the same
 document, which would otherwise dominate top-K results. The final
 shaping stage of every search mode (keyword, semantic, hybrid) collapses
-chunks under their parent document via `_group_by_path`:
+chunks under their parent document via `group_by_path` (in
+`managers/_ranking.py`, the pure ranking-pipeline module shared by all
+channels):
 
 1. Rows arrive sorted by descending score (already length-downweighted;
    for hybrid, RRF-fused).

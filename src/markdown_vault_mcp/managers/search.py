@@ -12,16 +12,33 @@ import contextlib
 import fnmatch
 import json
 import logging
-import math
 import mimetypes
-import re as _re
 import sqlite3
-from dataclasses import dataclass
-from dataclasses import replace as _dc_replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, Protocol, TypeVar
+from typing import TYPE_CHECKING, Any, Literal
 
 from markdown_vault_mcp.exceptions import EmbeddingsNotConfiguredError
+from markdown_vault_mcp.managers._ranking import (
+    ChannelRow as _ChannelRow,
+)
+from markdown_vault_mcp.managers._ranking import (
+    GroupableFTS as _GroupableFTS,
+)
+from markdown_vault_mcp.managers._ranking import (
+    SemanticRow as _SemanticRow,
+)
+from markdown_vault_mcp.managers._ranking import (
+    apply_folder_boost as _apply_folder_boost,
+)
+from markdown_vault_mcp.managers._ranking import (
+    apply_length_downweight as _apply_length_downweight,
+)
+from markdown_vault_mcp.managers._ranking import (
+    compute_snippet_window as _compute_snippet_for_semantic,
+)
+from markdown_vault_mcp.managers._ranking import (
+    group_by_path as _group_by_path,
+)
 from markdown_vault_mcp.managers._vector_loader import load_or_self_heal
 from markdown_vault_mcp.types import (
     AttachmentInfo,
@@ -44,7 +61,7 @@ from markdown_vault_mcp.utils.fs import GLOB_SYMLINK_KWARGS
 
 if TYPE_CHECKING:
     import builtins
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
 
     from markdown_vault_mcp.fts_index import FTSIndex
     from markdown_vault_mcp.managers.link import LinkManager
@@ -64,293 +81,44 @@ _RRF_K = 60
 # depending on how large a limit the caller passed.
 _SEMANTIC_CANDIDATE_FLOOR = 1000
 
-# Regex for extracting query tokens (alphanumeric sequences).
-_QUERY_TOKEN_RE = _re.compile(r"[A-Za-z0-9]+")
-
 # Maximum folder peers returned by get_context().
 _CONTEXT_FOLDER_PEERS_LIMIT = 20
 
 
-class _ScorableRow(Protocol):
-    """Row contract consumed by the length-downweight helper.
+def _rrf_accumulate(
+    rows: Sequence[_ChannelRow],
+    *,
+    rrf_scores: dict[tuple[str, str | None], float],
+    chunk_meta: dict[tuple[str, str | None], dict[str, Any]],
+    channel_keys: set[tuple[str, str | None]],
+) -> None:
+    """Fold one ranked channel into the Reciprocal Rank Fusion accumulators.
 
-    Both :class:`~markdown_vault_mcp.types.FTSResult` and the local
-    :class:`_SemanticRow` adapter satisfy this Protocol structurally; no
-    nominal subclassing required.  All callers are dataclasses so
-    :func:`dataclasses.replace` is used to produce adjusted-score copies
-    without mutating the input.
-    """
-
-    score: float
-    chunk_count: int
-
-
-_ScorableT = TypeVar("_ScorableT", bound=_ScorableRow)
-
-
-def _apply_length_downweight(
-    rows: list[_ScorableT], *, alpha: float
-) -> list[_ScorableT]:
-    """Re-rank ``rows`` by ``score / (1 + alpha * log(chunk_count))``.
-
-    Returns a new list sorted by descending adjusted score; input is not
-    mutated.  Callers must pass dataclass instances (every caller in this
-    codebase already does) so :func:`dataclasses.replace` can produce the
-    adjusted-score copies.
-    """
-    if alpha <= 0 or not rows:
-        return list(rows)
-
-    adjusted: list[tuple[_ScorableT, float]] = []
-    for row in rows:
-        chunk_count = max(1, row.chunk_count)
-        # log(1) = 0 -> factor = 1 -> no change for single-chunk docs.
-        factor = 1.0 + alpha * math.log(chunk_count)
-        new_score = row.score / factor
-        # Protocols can't promise __dataclass_fields__; the helper's
-        # contract is "callers pass dataclasses" (FTSResult / _SemanticRow
-        # both are), enforced at runtime by replace() itself.
-        new_row = _dc_replace(row, score=new_score)  # type: ignore[type-var]
-        adjusted.append((new_row, new_score))
-
-    adjusted.sort(key=lambda t: t[1], reverse=True)
-    return [r for r, _ in adjusted]
-
-
-class _FolderBoostableRow(Protocol):
-    """Row contract consumed by the folder-boost helper.
-
-    :class:`~markdown_vault_mcp.types.FTSResult`, :class:`_SemanticRow`, and
-    :class:`_GroupableFTS` all satisfy this Protocol structurally.  All
-    callers are dataclasses so :func:`dataclasses.replace` is used to
-    produce adjusted-score copies without mutating the input.
-    """
-
-    folder: str
-    score: float
-
-
-_FolderBoostableT = TypeVar("_FolderBoostableT", bound=_FolderBoostableRow)
-
-
-def _folder_weight(folder: str, weights: dict[str, float]) -> float:
-    """Return the weight of the deepest configured prefix matching *folder*.
-
-    A prefix ``K`` matches folder ``F`` when ``F == K`` or ``F`` starts with
-    ``K + "/"`` (boundary match, so ``"Project"`` never matches
-    ``"Projects"``).  When several prefixes match, the longest (deepest)
-    one wins.  No match returns ``1.0``.
-    """
-    best_key: str | None = None
-    for key in weights:
-        if (folder == key or folder.startswith(key + "/")) and (
-            best_key is None or len(key) > len(best_key)
-        ):
-            best_key = key
-    return 1.0 if best_key is None else weights[best_key]
-
-
-def _apply_folder_boost(
-    rows: list[_FolderBoostableT], *, weights: dict[str, float] | None
-) -> list[_FolderBoostableT]:
-    """Scale positive row scores by their folder's configured weight.
-
-    Returns a new list re-sorted by descending adjusted score; input rows
-    are not mutated (adjusted rows are :func:`dataclasses.replace` copies).
-    Only positive scores are scaled — a negative score (possible only for
-    raw cosine similarities) is left untouched so a demoting weight cannot
-    accidentally promote it.  Empty/absent *weights* is the identity.
-    """
-    if not weights or not rows:
-        return list(rows)
-
-    out: list[_FolderBoostableT] = []
-    for row in rows:
-        weight = _folder_weight(row.folder, weights)
-        if weight != 1.0 and row.score > 0:
-            # Protocols can't promise __dataclass_fields__; the helper's
-            # contract is "callers pass dataclasses" (FTSResult /
-            # _SemanticRow / _GroupableFTS all are), enforced at runtime by
-            # replace() itself.
-            row = _dc_replace(row, score=row.score * weight)  # type: ignore[type-var]
-        out.append(row)
-    out.sort(key=lambda r: r.score, reverse=True)
-    return out
-
-
-class _GroupableRow(Protocol):
-    """Row contract consumed by :func:`_group_by_path`.
-
-    Adds ``heading``, ``start_line`` and ``section_id`` to the cap-helper's
-    contract so grouped output preserves section identity and breaks score
-    ties deterministically.  ``start_line`` defaults to ``0`` for legacy
-    vector rows loaded from older .json sidecars; ``section_id`` is the
-    final tie-break (the ``sections`` rowid) and is ``0`` for any channel
-    that cannot resolve it (vector rows, legacy indices).
-    """
-
-    path: str
-    heading: str | None
-    score: float
-    start_line: int
-    section_id: int
-
-
-_GroupableT = TypeVar("_GroupableT", bound=_GroupableRow)
-
-
-def _group_by_path(
-    rows: list[_GroupableT], *, chunks_per_file: int, file_limit: int
-) -> list[list[_GroupableT]]:
-    """Collapse score-desc rows into file groups.
-
-    Walks ``rows`` (assumed already sorted DESC by score) and emits a list
-    of groups.  Each group is a list of rows sharing the same ``path``,
-    capped at ``chunks_per_file`` rows.  At most ``file_limit`` groups are
-    returned.  Sections within a group are sorted ``(score DESC,
-    start_line ASC, section_id ASC)`` so ties surface in document order.
-    The ``section_id`` key (the ``sections`` rowid) makes the order fully
-    deterministic even when chunks share a ``start_line`` — e.g. word-split
-    fragments of a single oversize source line, which the chunker emits
-    with identical ``start_line`` values.
+    Each row contributes ``1 / (_RRF_K + rank)`` to its ``(path, heading)``
+    key. ``chunk_meta`` keeps the first channel's row payload per key
+    (``setdefault``), so fold order decides which channel's metadata wins
+    for chunks present in both.
 
     Args:
-        rows: Rows pre-sorted by descending score.
-        chunks_per_file: Maximum rows per group; must be >= 1.
-        file_limit: Maximum number of groups emitted.
-
-    Returns:
-        List of groups; outer order = file rank (best file first).
-
-    Raises:
-        ValueError: If ``chunks_per_file`` < 1.
+        rows: One channel's rows, pre-sorted by descending channel score.
+        rrf_scores: Accumulated RRF score per chunk key (mutated).
+        chunk_meta: First-seen row payload per chunk key (mutated).
+        channel_keys: This channel's chunk-key membership set (mutated).
     """
-    if chunks_per_file < 1:
-        raise ValueError(f"chunks_per_file must be >= 1, got {chunks_per_file}")
-
-    groups: dict[str, list[_GroupableT]] = {}
-    order: list[str] = []
-    for row in rows:
-        existing = groups.get(row.path)
-        if existing is None:
-            if len(order) >= file_limit:
-                continue
-            order.append(row.path)
-            groups[row.path] = [row]
-        elif len(existing) < chunks_per_file:
-            existing.append(row)
-
-    # Sort each group's sections by (score DESC, start_line ASC, section_id
-    # ASC) so ties within a file surface in document order — section_id is
-    # the final tie-break for chunks sharing a start_line.
-    return [
-        sorted(groups[p], key=lambda r: (-r.score, r.start_line, r.section_id))
-        for p in order
-    ]
-
-
-def _compute_snippet_for_semantic(
-    content: str, query: str, *, snippet_words: int
-) -> str:
-    """Pick a ``snippet_words``-wide window from ``content``.
-
-    Returns the full content when ``snippet_words`` is 0, when the chunk is
-    already shorter, or as a fallback when no query tokens overlap (in which
-    case the first ``snippet_words`` words are returned with a trailing
-    ellipsis).
-
-    Uses simple case-insensitive substring matching on alphanumeric tokens.
-    """
-    if snippet_words <= 0:
-        return content
-
-    words = content.split()
-    if len(words) <= snippet_words:
-        return content
-
-    # Tokenize the query into both the joined-per-word form (matches our
-    # content normalization, e.g. "isn't" → "isnt") AND the individual
-    # alphanumeric runs (matches per-token content words, e.g. "se-cura"
-    # → {"se", "cura"} so a chunk that mentions "cura" alone still hits).
-    query_tokens: set[str] = set()
-    for word in query.split():
-        runs = _QUERY_TOKEN_RE.findall(word)
-        if not runs:
-            continue
-        # Joined form: runs concatenated.
-        query_tokens.add("".join(runs).lower())
-        # Individual runs: each alphanumeric span.
-        query_tokens.update(r.lower() for r in runs)
-    query_tokens.discard("")
-    if not query_tokens:
-        return " ".join(words[:snippet_words]) + "…"
-
-    # Normalise each word: keep alphanumeric chars, lower-case, fall back to
-    # the lowercased original if no alphanumeric chars were found.
-    lower_words = [
-        "".join(_QUERY_TOKEN_RE.findall(w)).lower() or w.lower() for w in words
-    ]
-
-    # Sliding window: maintain best_start / best_score, update incrementally.
-    best_start = 0
-    best_score = sum(1 for w in lower_words[:snippet_words] if w in query_tokens)
-    cur_score = best_score
-    for i in range(1, len(words) - snippet_words + 1):
-        if lower_words[i - 1] in query_tokens:
-            cur_score -= 1
-        if lower_words[i + snippet_words - 1] in query_tokens:
-            cur_score += 1
-        if cur_score > best_score:
-            best_score = cur_score
-            best_start = i
-
-    if best_score == 0:
-        # No literal overlap anywhere — fall back to first-N words.
-        return " ".join(words[:snippet_words]) + "…"
-
-    snippet = " ".join(words[best_start : best_start + snippet_words])
-    if best_start > 0:
-        snippet = "…" + snippet
-    if best_start + snippet_words < len(words):
-        snippet = snippet + "…"
-    return snippet
-
-
-@dataclass
-class _SemanticRow:
-    """Adapter row for vector search results so they expose .score / .chunk_count.
-
-    ``section_id`` is always ``0``: the vector store keys chunks by metadata,
-    not by ``sections`` rowid, and vector scores essentially never tie
-    (distinct embeddings → distinct cosine), so the tie-break never engages
-    for a pure semantic channel.  The field exists only to satisfy the
-    :class:`_GroupableRow` protocol.
-    """
-
-    path: str
-    title: str
-    folder: str
-    heading: str | None
-    content: str
-    score: float
-    chunk_count: int
-    start_line: int = 0
-    section_id: int = 0
-
-
-@dataclass
-class _GroupableFTS:
-    """Adapter row exposing title/folder/content/start_line/section_id to
-    _group_by_path for the keyword and hybrid channels."""
-
-    path: str
-    title: str
-    folder: str
-    heading: str | None
-    content: str
-    score: float
-    start_line: int
-    section_id: int = 0
+    for rank, row in enumerate(rows, start=1):
+        key = (row.path, row.heading)
+        rrf_scores[key] = rrf_scores.get(key, 0.0) + 1.0 / (_RRF_K + rank)
+        channel_keys.add(key)
+        chunk_meta.setdefault(
+            key,
+            {
+                "title": row.title,
+                "folder": row.folder,
+                "content": row.content,
+                "start_line": row.start_line,
+                "section_id": row.section_id,
+            },
+        )
 
 
 class SearchManager:
@@ -722,6 +490,100 @@ class SearchManager:
             snippet_words=eff_snip,
         )
 
+    def _adapt_semantic_rows(
+        self, rows: builtins.list[dict[str, Any]]
+    ) -> builtins.list[_SemanticRow]:
+        """Adapt raw vector-store rows to the ranking-pipeline row contract.
+
+        Chunk counts are batch-fetched from FTS so the length downweight can
+        normalize multi-chunk documents.  Shared by the semantic and hybrid
+        channels and :meth:`get_similar`.
+
+        Args:
+            rows: Post-filtered dicts from :meth:`VectorIndex.search` /
+                :meth:`VectorIndex.search_by_path`.
+
+        Returns:
+            :class:`_SemanticRow` adapter rows.
+        """
+        chunk_counts = self._fts.get_chunk_counts({r["path"] for r in rows})
+        return [
+            _SemanticRow(
+                path=r["path"],
+                title=r.get("title", ""),
+                folder=r.get("folder", ""),
+                heading=r.get("heading"),
+                content=r.get("content", ""),
+                score=r.get("score", 0.0),
+                chunk_count=chunk_counts.get(r["path"], 1),
+                start_line=int(r.get("start_line", 0)),
+                section_id=0,  # vector store has no sections rowid; see dataclass
+            )
+            for r in rows
+        ]
+
+    def _assemble_grouped_results(
+        self,
+        groups: Sequence[Sequence[_ChannelRow]],
+        *,
+        query: str,
+        snippet_words: int,
+        snippet_map: dict[tuple[str, str | None], str] | None = None,
+        search_type: Literal["keyword", "semantic", "hybrid"]
+        | Callable[[Sequence[_ChannelRow]], Literal["keyword", "semantic", "hybrid"]],
+    ) -> builtins.list[GroupedResult]:
+        """Fold file groups into :class:`GroupedResult` objects.
+
+        The shared tail of every search channel: per-section content
+        resolution (snippet-map hit → recompute → raw content), file score
+        (max of section scores), and frontmatter enrichment.
+
+        Args:
+            groups: File groups from :func:`group_by_path`; rows must expose
+                ``path`` / ``title`` / ``folder`` / ``heading`` /
+                ``content`` / ``score``.
+            query: The search query (drives snippet recomputation).
+            snippet_words: Snippet window width; ``0`` returns raw content.
+            snippet_map: Optional ``{(path, heading): snippet}`` map from
+                :meth:`_fetch_snippet_map`; missing keys fall back to
+                recomputation.
+            search_type: Either a fixed channel label or a callable deriving
+                the label per group (the hybrid channel's union rule).
+
+        Returns:
+            List of :class:`GroupedResult`, one per group, in group order.
+        """
+        out: builtins.list[GroupedResult] = []
+        for group in groups:
+            sections: builtins.list[SectionHit] = []
+            for r in group:
+                key = (r.path, r.heading)
+                if snippet_map and key in snippet_map:
+                    content = snippet_map[key]
+                elif snippet_words > 0:
+                    content = _compute_snippet_for_semantic(
+                        r.content, query, snippet_words=snippet_words
+                    )
+                else:
+                    content = r.content
+                sections.append(
+                    SectionHit(heading=r.heading, content=content, score=r.score)
+                )
+            head = group[0]
+            file_type = search_type(group) if callable(search_type) else search_type
+            out.append(
+                GroupedResult(
+                    path=head.path,
+                    title=head.title,
+                    folder=head.folder,
+                    score=max(s.score for s in sections),
+                    search_type=file_type,
+                    frontmatter=self._get_frontmatter(head.path),
+                    sections=sections,
+                )
+            )
+        return out
+
     def _keyword_search(
         self,
         query: str,
@@ -763,8 +625,7 @@ class SearchManager:
         )
 
         if snippet_words > 0:
-            survivor_rows = [r for g in groups for r in g]
-            survivor_keys = {(r.path, r.heading) for r in survivor_rows}
+            survivor_keys = {(r.path, r.heading) for g in groups for r in g}
             snippet_rows = [
                 fr for fr in downweighted if (fr.path, fr.heading) in survivor_keys
             ]
@@ -779,35 +640,13 @@ class SearchManager:
         else:
             snippets_by_key = {}
 
-        out: list[GroupedResult] = []
-        for group in groups:
-            sections: list[SectionHit] = []
-            for r in group:
-                key = (r.path, r.heading)
-                if key in snippets_by_key:
-                    content = snippets_by_key[key]
-                elif snippet_words > 0:
-                    content = _compute_snippet_for_semantic(
-                        r.content, query, snippet_words=snippet_words
-                    )
-                else:
-                    content = r.content
-                sections.append(
-                    SectionHit(heading=r.heading, content=content, score=r.score)
-                )
-            head = group[0]
-            out.append(
-                GroupedResult(
-                    path=head.path,
-                    title=head.title,
-                    folder=head.folder,
-                    score=max(s.score for s in sections),
-                    search_type="keyword",
-                    frontmatter=self._get_frontmatter(head.path),
-                    sections=sections,
-                )
-            )
-        return out
+        return self._assemble_grouped_results(
+            groups,
+            query=query,
+            snippet_words=snippet_words,
+            snippet_map=snippets_by_key,
+            search_type="keyword",
+        )
 
     def _fetch_snippet_map(
         self,
@@ -872,22 +711,7 @@ class SearchManager:
         raw = vectors.search(query, limit=candidate_limit)
 
         filtered = self._post_filter_semantic_rows(raw, folder=folder, filters=filters)
-
-        chunk_counts = self._fts.get_chunk_counts({r["path"] for r in filtered})
-        rows: list[_SemanticRow] = [
-            _SemanticRow(
-                path=r["path"],
-                title=r["title"],
-                folder=r["folder"],
-                heading=r.get("heading"),
-                content=r["content"],
-                score=r["score"],
-                chunk_count=chunk_counts.get(r["path"], 1),
-                start_line=int(r.get("start_line", 0)),
-                section_id=0,  # vector store has no sections rowid; see dataclass
-            )
-            for r in filtered
-        ]
+        rows = self._adapt_semantic_rows(filtered)
 
         downweighted = _apply_length_downweight(
             rows, alpha=self._length_downweight_alpha
@@ -897,31 +721,12 @@ class SearchManager:
             downweighted, chunks_per_file=chunks_per_file, file_limit=limit
         )
 
-        out: list[GroupedResult] = []
-        for group in groups:
-            sections = [
-                SectionHit(
-                    heading=r.heading,
-                    content=_compute_snippet_for_semantic(
-                        r.content, query, snippet_words=snippet_words
-                    ),
-                    score=r.score,
-                )
-                for r in group
-            ]
-            head = group[0]
-            out.append(
-                GroupedResult(
-                    path=head.path,
-                    title=head.title,
-                    folder=head.folder,
-                    score=max(s.score for s in sections),
-                    search_type="semantic",
-                    frontmatter=self._get_frontmatter(head.path),
-                    sections=sections,
-                )
-            )
-        return out
+        return self._assemble_grouped_results(
+            groups,
+            query=query,
+            snippet_words=snippet_words,
+            search_type="semantic",
+        )
 
     def _hybrid_search(
         self,
@@ -961,24 +766,9 @@ class SearchManager:
         vec_filtered = self._post_filter_semantic_rows(
             vec_raw, folder=folder, filters=filters
         )
-
-        vec_chunk_counts = self._fts.get_chunk_counts({r["path"] for r in vec_filtered})
-        vec_rows: list[_SemanticRow] = [
-            _SemanticRow(
-                path=r["path"],
-                title=r["title"],
-                folder=r["folder"],
-                heading=r.get("heading"),
-                content=r["content"],
-                score=r["score"],
-                chunk_count=vec_chunk_counts.get(r["path"], 1),
-                start_line=int(r.get("start_line", 0)),
-                section_id=0,  # vector store has no sections rowid; see dataclass
-            )
-            for r in vec_filtered
-        ]
         vec_rows = _apply_length_downweight(
-            vec_rows, alpha=self._length_downweight_alpha
+            self._adapt_semantic_rows(vec_filtered),
+            alpha=self._length_downweight_alpha,
         )
 
         rrf_scores: dict[tuple[str, str | None], float] = {}
@@ -986,50 +776,24 @@ class SearchManager:
         keyword_keys: set[tuple[str, str | None]] = set()
         vec_keys: set[tuple[str, str | None]] = set()
 
-        # FTS results are walked before vector results, so chunk_meta's
+        # FTS results are folded before vector results, so chunk_meta's
         # setdefault keeps the keyword channel's section_id (a real sections
         # rowid >= 1) for any chunk present in both channels; a vector-only
         # chunk keeps section_id=0.  Both are correct: the keyword rowid is
         # the authoritative tie-break value, and vector-only ties are
         # measure-zero (distinct embeddings -> distinct cosine scores).
-        for rank, fr in enumerate(fts_results, start=1):
-            key = (fr.path, fr.heading)
-            rrf_scores[key] = rrf_scores.get(key, 0.0) + 1.0 / (_RRF_K + rank)
-            keyword_keys.add(key)
-            chunk_meta.setdefault(
-                key,
-                {
-                    "path": fr.path,
-                    "title": fr.title,
-                    "folder": fr.folder,
-                    "heading": fr.heading,
-                    "content": fr.content,
-                    "search_type": "keyword",
-                    "start_line": fr.start_line,
-                    "section_id": fr.section_id,
-                },
-            )
-
-        for rank, vr in enumerate(vec_rows, start=1):
-            vkey = (vr.path, vr.heading)
-            rrf_scores[vkey] = rrf_scores.get(vkey, 0.0) + 1.0 / (_RRF_K + rank)
-            vec_keys.add(vkey)
-            chunk_meta.setdefault(
-                vkey,
-                {
-                    "path": vr.path,
-                    "title": vr.title,
-                    "folder": vr.folder,
-                    "heading": vr.heading,
-                    "content": vr.content,
-                    "search_type": "semantic",
-                    "start_line": vr.start_line,
-                    "section_id": vr.section_id,
-                },
-            )
-
-        for key in keyword_keys & vec_keys:
-            chunk_meta[key]["search_type"] = "hybrid"
+        _rrf_accumulate(
+            fts_results,
+            rrf_scores=rrf_scores,
+            chunk_meta=chunk_meta,
+            channel_keys=keyword_keys,
+        )
+        _rrf_accumulate(
+            vec_rows,
+            rrf_scores=rrf_scores,
+            chunk_meta=chunk_meta,
+            channel_keys=vec_keys,
+        )
 
         sorted_keys = sorted(rrf_scores, key=lambda k: rrf_scores[k], reverse=True)
 
@@ -1075,25 +839,9 @@ class SearchManager:
                 candidate_limit=fts_candidate_limit,
             )
 
-        out: list[GroupedResult] = []
-        for group in groups:
-            sections: list[SectionHit] = []
-            for gr in group:
-                key = (gr.path, gr.heading)
-                meta = chunk_meta[key]
-                if key in snippet_map:
-                    content = snippet_map[key]
-                elif snippet_words > 0:
-                    content = _compute_snippet_for_semantic(
-                        meta["content"], query, snippet_words=snippet_words
-                    )
-                else:
-                    content = meta["content"]
-                sections.append(
-                    SectionHit(heading=gr.heading, content=content, score=gr.score)
-                )
-            head = group[0]
-            head_meta = chunk_meta[(head.path, head.heading)]
+        def _group_search_type(
+            group: Sequence[_ChannelRow],
+        ) -> Literal["keyword", "semantic", "hybrid"]:
             # File-level search_type: union over the group's sections.
             # "hybrid" if the group spans both channels — covers both
             # (a) any single section appeared in both channels and
@@ -1105,23 +853,18 @@ class SearchManager:
             in_keyword = bool(group_keys & keyword_keys)
             in_vec = bool(group_keys & vec_keys)
             if in_keyword and in_vec:
-                file_search_type: Literal["keyword", "semantic", "hybrid"] = "hybrid"
-            elif in_keyword:
-                file_search_type = "keyword"
-            else:
-                file_search_type = "semantic"
-            out.append(
-                GroupedResult(
-                    path=head.path,
-                    title=head_meta["title"],
-                    folder=head_meta["folder"],
-                    score=max(s.score for s in sections),
-                    search_type=file_search_type,
-                    frontmatter=self._get_frontmatter(head.path),
-                    sections=sections,
-                )
-            )
-        return out
+                return "hybrid"
+            if in_keyword:
+                return "keyword"
+            return "semantic"
+
+        return self._assemble_grouped_results(
+            groups,
+            query=query,
+            snippet_words=snippet_words,
+            snippet_map=snippet_map,
+            search_type=_group_search_type,
+        )
 
     # ------------------------------------------------------------------
     # List / enumerate
@@ -1162,70 +905,122 @@ class SearchManager:
         if not include_attachments:
             return notes
 
+        return notes + self._list_attachments(pattern=pattern, folder=folder)
+
+    def _list_attachments(
+        self, *, pattern: str | None, folder: str | None
+    ) -> builtins.list[AttachmentInfo]:
+        """Scan the filesystem for allowlisted non-.md attachments.
+
+        Attachments are not indexed, so this walks the source tree directly.
+        The scan runs without any lock — the result is a best-effort
+        snapshot and is not atomic with an FTS note listing.
+
+        Args:
+            pattern: Optional Unix glob matched against the relative path.
+            folder: Optional folder restriction (exact or sub-folder prefix).
+
+        Returns:
+            List of :class:`~markdown_vault_mcp.types.AttachmentInfo`.
+        """
         exts = self._effective_attachment_extensions()
-        attachments: list[AttachmentInfo] = []
-
-        # Attachment scan runs without any lock — result is a best-effort
-        # snapshot and is not atomic with the FTS note listing above.
+        attachments: builtins.list[AttachmentInfo] = []
         for abs_path in self._source_dir.rglob("*", **GLOB_SYMLINK_KWARGS):
-            if not abs_path.is_file():
-                continue
-            if abs_path.suffix.lower() == ".md":
-                continue
-            suffix = abs_path.suffix.lstrip(".").lower()
-            if "*" not in exts and suffix not in exts:
-                continue
-            try:
-                # rglob yields paths anchored at the unresolved self._source_dir;
-                # using .resolve() here would mismatch when source_dir is itself
-                # a symlink and silently drop every attachment.
-                rel = abs_path.relative_to(self._source_dir)
-            except ValueError as exc:
-                logger.warning(
-                    "_list_attachments: skipping %s — outside source_dir (%s)",
-                    abs_path,
-                    exc,
-                )
-                continue
-            rel_path = str(rel)
-            # Skip files where any path component starts with ".".
-            if any(part.startswith(".") for part in rel.parts):
-                continue
-            # Apply exclude_patterns — mirrors scan_directory behaviour.
-            if self._is_path_excluded(rel.as_posix()):
-                continue
-            if pattern and not fnmatch.fnmatch(rel_path, pattern):
-                continue
-            rel_folder = str(Path(rel_path).parent)
-            if rel_folder == ".":
-                rel_folder = ""
-            if (
-                folder is not None
-                and rel_folder != folder
-                and not rel_folder.startswith(folder + "/")
-            ):
-                continue
-            try:
-                stat = abs_path.stat()
-            except OSError as exc:
-                logger.warning(
-                    "_list_attachments: skipping %s — stat error (%s)",
-                    abs_path,
-                    exc,
-                )
-                continue
-            mime_type, _ = mimetypes.guess_type(rel_path)
-            attachments.append(
-                AttachmentInfo(
-                    path=rel_path,
-                    folder=rel_folder,
-                    mime_type=mime_type,
-                    size_bytes=stat.st_size,
-                    modified_at=stat.st_mtime,
-                )
+            info = self._attachment_info(
+                abs_path, exts=exts, pattern=pattern, folder=folder
             )
+            if info is not None:
+                attachments.append(info)
+        return attachments
 
-        return notes + attachments
+    def _attachment_rel_path(self, abs_path: Path) -> Path | None:
+        """Vault-relative path of *abs_path*, or ``None`` when out of scope.
+
+        Out of scope: outside ``source_dir``, any dot-prefixed path
+        component, or a match against the configured exclude patterns
+        (mirrors ``scan_directory`` behaviour).
+        """
+        try:
+            # rglob yields paths anchored at the unresolved self._source_dir;
+            # using .resolve() here would mismatch when source_dir is itself
+            # a symlink and silently drop every attachment.
+            rel = abs_path.relative_to(self._source_dir)
+        except ValueError as exc:
+            logger.warning(
+                "_list_attachments: skipping %s — outside source_dir (%s)",
+                abs_path,
+                exc,
+            )
+            return None
+        # Skip files where any path component starts with ".".
+        if any(part.startswith(".") for part in rel.parts):
+            return None
+        if self._is_path_excluded(rel.as_posix()):
+            return None
+        return rel
+
+    def _attachment_info(
+        self,
+        abs_path: Path,
+        *,
+        exts: frozenset[str],
+        pattern: str | None,
+        folder: str | None,
+    ) -> AttachmentInfo | None:
+        """Classify one filesystem entry as an attachment, or ``None`` to skip.
+
+        Applies the allowlist, scope, glob-pattern, and folder filters in
+        order, then stats the file for size/mtime.
+
+        Args:
+            abs_path: Absolute path yielded by the source-tree walk.
+            exts: Effective attachment-extension allowlist.
+            pattern: Optional Unix glob matched against the relative path.
+            folder: Optional folder restriction (exact or sub-folder prefix).
+
+        Returns:
+            An :class:`~markdown_vault_mcp.types.AttachmentInfo`, or
+            ``None`` when the entry is filtered out or unreadable.
+        """
+        suffix = abs_path.suffix.lstrip(".").lower()
+        if (
+            not abs_path.is_file()
+            or abs_path.suffix.lower() == ".md"
+            or ("*" not in exts and suffix not in exts)
+        ):
+            return None
+        rel = self._attachment_rel_path(abs_path)
+        if rel is None:
+            return None
+        rel_path = str(rel)
+        if pattern and not fnmatch.fnmatch(rel_path, pattern):
+            return None
+        rel_folder = str(Path(rel_path).parent)
+        if rel_folder == ".":
+            rel_folder = ""
+        if (
+            folder is not None
+            and rel_folder != folder
+            and not rel_folder.startswith(folder + "/")
+        ):
+            return None
+        try:
+            stat = abs_path.stat()
+        except OSError as exc:
+            logger.warning(
+                "_list_attachments: skipping %s — stat error (%s)",
+                abs_path,
+                exc,
+            )
+            return None
+        mime_type, _ = mimetypes.guess_type(rel_path)
+        return AttachmentInfo(
+            path=rel_path,
+            folder=rel_folder,
+            mime_type=mime_type,
+            size_bytes=stat.st_size,
+            modified_at=stat.st_mtime,
+        )
 
     def list_folders(self) -> builtins.list[str]:
         """Return all distinct folder values across the indexed vault.
@@ -1365,40 +1160,86 @@ class SearchManager:
             raw_results, folder=folder, filters=filters
         )
 
-        chunk_counts = self._fts.get_chunk_counts({r["path"] for r in raw_results})
-        rows: list[_SemanticRow] = [
-            _SemanticRow(
-                path=r["path"],
-                title=r.get("title", ""),
-                folder=r.get("folder", ""),
-                heading=r.get("heading"),
-                content=r.get("content", ""),
-                score=r.get("score", 0.0),
-                chunk_count=chunk_counts.get(r["path"], 1),
-                start_line=int(r.get("start_line", 0)),
-                section_id=0,  # vector store has no sections rowid; see dataclass
-            )
-            for r in raw_results
-        ]
+        rows = self._adapt_semantic_rows(raw_results)
         # Skip downweight: grouping already dedupes multi-chunk docs; see #472.
         downweighted = _apply_length_downweight(rows, alpha=0.0)
         groups = _group_by_path(downweighted, chunks_per_file=eff_cpf, file_limit=limit)
 
-        return [
-            GroupedResult(
-                path=group[0].path,
-                title=group[0].title,
-                folder=group[0].folder,
-                score=max(r.score for r in group),
-                search_type="semantic",
-                frontmatter=self._get_frontmatter(group[0].path),
-                sections=[
-                    SectionHit(heading=r.heading, content=r.content, score=r.score)
-                    for r in group
-                ],
+        # snippet_words=0: similarity results return full section content.
+        return self._assemble_grouped_results(
+            groups, query="", snippet_words=0, search_type="semantic"
+        )
+
+    def _context_backlinks(
+        self, path: str, link_limit: int
+    ) -> builtins.list[BacklinkInfo]:
+        """Collect backlinks for :meth:`get_context` (best effort).
+
+        Uses the :class:`LinkManager` when wired (the production path —
+        ``vault.py`` always injects one), else falls back to raw FTS rows.
+        Failures are logged and yield an empty list rather than failing the
+        whole dossier.
+        """
+        if self._link_manager is not None:
+            try:
+                return self._link_manager.get_backlinks(path, limit=link_limit)
+            except (ValueError, sqlite3.OperationalError) as exc:
+                logger.warning("get_context: backlinks for %s: %s", path, exc)
+            return []
+        try:
+            backlinks = self._fts.get_backlinks(path, limit=link_limit)
+            return [
+                BacklinkInfo(
+                    source_path=r["source_path"],
+                    source_title=r["source_title"],
+                    link_text=r["link_text"],
+                    link_type=r["link_type"],
+                    fragment=r["fragment"],
+                    raw_target=r["raw_target"],
+                )
+                for r in backlinks
+            ]
+        except sqlite3.OperationalError as exc:
+            logger.warning(
+                "get_context: failed to retrieve backlinks for %s: %s",
+                path,
+                exc,
             )
-            for group in groups
-        ]
+        return []
+
+    def _context_outlinks(
+        self, path: str, link_limit: int
+    ) -> builtins.list[OutlinkInfo]:
+        """Collect outlinks for :meth:`get_context` (best effort).
+
+        Mirror of :meth:`_context_backlinks` for the outgoing direction.
+        """
+        if self._link_manager is not None:
+            try:
+                return self._link_manager.get_outlinks(path, limit=link_limit)
+            except (ValueError, sqlite3.OperationalError) as exc:
+                logger.warning("get_context: outlinks for %s: %s", path, exc)
+            return []
+        try:
+            outlinks = self._fts.get_outlinks(path, limit=link_limit)
+            return [
+                OutlinkInfo(
+                    target_path=r["target_path"],
+                    link_text=r["link_text"],
+                    link_type=r["link_type"],
+                    fragment=r["fragment"],
+                    exists=bool(r["target_exists"]),
+                    raw_target=r["raw_target"],
+                )
+                for r in outlinks
+            ]
+        except sqlite3.OperationalError as exc:
+            logger.warning(
+                "get_context: failed to retrieve outlinks for %s: %s",
+                path,
+                exc,
+            )
+        return []
 
     def get_context(
         self,
@@ -1432,61 +1273,8 @@ class SearchManager:
 
         frontmatter = self._get_frontmatter(path)
 
-        # Backlinks — via LinkManager if available, else direct FTS.
-        backlink_objs: list[BacklinkInfo] = []
-        if self._link_manager is not None:
-            try:
-                backlink_objs = self._link_manager.get_backlinks(path, limit=link_limit)
-            except (ValueError, sqlite3.OperationalError) as exc:
-                logger.warning("get_context: backlinks for %s: %s", path, exc)
-        else:
-            try:
-                backlinks = self._fts.get_backlinks(path, limit=link_limit)
-                backlink_objs = [
-                    BacklinkInfo(
-                        source_path=r["source_path"],
-                        source_title=r["source_title"],
-                        link_text=r["link_text"],
-                        link_type=r["link_type"],
-                        fragment=r["fragment"],
-                        raw_target=r["raw_target"],
-                    )
-                    for r in backlinks
-                ]
-            except sqlite3.OperationalError as exc:
-                logger.warning(
-                    "get_context: failed to retrieve backlinks for %s: %s",
-                    path,
-                    exc,
-                )
-
-        # Outlinks — via LinkManager if available, else direct FTS.
-        outlink_objs: list[OutlinkInfo] = []
-        if self._link_manager is not None:
-            try:
-                outlink_objs = self._link_manager.get_outlinks(path, limit=link_limit)
-            except (ValueError, sqlite3.OperationalError) as exc:
-                logger.warning("get_context: outlinks for %s: %s", path, exc)
-        else:
-            try:
-                outlinks = self._fts.get_outlinks(path, limit=link_limit)
-                outlink_objs = [
-                    OutlinkInfo(
-                        target_path=r["target_path"],
-                        link_text=r["link_text"],
-                        link_type=r["link_type"],
-                        fragment=r["fragment"],
-                        exists=bool(r["target_exists"]),
-                        raw_target=r["raw_target"],
-                    )
-                    for r in outlinks
-                ]
-            except sqlite3.OperationalError as exc:
-                logger.warning(
-                    "get_context: failed to retrieve outlinks for %s: %s",
-                    path,
-                    exc,
-                )
+        backlink_objs = self._context_backlinks(path, link_limit)
+        outlink_objs = self._context_outlinks(path, link_limit)
 
         # Similar notes — field-collapsed via shared get_similar core so the
         # dossier never re-applies the cap on top of the cap (#469).  Use
