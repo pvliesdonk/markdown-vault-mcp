@@ -77,8 +77,8 @@ def _json_default(obj: Any) -> str:
 
 
 # DDL executed once on connection open. `foreign_keys` is intentionally NOT
-# set here — `_apply_pragmas` sets it on every connection (primary and
-# per-thread) before `_init_schema` runs.
+# set here — `SqliteConnectionRegistry.apply_pragmas` sets it on every
+# connection (primary and per-thread) before `_init_schema` runs.
 _SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS documents (
     id INTEGER PRIMARY KEY,
