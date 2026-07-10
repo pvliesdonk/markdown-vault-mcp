@@ -81,6 +81,8 @@ Find documents matching a query using full-text or semantic search.
     - Use `mode="semantic"` for meaning-based similarity
     - Check `stats` to see if `semantic_search_available` is true
 
+    Keyword and hybrid modes accept FTS5 operators (`AND`, `OR`, `NEAR`, `"exact phrase"`, `prefix*`). A natural-language query whose terms contain characters FTS5 reserves (a hyphenated slug such as `vault-mcp`, or a colon) is matched literally rather than failing, so plain queries do not need escaping.
+
 **Example usage:**
 
 ```json

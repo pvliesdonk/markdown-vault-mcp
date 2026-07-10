@@ -312,8 +312,10 @@ class TestSearch:
         results = idx.search("")
         assert results == []
 
-    def test_search_malformed_fts5_syntax_returns_empty_results(self) -> None:
-        """search() returns an empty list for malformed FTS5 syntax (no exception)."""
+    def test_search_malformed_fts5_syntax_degrades_to_term_search(self) -> None:
+        """A query FTS5 rejects (unclosed quote) degrades to a quoted term
+        search rather than silently returning [] — the terms are still found
+        when present (#866)."""
         idx = FTSIndex(":memory:")
         idx.upsert_note(
             make_note(
@@ -322,18 +324,20 @@ class TestSearch:
                     Chunk(
                         heading=None,
                         heading_level=0,
-                        content="hello world",
+                        content="hello unclosed world",
                         start_line=0,
                     )
                 ],
             )
         )
-        # Unclosed quote is invalid FTS5 syntax
-        results = idx.search('"unclosed quote')
-        assert results == []
+        # Unclosed quote is invalid FTS5 syntax; the fallback quotes each token
+        # so the real word "unclosed" is still matched.
+        results = idx.search('"unclosed world')
+        assert [r.path for r in results] == ["a.md"]
 
-    def test_search_invalid_fts5_column_returns_empty_results(self) -> None:
-        """search() returns an empty list for an invalid FTS5 column reference."""
+    def test_search_invalid_fts5_column_degrades_to_term_search(self) -> None:
+        """A `foo:bar` query where `foo` is not an FTS column degrades to a
+        term search instead of returning [] (#866)."""
         idx = FTSIndex(":memory:")
         idx.upsert_note(
             make_note(
@@ -342,15 +346,19 @@ class TestSearch:
                     Chunk(
                         heading=None,
                         heading_level=0,
-                        content="hello world",
+                        content="the value lives here",
                         start_line=0,
                     )
                 ],
             )
         )
-        # FTS5 column filters for non-existent columns raise OperationalError
-        results = idx.search("nonexistent_column:value")
-        assert results == []
+        # `nonexistent_column:value` raises "no such column"; the fallback
+        # quotes it into one phrase literal ("nonexistent column value", a
+        # single adjacency phrase) — those tokens are not adjacent in the doc,
+        # so no match.
+        assert idx.search("nonexistent_column:value") == []
+        # ...but the bare word does match once the column syntax is gone.
+        assert [r.path for r in idx.search("value")] == ["a.md"]
 
     def test_search_non_fts5_operational_error_propagates(self) -> None:
         """Non-FTS5 OperationalError (e.g. DB lock) must propagate, not return []."""
@@ -365,6 +373,177 @@ class TestSearch:
 
         with pytest.raises(sqlite3.OperationalError, match="database is locked"):
             idx.search("hello")
+
+    def _hyphen_idx(self) -> FTSIndex:
+        idx = FTSIndex(":memory:")
+        idx.upsert_note(
+            make_note(
+                "doc.md",
+                chunks=[
+                    Chunk(
+                        heading=None,
+                        heading_level=0,
+                        content="Ingest File-back Lint pipeline",
+                        start_line=0,
+                    )
+                ],
+            )
+        )
+        return idx
+
+    def test_hyphenated_query_finds_document(self) -> None:
+        """#866 repro: a hyphenated natural-language query returned [] because
+        FTS5 rejected it and the error was swallowed. It must now find the doc."""
+        idx = self._hyphen_idx()
+        results = idx.search("File-back Ingest Lint")
+        assert [r.path for r in results] == ["doc.md"]
+        idx.close()
+
+    def test_single_hyphenated_slug_finds_document(self) -> None:
+        """A lone slug like `vault-mcp` (raises 'no such column') must match."""
+        idx = FTSIndex(":memory:")
+        idx.upsert_note(
+            make_note(
+                "s.md",
+                chunks=[
+                    Chunk(
+                        heading=None,
+                        heading_level=0,
+                        content="the vault-mcp server rocks",
+                        start_line=0,
+                    )
+                ],
+            )
+        )
+        assert [r.path for r in idx.search("vault-mcp")] == ["s.md"]
+        idx.close()
+
+    def test_wellformed_boolean_query_bypasses_fallback(self) -> None:
+        """A valid FTS5 OR query must keep operator semantics (not be quoted).
+
+        `Ingest OR zzzmissing` parses cleanly and matches on `Ingest`; if the
+        quote-fallback fired it would AND three literals (incl. `or`) and match
+        nothing. Returning the doc proves well-formed queries bypass the
+        fallback — the documented FTS5-query contract is preserved.
+        """
+        idx = self._hyphen_idx()
+        assert [r.path for r in idx.search("Ingest OR zzzmissing")] == ["doc.md"]
+        idx.close()
+
+    def test_wellformed_phrase_and_prefix_queries_still_work(self) -> None:
+        idx = self._hyphen_idx()
+        assert [r.path for r in idx.search('"Ingest File"')] == ["doc.md"]  # phrase
+        assert [r.path for r in idx.search(" Inge*")] == ["doc.md"]  # prefix
+        idx.close()
+
+    def test_hyphenated_query_with_absent_terms_returns_empty(self) -> None:
+        """The fallback still returns [] when the quoted terms aren't present —
+        graceful degradation, not a false positive."""
+        idx = self._hyphen_idx()
+        assert idx.search("absent-slug notpresent") == []
+        idx.close()
+
+    def test_search_retry_non_fts5_error_propagates(self) -> None:
+        """A non-FTS5 error on the *quoted retry* must propagate, not be
+        swallowed to [] — the same guarantee as the first execute (#866)."""
+        from unittest.mock import MagicMock
+
+        idx = FTSIndex(":memory:")
+        mock_conn = MagicMock()
+        # First execute: FTS5 syntax error (triggers the retry). Retry: a
+        # genuine environmental error that must not be masked. Use a non-locked
+        # error so the @_retry_on_locked decorator doesn't re-drive search().
+        mock_conn.execute.side_effect = [
+            sqlite3.OperationalError('fts5: syntax error near "-"'),
+            sqlite3.OperationalError("disk I/O error"),
+        ]
+        idx._conn = lambda: mock_conn  # type: ignore[method-assign]
+        with pytest.raises(sqlite3.OperationalError, match="disk I/O error"):
+            idx.search("vault-mcp")
+
+    def test_search_retry_still_malformed_returns_empty_and_warns(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """If the quoted retry is *also* rejected as an FTS5 query error, the
+        search degrades to [] — and logs at WARNING (degraded but continuing),
+        not silently."""
+        import logging
+        from unittest.mock import MagicMock
+
+        idx = FTSIndex(":memory:")
+        mock_conn = MagicMock()
+        mock_conn.execute.side_effect = [
+            sqlite3.OperationalError('fts5: syntax error near "-"'),
+            sqlite3.OperationalError("fts5: unterminated string"),
+        ]
+        idx._conn = lambda: mock_conn  # type: ignore[method-assign]
+        with caplog.at_level(logging.WARNING, logger="markdown_vault_mcp.fts_index"):
+            assert idx.search("vault-mcp") == []
+        assert any("fts_search_unexecutable" in r.getMessage() for r in caplog.records)
+
+    def test_search_whitespace_only_query_with_fts_error_returns_empty(self) -> None:
+        """A truthy query with no quotable tokens that FTS5 rejects degrades to
+        [] (the unrecoverable-fallback guard)."""
+        from unittest.mock import MagicMock
+
+        idx = FTSIndex(":memory:")
+        mock_conn = MagicMock()
+        # A one-element side_effect: only the FIRST execute may run. If the
+        # `if not fallback: return []` guard were removed, the code would call
+        # execute a second time (with the empty match) and StopIteration would
+        # fail the test — so this genuinely pins the guard branch.
+        mock_conn.execute.side_effect = [
+            sqlite3.OperationalError("fts5: syntax error"),
+        ]
+        idx._conn = lambda: mock_conn  # type: ignore[method-assign]
+        # "   " is truthy (bypasses the empty-query guard) but tokenizes to no
+        # quotable tokens, so the fallback is empty and search returns [].
+        assert idx.search("   ") == []
+
+    def test_fallback_honours_folder_filter(self) -> None:
+        """A hyphenated query that triggers the quoted retry must still respect
+        the folder= filter — the retry reuses the same folder/tag params."""
+        idx = FTSIndex(":memory:")
+        for path in ("Journal/a.md", "Notes/b.md"):
+            idx.upsert_note(
+                make_note(
+                    path,
+                    chunks=[
+                        Chunk(
+                            heading=None,
+                            heading_level=0,
+                            content="the vault-mcp pipeline",
+                            start_line=0,
+                        )
+                    ],
+                )
+            )
+        results = idx.search("vault-mcp", folder="Journal")
+        assert [r.path for r in results] == ["Journal/a.md"]
+        idx.close()
+
+    def test_fallback_escapes_embedded_quote(self) -> None:
+        """A token containing a double-quote is matched via the quote-doubling
+        escape, not re-broken into malformed FTS5 syntax that masks as []."""
+        idx = FTSIndex(":memory:")
+        idx.upsert_note(
+            make_note(
+                "q.md",
+                chunks=[
+                    Chunk(
+                        heading=None,
+                        heading_level=0,
+                        content='he said "hi" today',
+                        start_line=0,
+                    )
+                ],
+            )
+        )
+        # `said"hi` is an unterminated FTS5 string; the fallback must produce
+        # "said""hi" (doubled quote) and still find the doc.
+        results = idx.search('said"hi')
+        assert [r.path for r in results] == ["q.md"]
+        idx.close()
 
     def test_search_returns_start_line(self) -> None:
         """search() propagates start_line from the sections row.

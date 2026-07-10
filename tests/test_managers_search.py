@@ -130,6 +130,24 @@ class TestKeywordSearch:
         results = search_mgr.search("zzzznonexistent")
         assert results == []
 
+    def test_hyphenated_query_finds_document_through_keyword_leg(
+        self, tmp_path: Path
+    ) -> None:
+        """#866: a hyphenated query must flow through the SearchManager keyword
+        leg (which delegates to FTSIndex.search) and return the doc."""
+        vault = tmp_path / "hyphen_vault"
+        vault.mkdir()
+        (vault / "slug.md").write_text(
+            "# Slug\n\nThe vault-mcp File-back pipeline runs nightly.\n",
+            encoding="utf-8",
+        )
+        fts = FTSIndex(db_path=":memory:")
+        for note in scan_directory(vault):
+            fts.upsert_note(note)
+        mgr = SearchManager(fts=fts, source_dir=vault)
+        results = mgr.search("vault-mcp File-back", mode="keyword")
+        assert [r.path for r in results] == ["slug.md"]
+
 
 # ---------------------------------------------------------------------------
 # semantic search

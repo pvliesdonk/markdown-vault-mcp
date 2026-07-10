@@ -220,6 +220,49 @@ def _escape_like(value: str) -> str:
     return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
+def _is_fts5_query_error(exc: sqlite3.OperationalError) -> bool:
+    """True when an ``OperationalError`` is an FTS5 *query-syntax* error.
+
+    Distinguishes a malformed MATCH expression (user input problem, safe to
+    recover from) from an environmental error such as a database lock (must
+    propagate). Matches the error strings SQLite emits for FTS5 query
+    problems: ``fts5: syntax error``, ``no such column`` (a bareword parsed as
+    a column filter), and ``unterminated string``.
+    """
+    msg = str(exc).lower()
+    return (
+        "fts5" in msg
+        or "syntax error" in msg
+        or "no such column" in msg
+        or "unterminated" in msg
+    )
+
+
+def _quote_fts_query(query: str) -> str:
+    """Quote each whitespace-separated token as an FTS5 string literal.
+
+    FTS5 query syntax treats characters like ``-`` and ``:`` between barewords
+    as operators/column filters, so a natural-language query such as
+    ``File-back Ingest Lint`` or a slug like ``vault-mcp`` is rejected with an
+    ``OperationalError`` (#866). Wrapping each token in a string literal
+    (``"File-back" "Ingest" "Lint"`` — case is preserved; FTS5's tokenizer
+    handles case-folding) turns the query into an implicit-AND of phrase
+    literals: the special characters are matched literally, a compound
+    like ``File-back`` becomes an adjacency phrase over its tokens, and no
+    token can be mistaken for an operator or column reference. Internal quotes
+    are escaped by doubling, per FTS5's literal grammar.
+
+    Args:
+        query: The raw user query that FTS5 rejected.
+
+    Returns:
+        A space-joined string of quoted literals, or ``""`` when *query* has
+        no tokens (the caller then returns no results).
+    """
+    tokens = query.split()
+    return " ".join(f'"{token.replace(chr(34), chr(34) * 2)}"' for token in tokens)
+
+
 def _derive_folder(path: str) -> str:
     """Derive the folder from a document's relative path.
 
@@ -1066,7 +1109,14 @@ class FTSIndex:
         """Full-text search using BM25 ranking.
 
         Args:
-            query: FTS5 query string.
+            query: FTS5 query string. Well-formed operator syntax (``AND`` /
+                ``OR`` / ``NEAR`` / phrases / prefixes) is honoured as-is. A
+                query FTS5 rejects as malformed — most commonly a
+                natural-language query with a hyphenated term or slug (e.g.
+                ``vault-mcp``), which parses as a column filter — is retried
+                once with every token quoted as a phrase literal, so it
+                degrades to an implicit-AND term search instead of returning
+                ``[]`` (#866).
             limit: Maximum number of results to return.
             folder: If provided, only return documents whose ``folder``
                 starts with this string.
@@ -1164,13 +1214,12 @@ class FTSIndex:
         if not query:
             return []
 
-        params: list[object] = [
-            *snippet_params,
-            query,
-            *folder_params,
-            *tag_params,
-            limit,
-        ]
+        def _execute(match: str) -> sqlite3.Cursor:
+            return self._conn().execute(
+                sql,
+                [*snippet_params, match, *folder_params, *tag_params, limit],
+            )
+
         logger.debug(
             "FTS search: query=%r folder=%r filters=%r limit=%d snippet_words=%r",
             query,
@@ -1180,18 +1229,42 @@ class FTSIndex:
             snippet_words,
         )
         try:
-            cur = self._conn().execute(sql, params)
+            cur = _execute(query)
         except sqlite3.OperationalError as exc:
-            msg = str(exc).lower()
-            if (
-                "fts5" in msg
-                or "syntax error" in msg
-                or "no such column" in msg
-                or "unterminated" in msg
-            ):
-                logger.debug("FTS search: malformed query %r — %s", query, exc)
+            if not _is_fts5_query_error(exc):
+                raise
+            # #866: FTS5 rejected the raw query — e.g. a hyphenated slug like
+            # `vault-mcp` parses as a column filter ("no such column: mcp").
+            # Retry once with every token quoted so a natural-language query
+            # degrades to an implicit-AND of phrase literals instead of
+            # silently returning [] (which, in hybrid mode, masks the failure
+            # as a semantic-only result).
+            fallback = _quote_fts_query(query)
+            if not fallback:
+                logger.debug("FTS search: unrecoverable query %r — %s", query, exc)
                 return []
-            raise
+            logger.debug(
+                "FTS search: query %r rejected by FTS5 (%s); retrying quoted %r",
+                query,
+                exc,
+                fallback,
+            )
+            try:
+                cur = _execute(fallback)
+            except sqlite3.OperationalError as retry_exc:
+                if not _is_fts5_query_error(retry_exc):
+                    raise
+                # Degraded but continuing: the query could not execute even
+                # after quoting every token, so the caller gets []. Log at
+                # WARNING (per the logging standard) so this is visible at the
+                # default level rather than masking as an empty result set.
+                logger.warning(
+                    "fts_search_unexecutable query=%r fallback=%r reason=%s",
+                    query,
+                    fallback,
+                    retry_exc,
+                )
+                return []
         rows = cur.fetchall()
         logger.debug("FTS search: %d results for query=%r", len(rows), query)
 
