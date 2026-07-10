@@ -1999,11 +1999,21 @@
 <span class="w">  </span><span class="nt">&quot;read_only&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">&quot;indexed_fields&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;tags&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;cluster&quot;</span><span class="p">],</span>
 <span class="w">  </span><span class="nt">&quot;required_fields&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span>
-<span class="w">  </span><span class="nt">&quot;exclude_patterns&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;.obsidian/**&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;.trash/**&quot;</span><span class="p">],</span>
+<span class="w">  </span><span class="nt">&quot;exclude_patterns&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;.obsidian/**&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;.trash/**&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;_conventions.md&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;**/_conventions.md&quot;</span><span class="p">],</span>
+<span class="w">  </span><span class="nt">&quot;templates_folder&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;_templates&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;conventions_file&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;_conventions.md&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;convention_folders&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;3-Resources&quot;</span><span class="p">],</span>
 <span class="w">  </span><span class="nt">&quot;semantic_search_available&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">&quot;attachment_extensions&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;pdf&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;png&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;jpg&quot;</span><span class="p">]</span>
 <span class="p">}</span>
 </code></pre></div>
+<p><code>conventions_file</code> is the configured per-folder conventions filename (<code>null</code>
+when the feature is disabled); <code>convention_folders</code> lists every folder
+carrying such a file (<code>""</code> is the vault root). See the
+<a href="../tools/#get_conventions"><code>get_conventions</code> tool</a>. <code>exclude_patterns</code>
+reports the vault's <em>effective</em> exclusions: the configured patterns plus the
+two patterns derived from <code>conventions_file</code> (shown in the example above), so
+the list always matches actual index behavior.</p>
 <h2 id="statsvault"><code>stats://vault</code><a class="headerlink" href="#statsvault" title="Permanent link">&para;</a></h2>
 <p>Vault statistics including document count, chunk count, and index capabilities.</p>
 <p><strong>Response:</strong></p>

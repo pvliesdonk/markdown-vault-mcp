@@ -15,7 +15,7 @@ vault = Vault(**config.to_vault_kwargs())
 
 ## API Reference
 
-## `ProjectConfig(source_dir, read_only=True, server_name='markdown-vault-mcp', instructions=None, git=GitConfig(), indexing=IndexingConfig(), embeddings=EmbeddingsConfig(), search=SearchConfig(), sync=SyncConfig(), content=ContentConfig(), transfer=TransferConfig(), disable_apps_ui=False, server=ServerConfig())`
+## `ProjectConfig(source_dir, read_only=True, server_name='markdown-vault-mcp', instructions=None, git=GitConfig(), indexing=IndexingConfig(), embeddings=EmbeddingsConfig(), search=SearchConfig(), summarize=SummarizeConfig(), sync=SyncConfig(), content=ContentConfig(), transfer=TransferConfig(), disable_apps_ui=False, server=ServerConfig())`
 
 Configuration for a :class:`~markdown_vault_mcp.vault.Vault`.
 
@@ -31,6 +31,7 @@ Attributes:
 | `indexing`        | `IndexingConfig`   | SQLite/vector index paths and frontmatter/exclusion settings.                                                                                                                                             |
 | `embeddings`      | `EmbeddingsConfig` | Embedding provider selection and per-provider settings.                                                                                                                                                   |
 | `search`          | `SearchConfig`     | Search ranking and snippet-truncation knobs.                                                                                                                                                              |
+| `summarize`       | `SummarizeConfig`  | LLM-backed summarize tool backend selection and limits.                                                                                                                                                   |
 | `sync`            | `SyncConfig`       | File-watcher and GitHub-webhook settings.                                                                                                                                                                 |
 | `content`         | `ContentConfig`    | Attachment/note-read limits and template/prompt folder paths.                                                                                                                                             |
 | `transfer`        | `TransferConfig`   | One-time upload/download transfer-link TTL and size settings.                                                                                                                                             |
@@ -80,6 +81,13 @@ Reads the following environment variables:
 - `MARKDOWN_VAULT_MCP_INDEXED_FIELDS`: comma-separated frontmatter fields to index; default none.
 - `MARKDOWN_VAULT_MCP_REQUIRED_FIELDS`: comma-separated required frontmatter fields; default none.
 - `MARKDOWN_VAULT_MCP_EXCLUDE`: comma-separated glob patterns to exclude; default none.
+- `MARKDOWN_VAULT_MCP_TITLE_FIELD`: frontmatter field used as the document title; default `title`.
+- `MARKDOWN_VAULT_MCP_SEARCHABLE_FIELDS`: comma-separated frontmatter fields whose scalar values are keyword-searchable via the FTS `summary` column. Setting it also activates context-enriched embeddings (format v2), so it triggers a one-time full re-embed even when `EMBED_CONTEXT` is unset; default none.
+
+**Search ranking:**
+
+- `MARKDOWN_VAULT_MCP_FOLDER_WEIGHTS`: `prefix:weight,...` map scaling result scores by folder prefix (weights > 0); default none.
+- `MARKDOWN_VAULT_MCP_FTS_WEIGHTS`: `column:weight,...` per-column BM25 weights (columns `path`, `title`, `folder`, `heading`, `content`, `summary`; weights >= 0); default all `1.0`.
 
 **Git:**
 
@@ -101,6 +109,7 @@ Reads the following environment variables:
 - `MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES`: maximum bytes returned by full-document `read()` for `.md` files; `read(path, section=...)` bypasses the cap; `0` disables; default `262144` (256 KB).
 - `MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER`: relative folder path where template markdown files are stored; default `_templates`.
 - `MARKDOWN_VAULT_MCP_PROMPTS_FOLDER`: relative folder path where user-defined prompt markdown files are stored; default `None` (disabled).
+- `MARKDOWN_VAULT_MCP_CONVENTIONS_FILE`: well-known per-folder conventions filename surfaced to clients; default `_conventions.md`; set to `none` to disable folder conventions.
 
 **Server identity:**
 
@@ -118,6 +127,7 @@ Reads the following environment variables:
 - `MARKDOWN_VAULT_MCP_OPENAI_EMBEDDING_MODEL` or `OPENAI_EMBEDDING_MODEL`: embedding model name; default `"text-embedding-3-small"`.
 - `MARKDOWN_VAULT_MCP_FASTEMBED_MODEL`: FastEmbed model name; default `"BAAI/bge-small-en-v1.5"`.
 - `MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR`: FastEmbed model cache directory; default `None`.
+- `MARKDOWN_VAULT_MCP_EMBED_CONTEXT`: enrich embedding input with the document title and chunk heading (and, when `SEARCHABLE_FIELDS` is set, their first-chunk preamble). Forces format v2 even with no searchable fields; default `false`.
 
 **Transfer links:**
 

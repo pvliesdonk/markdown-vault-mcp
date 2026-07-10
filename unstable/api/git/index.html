@@ -2676,16 +2676,20 @@ the remote.  See above for the rationale.</p>
     <div class="doc doc-contents ">
 
         <p>Fetch and update once, returning True if HEAD advanced.</p>
-<p>Tries fast-forward first; falls back to rebase when the local
-and upstream branches have diverged (e.g. Obsidian and MCP both
-committed on different files).  Aborts on true conflicts.</p>
-<p>Self-quiesces before the merge via :meth:<code>_quiesce_writes</code> (pause new
-writes + drain the deferred-commit queue, best-effort/time-bounded) so a
-write racing the periodic pull is committed first and the merge runs on
-a clean tree (#571). As with :meth:<code>force_pull</code>, the pause is held for
-the whole fetch + merge — including the network round-trip — so MCP
-writes block for the pull's duration; acceptable for a periodic
-background pull (default every 600 s) and a fast fetch.</p>
+<p>Thin adapter over :meth:<code>_pull_pipeline</code> (#879) — the periodic
+pull loop and the interactive <code>git_sync</code> tool now share one
+fetch → ff-only → rebase → sibling implementation, so the loop
+gets the pipeline's safe conflict handling: defensive rebase
+abort and an upstream restore that drops paths whose restore
+failed instead of committing stale local content over them.</p>
+<p>The pipeline self-quiesces before the merge via
+:meth:<code>_quiesce_writes</code> (pause new writes + drain the
+deferred-commit queue, best-effort/time-bounded) so a write
+racing the periodic pull is committed first and the merge runs
+on a clean tree (#571). The pause is held for the whole fetch +
+merge — including the network round-trip — so MCP writes block
+for the pull's duration; acceptable for a periodic background
+pull (default every 600 s) and a fast fetch.</p>
 
 
     </div>

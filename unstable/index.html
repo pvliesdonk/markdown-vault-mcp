@@ -1934,7 +1934,9 @@
 <li><strong>Frontmatter-aware</strong>: indexes YAML frontmatter fields, supports required field enforcement</li>
 <li><strong>Incremental reindexing</strong>: hash-based change detection, only re-processes modified files</li>
 <li><strong>Write operations</strong>: create, edit, delete, rename documents with automatic index updates</li>
+<li><strong>Folder conventions</strong>: per-folder <code>_conventions.md</code> files carry your authoring rules, surfaced to LLM clients at write time via <a href="tools/#get_conventions"><code>get_conventions</code></a> and in <code>write</code>/<code>edit</code> results</li>
 <li><strong>Attachment support</strong>: read, write, delete, and list non-markdown files (PDFs, images, and so on)</li>
+<li><strong>LLM summarization</strong>: optional <code>summarize</code> tool condenses a note, a set of notes, or a subtree with a language model (Anthropic Claude Haiku is the first supported backend); the synthesis references the individual source notes by path. Gated on <code>ANTHROPIC_API_KEY</code>.</li>
 <li><strong>Git integration</strong>: optional auto-commit and push on every write via <code>GIT_ASKPASS</code></li>
 <li><strong>OIDC authentication</strong>: optional token-based auth for HTTP deployments</li>
 <li><strong>MCP tools</strong>: search, read, write, edit, delete, rename, link graph analysis, and admin operations</li>

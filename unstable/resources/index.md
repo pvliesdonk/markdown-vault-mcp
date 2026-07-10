@@ -34,11 +34,16 @@ Current vault configuration and runtime state.
   "read_only": true,
   "indexed_fields": ["tags", "cluster"],
   "required_fields": [],
-  "exclude_patterns": [".obsidian/**", ".trash/**"],
+  "exclude_patterns": [".obsidian/**", ".trash/**", "_conventions.md", "**/_conventions.md"],
+  "templates_folder": "_templates",
+  "conventions_file": "_conventions.md",
+  "convention_folders": ["", "3-Resources"],
   "semantic_search_available": true,
   "attachment_extensions": ["pdf", "png", "jpg"]
 }
 ```
+
+`conventions_file` is the configured per-folder conventions filename (`null` when the feature is disabled); `convention_folders` lists every folder carrying such a file (`""` is the vault root). See the [`get_conventions` tool](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/tools/#get_conventions). `exclude_patterns` reports the vault's *effective* exclusions: the configured patterns plus the two patterns derived from `conventions_file` (shown in the example above), so the list always matches actual index behavior.
 
 ## `stats://vault`
 

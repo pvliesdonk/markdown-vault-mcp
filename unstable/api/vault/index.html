@@ -1566,6 +1566,39 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.vault.Vault.summarizer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        summarizer
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.vault.Vault.conventions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        conventions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.vault.Vault.exclude_patterns" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        exclude_patterns
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#markdown_vault_mcp.vault.Vault.source_dir" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1947,6 +1980,39 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.vault.Vault.summarizer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        summarizer
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.vault.Vault.conventions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        conventions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.vault.Vault.exclude_patterns" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        exclude_patterns
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#markdown_vault_mcp.vault.Vault.source_dir" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2088,7 +2154,7 @@
 
 
 <h2 id="markdown_vault_mcp.vault.Vault" class="doc doc-heading">
-              <code class="highlight language-python"><span class="n">Vault</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">source_dir</span><span class="p">,</span> <span class="n">index_path</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">embeddings_path</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">embedding_provider</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">read_only</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">state_path</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">indexed_frontmatter_fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">required_frontmatter</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">chunk_strategy</span><span class="o">=</span><span class="s1">&#39;heading&#39;</span><span class="p">,</span> <span class="n">on_write</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">git_strategy</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">git_pull_interval_s</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">exclude_patterns</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">attachment_extensions</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">max_attachment_size_mb</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">max_note_read_bytes</span><span class="o">=</span><span class="mi">262144</span><span class="p">,</span> <span class="n">chunks_per_file</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">snippet_words</span><span class="o">=</span><span class="mi">200</span><span class="p">,</span> <span class="n">length_downweight_alpha</span><span class="o">=</span><span class="mf">0.25</span><span class="p">,</span> <span class="n">max_chunk_words</span><span class="o">=</span><span class="mi">400</span><span class="p">,</span> <span class="n">max_chunk_chars</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">max_chunk_chars_override</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">chunk_overlap_words</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span></code>
+              <code class="highlight language-python"><span class="n">Vault</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">source_dir</span><span class="p">,</span> <span class="n">index_path</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">embeddings_path</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">embedding_provider</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">read_only</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">state_path</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">indexed_frontmatter_fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">required_frontmatter</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">chunk_strategy</span><span class="o">=</span><span class="s1">&#39;heading&#39;</span><span class="p">,</span> <span class="n">on_write</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">git_strategy</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">git_pull_interval_s</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">exclude_patterns</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">attachment_extensions</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">max_attachment_size_mb</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">max_note_read_bytes</span><span class="o">=</span><span class="mi">262144</span><span class="p">,</span> <span class="n">chunks_per_file</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">snippet_words</span><span class="o">=</span><span class="mi">200</span><span class="p">,</span> <span class="n">length_downweight_alpha</span><span class="o">=</span><span class="mf">0.25</span><span class="p">,</span> <span class="n">max_chunk_words</span><span class="o">=</span><span class="mi">400</span><span class="p">,</span> <span class="n">max_chunk_chars</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">max_chunk_chars_override</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">chunk_overlap_words</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">summarizer</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">summarize_max_notes</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span> <span class="n">summarize_max_input_chars</span><span class="o">=</span><span class="mi">200000</span><span class="p">,</span> <span class="n">title_field</span><span class="o">=</span><span class="s1">&#39;title&#39;</span><span class="p">,</span> <span class="n">searchable_frontmatter_fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">embed_context</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">folder_weights</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">fts_weights</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">conventions_file</span><span class="o">=</span><span class="s1">&#39;_conventions.md&#39;</span><span class="p">)</span></code>
 
 <a href="#markdown_vault_mcp.vault.Vault" class="headerlink" title="Permanent link">&para;</a></h2>
 
@@ -2441,6 +2507,170 @@ the vault library). <code>0</code> disables the limit (default <code>1.0</code>)
                   <code>262144</code>
             </td>
           </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>summarizer</code>
+            </td>
+            <td>
+                  <code><span title="markdown_vault_mcp.summarizer.Summarizer">Summarizer</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Optional summarization backend. When provided, the
+<code>Vault.summarizer</code> facet is available; when <code>None</code> (default)
+the facet accessor raises and the <code>summarize</code> MCP tool is hidden.</p>
+              </div>
+            </td>
+            <td>
+                  <code>None</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>summarize_max_notes</code>
+            </td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Cap on notes summarised per <code>summarize</code> call
+(subtree expansion is truncated to this many notes; default 50).</p>
+              </div>
+            </td>
+            <td>
+                  <code>50</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>summarize_max_input_chars</code>
+            </td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Aggregate cap on note characters sent to the
+summarization backend per call (default 200000).</p>
+              </div>
+            </td>
+            <td>
+                  <code>200000</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>title_field</code>
+            </td>
+            <td>
+                  <code><span title="str">str</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Frontmatter key consulted first when resolving document
+titles (default <code>"title"</code>; falls back to <code>title</code> → first H1
+→ filename stem).</p>
+              </div>
+            </td>
+            <td>
+                  <code>&#39;title&#39;</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>searchable_frontmatter_fields</code>
+            </td>
+            <td>
+                  <code><span title="list">list</span>[<span title="str">str</span>] | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Frontmatter keys whose scalar values
+are keyword-searchable via the FTS <code>summary</code> column and —
+because configuring this activates format v2 — prefixed to
+first-chunk embedding text (triggering a one-time re-embed).
+<code>None</code> disables both.</p>
+              </div>
+            </td>
+            <td>
+                  <code>None</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>embed_context</code>
+            </td>
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>When <code>True</code>, forces format v2 (document title +
+chunk heading enrichment) even with no
+<code>searchable_frontmatter_fields</code>; any searchable field also
+activates v2 (default <code>False</code> — raw chunk content).</p>
+              </div>
+            </td>
+            <td>
+                  <code>False</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>folder_weights</code>
+            </td>
+            <td>
+                  <code><span title="dict">dict</span>[<span title="str">str</span>, <span title="float">float</span>] | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Folder-prefix score multipliers applied to search
+results just before file grouping (<code>None</code> disables).</p>
+              </div>
+            </td>
+            <td>
+                  <code>None</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>fts_weights</code>
+            </td>
+            <td>
+                  <code><span title="dict">dict</span>[<span title="str">str</span>, <span title="float">float</span>] | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Per-column BM25 weights persisted into the FTS5 rank
+configuration (<code>None</code> or all-<code>1.0</code> keeps the default).</p>
+              </div>
+            </td>
+            <td>
+                  <code>None</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>conventions_file</code>
+            </td>
+            <td>
+                  <code><span title="str">str</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Well-known per-folder conventions filename resolved
+by :attr:<code>conventions</code> (default <code>"_conventions.md"</code>); <code>None</code>
+disables folder conventions. When set, the filename is
+automatically appended to <em>exclude_patterns</em> (in both fnmatch
+forms) so convention files stay out of the index while remaining
+disk-readable. Must not contain fnmatch metacharacters.</p>
+              </div>
+            </td>
+            <td>
+                  <code>&#39;_conventions.md&#39;</code>
+            </td>
+          </tr>
       </tbody>
     </table>
 
@@ -2545,6 +2775,99 @@ the vault library). <code>0</code> disables the limit (default <code>1.0</code>)
     <div class="doc doc-contents ">
 
         <p>Index facet: build/reindex/embeddings, readiness, writer status.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h3 id="markdown_vault_mcp.vault.Vault.summarizer" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">summarizer</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#markdown_vault_mcp.vault.Vault.summarizer" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Summarize facet: LLM-backed note/subtree summarization.</p>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="RuntimeError">RuntimeError</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If no summarization backend was configured (set
+<code>ANTHROPIC_API_KEY</code> and install the <code>[summarize]</code> extra).</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h3 id="markdown_vault_mcp.vault.Vault.conventions" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">conventions</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#markdown_vault_mcp.vault.Vault.conventions" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Folder-conventions resolver (disk-read, index-independent).</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h3 id="markdown_vault_mcp.vault.Vault.exclude_patterns" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">exclude_patterns</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#markdown_vault_mcp.vault.Vault.exclude_patterns" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>The effective exclusion patterns, including derived ones.</p>
+<p>Contains the configured patterns plus the conventions-file patterns
+derived in <code>__init__</code> — the list the scanner, reconcile, and
+incremental index paths actually enforce.</p>
 
     </div>
 

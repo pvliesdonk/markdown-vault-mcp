@@ -1891,6 +1891,28 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.facets.graph.GraphFacet.get_neighborhood" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_neighborhood
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.facets.graph.GraphFacet.get_hub_graph" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_hub_graph
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -2652,6 +2674,28 @@
     <span class="md-ellipsis">
       
         get_connection_path
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.facets.graph.GraphFacet.get_neighborhood" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_neighborhood
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.facets.graph.GraphFacet.get_hub_graph" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_hub_graph
       
     </span>
   </a>
@@ -3991,7 +4035,7 @@ first (bucket 3).</p>
 
 
 <h3 id="markdown_vault_mcp.facets.reader.ReaderFacet.get_similar" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">get_similar</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">chunks_per_file</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
+            <code class="highlight language-python"><span class="n">get_similar</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">chunks_per_file</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">folder</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">filters</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
 
 <a href="#markdown_vault_mcp.facets.reader.ReaderFacet.get_similar" class="headerlink" title="Permanent link">&para;</a></h3>
 
@@ -4058,6 +4102,40 @@ descending file score; each result wraps one document with up to
             <td>
               <div class="doc-md-description">
                 <p>Maximum sections per result file.</p>
+              </div>
+            </td>
+            <td>
+                  <code>None</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>folder</code>
+            </td>
+            <td>
+                  <code><span title="str">str</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Optional folder to restrict results to (exact match or
+sub-folder prefix).</p>
+              </div>
+            </td>
+            <td>
+                  <code>None</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>filters</code>
+            </td>
+            <td>
+                  <code><span title="dict">dict</span>[<span title="str">str</span>, <span title="str">str</span>] | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Optional <code>{frontmatter_key: value}</code> equality filters,
+ANDed; applied post-hoc against full frontmatter.</p>
               </div>
             </td>
             <td>
@@ -6062,7 +6140,7 @@ paths.</p>
 
 
 <h2 id="markdown_vault_mcp.facets.graph.GraphFacet" class="doc doc-heading">
-              <code class="highlight language-python"><span class="n">GraphFacet</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">link_mgr</span><span class="p">,</span> <span class="n">require_built</span><span class="p">)</span></code>
+              <code class="highlight language-python"><span class="n">GraphFacet</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">link_mgr</span><span class="p">,</span> <span class="n">search_mgr</span><span class="p">,</span> <span class="n">require_built</span><span class="p">)</span></code>
 
 <a href="#markdown_vault_mcp.facets.graph.GraphFacet" class="headerlink" title="Permanent link">&para;</a></h2>
 
@@ -6073,7 +6151,7 @@ paths.</p>
 
         <p>Link-graph queries, backed by :class:<code>LinkManager</code>.</p>
 
-        <p>Hold the link manager and the index-readiness gate.</p>
+        <p>Hold the managers and the index-readiness gate.</p>
 
 
 <p><span class="doc-section-title">Parameters:</span></p>
@@ -6097,6 +6175,25 @@ paths.</p>
             <td>
               <div class="doc-md-description">
                 <p>The shared :class:<code>LinkManager</code> owned by the root.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>search_mgr</code>
+            </td>
+            <td>
+                  <code><span title="markdown_vault_mcp.managers.search.SearchManager">SearchManager</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The shared :class:<code>SearchManager</code>; the graph-view
+assembly methods (#880) use it for node labels
+(:meth:<code>SearchManager.get_metadata</code>) and semantic edges
+(:meth:<code>SearchManager.get_similar</code>).</p>
               </div>
             </td>
             <td>
@@ -6795,6 +6892,244 @@ Defaults to <code>10</code>.</p>
             <td>
               <div class="doc-md-description">
                 <p>If <em>source</em> or <em>target</em> is not found in the index.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="markdown_vault_mcp.facets.graph.GraphFacet.get_neighborhood" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">get_neighborhood</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">depth</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">include_semantic</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">max_nodes</span><span class="o">=</span><span class="mi">200</span><span class="p">)</span></code>
+
+<a href="#markdown_vault_mcp.facets.graph.GraphFacet.get_neighborhood" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Return the link neighborhood of a note as a node/edge graph.</p>
+<p>Breadth-first traversal from <em>path</em>: interior nodes (within <em>depth</em>
+hops) contribute their backlink/outlink edges and orphan grouping;
+boundary nodes appear with <code>backlink_count=0</code>. Explicit edges are
+deduplicated per <code>(source, target)</code>.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>path</code>
+            </td>
+            <td>
+                  <code><span title="str">str</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Center note path.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>depth</code>
+            </td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>How many hops to traverse (default 1).</p>
+              </div>
+            </td>
+            <td>
+                  <code>1</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>include_semantic</code>
+            </td>
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>When <code>True</code>, add <code>"semantic"</code> similarity
+edges for each node (requires embeddings; silently omitted
+when unavailable).</p>
+              </div>
+            </td>
+            <td>
+                  <code>False</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>max_nodes</code>
+            </td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Soft cap on returned node count. Traversal and any
+semantic expansion both stop once the cap is hit, setting
+:attr:<code>GraphView.truncated</code>. Bounds dense-vault depth=2
+traversals.</p>
+              </div>
+            </td>
+            <td>
+                  <code>200</code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+<th>Name</th>          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+<td><code>A</code></td>            <td>
+                  <code><span title="markdown_vault_mcp.types.GraphView">GraphView</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>class:<code>~markdown_vault_mcp.types.GraphView</code>.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="markdown_vault_mcp.exceptions.IndexUnavailableError">IndexUnavailableError</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If :meth:<code>IndexFacet.build_index</code> has not
+been called.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="markdown_vault_mcp.facets.graph.GraphFacet.get_hub_graph" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">get_hub_graph</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="mi">20</span><span class="p">)</span></code>
+
+<a href="#markdown_vault_mcp.facets.graph.GraphFacet.get_hub_graph" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Return the most-linked notes and their inbound links as a graph.</p>
+<p>Hub nodes come from :meth:<code>get_most_linked</code>; each hub's backlink
+sources join as <code>"note"</code> nodes with edges deduplicated per
+<code>(source, hub)</code>.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>limit</code>
+            </td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Maximum number of hub notes to include.</p>
+              </div>
+            </td>
+            <td>
+                  <code>20</code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+<th>Name</th>          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+<td><code>A</code></td>            <td>
+                  <code><span title="markdown_vault_mcp.types.GraphView">GraphView</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>class:<code>~markdown_vault_mcp.types.GraphView</code> (<code>truncated</code> is</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+<td></td>            <td>
+                  <code><span title="markdown_vault_mcp.types.GraphView">GraphView</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>always <code>False</code> — hub views have no node cap).</p>
               </div>
             </td>
           </tr>

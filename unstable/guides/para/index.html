@@ -1024,6 +1024,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#folder-conventions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Folder conventions
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -1230,10 +1241,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#link-aggressively-within-related" class="md-nav__link">
+  <a href="#link-aggressively-within-related-but-respect-direction" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Link aggressively within ## Related
+        Link aggressively within ## Related, but respect direction
       
     </span>
   </a>
@@ -2074,6 +2085,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#folder-conventions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Folder conventions
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -2280,10 +2302,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#link-aggressively-within-related" class="md-nav__link">
+  <a href="#link-aggressively-within-related-but-respect-direction" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Link aggressively within ## Related
+        Link aggressively within ## Related, but respect direction
       
     </span>
   </a>
@@ -2465,6 +2487,37 @@
 <li><code>3-Resources/postgres-connection-pooling.md</code></li>
 </ul>
 <p>Do not embed dates in filenames. PARA uses the <code>deadline</code> and <code>created</code> frontmatter fields for dates, and the folder for lifecycle. A project's filename should describe its identity, not its moment in time.</p>
+<h3 id="folder-conventions">Folder conventions<a class="headerlink" href="#folder-conventions" title="Permanent link">&para;</a></h3>
+<p>PARA's biggest friction with LLM clients is that not every folder wants the
+same authoring behavior: a Resource note about a regulation should stay
+self-contained and timeless, while the LLM's instinct is to weave in your
+current projects ("this relates to yesterday's slide deck…"). Per-folder
+<a href="../../tools/#get_conventions">convention files</a> fix this: drop a
+<code>_conventions.md</code> into a folder and the server surfaces it to the client at
+write time (in <code>write</code>/<code>edit</code> results and via the <code>get_conventions</code> tool).
+The files are excluded from search results but stay readable.</p>
+<p>Two example files that encode PARA's linking directionality:</p>
+<p><code>3-Resources/_conventions.md</code>:</p>
+<div class="highlight"><pre><span></span><code>Reference material. Notes here are self-contained and timeless:
+
+<span class="k">-</span><span class="w"> </span>No &quot;relates to project X&quot; or &quot;from yesterday&#39;s meeting&quot; prose.
+<span class="k">-</span><span class="w"> </span>Do not link out to 1-Projects, 2-Areas, or Journal notes.
+<span class="k">-</span><span class="w"> </span>Projects and areas link <span class="ge">*to*</span> resources — never the reverse.
+<span class="k">-</span><span class="w"> </span>Structure: summary first, then detail. External sources under
+  <span class="sb">`## References`</span>.
+</code></pre></div>
+<p><code>1-Projects/_conventions.md</code>:</p>
+<div class="highlight"><pre><span></span><code>Active project notes. Link out freely to 3-Resources for background
+material (one-way: project → resource). Keep project state, decisions,
+and next actions here — do not duplicate reference content from
+3-Resources; link to it instead.
+</code></pre></div>
+<p>The reverse-linking rule costs nothing: <code>get_backlinks</code> (and Obsidian's
+backlinks pane) recover the project→resource references from the resource's
+side, so the resource never needs to mention the projects that cite it.</p>
+<p>A root-level <code>_conventions.md</code> holds vault-wide rules (heading style, tag
+hygiene); nested files add to it. The built-in <code>propose-links</code> prompt reads
+these conventions and skips or reverses link proposals they forbid.</p>
 <h2 id="workflow">Workflow<a class="headerlink" href="#workflow" title="Permanent link">&para;</a></h2>
 <p>The canonical PARA loop: <strong>Capture → Triage → Project Work → Weekly Review → Archive</strong>. Each stage has a corresponding prompt or manual action.</p>
 <h3 id="1-capture-inbox">1. Capture (Inbox)<a class="headerlink" href="#1-capture-inbox" title="Permanent link">&para;</a></h3>
@@ -2651,8 +2704,9 @@ markdown-vault-mcp<span class="w"> </span>serve
 <li>Run the <code>para-weekly-review</code> prompt, which surfaces project deadlines in the review note</li>
 </ul>
 <p>Date-range filters are tracked as a planned follow-up; see <a href="#future-enhancements">Future Enhancements</a>.</p>
-<h3 id="link-aggressively-within-related">Link aggressively within <code>## Related</code><a class="headerlink" href="#link-aggressively-within-related" title="Permanent link">&para;</a></h3>
-<p>Same spirit as Zettelkasten: over-linking is better than under-linking. If a Resource touches on a Project's outcome, link it. If an Area has three projects that reference a common book, link the book from each. <code>get_context(path)</code> will surface these connections later when you're editing, and <code>para-project-kickoff</code> will resurface them when you start a new related project. Don't agonize; the tools will help you rediscover what you linked.</p>
+<h3 id="link-aggressively-within-related-but-respect-direction">Link aggressively within <code>## Related</code>, but respect direction<a class="headerlink" href="#link-aggressively-within-related-but-respect-direction" title="Permanent link">&para;</a></h3>
+<p>Same spirit as Zettelkasten: over-linking is better than under-linking. If an Area has three projects that reference a common book, link the book from each. <code>get_context(path)</code> will surface these connections later when you're editing, and <code>para-project-kickoff</code> will resurface them when you start a new related project. Don't agonize; the tools will help you rediscover what you linked.</p>
+<p>The one rule worth keeping: link <em>from</em> projects and areas <em>to</em> resources, not the reverse. A Resource stays self-contained and <code>get_backlinks</code> recovers who cites it. Encode this in <a href="#folder-conventions">folder conventions</a> so LLM clients honor it automatically.</p>
 <h3 id="let-claude-split-or-merge-captures">Let Claude split or merge captures<a class="headerlink" href="#let-claude-split-or-merge-captures" title="Permanent link">&para;</a></h3>
 <p>Two shape operations the triage prompt handles that manual workflows usually skip:</p>
 <ul>

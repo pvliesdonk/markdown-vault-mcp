@@ -1858,7 +1858,7 @@
 
 
 <h2 id="markdown_vault_mcp.config.ProjectConfig" class="doc doc-heading">
-              <code class="highlight language-python"><span class="n">ProjectConfig</span><span class="p">(</span><span class="n">source_dir</span><span class="p">,</span> <span class="n">read_only</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">server_name</span><span class="o">=</span><span class="s1">&#39;markdown-vault-mcp&#39;</span><span class="p">,</span> <span class="n">instructions</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">git</span><span class="o">=</span><span class="n">GitConfig</span><span class="p">(),</span> <span class="n">indexing</span><span class="o">=</span><span class="n">IndexingConfig</span><span class="p">(),</span> <span class="n">embeddings</span><span class="o">=</span><span class="n">EmbeddingsConfig</span><span class="p">(),</span> <span class="n">search</span><span class="o">=</span><span class="n">SearchConfig</span><span class="p">(),</span> <span class="n">sync</span><span class="o">=</span><span class="n">SyncConfig</span><span class="p">(),</span> <span class="n">content</span><span class="o">=</span><span class="n">ContentConfig</span><span class="p">(),</span> <span class="n">transfer</span><span class="o">=</span><span class="n">TransferConfig</span><span class="p">(),</span> <span class="n">disable_apps_ui</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">server</span><span class="o">=</span><span class="n">ServerConfig</span><span class="p">())</span></code>
+              <code class="highlight language-python"><span class="n">ProjectConfig</span><span class="p">(</span><span class="n">source_dir</span><span class="p">,</span> <span class="n">read_only</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">server_name</span><span class="o">=</span><span class="s1">&#39;markdown-vault-mcp&#39;</span><span class="p">,</span> <span class="n">instructions</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">git</span><span class="o">=</span><span class="n">GitConfig</span><span class="p">(),</span> <span class="n">indexing</span><span class="o">=</span><span class="n">IndexingConfig</span><span class="p">(),</span> <span class="n">embeddings</span><span class="o">=</span><span class="n">EmbeddingsConfig</span><span class="p">(),</span> <span class="n">search</span><span class="o">=</span><span class="n">SearchConfig</span><span class="p">(),</span> <span class="n">summarize</span><span class="o">=</span><span class="n">SummarizeConfig</span><span class="p">(),</span> <span class="n">sync</span><span class="o">=</span><span class="n">SyncConfig</span><span class="p">(),</span> <span class="n">content</span><span class="o">=</span><span class="n">ContentConfig</span><span class="p">(),</span> <span class="n">transfer</span><span class="o">=</span><span class="n">TransferConfig</span><span class="p">(),</span> <span class="n">disable_apps_ui</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">server</span><span class="o">=</span><span class="n">ServerConfig</span><span class="p">())</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
@@ -1971,6 +1971,17 @@
             <td>
               <div class="doc-md-description">
                 <p>Search ranking and snippet-truncation knobs.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.config.ProjectConfig.summarize">summarize</span></code></td>
+            <td>
+                  <code><span title="markdown_vault_mcp.config_sections.SummarizeConfig">SummarizeConfig</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>LLM-backed <code>summarize</code> tool backend selection and limits.</p>
               </div>
             </td>
           </tr>
@@ -2152,6 +2163,21 @@ vault = Vault(**config.to_vault_kwargs())
   frontmatter fields; default none.</li>
 <li><code>MARKDOWN_VAULT_MCP_EXCLUDE</code>: comma-separated glob patterns to
   exclude; default none.</li>
+<li><code>MARKDOWN_VAULT_MCP_TITLE_FIELD</code>: frontmatter field used as the
+  document title; default <code>title</code>.</li>
+<li><code>MARKDOWN_VAULT_MCP_SEARCHABLE_FIELDS</code>: comma-separated
+  frontmatter fields whose scalar values are keyword-searchable via
+  the FTS <code>summary</code> column. Setting it also activates
+  context-enriched embeddings (format v2), so it triggers a one-time
+  full re-embed even when <code>EMBED_CONTEXT</code> is unset; default none.</li>
+</ul>
+<p><strong>Search ranking:</strong></p>
+<ul>
+<li><code>MARKDOWN_VAULT_MCP_FOLDER_WEIGHTS</code>: <code>prefix:weight,...</code> map
+  scaling result scores by folder prefix (weights &gt; 0); default none.</li>
+<li><code>MARKDOWN_VAULT_MCP_FTS_WEIGHTS</code>: <code>column:weight,...</code> per-column
+  BM25 weights (columns <code>path</code>, <code>title</code>, <code>folder</code>, <code>heading</code>,
+  <code>content</code>, <code>summary</code>; weights &gt;= 0); default all <code>1.0</code>.</li>
 </ul>
 <p><strong>Git:</strong></p>
 <ul>
@@ -2192,6 +2218,9 @@ vault = Vault(**config.to_vault_kwargs())
   template markdown files are stored; default <code>_templates</code>.</li>
 <li><code>MARKDOWN_VAULT_MCP_PROMPTS_FOLDER</code>: relative folder path where
   user-defined prompt markdown files are stored; default <code>None</code> (disabled).</li>
+<li><code>MARKDOWN_VAULT_MCP_CONVENTIONS_FILE</code>: well-known per-folder
+  conventions filename surfaced to clients; default <code>_conventions.md</code>;
+  set to <code>none</code> to disable folder conventions.</li>
 </ul>
 <p><strong>Server identity:</strong></p>
 <ul>
@@ -2220,6 +2249,10 @@ vault = Vault(**config.to_vault_kwargs())
   <code>"BAAI/bge-small-en-v1.5"</code>.</li>
 <li><code>MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR</code>: FastEmbed model cache
   directory; default <code>None</code>.</li>
+<li><code>MARKDOWN_VAULT_MCP_EMBED_CONTEXT</code>: enrich embedding input with
+  the document title and chunk heading (and, when
+  <code>SEARCHABLE_FIELDS</code> is set, their first-chunk preamble). Forces
+  format v2 even with no searchable fields; default <code>false</code>.</li>
 </ul>
 <p><strong>Transfer links:</strong></p>
 <ul>
@@ -2280,7 +2313,7 @@ into <code>config.server</code> by
       <tbody>
           <tr class="doc-section-item">
             <td>
-                  <code><a class="autorefs autorefs-internal" title="ProjectConfig(source_dir, read_only=True, server_name='markdown-vault-mcp', instructions=None, git=GitConfig(), indexing=IndexingConfig(), embeddings=EmbeddingsConfig(), search=SearchConfig(), sync=SyncConfig(), content=ContentConfig(), transfer=TransferConfig(), disable_apps_ui=False, server=ServerConfig())
+                  <code><a class="autorefs autorefs-internal" title="ProjectConfig(source_dir, read_only=True, server_name='markdown-vault-mcp', instructions=None, git=GitConfig(), indexing=IndexingConfig(), embeddings=EmbeddingsConfig(), search=SearchConfig(), summarize=SummarizeConfig(), sync=SyncConfig(), content=ContentConfig(), transfer=TransferConfig(), disable_apps_ui=False, server=ServerConfig())
 
   
       dataclass

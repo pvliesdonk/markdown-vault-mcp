@@ -138,6 +138,37 @@ The server uses the file's path (relative to the vault root) as its identity. An
 
 Do not embed dates in filenames. PARA uses the `deadline` and `created` frontmatter fields for dates, and the folder for lifecycle. A project's filename should describe its identity, not its moment in time.
 
+### Folder conventions
+
+PARA's biggest friction with LLM clients is that not every folder wants the same authoring behavior: a Resource note about a regulation should stay self-contained and timeless, while the LLM's instinct is to weave in your current projects ("this relates to yesterday's slide deck…"). Per-folder [convention files](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/tools/#get_conventions) fix this: drop a `_conventions.md` into a folder and the server surfaces it to the client at write time (in `write`/`edit` results and via the `get_conventions` tool). The files are excluded from search results but stay readable.
+
+Two example files that encode PARA's linking directionality:
+
+`3-Resources/_conventions.md`:
+
+```
+Reference material. Notes here are self-contained and timeless:
+
+- No "relates to project X" or "from yesterday's meeting" prose.
+- Do not link out to 1-Projects, 2-Areas, or Journal notes.
+- Projects and areas link *to* resources — never the reverse.
+- Structure: summary first, then detail. External sources under
+  `## References`.
+```
+
+`1-Projects/_conventions.md`:
+
+```
+Active project notes. Link out freely to 3-Resources for background
+material (one-way: project → resource). Keep project state, decisions,
+and next actions here — do not duplicate reference content from
+3-Resources; link to it instead.
+```
+
+The reverse-linking rule costs nothing: `get_backlinks` (and Obsidian's backlinks pane) recover the project→resource references from the resource's side, so the resource never needs to mention the projects that cite it.
+
+A root-level `_conventions.md` holds vault-wide rules (heading style, tag hygiene); nested files add to it. The built-in `propose-links` prompt reads these conventions and skips or reverses link proposals they forbid.
+
 ## Workflow
 
 The canonical PARA loop: **Capture → Triage → Project Work → Weekly Review → Archive**. Each stage has a corresponding prompt or manual action.
@@ -409,9 +440,11 @@ You can store `deadline: YYYY-MM-DD` in project frontmatter, and the date round-
 
 Date-range filters are tracked as a planned follow-up; see [Future Enhancements](#future-enhancements).
 
-### Link aggressively within `## Related`
+### Link aggressively within `## Related`, but respect direction
 
-Same spirit as Zettelkasten: over-linking is better than under-linking. If a Resource touches on a Project's outcome, link it. If an Area has three projects that reference a common book, link the book from each. `get_context(path)` will surface these connections later when you're editing, and `para-project-kickoff` will resurface them when you start a new related project. Don't agonize; the tools will help you rediscover what you linked.
+Same spirit as Zettelkasten: over-linking is better than under-linking. If an Area has three projects that reference a common book, link the book from each. `get_context(path)` will surface these connections later when you're editing, and `para-project-kickoff` will resurface them when you start a new related project. Don't agonize; the tools will help you rediscover what you linked.
+
+The one rule worth keeping: link *from* projects and areas *to* resources, not the reverse. A Resource stays self-contained and `get_backlinks` recovers who cites it. Encode this in [folder conventions](#folder-conventions) so LLM clients honor it automatically.
 
 ### Let Claude split or merge captures
 

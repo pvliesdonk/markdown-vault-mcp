@@ -8,6 +8,7 @@
   "secretKeys": [
     "MARKDOWN_VAULT_MCP_GIT_TOKEN",
     "OPENAI_API_KEY",
+    "ANTHROPIC_API_KEY",
     "MARKDOWN_VAULT_MCP_BEARER_TOKEN",
     "MARKDOWN_VAULT_MCP_OIDC_CLIENT_SECRET",
     "MARKDOWN_VAULT_MCP_GITHUB_WEBHOOK_SECRET",
@@ -235,6 +236,85 @@
       },
       "advancedGroup": "Embeddings",
       "dockerPath": "/data/state/fastembed"
+    },
+    {
+      "id": "summarize",
+      "label": "LLM summarization",
+      "help": "Enables the `summarize` tool. Note content is sent to the model provider. Needs the [summarize] extra.",
+      "type": "select",
+      "options": [
+        {
+          "value": "off",
+          "label": "Off"
+        },
+        {
+          "value": "anthropic",
+          "label": "Anthropic Claude (Haiku)",
+          "emit": {
+            "MARKDOWN_VAULT_MCP_SUMMARIZE_PROVIDER": "anthropic"
+          }
+        }
+      ]
+    },
+    {
+      "id": "anthropic_api_key",
+      "label": "Anthropic API key",
+      "help": "Browser-only; never sent anywhere and never put in the shareable link. Enables the summarize tool.",
+      "type": "text",
+      "var": "ANTHROPIC_API_KEY",
+      "showIf": {
+        "summarize": [
+          "anthropic"
+        ]
+      }
+    },
+    {
+      "id": "summarize_model",
+      "label": "Summarize model",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_SUMMARIZE_ANTHROPIC_MODEL",
+      "showIf": {
+        "summarize": [
+          "anthropic"
+        ]
+      },
+      "advancedGroup": "Summarization"
+    },
+    {
+      "id": "summarize_max_tokens",
+      "label": "Summarize max tokens",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_SUMMARIZE_MAX_TOKENS",
+      "showIf": {
+        "summarize": [
+          "anthropic"
+        ]
+      },
+      "advancedGroup": "Summarization"
+    },
+    {
+      "id": "summarize_max_notes",
+      "label": "Summarize max notes per call",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_SUMMARIZE_MAX_NOTES",
+      "showIf": {
+        "summarize": [
+          "anthropic"
+        ]
+      },
+      "advancedGroup": "Summarization"
+    },
+    {
+      "id": "summarize_max_input_chars",
+      "label": "Summarize max input characters",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_SUMMARIZE_MAX_INPUT_CHARS",
+      "showIf": {
+        "summarize": [
+          "anthropic"
+        ]
+      },
+      "advancedGroup": "Summarization"
     },
     {
       "id": "git",
@@ -683,6 +763,22 @@
       "advancedGroup": "Frontmatter"
     },
     {
+      "id": "title_field",
+      "label": "Title frontmatter field",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_TITLE_FIELD",
+      "help": "Frontmatter field used as the document title (default 'title'; falls back to 'title', the first H1, then the filename). Changing it cold-rebuilds the index once on next startup.",
+      "advancedGroup": "Frontmatter"
+    },
+    {
+      "id": "searchable_fields",
+      "label": "Searchable frontmatter fields (CSV)",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_SEARCHABLE_FIELDS",
+      "help": "Frontmatter fields whose text values become keyword-searchable (and, with context-enriched embeddings, are prefixed to first-chunk embedding text). Changing it cold-rebuilds the index once on next startup.",
+      "advancedGroup": "Frontmatter"
+    },
+    {
       "id": "templates_folder",
       "label": "Templates folder",
       "type": "text",
@@ -694,6 +790,13 @@
       "label": "Prompts folder",
       "type": "text",
       "var": "MARKDOWN_VAULT_MCP_PROMPTS_FOLDER",
+      "advancedGroup": "Frontmatter"
+    },
+    {
+      "id": "conventions_file",
+      "label": "Folder-conventions filename",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_CONVENTIONS_FILE",
       "advancedGroup": "Frontmatter"
     },
     {
@@ -752,6 +855,30 @@
       "type": "number",
       "var": "MARKDOWN_VAULT_MCP_CHUNK_OVERLAP_WORDS",
       "help": "Words of overlap prepended to adjacent fragments of an oversize section (default 40; 0 disables). Improves retrieval recall at arbitrary split points; applies to new and re-indexed notes, so run reindex to apply it to an existing vault.",
+      "advancedGroup": "Search & chunking"
+    },
+    {
+      "id": "folder_weights",
+      "label": "Folder ranking weights (prefix:weight CSV)",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_FOLDER_WEIGHTS",
+      "help": "Folder-prefix score multipliers applied to search results, e.g. 'sessions:0.5,curated:1.5'. Weights must be > 0; the deepest matching prefix wins. Leave unset for no boost.",
+      "advancedGroup": "Search & chunking"
+    },
+    {
+      "id": "fts_weights",
+      "label": "BM25 column weights (column:weight CSV)",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_FTS_WEIGHTS",
+      "help": "Per-column BM25 weights for keyword ranking, e.g. 'title:5,summary:3'. Columns: path, title, folder, heading, content, summary; weights must be at least 0 (unlisted columns weigh 1). Leave unset for default ranking.",
+      "advancedGroup": "Search & chunking"
+    },
+    {
+      "id": "embed_context",
+      "label": "Context-enriched embeddings",
+      "type": "bool",
+      "var": "MARKDOWN_VAULT_MCP_EMBED_CONTEXT",
+      "help": "Prefix each embedded chunk with the note title, chunk heading, and (first chunk) searchable-field values. Flipping this re-embeds the whole vault once on next startup.",
       "advancedGroup": "Search & chunking"
     },
     {

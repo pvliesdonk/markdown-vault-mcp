@@ -145,9 +145,9 @@ Scan a bounded set of notes for semantically close pairs that aren't already lin
 
 1. Resolve `scope` to a list of notes, warning if more than 100 notes match.
 1. For each note, gather candidates via `get_similar` (with a `search(mode='keyword')` fallback when embeddings aren't configured).
-1. Filter out pairs where A already links to B (via `get_outlinks`).
+1. Filter out pairs where A already links to B (via `get_outlinks`), then check [folder conventions](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/tools/#get_conventions) via `get_conventions` and drop or reverse pairs a convention forbids (such as a self-contained resources folder that must not link out to projects).
 1. LLM judgment: read each candidate's title and opening to confirm the connection is substantive, not merely lexical.
-1. Pick direction (one-way `A → B`) and placement per note shape (inline citation, `## Related` section, hub bullet list, or footnote, whichever fits).
+1. Pick direction (one-way `A → B`) and placement per note shape (inline citation, `## Related` section, hub bullet list, or footnote, whichever fits). Folder conventions override these heuristics.
 1. Show a batch preview of every proposed edit.
 1. Write approved edits; skip failures (such as `ConcurrentModificationError`) and report reasons.
 

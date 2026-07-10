@@ -2394,9 +2394,9 @@
 <ol>
 <li>Resolve <code>scope</code> to a list of notes, warning if more than 100 notes match.</li>
 <li>For each note, gather candidates via <code>get_similar</code> (with a <code>search(mode='keyword')</code> fallback when embeddings aren't configured).</li>
-<li>Filter out pairs where A already links to B (via <code>get_outlinks</code>).</li>
+<li>Filter out pairs where A already links to B (via <code>get_outlinks</code>), then check <a href="../tools/#get_conventions">folder conventions</a> via <code>get_conventions</code> and drop or reverse pairs a convention forbids (such as a self-contained resources folder that must not link out to projects).</li>
 <li>LLM judgment: read each candidate's title and opening to confirm the connection is substantive, not merely lexical.</li>
-<li>Pick direction (one-way <code>A → B</code>) and placement per note shape (inline citation, <code>## Related</code> section, hub bullet list, or footnote, whichever fits).</li>
+<li>Pick direction (one-way <code>A → B</code>) and placement per note shape (inline citation, <code>## Related</code> section, hub bullet list, or footnote, whichever fits). Folder conventions override these heuristics.</li>
 <li>Show a batch preview of every proposed edit.</li>
 <li>Write approved edits; skip failures (such as <code>ConcurrentModificationError</code>) and report reasons.</li>
 </ol>

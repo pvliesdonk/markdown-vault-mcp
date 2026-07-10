@@ -203,7 +203,7 @@ Returns:
 | `list[NoteInfo]` | List of :class:~markdown_vault_mcp.types.NoteInfo objects |
 | `list[NoteInfo]` | ordered by modification time (most recent first).         |
 
-### `get_similar(path, *, limit=10, chunks_per_file=None)`
+### `get_similar(path, *, limit=10, chunks_per_file=None, folder=None, filters=None)`
 
 Return semantically similar documents grouped by file.
 
@@ -211,11 +211,13 @@ See :meth:`SearchManager.get_similar` for details. Returns :class:`~markdown_vau
 
 Parameters:
 
-| Name              | Type  | Description                              | Default                           |
-| ----------------- | ----- | ---------------------------------------- | --------------------------------- |
-| `path`            | `str` | Relative path of the reference document. | *required*                        |
-| `limit`           | `int` | Maximum number of files to return.       | `10`                              |
-| `chunks_per_file` | \`int | None\`                                   | Maximum sections per result file. |
+| Name              | Type             | Description                              | Default                                                                                               |
+| ----------------- | ---------------- | ---------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `path`            | `str`            | Relative path of the reference document. | *required*                                                                                            |
+| `limit`           | `int`            | Maximum number of files to return.       | `10`                                                                                                  |
+| `chunks_per_file` | \`int            | None\`                                   | Maximum sections per result file.                                                                     |
+| `folder`          | \`str            | None\`                                   | Optional folder to restrict results to (exact match or sub-folder prefix).                            |
+| `filters`         | \`dict[str, str] | None\`                                   | Optional {frontmatter_key: value} equality filters, ANDed; applied post-hoc against full frontmatter. |
 
 Returns:
 
@@ -546,18 +548,19 @@ Raises:
 
 Backlinks, outlinks, broken links, orphans, most-linked notes, and connection paths.
 
-## `GraphFacet(*, link_mgr, require_built)`
+## `GraphFacet(*, link_mgr, search_mgr, require_built)`
 
 Link-graph queries, backed by :class:`LinkManager`.
 
-Hold the link manager and the index-readiness gate.
+Hold the managers and the index-readiness gate.
 
 Parameters:
 
-| Name            | Type                 | Description                                                                                              | Default    |
-| --------------- | -------------------- | -------------------------------------------------------------------------------------------------------- | ---------- |
-| `link_mgr`      | `LinkManager`        | The shared :class:LinkManager owned by the root.                                                         | *required* |
-| `require_built` | `Callable[[], None]` | Raises :exc:IndexUnavailableError if the index has not been built; called by the bucket-3 query methods. | *required* |
+| Name            | Type                 | Description                                                                                                                                                                             | Default    |
+| --------------- | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| `link_mgr`      | `LinkManager`        | The shared :class:LinkManager owned by the root.                                                                                                                                        | *required* |
+| `search_mgr`    | `SearchManager`      | The shared :class:SearchManager; the graph-view assembly methods (#880) use it for node labels (:meth:SearchManager.get_metadata) and semantic edges (:meth:SearchManager.get_similar). | *required* |
+| `require_built` | `Callable[[], None]` | Raises :exc:IndexUnavailableError if the index has not been built; called by the bucket-3 query methods.                                                                                | *required* |
 
 ### `get_backlinks(path, *, limit=None)`
 
@@ -684,6 +687,52 @@ Raises:
 | ----------------------- | ---------------------------------------------------- |
 | `IndexUnavailableError` | If :meth:IndexFacet.build_index has not been called. |
 | `ValueError`            | If source or target is not found in the index.       |
+
+### `get_neighborhood(path, *, depth=1, include_semantic=False, max_nodes=200)`
+
+Return the link neighborhood of a note as a node/edge graph.
+
+Breadth-first traversal from *path*: interior nodes (within *depth* hops) contribute their backlink/outlink edges and orphan grouping; boundary nodes appear with `backlink_count=0`. Explicit edges are deduplicated per `(source, target)`.
+
+Parameters:
+
+| Name               | Type   | Description                                                                                                                                                                    | Default    |
+| ------------------ | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------- |
+| `path`             | `str`  | Center note path.                                                                                                                                                              | *required* |
+| `depth`            | `int`  | How many hops to traverse (default 1).                                                                                                                                         | `1`        |
+| `include_semantic` | `bool` | When True, add "semantic" similarity edges for each node (requires embeddings; silently omitted when unavailable).                                                             | `False`    |
+| `max_nodes`        | `int`  | Soft cap on returned node count. Traversal and any semantic expansion both stop once the cap is hit, setting :attr:GraphView.truncated. Bounds dense-vault depth=2 traversals. | `200`      |
+
+Returns:
+
+| Name | Type        | Description                                |
+| ---- | ----------- | ------------------------------------------ |
+| `A`  | `GraphView` | class:~markdown_vault_mcp.types.GraphView. |
+
+Raises:
+
+| Type                    | Description                                          |
+| ----------------------- | ---------------------------------------------------- |
+| `IndexUnavailableError` | If :meth:IndexFacet.build_index has not been called. |
+
+### `get_hub_graph(*, limit=20)`
+
+Return the most-linked notes and their inbound links as a graph.
+
+Hub nodes come from :meth:`get_most_linked`; each hub's backlink sources join as `"note"` nodes with edges deduplicated per `(source, hub)`.
+
+Parameters:
+
+| Name    | Type  | Description                             | Default |
+| ------- | ----- | --------------------------------------- | ------- |
+| `limit` | `int` | Maximum number of hub notes to include. | `20`    |
+
+Returns:
+
+| Name | Type        | Description                                             |
+| ---- | ----------- | ------------------------------------------------------- |
+| `A`  | `GraphView` | class:~markdown_vault_mcp.types.GraphView (truncated is |
+|      | `GraphView` | always False — hub views have no node cap).             |
 
 ## IndexFacet
 

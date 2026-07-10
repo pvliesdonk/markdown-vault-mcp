@@ -655,6 +655,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#summarization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Summarization
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#git-integration" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1969,6 +1980,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#summarization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Summarization
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#git-integration" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2179,6 +2201,20 @@ questions and copy a ready-made <code>.env</code>, Docker, or Claude config.</p>
 <td>Comma-separated glob patterns to exclude from scanning (such as <code>.obsidian/**,.trash/**</code>)</td>
 </tr>
 <tr>
+<td><code>MARKDOWN_VAULT_MCP_TITLE_FIELD</code></td>
+<td>string</td>
+<td><code>title</code></td>
+<td>No</td>
+<td>Frontmatter field used as the document title. Resolution order: this field → <code>title</code> (when a custom field is set) → first H1 heading → filename stem. Recorded as a warm-restart key, so changing it cold-rebuilds the index once on next startup</td>
+</tr>
+<tr>
+<td><code>MARKDOWN_VAULT_MCP_SEARCHABLE_FIELDS</code></td>
+<td>csv</td>
+<td>(none)</td>
+<td>No</td>
+<td>Comma-separated frontmatter fields whose scalar values are indexed into the FTS <code>summary</code> column (chunk-0 row of each document), making them keyword-searchable (including <code>summary:term</code> column filters). They are also prefixed to first-chunk embedding text (format v2), independent of <code>EMBED_CONTEXT</code>. Recorded as a warm-restart key, so setting or changing it cold-rebuilds the index and re-embeds the vault once on next startup</td>
+</tr>
+<tr>
 <td><code>MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER</code></td>
 <td>string</td>
 <td><code>_templates</code></td>
@@ -2191,6 +2227,13 @@ questions and copy a ready-made <code>.env</code>, Docker, or Claude config.</p>
 <td>(none)</td>
 <td>No</td>
 <td>Path to a directory of <code>.md</code> prompt files that extend or override built-in prompts. Each declared argument name must be a plain Python identifier (letters, digits, underscore; not a keyword); a prompt with a non-conforming argument name is skipped with a logged warning.</td>
+</tr>
+<tr>
+<td><code>MARKDOWN_VAULT_MCP_CONVENTIONS_FILE</code></td>
+<td>string</td>
+<td><code>_conventions.md</code></td>
+<td>No</td>
+<td>Filename of the per-folder <a href="../tools/#get_conventions">conventions files</a> surfaced to clients at write time. Must be a bare <code>.md</code> filename without glob characters (<code>*?[]</code>). Set to <code>none</code> to disable folder conventions. Convention files are excluded from the search index but stay readable; existing notes matching the name are removed from the index on the next boot reconcile. Note: setting <code>MARKDOWN_VAULT_MCP_INSTRUCTIONS</code> replaces the default server instructions entirely, including the sentence that points clients at <code>get_conventions</code>; mention conventions in your custom instructions if you rely on them.</td>
 </tr>
 </tbody>
 </table>
@@ -2323,6 +2366,18 @@ chronic backlog.</p>
 <td>Strength of the per-channel length downweight: <code>score / (1 + alpha · log(chunk_count))</code>. <code>0</code> disables. Applied only to <code>search</code> modes (keyword/semantic/hybrid); <code>get_similar</code> and <code>get_context.similar</code> skip the downweight because grouping already handles multi-chunk dedup (see <a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/472">#472</a>). Operator-only (no per-call override).</td>
 </tr>
 <tr>
+<td><code>MARKDOWN_VAULT_MCP_FOLDER_WEIGHTS</code></td>
+<td>(none)</td>
+<td><code>prefix:weight,...</code></td>
+<td>Folder-prefix score multipliers applied to every search mode (keyword, semantic, hybrid) just before results are grouped per file. A prefix matches a folder exactly or as a parent (<code>Projects</code> matches <code>Projects/2026</code> but never <code>ProjectsArchive</code>); the deepest matching prefix wins; weights must be &gt; 0 (<code>0.5</code> demotes, <code>2</code> promotes). Query-time only: takes effect immediately, no reindex. <code>get_similar</code>/<code>get_context</code> are deliberately unaffected.</td>
+</tr>
+<tr>
+<td><code>MARKDOWN_VAULT_MCP_FTS_WEIGHTS</code></td>
+<td>(none)</td>
+<td><code>column:weight,...</code></td>
+<td>Per-column BM25 weights for keyword ranking, persisted into the FTS5 rank configuration at startup. Columns: <code>path</code>, <code>title</code>, <code>folder</code>, <code>heading</code>, <code>content</code>, <code>summary</code>; weights must be ≥ 0; unlisted columns weigh <code>1.0</code>. Unset (or all <code>1.0</code>) resets to the default <code>bm25()</code>. Takes effect on restart, no reindex.</td>
+</tr>
+<tr>
 <td><code>MARKDOWN_VAULT_MCP_MAX_CHUNK_WORDS</code></td>
 <td><code>400</code></td>
 <td>int ≥ 1</td>
@@ -2359,6 +2414,12 @@ chronic backlog.</p>
 <td>string</td>
 <td>auto-detect</td>
 <td>Embedding provider: <code>openai</code>, <code>ollama</code>, or <code>fastembed</code>. <strong>Breaking change</strong> from <code>EMBEDDING_PROVIDER</code> in older versions</td>
+</tr>
+<tr>
+<td><code>MARKDOWN_VAULT_MCP_EMBED_CONTEXT</code></td>
+<td>bool</td>
+<td><code>false</code></td>
+<td>Enrich each chunk's embedding input with the note title, the chunk heading, and (on the first chunk) the <code>SEARCHABLE_FIELDS</code> values, improving semantic recall for short or context-poor chunks. The raw note content on disk and in search snippets is unchanged. The active format is recorded in the vector sidecar, so flipping this (or changing <code>SEARCHABLE_FIELDS</code>) re-embeds the whole vault once on next startup</td>
 </tr>
 <tr>
 <td><code>OLLAMA_HOST</code></td>
@@ -2419,6 +2480,64 @@ chronic backlog.</p>
 <li><strong>FastEmbed</strong> — if the <code>fastembed</code> package is installed</li>
 </ol>
 <p><strong>Explicit vs. auto-detect failure handling:</strong> when you set <code>MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER</code> to a specific backend and it cannot be constructed at startup — a missing dependency, missing/empty credentials, or an unrecognised value — the server <strong>fails fast</strong> with a <code>ConfigurationError</code> rather than silently falling back to keyword-only search. (An unreachable Ollama/OpenAI <em>service</em> does not prevent startup — the provider still loads; the failure surfaces later as an embedding error during index build.) When the variable is <em>unset</em> (auto-detect) and no backend is available, the server logs a warning and continues with semantic search disabled. Set the variable explicitly if you want a missing provider to be a hard startup error.</p>
+</div>
+<h2 id="summarization">Summarization<a class="headerlink" href="#summarization" title="Permanent link">&para;</a></h2>
+<p>Powers the optional <a href="../tools/#summarize"><code>summarize</code></a> tool. Anthropic Claude (Haiku by default) is the first supported backend, and others can be added later. The tool is only registered when a backend is configured (an <code>ANTHROPIC_API_KEY</code>). Requires the <code>anthropic</code> SDK: <code>pip install 'markdown-vault-mcp[summarize]'</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>MARKDOWN_VAULT_MCP_SUMMARIZE_PROVIDER</code></td>
+<td>string</td>
+<td>auto-detect</td>
+<td>Summarization backend. Currently <code>anthropic</code>. Leave unset to auto-detect from available credentials</td>
+</tr>
+<tr>
+<td><code>ANTHROPIC_API_KEY</code></td>
+<td>string</td>
+<td>(none)</td>
+<td>Anthropic API key. Presence enables the <code>summarize</code> tool. <strong>Not</strong> <code>MARKDOWN_VAULT_MCP_</code>-prefixed</td>
+</tr>
+<tr>
+<td><code>MARKDOWN_VAULT_MCP_SUMMARIZE_ANTHROPIC_MODEL</code></td>
+<td>string</td>
+<td><code>claude-haiku-4-5</code></td>
+<td>Claude model id used for summaries</td>
+</tr>
+<tr>
+<td><code>MARKDOWN_VAULT_MCP_SUMMARIZE_MAX_TOKENS</code></td>
+<td>int</td>
+<td><code>2048</code></td>
+<td>Upper bound on generated summary tokens per call</td>
+</tr>
+<tr>
+<td><code>MARKDOWN_VAULT_MCP_SUMMARIZE_MAX_NOTES</code></td>
+<td>int</td>
+<td><code>50</code></td>
+<td>Cap on notes summarised per call (subtree expansion is truncated to this many)</td>
+</tr>
+<tr>
+<td><code>MARKDOWN_VAULT_MCP_SUMMARIZE_MAX_INPUT_CHARS</code></td>
+<td>int</td>
+<td><code>200000</code></td>
+<td>Aggregate cap on note characters sent to the model per call</td>
+</tr>
+</tbody>
+</table>
+<div class="admonition warning">
+<p class="admonition-title">Note content leaves your environment</p>
+<p>The <code>summarize</code> tool sends the referenced notes to the external model provider. Do not enable it for vaults whose content must not leave your environment.</p>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Explicit vs. auto-detect failure handling</p>
+<p>Same posture as embeddings: if you set <code>MARKDOWN_VAULT_MCP_SUMMARIZE_PROVIDER</code> explicitly and the backend cannot be loaded (missing SDK, empty key, unrecognised value), startup <strong>fails fast</strong> with a <code>ConfigurationError</code>. When the provider is <em>unset</em> (auto-detect) and the backend cannot be loaded, the server logs a warning and the <code>summarize</code> tool stays hidden.</p>
 </div>
 <h2 id="git-integration">Git Integration<a class="headerlink" href="#git-integration" title="Permanent link">&para;</a></h2>
 <p>Git integration has three modes:</p>
