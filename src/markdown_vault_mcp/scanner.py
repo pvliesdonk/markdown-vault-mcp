@@ -876,9 +876,20 @@ def extract_links(content: str, source_path: str) -> list[LinkInfo]:
         List of :class:`~markdown_vault_mcp.types.LinkInfo` objects.
     """
     clean = _strip_code_spans(content)
-    links: list[LinkInfo] = []
+    return [
+        *_extract_inline_links(clean, source_path),
+        *_extract_reference_links(clean, source_path),
+        *_extract_wikilinks(clean, source_path),
+    ]
 
-    # --- Inline markdown links ---
+
+def _extract_inline_links(clean: str, source_path: str) -> list[LinkInfo]:
+    """Extract inline ``[text](path.md)`` links from code-stripped content.
+
+    Skips image links (``![alt](src)``), external URLs, and pure anchor
+    links (``#section`` within the same document).
+    """
+    links: list[LinkInfo] = []
     for m in _RE_INLINE_LINK.finditer(clean):
         # Skip image links: ![alt](src) shares the same bracket syntax.
         if m.start() > 0 and clean[m.start() - 1] == "!":
@@ -901,7 +912,18 @@ def extract_links(content: str, source_path: str) -> list[LinkInfo]:
             )
         )
 
-    # --- Reference-style links ---
+    return links
+
+
+def _extract_reference_links(clean: str, source_path: str) -> list[LinkInfo]:
+    """Extract reference-style ``[text][ref]`` links from code-stripped content.
+
+    Collects the ``[ref]: path.md`` definitions first (optional CommonMark
+    titles stripped), then resolves each usage; an empty ``[ref]`` falls
+    back to the link text per CommonMark shortcut semantics. External URLs
+    and pure anchors are skipped.
+    """
+    links: list[LinkInfo] = []
     # Collect reference definitions first.
     ref_defs: dict[str, str] = {}
     for m in _RE_REF_DEF.finditer(clean):
@@ -933,7 +955,19 @@ def extract_links(content: str, source_path: str) -> list[LinkInfo]:
             )
         )
 
-    # --- Wikilinks ---
+    return links
+
+
+def _extract_wikilinks(clean: str, source_path: str) -> list[LinkInfo]:
+    """Extract ``[[path]]`` / ``[[path|alias]]`` wikilinks from content.
+
+    Handles the Obsidian table-cell pipe escape (#731), fragment splitting
+    before the ``.md`` append, and Obsidian vault-wide resolution
+    semantics: only explicit relative prefixes (``./`` / ``../``) resolve
+    source-relative; bare and path-qualified wikilinks are stored as-is
+    for ``FTSIndex.resolve_vault_wikilinks()`` to resolve vault-wide.
+    """
+    links: list[LinkInfo] = []
     for m in _RE_WIKILINK.finditer(clean):
         raw_path = m.group(1).strip()
         # Obsidian escapes the alias pipe as `\|` in table cells, so the target
