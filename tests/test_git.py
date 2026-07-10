@@ -3089,6 +3089,56 @@ class TestGetFileDiff:
         assert diffs[0].message == "edit: note.md"
         assert diffs[0].diff
 
+    def _grow_note_past_truncation(self, repo: Path) -> None:
+        """Commit a note.md rewrite large enough to exceed the 50 KB cap."""
+        big = "".join(f"unique padding line {i:06d}\n" for i in range(4000))
+        (repo / "note.md").write_text(big)
+        subprocess.run(
+            ["git", "-C", str(repo), "add", "."], capture_output=True, check=True
+        )
+        subprocess.run(
+            ["git", "-C", str(repo), "commit", "-m", "edit: grow note.md"],
+            capture_output=True,
+            check=True,
+        )
+
+    def test_single_diff_truncates_oversized_payload(self, tmp_path: Path) -> None:
+        """A single diff over 50 KB is capped with an omission marker."""
+        repo, first_sha = self._make_repo_with_commits(tmp_path)
+        self._grow_note_past_truncation(repo)
+        strategy = GitWriteStrategy()
+        diff = strategy.get_file_diff(
+            repo, repo / "note.md", first_sha, per_commit=False
+        )
+        assert isinstance(diff, str)
+        assert "[diff truncated:" in diff
+        assert "bytes omitted]" in diff
+        # Payload is the 50 KB cap plus the short marker line.
+        assert len(diff.encode()) < 50 * 1024 + 100
+
+    def test_per_commit_diff_truncates_oversized_payload(self, tmp_path: Path) -> None:
+        """Each oversized per-commit diff is capped with an omission marker."""
+        repo, first_sha = self._make_repo_with_commits(tmp_path)
+        self._grow_note_past_truncation(repo)
+        strategy = GitWriteStrategy()
+        diffs = strategy.get_file_diff(
+            repo, repo / "note.md", first_sha, per_commit=True
+        )
+        assert isinstance(diffs, list)
+        oversized = [d for d in diffs if "[diff truncated:" in d.diff]
+        assert oversized, "expected at least one truncated per-commit diff"
+        for d in oversized:
+            assert len(d.diff.encode()) < 50 * 1024 + 100
+
+    def test_parse_log_block_rejects_malformed_blocks(self) -> None:
+        """Empty and header-short log blocks are skipped, not parsed."""
+        from markdown_vault_mcp.git.query import _parse_log_block
+
+        assert _parse_log_block("", "fallback.md") is None
+        assert _parse_log_block("   \n  ", "fallback.md") is None
+        # Header with fewer than 4 NUL-separated fields is malformed.
+        assert _parse_log_block("sha\x00short\x00ts", "fallback.md") is None
+
     def test_no_git_root_returns_empty(self, tmp_path: Path) -> None:
         """get_file_diff returns empty when not in a git repo."""
         non_repo = tmp_path / "not_a_repo"

@@ -163,6 +163,19 @@ ignore = ["E501"]
 # those imports top-level, not behind TYPE_CHECKING.
 "src/markdown_vault_mcp/config_sections/indexing.py" = ["TC003"]
 "src/markdown_vault_mcp/config_sections/content.py" = ["TC003"]
+# The git/ package exists to spawn `git` subprocesses: S603/S607 would flag
+# every call (fixed argv built from validated paths/refs; the `git` executable
+# is resolved from PATH by design), making `# noqa` routine on any diff that
+# touches these modules. Ignore both at package scope; the rest of src/ keeps
+# the checks. Only bites when the structural diff-gate adds `S` on the diff
+# pass (S isn't in the base select).
+"src/markdown_vault_mcp/git/*.py" = ["S603", "S607"]
+# query.py's module-private diff helpers mirror get_file_diff's wide surface
+# (two refs + two path forms + env + a binary flag); a param object for
+# single-caller private functions is pure ceremony. PLR0913 is gate-only
+# (not in the base select), so `# noqa` would be stripped as unused (RUF100)
+# — per-file ignore is the working mechanism, same as the DI modules above.
+"src/markdown_vault_mcp/git/query.py" = ["PLR0913"]
 # Test fixtures import vault/protocol types only used in annotations.
 "tests/conftest.py" = ["TC002", "TC003"]
 "tests/test_smoke.py" = ["TC002", "TC003"]
