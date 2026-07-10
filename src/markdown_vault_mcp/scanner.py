@@ -1056,6 +1056,85 @@ def parse_note(
     return note
 
 
+def parse_note_categorized(
+    abs_path: Path,
+    source_dir: Path,
+    chunk_strategy: ChunkStrategy | None,
+    *,
+    rel_path: str,
+    title_field: str = "title",
+    required_frontmatter: list[str] | None = None,
+    log_context: str = "scan",
+) -> ParsedNote | SkippedFile | None:
+    """Parse one markdown file, classifying failures into the skip taxonomy.
+
+    The single owner of the deterministic-skip policy shared by
+    :func:`scan_directory` and ``IndexManager.reindex`` (#762): decode,
+    YAML, and unexpected parse failures surface as categorized
+    :class:`~markdown_vault_mcp.types.SkippedFile` values, while a
+    possibly-transient ``OSError`` returns ``None`` — callers must record
+    nothing for it, so the file retries on the next scan (#775). A
+    ``required_frontmatter`` miss returns a ``missing_frontmatter``
+    ``SkippedFile``.
+
+    Exception arms are logged here, prefixed with *log_context* (WARNING
+    for decode/I/O/YAML; ERROR with traceback for unexpected failures).
+    The missing-frontmatter case is **not** logged here — each caller
+    reports it at its own level (scan: DEBUG per file plus an aggregate
+    INFO; reindex: INFO per file).
+
+    Args:
+        abs_path: Absolute path of the file to parse.
+        source_dir: Vault root, forwarded to :func:`parse_note`.
+        chunk_strategy: Chunking strategy, forwarded to :func:`parse_note`.
+        rel_path: Vault-relative POSIX path, used for the ``SkippedFile``
+            and log messages.
+        title_field: Frontmatter key consulted first for the title.
+        required_frontmatter: Frontmatter keys that must be present.
+        log_context: Prefix identifying the calling pipeline in logs.
+
+    Returns:
+        The parsed note on success, a categorized ``SkippedFile`` for a
+        deterministic skip, or ``None`` for a transient I/O failure.
+    """
+    try:
+        note = parse_note(abs_path, source_dir, chunk_strategy, title_field=title_field)
+    except UnicodeDecodeError as exc:
+        logger.warning(
+            "%s: skipping %s — cannot decode as UTF-8 (%s)",
+            log_context,
+            rel_path,
+            exc,
+        )
+        return SkippedFile(path=rel_path, category="encoding_error", detail=str(exc))
+    except OSError as exc:
+        # Possibly transient (I/O error) — do not surface; retry next scan.
+        logger.warning("%s: skipping %s — I/O error (%s)", log_context, rel_path, exc)
+        return None
+    except yaml.YAMLError as exc:
+        logger.warning("%s: skipping %s — parse error (%s)", log_context, rel_path, exc)
+        return SkippedFile(path=rel_path, category="parse_error", detail=str(exc))
+    except Exception as exc:
+        logger.error(
+            "%s: skipping %s — unexpected error (%s)",
+            log_context,
+            rel_path,
+            exc,
+            exc_info=True,
+        )
+        return SkippedFile(path=rel_path, category="internal_error", detail=str(exc))
+
+    if required_frontmatter:
+        missing = [f for f in required_frontmatter if f not in note.frontmatter]
+        if missing:
+            return SkippedFile(
+                path=rel_path,
+                category="missing_frontmatter",
+                detail=f"missing: {missing}",
+            )
+    return note
+
+
 def scan_directory(
     source_dir: Path,
     *,
@@ -1134,68 +1213,32 @@ def scan_directory(
             logger.debug("Excluding %s (matched exclude pattern)", rel)
             continue
 
-        # Parse the file; skip on decode / I/O / YAML errors.
-        try:
-            note = parse_note(
-                abs_path, source_dir, chunk_strategy, title_field=title_field
-            )
-        except UnicodeDecodeError as exc:
-            logger.warning(
-                "Skipping %s: cannot decode as UTF-8", abs_path, exc_info=False
-            )
-            if on_skip is not None:
-                on_skip(
-                    SkippedFile(
-                        path=rel_posix, category="encoding_error", detail=str(exc)
-                    )
-                )
+        # Parse and categorize; skip on decode / I/O / YAML / frontmatter.
+        outcome = parse_note_categorized(
+            abs_path,
+            source_dir,
+            chunk_strategy,
+            rel_path=rel_posix,
+            title_field=title_field,
+            required_frontmatter=required_frontmatter,
+            log_context="scan",
+        )
+        if outcome is None:
+            # Transient I/O failure (already logged) — retry next scan.
             continue
-        except OSError as exc:
-            # Possibly transient (I/O error) — do not surface; retry next scan.
-            logger.warning("Skipping %s: I/O error (%s)", abs_path, exc)
-            continue
-        except yaml.YAMLError as exc:
-            logger.warning("Skipping %s: parse error (%s)", abs_path, exc)
-            if on_skip is not None:
-                on_skip(
-                    SkippedFile(path=rel_posix, category="parse_error", detail=str(exc))
-                )
-            continue
-        except Exception as exc:
-            logger.error(
-                "Skipping %s: unexpected error (%s)", abs_path, exc, exc_info=True
-            )
-            if on_skip is not None:
-                on_skip(
-                    SkippedFile(
-                        path=rel_posix, category="internal_error", detail=str(exc)
-                    )
-                )
-            continue
-
-        # Apply required_frontmatter filter.
-        if required_frontmatter:
-            missing = [
-                field for field in required_frontmatter if field not in note.frontmatter
-            ]
-            if missing:
+        if isinstance(outcome, SkippedFile):
+            if outcome.category == "missing_frontmatter":
                 logger.debug(
-                    "Skipping %s: missing required frontmatter fields: %s",
+                    "Skipping %s: missing required frontmatter fields (%s)",
                     rel,
-                    missing,
+                    outcome.detail,
                 )
                 skipped_required += 1
-                if on_skip is not None:
-                    on_skip(
-                        SkippedFile(
-                            path=rel_posix,
-                            category="missing_frontmatter",
-                            detail=f"missing: {missing}",
-                        )
-                    )
-                continue
+            if on_skip is not None:
+                on_skip(outcome)
+            continue
 
-        yield note
+        yield outcome
 
     if skipped_required:
         logger.info(

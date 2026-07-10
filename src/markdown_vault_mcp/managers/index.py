@@ -22,7 +22,11 @@ from markdown_vault_mcp.exceptions import EmbeddingsNotConfiguredError
 from markdown_vault_mcp.fts_index import _derive_folder, should_optimize
 from markdown_vault_mcp.hashing import compute_file_hash
 from markdown_vault_mcp.managers._vector_loader import load_or_self_heal
-from markdown_vault_mcp.scanner import parse_note, scan_directory
+from markdown_vault_mcp.scanner import (
+    parse_note,
+    parse_note_categorized,
+    scan_directory,
+)
 from markdown_vault_mcp.types import IndexStats, ParsedNote, ReindexResult, SkippedFile
 from markdown_vault_mcp.utils import is_path_excluded
 from markdown_vault_mcp.utils.fs import iter_markdown_files
@@ -263,6 +267,107 @@ class IndexManager:
         )
 
     # ------------------------------------------------------------------
+    # Shared indexing helpers
+    # ------------------------------------------------------------------
+
+    def _record_skip_hash(
+        self,
+        skipped: dict[str, str],
+        rel_path: str,
+        abs_path: Path,
+        *,
+        event: str,
+        surfaced: bool,
+    ) -> bool:
+        """Record ``compute_file_hash(abs_path)`` into ``skipped[rel_path]``.
+
+        The shared hash-or-retry policy behind skip recording (#775/#802):
+        an ``OSError`` is possibly transient, so nothing is recorded and the
+        next scan retries the file. When the skip was already *surfaced*
+        (a reason was recorded for it), the drop is logged at WARNING so
+        the transient loss is observable rather than silent (#802);
+        otherwise at DEBUG.
+
+        Args:
+            skipped: Target ``{rel_path: content_hash}`` map (mutated).
+            rel_path: Vault-relative path of the skipped file.
+            abs_path: Absolute path to hash.
+            event: Log event prefix (``"build_index"`` / ``"reindex"``).
+            surfaced: Whether a skip reason was already recorded for it.
+
+        Returns:
+            ``True`` when the hash was recorded, ``False`` on ``OSError``.
+        """
+        try:
+            skipped[rel_path] = compute_file_hash(abs_path)
+        except OSError as exc:
+            if surfaced:
+                logger.warning(
+                    "%s_surfaced_skip_dropped path=%s err=%s", event, rel_path, exc
+                )
+            else:
+                logger.debug("%s_skip_hash_failed path=%s err=%s", event, rel_path, exc)
+            return False
+        return True
+
+    def _purge_stale_excluded(
+        self,
+        vectors: VectorIndex | None,
+        *,
+        keep_paths: set[str] | None = None,
+    ) -> tuple[int, VectorIndex | None]:
+        """Delete indexed rows that now match ``exclude_patterns`` (#255).
+
+        Shared by :meth:`build_index` and :meth:`reindex`, carrying the
+        embedding-leak invariant (#255/#257): a purged document leaves both
+        the FTS index and the vector sidecar. Stale rows are identified
+        BEFORE force-loading the vector sidecar — exclude_patterns is
+        non-empty on every default-configured vault now (the derived
+        conventions-file patterns), so an unconditional load would defeat
+        lazy vector loading (and, on the reindex path, flip the per-note
+        loop into inline embedding, changing provider-failure semantics
+        from converge-and-skip to raise; see test_embedding_convergence).
+
+        Persisting the vector index, logging, and FTS optimize accounting
+        stay with the callers — they deliberately differ between the two
+        pipelines.
+
+        Args:
+            vectors: The currently-loaded vector index handle, or ``None``.
+            keep_paths: Paths (re)indexed this pass — never purged, even
+                when they match a pattern (:meth:`build_index` passes the
+                fresh scan result).
+
+        Returns:
+            Tuple ``(purged_count, vectors)``; *vectors* may have been
+            lazily loaded, so callers must adopt the returned handle.
+        """
+        if not self._exclude_patterns:
+            return 0, vectors
+        stale_paths = [
+            row["path"]
+            for row in self._fts.list_notes()
+            if (keep_paths is None or row["path"] not in keep_paths)
+            and self._is_path_excluded(row["path"])
+        ]
+        if (
+            stale_paths
+            and vectors is None
+            and self._embedding_provider is not None
+            and self._embeddings_path is not None
+        ):
+            self._load_vectors()
+            vectors = self._get_vectors()
+
+        purged = 0
+        for stale_path in stale_paths:
+            self._fts.delete_by_path(stale_path)
+            if vectors is not None:
+                vectors.delete_by_path(stale_path)
+            purged += 1
+        return purged, vectors
+
+    # ------------------------------------------------------------------
     # Index building
     # ------------------------------------------------------------------
 
@@ -329,44 +434,18 @@ class IndexManager:
         # Purge stale excluded docs from a persistent index that was built
         # before exclude_patterns were configured (upgrade scenario, #255).
         indexed_paths = {note.path for note in notes}
-        if self._exclude_patterns:
-            # Identify stale excluded rows BEFORE force-loading the vector
-            # sidecar: exclude_patterns is non-empty on every
-            # default-configured vault now (the derived conventions-file
-            # patterns), and an unconditional load here would defeat lazy
-            # vector loading on every warm boot.
-            rows = self._fts.list_notes()
-            stale_rows = [
-                row["path"]
-                for row in rows
-                if row["path"] not in indexed_paths
-                and self._is_path_excluded(row["path"])
-            ]
-            vectors = self._get_vectors()
-            if (
-                stale_rows
-                and vectors is None
-                and self._embedding_provider is not None
-                and self._embeddings_path is not None
-            ):
-                self._load_vectors()
-                vectors = self._get_vectors()
+        docs_before_purge = self._fts.count_documents()
+        purged, vectors = self._purge_stale_excluded(
+            self._get_vectors(), keep_paths=indexed_paths
+        )
+        if purged and vectors is not None and self._embeddings_path is not None:
+            vectors.save(self._embeddings_path)
 
-            purged = 0
-            for stale_path in stale_rows:
-                self._fts.delete_by_path(stale_path)
-                if vectors is not None:
-                    vectors.delete_by_path(stale_path)
-                purged += 1
-
-            if purged and vectors is not None and self._embeddings_path is not None:
-                vectors.save(self._embeddings_path)
-
-            # A bulk purge (e.g. exclude patterns newly configured on an
-            # existing index, issue #255) leaves dead FTS5 segments behind;
-            # merge them away when the purge crossed the optimize threshold.
-            if should_optimize(purged, len(rows)):
-                self._fts.optimize()
+        # A bulk purge (e.g. exclude patterns newly configured on an
+        # existing index, issue #255) leaves dead FTS5 segments behind;
+        # merge them away when the purge crossed the optimize threshold.
+        if should_optimize(purged, docs_before_purge):
+            self._fts.optimize()
 
         # Count how many files were skipped (e.g. for required_frontmatter).
         # Discovery prunes excluded *subtrees* and then drops any remaining
@@ -388,23 +467,15 @@ class IndexManager:
         for abs_path, rel_str in candidates:
             if rel_str in indexed_paths:
                 continue
-            try:
-                skipped_state[rel_str] = compute_file_hash(abs_path)
-            except OSError as exc:
-                # Possibly transient — leave unrecorded so the next scan
-                # retries the file. If the path was an already-surfaced skip,
-                # its reason is clamped away by update_state; warn so the
-                # transient loss is observable rather than silent (#802).
-                if rel_str in skip_reasons:
-                    logger.warning(
-                        "build_index_surfaced_skip_dropped path=%s err=%s",
-                        rel_str,
-                        exc,
-                    )
-                else:
-                    logger.debug(
-                        "build_index_skip_hash_failed path=%s err=%s", rel_str, exc
-                    )
+            # A failed hash is possibly transient — left unrecorded so the
+            # next scan retries the file (#802; see _record_skip_hash).
+            self._record_skip_hash(
+                skipped_state,
+                rel_str,
+                abs_path,
+                event="build_index",
+                surfaced=rel_str in skip_reasons,
+            )
 
         # Update tracker state so reindex() knows the baseline.
         self._tracker.update_state(
@@ -481,82 +552,10 @@ class IndexManager:
             changes.skipped_unchanged,
         )
 
-        # Files seen this scan but deliberately not indexed (#665).  Recording
-        # their content hash in tracker state means an unchanged skipped file
-        # is neither re-parsed nor re-reported (or re-logged) on the next
-        # scan; it is only re-evaluated when its content changes.  Transient
-        # I/O errors are NOT recorded, so those files retry on every scan.
-        newly_skipped: dict[str, str] = {}
-        newly_skip_reasons: dict[str, dict[str, str]] = {}
-
-        def _record_skip(
-            rel_path: str, abs_file: Path, category: str, detail: str
-        ) -> None:
-            """Record a deterministically skipped file's hash and reason (#775)."""
-            try:
-                newly_skipped[rel_path] = compute_file_hash(abs_file)
-            except OSError as exc:
-                # File vanished/unreadable since parse — treat as transient:
-                # record neither the hash nor the reason so it retries.
-                logger.debug("reindex_skip_hash_failed path=%s err=%s", rel_path, exc)
-                return
-            newly_skip_reasons[rel_path] = {"category": category, "detail": detail}
-
         # Pre-parse notes outside the lock to minimise lock hold time.
-        parsed: list[tuple[str, ParsedNote]] = []
-        # Excluded paths are filtered inside detect_changes (before hashing,
-        # #257), so they never reach this loop; the only skips recorded here
-        # are parse/decode/unexpected failures and missing-frontmatter below.
-        for path in changes.added + changes.modified:
-            abs_path = self._source_dir / path
-
-            try:
-                note = parse_note(
-                    abs_path,
-                    self._source_dir,
-                    self._chunk_strategy,
-                    title_field=self._title_field,
-                )
-            except OSError as exc:
-                # Possibly transient — do not record; retry on the next scan.
-                logger.warning("reindex: skipping %s — %s", path, exc)
-                continue
-            except UnicodeDecodeError as exc:
-                logger.warning("reindex: skipping %s — %s", path, exc)
-                _record_skip(path, abs_path, "encoding_error", str(exc))
-                continue
-            except yaml.YAMLError as exc:
-                logger.warning("reindex: skipping %s — parse error (%s)", path, exc)
-                _record_skip(path, abs_path, "parse_error", str(exc))
-                continue
-            except Exception as exc:
-                logger.error(
-                    "reindex: skipping %s — unexpected error (%s)",
-                    path,
-                    exc,
-                    exc_info=True,
-                )
-                _record_skip(path, abs_path, "internal_error", str(exc))
-                continue
-
-            if self._required_frontmatter:
-                missing = [
-                    f for f in self._required_frontmatter if f not in note.frontmatter
-                ]
-                if missing:
-                    logger.info(
-                        "reindex: skipping %s — missing frontmatter: %s",
-                        path,
-                        missing,
-                    )
-                    newly_skipped[path] = note.content_hash
-                    newly_skip_reasons[path] = {
-                        "category": "missing_frontmatter",
-                        "detail": f"missing: {missing}",
-                    }
-                    continue
-
-            parsed.append((path, note))
+        parsed, newly_skipped, newly_skip_reasons = self._parse_changed_notes(
+            changes.added + changes.modified
+        )
 
         # Phase 2: apply mutations (writer is sole mutator; no lock needed).
         vectors = self._get_vectors()
@@ -570,39 +569,16 @@ class IndexManager:
             if vectors is not None:
                 vectors.delete_by_path(path)
 
-        # Purge stale excluded docs (issue #255). Identify them first and
-        # only then force-load the vector sidecar: exclude_patterns is
-        # non-empty on every default-configured vault now (the derived
-        # conventions-file patterns), and an unconditional load would flip
-        # the per-note loop below into inline embedding on every reindex —
-        # changing provider-failure semantics from converge-and-skip to
-        # raise (see test_embedding_convergence).
-        stale_excluded = 0
-        if self._exclude_patterns:
-            stale_paths = [
-                row["path"]
-                for row in self._fts.list_notes()
-                if self._is_path_excluded(row["path"])
-            ]
-            if (
-                stale_paths
-                and vectors is None
-                and self._embedding_provider is not None
-                and self._embeddings_path is not None
-            ):
-                self._load_vectors()
-                vectors = self._get_vectors()
-
-            for stale_path in stale_paths:
-                self._fts.delete_by_path(stale_path)
-                if vectors is not None:
-                    vectors.delete_by_path(stale_path)
-                stale_excluded += 1
-            if stale_excluded:
-                logger.info(
-                    "reindex: purged %d stale excluded document(s)",
-                    stale_excluded,
-                )
+        # Purge stale excluded docs (issue #255); the shared helper defers
+        # the vector-sidecar load until stale rows are confirmed, keeping
+        # the per-note loop below on its lazy-load (converge-and-skip)
+        # semantics — see test_embedding_convergence.
+        stale_excluded, vectors = self._purge_stale_excluded(vectors)
+        if stale_excluded:
+            logger.info(
+                "reindex: purged %d stale excluded document(s)",
+                stale_excluded,
+            )
 
         # A bulk purge leaves dead FTS5 segments behind; merge them away
         # when this pass crossed the optimize threshold (issue #255
@@ -611,32 +587,9 @@ class IndexManager:
         if should_optimize(deleted_purged + stale_excluded, docs_before_purge):
             self._fts.optimize()
 
-        indexed_added = 0
-        indexed_modified = 0
-        added_set = set(changes.added)
-
-        for path, note in parsed:
-            try:
-                self._fts.upsert_note(note)
-            except Exception:
-                logger.warning("reindex: failed to index %s", path, exc_info=True)
-                continue
-            if path in added_set:
-                indexed_added += 1
-            else:
-                indexed_modified += 1
-
-            if vectors is not None and self._embeddings_path is not None:
-                vectors.delete_by_path(note.path)
-                texts, meta = self._embed_inputs(
-                    path=note.path,
-                    title=note.title,
-                    folder=_derive_folder(note.path),
-                    frontmatter=note.frontmatter,
-                    chunks=note.chunks,
-                )
-                if texts:
-                    vectors.add(texts, meta)
+        indexed_added, indexed_modified = self._upsert_parsed_notes(
+            parsed, vectors, added_paths=set(changes.added)
+        )
 
         # Persist the vector index only when this pass actually mutated it.
         # An empty-diff reindex (0 added/modified/deleted) that purged no
@@ -681,6 +634,114 @@ class IndexManager:
             unchanged=changes.unchanged,
             skipped=changes.skipped_unchanged + len(newly_skipped),
         )
+
+    def _parse_changed_notes(
+        self, paths: list[str]
+    ) -> tuple[list[tuple[str, ParsedNote]], dict[str, str], dict[str, dict[str, str]]]:
+        """Parse changed files for :meth:`reindex`, recording surfaced skips.
+
+        Files seen this scan but deliberately not indexed (#665) have their
+        content hash recorded in tracker state, so an unchanged skipped
+        file is neither re-parsed nor re-reported (or re-logged) on the
+        next scan; it is only re-evaluated when its content changes.
+        Transient I/O errors are NOT recorded, so those files retry on
+        every scan. Excluded paths are filtered inside ``detect_changes``
+        (before hashing, #257), so they never reach this loop; the only
+        skips recorded here are parse/decode/unexpected failures and
+        missing frontmatter, categorized by
+        :func:`~markdown_vault_mcp.scanner.parse_note_categorized`.
+
+        Args:
+            paths: Vault-relative paths of added + modified files.
+
+        Returns:
+            Tuple ``(parsed, newly_skipped, newly_skip_reasons)``:
+            successfully parsed ``(path, note)`` pairs, the skipped-file
+            hash map, and the skip-reason map for the tracker.
+        """
+        parsed: list[tuple[str, ParsedNote]] = []
+        newly_skipped: dict[str, str] = {}
+        newly_skip_reasons: dict[str, dict[str, str]] = {}
+
+        for path in paths:
+            abs_path = self._source_dir / path
+            outcome = parse_note_categorized(
+                abs_path,
+                self._source_dir,
+                self._chunk_strategy,
+                rel_path=path,
+                title_field=self._title_field,
+                required_frontmatter=self._required_frontmatter,
+                log_context="reindex",
+            )
+            if outcome is None:
+                # Possibly transient (already logged) — retry next scan.
+                continue
+            if isinstance(outcome, SkippedFile):
+                if outcome.category == "missing_frontmatter":
+                    logger.info(
+                        "reindex: skipping %s — missing frontmatter (%s)",
+                        path,
+                        outcome.detail,
+                    )
+                if self._record_skip_hash(
+                    newly_skipped, path, abs_path, event="reindex", surfaced=False
+                ):
+                    newly_skip_reasons[path] = {
+                        "category": outcome.category,
+                        "detail": outcome.detail,
+                    }
+                continue
+            parsed.append((path, outcome))
+
+        return parsed, newly_skipped, newly_skip_reasons
+
+    def _upsert_parsed_notes(
+        self,
+        parsed: list[tuple[str, ParsedNote]],
+        vectors: VectorIndex | None,
+        *,
+        added_paths: set[str],
+    ) -> tuple[int, int]:
+        """Upsert parsed notes into FTS (and inline-embed when loaded).
+
+        Inline embedding runs only when the vector sidecar is already
+        loaded — :meth:`reindex` deliberately keeps provider failures on
+        the converge-and-skip path otherwise (see the purge comments).
+
+        Args:
+            parsed: ``(path, note)`` pairs from :meth:`_parse_changed_notes`.
+            vectors: The (possibly lazily-loaded) vector index, or ``None``.
+            added_paths: Paths counted as added rather than modified.
+
+        Returns:
+            Tuple ``(indexed_added, indexed_modified)``.
+        """
+        indexed_added = 0
+        indexed_modified = 0
+        for path, note in parsed:
+            try:
+                self._fts.upsert_note(note)
+            except Exception:
+                logger.warning("reindex: failed to index %s", path, exc_info=True)
+                continue
+            if path in added_paths:
+                indexed_added += 1
+            else:
+                indexed_modified += 1
+
+            if vectors is not None and self._embeddings_path is not None:
+                vectors.delete_by_path(note.path)
+                texts, meta = self._embed_inputs(
+                    path=note.path,
+                    title=note.title,
+                    folder=_derive_folder(note.path),
+                    frontmatter=note.frontmatter,
+                    chunks=note.chunks,
+                )
+                if texts:
+                    vectors.add(texts, meta)
+        return indexed_added, indexed_modified
 
     # ------------------------------------------------------------------
     # Embeddings

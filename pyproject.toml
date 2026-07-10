@@ -176,6 +176,11 @@ ignore = ["E501"]
 # (not in the base select), so `# noqa` would be stripped as unused (RUF100)
 # — per-file ignore is the working mechanism, same as the DI modules above.
 "src/markdown_vault_mcp/git/query.py" = ["PLR0913"]
+# scanner.py's parse/scan surface is inherently config-heavy (paths + chunking
+# strategy + exclusion/frontmatter policy + skip callback + title field):
+# scan_directory predates the gate at 7 params and parse_note_categorized
+# mirrors that surface. Same gate-only mechanism as query.py above.
+"src/markdown_vault_mcp/scanner.py" = ["PLR0913"]
 # Test fixtures import vault/protocol types only used in annotations.
 "tests/conftest.py" = ["TC002", "TC003"]
 "tests/test_smoke.py" = ["TC002", "TC003"]

@@ -326,16 +326,16 @@ class TestSkipStateMemory:
         mgr, _fts, _ = _make_index_mgr(vault, tmp_path, required_frontmatter=["title"])
         mgr.build_index()
 
-        import markdown_vault_mcp.managers.index as index_module
+        import markdown_vault_mcp.scanner as scanner_module
 
         parse_calls: list[str] = []
-        original_parse = index_module.parse_note
+        original_parse = scanner_module.parse_note
 
         def counting_parse(abs_path, source_dir, chunk_strategy, **kwargs):
             parse_calls.append(str(abs_path))
             return original_parse(abs_path, source_dir, chunk_strategy, **kwargs)
 
-        monkeypatch.setattr(index_module, "parse_note", counting_parse)
+        monkeypatch.setattr(scanner_module, "parse_note", counting_parse)
 
         result = mgr.reindex()
         assert result.added == 0
@@ -417,19 +417,19 @@ class TestSkipStateMemory:
         (vault / "flaky.md").write_text("# Flaky\n\nbody\n", encoding="utf-8")
         mgr, fts, _ = _make_index_mgr(vault, tmp_path)
 
-        import markdown_vault_mcp.managers.index as index_module
+        import markdown_vault_mcp.scanner as scanner_module
 
-        original_parse = index_module.parse_note
+        original_parse = scanner_module.parse_note
 
         def failing_parse(abs_path, source_dir, chunk_strategy, **kwargs):  # noqa: ARG001
             raise OSError("transient I/O error")
 
-        monkeypatch.setattr(index_module, "parse_note", failing_parse)
+        monkeypatch.setattr(scanner_module, "parse_note", failing_parse)
         first = mgr.reindex()
         assert first.added == 0
         assert first.skipped == 0  # not recorded — must retry
 
-        monkeypatch.setattr(index_module, "parse_note", original_parse)
+        monkeypatch.setattr(scanner_module, "parse_note", original_parse)
         second = mgr.reindex()
         assert second.added == 1
         paths = {n["path"] for n in fts.list_notes()}
@@ -444,7 +444,7 @@ class TestSkipStateMemory:
         (vault / "broken.md").write_text("# Broken\n\nbody\n", encoding="utf-8")
         mgr, _fts, _ = _make_index_mgr(vault, tmp_path)
 
-        import markdown_vault_mcp.managers.index as index_module
+        import markdown_vault_mcp.scanner as scanner_module
 
         parse_calls: list[str] = []
 
@@ -452,7 +452,7 @@ class TestSkipStateMemory:
             parse_calls.append(str(abs_path))
             raise ValueError("malformed note")
 
-        monkeypatch.setattr(index_module, "parse_note", broken_parse)
+        monkeypatch.setattr(scanner_module, "parse_note", broken_parse)
         first = mgr.reindex()
         assert first.added == 0
         assert first.skipped == 1
@@ -489,13 +489,14 @@ class TestSkipStateMemory:
         mgr, _fts, _ = _make_index_mgr(vault, tmp_path)
 
         import markdown_vault_mcp.managers.index as index_module
+        import markdown_vault_mcp.scanner as scanner_module
 
         # A non-OSError parse failure is a deterministic skip recorded via
-        # _record_skip (the path that hashes the file).
+        # _record_skip_hash (the path that hashes the file).
         def failing_parse(abs_path, source_dir, chunk_strategy, **kwargs):  # noqa: ARG001
             raise ValueError("unparseable")
 
-        monkeypatch.setattr(index_module, "parse_note", failing_parse)
+        monkeypatch.setattr(scanner_module, "parse_note", failing_parse)
         real_hash = index_module.compute_file_hash
 
         def failing_hash(path):  # noqa: ARG001
@@ -1547,16 +1548,16 @@ class TestReindexSkipReasons:
             (tmp_path / "boom.md").write_text(
                 "---\ntitle: ok\n---\nbody", encoding="utf-8"
             )
-            import markdown_vault_mcp.managers.index as index_module
+            import markdown_vault_mcp.scanner as scanner_module
 
-            real_parse = index_module.parse_note
+            real_parse = scanner_module.parse_note
 
             def maybe_explode(abs_path, source_dir, chunk_strategy, **kwargs):
                 if abs_path.name == "boom.md":
                     raise RuntimeError("chunker exploded")
                 return real_parse(abs_path, source_dir, chunk_strategy, **kwargs)
 
-            monkeypatch.setattr(index_module, "parse_note", maybe_explode)
+            monkeypatch.setattr(scanner_module, "parse_note", maybe_explode)
             vault.index.reindex()
             by_path = {sf.path: sf for sf in vault.index.skipped_files()}
         finally:
