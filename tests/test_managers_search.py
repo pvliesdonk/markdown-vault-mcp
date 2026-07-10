@@ -840,6 +840,28 @@ def test_hybrid_search_caps_per_file_after_rrf(
         assert len(r.sections) <= 1
 
 
+def test_hybrid_folder_filter_normalizes_trailing_slash(
+    search_mgr_with_embeddings: SearchManager,
+) -> None:
+    """Hybrid's vector channel shares semantic's folder normalization (#878).
+
+    A natural ``"notes/"`` (trailing slash) must not silently filter the
+    vector channel to nothing while ``mode="semantic"`` handles the same
+    input correctly.
+    """
+    with_slash = search_mgr_with_embeddings.search(
+        "world", mode="hybrid", folder="notes/", limit=10
+    )
+    assert with_slash, "expected hybrid results within notes/"
+    assert all(r.path.startswith("notes/") for r in with_slash)
+    # The vector channel must surface the same files the semantic mode does
+    # for the identical un-normalized input.
+    semantic = search_mgr_with_embeddings.search(
+        "world", mode="semantic", folder="notes/", limit=10
+    )
+    assert {r.path for r in with_slash} == {r.path for r in semantic}
+
+
 def test_hybrid_search_uses_fts_snippet_for_keyword_hits(
     search_mgr_with_embeddings: SearchManager,
 ) -> None:

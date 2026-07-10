@@ -958,15 +958,9 @@ class SearchManager:
 
         vectors = self._load_vectors()
         vec_raw = vectors.search(query, limit=vec_candidate_limit)
-        vec_filtered: list[dict[str, Any]] = []
-        for r in vec_raw:
-            if folder is not None:
-                r_folder = r.get("folder", "")
-                if r_folder != folder and not r_folder.startswith(folder + "/"):
-                    continue
-            if filters and not self._row_matches_filters(r["path"], filters):
-                continue
-            vec_filtered.append(r)
+        vec_filtered = self._post_filter_semantic_rows(
+            vec_raw, folder=folder, filters=filters
+        )
 
         vec_chunk_counts = self._fts.get_chunk_counts({r["path"] for r in vec_filtered})
         vec_rows: list[_SemanticRow] = [
