@@ -642,6 +642,63 @@ def test_semantic_search_applies_chunks_per_file_cap_and_snippet(
             assert len(s.content.split()) <= 10
 
 
+class TestGetSimilarFilters:
+    """Folder and frontmatter filter params on get_similar (post-filtered)."""
+
+    def test_folder_filter_restricts_results(
+        self, search_mgr_with_embeddings: SearchManager
+    ) -> None:
+        results = search_mgr_with_embeddings.get_similar("alpha.md", folder="notes")
+        paths = [r.path for r in results]
+        assert paths, "expected candidates within notes/"
+        assert all(p.startswith("notes/") for p in paths)
+
+    def test_folder_filter_is_prefix_not_substring(
+        self, search_mgr_with_embeddings: SearchManager
+    ) -> None:
+        # "note" is a prefix of the "notes" folder *name* but not a folder —
+        # exact-or-"note/" matching must exclude notes/* results.
+        results = search_mgr_with_embeddings.get_similar("alpha.md", folder="note")
+        assert results == []
+
+    def test_frontmatter_filter_scalar_and_list(
+        self, search_mgr_with_embeddings: SearchManager
+    ) -> None:
+        # tags is list-valued; membership matching applies.
+        results = search_mgr_with_embeddings.get_similar(
+            "alpha.md", filters={"tags": "b"}
+        )
+        paths = [r.path for r in results]
+        assert paths == ["beta.md"]
+        # title is a scalar field NOT in indexed_frontmatter_fields — the
+        # post-filter matches any frontmatter key.
+        results = search_mgr_with_embeddings.get_similar(
+            "alpha.md", filters={"title": "Gamma"}
+        )
+        assert [r.path for r in results] == ["notes/gamma.md"]
+
+    def test_combined_filters_and_empty_result(
+        self, search_mgr_with_embeddings: SearchManager
+    ) -> None:
+        results = search_mgr_with_embeddings.get_similar(
+            "alpha.md", folder="notes", filters={"tags": "c"}
+        )
+        assert [r.path for r in results] == ["notes/gamma.md"]
+        results = search_mgr_with_embeddings.get_similar(
+            "alpha.md", folder="notes", filters={"tags": "b"}
+        )
+        assert results == []
+
+    def test_no_filters_unchanged_behavior(
+        self, search_mgr_with_embeddings: SearchManager
+    ) -> None:
+        unfiltered = search_mgr_with_embeddings.get_similar("alpha.md")
+        assert [r.path for r in unfiltered] == [
+            r.path for r in search_mgr_with_embeddings.get_similar("alpha.md")
+        ]
+        assert "alpha.md" not in [r.path for r in unfiltered]
+
+
 class _FixedQueryProvider:
     """Embeds every query to the same unit vector along the first axis.
 

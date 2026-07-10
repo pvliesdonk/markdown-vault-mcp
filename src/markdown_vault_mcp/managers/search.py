@@ -509,6 +509,40 @@ class SearchManager:
                     return False
         return True
 
+    def _post_filter_semantic_rows(
+        self,
+        raw: builtins.list[dict[str, Any]],
+        *,
+        folder: str | None,
+        filters: dict[str, str] | None,
+    ) -> builtins.list[dict[str, Any]]:
+        """Apply folder-prefix and frontmatter filters to vector-search rows.
+
+        Vector search carries no structured metadata, so filtering happens
+        after the fact: *folder* matches exactly or as a sub-folder prefix,
+        and *filters* checks frontmatter via :meth:`_row_matches_filters`
+        (any frontmatter key — not limited to ``indexed_frontmatter_fields``).
+
+        Args:
+            raw: Result dicts from :meth:`VectorIndex.search` /
+                :meth:`VectorIndex.search_by_path`.
+            folder: Optional folder to restrict results to.
+            filters: Optional ``{frontmatter_key: value}`` equality filters.
+
+        Returns:
+            The rows that satisfy every condition, original order preserved.
+        """
+        filtered: builtins.list[dict[str, Any]] = []
+        for r in raw:
+            if folder is not None:
+                r_folder = r.get("folder", "")
+                if r_folder != folder and not r_folder.startswith(folder + "/"):
+                    continue
+            if filters and not self._row_matches_filters(r["path"], filters):
+                continue
+            filtered.append(r)
+        return filtered
+
     def _effective_attachment_extensions(self) -> frozenset[str]:
         """Return the effective set of allowed attachment extensions.
 
@@ -758,15 +792,7 @@ class SearchManager:
         candidate_limit = max(limit * (chunks_per_file + 4), _SEMANTIC_CANDIDATE_FLOOR)
         raw = vectors.search(query, limit=candidate_limit)
 
-        filtered: list[dict[str, Any]] = []
-        for r in raw:
-            if folder is not None:
-                r_folder = r.get("folder", "")
-                if r_folder != folder and not r_folder.startswith(folder + "/"):
-                    continue
-            if filters and not self._row_matches_filters(r["path"], filters):
-                continue
-            filtered.append(r)
+        filtered = self._post_filter_semantic_rows(raw, folder=folder, filters=filters)
 
         chunk_counts = self._fts.get_chunk_counts({r["path"] for r in filtered})
         rows: list[_SemanticRow] = [
@@ -1204,6 +1230,8 @@ class SearchManager:
         *,
         limit: int = 10,
         chunks_per_file: int | None = None,
+        folder: str | None = None,
+        filters: dict[str, str] | None = None,
     ) -> builtins.list[GroupedResult]:
         """Return the most semantically similar documents (field-collapsed).
 
@@ -1216,6 +1244,13 @@ class SearchManager:
             limit: Maximum number of *files* to return.
             chunks_per_file: Maximum sections returned per result file.
                 ``None`` uses the instance default.
+            folder: If provided, restrict results to documents in this
+                folder (exact match or sub-folder prefix).
+            filters: Optional ``{frontmatter_key: value}`` equality filters,
+                ANDed. Applied post-hoc against each candidate's full
+                frontmatter (any key — not limited to
+                ``indexed_frontmatter_fields``); list-valued fields match by
+                membership.
 
         Returns:
             List of :class:`~markdown_vault_mcp.types.GroupedResult` ordered
@@ -1242,7 +1277,14 @@ class SearchManager:
             chunks_per_file if chunks_per_file is not None else self._chunks_per_file
         )
         candidate_limit = max(limit * (eff_cpf + 4), 50)
+        if folder is not None or filters:
+            # Post-filtering discards candidates; widen the pool so a
+            # narrow folder/filter cannot starve the result list.
+            candidate_limit = max(candidate_limit * 4, 200)
         raw_results = self._vectors.search_by_path(path, limit=candidate_limit)
+        raw_results = self._post_filter_semantic_rows(
+            raw_results, folder=folder, filters=filters
+        )
 
         chunk_counts = self._fts.get_chunk_counts({r["path"] for r in raw_results})
         rows: list[_SemanticRow] = [

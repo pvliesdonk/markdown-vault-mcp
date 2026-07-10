@@ -245,6 +245,8 @@ class ReaderFacet:
         *,
         limit: int = 10,
         chunks_per_file: int | None = None,
+        folder: str | None = None,
+        filters: dict[str, str] | None = None,
     ) -> list[GroupedResult]:
         """Return semantically similar documents grouped by file.
 
@@ -257,6 +259,10 @@ class ReaderFacet:
             path: Relative path of the reference document.
             limit: Maximum number of files to return.
             chunks_per_file: Maximum sections per result file.
+            folder: Optional folder to restrict results to (exact match or
+                sub-folder prefix).
+            filters: Optional ``{frontmatter_key: value}`` equality filters,
+                ANDed; applied post-hoc against full frontmatter.
 
         Returns:
             List of grouped results.
@@ -266,7 +272,11 @@ class ReaderFacet:
         """
         self._require_built()
         return self._search_mgr.get_similar(
-            path, limit=limit, chunks_per_file=chunks_per_file
+            path,
+            limit=limit,
+            chunks_per_file=chunks_per_file,
+            folder=folder,
+            filters=filters,
         )
 
     def get_context(

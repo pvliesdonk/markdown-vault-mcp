@@ -71,6 +71,13 @@ class TestReaderFacetBehaviour:
         # No embedding provider configured -> semantic similarity degrades to [].
         assert built.reader.get_similar("full_frontmatter.md") == []
 
+    def test_get_similar_accepts_filter_params(self, built: Vault) -> None:
+        # folder/filters thread through to SearchManager.get_similar.
+        result = built.reader.get_similar(
+            "full_frontmatter.md", folder="subfolder", filters={"tags": "x"}
+        )
+        assert result == []
+
     def test_get_context_returns_note_context(self, built: Vault) -> None:
         ctx = built.reader.get_context("full_frontmatter.md")
         assert isinstance(ctx, NoteContext)

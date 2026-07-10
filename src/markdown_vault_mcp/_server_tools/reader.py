@@ -482,6 +482,8 @@ def register(mcp: FastMCP) -> None:
         path: str,
         limit: int = 10,
         chunks_per_file: int | None = None,
+        folder: str | None = None,
+        filters: dict[str, str] | None = None,
         wait_for_pending_writes: bool = False,
         vault: Vault = Depends(get_vault),
     ) -> list[dict[str, Any]]:
@@ -500,6 +502,15 @@ def register(mcp: FastMCP) -> None:
             limit: Maximum number of similar notes to return (default 10).
             chunks_per_file: Maximum sections returned per file (default 2).
                 Set to 1 for one best section per file.  Must be >= 1.
+            folder: Restrict results to this folder (exact match or
+                sub-folder prefix), e.g. "3-Resources". Useful to scope
+                link candidates to one part of the vault.
+            filters: Frontmatter equality filters, ANDed — e.g.
+                {"type": "resource"}. Matched post-hoc against each
+                candidate's full frontmatter, so any frontmatter key works
+                (unlike keyword 'search' filters, which are limited to
+                indexed_frontmatter_fields). List-valued fields match if
+                the value is among them.
             wait_for_pending_writes: When True, wait until your recent
                 write/edit/delete/rename operations have been applied to the
                 index before answering, so the results reflect those changes.
@@ -552,6 +563,8 @@ def register(mcp: FastMCP) -> None:
             path,
             limit=limit,
             chunks_per_file=chunks_per_file,
+            folder=folder,
+            filters=filters,
         )
         return _staleness_result(
             vault,
