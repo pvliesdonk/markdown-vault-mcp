@@ -523,6 +523,10 @@ class SearchManager:
         and *filters* checks frontmatter via :meth:`_row_matches_filters`
         (any frontmatter key — not limited to ``indexed_frontmatter_fields``).
 
+        *folder* is normalized first (backslashes to slashes, surrounding
+        slashes stripped) so a natural ``"3-Resources/"`` does not silently
+        match nothing; a value that normalizes to ``""`` means no restriction.
+
         Args:
             raw: Result dicts from :meth:`VectorIndex.search` /
                 :meth:`VectorIndex.search_by_path`.
@@ -532,6 +536,8 @@ class SearchManager:
         Returns:
             The rows that satisfy every condition, original order preserved.
         """
+        if folder is not None:
+            folder = folder.replace("\\", "/").strip("/") or None
         filtered: builtins.list[dict[str, Any]] = []
         for r in raw:
             if folder is not None:

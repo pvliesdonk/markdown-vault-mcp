@@ -179,9 +179,10 @@ class Vault:
             summarization backend per call (default 200000).
         conventions_file: Well-known per-folder conventions filename resolved
             by :attr:`conventions` (default ``"_conventions.md"``); ``None``
-            disables folder conventions. Callers are expected to also list the
-            filename in *exclude_patterns* so convention files stay out of the
-            index (``ProjectConfig.to_vault_kwargs`` does this automatically).
+            disables folder conventions. When set, the filename is
+            automatically appended to *exclude_patterns* (in both fnmatch
+            forms) so convention files stay out of the index while remaining
+            disk-readable. Must not contain fnmatch metacharacters.
     """
 
     def __init__(
@@ -251,6 +252,26 @@ class Vault:
         self._on_write = on_write
         self._git_strategy = git_strategy
         self._git_pull_interval_s = git_pull_interval_s
+        # The resolver prunes its folder walk with the *configured* patterns
+        # only — the derived patterns below would otherwise exclude the
+        # convention files themselves.
+        self._conventions = ConventionsResolver(
+            source_dir, conventions_file, exclude_patterns=exclude_patterns
+        )
+        if conventions_file:
+            if any(ch in conventions_file for ch in "*?[]"):
+                raise ValueError(
+                    "conventions_file must not contain fnmatch metacharacters "
+                    f"(*, ?, [, ]), got {conventions_file!r}"
+                )
+            # Convention files are index-excluded but stay disk-readable.
+            # Both fnmatch forms are needed: `**/name` alone does not match
+            # a root-level file.
+            exclude_patterns = [
+                *(exclude_patterns or []),
+                conventions_file,
+                f"**/{conventions_file}",
+            ]
         self._exclude_patterns = exclude_patterns
         self._attachment_extensions = attachment_extensions
         self._max_attachment_size_mb = max_attachment_size_mb
@@ -258,7 +279,6 @@ class Vault:
         self._summarizer = summarizer
         self._summarize_max_notes = summarize_max_notes
         self._summarize_max_input_chars = summarize_max_input_chars
-        self._conventions = ConventionsResolver(source_dir, conventions_file)
 
         # Default state path: {source_dir}/.markdown_vault_mcp/state.json
         if state_path is None:
@@ -457,6 +477,16 @@ class Vault:
     def conventions(self) -> ConventionsResolver:
         """Folder-conventions resolver (disk-read, index-independent)."""
         return self._conventions
+
+    @property
+    def exclude_patterns(self) -> list[str] | None:
+        """The effective exclusion patterns, including derived ones.
+
+        Contains the configured patterns plus the conventions-file patterns
+        derived in ``__init__`` — the list the scanner, reconcile, and
+        incremental index paths actually enforce.
+        """
+        return self._exclude_patterns
 
     @property
     def source_dir(self) -> Path:

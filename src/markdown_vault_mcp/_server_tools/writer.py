@@ -19,7 +19,7 @@ from markdown_vault_mcp.vault import Vault
 
 from .._icons import _TOOL_ICONS
 from .._server_deps import get_vault
-from ._common import conventions_payload
+from ._common import attach_conventions
 
 logger = logging.getLogger(__name__)
 
@@ -219,11 +219,7 @@ def register(mcp: FastMCP) -> None:
             frontmatter=frontmatter,
             if_match=if_match,
         )
-        data = asdict(result)
-        conventions = await asyncio.to_thread(conventions_payload, vault, path)
-        if conventions:
-            data["conventions"] = conventions
-        return data
+        return await attach_conventions(vault, asdict(result), path)
 
     @mcp.tool(
         tags={"write"},
@@ -306,11 +302,7 @@ def register(mcp: FastMCP) -> None:
                 line_start=line_start,
                 line_end=line_end,
             )
-            data = asdict(result)
-            conventions = await asyncio.to_thread(conventions_payload, vault, path)
-            if conventions:
-                data["conventions"] = conventions
-            return data
+            return await attach_conventions(vault, asdict(result), path)
         except EditConflictError as exc:
             parts = [str(exc)]
             if exc.closest_match_line is not None:
@@ -545,6 +537,10 @@ def register(mcp: FastMCP) -> None:
             - created (bool): true if new file, false if overwrite
             - content_length (int): bytes downloaded
             - content_type (str or null): Content-Type from the response
+            - conventions (list, optional; .md only): the user's authoring
+              conventions for the target folder (root-first list of
+              {folder, path, content}). When present, verify the saved note
+              complies and issue a follow-up 'edit' if it does not.
 
         Primary building block for URL-to-note capture flows: call ``fetch`` to
         retrieve the source, summarize via the LLM, and ``write`` the result
@@ -689,7 +685,5 @@ def register(mcp: FastMCP) -> None:
             "content_type": content_type,
         }
         if is_markdown:
-            conventions = await asyncio.to_thread(conventions_payload, vault, path)
-            if conventions:
-                data["conventions"] = conventions
+            data = await attach_conventions(vault, data, path)
         return data

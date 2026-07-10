@@ -258,25 +258,34 @@ class IndexManager:
         # before exclude_patterns were configured (upgrade scenario, #255).
         indexed_paths = {note.path for note in notes}
         if self._exclude_patterns:
+            # Identify stale excluded rows BEFORE force-loading the vector
+            # sidecar: exclude_patterns is non-empty on every
+            # default-configured vault now (the derived conventions-file
+            # patterns), and an unconditional load here would defeat lazy
+            # vector loading on every warm boot.
+            rows = self._fts.list_notes()
+            stale_rows = [
+                row["path"]
+                for row in rows
+                if row["path"] not in indexed_paths
+                and self._is_path_excluded(row["path"])
+            ]
             vectors = self._get_vectors()
             if (
-                vectors is None
+                stale_rows
+                and vectors is None
                 and self._embedding_provider is not None
                 and self._embeddings_path is not None
             ):
                 self._load_vectors()
                 vectors = self._get_vectors()
 
-            rows = self._fts.list_notes()
             purged = 0
-            for row in rows:
-                if row["path"] not in indexed_paths and self._is_path_excluded(
-                    row["path"]
-                ):
-                    self._fts.delete_by_path(row["path"])
-                    if vectors is not None:
-                        vectors.delete_by_path(row["path"])
-                    purged += 1
+            for stale_path in stale_rows:
+                self._fts.delete_by_path(stale_path)
+                if vectors is not None:
+                    vectors.delete_by_path(stale_path)
+                purged += 1
 
             if purged and vectors is not None and self._embeddings_path is not None:
                 vectors.save(self._embeddings_path)
@@ -482,23 +491,34 @@ class IndexManager:
             if vectors is not None:
                 vectors.delete_by_path(path)
 
-        # Purge stale excluded docs (issue #255).
+        # Purge stale excluded docs (issue #255). Identify them first and
+        # only then force-load the vector sidecar: exclude_patterns is
+        # non-empty on every default-configured vault now (the derived
+        # conventions-file patterns), and an unconditional load would flip
+        # the per-note loop below into inline embedding on every reindex —
+        # changing provider-failure semantics from converge-and-skip to
+        # raise (see test_embedding_convergence).
         stale_excluded = 0
         if self._exclude_patterns:
+            stale_paths = [
+                row["path"]
+                for row in self._fts.list_notes()
+                if self._is_path_excluded(row["path"])
+            ]
             if (
-                vectors is None
+                stale_paths
+                and vectors is None
                 and self._embedding_provider is not None
                 and self._embeddings_path is not None
             ):
                 self._load_vectors()
                 vectors = self._get_vectors()
 
-            for row in self._fts.list_notes():
-                if self._is_path_excluded(row["path"]):
-                    self._fts.delete_by_path(row["path"])
-                    if vectors is not None:
-                        vectors.delete_by_path(row["path"])
-                    stale_excluded += 1
+            for stale_path in stale_paths:
+                self._fts.delete_by_path(stale_path)
+                if vectors is not None:
+                    vectors.delete_by_path(stale_path)
+                stale_excluded += 1
             if stale_excluded:
                 logger.info(
                     "reindex: purged %d stale excluded document(s)",
@@ -989,6 +1009,15 @@ class IndexManager:
             for path in paths:
                 abs_path = self._source_dir / path
                 try:
+                    if self._is_path_excluded(path):
+                        # Excluded paths (e.g. convention files) never enter
+                        # the index, whichever producer marked them dirty —
+                        # this is the choke point every dirty path flows
+                        # through. Deleting is a no-op when the path was
+                        # never indexed and purges stale rows left from
+                        # before the exclusion existed.
+                        self._fts.delete_by_path(path)
+                        continue
                     if abs_path.is_file() and path.endswith(".md"):
                         note = parse_note(
                             abs_path, self._source_dir, self._chunk_strategy
@@ -1079,7 +1108,11 @@ class IndexManager:
         ] = []
         for path in paths:
             abs_path = self._source_dir / path
-            if abs_path.is_file() and path.endswith(".md"):
+            if self._is_path_excluded(path):
+                # Excluded paths (e.g. convention files) never get vectors,
+                # mirroring the FTS guard in process_dirty_paths → delete.
+                pre_embedded.append((path, None, None, False))
+            elif abs_path.is_file() and path.endswith(".md"):
                 try:
                     note = parse_note(abs_path, self._source_dir, self._chunk_strategy)
                     texts = [c.content for c in note.chunks]

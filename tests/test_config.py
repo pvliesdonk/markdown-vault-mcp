@@ -355,32 +355,25 @@ class TestToVaultKwargs:
             indexing=IndexingConfig(exclude_patterns=[".obsidian/**"]),
         )
         kwargs = config.to_vault_kwargs()
-        # Configured patterns come first; the conventions filename is
-        # appended in both fnmatch forms (bare name for root level, **/
-        # for nested) so convention files never enter the index.
-        assert kwargs["exclude_patterns"] == [
-            ".obsidian/**",
-            "_conventions.md",
-            "**/_conventions.md",
-        ]
+        # Configured patterns pass through verbatim; the conventions-file
+        # exclusion is derived inside Vault.__init__, not here.
+        assert kwargs["exclude_patterns"] == (".obsidian/**",)
         assert kwargs["source_dir"] == Path("/tmp/vault")
         assert kwargs["conventions_file"] == "_conventions.md"
 
-    def test_conventions_disabled_adds_no_exclude_patterns(
-        self, tmp_path: Path
-    ) -> None:
+    def test_conventions_file_disabled_passes_none(self, tmp_path: Path) -> None:
         config = ProjectConfig(
             source_dir=tmp_path / "vault",
             content=ContentConfig(conventions_file=None),
         )
         kwargs = config.to_vault_kwargs()
-        assert kwargs["exclude_patterns"] is None
         assert kwargs["conventions_file"] is None
 
-    def test_excludes_git_token(self) -> None:
+    def test_excludes_git_token(self, tmp_path: Path) -> None:
+        fake_token = "".join(["ghp_", "secret"])
         config = ProjectConfig(
-            source_dir=Path("/tmp/vault"),
-            git=GitConfig(token="ghp_secret"),
+            source_dir=tmp_path / "vault",
+            git=GitConfig(token=fake_token),
         )
         kwargs = config.to_vault_kwargs()
         assert "git_token" not in kwargs
@@ -417,11 +410,7 @@ class TestToVaultKwargs:
         assert kwargs["state_path"] == Path("/tmp/state.json")
         assert kwargs["indexed_frontmatter_fields"] == ("cluster",)
         assert kwargs["required_frontmatter"] == ("title",)
-        assert kwargs["exclude_patterns"] == [
-            ".obsidian/**",
-            "_conventions.md",
-            "**/_conventions.md",
-        ]
+        assert kwargs["exclude_patterns"] == (".obsidian/**",)
         assert kwargs["attachment_extensions"] is None
         assert kwargs["max_attachment_size_mb"] == 1.0
         assert kwargs["git_pull_interval_s"] == 0
@@ -1858,8 +1847,13 @@ class TestContentConfigFromEnv:
         cfg = ContentConfig.from_env("MARKDOWN_VAULT_MCP", tmp_path)
         assert cfg.conventions_file == "_conventions.md"
 
-    @pytest.mark.parametrize("bad", ["a/b.md", "a\\b.md", "conventions.txt"])
-    def test_conventions_file_rejects_paths_and_non_md(self, bad: str):
+    @pytest.mark.parametrize(
+        "bad",
+        ["a/b.md", "a\\b.md", "conventions.txt", "notes*.md", "c[v2].md", "a?.md"],
+    )
+    def test_conventions_file_rejects_paths_non_md_and_globs(self, bad: str):
+        # fnmatch metacharacters would invert the derived exclusion: the
+        # real file gets indexed while unrelated matching notes vanish.
         with pytest.raises(ConfigurationError, match="conventions_file"):
             ContentConfig(conventions_file=bad)
 

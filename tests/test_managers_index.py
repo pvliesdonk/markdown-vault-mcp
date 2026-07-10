@@ -1182,6 +1182,32 @@ class TestProcessDirtyPaths:
         mgr.process_dirty_paths({"beta.md"})
         assert fts.get_note("beta.md") is None
 
+    def test_excluded_path_never_indexed_even_when_file_exists(
+        self, index_vault, tmp_path
+    ):
+        """Excluded paths are purged, not upserted — the choke point every
+        dirty-path producer flows through (write tools, future watchers)."""
+        mgr, fts, _ = _make_index_mgr(
+            index_vault,
+            tmp_path,
+            exclude_patterns=["_conventions.md", "**/_conventions.md"],
+        )
+        mgr.build_index()
+        (index_vault / "_conventions.md").write_text("Rules.", encoding="utf-8")
+        mgr.process_dirty_paths({"_conventions.md"})
+        assert fts.get_note("_conventions.md") is None
+
+    def test_excluded_path_purges_stale_index_entry(self, index_vault, tmp_path):
+        """A previously-indexed path that becomes excluded is purged on dirty."""
+        mgr, fts, _ = _make_index_mgr(index_vault, tmp_path)
+        mgr.build_index()
+        assert fts.get_note("alpha.md") is not None
+        mgr2, _, _ = _make_index_mgr(
+            index_vault, tmp_path, fts=fts, exclude_patterns=["alpha.md"]
+        )
+        mgr2.process_dirty_paths({"alpha.md"})
+        assert fts.get_note("alpha.md") is None
+
     def test_continues_after_per_path_failure(self, index_vault, tmp_path):
         mgr, fts, _ = _make_index_mgr(index_vault, tmp_path)
         mgr.build_index()

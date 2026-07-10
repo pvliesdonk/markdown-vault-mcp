@@ -112,6 +112,18 @@ class TestForPath:
         assert entries[0].content == "Agent rules."
         assert resolver.filename == "AGENTS.md"
 
+    def test_non_utf8_file_skipped_without_breaking_chain(
+        self, vault_dir: Path
+    ) -> None:
+        # A latin-1/binary conventions file must not error the lookup or
+        # drop valid ancestor entries.
+        (vault_dir / "3-Resources" / "_conventions.md").write_bytes(
+            b"caf\xe9 rules \xff\xfe"
+        )
+        resolver = ConventionsResolver(vault_dir, "_conventions.md")
+        entries = resolver.for_path("3-Resources/CRA.md")
+        assert [e.folder for e in entries] == [""]
+
 
 class TestListFolders:
     def test_lists_folders_sorted_with_root_as_empty(self, vault_dir: Path) -> None:
@@ -132,3 +144,52 @@ class TestListFolders:
     def test_missing_source_dir_returns_empty(self, tmp_path: Path) -> None:
         resolver = ConventionsResolver(tmp_path / "nope", "_conventions.md")
         assert resolver.list_folders() == []
+
+    def test_skips_folders_under_exclude_patterns(self, vault_dir: Path) -> None:
+        archive = vault_dir / "4-Archive"
+        archive.mkdir()
+        (archive / "_conventions.md").write_text("archived", encoding="utf-8")
+        resolver = ConventionsResolver(
+            vault_dir, "_conventions.md", exclude_patterns=["4-Archive/**"]
+        )
+        assert resolver.list_folders() == ["", "3-Resources"]
+
+
+class TestVaultDerivedExclusion:
+    def test_vault_derives_exclude_patterns(self, tmp_path: Path) -> None:
+        """Direct Vault construction excludes convention files by itself."""
+        from markdown_vault_mcp.vault import Vault
+
+        (tmp_path / "_conventions.md").write_text("Rules.", encoding="utf-8")
+        (tmp_path / "note.md").write_text("# Note\nBody.", encoding="utf-8")
+        col = Vault(source_dir=tmp_path, exclude_patterns=[".trash/**"])
+        try:
+            assert col.exclude_patterns == [
+                ".trash/**",
+                "_conventions.md",
+                "**/_conventions.md",
+            ]
+            col.index.build_index()
+            paths = [n.path for n in col.reader.list_documents()]
+            assert paths == ["note.md"]
+            assert [e.content for e in col.conventions.for_path("note.md")] == [
+                "Rules."
+            ]
+        finally:
+            col.close()
+
+    def test_vault_rejects_glob_metachars_in_filename(self, tmp_path: Path) -> None:
+        from markdown_vault_mcp.vault import Vault
+
+        with pytest.raises(ValueError, match="metacharacters"):
+            Vault(source_dir=tmp_path, conventions_file="notes*.md")
+
+    def test_vault_disabled_conventions_adds_nothing(self, tmp_path: Path) -> None:
+        from markdown_vault_mcp.vault import Vault
+
+        col = Vault(source_dir=tmp_path, conventions_file=None)
+        try:
+            assert col.exclude_patterns is None
+            assert col.conventions.enabled is False
+        finally:
+            col.close()

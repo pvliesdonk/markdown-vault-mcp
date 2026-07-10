@@ -4,7 +4,7 @@ import asyncio
 import logging
 import os
 from dataclasses import asdict
-from typing import TypeVar
+from typing import Any, TypeVar
 
 from fastmcp.tools import ToolResult
 
@@ -37,6 +37,30 @@ def conventions_payload(vault: Vault, path: str) -> list[dict[str, str]]:
     except ValueError:
         logger.debug("conventions_lookup_failed path=%s", path, exc_info=True)
         return []
+
+
+async def attach_conventions(
+    vault: Vault, data: dict[str, Any], path: str
+) -> dict[str, Any]:
+    """Add the folder-convention chain for *path* to a tool result dict.
+
+    The ``conventions`` key is omitted entirely when no conventions apply,
+    keeping the enrichment additive and non-breaking. Shared by the
+    ``write`` / ``edit`` / ``fetch`` / ``get_context`` tools so the result
+    shape stays consistent across all of them.
+
+    Args:
+        vault: The vault whose conventions resolver to consult.
+        data: The tool's result dict (mutated in place).
+        path: Vault-relative note path the tool operated on.
+
+    Returns:
+        The same *data* dict, for call-site convenience.
+    """
+    conventions = await asyncio.to_thread(conventions_payload, vault, path)
+    if conventions:
+        data["conventions"] = conventions
+    return data
 
 
 def _resolve_drain_timeout() -> float:

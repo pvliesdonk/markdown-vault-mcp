@@ -68,7 +68,8 @@ class TestGetConventionsTool:
         assert [e["folder"] for e in data["conventions"]] == ["", "3-Resources"]
         assert data["conventions"][0]["content"] == ROOT_RULES
         assert data["conventions"][1]["content"] == RESOURCE_RULES
-        assert data["convention_folders"] == ["", "3-Resources"]
+        # Targeted lookups skip the vault-wide folder walk.
+        assert "convention_folders" not in data
 
     async def test_discovery_mode_default_path(self) -> None:
         async with Client(make_server()) as client:
@@ -80,9 +81,7 @@ class TestGetConventionsTool:
     async def test_disabled_via_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_CONVENTIONS_FILE", "none")
         async with Client(make_server()) as client:
-            result = await client.call_tool(
-                "get_conventions", {"path": "3-Resources/CRA.md"}
-            )
+            result = await client.call_tool("get_conventions", {})
         data = _structured(result)
         assert data["conventions"] == []
         assert data["convention_folders"] == []

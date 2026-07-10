@@ -98,7 +98,10 @@ def register_resources(mcp: FastMCP) -> None:
                     "read_only": config.read_only,
                     "indexed_fields": config.indexing.indexed_frontmatter_fields or [],
                     "required_fields": config.indexing.required_frontmatter or [],
-                    "exclude_patterns": config.indexing.exclude_patterns or [],
+                    # The vault's *effective* patterns — configured plus the
+                    # conventions-file patterns Vault derives — so the
+                    # reported list matches actual index behavior.
+                    "exclude_patterns": list(vault.exclude_patterns or []),
                     "templates_folder": config.content.templates_folder,
                     "conventions_file": config.content.conventions_file,
                     "convention_folders": convention_folders,

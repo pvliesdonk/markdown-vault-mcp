@@ -153,14 +153,6 @@ class ProjectConfig:
             config = ProjectConfig.from_env()
             vault = Vault(**config.to_vault_kwargs())
         """
-        # Convention files are index-excluded but stay disk-readable via
-        # `read`. fnmatch needs both the bare name (root level) and the
-        # `**/` form (nested) — `**/name` does not match a root-level file.
-        exclude_patterns = list(self.indexing.exclude_patterns or [])
-        if self.content.conventions_file:
-            cf = self.content.conventions_file
-            exclude_patterns += [cf, f"**/{cf}"]
-
         kwargs: dict[str, Any] = {
             "source_dir": self.source_dir,
             "read_only": self.read_only,
@@ -169,7 +161,7 @@ class ProjectConfig:
             "state_path": self.indexing.state_path,
             "indexed_frontmatter_fields": self.indexing.indexed_frontmatter_fields,
             "required_frontmatter": self.indexing.required_frontmatter,
-            "exclude_patterns": exclude_patterns or None,
+            "exclude_patterns": self.indexing.exclude_patterns,
             "conventions_file": self.content.conventions_file,
             "attachment_extensions": self.content.attachment_extensions,
             "max_attachment_size_mb": self.content.max_attachment_size_mb,

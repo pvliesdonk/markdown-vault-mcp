@@ -67,6 +67,14 @@ class ContentConfig:
                     "conventions_file must be a bare '.md' filename "
                     f"(no path separators), got {cf!r}"
                 )
+            # The filename is used verbatim as an fnmatch exclude pattern;
+            # metacharacters would invert the exclusion (the real file gets
+            # indexed while unrelated matching notes silently vanish).
+            if any(ch in cf for ch in "*?[]"):
+                raise ConfigurationError(
+                    "conventions_file must not contain fnmatch metacharacters "
+                    f"(*, ?, [, ]), got {cf!r}"
+                )
 
     @classmethod
     def from_env(cls, prefix: str, source_dir: Path) -> ContentConfig:

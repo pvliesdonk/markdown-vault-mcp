@@ -961,14 +961,20 @@ resolution means conventions work before the index is built (relevant in
 managed-git mode, where the clone happens inside the server lifespan).
 
 **Index exclusion.** Convention files are excluded from the index but stay
-readable via `read` (which reads from disk). `ProjectConfig.to_vault_kwargs`
-derives both fnmatch forms (`_conventions.md` and `**/_conventions.md` — the
-`**/` form alone does not match a root-level file) and appends them to
-`exclude_patterns`. The write path filters excluded paths before
-dirty-marking (`DocumentManager._mark_dirty_filtered`), so an MCP `write` to
-a convention file takes effect on disk immediately without ever entering the
-index; the reconcile purge migrates vaults that already had such files
-indexed.
+readable via `read` (which reads from disk). `Vault.__init__` itself derives
+both fnmatch forms (`_conventions.md` and `**/_conventions.md` — the `**/`
+form alone does not match a root-level file) and merges them into its
+effective `exclude_patterns`, so direct library construction behaves
+identically to the served path; the filename is validated against fnmatch
+metacharacters (which would invert the exclusion). Excluded paths are
+enforced at the index choke points every dirty path flows through —
+`IndexManager.process_dirty_paths` (FTS) and `flush_dirty_embeddings`
+(vectors) treat an excluded path as a purge — so any producer (write tools,
+future watchers) is covered, and an MCP `write` to a convention file takes
+effect on disk immediately without ever entering the index. The reconcile
+purge migrates vaults that already had such files indexed. `config://vault`
+reports the vault's *effective* exclude patterns (including the derived
+ones).
 
 **Delivery channels** (write-time first):
 
@@ -977,8 +983,8 @@ indexed.
    The docstrings instruct the client to verify compliance post-write and
    issue a corrective `edit`.
 2. The `get_conventions(path)` tool (read-only, no `@needs_queryable`) returns
-   the chain for a path plus `convention_folders` for discovery; `path=""` is
-   discovery mode.
+   the chain for a path; `path=""` is discovery mode and additionally returns
+   `convention_folders` (targeted lookups skip the vault-wide folder walk).
 3. `get_context` results carry the same `conventions` key (MCP layer only;
    `NoteContext` is unchanged).
 4. When the feature is enabled, the default server instructions gain one

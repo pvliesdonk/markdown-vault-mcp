@@ -13,7 +13,7 @@ from markdown_vault_mcp.vault import Vault
 from .._icons import _TOOL_ICONS
 from .._server_deps import get_vault
 from .._server_queryable import needs_queryable
-from ._common import _maybe_wait_for_drain, _staleness_result, conventions_payload
+from ._common import _maybe_wait_for_drain, _staleness_result, attach_conventions
 
 
 def register(mcp: FastMCP) -> None:
@@ -832,10 +832,7 @@ def register(mcp: FastMCP) -> None:
             similar_limit=similar_limit,
             link_limit=link_limit,
         )
-        data = asdict(result)
-        conventions = await asyncio.to_thread(conventions_payload, vault, path)
-        if conventions:
-            data["conventions"] = conventions
+        data = await attach_conventions(vault, asdict(result), path)
         return _staleness_result(
             vault, data, drained_on_request=drained, gen_before=gen_before
         )
@@ -872,8 +869,9 @@ def register(mcp: FastMCP) -> None:
         Args:
             path: Relative note path (e.g. "3-Resources/topic.md") or folder
                 path (e.g. "3-Resources"). A note path resolves to its
-                parent folder. Pass "" (default) for vault-root conventions
-                plus the full list of folders carrying convention files.
+                parent folder. Pass "" (default) for discovery mode:
+                vault-root conventions plus the full list of folders
+                carrying convention files.
 
         Returns:
             Dict with:
@@ -883,19 +881,20 @@ def register(mcp: FastMCP) -> None:
               Each has folder (str, "" for vault root), path (str, the
               convention file's own path), and content (str, its markdown
               body).
-            - convention_folders (list[str]): All folders carrying a
-              convention file ("" = vault root). Use to discover which
-              parts of the vault have authoring rules.
+            - convention_folders (list[str], discovery mode only): all
+              folders carrying a convention file ("" = vault root),
+              included only when path is "" — it requires a vault-wide
+              folder walk, so targeted lookups skip it.
 
         Raises:
             ValueError: If the path escapes the vault root.
         """
-        entries = await asyncio.to_thread(
-            lambda: [asdict(e) for e in vault.conventions.for_path(path)]
-        )
-        folders = await asyncio.to_thread(vault.conventions.list_folders)
-        return {
-            "path": path,
-            "conventions": entries,
-            "convention_folders": folders,
-        }
+
+        def _lookup() -> dict[str, Any]:
+            entries = [asdict(e) for e in vault.conventions.for_path(path)]
+            data: dict[str, Any] = {"path": path, "conventions": entries}
+            if not path:
+                data["convention_folders"] = vault.conventions.list_folders()
+            return data
+
+        return await asyncio.to_thread(_lookup)

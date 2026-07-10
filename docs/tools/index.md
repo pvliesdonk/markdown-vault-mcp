@@ -417,6 +417,8 @@ back into context.
 
 **Returns:** `{"path": "notes/report.md", "created": true, "content_length": 4096, "content_type": "text/markdown"}`
 
+For `.md` destinations, the response may also include a `conventions` list — see [`write`](#write).
+
 !!! note "Dependency"
     Requires `httpx`. Install with `pip install 'markdown-vault-mcp[all]'`.
 
@@ -630,8 +632,8 @@ Find semantically similar notes by document path. Requires embeddings to be buil
 | `path` | string | required | Relative path to the document |
 | `limit` | int | `10` | Maximum files to return |
 | `chunks_per_file` | int | server default (`2`) | Maximum number of matching sections returned per file. Overrides `MARKDOWN_VAULT_MCP_CHUNKS_PER_FILE` for this call. `0` is rejected. |
-| `folder` | string | `null` | Restrict results to this folder (exact match or sub-folder prefix), e.g. `3-Resources` |
-| `filters` | object | `null` | Frontmatter equality filters, ANDed — e.g. `{"type": "resource"}`. List-valued fields match by membership |
+| `folder` | string | `null` | Restrict results to this folder (exact match or sub-folder prefix), such as `3-Resources` |
+| `filters` | object | `null` | Frontmatter equality filters, ANDed — such as `{"type": "resource"}`. List-valued fields match by membership |
 | `wait_for_pending_writes` | bool | `false` | Block until the IndexWriter drains before answering, then report freshness via `_meta.index_stale` (see the *Index freshness on read tools* note at the top of this page). |
 
 **Returns:** List of grouped similar-document dicts ranked by cosine similarity, one entry per file with up to `chunks_per_file` best-matching sections. Each entry contains: `path`, `title`, `folder`, `score` (max section score), `search_type` (`"semantic"`), `frontmatter`, and `sections` (a list of `{heading, content, score}` dicts sorted by score then document order). Index freshness is reported in `_meta.index_stale` (see the freshness note at the top of this page).
@@ -721,7 +723,7 @@ so it works even while the index is still building.
 
 - `path` — the queried path.
 - `conventions` — applicable entries, root-first, each `{folder, path, content}` (`folder` is `""` for the vault root).
-- `convention_folders` — every folder carrying a convention file.
+- `convention_folders` — every folder carrying a convention file. Included only in discovery mode (`path=""`), since it requires a vault-wide folder walk.
 
 !!! tip "Write-time enforcement"
     The `write`, `edit`, and `fetch` tools echo applicable conventions in

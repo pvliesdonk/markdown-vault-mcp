@@ -653,6 +653,16 @@ class TestGetSimilarFilters:
         assert paths, "expected candidates within notes/"
         assert all(p.startswith("notes/") for p in paths)
 
+    def test_folder_filter_normalizes_trailing_slash(
+        self, search_mgr_with_embeddings: SearchManager
+    ) -> None:
+        # "3-Resources/"-style input (natural after path joining) must not
+        # silently match nothing.
+        with_slash = search_mgr_with_embeddings.get_similar("alpha.md", folder="notes/")
+        without = search_mgr_with_embeddings.get_similar("alpha.md", folder="notes")
+        assert [r.path for r in with_slash] == [r.path for r in without]
+        assert with_slash, "expected candidates within notes/"
+
     def test_folder_filter_is_prefix_not_substring(
         self, search_mgr_with_embeddings: SearchManager
     ) -> None:
