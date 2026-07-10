@@ -86,7 +86,7 @@ markdown-vault-mcp (new package)
 +-- facets/
 |   +-- reader.py     -- ReaderFacet: search/read/list/toc/similar/context/stats/history (#604)
 |   +-- writer.py     -- WriterFacet: write/edit/delete/rename/attachments (#604)
-|   +-- graph.py      -- GraphFacet: backlinks/outlinks/broken/orphans/most-linked/paths (#604)
+|   +-- graph.py      -- GraphFacet: backlinks/outlinks/broken/orphans/most-linked/paths (#604); neighborhood/hub graph views (#880)
 |   +-- index.py      -- IndexFacet: thin wrapper over the coordinator (#604)
 
 ifcraftcorpus (existing, refactored later)
@@ -1682,7 +1682,7 @@ root already owns:
 |-|-|-|
 | ``ReaderFacet`` | search, read, get_metadata, list, folders, tags, toc, recent, similar, context, stats, history, diff, read_attachment | ``SearchManager``, ``DocumentManager``, ``GitQueryManager``, ``require_built`` |
 | ``WriterFacet`` | write, edit, delete, rename, write_attachment | ``DocumentManager`` |
-| ``GraphFacet`` | backlinks, outlinks, broken_links, orphans, most_linked, connection_path | ``LinkManager``, ``require_built`` |
+| ``GraphFacet`` | backlinks, outlinks, broken_links, orphans, most_linked, connection_path, neighborhood/hub graph views (#880) | ``LinkManager``, ``SearchManager``, ``require_built`` |
 | ``IndexFacet`` | build/reindex/embeddings (sync + async), readiness, writer status, embeddings_status | ``IndexWriteCoordinator`` (public subset only), ``IndexManager`` (embeddings_status) |
 
 ``Vault`` constructs the facets once in ``__init__`` and exposes them via

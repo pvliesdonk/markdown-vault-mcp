@@ -11,7 +11,6 @@ instance in :func:`~markdown_vault_mcp.server.make_server`.
 from __future__ import annotations
 
 import asyncio
-import collections
 import hashlib
 import importlib.resources
 import logging
@@ -37,6 +36,7 @@ except ImportError as exc:  # pragma: no cover - dep-pin guard
     ) from exc
 
 from markdown_vault_mcp.config import _ENV_PREFIX
+from markdown_vault_mcp.types import GraphView
 from markdown_vault_mcp.vault import Vault
 
 from ._icons import _TOOL_ICONS
@@ -192,6 +192,32 @@ _SPA_SHELL_HTML = _rewrite_spa_app_tool_calls(
     .read_text(encoding="utf-8")
     .rstrip("\n")
 )
+
+
+def _graph_view_payload(view: GraphView, *, include_truncated: bool) -> dict[str, Any]:
+    """Serialize a :class:`GraphView` into the SPA graph-tool wire shape.
+
+    Edge endpoints map to ``from``/``to`` (vis-network's field names;
+    ``from`` is a Python keyword, so the dataclass uses source/target).
+    """
+    payload: dict[str, Any] = {
+        "nodes": [
+            {
+                "id": n.id,
+                "label": n.label,
+                "group": n.group,
+                "folder": n.folder,
+                "backlink_count": n.backlink_count,
+            }
+            for n in view.nodes
+        ],
+        "edges": [
+            {"from": e.source, "to": e.target, "type": e.link_type} for e in view.edges
+        ],
+    }
+    if include_truncated:
+        payload["truncated"] = view.truncated
+    return payload
 
 
 def register_apps(mcp: FastMCP) -> None:
@@ -453,150 +479,14 @@ def register_apps(mcp: FastMCP) -> None:
 
             - truncated (bool): True when BFS hit the ``max_nodes`` cap.
         """
-        nodes: dict[str, dict[str, Any]] = {}
-        edges: list[dict[str, Any]] = []
-        visited: set[str] = set()
-        queue: collections.deque[tuple[str, int]] = collections.deque([(path, 0)])
-        truncated = False
-
-        while queue:
-            if len(nodes) >= max_nodes:
-                truncated = True
-                break
-            current, d = queue.popleft()
-            if current in visited:
-                continue
-            visited.add(current)
-
-            # Add node — indexed metadata only (title/folder); reading the full
-            # document here would load it into memory and, for a note over
-            # MAX_NOTE_READ_BYTES, raise and fail the whole graph.
-            meta = await asyncio.to_thread(vault.reader.get_metadata, current)
-            label = (
-                meta.title if meta else current.rsplit("/", 1)[-1].replace(".md", "")
-            )
-            folder = meta.folder if meta else ""
-
-            if d >= depth:
-                # Boundary nodes are reachable by definition — skip DB calls
-                nodes[current] = {
-                    "id": current,
-                    "label": label,
-                    "group": "note",
-                    "folder": folder,
-                    "backlink_count": 0,
-                }
-                continue
-
-            # Fetch backlinks/outlinks for interior nodes (orphan detection + edges)
-            try:
-                backlinks = await asyncio.to_thread(vault.graph.get_backlinks, current)
-            except ValueError:
-                backlinks = []
-            try:
-                outlinks = await asyncio.to_thread(vault.graph.get_outlinks, current)
-            except ValueError:
-                outlinks = []
-            is_orphan = len(backlinks) == 0 and len(outlinks) == 0
-
-            nodes[current] = {
-                "id": current,
-                "label": label,
-                "group": "orphan" if is_orphan else "note",
-                "folder": folder,
-                "backlink_count": len(backlinks),
-            }
-
-            for bl in backlinks:
-                edges.append(
-                    {
-                        "from": bl.source_path,
-                        "to": current,
-                        "type": bl.link_type,
-                    }
-                )
-                if bl.source_path not in visited:
-                    queue.append((bl.source_path, d + 1))
-
-            # Process outlinks (already fetched above for orphan detection)
-            for ol in outlinks:
-                if ol.exists:
-                    edges.append(
-                        {
-                            "from": current,
-                            "to": ol.target_path,
-                            "type": ol.link_type,
-                        }
-                    )
-                    if ol.target_path not in visited:
-                        queue.append((ol.target_path, d + 1))
-
-        # Deduplicate explicit edges
-        seen_edges: set[tuple[str, str]] = set()
-        unique_edges: list[dict[str, Any]] = []
-        for e in edges:
-            key = (e["from"], e["to"])
-            if key not in seen_edges:
-                seen_edges.add(key)
-                unique_edges.append(e)
-
-        # Semantic similarity edges (optional, requires embeddings)
-        if include_semantic:
-            sem_seen: set[frozenset[str]] = set()
-            for node_path in list(nodes.keys()):
-                if len(nodes) >= max_nodes:
-                    truncated = True
-                    break
-                try:
-                    similar = await asyncio.to_thread(
-                        vault.reader.get_similar, node_path, limit=5
-                    )
-                except ValueError:
-                    # Expected when embeddings are not configured for this vault
-                    continue
-                except Exception:
-                    logger.warning(
-                        "get_similar failed for %s", node_path, exc_info=True
-                    )
-                    continue
-                seen_sr: set[str] = set()
-                for sr in similar:
-                    if sr.path == node_path or sr.path in seen_sr:
-                        continue
-                    seen_sr.add(sr.path)
-                    pair: frozenset[str] = frozenset({node_path, sr.path})
-                    if pair in sem_seen:
-                        continue
-                    sem_seen.add(pair)
-                    if sr.path not in nodes:
-                        if len(nodes) >= max_nodes:
-                            truncated = True
-                            break
-                        sim_meta = await asyncio.to_thread(
-                            vault.reader.get_metadata, sr.path
-                        )
-                        sim_label = (
-                            sim_meta.title
-                            if sim_meta
-                            else sr.path.rsplit("/", 1)[-1].replace(".md", "")
-                        )
-                        sim_folder = sim_meta.folder if sim_meta else ""
-                        nodes[sr.path] = {
-                            "id": sr.path,
-                            "label": sim_label,
-                            "group": "note",
-                            "folder": sim_folder,
-                            "backlink_count": 0,
-                        }
-                    unique_edges.append(
-                        {"from": node_path, "to": sr.path, "type": "semantic"}
-                    )
-
-        return {
-            "nodes": list(nodes.values()),
-            "edges": unique_edges,
-            "truncated": truncated,
-        }
+        view = await asyncio.to_thread(
+            vault.graph.get_neighborhood,
+            path,
+            depth=depth,
+            include_semantic=include_semantic,
+            max_nodes=max_nodes,
+        )
+        return _graph_view_payload(view, include_truncated=True)
 
     @mcp.tool(
         icons=_TOOL_ICONS["vault_graph_hubs"],
@@ -639,78 +529,8 @@ def register_apps(mcp: FastMCP) -> None:
               - to (str): Target node ID.
               - type (str): "markdown", "wikilink", or "reference".
         """
-        hubs = await asyncio.to_thread(vault.graph.get_most_linked, limit=limit)
-        nodes: dict[str, dict[str, Any]] = {}
-        edges: list[dict[str, Any]] = []
-        seen_edges: set[tuple[str, str]] = set()
-
-        for hub in hubs:
-            nodes[hub.path] = {
-                "id": hub.path,
-                "label": hub.title,
-                "group": "hub",
-                "backlink_count": hub.backlink_count,
-                "folder": hub.folder,
-            }
-
-        # Fetch every hub's backlinks concurrently. Each call is an independent
-        # read and FTS uses per-thread sqlite connections, so the to_thread
-        # calls run in parallel safely instead of one-at-a-time (#285).
-        async def _backlinks(path: str) -> list[Any]:
-            try:
-                return await asyncio.to_thread(vault.graph.get_backlinks, path)
-            except ValueError:
-                return []
-
-        backlinks_per_hub = await asyncio.gather(*(_backlinks(h.path) for h in hubs))
-
-        # Collect the non-hub source paths that need a label, preserving
-        # first-seen order so labels/folders are assigned deterministically,
-        # then fetch their metadata concurrently (deduplicated — a source linking
-        # several hubs is fetched once).
-        to_read: list[str] = []
-        seen_read: set[str] = set()
-        for backlinks in backlinks_per_hub:
-            for bl in backlinks:
-                if bl.source_path not in nodes and bl.source_path not in seen_read:
-                    seen_read.add(bl.source_path)
-                    to_read.append(bl.source_path)
-        meta_results = await asyncio.gather(
-            *(asyncio.to_thread(vault.reader.get_metadata, p) for p in to_read)
-        )
-        meta_by_path = dict(zip(to_read, meta_results, strict=True))
-
-        # Build nodes + edges in the original (hub, backlink) order so the
-        # output is identical to the sequential version.
-        for hub, backlinks in zip(hubs, backlinks_per_hub, strict=True):
-            for bl in backlinks:
-                if bl.source_path not in nodes:
-                    meta = meta_by_path.get(bl.source_path)
-                    label = (
-                        meta.title
-                        if meta
-                        else bl.source_path.rsplit("/", 1)[-1].replace(".md", "")
-                    )
-                    folder = meta.folder if meta else ""
-                    nodes[bl.source_path] = {
-                        "id": bl.source_path,
-                        "label": label,
-                        "group": "note",
-                        "folder": folder,
-                        "backlink_count": 0,
-                    }
-                edge_key = (bl.source_path, hub.path)
-                if edge_key not in seen_edges:
-                    seen_edges.add(edge_key)
-                    edges.append(
-                        {
-                            "from": bl.source_path,
-                            "to": hub.path,
-                            "type": bl.link_type,
-                        }
-                    )
-
-        return {"nodes": list(nodes.values()), "edges": edges}
+        view = await asyncio.to_thread(vault.graph.get_hub_graph, limit=limit)
+        return _graph_view_payload(view, include_truncated=False)
 
     @mcp.tool(
         icons=_TOOL_ICONS["vault_list"],

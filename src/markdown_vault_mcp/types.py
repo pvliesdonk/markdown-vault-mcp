@@ -567,6 +567,60 @@ class MostLinkedNote:
 
 
 @dataclass
+class GraphNode:
+    """One node in a link-graph view (#880).
+
+    Attributes:
+        id: Vault-relative document path (unique node identifier).
+        label: Display name — the indexed title, falling back to the
+            filename stem when the document is not indexed.
+        group: Rendering group — ``"note"``, ``"orphan"``, or ``"hub"``.
+        folder: Parent folder path (empty string for root-level documents).
+        backlink_count: Inbound-link count, ``0`` for boundary nodes whose
+            links were not expanded.
+    """
+
+    id: str
+    label: str
+    group: str
+    folder: str
+    backlink_count: int
+
+
+@dataclass
+class GraphEdge:
+    """One directed edge in a link-graph view (#880).
+
+    Attributes:
+        source: Path of the linking document.
+        target: Path of the linked document.
+        link_type: ``"markdown"``, ``"wikilink"``, ``"reference"``, or
+            ``"semantic"`` (similarity edges from
+            :meth:`~markdown_vault_mcp.facets.graph.GraphFacet.get_neighborhood`).
+    """
+
+    source: str
+    target: str
+    link_type: str
+
+
+@dataclass
+class GraphView:
+    """A node/edge graph assembled by the graph facet (#880).
+
+    Attributes:
+        nodes: Graph nodes, in first-seen traversal order.
+        edges: Directed edges, deduplicated per ``(source, target)`` for
+            explicit links.
+        truncated: ``True`` when assembly stopped at the node cap.
+    """
+
+    nodes: list[GraphNode]
+    edges: list[GraphEdge]
+    truncated: bool = False
+
+
+@dataclass
 class NoteContext:
     """Consolidated context for a document, returned by :meth:`~markdown_vault_mcp.facets.reader.ReaderFacet.get_context`.
 

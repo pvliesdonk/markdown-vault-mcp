@@ -454,7 +454,9 @@ class Vault:
         )
         self._writer_facet = WriterFacet(self._doc_mgr)
         self._graph_facet = GraphFacet(
-            link_mgr=self._link_mgr, require_built=self._require_built
+            link_mgr=self._link_mgr,
+            search_mgr=self._search_mgr,
+            require_built=self._require_built,
         )
         self._index_facet = IndexFacet(
             coordinator=self._coordinator, index_mgr=self._index_mgr

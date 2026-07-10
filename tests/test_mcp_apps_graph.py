@@ -702,7 +702,7 @@ class TestIncludeSemanticEdges:
                 return_value=mock_prov,
             ),
             patch(
-                "markdown_vault_mcp.facets.reader.ReaderFacet.get_similar",
+                "markdown_vault_mcp.managers.search.SearchManager.get_similar",
                 side_effect=ValueError("not found"),
             ),
         ):
@@ -738,7 +738,7 @@ class TestIncludeSemanticEdges:
                 return_value=mock_prov,
             ),
             patch(
-                "markdown_vault_mcp.facets.reader.ReaderFacet.get_similar",
+                "markdown_vault_mcp.managers.search.SearchManager.get_similar",
                 side_effect=RuntimeError("embedding backend unavailable"),
             ),
         ):
