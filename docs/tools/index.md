@@ -778,7 +778,7 @@ The tool is only registered when a summarization backend is configured (an `ANTH
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `paths` | array of string | required | Note paths (`"notes/topic.md"`) and/or folder prefixes (`"notes/project"`). Folders expand to every note in the subtree (capped by the server's summarize limits). Duplicates are de-duplicated. |
-| `focus` | string | `null` | Optional free-text instruction that steers the summary, for example `"extract action items"` or `"focus on decisions and their rationale"`. Omit for a general-purpose summary. |
+| `focus` | string | `null` | Optional free-text instruction that steers the summary, such as `"extract action items"` or `"focus on decisions and their rationale"`. Omit for a general-purpose summary. |
 | `mode` | `"synthesis"` \| `"per_note"` | `"synthesis"` | `synthesis` for one cross-note summary that references sources; `per_note` for one summary per note. |
 
 **Returns:** Dict with:
