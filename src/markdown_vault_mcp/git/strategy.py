@@ -934,6 +934,33 @@ class GitWriteStrategy:
                 ``repo_path``.
         """
         git_root = self._resolve_force_repo()
+        return self._pull_pipeline(git_root, dry_run=dry_run)
+
+    def _pull_pipeline(
+        self,
+        git_root: Path,
+        *,
+        dry_run: bool = False,
+        log_prefix: str = "Git force_pull",
+    ) -> PullResult:
+        """Run the shared fetch → ff-only → rebase → sibling pipeline.
+
+        The single implementation behind :meth:`force_pull` (interactive
+        ``git_sync`` tool) and :meth:`sync_once` (periodic pull loop) —
+        #879: the loop previously carried a diverging re-implementation
+        whose post-abort upstream restore had no failure handling.
+
+        Args:
+            git_root: Resolved working-tree root.
+            dry_run: Fetch and compute the would-be pull without touching
+                HEAD.
+            log_prefix: Message prefix identifying the calling entry point
+                (``"Git force_pull"`` / ``"Git pull"``).
+
+        Returns:
+            :class:`PullResult`; see :meth:`force_pull` for the outcome
+            enumeration.
+        """
         env = self._git_env()
         try:
             with self._quiesce_writes(skip=dry_run), self._lock:
@@ -951,7 +978,8 @@ class GitWriteStrategy:
                     # already used in ``_do_push_safe`` and ``force_push``.
                     stderr = self._redact((exc.stderr or "").strip())
                     logger.warning(
-                        "Git force_pull: fetch failed: %s",
+                        "%s: fetch failed: %s",
+                        log_prefix,
                         stderr,
                     )
                     return PullResult.head_unchanged_failure(
@@ -960,15 +988,18 @@ class GitWriteStrategy:
 
                 # Resolve the remote-tracking ref (``origin/<branch>``,
                 # falling back to ``origin/HEAD`` for a non-tracking or
-                # detached checkout) and read its SHA.
+                # detached checkout) and read its SHA.  An unresolvable or
+                # unparseable ref is one outcome: no usable remote.
                 ref = self._tracking_ref(git_root, env)
-                if ref is None:
-                    return PullResult.head_unchanged_failure(
-                        from_sha, PULL_REASON_NO_REMOTE
-                    )
-                try:
-                    remote_sha = self._git(git_root, "rev-parse", ref, env=env).strip()
-                except subprocess.CalledProcessError:
+                remote_sha: str | None = None
+                if ref is not None:
+                    try:
+                        remote_sha = self._git(
+                            git_root, "rev-parse", ref, env=env
+                        ).strip()
+                    except subprocess.CalledProcessError:
+                        remote_sha = None
+                if ref is None or remote_sha is None:
                     return PullResult.head_unchanged_failure(
                         from_sha, PULL_REASON_NO_REMOTE
                     )
@@ -1001,8 +1032,9 @@ class GitWriteStrategy:
                     # broken in a way we should surface rather than silently
                     # report 0 commits.  Fall back to 0 but log loudly.
                     logger.warning(
-                        "Git force_pull: could not parse commit count %r "
+                        "%s: could not parse commit count %r "
                         "from `git rev-list --count %s..%s`",
+                        log_prefix,
                         commits_ahead,
                         from_sha,
                         remote_sha,
@@ -1028,7 +1060,8 @@ class GitWriteStrategy:
                     self._git(git_root, "merge", "--ff-only", remote_sha, env=env)
                 except subprocess.CalledProcessError as ff_exc:
                     logger.debug(
-                        "Git force_pull: ff-only merge failed, attempting rebase: %s",
+                        "%s: ff-only merge failed, attempting rebase: %s",
+                        log_prefix,
                         (ff_exc.stderr or "").strip(),
                     )
                     return self._force_pull_rebase_fallback(
@@ -1036,6 +1069,7 @@ class GitWriteStrategy:
                         env=env,
                         from_sha=from_sha,
                         ref=ref,
+                        log_prefix=log_prefix,
                     )
 
                 # Fast-forward succeeded.  ``remote_sha`` is the new HEAD —
@@ -1058,13 +1092,14 @@ class GitWriteStrategy:
         env: dict[str, str] | None,
         from_sha: str,
         ref: str,
+        log_prefix: str = "Git force_pull",
     ) -> PullResult:
         """Attempt rebase + Syncthing-style sibling resolution.
 
-        Called by :meth:`force_pull` when ``merge --ff-only`` failed
-        because local and remote histories diverged.  Mirrors the
-        rebase / conflict-resolution branch in :meth:`sync_once` but
-        returns a structured :class:`PullResult` rather than a bool.
+        Called by :meth:`_pull_pipeline` when ``merge --ff-only`` failed
+        because local and remote histories diverged.  Returns a
+        structured :class:`PullResult`; :meth:`sync_once` adapts it back
+        to its historical bool (#879).
 
         Must be called with :attr:`_lock` already held — it issues
         further git commands against the same working tree.
@@ -1074,9 +1109,11 @@ class GitWriteStrategy:
             env: Optional GIT_ASKPASS environment for token auth.
             from_sha: HEAD SHA captured before the fetch.
             ref: Remote-tracking ref (``origin/<branch>``) already resolved
-                and verified non-``None`` by :meth:`force_pull` before
+                and verified non-``None`` by :meth:`_pull_pipeline` before
                 delegating here.  Used as the rebase target and the
                 post-abort upstream-restore ref.
+            log_prefix: Message prefix identifying the calling entry point
+                (``"Git force_pull"`` / ``"Git pull"``).
 
         Returns:
             :class:`PullResult` whose ``reason`` is one of
@@ -1128,7 +1165,8 @@ class GitWriteStrategy:
 
             if not saved:
                 logger.warning(
-                    "Git force_pull: conflict resolution failed, leaving HEAD unchanged"
+                    "%s: conflict resolution failed, leaving HEAD unchanged",
+                    log_prefix,
                 )
                 return PullResult.head_unchanged_failure(
                     from_sha, PULL_REASON_CONFLICT_RESOLUTION_FAILED
@@ -1139,6 +1177,7 @@ class GitWriteStrategy:
             actual_head = self._head_sha(git_root)
             written = self._write_conflict_files(git_root, saved, env)
             if written is None:
+                logger.warning("%s: conflict commit failed, skipping", log_prefix)
                 return PullResult(
                     applied=False,
                     fast_forward=False,
@@ -1149,11 +1188,13 @@ class GitWriteStrategy:
                 )
             for cf in written:
                 logger.warning(
-                    "Git force_pull: conflict resolved, saved MCP version as %s",
+                    "%s: conflict resolved, saved MCP version as %s",
+                    log_prefix,
                     cf,
                 )
             logger.info(
-                "Git force_pull: rebase completed with %d conflict file(s)",
+                "%s: rebase completed with %d conflict file(s)",
+                log_prefix,
                 len(written),
             )
             # HEAD has advanced past the upstream because conflict
@@ -1169,6 +1210,10 @@ class GitWriteStrategy:
 
         # Plain rebase succeeded — local commits replayed cleanly on top
         # of the upstream.  HEAD has advanced.
+        logger.info(
+            "%s: ff-only not possible, rebased local commits onto upstream",
+            log_prefix,
+        )
         return self._build_pull_result_advanced(
             git_root,
             env,
@@ -1354,17 +1399,21 @@ class GitWriteStrategy:
     def sync_once(self, repo_path: Path) -> bool:
         """Fetch and update once, returning True if HEAD advanced.
 
-        Tries fast-forward first; falls back to rebase when the local
-        and upstream branches have diverged (e.g. Obsidian and MCP both
-        committed on different files).  Aborts on true conflicts.
+        Thin adapter over :meth:`_pull_pipeline` (#879) — the periodic
+        pull loop and the interactive ``git_sync`` tool now share one
+        fetch → ff-only → rebase → sibling implementation, so the loop
+        gets the pipeline's safe conflict handling: defensive rebase
+        abort and an upstream restore that drops paths whose restore
+        failed instead of committing stale local content over them.
 
-        Self-quiesces before the merge via :meth:`_quiesce_writes` (pause new
-        writes + drain the deferred-commit queue, best-effort/time-bounded) so a
-        write racing the periodic pull is committed first and the merge runs on
-        a clean tree (#571). As with :meth:`force_pull`, the pause is held for
-        the whole fetch + merge — including the network round-trip — so MCP
-        writes block for the pull's duration; acceptable for a periodic
-        background pull (default every 600 s) and a fast fetch.
+        The pipeline self-quiesces before the merge via
+        :meth:`_quiesce_writes` (pause new writes + drain the
+        deferred-commit queue, best-effort/time-bounded) so a write
+        racing the periodic pull is committed first and the merge runs
+        on a clean tree (#571). The pause is held for the whole fetch +
+        merge — including the network round-trip — so MCP writes block
+        for the pull's duration; acceptable for a periodic background
+        pull (default every 600 s) and a fast fetch.
         """
         if self._closed or not self._enable_pull:
             return False
@@ -1373,152 +1422,17 @@ class GitWriteStrategy:
         if git_root is None:
             return False
 
-        env = None
         try:
-            env = self._git_env()
-            with self._quiesce_writes(), self._lock:
-                ref = self._tracking_ref(git_root, env)
-                if ref is None:
-                    logger.info(
-                        "Git pull: no remote-tracking ref resolvable; skipping fetch"
-                    )
-                    return False
-
-                old_head = subprocess.run(
-                    ["git", "-C", str(git_root), "rev-parse", "HEAD"],
-                    capture_output=True,
-                    text=True,
-                    check=True,
-                    env=env,
-                ).stdout.strip()
-
-                subprocess.run(
-                    ["git", "-C", str(git_root), "fetch"],
-                    capture_output=True,
-                    text=True,
-                    check=True,
-                    env=env,
+            # Pre-check the remote-tracking ref (local ref inspection, no
+            # network) so a remoteless checkout skips at INFO level rather
+            # than surfacing the pipeline's fetch-failed WARNING on every
+            # loop tick.
+            if self._tracking_ref(git_root, None) is None:
+                logger.info(
+                    "Git pull: no remote-tracking ref resolvable; skipping fetch"
                 )
-
-                try:
-                    subprocess.run(
-                        [
-                            "git",
-                            "-C",
-                            str(git_root),
-                            "merge",
-                            "--ff-only",
-                            ref,
-                        ],
-                        capture_output=True,
-                        text=True,
-                        check=True,
-                        env=env,
-                    )
-                except subprocess.CalledProcessError as ff_exc:
-                    # ff-only failed — the branches have diverged.  Attempt
-                    # rebase to replay local MCP commits on top of upstream.
-                    # This handles the common case where Obsidian and the MCP
-                    # server both committed independently on different files.
-                    logger.debug(
-                        "Git pull: ff-only failed, attempting rebase: %s",
-                        (ff_exc.stderr or "").strip(),
-                    )
-                    try:
-                        subprocess.run(
-                            [
-                                "git",
-                                "-C",
-                                str(git_root),
-                                "rebase",
-                                ref,
-                            ],
-                            capture_output=True,
-                            text=True,
-                            check=True,
-                            env=env,
-                        )
-                        logger.info(
-                            "Git pull: ff-only not possible, rebased local commits onto upstream"
-                        )
-                    except subprocess.CalledProcessError:
-                        # True conflict — resolve by accepting theirs and
-                        # saving the MCP version as a conflict file.
-                        saved = self._resolve_rebase_conflicts(git_root, env)
-
-                        # Directory check (REBASE_HEAD lingers post-continue, #466).
-                        rebase_in_progress = self._rebase_in_progress(git_root, env)
-
-                        if rebase_in_progress:
-                            # Abort the incomplete rebase before committing
-                            # conflict files so the working tree is clean.
-                            abort_proc = subprocess.run(
-                                ["git", "-C", str(git_root), "rebase", "--abort"],
-                                capture_output=True,
-                                text=True,
-                                env=env,
-                            )
-                            if abort_proc.returncode != 0:
-                                logger.error(
-                                    "Git pull: failed to abort rebase: %s",
-                                    self._redact((abort_proc.stderr or "").strip()),
-                                )
-                            # After abort, the working tree reverts to the
-                            # pre-rebase state (MCP commits), so the original
-                            # files contain MCP content, not upstream content.
-                            # Restore the upstream version for each conflicting
-                            # file so _write_conflict_files reads the right side.
-                            for rel_path, _ in saved:
-                                subprocess.run(
-                                    [
-                                        "git",
-                                        "-C",
-                                        str(git_root),
-                                        "checkout",
-                                        ref,
-                                        "--",
-                                        rel_path,
-                                    ],
-                                    capture_output=True,
-                                    text=True,
-                                    env=env,
-                                )
-
-                        if saved:
-                            written = self._write_conflict_files(git_root, saved, env)
-                            if written is None:
-                                logger.warning(
-                                    "Git pull: conflict commit failed, skipping"
-                                )
-                                return False
-                            for cf in written:
-                                logger.warning(
-                                    "Git pull: conflict resolved, saved MCP version as %s",
-                                    cf,
-                                )
-                            logger.info(
-                                "Git pull: rebase completed with %d conflict file(s)",
-                                len(written),
-                            )
-                        else:
-                            # Resolution failed entirely — stay put.
-                            logger.warning(
-                                "Git pull: conflict resolution failed, skipping"
-                            )
-                            return False
-
-                new_head = subprocess.run(
-                    ["git", "-C", str(git_root), "rev-parse", "HEAD"],
-                    capture_output=True,
-                    text=True,
-                    check=True,
-                    env=env,
-                ).stdout.strip()
-
-                # Always attempt LFS pull after a successful fetch+ff-only step.
-                self._lfs_pull(env=env)
-
-            return old_head != new_head
+                return False
+            result = self._pull_pipeline(git_root, log_prefix="Git pull")
         except FileNotFoundError:
             logger.info("Git pull: git not found on PATH; pull loop disabled")
             return False
@@ -1528,8 +1442,8 @@ class GitWriteStrategy:
                 (exc.stderr or "").strip(),
             )
             return False
-        finally:
-            self._cleanup_git_env(env)
+
+        return result.applied and result.to_sha != result.from_sha
 
     def set_write_quiescer(
         self,

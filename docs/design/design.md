@@ -2548,8 +2548,23 @@ Set `MARKDOWN_VAULT_MCP_GIT_LFS=false` for repos that do not use LFS, or when
   (not during fetch/ff-only merge) by acquiring the Vault write lock.
   Read/search operations are not blocked at the Python level (SQLite WAL
   enables concurrent readers during index writes).
-- If `MARKDOWN_VAULT_MCP_GIT_LFS=true`, each successful pull tick ends with
-  `git lfs pull` so LFS pointer files are resolved before reads and indexing.
+- If `MARKDOWN_VAULT_MCP_GIT_LFS=true`, each pull tick that advanced `HEAD`
+  ends with `git lfs pull` so LFS pointer files are resolved before reads and
+  indexing (a no-op tick that finds `HEAD` already up to date skips it).
+
+**Shared pull pipeline (#879)**: the periodic loop (`sync_once`) and the
+interactive `git_sync(direction='pull')` tool (`force_pull`) are thin entry
+points over one implementation, `GitWriteStrategy._pull_pipeline` (quiesce +
+lock → `git fetch origin` → resolve tracking ref → ff-only merge → rebase →
+Syncthing-style sibling conflict resolution → LFS pull). `force_pull` returns
+the pipeline's structured `PullResult` directly; `sync_once` adapts it to its
+historical bool (`applied and to_sha != from_sha`), pre-checks the tracking ref
+so a remoteless checkout skips quietly at INFO level, and maps
+`FileNotFoundError` / `CalledProcessError` to the loop's log-and-return-False
+contract. Unifying the two paths fixed the loop's diverged conflict handling:
+its post-abort upstream restore previously ran per-file `git checkout` with no
+failure handling, whereas the pipeline's `_restore_upstream_paths` drops paths
+whose restore failed instead of committing stale local content over them.
 
 **Tracking-independent remote ref**: all sync operations (startup unpushed
 check, periodic `sync_once`, interactive `force_pull`/`force_push`, and the

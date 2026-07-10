@@ -323,6 +323,37 @@ class TestForceMethodsErrorBranches:
         assert result.reason == PULL_REASON_NO_REMOTE
         assert result.commits_pulled == 0
 
+    def test_force_pull_no_remote_when_tracking_ref_unparseable(
+        self, git_repo_pair: GitRepoPair, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A resolved ref that ``rev-parse`` cannot parse → ``reason='no_remote'``.
+
+        Covers the second half of the pipeline's no-usable-remote guard:
+        ``_tracking_ref`` returned a name, but reading its SHA fails (e.g.
+        the remote-tracking ref was pruned between resolution and read).
+        """
+        from markdown_vault_mcp.git import (
+            PULL_REASON_NO_REMOTE,
+            GitWriteStrategy,
+        )
+
+        strategy = GitWriteStrategy(
+            enable_pull=True,
+            enable_push=False,
+            repo_path=git_repo_pair.local_path,
+        )
+        monkeypatch.setattr(
+            strategy, "_tracking_ref", lambda *_args: "origin/ghost-branch"
+        )
+        head_before = _run_git(git_repo_pair.local_path, "rev-parse", "HEAD").strip()
+        result = strategy.force_pull()
+
+        assert result.applied is False
+        assert result.reason == PULL_REASON_NO_REMOTE
+        assert result.commits_pulled == 0
+        assert result.from_sha == head_before
+        assert result.to_sha == head_before
+
     def test_force_pull_rebased_when_divergent_on_different_files(
         self, git_repo_pair: GitRepoPair
     ) -> None:
