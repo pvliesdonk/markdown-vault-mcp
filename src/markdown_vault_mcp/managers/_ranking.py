@@ -216,6 +216,50 @@ def group_by_path(
     ]
 
 
+def _query_tokens(query: str) -> set[str]:
+    """Tokenize *query* into matchable lowercase alphanumeric tokens.
+
+    Emits both the joined-per-word form (matches our content normalization,
+    e.g. ``"isn't"`` → ``"isnt"``) AND the individual alphanumeric runs
+    (matches per-token content words, e.g. ``"se-cura"`` → ``{"se",
+    "cura"}`` so a chunk that mentions ``"cura"`` alone still hits).
+    """
+    tokens: set[str] = set()
+    for word in query.split():
+        runs = _QUERY_TOKEN_RE.findall(word)
+        if not runs:
+            continue
+        # Joined form: runs concatenated.
+        tokens.add("".join(runs).lower())
+        # Individual runs: each alphanumeric span.
+        tokens.update(r.lower() for r in runs)
+    tokens.discard("")
+    return tokens
+
+
+def _best_window_start(
+    lower_words: list[str], query_tokens: set[str], snippet_words: int
+) -> tuple[int, int]:
+    """Slide a ``snippet_words`` window over *lower_words*, densest wins.
+
+    Returns:
+        Tuple ``(best_start, best_score)`` — the window offset with the
+        most query-token hits (leftmost on ties) and its hit count.
+    """
+    best_start = 0
+    best_score = sum(1 for w in lower_words[:snippet_words] if w in query_tokens)
+    cur_score = best_score
+    for i in range(1, len(lower_words) - snippet_words + 1):
+        if lower_words[i - 1] in query_tokens:
+            cur_score -= 1
+        if lower_words[i + snippet_words - 1] in query_tokens:
+            cur_score += 1
+        if cur_score > best_score:
+            best_score = cur_score
+            best_start = i
+    return best_start, best_score
+
+
 def compute_snippet_window(content: str, query: str, *, snippet_words: int) -> str:
     """Pick a ``snippet_words``-wide window from ``content``.
 
@@ -233,20 +277,7 @@ def compute_snippet_window(content: str, query: str, *, snippet_words: int) -> s
     if len(words) <= snippet_words:
         return content
 
-    # Tokenize the query into both the joined-per-word form (matches our
-    # content normalization, e.g. "isn't" → "isnt") AND the individual
-    # alphanumeric runs (matches per-token content words, e.g. "se-cura"
-    # → {"se", "cura"} so a chunk that mentions "cura" alone still hits).
-    query_tokens: set[str] = set()
-    for word in query.split():
-        runs = _QUERY_TOKEN_RE.findall(word)
-        if not runs:
-            continue
-        # Joined form: runs concatenated.
-        query_tokens.add("".join(runs).lower())
-        # Individual runs: each alphanumeric span.
-        query_tokens.update(r.lower() for r in runs)
-    query_tokens.discard("")
+    query_tokens = _query_tokens(query)
     if not query_tokens:
         return " ".join(words[:snippet_words]) + "…"
 
@@ -256,18 +287,9 @@ def compute_snippet_window(content: str, query: str, *, snippet_words: int) -> s
         "".join(_QUERY_TOKEN_RE.findall(w)).lower() or w.lower() for w in words
     ]
 
-    # Sliding window: maintain best_start / best_score, update incrementally.
-    best_start = 0
-    best_score = sum(1 for w in lower_words[:snippet_words] if w in query_tokens)
-    cur_score = best_score
-    for i in range(1, len(words) - snippet_words + 1):
-        if lower_words[i - 1] in query_tokens:
-            cur_score -= 1
-        if lower_words[i + snippet_words - 1] in query_tokens:
-            cur_score += 1
-        if cur_score > best_score:
-            best_score = cur_score
-            best_start = i
+    best_start, best_score = _best_window_start(
+        lower_words, query_tokens, snippet_words
+    )
 
     if best_score == 0:
         # No literal overlap anywhere — fall back to first-N words.
