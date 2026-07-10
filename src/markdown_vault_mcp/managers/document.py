@@ -584,6 +584,71 @@ class DocumentManager:
     # Write operations
     # ------------------------------------------------------------------
 
+    def _check_if_match(self, abs_path: Path, path: str, if_match: str | None) -> None:
+        """Enforce an optional etag precondition on *abs_path*.
+
+        Args:
+            abs_path: Absolute path of the file the etag refers to.
+            path: Vault-relative path, used in the error.
+            if_match: Etag from a previous read, or ``None`` to skip the
+                check. A file that does not exist counts as a mismatch.
+
+        Raises:
+            ConcurrentModificationError: If *if_match* is provided and does
+                not match the current file hash (or the file is missing).
+        """
+        if if_match is None:
+            return
+        if not abs_path.is_file():
+            raise ConcurrentModificationError(
+                path,
+                expected=if_match,
+                actual="(file does not exist)",
+            )
+        current_hash = compute_file_hash(abs_path)
+        if current_hash != if_match:
+            raise ConcurrentModificationError(
+                path, expected=if_match, actual=current_hash
+            )
+
+    def _atomic_write(self, abs_path: Path, data: str | bytes) -> None:
+        """Write *data* to *abs_path* atomically via a sibling tempfile.
+
+        The temp file lands with :meth:`Path.replace` semantics; permission
+        bits are preserved when the target already exists. On failure the
+        temp file is removed and the original is left untouched.
+
+        Args:
+            abs_path: Absolute destination path.
+            data: Text (written UTF-8) or raw bytes.
+        """
+        if isinstance(data, str):
+            with tempfile.NamedTemporaryFile(
+                dir=abs_path.parent,
+                mode="w",
+                encoding="utf-8",
+                suffix=".tmp",
+                delete=False,
+            ) as tmp:
+                tmp.write(data)
+                tmp_name = tmp.name
+        else:
+            with tempfile.NamedTemporaryFile(
+                dir=abs_path.parent,
+                mode="wb",
+                suffix=".tmp",
+                delete=False,
+            ) as tmp:
+                tmp.write(data)
+                tmp_name = tmp.name
+        if abs_path.is_file():
+            shutil.copymode(abs_path, tmp_name)
+        try:
+            Path(tmp_name).replace(abs_path)
+        except Exception:
+            Path(tmp_name).unlink(missing_ok=True)
+            raise
+
     def write(
         self,
         path: str,
@@ -620,18 +685,7 @@ class DocumentManager:
         self._check_writable()
         with self._file_write_lock:
             abs_path = self._validate_path(path)
-            if if_match is not None:
-                if not abs_path.is_file():
-                    raise ConcurrentModificationError(
-                        path,
-                        expected=if_match,
-                        actual="(file does not exist)",
-                    )
-                current_hash = compute_file_hash(abs_path)
-                if current_hash != if_match:
-                    raise ConcurrentModificationError(
-                        path, expected=if_match, actual=current_hash
-                    )
+            self._check_if_match(abs_path, path, if_match)
             created = not abs_path.is_file()
 
             abs_path.parent.mkdir(parents=True, exist_ok=True)
@@ -642,22 +696,7 @@ class DocumentManager:
             else:
                 file_content = content
 
-            with tempfile.NamedTemporaryFile(
-                dir=abs_path.parent,
-                mode="w",
-                encoding="utf-8",
-                suffix=".tmp",
-                delete=False,
-            ) as tmp:
-                tmp.write(file_content)
-                tmp_name = tmp.name
-            if abs_path.is_file():
-                shutil.copymode(abs_path, tmp_name)
-            try:
-                Path(tmp_name).replace(abs_path)
-            except Exception:
-                Path(tmp_name).unlink(missing_ok=True)
-                raise
+            self._atomic_write(abs_path, file_content)
 
             if self._mark_paths_dirty is not None:
                 self._mark_paths_dirty([path])
@@ -698,35 +737,10 @@ class DocumentManager:
         self._check_writable()
         with self._file_write_lock:
             abs_path = self._validate_attachment_path(path)
-            if if_match is not None:
-                if not abs_path.is_file():
-                    raise ConcurrentModificationError(
-                        path,
-                        expected=if_match,
-                        actual="(file does not exist)",
-                    )
-                current_hash = compute_file_hash(abs_path)
-                if current_hash != if_match:
-                    raise ConcurrentModificationError(
-                        path, expected=if_match, actual=current_hash
-                    )
+            self._check_if_match(abs_path, path, if_match)
             created = not abs_path.is_file()
             abs_path.parent.mkdir(parents=True, exist_ok=True)
-            with tempfile.NamedTemporaryFile(
-                dir=abs_path.parent,
-                mode="wb",
-                suffix=".tmp",
-                delete=False,
-            ) as tmp:
-                tmp.write(content)
-                tmp_name = tmp.name
-            if abs_path.is_file():
-                shutil.copymode(abs_path, tmp_name)
-            try:
-                Path(tmp_name).replace(abs_path)
-            except Exception:
-                Path(tmp_name).unlink(missing_ok=True)
-                raise
+            self._atomic_write(abs_path, content)
             result = WriteResult(path=path, created=created)
             self._on_write_callback(abs_path, "", "write")
 
@@ -814,12 +828,7 @@ class DocumentManager:
             if not abs_path.is_file():
                 raise DocumentNotFoundError(f"Document not found: {path}")
 
-            if if_match is not None:
-                current_hash = compute_file_hash(abs_path)
-                if current_hash != if_match:
-                    raise ConcurrentModificationError(
-                        path, expected=if_match, actual=current_hash
-                    )
+            self._check_if_match(abs_path, path, if_match)
 
             file_content = _read_text_utf8(abs_path)
 
@@ -839,21 +848,7 @@ class DocumentManager:
                     file_content, old_text, new_text, path
                 )
 
-            with tempfile.NamedTemporaryFile(
-                dir=abs_path.parent,
-                mode="w",
-                encoding="utf-8",
-                suffix=".tmp",
-                delete=False,
-            ) as tmp:
-                tmp.write(new_content)
-                tmp_name = tmp.name
-            shutil.copymode(abs_path, tmp_name)
-            try:
-                Path(tmp_name).replace(abs_path)
-            except Exception:
-                Path(tmp_name).unlink(missing_ok=True)
-                raise
+            self._atomic_write(abs_path, new_content)
 
             if self._mark_paths_dirty is not None:
                 self._mark_paths_dirty([path])
@@ -1002,12 +997,7 @@ class DocumentManager:
                 abs_path = self._validate_path(path)
                 if not abs_path.is_file():
                     raise DocumentNotFoundError(f"Document not found: {path}")
-                if if_match is not None:
-                    current_hash = compute_file_hash(abs_path)
-                    if current_hash != if_match:
-                        raise ConcurrentModificationError(
-                            path, expected=if_match, actual=current_hash
-                        )
+                self._check_if_match(abs_path, path, if_match)
                 abs_path.unlink()
                 if self._mark_paths_dirty is not None:
                     self._mark_paths_dirty([path])
@@ -1015,12 +1005,7 @@ class DocumentManager:
                 abs_path = self._validate_attachment_path(path)
                 if not abs_path.is_file():
                     raise DocumentNotFoundError(f"Attachment not found: {path}")
-                if if_match is not None:
-                    current_hash = compute_file_hash(abs_path)
-                    if current_hash != if_match:
-                        raise ConcurrentModificationError(
-                            path, expected=if_match, actual=current_hash
-                        )
+                self._check_if_match(abs_path, path, if_match)
                 abs_path.unlink()
 
             self._on_write_callback(abs_path, "", "delete")
@@ -1084,14 +1069,7 @@ class DocumentManager:
                     raise DocumentNotFoundError(f"Document not found: {old_path}")
                 if new_abs.is_file():
                     raise DocumentExistsError(f"Target already exists: {new_path}")
-                if if_match is not None:
-                    current_hash = compute_file_hash(old_abs)
-                    if current_hash != if_match:
-                        raise ConcurrentModificationError(
-                            old_path,
-                            expected=if_match,
-                            actual=current_hash,
-                        )
+                self._check_if_match(old_abs, old_path, if_match)
 
                 backlinks = self._fts.get_backlinks(old_path) if update_links else []
 
@@ -1124,14 +1102,7 @@ class DocumentManager:
                     raise DocumentNotFoundError(f"Attachment not found: {old_path}")
                 if new_abs.is_file():
                     raise DocumentExistsError(f"Target already exists: {new_path}")
-                if if_match is not None:
-                    current_hash = compute_file_hash(old_abs)
-                    if current_hash != if_match:
-                        raise ConcurrentModificationError(
-                            old_path,
-                            expected=if_match,
-                            actual=current_hash,
-                        )
+                self._check_if_match(old_abs, old_path, if_match)
 
                 new_abs.parent.mkdir(parents=True, exist_ok=True)
                 shutil.move(str(old_abs), str(new_abs))
@@ -1183,22 +1154,83 @@ class DocumentManager:
                 old_path=target_old,
             )
             content = _apply_link_replacement(content, link_type, raw_target, new_raw)
-        with tempfile.NamedTemporaryFile(
-            dir=source_abs.parent,
-            mode="w",
-            encoding="utf-8",
-            suffix=".tmp",
-            delete=False,
-        ) as tmp:
-            tmp.write(content)
-            tmp_name = tmp.name
-        shutil.copymode(source_abs, tmp_name)
-        try:
-            Path(tmp_name).replace(source_abs)
-        except Exception:
-            Path(tmp_name).unlink(missing_ok=True)
-            raise
+        self._atomic_write(source_abs, content)
         return content
+
+    def _rewrite_link_sources(
+        self,
+        by_source: dict[str, list[tuple[str, dict[str, Any]]]],
+        target_map: dict[str, str],
+        *,
+        op_name: str,
+    ) -> tuple[list[tuple[Path, str]], list[str], list[str]]:
+        """Rewrite link targets in each grouped source file (best effort).
+
+        Shared engine behind :meth:`rename` (single target) and
+        :meth:`move_folder` (many targets). A source that cannot be
+        rewritten is logged and reported without aborting the operation.
+
+        This method must be called while ``_file_write_lock`` is held. It
+        does **not** fire write callbacks or mark paths dirty itself — the
+        caller is responsible for both.
+
+        Args:
+            by_source: Mapping of source path (at its *current* on-disk
+                location) to ``(target_old, backlink_row)`` pairs to rewrite
+                within that source.
+            target_map: Mapping of old target path to new target path; must
+                cover every ``target_old`` in *by_source*.
+            op_name: Caller name used as the log-message prefix.
+
+        Returns:
+            Tuple ``(callbacks, dirty_paths, failed_sources)``:
+
+            * ``callbacks`` — ``(abs_path, new_content)`` pairs for every
+              source document that was successfully rewritten.
+            * ``dirty_paths`` — vault-relative paths of those same sources,
+              for the caller to feed to ``mark_paths_dirty``.
+            * ``failed_sources`` — sources that were skipped or failed.
+        """
+        pending_callbacks: list[tuple[Path, str]] = []
+        dirty_paths: list[str] = []
+        failed_sources: list[str] = []
+        for source_path, items in by_source.items():
+            try:
+                source_abs = self._validate_path(source_path)
+                if not source_abs.is_file():
+                    logger.warning(
+                        "%s: skipping %s — file not found",
+                        op_name,
+                        source_path,
+                    )
+                    failed_sources.append(source_path)
+                    continue
+                rewrites = [
+                    (
+                        row["link_type"],
+                        row["raw_target"],
+                        row["fragment"],
+                        target_old,
+                        target_map[target_old],
+                    )
+                    for target_old, row in items
+                ]
+                content = self._rewrite_one_source(source_abs, rewrites, source_path)
+                pending_callbacks.append((source_abs, content))
+                dirty_paths.append(source_path)
+            except (OSError, UnicodeDecodeError, ValueError, sqlite3.Error) as exc:
+                logger.warning("%s: failed to update %s: %s", op_name, source_path, exc)
+                failed_sources.append(source_path)
+            except Exception as exc:
+                logger.warning(
+                    "%s: unexpected error updating %s: %s",
+                    op_name,
+                    source_path,
+                    exc,
+                    exc_info=True,
+                )
+                failed_sources.append(source_path)
+        return pending_callbacks, dirty_paths, failed_sources
 
     def _update_backlinks(
         self,
@@ -1235,56 +1267,108 @@ class DocumentManager:
         if not backlinks:
             return [], []
 
-        by_source: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        by_source: dict[str, list[tuple[str, dict[str, Any]]]] = defaultdict(list)
         for row in backlinks:
-            by_source[row["source_path"]].append(row)
+            by_source[row["source_path"]].append((old_path, row))
 
         if old_path in by_source:
             by_source[new_path] = by_source.pop(old_path)
 
-        pending_callbacks: list[tuple[Path, str]] = []
-        dirty_paths: list[str] = []
-        for source_path, rows in by_source.items():
-            try:
-                source_abs = self._validate_path(source_path)
-                if not source_abs.is_file():
-                    logger.warning(
-                        "_update_backlinks: skipping %s — file not found",
-                        source_path,
-                    )
-                    continue
-                rewrites = [
-                    (
-                        row["link_type"],
-                        row["raw_target"],
-                        row["fragment"],
-                        old_path,
-                        new_path,
-                    )
-                    for row in rows
-                ]
-                content = self._rewrite_one_source(source_abs, rewrites, source_path)
-                pending_callbacks.append((source_abs, content))
-                dirty_paths.append(source_path)
-            except (
-                OSError,
-                UnicodeDecodeError,
-                ValueError,
-                sqlite3.Error,
-            ) as exc:
-                logger.warning(
-                    "_update_backlinks: failed to update %s: %s",
-                    source_path,
-                    exc,
-                )
-            except Exception as exc:
-                logger.warning(
-                    "_update_backlinks: unexpected error updating %s: %s",
-                    source_path,
-                    exc,
-                    exc_info=True,
-                )
+        pending_callbacks, dirty_paths, _failed = self._rewrite_link_sources(
+            by_source, {old_path: new_path}, op_name="_update_backlinks"
+        )
         return pending_callbacks, dirty_paths
+
+    def _plan_folder_move(
+        self, old_abs: Path, old_rel: str, new_rel: str
+    ) -> tuple[list[tuple[Path, Path]], dict[str, str], list[tuple[Path, str]]]:
+        """Enumerate the subtree under *old_abs* and gate on collisions.
+
+        Pure planning: walks the filesystem (not the index — attachments and
+        other files are not indexed), classifies each file, and fails before
+        anything moves if a destination already exists.
+
+        Args:
+            old_abs: Absolute path of the source folder.
+            old_rel: Normalized vault-relative source prefix.
+            new_rel: Normalized vault-relative target prefix.
+
+        Returns:
+            Tuple ``(moves, md_map, attachment_moves)``:
+
+            * ``moves`` — ``(src_abs, dst_abs)`` for every file to move.
+            * ``md_map`` — old→new vault-relative path map (``.md`` only).
+            * ``attachment_moves`` — ``(dst_abs, new_rel_path)`` for
+              allowlisted attachments.
+
+        Raises:
+            DocumentNotFoundError: If the folder contains no files.
+            DocumentExistsError: If any destination file already exists.
+        """
+        attachment_exts = self._effective_attachment_extensions()
+        moves: list[tuple[Path, Path]] = []  # (src_abs, dst_abs)
+        md_map: dict[str, str] = {}  # old_rel_path -> new_rel_path (.md only)
+        attachment_moves: list[tuple[Path, str]] = []  # (dst_abs, new_rel)
+        for src_abs in sorted(old_abs.rglob("*")):
+            if not src_abs.is_file():
+                continue
+            rel_within = src_abs.relative_to(old_abs).as_posix()
+            old_path = f"{old_rel}/{rel_within}"
+            new_path = f"{new_rel}/{rel_within}"
+            dst_abs = (self._source_dir / new_path).resolve()
+            moves.append((src_abs, dst_abs))
+            if old_path.endswith(".md"):
+                md_map[old_path] = new_path
+            else:
+                suffix = src_abs.suffix.lstrip(".").lower()
+                if "*" in attachment_exts or suffix in attachment_exts:
+                    attachment_moves.append((dst_abs, new_path))
+
+        if not moves:
+            raise DocumentNotFoundError(f"Folder is empty: {old_rel}")
+
+        # Atomic collision gate — fail before moving anything.
+        for _src_abs, dst_abs in moves:
+            if dst_abs.exists():
+                rel = dst_abs.relative_to(self._source_dir.resolve()).as_posix()
+                raise DocumentExistsError(f"Target already exists: {rel}")
+
+        return moves, md_map, attachment_moves
+
+    def _dispatch_move_callbacks(
+        self,
+        md_map: dict[str, str],
+        attachment_moves: list[tuple[Path, str]],
+        pending_callbacks: list[tuple[Path, str]],
+    ) -> None:
+        """Fire write callbacks for a completed folder move.
+
+        Emits ``rename`` for every moved note and allowlisted attachment,
+        and ``edit`` for every rewritten source. A source inside the moved
+        subtree already gets a ``rename`` callback (it is in *md_map*), so
+        its redundant ``edit`` is skipped to avoid a duplicate git commit.
+
+        Args:
+            md_map: Old→new vault-relative path map for moved notes.
+            attachment_moves: ``(dst_abs, new_rel_path)`` for moved
+                allowlisted attachments.
+            pending_callbacks: ``(abs_path, new_content)`` for rewritten
+                link sources.
+        """
+        moved_note_paths = set(md_map.values())
+        source_root = self._source_dir.resolve()
+        for _old_path, new_path in md_map.items():
+            new_note_abs = (self._source_dir / new_path).resolve()
+            self._on_write_callback(
+                new_note_abs, _read_text_utf8(new_note_abs), "rename"
+            )
+        for dst_abs, _new_rel in attachment_moves:
+            self._on_write_callback(dst_abs, "", "rename")
+        for src_abs, src_content in pending_callbacks:
+            src_rel = src_abs.relative_to(source_root).as_posix()
+            if src_rel in moved_note_paths:
+                continue
+            self._on_write_callback(src_abs, src_content, "edit")
 
     def move_folder(self, old_dir: str, new_dir: str) -> MoveFolderResult:
         """Move an entire folder subtree to a new prefix, rewriting links.
@@ -1336,38 +1420,13 @@ class DocumentManager:
             if new_abs.is_relative_to(old_abs) or old_abs.is_relative_to(new_abs):
                 raise ValueError("move_folder: old_dir and new_dir must not be nested")
 
-            # 1. Enumerate the subtree (filesystem, not the index — attachments
-            #    and other files are not indexed). Build the old->new path map.
+            # 1+2. Enumerate the subtree, build the old->new path map, and
+            #      gate on destination collisions before moving anything.
             old_rel = old_dir.strip("/")
             new_rel = new_dir.strip("/")
-            attachment_exts = self._effective_attachment_extensions()
-
-            moves: list[tuple[Path, Path]] = []  # (src_abs, dst_abs)
-            md_map: dict[str, str] = {}  # old_rel_path -> new_rel_path (.md only)
-            attachment_moves: list[tuple[Path, str]] = []  # (dst_abs, new_rel)
-            for src_abs in sorted(old_abs.rglob("*")):
-                if not src_abs.is_file():
-                    continue
-                rel_within = src_abs.relative_to(old_abs).as_posix()
-                old_path = f"{old_rel}/{rel_within}"
-                new_path = f"{new_rel}/{rel_within}"
-                dst_abs = (self._source_dir / new_path).resolve()
-                moves.append((src_abs, dst_abs))
-                if old_path.endswith(".md"):
-                    md_map[old_path] = new_path
-                else:
-                    suffix = src_abs.suffix.lstrip(".").lower()
-                    if "*" in attachment_exts or suffix in attachment_exts:
-                        attachment_moves.append((dst_abs, new_path))
-
-            if not moves:
-                raise DocumentNotFoundError(f"Folder is empty: {old_dir}")
-
-            # 2. Atomic collision gate — fail before moving anything.
-            for _src_abs, dst_abs in moves:
-                if dst_abs.exists():
-                    rel = dst_abs.relative_to(self._source_dir.resolve()).as_posix()
-                    raise DocumentExistsError(f"Target already exists: {rel}")
+            moves, md_map, attachment_moves = self._plan_folder_move(
+                old_abs, old_rel, new_rel
+            )
 
             # 3. Capture backlinks for every moved note BEFORE the move, while
             #    the index still reflects old paths. Annotate each row with its
@@ -1391,47 +1450,9 @@ class DocumentManager:
                 src_new = md_map.get(src_old, src_old)  # remap if inside subtree
                 by_source[src_new].append((target_old, row))
 
-            pending_callbacks: list[tuple[Path, str]] = []
-            dirty_paths: list[str] = []
-            failed_links: list[str] = []
-            for source_path, items in by_source.items():
-                try:
-                    source_abs = self._validate_path(source_path)
-                    if not source_abs.is_file():
-                        logger.warning(
-                            "move_folder: skipping %s — file not found",
-                            source_path,
-                        )
-                        failed_links.append(source_path)
-                        continue
-                    rewrites = [
-                        (
-                            row["link_type"],
-                            row["raw_target"],
-                            row["fragment"],
-                            target_old,
-                            md_map[target_old],
-                        )
-                        for target_old, row in items
-                    ]
-                    content = self._rewrite_one_source(
-                        source_abs, rewrites, source_path
-                    )
-                    pending_callbacks.append((source_abs, content))
-                    dirty_paths.append(source_path)
-                except (OSError, UnicodeDecodeError, ValueError, sqlite3.Error) as exc:
-                    logger.warning(
-                        "move_folder: failed to update %s: %s", source_path, exc
-                    )
-                    failed_links.append(source_path)
-                except Exception as exc:
-                    logger.warning(
-                        "move_folder: unexpected error updating %s: %s",
-                        source_path,
-                        exc,
-                        exc_info=True,
-                    )
-                    failed_links.append(source_path)
+            pending_callbacks, dirty_paths, failed_links = self._rewrite_link_sources(
+                by_source, md_map, op_name="move_folder"
+            )
 
             # 6. Index: purge old note paths, reparse new note paths, plus the
             #    rewritten sources. A single mark_paths_dirty batch makes the
@@ -1444,23 +1465,8 @@ class DocumentManager:
                 self._mark_paths_dirty(move_dirty)
 
             # 7. Callbacks: rename for every moved note + allowlisted attachment,
-            #    edit for every rewritten source. A source inside the moved
-            #    subtree already gets a "rename" callback (it is in md_map), so
-            #    skip its redundant "edit" to avoid a duplicate git commit.
-            moved_note_paths = set(md_map.values())
-            source_root = self._source_dir.resolve()
-            for _old_path, new_path in md_map.items():
-                new_note_abs = (self._source_dir / new_path).resolve()
-                self._on_write_callback(
-                    new_note_abs, _read_text_utf8(new_note_abs), "rename"
-                )
-            for dst_abs, _new_rel in attachment_moves:
-                self._on_write_callback(dst_abs, "", "rename")
-            for src_abs, src_content in pending_callbacks:
-                src_rel = src_abs.relative_to(source_root).as_posix()
-                if src_rel in moved_note_paths:
-                    continue
-                self._on_write_callback(src_abs, src_content, "edit")
+            #    edit for every rewritten source (minus intra-subtree dupes).
+            self._dispatch_move_callbacks(md_map, attachment_moves, pending_callbacks)
 
             # 8. Remove the now-empty source tree. A leftover file (e.g. from a
             #    concurrent write) is logged rather than silently swallowed.

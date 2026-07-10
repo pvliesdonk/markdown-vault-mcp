@@ -179,6 +179,26 @@ def test_move_folder_best_effort_skips_unwritable_source(
     assert "archive/a.md" in (source_dir / "ext2.md").read_text()
 
 
+def test_move_folder_missing_backlink_source_reported(
+    vault: Vault, source_dir: Path
+) -> None:
+    """A backlink source deleted out-of-band is skipped and reported."""
+    _write(vault, "drafts/a.md", "content\n")
+    _write(vault, "ext1.md", "[A](drafts/a.md)\n")
+    _write(vault, "ext2.md", "[A](drafts/a.md)\n")
+
+    # Remove one source behind the vault's back — the index still holds its
+    # backlink row, so the rewrite loop must skip-and-report the source.
+    (source_dir / "ext1.md").unlink()
+
+    result = vault.writer.move_folder("drafts", "archive")
+    wait_for_writer_drain(vault)
+
+    assert "ext1.md" in result.failed_links
+    assert result.updated_links >= 1
+    assert "archive/a.md" in (source_dir / "ext2.md").read_text()
+
+
 def test_move_folder_read_only_rejected(read_only_vault: Vault) -> None:
     with pytest.raises(ReadOnlyError):
         read_only_vault.writer.move_folder("drafts", "archive")
