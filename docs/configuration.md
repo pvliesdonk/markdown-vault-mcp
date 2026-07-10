@@ -116,6 +116,25 @@ The first three knobs adjust *ranking and rendering* and take effect immediately
 
     **Explicit vs. auto-detect failure handling:** when you set `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` to a specific backend and it cannot be constructed at startup — a missing dependency, missing/empty credentials, or an unrecognised value — the server **fails fast** with a `ConfigurationError` rather than silently falling back to keyword-only search. (An unreachable Ollama/OpenAI *service* does not prevent startup — the provider still loads; the failure surfaces later as an embedding error during index build.) When the variable is *unset* (auto-detect) and no backend is available, the server logs a warning and continues with semantic search disabled. Set the variable explicitly if you want a missing provider to be a hard startup error.
 
+## Summarization
+
+Powers the optional [`summarize`](tools/index.md#summarize) tool. The backend is pluggable; Anthropic Claude (Haiku by default) is the first implementation. The tool is only registered when a backend is configured (an `ANTHROPIC_API_KEY`). Requires the `anthropic` SDK: `pip install 'markdown-vault-mcp[summarize]'`.
+
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `MARKDOWN_VAULT_MCP_SUMMARIZE_PROVIDER` | string | auto-detect | Summarization backend. Currently `anthropic`. Leave unset to auto-detect from available credentials |
+| `ANTHROPIC_API_KEY` | string | (none) | Anthropic API key. Presence enables the `summarize` tool. **Not** `MARKDOWN_VAULT_MCP_`-prefixed |
+| `MARKDOWN_VAULT_MCP_SUMMARIZE_ANTHROPIC_MODEL` | string | `claude-haiku-4-5` | Claude model id used for summaries |
+| `MARKDOWN_VAULT_MCP_SUMMARIZE_MAX_TOKENS` | int | `2048` | Upper bound on generated summary tokens per call |
+| `MARKDOWN_VAULT_MCP_SUMMARIZE_MAX_NOTES` | int | `50` | Cap on notes summarised per call (subtree expansion is truncated to this many) |
+| `MARKDOWN_VAULT_MCP_SUMMARIZE_MAX_INPUT_CHARS` | int | `200000` | Aggregate cap on note characters sent to the model per call |
+
+!!! warning "Note content leaves your environment"
+    The `summarize` tool sends the referenced notes to the external model provider. Do not enable it for vaults whose content must not leave your environment.
+
+!!! note "Explicit vs. auto-detect failure handling"
+    Same posture as embeddings: if you set `MARKDOWN_VAULT_MCP_SUMMARIZE_PROVIDER` explicitly and the backend cannot be loaded (missing SDK, empty key, unrecognised value), startup **fails fast** with a `ConfigurationError`. When the provider is *unset* (auto-detect) and the backend cannot be loaded, the server logs a warning and the `summarize` tool stays hidden.
+
 ## Git Integration
 
 Git integration has three modes:

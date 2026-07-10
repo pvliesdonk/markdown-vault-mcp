@@ -10,6 +10,7 @@ accessors of the same names (see the facet architecture in ``docs/design/design.
 from markdown_vault_mcp.facets.graph import GraphFacet
 from markdown_vault_mcp.facets.index import IndexFacet
 from markdown_vault_mcp.facets.reader import ReaderFacet
+from markdown_vault_mcp.facets.summarize import SummarizeFacet
 from markdown_vault_mcp.facets.writer import WriterFacet
 
-__all__ = ["GraphFacet", "IndexFacet", "ReaderFacet", "WriterFacet"]
+__all__ = ["GraphFacet", "IndexFacet", "ReaderFacet", "SummarizeFacet", "WriterFacet"]

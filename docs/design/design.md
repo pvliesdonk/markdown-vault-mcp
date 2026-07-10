@@ -1896,6 +1896,7 @@ pattern). Each tool is annotated with MCP `ToolAnnotations`:
 | `get_orphan_notes` | Find notes with no inbound or outbound links | `True` | `False` | `True` |
 | `get_most_linked` | Find notes ranked by number of inbound links | `True` | `False` | `True` |
 | `get_connection_path` | Shortest undirected path between two notes (BFS, max 10 hops) | `True` | `False` | `True` |
+| `summarize` | LLM summary of a note/set/subtree (references sources by path) | `True` | `False` | **`False`** |
 | `fetch` | Download from URL and save to vault (MCP-to-MCP transfer) | `False` | `False` | `True` |
 
 **Tool name note**: the MCP tool is registered as `list_documents` (not `list`)
@@ -1916,6 +1917,21 @@ The MCP-Apps UI tools ``browse_vault`` and ``show_context`` are tagged with
 server calls ``mcp.disable(tags={"apps-ui"})`` to hide them from the tool
 listing for clients that don't render MCP Apps panels. This composes as a
 set-union with the ``write`` and ``git-managed`` disable passes.
+
+The LLM-backed ``summarize`` tool is tagged ``tags={"summarize"}``. When no
+summarization backend is configured — ``config.summarize.has_provider()`` is
+``False`` (no ``ANTHROPIC_API_KEY``) — the server calls
+``mcp.disable(tags={"summarize"})`` to hide it, the same key-based gating shape
+as ``git_sync`` (which gates on ``GIT_REPO_URL``). The check is provider-neutral
+(it never names a specific backend) and reads ``config.summarize`` directly, not
+``to_vault_kwargs()`` (which builds an embedding provider and can clone a git
+repo as a side effect). The summarization backend sits behind a provider-neutral
+``Summarizer`` abstraction (``summarizer.py``): ``AnthropicSummarizer`` is the
+first implementation, resolved by ``get_summarizer(config)`` with the same
+explicit-provider-vs-auto-detect posture as ``get_embedding_provider``. The tool
+is read-only with respect to the vault but sends note content to the external
+model provider, so it stays available in read-only mode (it never mutates the
+vault) and its data-egress is documented in the tool docstring and README.
 
 **Dynamic instructions**: the server's MCP `instructions` string varies with
 `read_only` mode. When `read_only=True`, the instructions state this is a

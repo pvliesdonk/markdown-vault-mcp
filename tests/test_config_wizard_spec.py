@@ -53,6 +53,7 @@ _BARE_NAMES = {
     "OPENAI_API_KEY",
     "OPENAI_BASE_URL",
     "OPENAI_EMBEDDING_MODEL",
+    "ANTHROPIC_API_KEY",
 }
 
 REPO_ROOT = Path(__file__).resolve().parent.parent

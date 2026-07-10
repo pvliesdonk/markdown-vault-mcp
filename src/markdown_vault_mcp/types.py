@@ -689,6 +689,43 @@ class SubtreeToc:
     truncated: bool
 
 
+@dataclass
+class SummarySource:
+    """One note that contributed to a summary.
+
+    Attributes:
+        path: Relative note path (ends in ``.md``).
+        title: Document title.
+    """
+
+    path: str
+    title: str
+
+
+@dataclass
+class SummaryResult:
+    """Result of the ``summarize`` tool.
+
+    Attributes:
+        summary: The generated summary text. In ``"synthesis"`` mode this is a
+            single cross-note summary that references the source notes by path;
+            in ``"per_note"`` mode it concatenates per-note summaries, each
+            headed by its note path.
+        sources: The notes that were summarised, in the order they were fed to
+            the model — always populated so individual notes are attributable
+            even when the prose does not name every one.
+        mode: ``"synthesis"`` or ``"per_note"``.
+        truncated: True when the input was capped — either more notes matched a
+            subtree than ``max_notes``, or the aggregate note text exceeded
+            ``max_input_chars`` and was cut.
+    """
+
+    summary: str
+    sources: list[SummarySource]
+    mode: str
+    truncated: bool
+
+
 WriteOperation = Literal["write", "edit", "delete", "rename"]
 
 WriteCallback = Callable[[Path, str, WriteOperation], None]

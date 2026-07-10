@@ -8,6 +8,7 @@
   "secretKeys": [
     "MARKDOWN_VAULT_MCP_GIT_TOKEN",
     "OPENAI_API_KEY",
+    "ANTHROPIC_API_KEY",
     "MARKDOWN_VAULT_MCP_BEARER_TOKEN",
     "MARKDOWN_VAULT_MCP_OIDC_CLIENT_SECRET",
     "MARKDOWN_VAULT_MCP_GITHUB_WEBHOOK_SECRET",
@@ -235,6 +236,85 @@
       },
       "advancedGroup": "Embeddings",
       "dockerPath": "/data/state/fastembed"
+    },
+    {
+      "id": "summarize",
+      "label": "LLM summarization",
+      "help": "Enables the `summarize` tool. Note content is sent to the model provider. Needs the [summarize] extra.",
+      "type": "select",
+      "options": [
+        {
+          "value": "off",
+          "label": "Off"
+        },
+        {
+          "value": "anthropic",
+          "label": "Anthropic Claude (Haiku)",
+          "emit": {
+            "MARKDOWN_VAULT_MCP_SUMMARIZE_PROVIDER": "anthropic"
+          }
+        }
+      ]
+    },
+    {
+      "id": "anthropic_api_key",
+      "label": "Anthropic API key",
+      "help": "Browser-only; never sent anywhere and never put in the shareable link. Enables the summarize tool.",
+      "type": "text",
+      "var": "ANTHROPIC_API_KEY",
+      "showIf": {
+        "summarize": [
+          "anthropic"
+        ]
+      }
+    },
+    {
+      "id": "summarize_model",
+      "label": "Summarize model",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_SUMMARIZE_ANTHROPIC_MODEL",
+      "showIf": {
+        "summarize": [
+          "anthropic"
+        ]
+      },
+      "advancedGroup": "Summarization"
+    },
+    {
+      "id": "summarize_max_tokens",
+      "label": "Summarize max tokens",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_SUMMARIZE_MAX_TOKENS",
+      "showIf": {
+        "summarize": [
+          "anthropic"
+        ]
+      },
+      "advancedGroup": "Summarization"
+    },
+    {
+      "id": "summarize_max_notes",
+      "label": "Summarize max notes per call",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_SUMMARIZE_MAX_NOTES",
+      "showIf": {
+        "summarize": [
+          "anthropic"
+        ]
+      },
+      "advancedGroup": "Summarization"
+    },
+    {
+      "id": "summarize_max_input_chars",
+      "label": "Summarize max input characters",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_SUMMARIZE_MAX_INPUT_CHARS",
+      "showIf": {
+        "summarize": [
+          "anthropic"
+        ]
+      },
+      "advancedGroup": "Summarization"
     },
     {
       "id": "git",

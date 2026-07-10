@@ -15,6 +15,7 @@ from markdown_vault_mcp.facets import (
     GraphFacet,
     IndexFacet,
     ReaderFacet,
+    SummarizeFacet,
     WriterFacet,
 )
 from markdown_vault_mcp.fts_index import FTSIndex
@@ -33,6 +34,7 @@ if TYPE_CHECKING:
 
     from markdown_vault_mcp.git import GitWriteStrategy, PullResult
     from markdown_vault_mcp.providers import EmbeddingProvider
+    from markdown_vault_mcp.summarizer import Summarizer
     from markdown_vault_mcp.types import (
         WriteCallback,
     )
@@ -167,6 +169,13 @@ class Vault:
             the vault library). ``0`` disables the limit (default ``1.0``).
         max_note_read_bytes: Maximum bytes returned by full-document reads.
             ``0`` disables the limit (default ``262144``, i.e. 256 KB).
+        summarizer: Optional summarization backend. When provided, the
+            ``Vault.summarizer`` facet is available; when ``None`` (default)
+            the facet accessor raises and the ``summarize`` MCP tool is hidden.
+        summarize_max_notes: Cap on notes summarised per ``summarize`` call
+            (subtree expansion is truncated to this many notes; default 50).
+        summarize_max_input_chars: Aggregate cap on note characters sent to the
+            summarization backend per call (default 200000).
     """
 
     def __init__(
@@ -195,6 +204,9 @@ class Vault:
         max_chunk_chars: int | None = None,
         max_chunk_chars_override: int | None = None,
         chunk_overlap_words: int = 0,
+        summarizer: Summarizer | None = None,
+        summarize_max_notes: int = 50,
+        summarize_max_input_chars: int = 200_000,
     ) -> None:
         self._source_dir = source_dir
         self._index_path = index_path
@@ -236,6 +248,9 @@ class Vault:
         self._attachment_extensions = attachment_extensions
         self._max_attachment_size_mb = max_attachment_size_mb
         self._max_note_read_bytes = max_note_read_bytes
+        self._summarizer = summarizer
+        self._summarize_max_notes = summarize_max_notes
+        self._summarize_max_input_chars = summarize_max_input_chars
 
         # Default state path: {source_dir}/.markdown_vault_mcp/state.json
         if state_path is None:
@@ -374,6 +389,22 @@ class Vault:
         self._index_facet = IndexFacet(
             coordinator=self._coordinator, index_mgr=self._index_mgr
         )
+        # Summarize facet is present only when a backend was supplied (the
+        # summarize tool is otherwise hidden at the server layer).
+        self._summarize_facet: SummarizeFacet | None = None
+        if self._summarizer is not None:
+            from markdown_vault_mcp.managers.summarize import SummarizeManager
+
+            summarize_mgr = SummarizeManager(
+                doc_mgr=self._doc_mgr,
+                summarizer=self._summarizer,
+                max_notes=self._summarize_max_notes,
+                max_input_chars=self._summarize_max_input_chars,
+            )
+            self._summarize_facet = SummarizeFacet(
+                summarize_mgr=summarize_mgr,
+                require_built=self._require_built,
+            )
 
     # ------------------------------------------------------------------
     # Facets (#604)
@@ -398,6 +429,21 @@ class Vault:
     def index(self) -> IndexFacet:
         """Index facet: build/reindex/embeddings, readiness, writer status."""
         return self._index_facet
+
+    @property
+    def summarizer(self) -> SummarizeFacet:
+        """Summarize facet: LLM-backed note/subtree summarization.
+
+        Raises:
+            RuntimeError: If no summarization backend was configured (set
+                ``ANTHROPIC_API_KEY`` and install the ``[summarize]`` extra).
+        """
+        if self._summarize_facet is None:
+            raise RuntimeError(
+                "Summarization is not configured. Set ANTHROPIC_API_KEY and "
+                "install the SDK with: pip install 'markdown-vault-mcp[summarize]'"
+            )
+        return self._summarize_facet
 
     @property
     def source_dir(self) -> Path:

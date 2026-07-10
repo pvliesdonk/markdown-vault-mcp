@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from fastmcp import FastMCP
 
-from . import git, graph, index, reader, writer
+from . import git, graph, index, reader, summarize, writer
 
 __all__ = ["register_tools"]
 
@@ -24,3 +24,4 @@ def register_tools(mcp: FastMCP) -> None:
     index.register(mcp)
     writer.register(mcp)
     git.register(mcp)
+    summarize.register(mcp)

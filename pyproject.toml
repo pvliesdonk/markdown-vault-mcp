@@ -46,7 +46,9 @@ mcp = ["fastmcp>=3.0,<4"]
 embeddings-api = ["httpx>=0.25", "numpy>=1.20"]
 embeddings = ["fastembed>=0.3", "numpy>=1.20"]
 file-watcher = ["watchdog>=4.0"]
-all = ["fastmcp>=3.0,<4", "httpx>=0.25", "fastembed>=0.3", "numpy>=1.20", "watchdog>=4.0"]
+# LLM-backed summarize tool (first backend: Anthropic Claude Messages API).
+summarize = ["anthropic>=0.40"]
+all = ["fastmcp>=3.0,<4", "httpx>=0.25", "fastembed>=0.3", "numpy>=1.20", "watchdog>=4.0", "anthropic>=0.40"]
 # Pulls debugpy transitively via fastmcp-pvl-core's [debug] extra.  The
 # version range is inherited from the [project] dependency on
 # fastmcp-pvl-core above; pip resolves a single, consistent version.

@@ -21,6 +21,7 @@ from markdown_vault_mcp.config_sections import (
     GitConfig,
     IndexingConfig,
     SearchConfig,
+    SummarizeConfig,
     SyncConfig,
     TransferConfig,
 )
@@ -99,6 +100,7 @@ class ProjectConfig:
         indexing: SQLite/vector index paths and frontmatter/exclusion settings.
         embeddings: Embedding provider selection and per-provider settings.
         search: Search ranking and snippet-truncation knobs.
+        summarize: LLM-backed ``summarize`` tool backend selection and limits.
         sync: File-watcher and GitHub-webhook settings.
         content: Attachment/note-read limits and template/prompt folder paths.
         transfer: One-time upload/download transfer-link TTL and size settings.
@@ -126,6 +128,7 @@ class ProjectConfig:
     indexing: IndexingConfig = field(default_factory=IndexingConfig)
     embeddings: EmbeddingsConfig = field(default_factory=EmbeddingsConfig)
     search: SearchConfig = field(default_factory=SearchConfig)
+    summarize: SummarizeConfig = field(default_factory=SummarizeConfig)
     sync: SyncConfig = field(default_factory=SyncConfig)
     content: ContentConfig = field(default_factory=ContentConfig)
     transfer: TransferConfig = field(default_factory=TransferConfig)
@@ -213,6 +216,33 @@ class ProjectConfig:
         # warm-restart key (#649): the coordinator compares it (not the derived
         # cap) so a transient model-context read cannot trigger a rebuild.
         kwargs["max_chunk_chars_override"] = self.search.max_chunk_chars_override
+
+        # LLM summarization is gated on a backend being configured (a key).
+        # Same posture as embeddings: an explicit provider that fails to load is
+        # a configuration error; auto-detect failure warns and disables.
+        if self.summarize.has_provider():
+            explicit_summarizer = (self.summarize.provider or "").strip()
+            try:
+                from markdown_vault_mcp import summarizer as _summarizer
+
+                kwargs["summarizer"] = _summarizer.get_summarizer(self)
+                kwargs["summarize_max_notes"] = self.summarize.max_notes
+                kwargs["summarize_max_input_chars"] = self.summarize.max_input_chars
+            except (ImportError, RuntimeError) as exc:
+                if explicit_summarizer:
+                    raise ConfigurationError(
+                        f"Summarize provider {explicit_summarizer!r} was "
+                        "explicitly configured "
+                        "(MARKDOWN_VAULT_MCP_SUMMARIZE_PROVIDER) but could not "
+                        f"be loaded: {exc}. Fix the configuration, or unset the "
+                        "variable to fall back to auto-detection."
+                    ) from exc
+                logger.warning(
+                    "Could not load a summarization backend; the summarize "
+                    "tool is disabled. Install the SDK with "
+                    "pip install 'markdown-vault-mcp[summarize]'.",
+                    exc_info=True,
+                )
 
         if self.git.repo_url is not None:
             git_strategy = self._build_git_strategy(
@@ -438,6 +468,7 @@ class ProjectConfig:
         indexing = IndexingConfig.from_env(prefix)
         embeddings = EmbeddingsConfig.from_env(prefix)
         search = SearchConfig.from_env(prefix)
+        summarize = SummarizeConfig.from_env(prefix)
         sync = SyncConfig.from_env(prefix)
         content = ContentConfig.from_env(prefix, source_dir)
         transfer = TransferConfig.from_env(prefix)
@@ -460,6 +491,7 @@ class ProjectConfig:
             indexing=indexing,
             embeddings=embeddings,
             search=search,
+            summarize=summarize,
             sync=sync,
             content=content,
             transfer=transfer,

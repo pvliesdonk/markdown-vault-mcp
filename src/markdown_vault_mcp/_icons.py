@@ -61,6 +61,7 @@ _TOOL_ICONS: dict[str, list[Icon]] = {
         "get_history",
         "get_diff",
         "git_sync",
+        "summarize",
         "vault_graph_neighborhood",
         "vault_graph_hubs",
     ]

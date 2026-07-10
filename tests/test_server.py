@@ -263,6 +263,7 @@ class TestToolManifest:
             "rename",
             "search",
             "stats",
+            "summarize",
             "write",
         ]
 

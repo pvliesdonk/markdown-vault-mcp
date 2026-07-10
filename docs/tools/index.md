@@ -29,6 +29,7 @@ markdown-vault-mcp exposes MCP tools across several categories. Write tools are 
 | [`get_orphan_notes`](#get_orphan_notes) | Orphan Notes | Read | Find notes with no inbound or outbound links |
 | [`get_most_linked`](#get_most_linked) | Most-Linked Notes | Read | Find the most-linked-to notes ranked by backlink count |
 | [`get_connection_path`](#get_connection_path) | Connection Path | Read | Find the shortest path between two notes via link graph |
+| [`summarize`](#summarize) | Summarize Notes | AI | Summarize a note, a set of notes, or a subtree with an LLM (needs `ANTHROPIC_API_KEY`) |
 | [`get_history`](#get_history) | Note History | Read (git) | List commits that touched a note, attachment, or the whole vault |
 | [`get_diff`](#get_diff) | Note Diff | Read (git) | Return a diff of a note or attachment between two points in history |
 | [`reindex`](#reindex) | Reindex Vault | Admin | Force a full reindex of the vault |
@@ -761,6 +762,39 @@ Exactly one of `since_sha` / `since_timestamp` must be supplied.
 - `per_commit=true`: object with `commits` (list of per-commit entries, newest-first, each containing `sha`, `short_sha`, `timestamp`, `message`, and `diff`) and `total` (count; always equals `len(commits)` and does NOT indicate how many commits exist beyond the `limit` cap). The envelope keeps the structured payload self-describing on the wire instead of relying on FastMCP's auto-wrapping `result` key.
 
 **Raises:** `ToolError` if parameters are invalid, the reference commit is not found, or the path uses an unsupported extension.
+
+---
+
+## AI Summarization
+
+### `summarize`
+
+Summarize a note, a set of notes, or a folder subtree with a language model. In the default `synthesis` mode the result is one cohesive summary that synthesizes across all the notes and **references the individual source notes by path**, so each point can be traced back to its origin. In `per_note` mode it returns a separate summary for each note instead.
+
+The tool is only registered when a summarization backend is configured (an `ANTHROPIC_API_KEY`); otherwise it does not appear in the tool listing. The backend is pluggable — Anthropic Claude (Haiku by default) is the first implementation.
+
+**Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `paths` | array of string | required | Note paths (`"notes/topic.md"`) and/or folder prefixes (`"notes/project"`). Folders expand to every note in the subtree (capped by the server's summarize limits). Duplicates are de-duplicated. |
+| `focus` | string | `null` | Optional free-text instruction that steers the summary, e.g. `"extract action items"` or `"focus on decisions and their rationale"`. Omit for a general-purpose summary. |
+| `mode` | `"synthesis"` \| `"per_note"` | `"synthesis"` | `synthesis` for one cross-note summary that references sources; `per_note` for one summary per note. |
+
+**Returns:** Dict with:
+
+- `summary` (string): the generated summary text.
+- `sources` (list of `{path, title}`): the notes that were summarised — always populated so individual notes are attributable even when the prose does not name every one.
+- `mode` (string): the mode used.
+- `truncated` (bool): `true` when the input was capped (a subtree had more notes than the server limit, or the aggregate note text exceeded the character budget and was cut).
+
+**Errors:** raises if `paths` is empty, `mode` is invalid, no readable notes were found, or the backend call fails.
+
+!!! warning "Note content leaves your environment"
+    The referenced notes are sent to the external model provider to generate the summary. Do not summarize notes whose content must not leave your environment.
+
+!!! note "Dependency"
+    Requires the `anthropic` SDK and an `ANTHROPIC_API_KEY`. Install with `pip install 'markdown-vault-mcp[summarize]'` (or `[all]`). Configure the model and limits via the `MARKDOWN_VAULT_MCP_SUMMARIZE_*` env vars — see [Configuration](../configuration.md).
 
 ---
 

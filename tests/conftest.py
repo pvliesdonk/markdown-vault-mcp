@@ -38,6 +38,9 @@ def _clear_env(monkeypatch: pytest.MonkeyPatch) -> None:
     for key in list(os.environ):
         if key.startswith("MARKDOWN_VAULT_MCP_"):
             monkeypatch.delenv(key, raising=False)
+    # Bare ecosystem keys the server reads directly (never prefixed). Strip so
+    # an ambient key doesn't silently enable a gated feature mid-test.
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
 
 
 def _parse_tool_data(result: Any) -> Any:

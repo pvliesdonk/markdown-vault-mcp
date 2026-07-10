@@ -242,6 +242,14 @@ def make_server(
     if config.git.repo_url is None:
         mcp.disable(tags={"git-managed"})
 
+    # Hide the LLM-backed summarize tool unless a summarization backend is
+    # configured (an ANTHROPIC_API_KEY). Provider-neutral: the check lives on
+    # config.summarize, never referencing a specific provider. Checked directly
+    # (not via to_vault_kwargs(), which builds an embedding provider and may
+    # clone a git repo as a side effect — see the git-managed gate above).
+    if not config.summarize.has_provider():
+        mcp.disable(tags={"summarize"})
+
     # Hide MCP-Apps UI tools (browse_vault, show_context) when the client
     # does not render the MCP Apps panels. Set
     # MARKDOWN_VAULT_MCP_DISABLE_APPS_UI=true to remove them from the tool
