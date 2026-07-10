@@ -719,6 +719,19 @@ class TestProposeLinks:
         assert "$scope" not in text
         assert "$per_note_limit" not in text
 
+    @pytest.mark.usefixtures("_clear_vars")
+    async def test_propose_links_checks_folder_conventions(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The builtin body instructs a get_conventions check before proposing."""
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
+        server = make_server()
+        async with Client(server) as client:
+            result = await client.get_prompt("propose-links", {})
+        text = result.messages[0].content.text
+        assert "get_conventions" in text
+        assert "conventions" in text.lower()
+
 
 class TestRegisterPromptsPerPromptGuard:
     """register_prompts skips a malformed prompt and keeps registering siblings.

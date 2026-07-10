@@ -366,9 +366,11 @@ class TestToVaultKwargs:
         assert kwargs["source_dir"] == Path("/tmp/vault")
         assert kwargs["conventions_file"] == "_conventions.md"
 
-    def test_conventions_disabled_adds_no_exclude_patterns(self) -> None:
+    def test_conventions_disabled_adds_no_exclude_patterns(
+        self, tmp_path: Path
+    ) -> None:
         config = ProjectConfig(
-            source_dir=Path("/tmp/vault"),
+            source_dir=tmp_path / "vault",
             content=ContentConfig(conventions_file=None),
         )
         kwargs = config.to_vault_kwargs()

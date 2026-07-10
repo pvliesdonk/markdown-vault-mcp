@@ -81,7 +81,9 @@ def register(mcp: FastMCP) -> None:
             is current as of response time.
 
         Combine with ``get_similar`` to find connection gaps — notes that are
-        semantically close to the target but not yet linked.
+        semantically close to the target but not yet linked. Respect folder
+        conventions (see 'get_conventions') before proposing such links —
+        some folders are self-contained by design.
 
         Raises:
             ValueError: If no document exists at the given path.
@@ -159,7 +161,9 @@ def register(mcp: FastMCP) -> None:
             is current as of response time.
 
         Combine with ``get_similar`` to find connection gaps — notes the
-        source is semantically close to but hasn't linked yet.
+        source is semantically close to but hasn't linked yet. Respect folder
+        conventions (see 'get_conventions') before proposing such links —
+        some folders are self-contained by design.
 
         Raises:
             ValueError: If no document exists at the given path.

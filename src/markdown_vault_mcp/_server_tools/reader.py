@@ -549,7 +549,9 @@ def register(mcp: FastMCP) -> None:
 
         Useful for finding link candidates that aren't yet wikilinked — the
         vault's organic graph is almost always denser than its explicit one.
-        See the ``propose-links`` prompt for a full vault-wide sweep.
+        See the ``propose-links`` prompt for a full vault-wide sweep. Respect
+        folder conventions (see 'get_conventions') when turning similarity
+        into links — some folders are self-contained by design.
 
         Raises:
             ValueError: If no document exists at the given path.
@@ -813,7 +815,9 @@ def register(mcp: FastMCP) -> None:
 
         The ``similar`` field in the response surfaces notes that may warrant
         explicit links to the context note but don't yet — a common input to
-        manual or automated link proposal.
+        manual or automated link proposal. Respect the ``conventions`` field
+        (and 'get_conventions') when proposing links — some folders are
+        self-contained by design.
 
         Raises:
             ValueError: If no document exists at the given path.

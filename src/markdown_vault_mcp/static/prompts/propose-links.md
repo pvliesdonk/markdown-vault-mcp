@@ -35,6 +35,17 @@ For each note in scope:
 
 For each scanned note, call `get_outlinks(path=<note>)` once. The tool returns a list of outlink dicts directly; iterate them. For each candidate pair (A, B), drop the candidate if A already links to B — compare the candidate path `B` against each outlink's `target_path` (the resolved vault-relative path of the link target, which is what you want for equality checks). `raw_target` is the literal link text as written (and may be a wikilink without `.md`) — only fall back to comparing against `raw_target` when `target_path` is empty (e.g., the link hasn't been resolved).
 
+## Step 3b: Check folder conventions
+
+Call `get_conventions(path='')` once. If `convention_folders` is non-empty, fetch the conventions for each folder that contains notes in your candidate pairs (one `get_conventions(path=<folder>)` call per distinct folder; results accumulate root-first).
+
+Apply them to every candidate pair (A, B):
+
+- If A's folder conventions say its notes stay self-contained or must not link out to certain content, drop the pair — or reverse it (propose B → A instead) when the reverse direction is permitted and still useful.
+- If B's folder conventions restrict inbound links, drop the pair.
+
+Conventions are the vault owner's rules; they override the direction/placement heuristics in Step 5. If `get_conventions` is unavailable (older server) or returns no folders, skip this step.
+
 ## Step 4: Apply LLM judgment
 
 For each surviving candidate pair, `read(path=<B>)` and inspect B's title, first section heading, and opening paragraph. Keep only pairs where the content justifies an explicit link — the reader of A would benefit from knowing about B in context, not merely because the two share words.
@@ -43,7 +54,7 @@ For each surviving candidate pair, `read(path=<B>)` and inspect B's title, first
 
 For each kept pair:
 
-- **Direction:** one-way `A → B` as a wikilink from A. `get_backlinks` recovers the reverse; explicit bidirectional wikilinks are redundant. Pick A as the note where the link reads most naturally: atomic → hub, specific → general, newer → older.
+- **Direction:** one-way `A → B` as a wikilink from A. `get_backlinks` recovers the reverse; explicit bidirectional wikilinks are redundant. Folder conventions (Step 3b) override these heuristics; otherwise pick A as the note where the link reads most naturally: atomic → hub, specific → general, newer → older.
 - **Placement:** pick per note shape, using judgment:
   - Short atomic note → new `## Related` section (create if missing).
   - Prose note → inline citation in a relevant paragraph.
@@ -84,6 +95,7 @@ Report the counts:
 
 - Never write without explicit user confirmation. The batch preview in Step 6 is the only gating point; per-edit confirmation is available on request.
 - Never propose self-links.
+- Never propose a link that a folder convention forbids. When in doubt about whether a convention applies, surface the pair in the preview as an observation, not an edit.
 - Do not propose MOC-to-MOC links by default. Mention them in the preview as observations but do not include them as edits unless the user explicitly asks.
 - Budget guard: if the scope resolves to more than 100 notes, stop and ask before proceeding.
 - Graceful degradation: if neither `get_similar` nor `search` produces candidates for a note, skip it silently. Do not warn per-note.

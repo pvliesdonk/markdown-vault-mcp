@@ -199,3 +199,21 @@ class TestConfigSurface:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_CONVENTIONS_FILE", "none")
         server = make_server()
         assert "get_conventions" not in (server.instructions or "")
+
+
+class TestConventionsPayloadHelper:
+    def test_invalid_path_yields_empty_not_raise(self, tmp_path: Path) -> None:
+        """A traversal path degrades to [] so the calling tool never breaks."""
+        from markdown_vault_mcp._server_tools._common import conventions_payload
+        from markdown_vault_mcp.vault import Vault
+
+        vault_dir = tmp_path / "vault"
+        vault_dir.mkdir()
+        (vault_dir / "_conventions.md").write_text("Rules.", encoding="utf-8")
+        col = Vault(source_dir=vault_dir)
+        try:
+            assert conventions_payload(col, "../outside/note.md") == []
+            payload = conventions_payload(col, "note.md")
+            assert [e["content"] for e in payload] == ["Rules."]
+        finally:
+            col.close()

@@ -12,6 +12,16 @@ Five note templates covering the PARA lifecycle:
 - **`resource.md`** — Reference material on a topic
 - **`weekly-review.md`** — Dated review note with preset sections
 
+## Conventions
+
+Sample per-folder [convention files](../../docs/guides/para.md#folder-conventions) that encode PARA's linking directionality — copy them into the matching vault folders:
+
+- **`conventions/_conventions.md`** — vault-root rules (heading style, frontmatter hygiene)
+- **`conventions/3-Resources/_conventions.md`** — resources are self-contained; no links out to projects
+- **`conventions/1-Projects/_conventions.md`** — projects link one-way to resources
+
+The server surfaces these to LLM clients at write time (the `get_conventions` tool plus `write`/`edit` results); the files themselves are excluded from the search index.
+
 ## Prompts
 
 Four prompts that codify the canonical PARA workflow:
