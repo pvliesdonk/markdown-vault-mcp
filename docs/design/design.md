@@ -948,8 +948,8 @@ The mechanism is **per-thread `sqlite3.Connection` instances** owned by
 - Slow-path open + pragma + register is wrapped in `except BaseException`
   so `KeyboardInterrupt` / `SystemExit` / `asyncio.CancelledError` during
   interpreter teardown cannot leak the half-initialized connection.
-- `_primary_conn` is a strong instance attribute (alongside
-  `self._local.conn`) so the primary connection survives the constructing
+- `primary_conn` is a strong instance attribute (alongside
+  `self.local.conn`) so the primary connection survives the constructing
   thread's exit; the registry-based `close()` then still closes it.
 - `:memory:` databases are translated to a unique-per-instance shared-cache
   URI (`file:fts_<uuid4hex>?mode=memory&cache=shared`) so every per-thread

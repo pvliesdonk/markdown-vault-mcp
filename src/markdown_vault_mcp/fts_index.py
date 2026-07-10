@@ -250,7 +250,8 @@ class FTSIndex:
     **Thread safety (issue #519):** every public method is safe to call from
     any thread. Each thread that touches the index opens its own
     ``sqlite3.Connection`` on first use via :meth:`_conn`; a side registry
-    (``_all_conns``, guarded by ``_reg_lock``) holds strong refs so
+    (``SqliteConnectionRegistry.all_conns`` in ``_fts_connection.py``,
+    guarded by ``reg_lock``) holds strong refs so
     :meth:`close` can close every connection — including those opened by
     threads that have since exited. Concurrent index mutations are
     serialised by the single-owner :class:`IndexWriter` thread (#559),

@@ -5,8 +5,8 @@ must address. Run individually with ``uv run pytest tests/test_thread_safety.py`
 
 The carryover design (per ``project_issue_519_attempt_1_abandon.md``) is:
 per-thread ``sqlite3.Connection`` via ``threading.local``, strong-ref
-registry guarded by ``_reg_lock``, ``_closed`` flag with double-checked
-locking, ``BaseException`` cleanup on slow-path open, ``_primary_conn``
+registry guarded by ``reg_lock``, ``closed`` flag with double-checked
+locking, ``BaseException`` cleanup on slow-path open, ``primary_conn``
 strong attribute, shared-cache URI translation for ``:memory:`` with
 startup probe, and pragmas applied BEFORE schema/migrations.
 """
