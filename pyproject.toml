@@ -69,6 +69,7 @@ dev = [
     "pip-audit>=2.7",
     "watchdog>=4.0",
     "jsonschema>=4.18",
+    "copier>=9.4",  # template-conformance gate renders the template pristinely (#899)
 ]
 docs = [
     "mike>=2",

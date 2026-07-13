@@ -447,6 +447,30 @@ wheels = [
 ]
 
 [[package]]
+name = "copier"
+version = "9.16.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "colorama" },
+    { name = "dunamai" },
+    { name = "funcy" },
+    { name = "jinja2" },
+    { name = "jinja2-ansible-filters" },
+    { name = "packaging" },
+    { name = "pathspec" },
+    { name = "platformdirs" },
+    { name = "plumbum" },
+    { name = "pydantic" },
+    { name = "pygments" },
+    { name = "pyyaml" },
+    { name = "questionary" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/9c/c7/3cd18cd539ff41e8e7a95b0146dbace0ba332a4c97f468066b2c2daca2ed/copier-9.16.0.tar.gz", hash = "sha256:4db1a9861d0760f745cc6241f99be37b476f849b8ad700133e2f620b7df92eb2", size = 643997, upload-time = "2026-06-23T17:09:04.995Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0c/a4/cf8df35b6488c04cae9aa7338c7b531a87aae2515da3993d2906d49b1dc1/copier-9.16.0-py3-none-any.whl", hash = "sha256:fadc55a22db6fb0f99d52878d3df4df3fa9c314dd96b0d81fef785a5e803114b", size = 65483, upload-time = "2026-06-23T17:09:03.617Z" },
+]
+
+[[package]]
 name = "coverage"
 version = "7.14.2"
 source = { registry = "https://pypi.org/simple" }
@@ -708,6 +732,18 @@ wheels = [
 ]
 
 [[package]]
+name = "dunamai"
+version = "1.26.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "packaging" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/9f/67/d5611975faaa5e4a920f4b19e4caccd5df0facb925687850f1e45f5876f2/dunamai-1.26.1.tar.gz", hash = "sha256:3b46007bd65b00b4824ead0a1aee365fd22d0ec2b9c219497d4fd48f52860c8b", size = 45567, upload-time = "2026-04-04T14:07:11.17Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/fa/bc/8b8ec5a4bfc5b9cf3ce27a118339e994f88410be5677c96493e0ea28e76d/dunamai-1.26.1-py3-none-any.whl", hash = "sha256:2727d939c5b4257cb01ea404372803b477f5176e5a347c43beaf89cd5072e853", size = 27332, upload-time = "2026-04-04T14:07:10.079Z" },
+]
+
+[[package]]
 name = "email-validator"
 version = "2.3.0"
 source = { registry = "https://pypi.org/simple" }
@@ -858,6 +894,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/10/a1/ae4e3e5003468d6391d2c77b6fa1cd73bd5d13511d81c642d7b28ac90ed4/fsspec-2026.6.0.tar.gz", hash = "sha256:f5bac145310fe30e16e1471bd6840b2d990d609e872251d7e674241822abf01a", size = 313646, upload-time = "2026-06-16T01:57:28.105Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e5/22/4222d7ddf3da30f363edaa98e329c2bce6c65497c9cb2810931c8b2c0fbc/fsspec-2026.6.0-py3-none-any.whl", hash = "sha256:02e0b71817df9b2169dc30a16832045764def1191b43dcff5bb85bdee212d2a1", size = 203949, upload-time = "2026-06-16T01:57:26.358Z" },
+]
+
+[[package]]
+name = "funcy"
+version = "2.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/70/b8/c6081521ff70afdff55cd9512b2220bbf4fa88804dae51d1b57b4b58ef32/funcy-2.0.tar.gz", hash = "sha256:3963315d59d41c6f30c04bc910e10ab50a3ac4a225868bfa96feed133df075cb", size = 537931, upload-time = "2023-03-28T06:22:46.764Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d5/08/c2409cb01d5368dcfedcbaffa7d044cc8957d57a9d0855244a5eb4709d30/funcy-2.0-py2.py3-none-any.whl", hash = "sha256:53df23c8bb1651b12f095df764bfb057935d49537a56de211b098f4c79614bb0", size = 30891, upload-time = "2023-03-28T06:22:42.576Z" },
 ]
 
 [[package]]
@@ -1150,6 +1195,19 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/df/bf/f7da0350254c0ed7c72f3e33cef02e048281fec7ecec5f032d4aac52226b/jinja2-3.1.6.tar.gz", hash = "sha256:0137fb05990d35f1275a587e9aee6d56da821fc83491a0fb838183be43f66d6d", size = 245115, upload-time = "2025-03-05T20:05:02.478Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/62/a1/3d680cbfd5f4b8f15abc1d571870c5fc3e594bb582bc3b64ea099db13e56/jinja2-3.1.6-py3-none-any.whl", hash = "sha256:85ece4451f492d0c13c5dd7c13a64681a86afae63a5f347908daf103ce6d2f67", size = 134899, upload-time = "2025-03-05T20:05:00.369Z" },
+]
+
+[[package]]
+name = "jinja2-ansible-filters"
+version = "1.3.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "jinja2" },
+    { name = "pyyaml" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/1a/27/fa186af4b246eb869ffca8ffa42d92b05abaec08c99329e74d88b2c46ec7/jinja2-ansible-filters-1.3.2.tar.gz", hash = "sha256:07c10cf44d7073f4f01102ca12d9a2dc31b41d47e4c61ed92ef6a6d2669b356b", size = 16945, upload-time = "2022-06-30T14:08:50.775Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/72/b9/313e8f2f2e9517ae050a692ae7b3e4b3f17cc5e6dfea0db51fe14e586580/jinja2_ansible_filters-1.3.2-py3-none-any.whl", hash = "sha256:e1082f5564917649c76fed239117820610516ec10f87735d0338688800a55b34", size = 18975, upload-time = "2022-06-30T14:08:49.571Z" },
 ]
 
 [[package]]
@@ -1484,6 +1542,7 @@ browser = [
     { name = "pytest-playwright" },
 ]
 dev = [
+    { name = "copier" },
     { name = "diff-cover" },
     { name = "jsonschema" },
     { name = "mypy" },
@@ -1529,6 +1588,7 @@ provides-extras = ["mcp", "embeddings-api", "embeddings", "file-watcher", "summa
 [package.metadata.requires-dev]
 browser = [{ name = "pytest-playwright", specifier = ">=0.5" }]
 dev = [
+    { name = "copier", specifier = ">=9.4" },
     { name = "diff-cover", specifier = ">=9.0" },
     { name = "jsonschema", specifier = ">=4.18" },
     { name = "mypy", specifier = ">=1.0,<2" },
@@ -2458,6 +2518,18 @@ wheels = [
 ]
 
 [[package]]
+name = "plumbum"
+version = "2.0.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "typing-extensions", marker = "python_full_version < '3.13'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/0c/6a/1d1b143420fcdfc8902f2db6b7d1d2325211461c5f2a43c849de7afad688/plumbum-2.0.1.tar.gz", hash = "sha256:61623f856dcb09eb20dcd5aa708dfb3cd04b6f4ab10224d39303b163bb1c4c61", size = 377668, upload-time = "2026-06-08T14:44:06.17Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/59/2d/d741fbbbcba7eb6f9f1a829373c558114d59cb882b95f941aa0dc060861f/plumbum-2.0.1-py3-none-any.whl", hash = "sha256:27a454980f91689aae8f18242a36daaf2636219171cf0e6a849744aa1d6fff85", size = 164460, upload-time = "2026-06-08T14:44:04.75Z" },
+]
+
+[[package]]
 name = "pre-commit"
 version = "4.6.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2471,6 +2543,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/8e/22/2de9408ac81acbb8a7d05d4cc064a152ccf33b3d480ebe0cd292153db239/pre_commit-4.6.0.tar.gz", hash = "sha256:718d2208cef53fdc38206e40524a6d4d9576d103eb16f0fec11c875e7716e9d9", size = 198525, upload-time = "2026-04-21T20:31:41.613Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/80/6e/4b28b62ecb6aae56769c34a8ff1d661473ec1e9519e2d5f8b2c150086b26/pre_commit-4.6.0-py2.py3-none-any.whl", hash = "sha256:e2cf246f7299edcabcf15f9b0571fdce06058527f0a06535068a86d38089f29b", size = 226472, upload-time = "2026-04-21T20:31:40.092Z" },
+]
+
+[[package]]
+name = "prompt-toolkit"
+version = "3.0.52"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "wcwidth" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a1/96/06e01a7b38dce6fe1db213e061a4602dd6032a8a97ef6c1a862537732421/prompt_toolkit-3.0.52.tar.gz", hash = "sha256:28cde192929c8e7321de85de1ddbe736f1375148b02f2e17edd840042b1be855", size = 434198, upload-time = "2025-08-27T15:24:02.057Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/84/03/0d3ce49e2505ae70cf43bc5bb3033955d2fc9f932163e84dc0779cc47f48/prompt_toolkit-3.0.52-py3-none-any.whl", hash = "sha256:9aac639a3bbd33284347de5ad8d68ecc044b91a762dc39b7c21095fcd6a19955", size = 391431, upload-time = "2025-08-27T15:23:59.498Z" },
 ]
 
 [[package]]
@@ -3022,6 +3106,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/eb/2e/79c822141bfd05a853236b504869ebc6b70159afc570e1d5a20641782eaa/pyyaml_env_tag-1.1.tar.gz", hash = "sha256:2eb38b75a2d21ee0475d6d97ec19c63287a7e140231e4214969d0eac923cd7ff", size = 5737, upload-time = "2025-05-13T15:24:01.64Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/04/11/432f32f8097b03e3cd5fe57e88efb685d964e2e5178a48ed61e841f7fdce/pyyaml_env_tag-1.1-py3-none-any.whl", hash = "sha256:17109e1a528561e32f026364712fee1264bc2ea6715120891174ed1b980d2e04", size = 4722, upload-time = "2025-05-13T15:23:59.629Z" },
+]
+
+[[package]]
+name = "questionary"
+version = "2.1.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "prompt-toolkit" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f6/45/eafb0bba0f9988f6a2520f9ca2df2c82ddfa8d67c95d6625452e97b204a5/questionary-2.1.1.tar.gz", hash = "sha256:3d7e980292bb0107abaa79c68dd3eee3c561b83a0f89ae482860b181c8bd412d", size = 25845, upload-time = "2025-08-28T19:00:20.851Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3c/26/1062c7ec1b053db9e499b4d2d5bc231743201b74051c973dadeac80a8f43/questionary-2.1.1-py3-none-any.whl", hash = "sha256:a51af13f345f1cdea62347589fbb6df3b290306ab8930713bfae4d475a7d4a59", size = 36753, upload-time = "2025-08-28T19:00:19.56Z" },
 ]
 
 [[package]]
