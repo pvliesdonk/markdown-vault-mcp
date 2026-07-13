@@ -13,7 +13,7 @@ from fastmcp_pvl_core import (
     normalise_http_path,
 )
 
-from markdown_vault_mcp.config import _ENV_PREFIX, ProjectConfig
+from markdown_vault_mcp.config import _ENV_PREFIX, ProjectConfig, to_vault_kwargs
 
 app = typer.Typer(
     name="markdown-vault-mcp",
@@ -128,7 +128,7 @@ if TYPE_CHECKING:
 def _build_vault(source_dir: str | None = None, index_path: str | None = None) -> Vault:
     """Build a synchronous Vault from env vars + optional CLI overrides.
 
-    Uses the same ``ProjectConfig.to_vault_kwargs()`` bridge as the server path,
+    Uses the same ``to_vault_kwargs(config)`` bridge as the server path,
     but constructs a bare Vault (no background tasks, file watcher, or index
     writer — those belong to the server's lifespan).
 
@@ -150,7 +150,7 @@ def _build_vault(source_dir: str | None = None, index_path: str | None = None) -
     if source_dir:
         os.environ[f"{_ENV_PREFIX}_SOURCE_DIR"] = source_dir
     config = ProjectConfig.from_env()
-    kwargs = config.to_vault_kwargs()
+    kwargs = to_vault_kwargs(config)
     if index_path:
         kwargs["index_path"] = Path(index_path)
     return Vault(**kwargs)

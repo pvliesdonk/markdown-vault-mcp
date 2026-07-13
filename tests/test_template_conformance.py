@@ -54,7 +54,6 @@ FILE_MODULE_PATHS = {
 # the same PR that de-forks it; the removal is the proof (it flips the file to
 # the strict check). Epic #898. Seeded below after measuring actual conformance.
 RATCHET: dict[str, str] = {
-    "config.py": "#900",
     "server.py": "#901",
     "_server_deps.py": "#902",
     "__init__.py": "#903",
@@ -136,6 +135,46 @@ def _strip_sentinels(lines: list[str], legal: set[str]) -> list[str]:
     return out
 
 
+def _significant(lines: list[str]) -> list[str]:
+    """Drop blank lines and import statements before comparison.
+
+    Blank lines are formatting (ruff-governed) and imports are the template's
+    sanctioned domain-extension surface — ``config.py``'s own skeleton comment
+    tells you to add ``from pathlib import Path`` for domain fields, and the
+    template's ``test_config_wizard_drift`` gate requires ``from_env`` to
+    reference the domain sub-configs (which need imports). Neither is structure,
+    so ignoring them keeps this gate from false-flagging a conformant file.
+    Anything else outside a sentinel is still strictly compared: an import is
+    inert, and any *use* of it outside a sentinel is caught. A ``;`` on the
+    import (or on a multi-line import's closing-paren line) means a second
+    statement is riding along — the only way to smuggle code onto an import
+    line in valid Python — so such lines are NOT dropped and still compared.
+    """
+    out: list[str] = []
+    i, n = 0, len(lines)
+    while i < n:
+        stripped = lines[i].strip()
+        if stripped == "":
+            i += 1
+            continue
+        if stripped.startswith(("import ", "from ")) and ";" not in lines[i]:
+            if "(" in lines[i] and ")" not in lines[i]:
+                # Parenthesized multi-line import: find its closing-paren line.
+                j = i + 1
+                while j < n and ")" not in lines[j]:
+                    j += 1
+                if j < n and ";" not in lines[j]:
+                    i = j + 1  # pure import block → drop it
+                    continue
+                # unclosed, or a smuggled statement after ')' → keep + compare
+            else:
+                i += 1  # pure single-line import → drop it
+                continue
+        out.append(lines[i])
+        i += 1
+    return out
+
+
 def _first_divergence(
     repo_lines: list[str], pristine_lines: list[str]
 ) -> tuple[int, str | None, str | None] | None:
@@ -147,12 +186,25 @@ def _first_divergence(
 
 
 def _fork_message(
-    fname: str, rel: str, ref: str, div: tuple[int, str | None, str | None]
+    fname: str,
+    rel: str,
+    ref: str,
+    div: tuple[int, str | None, str | None],
+    repo_lines: list[str],
 ) -> str:
-    idx, repo_line, pristine_line = div
+    _, repo_line, pristine_line = div
+    # Map the divergence back to a real source line: the compared sequence is
+    # sentinel-collapsed and blank/import-stripped, so its index is not a file
+    # line. Locate the offending repo line's text in the normalized repo file
+    # instead (first occurrence). When repo_line is None the repo is missing a
+    # line the skeleton renders.
+    if repo_line is not None and repo_line in repo_lines:
+        loc = f"{rel}:{repo_lines.index(repo_line) + 1}"
+    else:
+        loc = f"{rel} (repo is missing a line the skeleton renders)"
     return (
-        f"FORK DETECTED in {rel} (template-owned, ref={ref}).\n"
-        f"  First out-of-sentinel divergence at stripped-remainder line {idx}:\n"
+        f"FORK DETECTED at {loc} (template-owned, ref={ref}).\n"
+        f"  Out-of-sentinel divergence:\n"
         f"      repo:     {repo_line!r}\n"
         f"      pristine: {pristine_line!r}\n"
         f"  This is OUTSIDE every sentinel block, so `copier update` will overwrite "
@@ -364,7 +416,8 @@ def test_template_owned_file_conforms(fname: str, ctx: _Ctx) -> None:
     repo = _normalize(repo_path.read_text())
     legal = _sentinel_names(pristine)
     div = _first_divergence(
-        _strip_sentinels(repo, legal), _strip_sentinels(pristine, legal)
+        _significant(_strip_sentinels(repo, legal)),
+        _significant(_strip_sentinels(pristine, legal)),
     )
 
     if fname in RATCHET:
@@ -374,7 +427,7 @@ def test_template_owned_file_conforms(fname: str, ctx: _Ctx) -> None:
             f"the proof of de-fork. Epic #898."
         )
     else:
-        assert div is None, _fork_message(fname, rel, ctx.ref, div)
+        assert div is None, _fork_message(fname, rel, ctx.ref, div, repo)
 
 
 def test_module_server_is_never_exempt(ctx: _Ctx) -> None:
@@ -428,7 +481,14 @@ def test_out_of_sentinel_change_is_a_fork() -> None:
     )
     assert div is not None
     assert div[0] == 0 and div[1] == "x = 999"
-    assert "FORK DETECTED" in _fork_message("f.py", "src/f.py", "v1", div)
+    msg = _fork_message("f.py", "src/f.py", "v1", div, repo)
+    assert "FORK DETECTED" in msg
+    assert "src/f.py:1" in msg  # real source line, not the stripped-remainder index
+
+    # repo shorter than the skeleton → repo_line is None → "missing a line" branch
+    short = _first_divergence(["x = 1"], ["x = 1", "extra()"])
+    assert short is not None
+    assert "missing a line" in _fork_message("f.py", "src/f.py", "v1", short, ["x = 1"])
 
 
 def test_invented_sentinel_content_is_not_stripped() -> None:
@@ -452,6 +512,48 @@ def test_invented_sentinel_content_is_not_stripped() -> None:
 
 def test_normalize_ignores_trailing_whitespace_and_blank_lines() -> None:
     assert _normalize("a  \nb\n\n\n") == _normalize("a\nb\n")
+
+
+def test_significant_drops_imports_and_blank_lines() -> None:
+    """An added import (single or multi-line) and blank lines are ignored."""
+    skeleton = ["x = 1", "code()"]
+    repo = [
+        "from pathlib import Path",  # single-line domain import — dropped
+        "from mod import (",  # parenthesized multi-line domain import — dropped
+        "    A,",
+        "    B,",
+        ")",
+        "",  # blank — dropped
+        "x = 1",
+        "",
+        "code()",
+    ]
+    assert _first_divergence(_significant(repo), _significant(skeleton)) is None
+
+
+def test_significant_keeps_use_of_import_so_a_fork_still_trips() -> None:
+    """The anti-false-pass guarantee: importing is inert, but *using* the import
+    outside a sentinel is still compared and surfaces as a fork.
+    """
+    skeleton = ["x = 1", "code()"]
+    repo = [
+        "from pathlib import Path",  # the import itself is dropped ...
+        "x = 1",
+        "SNEAKY = Path('/etc')",  # ... but this *use* is real code and must trip
+        "code()",
+    ]
+    div = _first_divergence(_significant(repo), _significant(skeleton))
+    assert div is not None
+    assert div[1] == "SNEAKY = Path('/etc')"
+
+
+def test_significant_does_not_drop_semicolon_smuggled_import() -> None:
+    """A ``;``-joined statement riding on an import line is real code, not dropped."""
+    skeleton = ["x = 1"]
+    single = ["import os; smuggled()", "x = 1"]
+    multi = ["from mod import (", "    A,", ") ; sneaky()", "x = 1"]
+    assert _first_divergence(_significant(single), _significant(skeleton)) is not None
+    assert _first_divergence(_significant(multi), _significant(skeleton)) is not None
 
 
 def test_unbalanced_sentinel_raises() -> None:

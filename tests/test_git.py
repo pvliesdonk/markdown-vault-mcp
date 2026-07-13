@@ -12,6 +12,7 @@ import pytest
 if TYPE_CHECKING:
     from pathlib import Path
 
+from markdown_vault_mcp.config import to_vault_kwargs
 from markdown_vault_mcp.git import (
     GitWriteStrategy,
     _find_git_root,
@@ -789,7 +790,7 @@ class TestConfigIntegration:
             read_only=False,
             git=GitConfig(token="ghp_test"),
         )
-        kwargs = config.to_vault_kwargs()
+        kwargs = to_vault_kwargs(config)
         assert "on_write" in kwargs
         assert isinstance(kwargs["on_write"], GitWriteStrategy)
         assert kwargs["git_pull_interval_s"] == 600
@@ -802,7 +803,7 @@ class TestConfigIntegration:
             source_dir=tmp_path,
             read_only=False,
         )
-        kwargs = config.to_vault_kwargs()
+        kwargs = to_vault_kwargs(config)
         assert "on_write" in kwargs
         assert kwargs["git_pull_interval_s"] == 0
 
@@ -824,7 +825,7 @@ class TestConfigIntegration:
             read_only=False,
             git=GitConfig(repo_url=str(bare), token="ghp_test", pull_interval_s=321),
         )
-        kwargs = config.to_vault_kwargs()
+        kwargs = to_vault_kwargs(config)
         assert "on_write" in kwargs
         assert kwargs["git_pull_interval_s"] == 321
 
@@ -838,7 +839,7 @@ class TestConfigIntegration:
             read_only=False,
             git=GitConfig(token="ghp_test", push_delay_s=60.0),
         )
-        kwargs = config.to_vault_kwargs()
+        kwargs = to_vault_kwargs(config)
         strategy = kwargs["on_write"]
         assert isinstance(strategy, GitWriteStrategy)
         assert strategy._push_delay_s == 60.0
@@ -5018,7 +5019,7 @@ class TestGitClaimConfig:
         assert config.git.commit_email_claim is None
 
     def test_claim_config_passed_to_strategy(self, tmp_path: Path) -> None:
-        """ProjectConfig.to_vault_kwargs() passes claim keys to GitWriteStrategy."""
+        """to_vault_kwargs() passes claim keys to GitWriteStrategy."""
         from markdown_vault_mcp.config import ProjectConfig
         from markdown_vault_mcp.config_sections import GitConfig
 
@@ -5027,7 +5028,7 @@ class TestGitClaimConfig:
             read_only=False,
             git=GitConfig(commit_name_claim="name", commit_email_claim="email"),
         )
-        kwargs = config.to_vault_kwargs()
+        kwargs = to_vault_kwargs(config)
         strategy = kwargs["on_write"]
         assert isinstance(strategy, GitWriteStrategy)
         assert strategy._commit_name_claim == "name"

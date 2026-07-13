@@ -66,8 +66,9 @@ markdown-vault-mcp (new package)
 +-- tracker.py        -- hash-based change detection
 +-- vault.py          -- thin composition root: lifecycle, wiring, facet accessors (index-write → indexing/coordinator.py)
 +-- write_callback.py -- WriteCallbackDispatcher: deferred git-commit callback worker (#599)
-+-- config.py         -- configuration loading
++-- config.py         -- template-owned skeleton: ProjectConfig fields/from_env in sentinels only (#900)
 +-- config_sections/  -- domain-grouped sub-configs (git/indexing/embeddings/search/sync/content)
+|   +-- _assembly.py   -- domain config-assembly kept out of template-owned config.py: to_vault_kwargs, derive_max_chunk_chars, git-strategy builder (#900)
 +-- server.py         -- generic FastMCP server
 +-- cli.py            -- CLI entry point
 +-- utils/

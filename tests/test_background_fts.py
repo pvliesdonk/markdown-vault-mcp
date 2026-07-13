@@ -527,9 +527,11 @@ def test_lifespan_cold_start_with_embeddings_submits_both_jobs(
 
     # Inject a MockEmbeddingProvider into to_vault_kwargs so that
     # kwargs["embedding_provider"] is non-None without needing a real provider.
-    from markdown_vault_mcp import config as config_mod
+    # Patch it where the lifespan uses it (_server_deps imports the free
+    # function into its namespace), not on ProjectConfig (it's no longer a method).
+    from markdown_vault_mcp import _server_deps as deps_mod
 
-    original_to_kwargs = config_mod.ProjectConfig.to_vault_kwargs
+    original_to_kwargs = deps_mod.to_vault_kwargs
 
     # Gate the embeddings build on the writer thread so it provably cannot
     # complete during the handshake — the deterministic replacement for the
@@ -541,14 +543,14 @@ def test_lifespan_cold_start_with_embeddings_submits_both_jobs(
             assert release.wait(10), "embed gate was never released — test bug"
             return super().embed(texts)
 
-    def patched_to_kwargs(self):  # type: ignore[no-untyped-def]
-        kw = original_to_kwargs(self)
+    def patched_to_kwargs(config):  # type: ignore[no-untyped-def]
+        kw = original_to_kwargs(config)
         kw["embedding_provider"] = _GatedProvider()
         if kw.get("embeddings_path") is None:
             kw["embeddings_path"] = tmp_path / "vectors"
         return kw
 
-    monkeypatch.setattr(config_mod.ProjectConfig, "to_vault_kwargs", patched_to_kwargs)
+    monkeypatch.setattr(deps_mod, "to_vault_kwargs", patched_to_kwargs)
 
     server = make_server()
     caplog.set_level(logging.INFO)

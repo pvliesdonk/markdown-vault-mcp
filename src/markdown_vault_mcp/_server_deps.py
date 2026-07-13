@@ -15,6 +15,7 @@ from fastmcp.dependencies import CurrentContext
 from fastmcp.server.context import Context
 from fastmcp.server.lifespan import lifespan
 
+from markdown_vault_mcp.config import to_vault_kwargs
 from markdown_vault_mcp.vault import Vault
 
 if TYPE_CHECKING:
@@ -87,7 +88,7 @@ def make_vault_lifespan(config: ProjectConfig) -> Any:
         """Build the Vault at server startup, tear down on shutdown."""
         logger.info("Initialising vault from %s", config.source_dir)
 
-        kwargs = config.to_vault_kwargs()
+        kwargs = to_vault_kwargs(config)
         if kwargs.get("embedding_provider") is not None:
             logger.info(
                 "Embedding provider: %s",

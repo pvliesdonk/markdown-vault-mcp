@@ -253,7 +253,7 @@ def make_server(
     # is hidden if either condition fires (set-union on disabled tags).
     #
     # Check the config directly rather than constructing a strategy via
-    # ``config.to_vault_kwargs()`` — that call builds an embedding
+    # ``to_vault_kwargs(config)`` — that call builds an embedding
     # provider (slow, GBs of memory) and may run ``git clone`` as a side
     # effect.  The runtime check inside the ``git_sync`` tool body
     # (``isinstance(strategy, GitWriteStrategy) and strategy._managed``)

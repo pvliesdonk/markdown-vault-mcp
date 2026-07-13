@@ -11,6 +11,7 @@ from unittest.mock import patch
 
 import pytest
 
+from markdown_vault_mcp.config import to_vault_kwargs
 from markdown_vault_mcp.exceptions import (
     ConcurrentModificationError,
     DocumentExistsError,
@@ -4488,7 +4489,7 @@ class TestMaxChunkCharsWiring:
         )
 
         config = ProjectConfig.from_env()
-        kwargs = config.to_vault_kwargs()
+        kwargs = to_vault_kwargs(config)
         assert kwargs["max_chunk_chars"] == round(512 * 2.8)
 
         col = Vault(**kwargs)

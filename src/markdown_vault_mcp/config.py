@@ -1,19 +1,18 @@
-"""Configuration loading from environment variables for markdown-vault-mcp.
+"""Configuration for Markdown Vault MCP.
 
-Reads env vars via :meth:`ProjectConfig.from_env` and returns a
-:class:`ProjectConfig` suitable for constructing a
-:class:`~markdown_vault_mcp.vault.Vault`.
+Composes :class:`fastmcp_pvl_core.ServerConfig` via the domain
+:class:`ProjectConfig` dataclass — never inherits.
+
+Add domain-specific fields between the CONFIG-FIELDS sentinels; copier
+update preserves that block across template updates.
 """
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 
 from fastmcp_pvl_core import ServerConfig
-from fastmcp_pvl_core import parse_bool as _parse_bool
 
 from markdown_vault_mcp.config_sections import (
     ContentConfig,
@@ -25,102 +24,29 @@ from markdown_vault_mcp.config_sections import (
     SyncConfig,
     TransferConfig,
 )
+from markdown_vault_mcp.config_sections._assembly import (
+    derive_max_chunk_chars as derive_max_chunk_chars,  # re-export: tests / scanner xref
+)
+from markdown_vault_mcp.config_sections._assembly import (
+    require_source_dir,
+    to_bool,
+)
+from markdown_vault_mcp.config_sections._assembly import (
+    to_vault_kwargs as to_vault_kwargs,  # re-export: cli / _server_deps consumers
+)
 from markdown_vault_mcp.config_sections._helpers import env
-from markdown_vault_mcp.exceptions import ConfigurationError
-from markdown_vault_mcp.git import GitWriteStrategy
-
-logger = logging.getLogger(__name__)
 
 _ENV_PREFIX = "MARKDOWN_VAULT_MCP"
-
-# Heuristic ratio converting an embedding model's token context length into a
-# conservative character budget for the chunker. English prose averages ~4
-# chars/token; 2.8 leaves headroom for token-dense (CJK, code, tables) content
-# so a derived char cap stays safely under the model's real token limit.
-_CHARS_PER_TOKEN = 2.8
-
-# Ceiling on the derived chunker char cap. Retrieval quality peaks at ~256-512
-# tokens per chunk regardless of the model's context length, so the cap is bounded
-# rather than scaled to context. 1500 chars (~535 tokens at _CHARS_PER_TOKEN) sits
-# just above that band and keeps the fastembed/ONNX fp32 path clear of the #306
-# OOM regime. Also the fallback when the model's context length is unknown.
-_MAX_CHUNK_CHARS_CEILING = 1500
-
-
-def derive_max_chunk_chars(*, context_length: int | None, override: int | None) -> int:
-    """Resolve the chunker character cap.
-
-    A positive override is used verbatim; ``-1`` opts into unbounded
-    context-scaling; otherwise the cap is the bounded default
-    ``min(_MAX_CHUNK_CHARS_CEILING, round(context * 2.8))``, falling back to
-    ``_MAX_CHUNK_CHARS_CEILING`` when the context length is unknown.
-
-    Args:
-        context_length: The embedding model's maximum input length in tokens,
-            or ``None`` when it cannot be determined.
-        override: An explicit operator-supplied char cap. A positive value is
-            used verbatim. ``-1`` opts into unbounded context-scaling (the cap
-            tracks the model's full context with no ceiling, or
-            ``_MAX_CHUNK_CHARS_CEILING`` when the context length is unknown),
-            which can OOM the fastembed/ONNX path on a long-context model.
-            ``None`` selects the bounded default
-            ``min(_MAX_CHUNK_CHARS_CEILING, round(context * 2.8))``.
-
-    Returns:
-        The character budget to pass to the chunker.
-    """
-    if override == -1:
-        # Opt-in: track the model's full context with no ceiling. Documented
-        # footgun — a long-context model can OOM the fastembed/ONNX path (#306).
-        if context_length is not None and context_length > 0:
-            return round(context_length * _CHARS_PER_TOKEN)
-        return _MAX_CHUNK_CHARS_CEILING
-    if override is not None:
-        return override
-    # Default: retrieval-optimal and OOM-safe. ``context_length > 0`` guards a
-    # degenerate 0 cap; a small-context model clamps *down* so chunks never exceed
-    # what it can ingest.
-    if context_length is not None and context_length > 0:
-        return min(_MAX_CHUNK_CHARS_CEILING, round(context_length * _CHARS_PER_TOKEN))
-    return _MAX_CHUNK_CHARS_CEILING
 
 
 @dataclass(frozen=True)
 class ProjectConfig:
-    """Configuration for a :class:`~markdown_vault_mcp.vault.Vault`.
+    """Domain config for Markdown Vault MCP.  Compose — don't inherit."""
 
-    Attributes:
-        source_dir: Root directory of the markdown vault.
-        read_only: When ``True`` (default), write operations raise
-            :exc:`~markdown_vault_mcp.exceptions.ReadOnlyError`.
-        server_name: Display name for the MCP server (default
-            ``"markdown-vault-mcp"``).
-        instructions: Optional server-level instructions surfaced to clients.
-        git: Git auth, identity, and sync cadence settings.
-        indexing: SQLite/vector index paths and frontmatter/exclusion settings.
-        embeddings: Embedding provider selection and per-provider settings.
-        search: Search ranking and snippet-truncation knobs.
-        summarize: LLM-backed ``summarize`` tool backend selection and limits.
-        sync: File-watcher and GitHub-webhook settings.
-        content: Attachment/note-read limits and template/prompt folder paths.
-        transfer: One-time upload/download transfer-link TTL and size settings.
-        disable_apps_ui: When ``True``, hides MCP-Apps UI tools
-            (``browse_vault``, ``show_context``) from the tool listing so
-            clients that don't render MCP Apps panels don't see them
-            (default ``False``).
-        server: Shared server-level configuration (transport, host/port,
-            auth, base URL, event store URL, MCP App domain) populated
-            from ``MARKDOWN_VAULT_MCP_*`` env vars by
-            :meth:`fastmcp_pvl_core.ServerConfig.from_env`.
-
-    Example::
-
-        config = ProjectConfig.from_env()
-        vault = Vault(**config.to_vault_kwargs())
-    """
+    server: ServerConfig = field(default_factory=ServerConfig)
 
     # CONFIG-FIELDS-START — domain fields; kept across copier update
-    source_dir: Path
+    source_dir: Path = Path("/data/vault")
     read_only: bool = True
     server_name: str = "markdown-vault-mcp"
     instructions: str | None = None
@@ -135,405 +61,27 @@ class ProjectConfig:
     disable_apps_ui: bool = False
     # CONFIG-FIELDS-END
 
-    # Universal server fields delegated to fastmcp_pvl_core.ServerConfig.
-    server: ServerConfig = field(default_factory=ServerConfig)
-
-    def to_vault_kwargs(self) -> dict[str, Any]:
-        """Return keyword arguments suitable for ``Vault(**kwargs)``.
-
-        Resolves the embedding provider (when ``indexing.embeddings_path``
-        is set) and creates a :class:`~markdown_vault_mcp.git.GitWriteStrategy`.
-
-        Returns:
-            Dict of keyword arguments accepted by
-            :class:`~markdown_vault_mcp.vault.Vault.__init__`.
-
-        Example::
-
-            config = ProjectConfig.from_env()
-            vault = Vault(**config.to_vault_kwargs())
-        """
-        kwargs: dict[str, Any] = {
-            "source_dir": self.source_dir,
-            "read_only": self.read_only,
-            "index_path": self.indexing.index_path,
-            "embeddings_path": self.indexing.embeddings_path,
-            "state_path": self.indexing.state_path,
-            "indexed_frontmatter_fields": self.indexing.indexed_frontmatter_fields,
-            "required_frontmatter": self.indexing.required_frontmatter,
-            "exclude_patterns": self.indexing.exclude_patterns,
-            "title_field": self.indexing.title_field,
-            "searchable_frontmatter_fields": self.indexing.searchable_frontmatter,
-            "embed_context": self.embeddings.embed_context,
-            "conventions_file": self.content.conventions_file,
-            "attachment_extensions": self.content.attachment_extensions,
-            "max_attachment_size_mb": self.content.max_attachment_size_mb,
-            "max_note_read_bytes": self.content.max_note_read_bytes,
-            "git_pull_interval_s": 0,
-            "chunks_per_file": self.search.chunks_per_file,
-            "snippet_words": self.search.snippet_words,
-            "length_downweight_alpha": self.search.length_downweight_alpha,
-            "max_chunk_words": self.search.max_chunk_words,
-            "chunk_overlap_words": self.search.chunk_overlap_words,
-            # Weight maps are stored as frozen sorted tuples on the config
-            # (#639); the Vault API takes plain dicts.
-            "folder_weights": (
-                dict(self.search.folder_weights)
-                if self.search.folder_weights is not None
-                else None
-            ),
-            "fts_weights": (
-                dict(self.search.fts_weights)
-                if self.search.fts_weights is not None
-                else None
-            ),
-        }
-
-        # Semantic search is gated by the storage path in config.indexing,
-        # while the provider lives in config.embeddings (cross-section coupling).
-        # An unrecognised provider name raises ConfigurationError from the
-        # resolver and propagates here unchanged.
-        provider = None
-        if self.indexing.embeddings_path is not None:
-            explicit_provider = (self.embeddings.provider or "").strip()
-            try:
-                from markdown_vault_mcp import providers as _providers
-
-                provider = _providers.get_embedding_provider(self)
-                kwargs["embedding_provider"] = provider
-            except (ImportError, RuntimeError) as exc:
-                if explicit_provider:
-                    # The operator explicitly chose a backend; a load failure is
-                    # a configuration error that must surface, not silently fall
-                    # back to keyword-only search.
-                    raise ConfigurationError(
-                        f"Embedding provider {explicit_provider!r} was explicitly "
-                        "configured (MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER) but "
-                        f"could not be loaded: {exc}. Fix the configuration, or "
-                        "unset the variable to fall back to auto-detection."
-                    ) from exc
-                logger.warning(
-                    "Could not auto-detect an embedding provider; semantic "
-                    "search disabled. Set MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER "
-                    "to require a specific backend.",
-                    exc_info=True,
-                )
-
-        # Derive the chunker char cap from the embedding model's token context
-        # (a token-dense chunk that fits max_chunk_words can still exceed the
-        # model context). A positive override wins verbatim; -1 opts into
-        # unbounded context-scaling (#790); otherwise the default is bounded by
-        # the ceiling, which is also the fallback when the context is unknown.
-        kwargs["max_chunk_chars"] = derive_max_chunk_chars(
-            context_length=(provider.context_length if provider is not None else None),
-            override=self.search.max_chunk_chars_override,
-        )
-        # The explicit override is also threaded straight through as the stable
-        # warm-restart key (#649): the coordinator compares it (not the derived
-        # cap) so a transient model-context read cannot trigger a rebuild.
-        kwargs["max_chunk_chars_override"] = self.search.max_chunk_chars_override
-
-        # LLM summarization is gated on a backend being configured (a key).
-        # Same posture as embeddings: an explicit provider that fails to load is
-        # a configuration error; auto-detect failure warns and disables.
-        if self.summarize.has_provider():
-            explicit_summarizer = (self.summarize.provider or "").strip()
-            try:
-                from markdown_vault_mcp import summarizer as _summarizer
-
-                kwargs["summarizer"] = _summarizer.get_summarizer(self)
-                kwargs["summarize_max_notes"] = self.summarize.max_notes
-                kwargs["summarize_max_input_chars"] = self.summarize.max_input_chars
-            except (ImportError, RuntimeError) as exc:
-                if explicit_summarizer:
-                    raise ConfigurationError(
-                        f"Summarize provider {explicit_summarizer!r} was "
-                        "explicitly configured "
-                        "(MARKDOWN_VAULT_MCP_SUMMARIZE_PROVIDER) but could not "
-                        f"be loaded: {exc}. Fix the configuration, or unset the "
-                        "variable to fall back to auto-detection."
-                    ) from exc
-                logger.warning(
-                    "Could not load a summarization backend; the summarize "
-                    "tool is disabled. Install the SDK with "
-                    "pip install 'markdown-vault-mcp[summarize]'.",
-                    exc_info=True,
-                )
-
-        if self.git.repo_url is not None:
-            git_strategy = self._build_git_strategy(
-                token=self.git.token,
-                repo_url=self.git.repo_url,
-                managed=True,
-                enable_pull=True,
-                enable_push=True,
-            )
-            kwargs["git_pull_interval_s"] = self.git.pull_interval_s
-            kwargs["git_strategy"] = git_strategy
-            kwargs["on_write"] = git_strategy
-            return kwargs
-
-        # Backward compatibility mode: token without explicit repo URL keeps
-        # pull+push semantics, using the existing local checkout's origin.
-        if self.git.token is not None:
-            git_strategy = self._build_git_strategy(
-                token=self.git.token,
-                managed=False,
-                enable_pull=True,
-                enable_push=True,
-            )
-            kwargs["git_pull_interval_s"] = self.git.pull_interval_s
-            kwargs["git_strategy"] = git_strategy
-            kwargs["on_write"] = git_strategy
-            return kwargs
-
-        # Unmanaged / commit-only mode: commit locally if repo exists, never pull/push.
-        git_strategy = self._build_git_strategy(
-            token=None,
-            managed=False,
-            enable_pull=False,
-            enable_push=False,
-        )
-        kwargs["git_strategy"] = git_strategy
-        kwargs["on_write"] = git_strategy
-        return kwargs
-
-    def _build_git_strategy(
-        self,
-        *,
-        token: str | None,
-        managed: bool,
-        enable_pull: bool,
-        enable_push: bool,
-        repo_url: str | None = None,
-    ) -> GitWriteStrategy:
-        """Build a GitWriteStrategy with the kwargs shared across all three git modes."""
-        return GitWriteStrategy(
-            token=token,
-            repo_url=repo_url,
-            managed=managed,
-            enable_pull=enable_pull,
-            enable_push=enable_push,
-            username=self.git.username,
-            push_delay_s=self.git.push_delay_s,
-            commit_name=self.git.commit_name,
-            commit_email=self.git.commit_email,
-            commit_name_claim=self.git.commit_name_claim,
-            commit_email_claim=self.git.commit_email_claim,
-            git_lfs=self.git.lfs,
-            repo_path=self.source_dir,
-        )
-
     @classmethod
-    def from_env(cls, prefix: str = _ENV_PREFIX) -> ProjectConfig:
-        """Load configuration from environment variables.
-
-        Reads the following environment variables:
-
-        **Core:**
-
-        - ``MARKDOWN_VAULT_MCP_SOURCE_DIR`` (required): path to markdown files.
-        - ``MARKDOWN_VAULT_MCP_READ_ONLY``: disable write tools; default ``true``.
-        - ``MARKDOWN_VAULT_MCP_INDEX_PATH``: SQLite index path; default in-memory.
-        - ``MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH``: embeddings directory; default
-          disabled.
-        - ``MARKDOWN_VAULT_MCP_STATE_PATH``: state file path; default
-          ``{source_dir}/.markdown_vault_mcp/state.json``.
-        - ``MARKDOWN_VAULT_MCP_INDEXED_FIELDS``: comma-separated frontmatter
-          fields to index; default none.
-        - ``MARKDOWN_VAULT_MCP_REQUIRED_FIELDS``: comma-separated required
-          frontmatter fields; default none.
-        - ``MARKDOWN_VAULT_MCP_EXCLUDE``: comma-separated glob patterns to
-          exclude; default none.
-        - ``MARKDOWN_VAULT_MCP_TITLE_FIELD``: frontmatter field used as the
-          document title; default ``title``.
-        - ``MARKDOWN_VAULT_MCP_SEARCHABLE_FIELDS``: comma-separated
-          frontmatter fields whose scalar values are keyword-searchable via
-          the FTS ``summary`` column. Setting it also activates
-          context-enriched embeddings (format v2), so it triggers a one-time
-          full re-embed even when ``EMBED_CONTEXT`` is unset; default none.
-
-        **Search ranking:**
-
-        - ``MARKDOWN_VAULT_MCP_FOLDER_WEIGHTS``: ``prefix:weight,...`` map
-          scaling result scores by folder prefix (weights > 0); default none.
-        - ``MARKDOWN_VAULT_MCP_FTS_WEIGHTS``: ``column:weight,...`` per-column
-          BM25 weights (columns ``path``, ``title``, ``folder``, ``heading``,
-          ``content``, ``summary``; weights >= 0); default all ``1.0``.
-
-        **Git:**
-
-        - ``MARKDOWN_VAULT_MCP_GIT_TOKEN``: token for git write strategy; default
-          disabled.
-        - ``MARKDOWN_VAULT_MCP_GIT_REPO_URL``: HTTPS remote URL for managed git mode;
-          when set, startup may clone into ``SOURCE_DIR``.
-        - ``MARKDOWN_VAULT_MCP_GIT_USERNAME``: username for token auth in managed
-          mode; default ``x-access-token``.
-        - ``MARKDOWN_VAULT_MCP_GIT_PUSH_DELAY_S``: seconds of idle before pushing
-          (default ``30``).  Set to ``0`` to push only on shutdown.
-        - ``MARKDOWN_VAULT_MCP_GIT_COMMIT_NAME``: git committer name for
-          auto-commits; default ``markdown-vault-mcp``.
-        - ``MARKDOWN_VAULT_MCP_GIT_COMMIT_EMAIL``: git committer email for
-          auto-commits; default ``noreply@markdown-vault-mcp``.
-        - ``MARKDOWN_VAULT_MCP_GIT_COMMIT_NAME_CLAIM``: OIDC claim key whose value
-          overrides the commit author name when an OIDC access token is present
-          (e.g. ``name``).  Unset by default (static name used for all commits).
-        - ``MARKDOWN_VAULT_MCP_GIT_COMMIT_EMAIL_CLAIM``: OIDC claim key whose value
-          overrides the commit author e-mail when an OIDC access token is present
-          (e.g. ``email``).  Unset by default.
-        - ``MARKDOWN_VAULT_MCP_GIT_LFS``: run ``git lfs pull`` during git strategy
-          init to resolve LFS pointers; default ``true``.
-        - ``MARKDOWN_VAULT_MCP_GIT_PULL_INTERVAL_S``: seconds between periodic
-          git fetch + ff-only updates (default ``600``). Set to ``0`` to disable.
-
-        **Attachments and templates:**
-
-        - ``MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS``: comma-separated list of
-          allowed attachment extensions (without dot, e.g. ``pdf,png,jpg``); use
-          ``*`` to allow all non-.md files; default: common document and image types.
-        - ``MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB``: maximum attachment size in
-          megabytes for read and write; ``0`` disables the limit; default ``1.0``.
-        - ``MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES``: maximum bytes returned by
-          full-document ``read()`` for ``.md`` files; ``read(path, section=...)``
-          bypasses the cap; ``0`` disables; default ``262144`` (256 KB).
-        - ``MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER``: relative folder path where
-          template markdown files are stored; default ``_templates``.
-        - ``MARKDOWN_VAULT_MCP_PROMPTS_FOLDER``: relative folder path where
-          user-defined prompt markdown files are stored; default ``None`` (disabled).
-        - ``MARKDOWN_VAULT_MCP_CONVENTIONS_FILE``: well-known per-folder
-          conventions filename surfaced to clients; default ``_conventions.md``;
-          set to ``none`` to disable folder conventions.
-
-        **Server identity:**
-
-        - ``MARKDOWN_VAULT_MCP_SERVER_NAME``: display name for the MCP server;
-          default ``"markdown-vault-mcp"``.
-        - ``MARKDOWN_VAULT_MCP_INSTRUCTIONS``: server-level instructions surfaced
-          to clients; default ``None``.
-
-        **Embedding providers:**
-
-        - ``MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER``: embedding provider name
-          (``"ollama"``, ``"openai"``, ``"fastembed"``); default ``None``.
-        - ``OLLAMA_HOST``: Ollama API base URL (ecosystem standard, bare env var);
-          default ``"http://localhost:11434"``.
-        - ``MARKDOWN_VAULT_MCP_OLLAMA_MODEL``: Ollama model name; default
-          ``"nomic-embed-text"``.
-        - ``MARKDOWN_VAULT_MCP_OLLAMA_CPU_ONLY``: CPU-only Ollama inference;
-          default ``false``.
-        - ``OPENAI_API_KEY``: OpenAI API key (ecosystem standard, bare env var).
-        - ``MARKDOWN_VAULT_MCP_OPENAI_BASE_URL`` or ``OPENAI_BASE_URL``:
-          OpenAI-compatible API base URL; default ``"https://api.openai.com/v1"``.
-        - ``MARKDOWN_VAULT_MCP_OPENAI_EMBEDDING_MODEL`` or
-          ``OPENAI_EMBEDDING_MODEL``: embedding model name; default
-          ``"text-embedding-3-small"``.
-        - ``MARKDOWN_VAULT_MCP_FASTEMBED_MODEL``: FastEmbed model name; default
-          ``"BAAI/bge-small-en-v1.5"``.
-        - ``MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR``: FastEmbed model cache
-          directory; default ``None``.
-        - ``MARKDOWN_VAULT_MCP_EMBED_CONTEXT``: enrich embedding input with
-          the document title and chunk heading (and, when
-          ``SEARCHABLE_FIELDS`` is set, their first-chunk preamble). Forces
-          format v2 even with no searchable fields; default ``false``.
-
-        **Transfer links:**
-
-        - ``MARKDOWN_VAULT_MCP_TRANSFER_TTL_DEFAULT_S``: token lifetime when the
-          caller omits one; default ``3600`` (1 hour).
-        - ``MARKDOWN_VAULT_MCP_TRANSFER_TTL_MAX_S``: ceiling a requested TTL is
-          clamped to; default ``86400`` (24 hours).
-        - ``MARKDOWN_VAULT_MCP_TRANSFER_MAX_UPLOAD_BYTES``: per-upload size cap in
-          bytes; default ``104857600`` (100 MiB).
-
-        Transport and auth variables (``TRANSPORT``, ``HOST``, ``PORT``,
-        ``BASE_URL``, ``AUTH_MODE``, ``OIDC_*``, ``BEARER_TOKEN``,
-        ``KV_STORE_URL`` (legacy ``EVENT_STORE_URL``), ``APP_DOMAIN``) are read
-        into ``config.server`` by
-        :meth:`fastmcp_pvl_core.ServerConfig.from_env`; see
-        ``docs/configuration.md`` for the full list.
-
-        Args:
-            prefix: Env var prefix; defaults to ``"MARKDOWN_VAULT_MCP"``.
-
-        Returns:
-            A fully populated :class:`ProjectConfig` instance.
-
-        Raises:
-            ConfigurationError: If ``MARKDOWN_VAULT_MCP_SOURCE_DIR`` is not set,
-                or if a search-ranking env var is non-numeric or out of range.
-
-        Example::
-
-            import os
-            os.environ["MARKDOWN_VAULT_MCP_SOURCE_DIR"] = "/home/user/vault"
-            config = ProjectConfig.from_env()
-            vault = Vault(**config.to_vault_kwargs())
-        """
-        raw_source_dir = (env(prefix, "SOURCE_DIR") or "").strip()
-        if not raw_source_dir:
-            raise ConfigurationError(
-                f"{prefix}_SOURCE_DIR is required but not set. "
-                "Set it to the path of your markdown vault."
-            )
-        source_dir = Path(raw_source_dir)
-        logger.debug("from_env: source_dir=%s", source_dir)
-
-        raw_read_only = env(prefix, "READ_ONLY")
-        read_only = _parse_bool(raw_read_only) if raw_read_only is not None else True
-        logger.debug("from_env: read_only=%s (raw=%r)", read_only, raw_read_only)
-
-        raw_disable_apps_ui = env(prefix, "DISABLE_APPS_UI")
-        disable_apps_ui = (
-            _parse_bool(raw_disable_apps_ui)
-            if raw_disable_apps_ui is not None
-            else False
-        )
-        logger.debug(
-            "from_env: disable_apps_ui=%s (raw=%r)",
-            disable_apps_ui,
-            raw_disable_apps_ui,
-        )
-
-        raw_server_name = (env(prefix, "SERVER_NAME") or "").strip()
-        server_name = raw_server_name or "markdown-vault-mcp"
-        logger.debug("from_env: server_name=%s", server_name)
-
-        raw_instructions = (env(prefix, "INSTRUCTIONS") or "").strip()
-        instructions: str | None = raw_instructions or None
-        logger.debug("from_env: instructions=%s", "set" if instructions else "not set")
-
-        git = GitConfig.from_env(prefix)
-        indexing = IndexingConfig.from_env(prefix)
-        embeddings = EmbeddingsConfig.from_env(prefix)
-        search = SearchConfig.from_env(prefix)
-        summarize = SummarizeConfig.from_env(prefix)
-        sync = SyncConfig.from_env(prefix)
-        content = ContentConfig.from_env(prefix, source_dir)
-        transfer = TransferConfig.from_env(prefix)
-        server = ServerConfig.from_env(prefix)
-
-        if git.token and not git.repo_url:
-            logger.warning(
-                "from_env: MARKDOWN_VAULT_MCP_GIT_TOKEN is set without "
-                "MARKDOWN_VAULT_MCP_GIT_REPO_URL. This legacy mode is deprecated; "
-                "set GIT_REPO_URL to enable explicit managed mode."
-            )
-
+    def from_env(cls) -> ProjectConfig:
+        """Load :class:`ProjectConfig` from ``MARKDOWN_VAULT_MCP_*`` env vars."""
         return cls(
-            # CONFIG-FROM-ENV-START — domain fields populated from env; kept across copier update
-            source_dir=source_dir,
-            read_only=read_only,
-            server_name=server_name,
-            instructions=instructions,
-            git=git,
-            indexing=indexing,
-            embeddings=embeddings,
-            search=search,
-            summarize=summarize,
-            sync=sync,
-            content=content,
-            transfer=transfer,
-            disable_apps_ui=disable_apps_ui,
+            server=ServerConfig.from_env(_ENV_PREFIX),
+            # CONFIG-FROM-ENV-START — domain fields from env; kept across copier update
+            source_dir=require_source_dir(env(_ENV_PREFIX, "SOURCE_DIR")),
+            read_only=to_bool(env(_ENV_PREFIX, "READ_ONLY"), default=True),
+            server_name=(env(_ENV_PREFIX, "SERVER_NAME") or "").strip()
+            or "markdown-vault-mcp",
+            instructions=(env(_ENV_PREFIX, "INSTRUCTIONS") or "").strip() or None,
+            git=GitConfig.from_env(_ENV_PREFIX),
+            indexing=IndexingConfig.from_env(_ENV_PREFIX),
+            embeddings=EmbeddingsConfig.from_env(_ENV_PREFIX),
+            search=SearchConfig.from_env(_ENV_PREFIX),
+            summarize=SummarizeConfig.from_env(_ENV_PREFIX),
+            sync=SyncConfig.from_env(_ENV_PREFIX),
+            content=ContentConfig.from_env(
+                _ENV_PREFIX, require_source_dir(env(_ENV_PREFIX, "SOURCE_DIR"))
+            ),
+            transfer=TransferConfig.from_env(_ENV_PREFIX),
+            disable_apps_ui=to_bool(env(_ENV_PREFIX, "DISABLE_APPS_UI"), default=False),
             # CONFIG-FROM-ENV-END
-            server=server,
         )

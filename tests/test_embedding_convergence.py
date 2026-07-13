@@ -377,7 +377,7 @@ class TestLifespanEmbeddingConvergence:
     def test_warm_boot_lifespan_converges_offline_add(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from markdown_vault_mcp import config as config_mod
+        from markdown_vault_mcp import _server_deps as deps_mod
         from markdown_vault_mcp.server import make_server
 
         provider = MockEmbeddingProvider()
@@ -397,17 +397,15 @@ class TestLifespanEmbeddingConvergence:
 
         # Inject the mock provider into to_vault_kwargs so the lifespan
         # submits the boot BuildEmbeddings job without a real provider.
-        original_to_kwargs = config_mod.ProjectConfig.to_vault_kwargs
+        original_to_kwargs = deps_mod.to_vault_kwargs
 
-        def patched_to_kwargs(self: Any) -> dict[str, Any]:
-            kw = original_to_kwargs(self)
+        def patched_to_kwargs(config: Any) -> dict[str, Any]:
+            kw = original_to_kwargs(config)
             kw["embedding_provider"] = MockEmbeddingProvider()
             kw["embeddings_path"] = tmp_path / "vectors"
             return kw
 
-        monkeypatch.setattr(
-            config_mod.ProjectConfig, "to_vault_kwargs", patched_to_kwargs
-        )
+        monkeypatch.setattr(deps_mod, "to_vault_kwargs", patched_to_kwargs)
         server = make_server()
 
         async def _run() -> tuple[dict[str, Any], dict[str, Any], list[str]]:

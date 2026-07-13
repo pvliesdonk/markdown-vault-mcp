@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 
 from fastmcp_pvl_core import parse_bool
 
 from markdown_vault_mcp.exceptions import ConfigurationError
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -57,9 +60,19 @@ class GitConfig:
         from markdown_vault_mcp.config_sections._helpers import env, env_float, env_int
 
         raw_lfs = env(prefix, "GIT_LFS")
+        token = env(prefix, "GIT_TOKEN") or None
+        repo_url = env(prefix, "GIT_REPO_URL") or None
+        if token and not repo_url:
+            logger.warning(
+                "from_env: %s_GIT_TOKEN is set without %s_GIT_REPO_URL. This "
+                "legacy mode is deprecated; set GIT_REPO_URL to enable explicit "
+                "managed mode.",
+                prefix,
+                prefix,
+            )
         return cls(
-            token=env(prefix, "GIT_TOKEN") or None,
-            repo_url=env(prefix, "GIT_REPO_URL") or None,
+            token=token,
+            repo_url=repo_url,
             username=env(prefix, "GIT_USERNAME") or "x-access-token",
             push_delay_s=env_float(prefix, "GIT_PUSH_DELAY_S", 30.0),
             commit_name=env(prefix, "GIT_COMMIT_NAME") or "markdown-vault-mcp",

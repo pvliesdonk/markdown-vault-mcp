@@ -19,7 +19,7 @@ from fastmcp import Client
 if TYPE_CHECKING:
     from pathlib import Path
 
-from markdown_vault_mcp.config import ProjectConfig
+from markdown_vault_mcp.config import ProjectConfig, to_vault_kwargs
 from markdown_vault_mcp.config_sections import SummarizeConfig
 from markdown_vault_mcp.exceptions import ConfigurationError
 from markdown_vault_mcp.server import make_server
@@ -427,7 +427,7 @@ class TestToVaultKwargsSummarizer:
             SummarizeConfig(anthropic_api_key="k", max_notes=9, max_input_chars=1234),
             tmp_path,
         )
-        kwargs = cfg.to_vault_kwargs()
+        kwargs = to_vault_kwargs(cfg)
         assert isinstance(kwargs["summarizer"], AnthropicSummarizer)
         assert kwargs["summarize_max_notes"] == 9
         assert kwargs["summarize_max_input_chars"] == 1234
@@ -440,19 +440,19 @@ class TestToVaultKwargsSummarizer:
             SummarizeConfig(provider="anthropic", anthropic_api_key="k"), tmp_path
         )
         with pytest.raises(ConfigurationError, match="explicitly configured"):
-            cfg.to_vault_kwargs()
+            to_vault_kwargs(cfg)
 
     def test_autodetect_load_failure_disables_silently(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setitem(sys.modules, "anthropic", None)  # force ImportError
         cfg = _config_with(SummarizeConfig(anthropic_api_key="k"), tmp_path)
-        kwargs = cfg.to_vault_kwargs()
+        kwargs = to_vault_kwargs(cfg)
         assert "summarizer" not in kwargs
 
     def test_no_provider_no_summarizer(self, tmp_path: Path) -> None:
         cfg = _config_with(SummarizeConfig(), tmp_path)
-        kwargs = cfg.to_vault_kwargs()
+        kwargs = to_vault_kwargs(cfg)
         assert "summarizer" not in kwargs
 
 
