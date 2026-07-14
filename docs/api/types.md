@@ -1,9 +1,9 @@
 # Types
 
-All data types returned by the `Vault` API are importable from the top-level `markdown_vault_mcp` package.
+All data types returned by the `Vault` API are importable from the `markdown_vault_mcp.types` module.
 
 ```python
-from markdown_vault_mcp import NoteContent, GroupedResult, SectionHit, NoteContext
+from markdown_vault_mcp.types import NoteContent, GroupedResult, SectionHit, NoteContext
 ```
 
 ## Document Types

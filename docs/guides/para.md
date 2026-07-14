@@ -197,7 +197,7 @@ Use the create_from_template prompt with template_name="inbox"
 **Programmatically (scripting escape hatch):**
 
 ```python
-from markdown_vault_mcp import Vault
+from markdown_vault_mcp.vault import Vault
 
 vault = Vault(source_dir="/path/to/vault")
 vault.writer.write(
@@ -303,7 +303,7 @@ For scripting outside the prompt:
 
 ```python
 from datetime import date
-from markdown_vault_mcp import Vault
+from markdown_vault_mcp.vault import Vault
 
 vault = Vault(source_dir="/path/to/vault")
 

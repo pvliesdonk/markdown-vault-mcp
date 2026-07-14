@@ -6,7 +6,8 @@ from typing import Literal
 # across the whole *-mcp server series — and re-exported here as the project's
 # one canonical config error (#638). env_int/env_float(strict=...) raise it,
 # and config validation + git-remote checks raise the same catchable type, so
-# `markdown_vault_mcp.ConfigurationError` and the pvl-core class are identical.
+# `markdown_vault_mcp.exceptions.ConfigurationError` and the pvl-core class are
+# identical.
 from fastmcp_pvl_core import ConfigurationError as ConfigurationError
 
 

@@ -118,7 +118,7 @@ Installs the MCP server and the `vault-workflow` skill. See the [Claude Code plu
 
 ```python
 from pathlib import Path
-from markdown_vault_mcp import Vault
+from markdown_vault_mcp.vault import Vault
 
 vault = Vault(source_dir=Path("/path/to/vault"))
 vault.index.build_index()
@@ -641,7 +641,7 @@ When `copier update` introduces new dependencies, CI runs `uv sync --frozen` whi
   ```
 
   `MARKDOWN_VAULT_MCP_CHUNKS_PER_FILE` replaces `MARKDOWN_VAULT_MCP_CHUNKS_PER_DOC`.
-  `SimilarItem` is removed; use `GroupedResult` (also re-exported at the package level).
+  `SimilarItem` is removed; use `GroupedResult` (from `markdown_vault_mcp.types`).
 - `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB` default lowered from **10 MB**
   to **1 MB**.  Most LLM contexts can't survive a 10 MB base64-encoded
   attachment; the old default was a silent context-blow-up.  If you have

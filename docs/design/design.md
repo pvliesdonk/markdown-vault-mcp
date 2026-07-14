@@ -1319,7 +1319,7 @@ class GroupedResult:
 @dataclass
 class SearchResult:
     """Legacy single-chunk shape.  Retained for backward API compatibility
-    (exported via ``__all__``); new code returns GroupedResult.  Not
+    (importable from ``markdown_vault_mcp.types``); new code returns GroupedResult.  Not
     directly returned by search()/get_similar()/get_context after v2.0.0.
     See GroupedResult."""
     path: str                         # document relative path
@@ -1632,13 +1632,16 @@ The MCP tool `get_connection_path` returns
 
 ## Module Design
 
-### `__init__.py`: Lazy Package Root (PEP 562, #665)
+### `__init__.py`: Minimal Package Root (#665, #903)
 
-The package root resolves its public attributes lazily via module-level
-``__getattr__``/``__dir__`` (PEP 562) from an explicit name -> submodule map
-(`_EXPORTS`), instead of eagerly importing every exporting submodule. The
-public API is unchanged: ``from markdown_vault_mcp import Vault`` still works,
-``__all__`` lists the same names, and a test pins ``_EXPORTS`` == ``__all__``.
+The package root is the bare template skeleton — a module docstring and
+``__version__`` — with no imports and no re-exports (it conforms to the
+``fastmcp-server-template`` skeleton, #903). Library consumers import from the
+defining submodule, e.g. ``from markdown_vault_mcp.vault import Vault`` and
+``from markdown_vault_mcp.config import ProjectConfig``; the root no longer
+re-exports these names. (Before #903 the root re-exported them lazily via a
+PEP 562 ``__getattr__`` map; that machinery existed only to keep the rich root
+import-light and was removed with it.)
 
 Rationale: an eager root pulled the full dependency tree (``config`` ->
 ``fastmcp_pvl_core`` -> ``beartype``; ``frontmatter`` -> PyYAML) into *any*
@@ -1647,7 +1650,7 @@ with ``importlib.util.find_spec`` inside a sys.modules-restoring context, so
 those dependencies were imported and then purged while their process-global
 side effects (beartype's claw entry in ``sys.path_hooks``, PyYAML's cached
 single-phase-init C extension) survived, breaking every subsequent import in
-the process. The package root must stay import-light: it may not
+the process. A bare root stays import-light by construction: it may not
 import (directly or transitively) ``fastmcp_pvl_core``, ``beartype``,
 ``frontmatter``, or ``yaml``. Regression tests live in
 ``tests/test_package_imports.py``.

@@ -112,7 +112,7 @@ markdown-vault-mcp serve &
 Or programmatically:
 
 ```python
-from markdown_vault_mcp import Vault
+from markdown_vault_mcp.vault import Vault
 
 vault = Vault(source_dir="/path/to/vault")
 vault.writer.write(

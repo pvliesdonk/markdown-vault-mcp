@@ -9,7 +9,8 @@ The `git` module provides:
 
 ```python
 from pathlib import Path
-from markdown_vault_mcp import Vault, GitWriteStrategy
+from markdown_vault_mcp.git import GitWriteStrategy
+from markdown_vault_mcp.vault import Vault
 
 strategy = GitWriteStrategy(
     token="ghp_your_token",

@@ -1,6 +1,16 @@
+import importlib
 import inspect
 
-import markdown_vault_mcp
+# The public API submodules (the package root is a bare skeleton since #903;
+# consumers import from these directly). Every public class/function they
+# export must carry a docstring.
+_PUBLIC_API_MODULES = (
+    "markdown_vault_mcp.config",
+    "markdown_vault_mcp.exceptions",
+    "markdown_vault_mcp.git",
+    "markdown_vault_mcp.types",
+    "markdown_vault_mcp.vault",
+)
 
 
 def _public_members(obj):
@@ -13,16 +23,25 @@ def _public_members(obj):
 
 
 def test_all_exported_symbols_have_docstrings():
-    """Every class and function in __all__ must have a docstring."""
+    """Every public class/function in the public-API submodules has a docstring."""
     missing = []
-    for name in markdown_vault_mcp.__all__:
-        obj = getattr(markdown_vault_mcp, name)
-        # Only check classes and functions; bare type aliases (Callable[...] etc.)
-        # cannot carry docstrings in the traditional sense
-        if not (inspect.isclass(obj) or inspect.isfunction(obj)):
-            continue
-        if obj.__doc__ is None:
-            missing.append(name)
+    for module_name in _PUBLIC_API_MODULES:
+        module = importlib.import_module(module_name)
+        for name, obj in _public_members(module):
+            # Only check classes and functions; bare type aliases (Callable[...]
+            # etc.) cannot carry docstrings.
+            if not (inspect.isclass(obj) or inspect.isfunction(obj)):
+                continue
+            # Own this symbol if it is defined in this module OR a subpackage of
+            # it (``markdown_vault_mcp.git`` is a package that re-exports
+            # GitWriteStrategy / git_write_strategy from ``git.strategy``), so a
+            # bare ``__module__ == module_name`` filter would drop them. Symbols
+            # merely imported from an unrelated module are checked where defined.
+            owner = getattr(obj, "__module__", "") or ""
+            if owner != module_name and not owner.startswith(module_name + "."):
+                continue
+            if obj.__doc__ is None:
+                missing.append(f"{module_name}.{name}")
     assert not missing, f"Missing docstrings: {missing}"
 
 

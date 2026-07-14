@@ -6,7 +6,7 @@ The `Vault` class is the primary public API for the library. MCP tools, CLI comm
 
 ```python
 from pathlib import Path
-from markdown_vault_mcp import Vault
+from markdown_vault_mcp.vault import Vault
 
 # Basic read-only vault
 vault = Vault(source_dir=Path("/path/to/vault"))

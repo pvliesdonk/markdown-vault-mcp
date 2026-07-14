@@ -1,16 +1,22 @@
-"""Regression tests for the lazy (PEP 562) package root (#665, Problem 3).
+"""Regression tests for the minimal package root (#665, Problem 3; #903).
+
+The package root (``__init__.py``) is a bare template skeleton — a module
+docstring and ``__version__`` — with no imports and no re-exports. Library
+consumers import from the defining submodules (``from
+markdown_vault_mcp.vault import Vault``), not the package root.
 
 ``pytest --cov=markdown_vault_mcp.<submodule>`` used to kill the whole test
 session at conftest load with ``ImportError: cannot import name 'claw_state'
 from partially initialized module 'beartype.claw._clawstate'``: coverage.py
 resolves dotted source packages with ``importlib.util.find_spec`` inside a
-sys.modules-restoring context (``coverage.misc.sys_modules_saved``), and the
+sys.modules-restoring context (``coverage.misc.sys_modules_saved``), and an
 eager package ``__init__`` dragged the full dependency tree (``config`` ->
 ``fastmcp_pvl_core`` -> ``beartype``, plus ``frontmatter`` -> PyYAML) into
 that disposable import. The purge on context exit removed beartype's modules
 but left its claw import hook in ``sys.path_hooks``, so the next import
-routed through an orphaned hook into a circular re-import. These tests pin
-the fix: importing (or find_spec-ing) the package root must stay light.
+routed through an orphaned hook into a circular re-import. The minimal root
+keeps the fix by construction; these tests pin it: importing (or
+find_spec-ing) the package root must stay light.
 """
 
 from __future__ import annotations
@@ -31,36 +37,27 @@ import markdown_vault_mcp
 _HEAVY = "{'beartype', 'fastmcp_pvl_core', 'frontmatter', 'yaml'}"
 
 
-class TestLazyExports:
-    def test_all_public_attributes_resolve(self):
-        """Every name in __all__ resolves via the lazy __getattr__."""
-        for name in markdown_vault_mcp.__all__:
-            assert getattr(markdown_vault_mcp, name) is not None
+class TestMinimalRoot:
+    """The package root is a bare skeleton; the public API lives in submodules."""
 
-    def test_exports_map_matches_all(self):
-        """The lazy export map and __all__ stay in sync."""
-        assert set(markdown_vault_mcp._EXPORTS) == set(markdown_vault_mcp.__all__)
+    def test_version_is_a_string(self):
+        """``markdown_vault_mcp.__version__`` is exposed as a string."""
+        assert isinstance(markdown_vault_mcp.__version__, str)
 
-    def test_unknown_attribute_raises(self):
-        """Unknown attributes raise AttributeError, as a normal module would."""
-        with pytest.raises(AttributeError, match="no attribute 'nope'"):
-            _ = markdown_vault_mcp.nope
+    def test_public_api_lives_in_submodules_not_the_root(self):
+        """Classes are imported from their defining submodule, not the root.
 
-    def test_dir_includes_public_names(self):
-        """dir() advertises the lazily resolved public surface."""
-        listing = dir(markdown_vault_mcp)
-        for name in markdown_vault_mcp.__all__:
-            assert name in listing
+        The pre-#903 lazy root re-exported ``Vault``/``ProjectConfig``/etc.;
+        the minimal root does not, so a root import must fail while the
+        submodule import succeeds.
+        """
+        from markdown_vault_mcp.config import ProjectConfig  # noqa: F401
+        from markdown_vault_mcp.vault import Vault
 
-    def test_resolved_attribute_is_cached_in_module_dict(self):
-        """First resolution binds the name into the module __dict__ so later
-        lookups bypass __getattr__ entirely."""
-        name = "Vault"
-        vars(markdown_vault_mcp).pop(name, None)
-        assert name not in vars(markdown_vault_mcp)
-        first = getattr(markdown_vault_mcp, name)
-        assert name in vars(markdown_vault_mcp)
-        assert vars(markdown_vault_mcp)[name] is first
+        with pytest.raises(ImportError):
+            from markdown_vault_mcp import (
+                Vault,  # type: ignore[attr-defined]  # noqa: F401
+            )
 
 
 class TestImportIsLight:
