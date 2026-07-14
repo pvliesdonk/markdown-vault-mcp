@@ -127,9 +127,20 @@ def make_server(
     from markdown_vault_mcp._http_logging import quiet_http_loggers
     from markdown_vault_mcp._icons import _SERVER_ICON
     from markdown_vault_mcp._instructions import build_default_instructions
+    from markdown_vault_mcp._server_prompts import register_domain_prompts
     from markdown_vault_mcp.domain import set_pending_config
 
     is_read_only = config.read_only
+
+    # Config-dependent prompts (create_from_template + user prompts): registered
+    # here, not at the template-mandated no-arg register_prompts(mcp) above, so
+    # their folders come from this already-loaded config rather than a second env
+    # read (#609). User prompts silently override the built-ins registered above.
+    register_domain_prompts(
+        mcp,
+        config.content.templates_folder,
+        config.content.prompts_folder,
+    )
 
     # Hand the already-loaded config to the no-arg server_lifespan's Service so it
     # builds the vault from this config, not a second from_env() read (#609).
@@ -152,7 +163,7 @@ def make_server(
         )
 
     logger.info(
-        "Vault startup: mode=%s vault=%s embeddings=%s",
+        "vault_startup mode=%s vault=%s embeddings=%s",
         "read-only" if is_read_only else "read-write",
         config.source_dir,
         "enabled" if config.indexing.embeddings_path else "disabled",

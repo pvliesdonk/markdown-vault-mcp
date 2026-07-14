@@ -752,7 +752,7 @@ class TestRegisterPromptsPerPromptGuard:
         from fastmcp import FastMCP
 
         from markdown_vault_mcp import _server_prompts
-        from markdown_vault_mcp._server_prompts import register_prompts
+        from markdown_vault_mcp._server_prompts import register_domain_prompts
 
         monkeypatch.setattr(
             _server_prompts,
@@ -772,7 +772,9 @@ class TestRegisterPromptsPerPromptGuard:
         with caplog.at_level(
             logging.WARNING, logger="markdown_vault_mcp._server_prompts"
         ):
-            register_prompts(mcp, templates_folder=None, prompts_folder="/whatever")
+            register_domain_prompts(
+                mcp, templates_folder=None, prompts_folder="/whatever"
+            )
 
         assert "User prompt 'bad' failed to register" in caplog.text
         async with Client(mcp) as client:
@@ -806,7 +808,7 @@ class TestRegisterPromptsPerPromptGuard:
         with caplog.at_level(
             logging.ERROR, logger="markdown_vault_mcp._server_prompts"
         ):
-            register_prompts(mcp, templates_folder=None, prompts_folder=None)
+            register_prompts(mcp)
 
         assert "Built-in prompt 'summarize' failed to register" in caplog.text
         assert "packaging defect" in caplog.text
@@ -827,7 +829,7 @@ class TestRegisterPromptsPerPromptGuard:
         from fastmcp import FastMCP
 
         from markdown_vault_mcp import _server_prompts
-        from markdown_vault_mcp._server_prompts import register_prompts
+        from markdown_vault_mcp._server_prompts import register_domain_prompts
 
         monkeypatch.setattr(
             _server_prompts,
@@ -856,7 +858,9 @@ class TestRegisterPromptsPerPromptGuard:
         with caplog.at_level(
             logging.WARNING, logger="markdown_vault_mcp._server_prompts"
         ):
-            register_prompts(mcp, templates_folder=None, prompts_folder="/whatever")
+            register_domain_prompts(
+                mcp, templates_folder=None, prompts_folder="/whatever"
+            )
 
         assert "cannot form a valid signature" in caplog.text
         assert "failed to register" not in caplog.text
@@ -876,7 +880,7 @@ class TestRegisterPromptsPerPromptGuard:
         from fastmcp import FastMCP
 
         from markdown_vault_mcp import _server_prompts
-        from markdown_vault_mcp._server_prompts import register_prompts
+        from markdown_vault_mcp._server_prompts import register_domain_prompts
 
         original_build = _server_prompts._build_prompt_fn
 
@@ -918,7 +922,9 @@ class TestRegisterPromptsPerPromptGuard:
         with caplog.at_level(
             logging.WARNING, logger="markdown_vault_mcp._server_prompts"
         ):
-            register_prompts(mcp, templates_folder=None, prompts_folder="/whatever")
+            register_domain_prompts(
+                mcp, templates_folder=None, prompts_folder="/whatever"
+            )
 
         assert "User prompt 'bad' failed to register" in caplog.text
         async with Client(mcp) as client:
@@ -972,7 +978,7 @@ class TestRegisterPromptsPerPromptGuard:
         with caplog.at_level(
             logging.ERROR, logger="markdown_vault_mcp._server_prompts"
         ):
-            register_prompts(mcp, templates_folder=None, prompts_folder=None)
+            register_prompts(mcp)
 
         assert "Built-in prompt 'summarize' failed to register" in caplog.text
         assert "packaging defect" in caplog.text

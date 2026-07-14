@@ -213,6 +213,60 @@ class TestDisableAppsUi:
         assert "read" in names
 
 
+class TestServerIcon:
+    """Guard the post-construction server-icon attachment in DOMAIN-WIRING.
+
+    ``make_server`` writes the low-level ``mcp._mcp_server.icons`` field because
+    FastMCP's public ``icons`` property is read-only and the template-skeleton
+    constructor carries no icons. This test fails loudly if a FastMCP upgrade
+    renames that field, rather than silently dropping the icon.
+    """
+
+    @pytest.mark.usefixtures("_mcp_env")
+    def test_server_icon_attached(self) -> None:
+        from markdown_vault_mcp._icons import _SERVER_ICON
+
+        server = make_server()
+        assert server.icons  # non-empty
+        assert server.icons == _SERVER_ICON
+
+
+class TestConfigDrivenPrompts:
+    """make_server(config=X) resolves prompt folders from X, not the environment.
+
+    Regression guard for the server.py de-fork: config-dependent prompts are
+    registered in DOMAIN-WIRING from the passed config's ``ContentConfig`` (via
+    ``register_domain_prompts``), never a second environment read — so a
+    programmatically-built config whose ``prompts_folder`` differs from the
+    environment is honored (#901 review).
+    """
+
+    @pytest.mark.usefixtures("_mcp_env")
+    async def test_user_prompt_resolved_from_provided_config_not_env(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from markdown_vault_mcp.config import ProjectConfig
+        from markdown_vault_mcp.config_sections.content import ContentConfig
+
+        # env deliberately carries NO prompts folder ...
+        monkeypatch.delenv("MARKDOWN_VAULT_MCP_PROMPTS_FOLDER", raising=False)
+        # ... while the provided config points at one holding a user prompt. If
+        # register_domain_prompts read the env instead of this config, "greet"
+        # would be absent.
+        prompts_dir = tmp_path / "cfg_prompts"
+        prompts_dir.mkdir()
+        (prompts_dir / "greet.md").write_text("Hello from config", encoding="utf-8")
+        config = ProjectConfig(
+            source_dir=tmp_path,
+            content=ContentConfig(prompts_folder=str(prompts_dir)),
+        )
+
+        server = make_server(config=config)
+        async with Client(server) as client:
+            names = {p.name for p in await client.list_prompts()}
+        assert "greet" in names
+
+
 class TestGithubWebhookWiring:
     """Cover the GitHub-webhook custom-route gate in make_server's DOMAIN-WIRING."""
 
