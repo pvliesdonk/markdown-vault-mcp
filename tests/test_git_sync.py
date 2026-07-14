@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 from fastmcp import Client
 
-from markdown_vault_mcp import _server_deps
+from markdown_vault_mcp import domain
 from markdown_vault_mcp.server import make_server
 from tests.fixtures.git import _run_git
 
@@ -349,7 +349,7 @@ class TestGitSync:
         async with Client(server) as client:
             # Lifespan has set the singleton; monkey-patch reindex BEFORE
             # the tool call so the post-pull bookkeeping path raises.
-            vault = _server_deps.get_vault_singleton()
+            vault = domain.get_vault_singleton()
 
             def _failing_reindex() -> None:
                 raise RuntimeError("simulated reindex failure")
@@ -403,7 +403,7 @@ class TestGitSync:
 
         server = make_server()
         async with Client(server) as client:
-            vault = _server_deps.get_vault_singleton()
+            vault = domain.get_vault_singleton()
             strategy = vault._git_strategy
 
             push_called = {"count": 0}

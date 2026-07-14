@@ -35,7 +35,7 @@ from markdown_vault_mcp.config import (
 
 from ._icons import _SERVER_ICON
 from ._server_apps import register_apps
-from ._server_deps import make_vault_lifespan
+from ._server_deps import server_lifespan
 from ._server_prompts import register_prompts
 from ._server_resources import register_resources
 from ._server_tools import register_tools
@@ -185,7 +185,7 @@ def make_server(
         server_name,
         instructions=instructions,
         icons=_SERVER_ICON,
-        lifespan=make_vault_lifespan(config),
+        lifespan=server_lifespan,
         auth=auth,
     )
 
@@ -223,6 +223,11 @@ def make_server(
     # DOMAIN-WIRING-START — project-specific wiring (custom HTTP routes,
     # transforms, mode toggles, alternative middleware, additional registrations);
     # kept across copier update.
+    # Hand the already-loaded config to the no-arg server_lifespan's Service so it
+    # builds the vault from this config, not a second from_env() read (#609).
+    from markdown_vault_mcp.domain import set_pending_config
+
+    set_pending_config(config)
     # Quiet httpx/httpcore per-request INFO on the serve path (#792); the CLI's
     # index/search/reindex commands do the same before their own vault builds.
     from markdown_vault_mcp._http_logging import quiet_http_loggers

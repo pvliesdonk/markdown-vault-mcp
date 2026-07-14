@@ -40,7 +40,7 @@ from markdown_vault_mcp.types import GraphView
 from markdown_vault_mcp.vault import Vault
 
 from ._icons import _TOOL_ICONS
-from ._server_deps import get_vault
+from .domain import get_vault
 
 logger = logging.getLogger(__name__)
 

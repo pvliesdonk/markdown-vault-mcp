@@ -18,7 +18,7 @@ from markdown_vault_mcp.utils.text import decode_utf8
 from markdown_vault_mcp.vault import Vault
 
 from .._icons import _TOOL_ICONS
-from .._server_deps import get_vault
+from ..domain import get_vault
 from ._common import attach_conventions
 
 logger = logging.getLogger(__name__)

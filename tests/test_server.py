@@ -3634,7 +3634,7 @@ class TestIndexStaleSignal:
     async def test_stale_true_when_writer_has_pending_dirty_paths(
         self,
     ) -> None:
-        from markdown_vault_mcp._server_deps import get_vault_singleton
+        from markdown_vault_mcp.domain import get_vault_singleton
 
         server = make_server()
         async with Client(server) as client:
@@ -3673,7 +3673,7 @@ class TestIndexStaleSignal:
     async def test_wait_for_pending_writes_timeout_reports_stale_true(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from markdown_vault_mcp._server_deps import get_vault_singleton
+        from markdown_vault_mcp.domain import get_vault_singleton
 
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S", "0.05")
         server = make_server()
@@ -3702,7 +3702,7 @@ class TestIndexStaleSignal:
         because a non-empty dirty set short-circuits the OR on is_drained."""
         import itertools
 
-        from markdown_vault_mcp._server_deps import get_vault_singleton
+        from markdown_vault_mcp.domain import get_vault_singleton
 
         server = make_server()
         async with Client(server) as client:
@@ -3747,7 +3747,7 @@ class TestIndexStaleSignal:
     ) -> None:
         """Every index-querying tool independently surfaces index_stale in
         ``_meta``; catch copy-paste regressions across the whole set."""
-        from markdown_vault_mcp._server_deps import get_vault_singleton
+        from markdown_vault_mcp.domain import get_vault_singleton
 
         server = make_server()
         async with Client(server) as client:
@@ -3862,7 +3862,7 @@ class TestResourceStaleSignal:
     @pytest.mark.usefixtures("_mcp_env")
     async def test_resource_meta_index_stale_true_when_writer_dirty(self) -> None:
         """A non-idle writer flips index_stale True in the resource _meta."""
-        from markdown_vault_mcp._server_deps import get_vault_singleton
+        from markdown_vault_mcp.domain import get_vault_singleton
 
         server = make_server()
         async with Client(server) as client:
@@ -3885,7 +3885,7 @@ class TestResourceStaleSignal:
         True via the generation-counter observation point — the resource case."""
         import itertools
 
-        from markdown_vault_mcp._server_deps import get_vault_singleton
+        from markdown_vault_mcp.domain import get_vault_singleton
 
         server = make_server()
         async with Client(server) as client:
@@ -3966,3 +3966,39 @@ def test_make_server_reads_config_from_env_once_when_not_provided() -> None:
     with patch.object(ProjectConfig, "from_env", wraps=ProjectConfig.from_env) as spy:
         make_server()
     spy.assert_called_once()
+
+
+@pytest.mark.usefixtures("_mcp_env")
+async def test_lifespan_uses_provided_config_not_a_second_env_read(
+    tmp_path: Path,
+) -> None:
+    """The provided config drives the vault lifespan too (#609/#902).
+
+    make_server hands its already-loaded config to the no-arg server_lifespan via
+    set_pending_config, so ``Service()`` builds the vault from it and never
+    re-reads the environment at server start — including on a ref-counted lifespan
+    RE-ENTRY (a new session opening after all sessions closed rebuilds the vault),
+    which is why the staged config must survive the first construction.
+    """
+    from unittest.mock import patch
+
+    from fastmcp import Client
+
+    from markdown_vault_mcp.config import ProjectConfig
+    from markdown_vault_mcp.domain import get_vault_singleton
+
+    (tmp_path / "note.md").write_text("# n\n\nbody", encoding="utf-8")
+    config = ProjectConfig(source_dir=tmp_path, read_only=False)
+    server = make_server(config=config)
+
+    def _boom(*_a: object, **_kw: object) -> ProjectConfig:
+        raise AssertionError("lifespan re-read env instead of the provided config")
+
+    with patch.object(ProjectConfig, "from_env", _boom):
+        # First lifespan entry.
+        async with Client(server):
+            assert get_vault_singleton() is not None
+        # Second, sequential entry: the lifespan re-enters and rebuilds Service();
+        # the staged config must still be honoured (no from_env re-read).
+        async with Client(server):
+            assert get_vault_singleton() is not None

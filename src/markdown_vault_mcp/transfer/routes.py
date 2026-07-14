@@ -13,7 +13,7 @@ from urllib.parse import quote
 from starlette.background import BackgroundTask
 from starlette.responses import JSONResponse, Response
 
-from markdown_vault_mcp._server_deps import get_vault_singleton
+from markdown_vault_mcp.domain import get_vault_singleton
 from markdown_vault_mcp.utils.text import decode_utf8
 
 if TYPE_CHECKING:

@@ -11,8 +11,8 @@ from markdown_vault_mcp.utils.serialization import toc_payload
 from markdown_vault_mcp.vault import Vault
 
 from .._icons import _TOOL_ICONS
-from .._server_deps import get_vault
 from .._server_queryable import needs_queryable
+from ..domain import get_vault
 from ._common import _maybe_wait_for_drain, _staleness_result, attach_conventions
 
 

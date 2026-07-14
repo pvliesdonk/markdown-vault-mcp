@@ -429,16 +429,27 @@ def test_lifespan_yields_quickly_on_cold_start(tmp_path: Path) -> None:
     """
     import asyncio
     import time
+    from contextlib import asynccontextmanager
 
-    from markdown_vault_mcp._server_deps import make_vault_lifespan
     from markdown_vault_mcp.config import ProjectConfig
+    from markdown_vault_mcp.domain import Service
 
     # Construct a cold vault (many files, no existing DB).
     for i in range(50):
         (tmp_path / f"n{i}.md").write_text(f"# n{i}\n\nhello", encoding="utf-8")
 
     config = ProjectConfig(source_dir=tmp_path, read_only=False)
-    lifespan_fn = make_vault_lifespan(config)
+
+    # Config-driven equivalent of the no-arg production server_lifespan (#902):
+    # drive Service(config) so the cold-boot yield timing is measured directly.
+    @asynccontextmanager
+    async def lifespan_fn(_mcp: object):  # type: ignore[no-untyped-def]
+        service = Service(config)
+        await service.start()
+        try:
+            yield {"vault": service.vault, "service": service}
+        finally:
+            await service.stop()
 
     async def _run() -> None:
         start = time.monotonic()

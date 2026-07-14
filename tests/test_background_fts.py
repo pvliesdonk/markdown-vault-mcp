@@ -433,7 +433,7 @@ def test_lifespan_cold_start_handshake_does_not_block_on_build(
 
     server = make_server()
 
-    from markdown_vault_mcp._server_deps import get_vault_singleton
+    from markdown_vault_mcp.domain import get_vault_singleton
 
     async def _run() -> tuple[bool, dict[str, Any]]:
         async with Client(server) as client:
@@ -527,9 +527,9 @@ def test_lifespan_cold_start_with_embeddings_submits_both_jobs(
 
     # Inject a MockEmbeddingProvider into to_vault_kwargs so that
     # kwargs["embedding_provider"] is non-None without needing a real provider.
-    # Patch it where the lifespan uses it (_server_deps imports the free
-    # function into its namespace), not on ProjectConfig (it's no longer a method).
-    from markdown_vault_mcp import _server_deps as deps_mod
+    # Patch it where the lifespan uses it (domain.Service.start calls the free
+    # function), not on ProjectConfig (it's no longer a method).
+    from markdown_vault_mcp import domain as deps_mod
 
     original_to_kwargs = deps_mod.to_vault_kwargs
 
@@ -555,7 +555,7 @@ def test_lifespan_cold_start_with_embeddings_submits_both_jobs(
     server = make_server()
     caplog.set_level(logging.INFO)
 
-    from markdown_vault_mcp._server_deps import get_vault_singleton
+    from markdown_vault_mcp.domain import get_vault_singleton
 
     async def _run() -> tuple[bool, list[str]]:
         async with Client(server):

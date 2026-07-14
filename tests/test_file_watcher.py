@@ -45,7 +45,30 @@ from markdown_vault_mcp._file_watcher import (
     _WatchRoot,
     should_start_file_watcher,
 )
-from markdown_vault_mcp._server_deps import make_vault_lifespan
+
+
+def _make_test_lifespan(config: object) -> object:
+    """A config-driven lifespan wrapping the domain ``Service`` (#902).
+
+    The production ``server_lifespan`` is no-arg (``Service()`` reads env); these
+    integration tests need a specific config, so they drive ``Service(config)``
+    through an equivalent async context manager yielding the same context shape.
+    """
+    from contextlib import asynccontextmanager
+
+    from markdown_vault_mcp.domain import Service
+
+    @asynccontextmanager
+    async def _lifespan(_mcp: object):  # type: ignore[no-untyped-def]
+        service = Service(config)  # type: ignore[arg-type]
+        await service.start()
+        try:
+            yield {"vault": service.vault, "service": service}
+        finally:
+            await service.stop()
+
+    return _lifespan
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -555,7 +578,7 @@ def test_lifespan_starts_and_stops_watcher_when_no_git(tmp_path: Path) -> None:
 
     (tmp_path / "note.md").write_text("# note\n\nbody", encoding="utf-8")
     config = ProjectConfig(source_dir=tmp_path, read_only=False)
-    lifespan_fn = make_vault_lifespan(config)
+    lifespan_fn = _make_test_lifespan(config)
 
     async def _run() -> None:
         with (
@@ -601,7 +624,7 @@ def test_lifespan_passes_configured_internal_dirs_to_watcher(tmp_path: Path) -> 
             embeddings_path=emb_dir / "embeddings",
         ),
     )
-    lifespan_fn = make_vault_lifespan(config)
+    lifespan_fn = _make_test_lifespan(config)
 
     captured: dict[str, object] = {}
     real_init = VaultFileWatcher.__init__
@@ -647,7 +670,7 @@ def test_lifespan_skips_watcher_when_git_pull_active(tmp_path: Path) -> None:
         read_only=False,
         git=GitConfig(token="fake-token", pull_interval_s=600),
     )
-    lifespan_fn = make_vault_lifespan(config)
+    lifespan_fn = _make_test_lifespan(config)
 
     async def _run() -> None:
         with patch.object(VaultFileWatcher, "start") as mock_start:
@@ -1271,7 +1294,7 @@ def test_lifespan_skips_watcher_when_webhook_active(tmp_path: Path) -> None:
         read_only=False,
         sync=SyncConfig(github_webhook_secret="shhh"),
     )
-    lifespan_fn = make_vault_lifespan(config)
+    lifespan_fn = _make_test_lifespan(config)
 
     async def _run() -> None:
         with patch.object(VaultFileWatcher, "start") as mock_start:

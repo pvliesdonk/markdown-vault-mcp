@@ -23,8 +23,8 @@ from markdown_vault_mcp.utils.serialization import toc_payload
 from markdown_vault_mcp.vault import Vault
 
 from ._icons import _TOOL_ICONS
-from ._server_deps import get_vault
 from ._server_queryable import needs_queryable
+from .domain import get_vault
 
 
 def _stale_resource(vault: Vault, contents: str, gen_before: int) -> ResourceResult:
@@ -61,11 +61,9 @@ def _get_config(ctx: Context) -> ProjectConfig:
     Returns:
         The ``ProjectConfig`` stored by the lifespan hook.
     """
-    config: ProjectConfig | None = ctx.lifespan_context.get("config")
-    if config is None:
-        msg = "Config not initialised — server lifespan has not run"
-        raise RuntimeError(msg)
-    return config
+    from markdown_vault_mcp.domain import get_config
+
+    return get_config(ctx)
 
 
 def register_resources(mcp: FastMCP) -> None:

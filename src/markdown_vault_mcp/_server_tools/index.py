@@ -9,8 +9,8 @@ from fastmcp.dependencies import Depends
 from markdown_vault_mcp.vault import Vault
 
 from .._icons import _TOOL_ICONS
-from .._server_deps import get_vault
 from .._server_queryable import needs_queryable
+from ..domain import get_vault
 
 
 def register(mcp: FastMCP) -> None:

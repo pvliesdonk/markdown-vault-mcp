@@ -45,6 +45,7 @@ src/markdown_vault_mcp/
   vault.py             -- thin composition root: lifecycle, wiring, facet accessors (index-write → indexing/coordinator.py)
   write_callback.py    -- WriteCallbackDispatcher: deferred git-commit callback worker (#599)
   config.py            -- configuration loading
+  domain.py            -- Service: owns the Vault lifecycle (build, boot index/reindex/embeddings jobs, file watcher); get_vault/get_config DI + vault singleton (#902)
   server.py            -- generic FastMCP server factory (make_server) with tool annotations
   cli.py               -- CLI entry point
 ```

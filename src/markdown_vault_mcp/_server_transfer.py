@@ -14,8 +14,8 @@ from typing import TYPE_CHECKING, Any
 from fastmcp.dependencies import Depends
 
 from markdown_vault_mcp._icons import _TOOL_ICONS
-from markdown_vault_mcp._server_deps import get_vault
 from markdown_vault_mcp.config import _ENV_PREFIX
+from markdown_vault_mcp.domain import get_vault
 from markdown_vault_mcp.transfer.routes import make_transfer_handler
 from markdown_vault_mcp.transfer.store import TransferStore
 from markdown_vault_mcp.utils import (

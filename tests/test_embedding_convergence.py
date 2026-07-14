@@ -377,7 +377,7 @@ class TestLifespanEmbeddingConvergence:
     def test_warm_boot_lifespan_converges_offline_add(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from markdown_vault_mcp import _server_deps as deps_mod
+        from markdown_vault_mcp import domain as deps_mod
         from markdown_vault_mcp.server import make_server
 
         provider = MockEmbeddingProvider()

@@ -55,7 +55,6 @@ FILE_MODULE_PATHS = {
 # the strict check). Epic #898. Seeded below after measuring actual conformance.
 RATCHET: dict[str, str] = {
     "server.py": "#901",
-    "_server_deps.py": "#902",
     "__init__.py": "#903",
     "_server_apps.py": "#905",
 }

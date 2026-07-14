@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING, Any
 
 from starlette.responses import JSONResponse
 
-from markdown_vault_mcp._server_deps import get_vault_singleton
+from markdown_vault_mcp.domain import get_vault_singleton
 
 if TYPE_CHECKING:
     from collections.abc import Callable

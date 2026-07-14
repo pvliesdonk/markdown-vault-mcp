@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from markdown_vault_mcp._server_deps import (
+from markdown_vault_mcp.domain import (
     get_vault_singleton,
     set_vault_singleton,
 )
@@ -26,7 +26,7 @@ class TestVaultSingleton:
 
     def test_get_raises_when_unset(self) -> None:
         """After clearing the singleton, the getter raises RuntimeError."""
-        import markdown_vault_mcp._server_deps as _deps_module
+        import markdown_vault_mcp.domain as _deps_module
 
         saved = _deps_module._vault_singleton
         try:
@@ -38,7 +38,7 @@ class TestVaultSingleton:
 
     def test_set_then_get_roundtrips(self, tmp_path: Path) -> None:
         """Setting then getting returns the same Vault instance."""
-        import markdown_vault_mcp._server_deps as _deps_module
+        import markdown_vault_mcp.domain as _deps_module
 
         saved = _deps_module._vault_singleton
         try:
