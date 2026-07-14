@@ -2121,23 +2121,34 @@ queries the existing ``sections`` table (no file I/O).
 
 The library layer returns typed structs (``TocEntry``, ``SubtreeNote``, ``SubtreeToc``, defined in ``types.py``); the MCP boundary serializes them to the JSON shapes above via ``utils/serialization.toc_payload``, keeping the wire format unchanged.
 
-**Prompts**: 6 built-in prompt templates, plus optional user-defined prompts:
+**Prompts**: 7 built-in prompt templates, plus optional user-defined prompts:
 
 | Prompt | Parameters | Tags | Description |
 |-|-|-|-|
 | ``summarize`` | ``path`` | | Summarize a document |
 | ``research`` | ``topic`` | ``write`` | Search and consolidate as new note |
 | ``discuss`` | ``path`` | ``write`` | Analyze and suggest improvements |
-| ``create_from_template`` | ``template_name`` (optional) | ``write`` | Discover/read/fill/write from a template |
 | ``related`` | ``path`` | | Find related notes, suggest cross-references |
 | ``compare`` | ``path1, path2`` | | Compare two documents |
+| ``propose-links`` | ``scope`` (optional), ``per_note_limit`` (optional) | ``write`` | Propose new links between semantically-close notes |
+| ``create_from_template`` | ``template_name`` (optional) | ``write`` | Discover/read/fill/write from a template |
 
 Write-tagged prompts are hidden in read-only mode by the same
 ``mcp.disable(tags={"write"})`` call that hides write tools.
 
+Prompt registration is split by config-dependency (#901). The template-owned
+``make_server`` body calls ``register_prompts(mcp)``, which registers the six
+config-independent built-ins above (every one except ``create_from_template``).
+The config-dependent prompts — ``create_from_template`` (needs the templates
+folder) and user-defined prompts (need the prompts folder) — are registered by
+``register_domain_prompts(mcp, templates_folder, prompts_folder)``, called from
+``make_server``'s
+``DOMAIN-WIRING`` block with the already-resolved ``config.content`` folders (no
+second environment read; a caller-supplied config is honored — #609).
+
 **User-defined prompts**: when ``MARKDOWN_VAULT_MCP_PROMPTS_FOLDER`` is set,
-``register_prompts()`` scans the directory for ``.md`` files at startup and
-registers each as an MCP prompt. The file stem becomes the prompt name.
+``register_domain_prompts()`` scans the directory for ``.md`` files at startup
+and registers each as an MCP prompt. The file stem becomes the prompt name.
 Frontmatter defines metadata:
 
 ```yaml
@@ -2157,19 +2168,26 @@ tags:
 Prompt content here. Use $path and $topic as placeholders (string.Template syntax).
 ```
 
-**Override semantics**: if a user-defined prompt has the same name as a
-built-in, the built-in is skipped and the user's version is registered.
-Domain-specific prompts (such as ``zettelkasten`` or ``para-triage``)
-can live outside the core server and be mounted at deployment time.
+**Override semantics**: a user-defined prompt with the same name as a built-in
+takes priority. Because ``register_prompts()`` registers all built-ins up front
+(before user names are known), ``register_domain_prompts()`` removes the shadowed
+built-in — via ``mcp.local_provider.remove_prompt(name)``, tolerating a
+``KeyError`` when the built-in never registered — before registering the user
+version, so the override replaces cleanly with no "component already exists"
+warning and the built-in text never appears. Domain-specific prompts (such as
+``zettelkasten`` or ``para-triage``) can live outside the core server and be
+mounted at deployment time.
 
-**Registration robustness**: ``register_prompts()`` guards each prompt
-registration independently, so one malformed prompt is logged and skipped rather
-than aborting registration of the remaining prompts. Invalid argument names or a
-signature that cannot be built are caught inside the per-prompt helper and logged
-at ``WARNING`` for both built-in and user prompts. A failure that propagates out
-of the helper, such as a missing definition key or a ``mcp.prompt`` rejection, is
-caught by the loop backstop: at ``WARNING`` for a user prompt, and at ``ERROR``
-for a built-in, since a broken first-party prompt is a packaging defect.
+**Registration robustness**: both ``register_prompts()`` (built-ins) and
+``register_domain_prompts()`` (user prompts) guard each prompt registration
+independently, so one malformed prompt is logged and skipped rather than aborting
+registration of the remaining prompts. Invalid argument names or a signature that
+cannot be built are caught inside the per-prompt helper and logged at ``WARNING``
+for both built-in and user prompts. A failure that propagates out of the helper,
+such as a missing definition key or a ``mcp.prompt`` rejection, is caught by the
+loop backstop: at ``WARNING`` for a user prompt (in ``register_domain_prompts``),
+and at ``ERROR`` for a built-in (in ``register_prompts``), since a broken
+first-party prompt is a packaging defect.
 
 ## Configuration
 
