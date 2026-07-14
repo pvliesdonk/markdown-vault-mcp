@@ -622,6 +622,31 @@ class TestUserPromptOverride:
         summarize_entries = [p for p in prompts if p.name == "summarize"]
         assert len(summarize_entries) == 1
 
+    @pytest.mark.usefixtures("_clear_vars")
+    async def test_override_does_not_log_component_already_exists(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Overriding a built-in prunes it first, so FastMCP logs no duplicate warning.
+
+        register_domain_prompts removes the shadowed built-in before registering
+        the user prompt; without that, FastMCP's default ``on_duplicate="warn"``
+        would emit "Component already exists: prompt:summarize" on every startup
+        for a fully-supported override.
+        """
+        import logging
+
+        prompts_dir = tmp_path / "prompts"
+        prompts_dir.mkdir()
+        (prompts_dir / "summarize.md").write_text("OVERRIDE", encoding="utf-8")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_PROMPTS_FOLDER", str(prompts_dir))
+
+        with caplog.at_level(logging.WARNING, logger="fastmcp"):
+            make_server()
+        assert "already exists" not in caplog.text
+
 
 class TestUserPromptWriteTag:
     """User prompts tagged 'write' are hidden in read-only mode."""
@@ -734,12 +759,14 @@ class TestProposeLinks:
 
 
 class TestRegisterPromptsPerPromptGuard:
-    """register_prompts skips a malformed prompt and keeps registering siblings.
+    """A malformed prompt is skipped and its siblings still register.
 
     The per-prompt helpers can raise *outside* their narrow ``except ValueError``
     handlers — a def-dict missing a key (``KeyError``) or a ``mcp.prompt(...)``
-    rejection. The loop backstop in ``register_prompts`` catches these so one bad
-    prompt does not abort registration of the rest (#799).
+    rejection. A loop backstop catches these so one bad prompt does not abort
+    registration of the rest (#799). Built-in failures go through the backstop in
+    :func:`register_prompts`; user-prompt failures through the one in
+    :func:`register_domain_prompts`.
     """
 
     async def test_user_prompt_registration_failure_skips_and_warns(

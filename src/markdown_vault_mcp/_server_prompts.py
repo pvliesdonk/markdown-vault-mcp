@@ -21,7 +21,6 @@ if TYPE_CHECKING:
 
 import frontmatter
 from fastmcp import FastMCP
-from fastmcp.prompts import Prompt
 
 from ._icons import _TOOL_ICONS
 from .utils.text import read_text_utf8
@@ -252,12 +251,11 @@ def _register_one_user_prompt(mcp: FastMCP, name: str, defn: dict[str, Any]) -> 
     fn.__name__ = name
     fn.__doc__ = description or f"User-defined prompt: {name}"
 
-    # ``add_prompt`` (not the ``mcp.prompt`` decorator) so a user prompt whose
-    # name matches a built-in registered earlier by ``register_prompts`` silently
-    # replaces it (last-wins) instead of logging a "component already exists"
-    # warning — preserving the pre-split "user overrides built-in" semantics now
-    # that the built-ins are registered up front rather than skipped.
-    mcp.add_prompt(Prompt.from_function(fn, name=name, tags=tags or None))
+    decorator_kwargs: dict[str, Any] = {}
+    if tags:
+        decorator_kwargs["tags"] = tags
+
+    mcp.prompt(**decorator_kwargs)(fn)
     logger.debug("Registered user-defined prompt: %s", name)
 
 
@@ -460,9 +458,11 @@ def register_domain_prompts(
     :func:`register_prompts` has registered the config-independent built-ins.
 
     User-defined prompts take priority: a user prompt whose name matches a
-    built-in (registered earlier by :func:`register_prompts`, or the inline
-    ``create_from_template``) silently replaces it via ``add_prompt`` (last
-    wins), so the built-in text never appears.
+    built-in registered earlier by :func:`register_prompts` shadows it — the
+    shadowed built-in is removed before the user prompt is registered, so the
+    built-in text never appears and no "component already exists" warning is
+    logged. ``create_from_template`` is guarded the same way (skipped when a
+    user prompt of that name exists).
 
     Args:
         mcp: The :class:`~fastmcp.FastMCP` instance to register prompts on.
@@ -481,6 +481,15 @@ def register_domain_prompts(
 
     if "create_from_template" not in user_prompt_defs:
         _register_create_from_template(mcp, templates_folder)
+
+    # Drop any built-in that a user prompt shadows before re-registering under
+    # that name, so the override replaces cleanly instead of colliding (which
+    # would log a spurious "component already exists" WARNING). register_prompts
+    # registered all built-ins up front; here — where the user names are known —
+    # is the first point we can prune the shadowed ones.
+    for name in user_prompt_defs:
+        if name in _BUILTIN_PROMPT_NAMES:
+            mcp.local_provider.remove_prompt(name)
 
     # --- Pass 3: register user-defined prompts ---
     for name, defn in user_prompt_defs.items():

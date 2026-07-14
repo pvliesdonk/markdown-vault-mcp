@@ -149,18 +149,22 @@ def make_server(
     # index/search/reindex commands do the same before their own vault builds.
     quiet_http_loggers()
 
-    # Domain server identity: attach the vault icon and, unless the operator set
-    # INSTRUCTIONS, replace the baseline instructions with the read-only-aware,
-    # conventions-aware domain guidance. Applied post-construction so server.py's
-    # make_server() body stays byte-identical to the template skeleton. FastMCP's
-    # ``icons`` property is read-only (only the constructor accepts icons, which
-    # the skeleton body does not), so write the low-level server field it reads.
+    # Domain server identity: attach the vault icon and resolve instructions from
+    # THIS config — the operator's config.instructions when set, else the
+    # read-only-aware, conventions-aware domain default. Set unconditionally
+    # (not gated on config.instructions is None) so a caller-supplied
+    # config.instructions is honored even when the MARKDOWN_VAULT_MCP_INSTRUCTIONS
+    # env var the skeleton body reads is unset; config.instructions is populated
+    # from that same env var, so the from_env path is unchanged. Applied
+    # post-construction so make_server()'s body stays byte-identical to the
+    # template skeleton. FastMCP's ``icons`` property is read-only (only the
+    # constructor accepts icons, which the skeleton body does not), so write the
+    # low-level server field it reads.
     mcp._mcp_server.icons = _SERVER_ICON
-    if config.instructions is None:
-        mcp.instructions = build_default_instructions(
-            read_only=is_read_only,
-            conventions_file=config.content.conventions_file,
-        )
+    mcp.instructions = config.instructions or build_default_instructions(
+        read_only=is_read_only,
+        conventions_file=config.content.conventions_file,
+    )
 
     logger.info(
         "vault_startup mode=%s vault=%s embeddings=%s",

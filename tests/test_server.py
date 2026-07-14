@@ -266,6 +266,22 @@ class TestConfigDrivenPrompts:
             names = {p.name for p in await client.list_prompts()}
         assert "greet" in names
 
+    @pytest.mark.usefixtures("_mcp_env")
+    def test_instructions_resolved_from_provided_config_not_env(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from markdown_vault_mcp.config import ProjectConfig
+
+        # env carries NO instructions override ...
+        monkeypatch.delenv("MARKDOWN_VAULT_MCP_INSTRUCTIONS", raising=False)
+        # ... while the provided config sets one. It must win over both the
+        # generic env-baseline and the domain default (DOMAIN-WIRING is gated on
+        # config.instructions, not the env var).
+        config = ProjectConfig(source_dir=tmp_path, instructions="Custom vault brief.")
+
+        server = make_server(config=config)
+        assert server.instructions == "Custom vault brief."
+
 
 class TestGithubWebhookWiring:
     """Cover the GitHub-webhook custom-route gate in make_server's DOMAIN-WIRING."""
