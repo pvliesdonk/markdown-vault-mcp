@@ -39,32 +39,63 @@ def test_no_args_exits_nonzero() -> None:
     assert "serve" in result.output
 
 
-def test_root_keeps_httpx_quiet_at_default_visible_at_debug() -> None:
+def test_quiet_http_loggers_pins_warning_at_default_visible_at_debug() -> None:
     """httpx/httpcore emit a per-request INFO line that floods logs during
-    embedding builds (#792). The root callback pins them to WARNING at the
-    default level (quiet) and to NOTSET at -v (root DEBUG governs, visible)."""
+    embedding builds (#792). ``quiet_http_loggers`` — called by the domain
+    commands and by ``make_server``'s DOMAIN-WIRING, since the template-owned
+    ``_root`` callback and ``make_server`` scaffold must stay byte-identical to
+    the skeleton — pins them to WARNING when the root level is not DEBUG (quiet)
+    and to NOTSET at ``-v`` (root DEBUG governs, visible)."""
     import logging
 
-    from markdown_vault_mcp.cli import _root
+    from markdown_vault_mcp._http_logging import quiet_http_loggers
 
     root = logging.getLogger()
     httpx_log = logging.getLogger("httpx")
     httpcore_log = logging.getLogger("httpcore")
     saved = (root.level, httpx_log.level, httpcore_log.level)
-    original_handlers = root.handlers[:]
     try:
-        _root(verbose=False)
+        root.setLevel(logging.INFO)
+        quiet_http_loggers()
         assert httpx_log.level == logging.WARNING
         assert httpcore_log.level == logging.WARNING
 
-        _root(verbose=True)
+        root.setLevel(logging.DEBUG)
+        quiet_http_loggers()
         assert httpx_log.level == logging.NOTSET
         assert httpcore_log.level == logging.NOTSET
     finally:
         root.setLevel(saved[0])
         httpx_log.setLevel(saved[1])
         httpcore_log.setLevel(saved[2])
-        root.handlers[:] = original_handlers
+
+
+def test_make_server_quiets_httpx_on_serve_path(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The serve path (CLI ``serve`` → ``make_server``) quiets httpx/httpcore too
+    (#792) — ``make_server``'s DOMAIN-WIRING calls ``quiet_http_loggers`` so the
+    background embedding build doesn't flood at the default level."""
+    import logging
+
+    from markdown_vault_mcp.server import make_server
+
+    monkeypatch.setenv(f"{_ENV_PREFIX}_SOURCE_DIR", str(tmp_path))
+    root = logging.getLogger()
+    httpx_log = logging.getLogger("httpx")
+    httpcore_log = logging.getLogger("httpcore")
+    saved = (root.level, httpx_log.level, httpcore_log.level)
+    try:
+        root.setLevel(logging.INFO)
+        httpx_log.setLevel(logging.NOTSET)  # flood-prone default
+        httpcore_log.setLevel(logging.NOTSET)
+        make_server(transport="stdio")
+        assert httpx_log.level == logging.WARNING
+        assert httpcore_log.level == logging.WARNING
+    finally:
+        root.setLevel(saved[0])
+        httpx_log.setLevel(saved[1])
+        httpcore_log.setLevel(saved[2])
 
 
 def test_serve_help_exits_zero() -> None:

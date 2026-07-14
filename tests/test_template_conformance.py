@@ -58,7 +58,6 @@ RATCHET: dict[str, str] = {
     "_server_deps.py": "#902",
     "__init__.py": "#903",
     "_server_apps.py": "#905",
-    "cli.py": "#904",
 }
 
 _START = re.compile(r"#\s*([A-Z0-9-]+)-START\b")

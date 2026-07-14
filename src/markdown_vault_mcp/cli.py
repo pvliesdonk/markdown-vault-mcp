@@ -46,10 +46,11 @@ def _root(
         handler = logging.StreamHandler()
         handler.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
         root.addHandler(handler)
-    # Quiet httpx/httpcore per-request INFO at the default level (#792); -v shows them.
-    http_level = logging.NOTSET if verbose else logging.WARNING
-    logging.getLogger("httpx").setLevel(http_level)
-    logging.getLogger("httpcore").setLevel(http_level)
+    if verbose:
+        # httpx/httpcore are noisy at DEBUG; keep them quiet.  Core doesn't
+        # own these deps, so the silencing stays domain-local.
+        logging.getLogger("httpx").setLevel(logging.WARNING)
+        logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 
 @app.command()
@@ -167,8 +168,10 @@ def index(
     force: bool = typer.Option(False, help="Drop and rebuild the index from scratch."),
 ) -> None:
     """Build the full-text search index."""
+    from markdown_vault_mcp._http_logging import quiet_http_loggers
     from markdown_vault_mcp.exceptions import EmbeddingsNotConfiguredError
 
+    quiet_http_loggers()
     vault = _build_vault(source_dir, index_path)
     stats = vault.index.build_index(force=force)
     typer.echo(
@@ -202,6 +205,9 @@ def search(
     from dataclasses import asdict
     from typing import cast
 
+    from markdown_vault_mcp._http_logging import quiet_http_loggers
+
+    quiet_http_loggers()
     vault = _build_vault(source_dir, None)
     results = vault.reader.search(
         query,
@@ -228,8 +234,10 @@ def reindex(
     ),
 ) -> None:
     """Incrementally reindex the vault."""
+    from markdown_vault_mcp._http_logging import quiet_http_loggers
     from markdown_vault_mcp.exceptions import EmbeddingsNotConfiguredError
 
+    quiet_http_loggers()
     vault = _build_vault(source_dir, index_path)
     # reindex() needs a built index (#525); build_index() is a cheap no-op when
     # the index is already populated (a SQL row-count check, no filesystem scan).

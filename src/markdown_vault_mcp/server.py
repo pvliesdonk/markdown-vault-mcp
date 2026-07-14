@@ -223,6 +223,11 @@ def make_server(
     # DOMAIN-WIRING-START — project-specific wiring (custom HTTP routes,
     # transforms, mode toggles, alternative middleware, additional registrations);
     # kept across copier update.
+    # Quiet httpx/httpcore per-request INFO on the serve path (#792); the CLI's
+    # index/search/reindex commands do the same before their own vault builds.
+    from markdown_vault_mcp._http_logging import quiet_http_loggers
+
+    quiet_http_loggers()
     # GitHub webhook endpoint — only when secret is configured and transport
     # is HTTP/SSE (stdio has no HTTP server to receive POST requests).
     if config.sync.github_webhook_secret and transport != "stdio":
