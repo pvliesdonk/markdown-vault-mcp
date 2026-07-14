@@ -282,6 +282,24 @@ class TestConfigDrivenPrompts:
         server = make_server(config=config)
         assert server.instructions == "Custom vault brief."
 
+    @pytest.mark.usefixtures("_mcp_env")
+    async def test_server_name_resolved_from_provided_config_not_env(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from markdown_vault_mcp.config import ProjectConfig
+
+        # env carries NO SERVER_NAME override ...
+        monkeypatch.delenv("MARKDOWN_VAULT_MCP_SERVER_NAME", raising=False)
+        # ... while the provided config sets one. Both the instance name and the
+        # get_server_info tool must report it (not the env default).
+        config = ProjectConfig(source_dir=tmp_path, server_name="custom-vault")
+
+        server = make_server(config=config)
+        assert server.name == "custom-vault"
+        async with Client(server) as client:
+            result = await client.call_tool("get_server_info", {})
+        assert result.data["server_name"] == "custom-vault"
+
 
 class TestGithubWebhookWiring:
     """Cover the GitHub-webhook custom-route gate in make_server's DOMAIN-WIRING."""

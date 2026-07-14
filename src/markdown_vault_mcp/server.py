@@ -166,6 +166,23 @@ def make_server(
         conventions_file=config.content.conventions_file,
     )
 
+    # Honor the passed config's server name the same way as instructions/icons.
+    # The skeleton body sources the name from the SERVER_NAME env var, which
+    # config.server_name mirrors for from_env configs; a programmatically-built
+    # config can diverge. Act only when they differ (a no-op on the from_env
+    # path). FastMCP.name is read-only, so write the low-level field, and
+    # re-register get_server_info so its reported name stays in sync with the
+    # client-facing name (the skeleton registered it above with the env value).
+    # The re-registration carries no upstream_version — a markdown vault has no
+    # remote upstream, so DOMAIN-UPSTREAM stays empty; mirror it here if that
+    # ever changes.
+    if config.server_name != server_name:
+        mcp._mcp_server.name = config.server_name
+        mcp.local_provider.remove_tool("get_server_info")
+        register_server_info_tool(
+            mcp, server_name=config.server_name, server_version=pkg_ver
+        )
+
     logger.info(
         "vault_startup mode=%s vault=%s embeddings=%s",
         "read-only" if is_read_only else "read-write",

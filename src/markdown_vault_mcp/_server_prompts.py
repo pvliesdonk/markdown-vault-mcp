@@ -486,10 +486,17 @@ def register_domain_prompts(
     # that name, so the override replaces cleanly instead of colliding (which
     # would log a spurious "component already exists" WARNING). register_prompts
     # registered all built-ins up front; here — where the user names are known —
-    # is the first point we can prune the shadowed ones.
+    # is the first point we can prune the shadowed ones. A built-in that failed
+    # to register (missing static file, or a #799 backstop-caught error) is
+    # simply absent: tolerate the KeyError so one bad built-in + a same-named
+    # user prompt does not abort server construction (the user prompt then
+    # registers fresh, with nothing to collide against).
     for name in user_prompt_defs:
         if name in _BUILTIN_PROMPT_NAMES:
-            mcp.local_provider.remove_prompt(name)
+            try:
+                mcp.local_provider.remove_prompt(name)
+            except KeyError:
+                logger.debug("no built-in %r to prune before user override", name)
 
     # --- Pass 3: register user-defined prompts ---
     for name, defn in user_prompt_defs.items():
