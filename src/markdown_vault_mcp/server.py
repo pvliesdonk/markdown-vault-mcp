@@ -1,12 +1,9 @@
-"""Generic FastMCP server for markdown vaults.
+"""Markdown Vault MCP — FastMCP server entry point.
 
-Exposes :class:`~markdown_vault_mcp.vault.Vault` methods as MCP tools
-with proper ``ToolAnnotations``.  Uses a lifespan hook to build the
-``Vault`` once at startup and tear it down on shutdown.
-
-The server is configured entirely via environment variables (see
-:mod:`markdown_vault_mcp.config`).  Call :func:`make_server` to build a
-configured :class:`~fastmcp.FastMCP` instance.
+Composes the primitives from ``fastmcp-pvl-core`` into a
+project-specific ``make_server()``.  See
+https://gofastmcp.com/servers for the FastMCP server surface and
+``fastmcp-pvl-core``'s README for the composable helpers used below.
 """
 
 from __future__ import annotations
@@ -17,146 +14,59 @@ from importlib.metadata import version as _pkg_version
 
 from fastmcp import FastMCP
 from fastmcp_pvl_core import (
+    ServerConfig,  # noqa: F401  — re-exported for downstream projects' convenience
     build_auth,
+    build_event_store,  # noqa: F401  — re-exported for downstream projects' convenience
+    build_instructions,
     build_kv_store,  # noqa: F401  — re-exported for downstream projects' convenience
-    configure_logging_from_env,  # noqa: F401  — re-exported for downstream projects' convenience
+    configure_logging_from_env,
+    env,
     register_server_info_tool,
     resolve_auth_mode,
     wire_middleware_stack,
 )
-from fastmcp_pvl_core import (
-    build_instructions as _core_build_instructions,
-)
 
-from markdown_vault_mcp.config import (
-    _ENV_PREFIX,
-    ProjectConfig,
-)
-
-from ._icons import _SERVER_ICON
-from ._server_apps import register_apps
-from ._server_deps import server_lifespan
-from ._server_prompts import register_prompts
-from ._server_resources import register_resources
-from ._server_tools import register_tools
+from markdown_vault_mcp._server_apps import register_apps
+from markdown_vault_mcp._server_deps import server_lifespan
+from markdown_vault_mcp._server_prompts import register_prompts
+from markdown_vault_mcp._server_resources import register_resources
+from markdown_vault_mcp._server_tools import register_tools
+from markdown_vault_mcp.config import ProjectConfig
 
 logger = logging.getLogger(__name__)
 
-
-# ---------------------------------------------------------------------------
-# Server factory
-# ---------------------------------------------------------------------------
-
-
-def _build_default_instructions(
-    *, read_only: bool, conventions_file: str | None = None
-) -> str:
-    """Build the default instructions string based on read-only state.
-
-    Composes MV's domain-specific guidance into a ``domain_line`` and
-    delegates to :func:`fastmcp_pvl_core.build_instructions` for the
-    read-only/read-write line and operator override hint.
-
-    The folder-conventions sentence is emitted whenever *conventions_file*
-    is configured, not gated on convention files existing on disk: in
-    managed-git mode the clone happens inside the server lifespan, after
-    instructions are composed, so a file-presence check here would silently
-    miss on first boot.
-    """
-    prelude = (
-        "A searchable markdown document vault. "
-        "Paths are always relative (e.g. 'Journal/note.md')."
-    )
-    write_guidance = (
-        ""
-        if read_only
-        else (
-            " Write tools: use 'write' to create, 'edit' for targeted changes "
-            "(read first), 'rename' to move (pass update_links=True to fix links "
-            "in other notes), 'delete' to remove. Use 'move_folder(old_dir, new_dir)' "
-            "to move an entire folder subtree and rewrite all vault links in one call. "
-            "All write operations update the "
-            "search index immediately — never call 'reindex' after write, edit, "
-            "delete, or rename."
-        )
-    )
-    search_guidance = (
-        " Use 'search' (mode='hybrid' preferred when available) to find documents, "
-        "'read' for full content, 'list_documents' to enumerate, 'stats' to check "
-        "capabilities. 'browse_vault' and 'show_context' open a visual UI for the "
-        "user — do not call them to retrieve vault content; use 'search', 'read', "
-        "'list_documents', or 'get_context' instead."
-    )
-    conventions_guidance = (
-        ""
-        if conventions_file is None
-        else (
-            f" Folders may carry authoring conventions in '{conventions_file}' "
-            "files; call 'get_conventions(path)' before creating or "
-            "restructuring notes, and follow any 'conventions' returned by "
-            "write/edit results."
-        )
-    )
-    domain_line = f"{prelude}{write_guidance}{search_guidance}{conventions_guidance}"
-    return _core_build_instructions(
-        read_only=read_only,
-        env_prefix=_ENV_PREFIX,
-        domain_line=domain_line,
-    )
+_ENV_PREFIX = "MARKDOWN_VAULT_MCP"
 
 
 def make_server(
-    transport: str = "stdio", config: ProjectConfig | None = None
+    *,
+    transport: str = "stdio",
+    config: ProjectConfig | None = None,
 ) -> FastMCP:
-    """Create and configure the FastMCP server.
-
-    Reads configuration from environment variables via
-    :meth:`~markdown_vault_mcp.config.ProjectConfig.from_env`.
-    Write tools are tagged with ``{"write"}`` and hidden via
-    ``mcp.disable(tags={"write"})`` when ``READ_ONLY=true``.
-
-    Server identity is configurable via:
-
-    - ``MARKDOWN_VAULT_MCP_SERVER_NAME``: MCP server name shown to clients
-      (default ``"markdown-vault-mcp"``).
-    - ``MARKDOWN_VAULT_MCP_INSTRUCTIONS``: system-level instructions injected
-      into LLM context (default: dynamic description reflecting read-only state).
-    - ``MARKDOWN_VAULT_MCP_PROMPTS_FOLDER``: directory of user-defined ``.md``
-      prompt files.  User prompts with the same name as a built-in override the
-      built-in.  Default: disabled.
+    """Construct the Markdown Vault MCP FastMCP server.
 
     Args:
-        transport: ``"stdio"`` / ``"http"`` / ``"sse"`` / ``"streamable-http"``.
-            Used to gate HTTP-only wiring (e.g. the GitHub webhook route) and
-            as ``transport=%s`` in the startup log.
-        config: A pre-built :class:`~markdown_vault_mcp.config.ProjectConfig`.
-            When ``None`` (the default) the config is read from the environment
-            via ``from_env``. Callers that already hold a config (e.g. the HTTP
-            serve path, which also needs ``config.server`` for the event store)
-            pass it here to avoid parsing the environment twice (#609).
+        transport: ``"stdio"`` / ``"http"`` / ``"sse"``.  Used here for
+            logging only.
+        config: Optional pre-loaded config; default loads from env.
 
     Returns:
-        A fully configured :class:`~fastmcp.FastMCP` instance ready to run.
+        A configured :class:`fastmcp.FastMCP` instance.
     """
-    if config is None:
-        config = ProjectConfig.from_env()
-    is_read_only = config.read_only
+    config = config or ProjectConfig.from_env()
+    configure_logging_from_env()
 
-    server_name = config.server_name
-    if config.instructions is not None:
-        instructions = config.instructions
-    else:
-        instructions = _build_default_instructions(
-            read_only=is_read_only,
-            conventions_file=config.content.conventions_file,
-        )
+    # Operator overrides: SERVER_NAME renames this instance; INSTRUCTIONS
+    # replaces the default instructions text (the latter is the override that
+    # build_instructions' hint advertises). Both fall back when unset/empty.
+    server_name = env(_ENV_PREFIX, "SERVER_NAME", "markdown-vault-mcp")
+    instructions = env(_ENV_PREFIX, "INSTRUCTIONS") or build_instructions(
+        read_only=True,
+        env_prefix=_ENV_PREFIX,
+        domain_line="Generic markdown vault MCP server with FTS5 + semantic search",
+    )
 
     auth = build_auth(config.server)
-    # build_auth returns None only for mode="none" or precondition-miss inside an
-    # OIDC builder (missing required fields).  pvl-core 2.0 raises ConfigurationError
-    # on actual discovery failures (httpx missing, network error, malformed discovery
-    # doc), so this no longer needs to defend against the "discovery silently failed"
-    # case — fail-fast at startup means we never reach this line in that scenario.
     auth_mode = resolve_auth_mode(config.server) if auth is not None else "none"
     if auth_mode == "none":
         logger.warning(
@@ -171,40 +81,27 @@ def make_server(
         pkg_ver = "unknown"
 
     logger.info(
-        "Server config: version=%s name=%s transport=%s auth=%s mode=%s vault=%s embeddings=%s",
+        "Server config: version=%s name=%s transport=%s auth=%s",
         pkg_ver,
         server_name,
         transport,
         auth_mode,
-        "read-only" if is_read_only else "read-write",
-        config.source_dir,
-        "enabled" if config.indexing.embeddings_path else "disabled",
     )
 
     mcp = FastMCP(
-        server_name,
+        name=server_name,
         instructions=instructions,
-        icons=_SERVER_ICON,
         lifespan=server_lifespan,
         auth=auth,
     )
 
-    # 3.x: kwargs removed; installs one tool-aware logging middleware.
     wire_middleware_stack(mcp)
 
     register_tools(mcp)
     register_resources(mcp)
+    register_prompts(mcp)
     register_apps(mcp)
-    register_prompts(
-        mcp,
-        templates_folder=config.content.templates_folder,
-        prompts_folder=config.content.prompts_folder,
-    )
 
-    # ``register_server_info_tool`` is intentionally read-only and stays
-    # enabled in read-only mode (no ``tags={"write"}``) — operators need
-    # ``get_server_info`` to confirm the deployed version regardless of
-    # the read/write posture.
     register_server_info_tool(
         mcp,
         server_name=server_name,
@@ -213,7 +110,10 @@ def make_server(
         # that talk to a remote service (paperless-mcp, etc.). The provider is
         # a zero-arg callable; the simplest pattern is a module-level upstream
         # client (typically constructed from env vars at import time) whose
-        # version method is referenced here.
+        # version method is referenced here. ``CurrentContext()`` is a FastMCP
+        # DI marker — it only resolves to a live context when used as a
+        # parameter default in a tool/resource handler, so it cannot be called
+        # directly from a zero-arg provider.
         # Uncomment the kwargs below as additional arguments to this call:
         # upstream_version=lambda: _upstream_client.remote_version(),
         # upstream_label="paperless",
@@ -222,17 +122,42 @@ def make_server(
 
     # DOMAIN-WIRING-START — project-specific wiring (custom HTTP routes,
     # transforms, mode toggles, alternative middleware, additional registrations);
-    # kept across copier update.
-    # Hand the already-loaded config to the no-arg server_lifespan's Service so it
-    # builds the vault from this config, not a second from_env() read (#609).
+    # kept across copier update. Leave empty for projects that don't customise
+    # make_server() beyond the standard scaffold.
+    from markdown_vault_mcp._http_logging import quiet_http_loggers
+    from markdown_vault_mcp._icons import _SERVER_ICON
+    from markdown_vault_mcp._instructions import build_default_instructions
     from markdown_vault_mcp.domain import set_pending_config
 
+    is_read_only = config.read_only
+
+    # Hand the already-loaded config to the no-arg server_lifespan's Service so it
+    # builds the vault from this config, not a second from_env() read (#609).
     set_pending_config(config)
     # Quiet httpx/httpcore per-request INFO on the serve path (#792); the CLI's
     # index/search/reindex commands do the same before their own vault builds.
-    from markdown_vault_mcp._http_logging import quiet_http_loggers
-
     quiet_http_loggers()
+
+    # Domain server identity: attach the vault icon and, unless the operator set
+    # INSTRUCTIONS, replace the baseline instructions with the read-only-aware,
+    # conventions-aware domain guidance. Applied post-construction so server.py's
+    # make_server() body stays byte-identical to the template skeleton. FastMCP's
+    # ``icons`` property is read-only (only the constructor accepts icons, which
+    # the skeleton body does not), so write the low-level server field it reads.
+    mcp._mcp_server.icons = _SERVER_ICON
+    if config.instructions is None:
+        mcp.instructions = build_default_instructions(
+            read_only=is_read_only,
+            conventions_file=config.content.conventions_file,
+        )
+
+    logger.info(
+        "Vault startup: mode=%s vault=%s embeddings=%s",
+        "read-only" if is_read_only else "read-write",
+        config.source_dir,
+        "enabled" if config.indexing.embeddings_path else "disabled",
+    )
+
     # GitHub webhook endpoint — only when secret is configured and transport
     # is HTTP/SSE (stdio has no HTTP server to receive POST requests).
     if config.sync.github_webhook_secret and transport != "stdio":
@@ -241,20 +166,16 @@ def make_server(
         mcp.custom_route("/github-webhook", methods=["POST"])(
             make_webhook_handler(config.sync.github_webhook_secret)
         )
-    # DOMAIN-WIRING-END
 
-    # DOMAIN-FILE-EXCHANGE-START — one-time transfer-link wiring (#622), kept
-    # across copier update.  HTTP/SSE only: stdio has no server to receive
-    # requests.  Registers the create_*_link tools and the /transfer/{token}
-    # route, sharing one in-memory TransferStore.
+    # One-time transfer-link wiring (#622). HTTP/SSE only: stdio has no server to
+    # receive requests. Registers the create_*_link tools and the
+    # /transfer/{token} route, sharing one in-memory TransferStore.
     if transport != "stdio":
         from markdown_vault_mcp._server_transfer import register_transfer
 
         register_transfer(mcp, config)
-    # DOMAIN-FILE-EXCHANGE-END
 
     # --- Visibility: hide write-tagged components in read-only mode ---
-
     if is_read_only:
         mcp.disable(tags={"write"})
 
@@ -287,5 +208,6 @@ def make_server(
     # listing (saves a few tokens; the LLM cannot call them anyway).
     if config.disable_apps_ui:
         mcp.disable(tags={"apps-ui"})
+    # DOMAIN-WIRING-END
 
     return mcp

@@ -54,7 +54,6 @@ FILE_MODULE_PATHS = {
 # the same PR that de-forks it; the removal is the proof (it flips the file to
 # the strict check). Epic #898. Seeded below after measuring actual conformance.
 RATCHET: dict[str, str] = {
-    "server.py": "#901",
     "__init__.py": "#903",
     "_server_apps.py": "#905",
 }

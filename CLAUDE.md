@@ -46,7 +46,8 @@ src/markdown_vault_mcp/
   write_callback.py    -- WriteCallbackDispatcher: deferred git-commit callback worker (#599)
   config.py            -- configuration loading
   domain.py            -- Service: owns the Vault lifecycle (build, boot index/reindex/embeddings jobs, file watcher); get_vault/get_config DI + vault singleton (#902)
-  server.py            -- generic FastMCP server factory (make_server) with tool annotations
+  _instructions.py     -- build_default_instructions: domain server-instructions prose, applied in server.py's DOMAIN-WIRING (#901)
+  server.py            -- generic FastMCP server factory (make_server); template-owned, domain customization confined to DOMAIN-UPSTREAM/DOMAIN-WIRING (#901)
   cli.py               -- CLI entry point
 ```
 <!-- DOMAIN-END -->

@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any, cast
 from unittest.mock import patch
 
 import pytest
-from fastmcp import Client
+from fastmcp import Client, FastMCP
 from fastmcp.exceptions import ToolError
 from mcp.shared.exceptions import McpError
 
@@ -211,6 +211,36 @@ class TestDisableAppsUi:
         # Non-apps-ui tools must remain available.
         assert "search" in names
         assert "read" in names
+
+
+class TestGithubWebhookWiring:
+    """Cover the GitHub-webhook custom-route gate in make_server's DOMAIN-WIRING."""
+
+    @staticmethod
+    def _route_paths(server: FastMCP) -> set[str]:
+        return {r.path for r in server._additional_http_routes}
+
+    @pytest.mark.usefixtures("_mcp_env")
+    def test_webhook_route_registered_when_secret_and_http(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_GITHUB_WEBHOOK_SECRET", "s3cret")
+        server = make_server(transport="http")
+        assert "/github-webhook" in self._route_paths(server)
+
+    @pytest.mark.usefixtures("_mcp_env")
+    def test_webhook_route_absent_on_stdio(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # A secret is set, but stdio has no HTTP server to receive POSTs.
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_GITHUB_WEBHOOK_SECRET", "s3cret")
+        server = make_server(transport="stdio")
+        assert "/github-webhook" not in self._route_paths(server)
+
+    @pytest.mark.usefixtures("_mcp_env")
+    def test_webhook_route_absent_without_secret(self) -> None:
+        server = make_server(transport="http")
+        assert "/github-webhook" not in self._route_paths(server)
 
 
 class TestToolManifest:

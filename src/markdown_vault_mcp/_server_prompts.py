@@ -21,8 +21,12 @@ if TYPE_CHECKING:
 
 import frontmatter
 from fastmcp import FastMCP
+from fastmcp_pvl_core import env
 
 from ._icons import _TOOL_ICONS
+from .config import _ENV_PREFIX
+from .config_sections._assembly import require_source_dir
+from .config_sections.content import ContentConfig
 from .utils.text import read_text_utf8
 
 _BUILTIN_PROMPTS_DIR = importlib.resources.files("markdown_vault_mcp").joinpath(
@@ -30,6 +34,12 @@ _BUILTIN_PROMPTS_DIR = importlib.resources.files("markdown_vault_mcp").joinpath(
 )
 
 logger = logging.getLogger(__name__)
+
+# Sentinel distinguishing "folder argument not passed" (→ resolve from config)
+# from an explicit ``None`` (→ that folder is disabled). Lets the production call
+# site stay ``register_prompts(mcp)`` (template-owned server.py conformance) while
+# tests keep passing folders explicitly.
+_FROM_CONFIG: Any = object()
 
 # Argument names must be plain, non-keyword Python identifiers: they become
 # parameters of a synthetic inspect.Signature (see _build_prompt_fn), so a name
@@ -340,8 +350,8 @@ def _register_one_builtin_prompt(mcp: FastMCP, name: str, defn: dict[str, Any]) 
 
 def register_prompts(
     mcp: FastMCP,
-    templates_folder: str | None,
-    prompts_folder: str | None = None,
+    templates_folder: str | None = _FROM_CONFIG,
+    prompts_folder: str | None = _FROM_CONFIG,
 ) -> None:
     """Register all built-in MCP prompts on *mcp*, with user-defined overrides.
 
@@ -352,13 +362,31 @@ def register_prompts(
     Args:
         mcp: The :class:`~fastmcp.FastMCP` instance to register prompts on.
         templates_folder: The configured templates folder path, or ``None``
-            when templates are not configured.  Passed in from
-            :func:`~markdown_vault_mcp.server.make_server` so that
-            ``create_from_template`` can close over this value without
-            re-reading environment variables.
+            when templates are not configured.  Omit (the default) to resolve
+            it from :meth:`ProjectConfig.from_env` — the production call site
+            (``make_server``) does so, matching the template's no-arg
+            ``register_prompts(mcp)`` shape; tests pass it explicitly.
         prompts_folder: Path to a directory of user-defined ``.md`` prompt
-            files.  ``None`` disables user-defined prompt loading.
+            files.  ``None`` disables user-defined prompt loading; omit to
+            resolve from config alongside *templates_folder*.
     """
+    if templates_folder is _FROM_CONFIG or prompts_folder is _FROM_CONFIG:
+        # Resolve unspecified folders from the environment. Go through
+        # ``ContentConfig.from_env`` (the same derivation ``ProjectConfig`` uses)
+        # rather than reading env directly, so the prompts-folder source_dir join
+        # (see config_sections/content.py) is applied identically and can't drift.
+        # This parses only the content section — no vault, no ProjectConfig — so
+        # the production ``register_prompts(mcp)`` call site (which the template
+        # skeleton mandates) matches paperless-mcp's config-independent shape
+        # without a second ``ProjectConfig.from_env`` (#609).
+        content = ContentConfig.from_env(
+            _ENV_PREFIX, require_source_dir(env(_ENV_PREFIX, "SOURCE_DIR"))
+        )
+        if templates_folder is _FROM_CONFIG:
+            templates_folder = content.templates_folder
+        if prompts_folder is _FROM_CONFIG:
+            prompts_folder = content.prompts_folder
+
     # --- Pass 1: collect user-defined prompt names (for override semantics) ---
     user_prompt_defs = _load_user_prompt_defs(prompts_folder)
     if user_prompt_defs:
