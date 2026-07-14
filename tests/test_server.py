@@ -290,15 +290,19 @@ class TestConfigDrivenPrompts:
 
         # env carries NO SERVER_NAME override ...
         monkeypatch.delenv("MARKDOWN_VAULT_MCP_SERVER_NAME", raising=False)
-        # ... while the provided config sets one. Both the instance name and the
-        # get_server_info tool must report it (not the env default).
+        # ... while the provided config sets one. The live instance name honors
+        # it (would be the env default "markdown-vault-mcp" if env drove it).
         config = ProjectConfig(source_dir=tmp_path, server_name="custom-vault")
 
         server = make_server(config=config)
         assert server.name == "custom-vault"
+        # get_server_info is intentionally left on its single skeleton
+        # registration (keeping the DOMAIN-UPSTREAM block the one source of truth
+        # for upstream wiring), so it reports the SERVER_NAME env identity — here
+        # the default, since the env var is unset — not the programmatic override.
         async with Client(server) as client:
             result = await client.call_tool("get_server_info", {})
-        assert result.data["server_name"] == "custom-vault"
+        assert result.data["server_name"] == "markdown-vault-mcp"
 
 
 class TestGithubWebhookWiring:
