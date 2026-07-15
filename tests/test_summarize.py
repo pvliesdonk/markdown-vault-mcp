@@ -119,6 +119,9 @@ class TestSummarizeConfig:
         assert cfg.openai_model == "gpt-5-mini"
         assert cfg.openai_base_url is None
         assert cfg.provider is None
+        # Sized for reasoning models, whose budget covers internal
+        # reasoning tokens as well as the visible summary (#919).
+        assert cfg.max_tokens == 8192
 
     def test_blank_key_is_unset(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("OPENAI_API_KEY", "   ")
@@ -257,6 +260,7 @@ def _install_fake_openai(
     no_choices: bool = False,
     raise_error: str | None = None,
     reject_max_completion_tokens: bool = False,
+    reject_reasoning_effort: bool = False,
 ) -> dict[str, Any]:
     """Inject a minimal fake ``openai`` module; return a capture dict.
 
@@ -293,6 +297,8 @@ def _install_fake_openai(
                 raise OpenAIError("upstream boom")
             if raise_error == "bad_request":
                 raise BadRequestError("model not found")
+            if reject_reasoning_effort and "reasoning_effort" in kwargs:
+                raise BadRequestError("Unsupported parameter: 'reasoning_effort'")
             if reject_max_completion_tokens and "max_completion_tokens" in kwargs:
                 raise BadRequestError("Unsupported parameter: 'max_completion_tokens'")
             return _Response()
@@ -330,6 +336,7 @@ class TestOpenAISummarizer:
         (kwargs,) = captured["calls"]
         assert kwargs["model"] == "gpt-5-mini"
         assert kwargs["max_completion_tokens"] == 99
+        assert kwargs["reasoning_effort"] == "low"
         assert "temperature" not in kwargs
         assert kwargs["messages"] == [
             {"role": "system", "content": "SYS"},
@@ -358,6 +365,35 @@ class TestOpenAISummarizer:
         assert first["max_completion_tokens"] == 42
         assert "max_completion_tokens" not in second
         assert second["max_tokens"] == 42
+        # The unrelated adaptive parameter survives the token-param retry.
+        assert second["reasoning_effort"] == "low"
+
+    def test_reasoning_effort_fallback_drops_parameter(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        captured = _install_fake_openai(monkeypatch, reject_reasoning_effort=True)
+        summ = OpenAISummarizer("k", "strict-model", max_tokens=42)
+        assert summ.summarize("s", "u") == "SUMMARY"
+        first, second = captured["calls"]
+        assert first["reasoning_effort"] == "low"
+        assert "reasoning_effort" not in second
+        assert second["max_completion_tokens"] == 42
+
+    def test_both_adaptive_parameters_fall_back_sequentially(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        captured = _install_fake_openai(
+            monkeypatch,
+            reject_reasoning_effort=True,
+            reject_max_completion_tokens=True,
+        )
+        summ = OpenAISummarizer("k", "very-strict-model", max_tokens=42)
+        assert summ.summarize("s", "u") == "SUMMARY"
+        assert len(captured["calls"]) == 3
+        final = captured["calls"][-1]
+        assert "reasoning_effort" not in final
+        assert "max_completion_tokens" not in final
+        assert final["max_tokens"] == 42
 
     def test_unrelated_bad_request_is_not_retried(
         self, monkeypatch: pytest.MonkeyPatch
@@ -387,9 +423,19 @@ class TestOpenAISummarizer:
             summ.summarize("s", "u")
 
     def test_empty_content_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        _install_fake_openai(monkeypatch, content=None, finish_reason="length")
+        _install_fake_openai(monkeypatch, content=None, finish_reason="stop")
         summ = OpenAISummarizer("k", "m", max_tokens=10)
         with pytest.raises(RuntimeError, match="returned no text"):
+            summ.summarize("s", "u")
+
+    def test_empty_content_on_length_hints_at_max_tokens(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Reasoning models can burn the whole budget on internal reasoning;
+        # the error must point the operator at the knob to turn (#919).
+        _install_fake_openai(monkeypatch, content=None, finish_reason="length")
+        summ = OpenAISummarizer("k", "gpt-5-mini", max_tokens=10)
+        with pytest.raises(RuntimeError, match="SUMMARIZE_MAX_TOKENS"):
             summ.summarize("s", "u")
 
     def test_empty_choices_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:

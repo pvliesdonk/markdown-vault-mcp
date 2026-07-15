@@ -32,7 +32,9 @@ class SummarizeConfig:
             the SDK default (``https://api.openai.com/v1``).  Setting it
             enables the tool even without an API key.
         openai_model: Chat model id used for summaries.
-        max_tokens: Upper bound on generated summary tokens per call.
+        max_tokens: Upper bound on generated tokens per call.  On
+            reasoning models this budget covers internal reasoning tokens
+            as well as the visible summary (#919).
         max_notes: Cap on the number of notes summarised in one call
             (subtree expansion is truncated to this many notes).
         max_input_chars: Aggregate cap on note characters sent to the model
@@ -43,7 +45,7 @@ class SummarizeConfig:
     openai_api_key: str | None = None
     openai_base_url: str | None = None
     openai_model: str = _DEFAULT_OPENAI_MODEL
-    max_tokens: int = 2048
+    max_tokens: int = 8192
     max_notes: int = 50
     max_input_chars: int = 200_000
 
@@ -107,7 +109,7 @@ class SummarizeConfig:
             openai_api_key=api_key,
             openai_base_url=prefixed_base or (bare_base if api_key else None),
             openai_model=env(prefix, "SUMMARIZE_OPENAI_MODEL") or _DEFAULT_OPENAI_MODEL,
-            max_tokens=env_int(prefix, "SUMMARIZE_MAX_TOKENS", 2048),
+            max_tokens=env_int(prefix, "SUMMARIZE_MAX_TOKENS", 8192),
             max_notes=env_int(prefix, "SUMMARIZE_MAX_NOTES", 50),
             max_input_chars=env_int(prefix, "SUMMARIZE_MAX_INPUT_CHARS", 200_000),
         )

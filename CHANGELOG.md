@@ -5,6 +5,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- `summarize` failed with `finish_reason=length` and empty output on
+  reasoning models (the default `gpt-5-mini`): the token budget covers
+  internal reasoning, so the old 2048 default was exhausted before any
+  summary text was emitted (#919). The server now requests
+  `reasoning_effort="low"` (dropped automatically on OpenAI-compatible
+  servers that reject the parameter), the `SUMMARIZE_MAX_TOKENS` default is
+  raised to 8192, and the exhausted-budget error now names the variable to
+  raise.
+
 ### Changed
 
 - Embedding providers are unified on the OpenAI-compatible wire protocol

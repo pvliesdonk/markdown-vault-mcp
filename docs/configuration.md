@@ -135,7 +135,7 @@ Powers the optional [`summarize`](tools/index.md#summarize) tool. The backend sp
 | `OPENAI_API_KEY` | string | (none) | Fallback API key (shared with embeddings). Presence enables the `summarize` tool. **Not** `MARKDOWN_VAULT_MCP_`-prefixed |
 | `MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_BASE_URL` | string | `https://api.openai.com/v1` | OpenAI-compatible endpoint base URL. Setting it enables the tool even without a key (local endpoints) |
 | `MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_MODEL` | string | `gpt-5-mini` | Chat model id used for summaries |
-| `MARKDOWN_VAULT_MCP_SUMMARIZE_MAX_TOKENS` | int | `2048` | Upper bound on generated summary tokens per call |
+| `MARKDOWN_VAULT_MCP_SUMMARIZE_MAX_TOKENS` | int | `8192` | Upper bound on generated tokens per call. On reasoning models (such as the default `gpt-5-mini`) this budget also covers internal reasoning tokens, so it must be comfortably larger than the summary itself; the server requests low reasoning effort where supported. Raise this if summarize fails with an exhausted-budget error |
 | `MARKDOWN_VAULT_MCP_SUMMARIZE_MAX_NOTES` | int | `50` | Cap on notes summarised per call (subtree expansion is truncated to this many) |
 | `MARKDOWN_VAULT_MCP_SUMMARIZE_MAX_INPUT_CHARS` | int | `200000` | Aggregate cap on note characters sent to the model per call |
 

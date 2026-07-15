@@ -110,12 +110,17 @@ class OpenAISummarizer(Summarizer):
         self._max_tokens = max_tokens
 
     def _create(self, system: str, user: str) -> Any:
-        """Call chat.completions.create, adapting the token-limit parameter.
+        """Call chat.completions.create, adapting parameters to the server.
 
-        Sends ``max_completion_tokens`` first (required by newer OpenAI
-        models, which reject ``max_tokens``); if the server rejects that
-        parameter name (older strict OpenAI-compatible servers), retries once
-        with legacy ``max_tokens``.
+        Sends ``max_completion_tokens`` (required by newer OpenAI models,
+        which reject ``max_tokens``) and ``reasoning_effort="low"`` (on
+        reasoning models the token budget covers internal reasoning too;
+        summarization is condensation, not problem-solving, so low effort
+        keeps the budget for actual output — #919). When a strict
+        OpenAI-compatible server rejects either parameter by name with a
+        BadRequest error, that parameter is dropped (or swapped to legacy
+        ``max_tokens``) and the call is retried; servers such as Ollama and
+        Anthropic's compat endpoint ignore unknown fields outright.
 
         Args:
             system: System-prompt text.
@@ -128,23 +133,39 @@ class OpenAISummarizer(Summarizer):
             {"role": "system", "content": system},
             {"role": "user", "content": user},
         ]
-        try:
-            return self._client.chat.completions.create(
-                model=self._model,
-                max_completion_tokens=self._max_tokens,
-                messages=messages,
-            )
-        except self._openai.BadRequestError as exc:
-            if "max_completion_tokens" not in str(exc):
+        kwargs: dict[str, Any] = {
+            "model": self._model,
+            "max_completion_tokens": self._max_tokens,
+            "reasoning_effort": "low",
+            "messages": messages,
+        }
+        # At most one fallback per adaptive parameter, then a final attempt.
+        for _ in range(2):
+            try:
+                return self._client.chat.completions.create(**kwargs)
+            except self._openai.BadRequestError as exc:
+                text = str(exc)
+                if "reasoning_effort" in text and "reasoning_effort" in kwargs:
+                    logger.debug(
+                        "summarize_reasoning_effort_fallback model=%s error=%s",
+                        self._model,
+                        exc,
+                    )
+                    del kwargs["reasoning_effort"]
+                    continue
+                if (
+                    "max_completion_tokens" in text
+                    and "max_completion_tokens" in kwargs
+                ):
+                    logger.debug(
+                        "summarize_token_param_fallback model=%s error=%s",
+                        self._model,
+                        exc,
+                    )
+                    kwargs["max_tokens"] = kwargs.pop("max_completion_tokens")
+                    continue
                 raise
-            logger.debug(
-                "summarize_token_param_fallback model=%s error=%s", self._model, exc
-            )
-            return self._client.chat.completions.create(
-                model=self._model,
-                max_tokens=self._max_tokens,
-                messages=messages,
-            )
+        return self._client.chat.completions.create(**kwargs)
 
     def summarize(self, system: str, user: str) -> str:
         """Call the chat-completions API and return the message content.
@@ -188,6 +209,17 @@ class OpenAISummarizer(Summarizer):
                 self._model,
                 finish_reason,
             )
+            if finish_reason == "length":
+                # On reasoning models the token budget covers internal
+                # reasoning too, so it can be exhausted before any visible
+                # summary text is produced.
+                raise RuntimeError(
+                    "OpenAI-compatible summarization produced no text: the "
+                    "output token budget was exhausted before any summary "
+                    "was emitted (on reasoning models the budget covers "
+                    "internal reasoning too). Raise "
+                    "MARKDOWN_VAULT_MCP_SUMMARIZE_MAX_TOKENS."
+                )
             raise RuntimeError(
                 "OpenAI-compatible summarization returned no text "
                 f"(finish_reason={finish_reason!r})."
