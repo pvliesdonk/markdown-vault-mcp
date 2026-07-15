@@ -169,14 +169,16 @@ class SummarizeManager:
             raise ValueError("No readable notes found for the given paths.")
 
         batches = self._pack_batches(notes)
-        summary = self._summarize_batches(batches, focus=focus, mode=mode)
+        summary, reduce_clipped = self._summarize_batches(
+            batches, focus=focus, mode=mode
+        )
 
         omitted = matched - len(notes)
         return SummaryResult(
             summary=summary,
             sources=[SummarySource(path=p, title=t) for p, t, _ in notes],
             mode=mode,
-            truncated=omitted > 0 or note_clipped,
+            truncated=omitted > 0 or note_clipped or reduce_clipped,
             notes_included=len(notes),
             notes_omitted=omitted,
         )
@@ -280,14 +282,19 @@ class SummarizeManager:
         *,
         focus: str | None,
         mode: str,
-    ) -> str:
-        """Run the map phase over *batches* and reduce to one summary."""
+    ) -> tuple[str, bool]:
+        """Run the map phase over *batches* and reduce to one summary.
+
+        Returns the summary and whether any partial summary was clipped to
+        fit a request budget during the reduce phase.
+        """
         if len(batches) == 1:
             # Single request: identical to the pre-#922 direct path.
             system = _SYSTEM_SYNTHESIS if mode == "synthesis" else _SYSTEM_PER_NOTE
-            return self._summarizer.summarize(
+            summary = self._summarizer.summarize(
                 _with_focus(system, focus), self._join_blocks(batches[0])
             )
+            return summary, False
 
         logger.info(
             "summarize_map_reduce batches=%d notes=%d mode=%s",
@@ -303,7 +310,7 @@ class SummarizeManager:
         )
         if mode == "per_note":
             # Per-note output is already in note order; no reduce needed.
-            return "\n\n".join(partials)
+            return "\n\n".join(partials), False
         return self._reduce(partials, focus=focus)
 
     def _join_blocks(self, batch: list[tuple[str, str, str]]) -> str:
@@ -322,30 +329,47 @@ class SummarizeManager:
                 pool.map(lambda user: self._summarizer.summarize(system, user), users)
             )
 
-    def _reduce(self, partials: list[str], *, focus: str | None) -> str:
-        """Combine partial summaries, recursively if they exceed one budget."""
+    def _reduce(self, partials: list[str], *, focus: str | None) -> tuple[str, bool]:
+        """Combine partial summaries, recursively if they exceed one budget.
+
+        Returns the combined summary and whether any partial was clipped to
+        fit a request budget along the way.
+        """
         system = _with_focus(_SYSTEM_REDUCE, focus)
+        clipped = False
         while True:
-            groups = self._pack_texts(partials)
+            if len(partials) == 1:
+                # A previous round already collapsed everything into one
+                # summary; re-summarizing it would be a wasted, lossy call.
+                return partials[0], clipped
+            groups, group_clipped = self._pack_texts(partials)
+            clipped = clipped or group_clipped
             if len(groups) == 1:
-                return self._summarizer.summarize(system, groups[0])
+                return self._summarizer.summarize(system, groups[0]), clipped
             if len(groups) >= len(partials):
                 # Every group is a singleton (each partial nearly fills the
                 # budget): force pairwise merges, clipped to the budget, so
                 # each round strictly shrinks the list and terminates.
-                groups = [
-                    "\n\n".join(partials[i : i + 2])[: self._max_input_chars]
-                    for i in range(0, len(partials), 2)
+                merged = [
+                    "\n\n".join(partials[i : i + 2]) for i in range(0, len(partials), 2)
                 ]
+                clipped = clipped or any(len(m) > self._max_input_chars for m in merged)
+                groups = [m[: self._max_input_chars] for m in merged]
             partials = self._run_parallel(groups, system)
 
-    def _pack_texts(self, texts: list[str]) -> list[str]:
-        """Greedily join texts, in order, into per-request character budgets."""
+    def _pack_texts(self, texts: list[str]) -> tuple[list[str], bool]:
+        """Greedily join texts, in order, into per-request character budgets.
+
+        Returns the groups and whether any single text had to be clipped to
+        fit one budget on its own.
+        """
         groups: list[str] = []
         current: list[str] = []
         used = 0
+        any_clipped = False
         for text in texts:
             clipped = text[: self._max_input_chars]
+            any_clipped = any_clipped or len(clipped) < len(text)
             size = len(clipped) + 2  # joined with a blank line
             if current and used + size > self._max_input_chars:
                 groups.append("\n\n".join(current))
@@ -355,4 +379,4 @@ class SummarizeManager:
             used += size
         if current:
             groups.append("\n\n".join(current))
-        return groups
+        return groups, any_clipped

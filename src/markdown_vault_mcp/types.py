@@ -769,9 +769,10 @@ class SummaryResult:
             the model — always populated so individual notes are attributable
             even when the prose does not name every one.
         mode: ``"synthesis"`` or ``"per_note"``.
-        truncated: True when the input was capped — more notes matched than
-            ``max_notes``, or a single note body exceeded the per-request
-            character budget (``max_input_chars``) and was cut.
+        truncated: True when content was lost to a cap — more notes matched
+            than ``max_notes``, a single note body exceeded the per-request
+            character budget (``max_input_chars``) and was cut, or a partial
+            summary was clipped during the reduce phase.
         notes_included: Number of notes whose content reached the model.
         notes_omitted: Number of matched notes that were dropped by the
             ``max_notes`` cap (or skipped as unreadable). Callers should

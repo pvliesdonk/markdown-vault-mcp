@@ -725,9 +725,14 @@ class TestMapReduce:
 
         assert result.summary == "R" * 100
         reduce_calls = [c for c in fake.calls if "combine partial summaries" in c[0]]
-        # More than one reduce round ran, and the pipeline still converged.
-        assert len(reduce_calls) >= 2
+        # Round one pairwise-merges 3 partials into 2 calls, round two merges
+        # those into 1; the lone survivor is returned without a redundant
+        # extra summarize pass (review finding on #924).
+        assert len(reduce_calls) == 3
         assert "combine partial summaries" in fake.calls[-1][0]
+        # The forced pairwise merges clipped content to fit the budget, and
+        # that loss is surfaced (review finding on #924).
+        assert result.truncated is True
 
     def test_oversized_note_clipped_to_request_budget(
         self, make_vault: VaultFactory
