@@ -1,6 +1,6 @@
 # MCP Resources
 
-MCP resources expose vault metadata that clients can read directly without invoking tools. Most resources return `application/json`; `ui://vault/app.html` is an exception that returns a self-contained HTML SPA for MCP Apps clients.
+MCP resources expose vault metadata that clients can read directly without invoking tools. Most resources return `application/json`; `ui://markdown_vault_mcp/app.html` is an exception that returns a self-contained HTML SPA for MCP Apps clients.
 
 Index freshness (`_meta.index_stale`)
 
@@ -8,17 +8,17 @@ The index-querying resources (`config://vault`, `stats://vault`, `tags://vault`,
 
 ## Quick Reference
 
-| URI                                           | Description                                    |
-| --------------------------------------------- | ---------------------------------------------- |
-| [`config://vault`](#configvault)              | Current vault configuration                    |
-| [`stats://vault`](#statsvault)                | Vault statistics                               |
-| [`tags://vault`](#tagsvault)                  | All tags grouped by indexed field              |
-| [`tags://vault/{field}`](#tagsvaultfield)     | Tags for a specific field                      |
-| [`folders://vault`](#foldersvault)            | All folder paths                               |
-| [`toc://vault/{path}`](#tocvaultpath)         | Table of contents for a note or folder subtree |
-| [`similar://vault/{path}`](#similarvaultpath) | Semantically similar notes for a document      |
-| [`recent://vault`](#recentvault)              | Most recently modified notes                   |
-| [`ui://vault/app.html`](#uivaultapphtml)      | Interactive vault explorer SPA (MCP Apps)      |
+| URI                                                                | Description                                    |
+| ------------------------------------------------------------------ | ---------------------------------------------- |
+| [`config://vault`](#configvault)                                   | Current vault configuration                    |
+| [`stats://vault`](#statsvault)                                     | Vault statistics                               |
+| [`tags://vault`](#tagsvault)                                       | All tags grouped by indexed field              |
+| [`tags://vault/{field}`](#tagsvaultfield)                          | Tags for a specific field                      |
+| [`folders://vault`](#foldersvault)                                 | All folder paths                               |
+| [`toc://vault/{path}`](#tocvaultpath)                              | Table of contents for a note or folder subtree |
+| [`similar://vault/{path}`](#similarvaultpath)                      | Semantically similar notes for a document      |
+| [`recent://vault`](#recentvault)                                   | Most recently modified notes                   |
+| [`ui://markdown_vault_mcp/app.html`](#uimarkdown_vault_mcpapphtml) | Interactive vault explorer SPA (MCP Apps)      |
 
 ______________________________________________________________________
 
@@ -205,6 +205,6 @@ The 20 most recently modified notes. Each entry is a full `NoteInfo` object with
 ]
 ```
 
-## `ui://vault/app.html`
+## `ui://markdown_vault_mcp/app.html`
 
 Interactive vault explorer delivered as a single self-contained HTML resource. This is an [MCP Apps](https://modelcontextprotocol.io/specification/2025-06-18/server/apps) resource; clients that support the MCP Apps protocol render it as an interactive iframe. See the [MCP Apps guide](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/mcp-apps/index.md) for details on the four views (Context Card, Graph Explorer, Vault Browser, Note Preview).

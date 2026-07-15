@@ -14,7 +14,7 @@ Point it at a directory of Markdown files (an Obsidian vault, a docs folder, a Z
 - **Write operations**: create, edit, delete, rename documents with automatic index updates
 - **Folder conventions**: per-folder `_conventions.md` files carry your authoring rules, surfaced to LLM clients at write time via [`get_conventions`](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/tools/#get_conventions) and in `write`/`edit` results
 - **Attachment support**: read, write, delete, and list non-markdown files (PDFs, images, and so on)
-- **LLM summarization**: optional `summarize` tool condenses a note, a set of notes, or a subtree with a language model (Anthropic Claude Haiku is the first supported backend); the synthesis references the individual source notes by path. Gated on `ANTHROPIC_API_KEY`.
+- **LLM summarization**: optional `summarize` tool condenses a note, a set of notes, or a subtree with a language model via any OpenAI-compatible endpoint (OpenAI, Ollama, Anthropic, vLLM, and others); the synthesis references the individual source notes by path. Gated on `OPENAI_API_KEY` or a configured base URL.
 - **Git integration**: optional auto-commit and push on every write via `GIT_ASKPASS`
 - **OIDC authentication**: optional token-based auth for HTTP deployments
 - **MCP tools**: search, read, write, edit, delete, rename, link graph analysis, and admin operations
@@ -41,7 +41,7 @@ See [MCP Prompts](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/promp
 
 ```
 from pathlib import Path
-from markdown_vault_mcp import Vault
+from markdown_vault_mcp.vault import Vault
 
 vault = Vault(source_dir=Path("/path/to/vault"))
 vault.index.build_index()

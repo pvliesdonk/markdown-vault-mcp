@@ -6,7 +6,7 @@ The `Vault` class is the primary public API for the library. MCP tools, CLI comm
 
 ```
 from pathlib import Path
-from markdown_vault_mcp import Vault
+from markdown_vault_mcp.vault import Vault
 
 # Basic read-only vault
 vault = Vault(source_dir=Path("/path/to/vault"))
@@ -89,9 +89,9 @@ Summarize facet: LLM-backed note/subtree summarization.
 
 Raises:
 
-| Type           | Description                                                                                           |
-| -------------- | ----------------------------------------------------------------------------------------------------- |
-| `RuntimeError` | If no summarization backend was configured (set ANTHROPIC_API_KEY and install the [summarize] extra). |
+| Type           | Description                                                                                                                         |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `RuntimeError` | If no summarization backend was configured (set OPENAI_API_KEY or an OpenAI-compatible base URL and install the [summarize] extra). |
 
 ### `conventions`
 

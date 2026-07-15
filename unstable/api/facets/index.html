@@ -2936,7 +2936,7 @@
 reached through the <code>reader</code> / <code>writer</code> / <code>graph</code> / <code>index</code> accessors on the
 <a href="../vault/"><code>Vault</code></a> composition root.</p>
 <div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">markdown_vault_mcp</span><span class="w"> </span><span class="kn">import</span> <span class="n">Vault</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">markdown_vault_mcp.vault</span><span class="w"> </span><span class="kn">import</span> <span class="n">Vault</span>
 
 <span class="n">vault</span> <span class="o">=</span> <span class="n">Vault</span><span class="p">(</span><span class="n">source_dir</span><span class="o">=</span><span class="n">Path</span><span class="p">(</span><span class="s2">&quot;/path/to/vault&quot;</span><span class="p">))</span>
 <span class="n">vault</span><span class="o">.</span><span class="n">index</span><span class="o">.</span><span class="n">build_index</span><span class="p">()</span>
@@ -3898,7 +3898,7 @@ first (bucket 3).</p>
       <tbody>
           <tr class="doc-section-item">
             <td>
-                  <code><span title="markdown_vault_mcp.exceptions.IndexUnavailableError">IndexUnavailableError</span></code>
+                  <code><span title="IndexUnavailableError">IndexUnavailableError</span></code>
             </td>
             <td>
               <div class="doc-md-description">
@@ -4184,7 +4184,7 @@ ANDed; applied post-hoc against full frontmatter.</p>
       <tbody>
           <tr class="doc-section-item">
             <td>
-                  <code><span title="markdown_vault_mcp.exceptions.IndexUnavailableError">IndexUnavailableError</span></code>
+                  <code><span title="IndexUnavailableError">IndexUnavailableError</span></code>
             </td>
             <td>
               <div class="doc-md-description">
@@ -4374,7 +4374,7 @@ multiple round trips.</p>
       <tbody>
           <tr class="doc-section-item">
             <td>
-                  <code><span title="markdown_vault_mcp.exceptions.IndexUnavailableError">IndexUnavailableError</span></code>
+                  <code><span title="IndexUnavailableError">IndexUnavailableError</span></code>
             </td>
             <td>
               <div class="doc-md-description">
@@ -5270,7 +5270,7 @@ modifications.  Pass <code>None</code> (default) to skip the check.</p>
       <tbody>
           <tr class="doc-section-item">
             <td>
-                  <code><a class="autorefs autorefs-internal" title="ReadOnlyError (markdown_vault_mcp.exceptions.ReadOnlyError)" href="../exceptions/#markdown_vault_mcp.exceptions.ReadOnlyError">ReadOnlyError</a></code>
+                  <code><span title="ReadOnlyError">ReadOnlyError</span></code>
             </td>
             <td>
               <div class="doc-md-description">
@@ -5280,7 +5280,7 @@ modifications.  Pass <code>None</code> (default) to skip the check.</p>
           </tr>
           <tr class="doc-section-item">
             <td>
-                  <code><a class="autorefs autorefs-internal" title="ConcurrentModificationError(path, expected, actual) (markdown_vault_mcp.exceptions.ConcurrentModificationError)" href="../exceptions/#markdown_vault_mcp.exceptions.ConcurrentModificationError">ConcurrentModificationError</a></code>
+                  <code><span title="ConcurrentModificationError">ConcurrentModificationError</span></code>
             </td>
             <td>
               <div class="doc-md-description">
@@ -5476,7 +5476,7 @@ Mutually exclusive with <em>line_start</em> / <em>line_end</em>.</p>
       <tbody>
           <tr class="doc-section-item">
             <td>
-                  <code><a class="autorefs autorefs-internal" title="EditConflictError(message, *, closest_match_line=None, first_diff_char=None, expected_snippet=None, found_snippet=None) (markdown_vault_mcp.exceptions.EditConflictError)" href="../exceptions/#markdown_vault_mcp.exceptions.EditConflictError">EditConflictError</a></code>
+                  <code><span title="EditConflictError">EditConflictError</span></code>
             </td>
             <td>
               <div class="doc-md-description">
@@ -5487,7 +5487,7 @@ once.</p>
           </tr>
           <tr class="doc-section-item">
             <td>
-                  <code><a class="autorefs autorefs-internal" title="ReadOnlyError (markdown_vault_mcp.exceptions.ReadOnlyError)" href="../exceptions/#markdown_vault_mcp.exceptions.ReadOnlyError">ReadOnlyError</a></code>
+                  <code><span title="ReadOnlyError">ReadOnlyError</span></code>
             </td>
             <td>
               <div class="doc-md-description">
@@ -5497,7 +5497,7 @@ once.</p>
           </tr>
           <tr class="doc-section-item">
             <td>
-                  <code><a class="autorefs autorefs-internal" title="ConcurrentModificationError(path, expected, actual) (markdown_vault_mcp.exceptions.ConcurrentModificationError)" href="../exceptions/#markdown_vault_mcp.exceptions.ConcurrentModificationError">ConcurrentModificationError</a></code>
+                  <code><span title="ConcurrentModificationError">ConcurrentModificationError</span></code>
             </td>
             <td>
               <div class="doc-md-description">
@@ -5508,7 +5508,7 @@ not match.</p>
           </tr>
           <tr class="doc-section-item">
             <td>
-                  <code><a class="autorefs autorefs-internal" title="DocumentNotFoundError (markdown_vault_mcp.exceptions.DocumentNotFoundError)" href="../exceptions/#markdown_vault_mcp.exceptions.DocumentNotFoundError">DocumentNotFoundError</a></code>
+                  <code><span title="DocumentNotFoundError">DocumentNotFoundError</span></code>
             </td>
             <td>
               <div class="doc-md-description">
@@ -5636,7 +5636,7 @@ vector indices.</p>
       <tbody>
           <tr class="doc-section-item">
             <td>
-                  <code><a class="autorefs autorefs-internal" title="ReadOnlyError (markdown_vault_mcp.exceptions.ReadOnlyError)" href="../exceptions/#markdown_vault_mcp.exceptions.ReadOnlyError">ReadOnlyError</a></code>
+                  <code><span title="ReadOnlyError">ReadOnlyError</span></code>
             </td>
             <td>
               <div class="doc-md-description">
@@ -5646,7 +5646,7 @@ vector indices.</p>
           </tr>
           <tr class="doc-section-item">
             <td>
-                  <code><a class="autorefs autorefs-internal" title="ConcurrentModificationError(path, expected, actual) (markdown_vault_mcp.exceptions.ConcurrentModificationError)" href="../exceptions/#markdown_vault_mcp.exceptions.ConcurrentModificationError">ConcurrentModificationError</a></code>
+                  <code><span title="ConcurrentModificationError">ConcurrentModificationError</span></code>
             </td>
             <td>
               <div class="doc-md-description">
@@ -5657,7 +5657,7 @@ not match.</p>
           </tr>
           <tr class="doc-section-item">
             <td>
-                  <code><a class="autorefs autorefs-internal" title="DocumentNotFoundError (markdown_vault_mcp.exceptions.DocumentNotFoundError)" href="../exceptions/#markdown_vault_mcp.exceptions.DocumentNotFoundError">DocumentNotFoundError</a></code>
+                  <code><span title="DocumentNotFoundError">DocumentNotFoundError</span></code>
             </td>
             <td>
               <div class="doc-md-description">
@@ -5809,7 +5809,7 @@ vault to reflect the new path.  Defaults to <code>False</code>.</p>
       <tbody>
           <tr class="doc-section-item">
             <td>
-                  <code><a class="autorefs autorefs-internal" title="ReadOnlyError (markdown_vault_mcp.exceptions.ReadOnlyError)" href="../exceptions/#markdown_vault_mcp.exceptions.ReadOnlyError">ReadOnlyError</a></code>
+                  <code><span title="ReadOnlyError">ReadOnlyError</span></code>
             </td>
             <td>
               <div class="doc-md-description">
@@ -5819,7 +5819,7 @@ vault to reflect the new path.  Defaults to <code>False</code>.</p>
           </tr>
           <tr class="doc-section-item">
             <td>
-                  <code><a class="autorefs autorefs-internal" title="ConcurrentModificationError(path, expected, actual) (markdown_vault_mcp.exceptions.ConcurrentModificationError)" href="../exceptions/#markdown_vault_mcp.exceptions.ConcurrentModificationError">ConcurrentModificationError</a></code>
+                  <code><span title="ConcurrentModificationError">ConcurrentModificationError</span></code>
             </td>
             <td>
               <div class="doc-md-description">
@@ -5830,7 +5830,7 @@ not match.</p>
           </tr>
           <tr class="doc-section-item">
             <td>
-                  <code><a class="autorefs autorefs-internal" title="DocumentNotFoundError (markdown_vault_mcp.exceptions.DocumentNotFoundError)" href="../exceptions/#markdown_vault_mcp.exceptions.DocumentNotFoundError">DocumentNotFoundError</a></code>
+                  <code><span title="DocumentNotFoundError">DocumentNotFoundError</span></code>
             </td>
             <td>
               <div class="doc-md-description">
@@ -5840,7 +5840,7 @@ not match.</p>
           </tr>
           <tr class="doc-section-item">
             <td>
-                  <code><a class="autorefs autorefs-internal" title="DocumentExistsError (markdown_vault_mcp.exceptions.DocumentExistsError)" href="../exceptions/#markdown_vault_mcp.exceptions.DocumentExistsError">DocumentExistsError</a></code>
+                  <code><span title="DocumentExistsError">DocumentExistsError</span></code>
             </td>
             <td>
               <div class="doc-md-description">
@@ -5968,7 +5968,7 @@ before anything moves); link rewrites are best-effort.</p>
       <tbody>
           <tr class="doc-section-item">
             <td>
-                  <code><a class="autorefs autorefs-internal" title="ReadOnlyError (markdown_vault_mcp.exceptions.ReadOnlyError)" href="../exceptions/#markdown_vault_mcp.exceptions.ReadOnlyError">ReadOnlyError</a></code>
+                  <code><span title="ReadOnlyError">ReadOnlyError</span></code>
             </td>
             <td>
               <div class="doc-md-description">
@@ -5978,7 +5978,7 @@ before anything moves); link rewrites are best-effort.</p>
           </tr>
           <tr class="doc-section-item">
             <td>
-                  <code><a class="autorefs autorefs-internal" title="DocumentNotFoundError (markdown_vault_mcp.exceptions.DocumentNotFoundError)" href="../exceptions/#markdown_vault_mcp.exceptions.DocumentNotFoundError">DocumentNotFoundError</a></code>
+                  <code><span title="DocumentNotFoundError">DocumentNotFoundError</span></code>
             </td>
             <td>
               <div class="doc-md-description">
@@ -5989,7 +5989,7 @@ or empty.</p>
           </tr>
           <tr class="doc-section-item">
             <td>
-                  <code><a class="autorefs autorefs-internal" title="DocumentExistsError (markdown_vault_mcp.exceptions.DocumentExistsError)" href="../exceptions/#markdown_vault_mcp.exceptions.DocumentExistsError">DocumentExistsError</a></code>
+                  <code><span title="DocumentExistsError">DocumentExistsError</span></code>
             </td>
             <td>
               <div class="doc-md-description">
@@ -6082,7 +6082,7 @@ partially moved with the index unchanged; reindex recovers.</p>
       <tbody>
           <tr class="doc-section-item">
             <td>
-                  <code><a class="autorefs autorefs-internal" title="ReadOnlyError (markdown_vault_mcp.exceptions.ReadOnlyError)" href="../exceptions/#markdown_vault_mcp.exceptions.ReadOnlyError">ReadOnlyError</a></code>
+                  <code><span title="ReadOnlyError">ReadOnlyError</span></code>
             </td>
             <td>
               <div class="doc-md-description">
@@ -6092,7 +6092,7 @@ partially moved with the index unchanged; reindex recovers.</p>
           </tr>
           <tr class="doc-section-item">
             <td>
-                  <code><a class="autorefs autorefs-internal" title="ConcurrentModificationError(path, expected, actual) (markdown_vault_mcp.exceptions.ConcurrentModificationError)" href="../exceptions/#markdown_vault_mcp.exceptions.ConcurrentModificationError">ConcurrentModificationError</a></code>
+                  <code><span title="ConcurrentModificationError">ConcurrentModificationError</span></code>
             </td>
             <td>
               <div class="doc-md-description">
@@ -6356,7 +6356,7 @@ means unlimited.</p>
       <tbody>
           <tr class="doc-section-item">
             <td>
-                  <code><span title="markdown_vault_mcp.exceptions.IndexUnavailableError">IndexUnavailableError</span></code>
+                  <code><span title="IndexUnavailableError">IndexUnavailableError</span></code>
             </td>
             <td>
               <div class="doc-md-description">
@@ -6499,7 +6499,7 @@ means unlimited.</p>
       <tbody>
           <tr class="doc-section-item">
             <td>
-                  <code><span title="markdown_vault_mcp.exceptions.IndexUnavailableError">IndexUnavailableError</span></code>
+                  <code><span title="IndexUnavailableError">IndexUnavailableError</span></code>
             </td>
             <td>
               <div class="doc-md-description">
@@ -6877,7 +6877,7 @@ Defaults to <code>10</code>.</p>
       <tbody>
           <tr class="doc-section-item">
             <td>
-                  <code><span title="markdown_vault_mcp.exceptions.IndexUnavailableError">IndexUnavailableError</span></code>
+                  <code><span title="IndexUnavailableError">IndexUnavailableError</span></code>
             </td>
             <td>
               <div class="doc-md-description">
@@ -7039,7 +7039,7 @@ traversals.</p>
       <tbody>
           <tr class="doc-section-item">
             <td>
-                  <code><span title="markdown_vault_mcp.exceptions.IndexUnavailableError">IndexUnavailableError</span></code>
+                  <code><span title="IndexUnavailableError">IndexUnavailableError</span></code>
             </td>
             <td>
               <div class="doc-md-description">
@@ -7422,7 +7422,7 @@ root's <code>_require_built</code> instead, which raises immediately.</p>
       <tbody>
           <tr class="doc-section-item">
             <td>
-                  <code><span title="markdown_vault_mcp.exceptions.IndexUnavailableError">IndexUnavailableError</span></code>
+                  <code><span title="IndexUnavailableError">IndexUnavailableError</span></code>
             </td>
             <td>
               <div class="doc-md-description">
@@ -7540,7 +7540,7 @@ changes require <code>force=True</code> to apply (see issue #525).</p>
       <tbody>
           <tr class="doc-section-item">
             <td>
-                  <code><span title="markdown_vault_mcp.exceptions.IndexUnavailableError">IndexUnavailableError</span></code>
+                  <code><span title="IndexUnavailableError">IndexUnavailableError</span></code>
             </td>
             <td>
               <div class="doc-md-description">
@@ -7636,7 +7636,7 @@ already exists on disk.</p>
       <tbody>
           <tr class="doc-section-item">
             <td>
-                  <code><span title="markdown_vault_mcp.exceptions.IndexUnavailableError">IndexUnavailableError</span></code>
+                  <code><span title="IndexUnavailableError">IndexUnavailableError</span></code>
             </td>
             <td>
               <div class="doc-md-description">
@@ -7646,7 +7646,7 @@ already exists on disk.</p>
           </tr>
           <tr class="doc-section-item">
             <td>
-                  <code><span title="markdown_vault_mcp.exceptions.EmbeddingsNotConfiguredError">EmbeddingsNotConfiguredError</span></code>
+                  <code><span title="EmbeddingsNotConfiguredError">EmbeddingsNotConfiguredError</span></code>
             </td>
             <td>
               <div class="doc-md-description">

@@ -18,7 +18,7 @@ Adds FastMCP for running as an MCP server.
 pip install markdown-vault-mcp[embeddings-api]
 ```
 
-Adds httpx + numpy for Ollama/OpenAI embeddings via HTTP.
+Adds the openai SDK + httpx + numpy for Ollama/OpenAI embeddings via API.
 
 ```
 pip install markdown-vault-mcp[embeddings]

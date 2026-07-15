@@ -1269,10 +1269,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#uivaultapphtml" class="md-nav__link">
+  <a href="#uimarkdown_vault_mcpapphtml" class="md-nav__link">
     <span class="md-ellipsis">
       
-        ui://vault/app.html
+        ui://markdown_vault_mcp/app.html
       
     </span>
   </a>
@@ -1907,10 +1907,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#uivaultapphtml" class="md-nav__link">
+  <a href="#uimarkdown_vault_mcpapphtml" class="md-nav__link">
     <span class="md-ellipsis">
       
-        ui://vault/app.html
+        ui://markdown_vault_mcp/app.html
       
     </span>
   </a>
@@ -1938,7 +1938,7 @@
 
 
 <h1 id="mcp-resources">MCP Resources<a class="headerlink" href="#mcp-resources" title="Permanent link">&para;</a></h1>
-<p>MCP resources expose vault metadata that clients can read directly without invoking tools. Most resources return <code>application/json</code>; <code>ui://vault/app.html</code> is an exception that returns a self-contained HTML SPA for MCP Apps clients.</p>
+<p>MCP resources expose vault metadata that clients can read directly without invoking tools. Most resources return <code>application/json</code>; <code>ui://markdown_vault_mcp/app.html</code> is an exception that returns a self-contained HTML SPA for MCP Apps clients.</p>
 <div class="admonition note">
 <p class="admonition-title">Index freshness (<code>_meta.index_stale</code>)</p>
 <p>The index-querying resources (<code>config://vault</code>, <code>stats://vault</code>, <code>tags://vault</code>, <code>tags://vault/{field}</code>, <code>folders://vault</code>, <code>toc://vault/{path}</code>, <code>similar://vault/{path}</code>, and <code>recent://vault</code>) keep their bare JSON contents unchanged and report index freshness out-of-band in the resource read's <strong><code>_meta.index_stale</code></strong> field (read it via <code>read_resource_mcp(uri).meta</code>). It is <code>true</code> when a write landed during the read or the IndexWriter was non-idle at response time. Resources carry no <code>wait_for_pending_writes</code> parameter (they signal only); use the equivalent MCP tool with <code>wait_for_pending_writes=true</code> when you need to block for a fresh read.</p>
@@ -1985,7 +1985,7 @@
 <td>Most recently modified notes</td>
 </tr>
 <tr>
-<td><a href="#uivaultapphtml"><code>ui://vault/app.html</code></a></td>
+<td><a href="#uimarkdown_vault_mcpapphtml"><code>ui://markdown_vault_mcp/app.html</code></a></td>
 <td>Interactive vault explorer SPA (MCP Apps)</td>
 </tr>
 </tbody>
@@ -2128,7 +2128,7 @@ the list always matches actual index behavior.</p>
 <span class="w">  </span><span class="p">{</span><span class="nt">&quot;path&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Projects/roadmap.md&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;title&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Roadmap&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;folder&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Projects&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;frontmatter&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{},</span><span class="w"> </span><span class="nt">&quot;kind&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;note&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;modified_at&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">1705250700.0</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;modified_at_iso&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2024-01-14T16:45:00+00:00&quot;</span><span class="p">}</span>
 <span class="p">]</span>
 </code></pre></div>
-<h2 id="uivaultapphtml"><code>ui://vault/app.html</code><a class="headerlink" href="#uivaultapphtml" title="Permanent link">&para;</a></h2>
+<h2 id="uimarkdown_vault_mcpapphtml"><code>ui://markdown_vault_mcp/app.html</code><a class="headerlink" href="#uimarkdown_vault_mcpapphtml" title="Permanent link">&para;</a></h2>
 <p>Interactive vault explorer delivered as a single self-contained HTML resource. This is an <a href="https://modelcontextprotocol.io/specification/2025-06-18/server/apps">MCP Apps</a> resource; clients that support the MCP Apps protocol render it as an interactive iframe. See the <a href="../guides/mcp-apps/">MCP Apps guide</a> for details on the four views (Context Card, Graph Explorer, Vault Browser, Note Preview).</p>
 
 

@@ -4,7 +4,7 @@ The read / write / graph / index operations live on four cohesive facets, reache
 
 ```
 from pathlib import Path
-from markdown_vault_mcp import Vault
+from markdown_vault_mcp.vault import Vault
 
 vault = Vault(source_dir=Path("/path/to/vault"))
 vault.index.build_index()

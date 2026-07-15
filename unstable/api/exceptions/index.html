@@ -1936,8 +1936,8 @@
 
 
 <h1 id="exceptions">Exceptions<a class="headerlink" href="#exceptions" title="Permanent link">&para;</a></h1>
-<p>All exceptions are importable from the top-level <code>markdown_vault_mcp</code> package.</p>
-<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">markdown_vault_mcp</span><span class="w"> </span><span class="kn">import</span> <span class="n">DocumentNotFoundError</span><span class="p">,</span> <span class="n">ReadOnlyError</span>
+<p>All exceptions are importable from the <code>markdown_vault_mcp.exceptions</code> module.</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">markdown_vault_mcp.exceptions</span><span class="w"> </span><span class="kn">import</span> <span class="n">DocumentNotFoundError</span><span class="p">,</span> <span class="n">ReadOnlyError</span>
 </code></pre></div>
 <p>Most exceptions inherit from <code>MarkdownMCPError</code>, so callers can catch the base class to handle any library error. The one exception is <code>ConfigurationError</code>, which is re-exported from <code>fastmcp-pvl-core</code> and is not a <code>MarkdownMCPError</code> subclass (see <a href="#configuration-errors">Configuration Errors</a>). Startup config failures are meant to fail hard rather than be caught by a library-error handler.</p>
 <h2 id="base-exception">Base Exception<a class="headerlink" href="#base-exception" title="Permanent link">&para;</a></h2>

@@ -1,6 +1,6 @@
 # MCP Apps
 
-The server ships four browser-based views that MCP clients supporting the [MCP Apps protocol](https://modelcontextprotocol.io/specification/2025-06-18/server/apps) can render inline or in fullscreen. They are delivered as a single HTML resource at `ui://vault/app.html` and use `visibility="app"` so they appear only in supporting clients.
+The server ships four browser-based views that MCP clients supporting the [MCP Apps protocol](https://modelcontextprotocol.io/specification/2025-06-18/server/apps) can render inline or in fullscreen. They are delivered as a single HTML resource at `ui://markdown_vault_mcp/app.html` and use `visibility="app"` so they appear only in supporting clients.
 
 ## Views
 

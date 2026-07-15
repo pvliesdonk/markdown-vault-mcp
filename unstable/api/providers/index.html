@@ -2536,7 +2536,13 @@ token-dense batch that still exceeds it is skipped at embed time).</p>
 
 
 
-        <p>Embedding provider backed by the Ollama REST API.</p>
+        <p>Embedding provider backed by an Ollama server.</p>
+<p>Embeds via Ollama's OpenAI-compatible endpoint (<code>{host}/v1</code>) through
+the shared :class:<code>_OpenAICompatEmbeddings</code> transport — the provider is
+a preset over one wire protocol, not a second code path (#916). Two
+capabilities have no OpenAI-API equivalent and keep the native REST API:
+CPU-only inference (<code>options.num_gpu</code>, <code>embed()</code> when <em>cpu_only</em>)
+and the <code>/api/show</code> context-length probe.</p>
 
 
 <p><span class="doc-section-title">Parameters:</span></p>
@@ -2592,7 +2598,7 @@ token-dense batch that still exceeds it is skipped at embed time).</p>
             <td>
               <div class="doc-md-description">
                 <p>When <code>True</code>, request CPU-only inference (sets
-<code>num_gpu=0</code> in the Ollama options payload).</p>
+<code>num_gpu=0</code> in the Ollama options payload; native API).</p>
               </div>
             </td>
             <td>
@@ -2683,7 +2689,9 @@ token-dense batch that still exceeds it is skipped at embed time).</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>If <code>httpx</code> is not installed.</p>
+                <p>If <code>httpx</code> is not installed, or the <code>openai</code>
+SDK is not installed (unless <em>cpu_only</em>, which only needs
+the native API).</p>
               </div>
             </td>
           </tr>
@@ -2794,7 +2802,9 @@ so the conservative fallback cap persists until the server restarts.</p>
 
     <div class="doc doc-contents ">
 
-        <p>Embed a batch of texts via the Ollama REST API.</p>
+        <p>Embed a batch of texts.</p>
+<p>Uses the OpenAI-compatible endpoint; falls back to the native API
+only when <em>cpu_only</em> was requested.</p>
 
 
 <p><span class="doc-section-title">Parameters:</span></p>
@@ -2866,7 +2876,7 @@ so the conservative fallback cap persists until the server restarts.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>If the Ollama API returns an error response.</p>
+                <p>If the embeddings request fails.</p>
               </div>
             </td>
           </tr>
@@ -3048,7 +3058,7 @@ so the conservative fallback cap persists until the server restarts.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>If <code>httpx</code> is not installed.</p>
+                <p>If the <code>openai</code> SDK is not installed.</p>
               </div>
             </td>
           </tr>
@@ -3167,7 +3177,7 @@ conservative chunk cap.</p>
 
     <div class="doc doc-contents ">
 
-        <p>Embed a batch of texts via the OpenAI Embeddings API.</p>
+        <p>Embed a batch of texts via the OpenAI-compatible Embeddings API.</p>
 
 
 <p><span class="doc-section-title">Parameters:</span></p>
@@ -3239,7 +3249,7 @@ conservative chunk cap.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>If the OpenAI API returns an error response.</p>
+                <p>If the embeddings request fails.</p>
               </div>
             </td>
           </tr>
@@ -3561,7 +3571,7 @@ that field is <code>None</code>, probes for available providers in this order:</
                 <code>config</code>
             </td>
             <td>
-                  <code><a class="autorefs autorefs-internal" title="ProjectConfig(source_dir, read_only=True, server_name='markdown-vault-mcp', instructions=None, git=GitConfig(), indexing=IndexingConfig(), embeddings=EmbeddingsConfig(), search=SearchConfig(), summarize=SummarizeConfig(), sync=SyncConfig(), content=ContentConfig(), transfer=TransferConfig(), disable_apps_ui=False, server=ServerConfig())
+                  <code><a class="autorefs autorefs-internal" title="ProjectConfig(server=ServerConfig(), source_dir=Path('/data/vault'), read_only=True, server_name='markdown-vault-mcp', instructions=None, git=GitConfig(), indexing=IndexingConfig(), embeddings=EmbeddingsConfig(), search=SearchConfig(), summarize=SummarizeConfig(), sync=SyncConfig(), content=ContentConfig(), transfer=TransferConfig(), disable_apps_ui=False)
 
   
       dataclass

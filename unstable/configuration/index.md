@@ -99,20 +99,32 @@ When `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` is not set, the server tries provid
 1. **Ollama** — if `OLLAMA_HOST` is reachable
 1. **FastEmbed** — if the `fastembed` package is installed
 
+Both API providers speak the OpenAI-compatible embeddings protocol through the official `openai` SDK: the `ollama` provider is a preset that targets `{OLLAMA_HOST}/v1` with no key required. The `OLLAMA_*` settings and their behavior are unchanged; `OLLAMA_CPU_ONLY` uses Ollama's native API, which is the only way to request CPU-only inference.
+
 **Explicit vs. auto-detect failure handling:** when you set `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` to a specific backend and it cannot be constructed at startup — a missing dependency, missing/empty credentials, or an unrecognised value — the server **fails fast** with a `ConfigurationError` rather than silently falling back to keyword-only search. (An unreachable Ollama/OpenAI *service* does not prevent startup — the provider still loads; the failure surfaces later as an embedding error during index build.) When the variable is *unset* (auto-detect) and no backend is available, the server logs a warning and continues with semantic search disabled. Set the variable explicitly if you want a missing provider to be a hard startup error.
 
 ## Summarization
 
-Powers the optional [`summarize`](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/tools/#summarize) tool. Anthropic Claude (Haiku by default) is the first supported backend, and others can be added later. The tool is only registered when a backend is configured (an `ANTHROPIC_API_KEY`). Requires the `anthropic` SDK: `pip install 'markdown-vault-mcp[summarize]'`.
+Powers the optional [`summarize`](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/tools/#summarize) tool. The backend speaks the OpenAI-compatible chat-completions API, so one endpoint/key/model triple covers OpenAI, a local Ollama, the Anthropic compatibility endpoint, vLLM, and any other compatible server. The tool is only registered when a backend is configured: an API key, or an explicit base URL for local endpoints that need no key. Requires the `openai` SDK: `pip install 'markdown-vault-mcp[summarize]'`.
 
-| Variable                                       | Type   | Default            | Description                                                                                         |
-| ---------------------------------------------- | ------ | ------------------ | --------------------------------------------------------------------------------------------------- |
-| `MARKDOWN_VAULT_MCP_SUMMARIZE_PROVIDER`        | string | auto-detect        | Summarization backend. Currently `anthropic`. Leave unset to auto-detect from available credentials |
-| `ANTHROPIC_API_KEY`                            | string | (none)             | Anthropic API key. Presence enables the `summarize` tool. **Not** `MARKDOWN_VAULT_MCP_`-prefixed    |
-| `MARKDOWN_VAULT_MCP_SUMMARIZE_ANTHROPIC_MODEL` | string | `claude-haiku-4-5` | Claude model id used for summaries                                                                  |
-| `MARKDOWN_VAULT_MCP_SUMMARIZE_MAX_TOKENS`      | int    | `2048`             | Upper bound on generated summary tokens per call                                                    |
-| `MARKDOWN_VAULT_MCP_SUMMARIZE_MAX_NOTES`       | int    | `50`               | Cap on notes summarised per call (subtree expansion is truncated to this many)                      |
-| `MARKDOWN_VAULT_MCP_SUMMARIZE_MAX_INPUT_CHARS` | int    | `200000`           | Aggregate cap on note characters sent to the model per call                                         |
+| Variable                                       | Type   | Default                     | Description                                                                                                              |
+| ---------------------------------------------- | ------ | --------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `MARKDOWN_VAULT_MCP_SUMMARIZE_PROVIDER`        | string | auto-detect                 | Summarization backend. Currently `openai`. Leave unset to auto-detect from available credentials                         |
+| `MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_API_KEY`  | string | (none)                      | API key for the summarize endpoint. Presence enables the `summarize` tool. Falls back to the bare `OPENAI_API_KEY`       |
+| `OPENAI_API_KEY`                               | string | (none)                      | Fallback API key (shared with embeddings). Presence enables the `summarize` tool. **Not** `MARKDOWN_VAULT_MCP_`-prefixed |
+| `MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_BASE_URL` | string | `https://api.openai.com/v1` | OpenAI-compatible endpoint base URL. Setting it enables the tool even without a key (local endpoints)                    |
+| `MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_MODEL`    | string | `gpt-5-mini`                | Chat model id used for summaries                                                                                         |
+| `MARKDOWN_VAULT_MCP_SUMMARIZE_MAX_TOKENS`      | int    | `2048`                      | Upper bound on generated summary tokens per call                                                                         |
+| `MARKDOWN_VAULT_MCP_SUMMARIZE_MAX_NOTES`       | int    | `50`                        | Cap on notes summarised per call (subtree expansion is truncated to this many)                                           |
+| `MARKDOWN_VAULT_MCP_SUMMARIZE_MAX_INPUT_CHARS` | int    | `200000`                    | Aggregate cap on note characters sent to the model per call                                                              |
+
+The bare `OPENAI_BASE_URL` is honored as a *value* fallback when a key is set (such as an organization-wide proxy), but it never enables the tool by itself: setting it purely for embeddings does not switch summarization on.
+
+Provider recipes
+
+- **OpenAI**: set `OPENAI_API_KEY` (or the prefixed `SUMMARIZE_OPENAI_API_KEY`). Done; the default model is `gpt-5-mini`.
+- **Ollama (local, no key)**: `MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_BASE_URL=http://localhost:11434/v1` and `MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_MODEL=llama3.2` (any installed model). No API key needed.
+- **Anthropic (Claude via the OpenAI compatibility endpoint)**: `MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_BASE_URL=https://api.anthropic.com/v1`, the Anthropic key in `MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_API_KEY`, and `MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_MODEL=claude-haiku-4-5`.
 
 Note content leaves your environment
 

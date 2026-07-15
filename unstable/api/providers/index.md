@@ -77,15 +77,17 @@ Returns:
 
 Bases: `EmbeddingProvider`
 
-Embedding provider backed by the Ollama REST API.
+Embedding provider backed by an Ollama server.
+
+Embeds via Ollama's OpenAI-compatible endpoint (`{host}/v1`) through the shared :class:`_OpenAICompatEmbeddings` transport — the provider is a preset over one wire protocol, not a second code path (#916). Two capabilities have no OpenAI-API equivalent and keep the native REST API: CPU-only inference (`options.num_gpu`, `embed()` when *cpu_only*) and the `/api/show` context-length probe.
 
 Parameters:
 
-| Name       | Type   | Description                                                                           | Default    |
-| ---------- | ------ | ------------------------------------------------------------------------------------- | ---------- |
-| `host`     | `str`  | Base URL of the Ollama server.                                                        | *required* |
-| `model`    | `str`  | Model name to use for embeddings.                                                     | *required* |
-| `cpu_only` | `bool` | When True, request CPU-only inference (sets num_gpu=0 in the Ollama options payload). | `False`    |
+| Name       | Type   | Description                                                                                       | Default    |
+| ---------- | ------ | ------------------------------------------------------------------------------------------------- | ---------- |
+| `host`     | `str`  | Base URL of the Ollama server.                                                                    | *required* |
+| `model`    | `str`  | Model name to use for embeddings.                                                                 | *required* |
+| `cpu_only` | `bool` | When True, request CPU-only inference (sets num_gpu=0 in the Ollama options payload; native API). | `False`    |
 
 Initialise OllamaProvider with explicit parameters.
 
@@ -99,9 +101,9 @@ Parameters:
 
 Raises:
 
-| Type          | Description                |
-| ------------- | -------------------------- |
-| `ImportError` | If httpx is not installed. |
+| Type          | Description                                                                                                       |
+| ------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `ImportError` | If httpx is not installed, or the openai SDK is not installed (unless cpu_only, which only needs the native API). |
 
 ### `dimension`
 
@@ -123,7 +125,9 @@ Returns None if the query fails or the field is absent. The result (including `N
 
 ### `embed(texts)`
 
-Embed a batch of texts via the Ollama REST API.
+Embed a batch of texts.
+
+Uses the OpenAI-compatible endpoint; falls back to the native API only when *cpu_only* was requested.
 
 Parameters:
 
@@ -139,9 +143,9 @@ Returns:
 
 Raises:
 
-| Type           | Description                                  |
-| -------------- | -------------------------------------------- |
-| `RuntimeError` | If the Ollama API returns an error response. |
+| Type           | Description                      |
+| -------------- | -------------------------------- |
+| `RuntimeError` | If the embeddings request fails. |
 
 ## `OpenAIProvider(api_key, *, base_url=_BASE_URL, model=_MODEL)`
 
@@ -169,10 +173,10 @@ Parameters:
 
 Raises:
 
-| Type           | Description                |
-| -------------- | -------------------------- |
-| `ImportError`  | If httpx is not installed. |
-| `RuntimeError` | If api_key is empty.       |
+| Type           | Description                         |
+| -------------- | ----------------------------------- |
+| `ImportError`  | If the openai SDK is not installed. |
+| `RuntimeError` | If api_key is empty.                |
 
 ### `dimension`
 
@@ -194,7 +198,7 @@ Returns None for models absent from the table; callers fall back to a conservati
 
 ### `embed(texts)`
 
-Embed a batch of texts via the OpenAI Embeddings API.
+Embed a batch of texts via the OpenAI-compatible Embeddings API.
 
 Parameters:
 
@@ -210,9 +214,9 @@ Returns:
 
 Raises:
 
-| Type           | Description                                  |
-| -------------- | -------------------------------------------- |
-| `RuntimeError` | If the OpenAI API returns an error response. |
+| Type           | Description                      |
+| -------------- | -------------------------------- |
+| `RuntimeError` | If the embeddings request fails. |
 
 ## `FastEmbedProvider(model_name='BAAI/bge-small-en-v1.5', cache_dir=None)`
 

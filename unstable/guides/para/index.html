@@ -2527,7 +2527,7 @@ these conventions and skips or reverses link proposals they forbid.</p>
 <div class="highlight"><pre><span></span><code>Use the create_from_template prompt with template_name=&quot;inbox&quot;
 </code></pre></div>
 <p><strong>Programmatically (scripting escape hatch):</strong></p>
-<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">markdown_vault_mcp</span><span class="w"> </span><span class="kn">import</span> <span class="n">Vault</span>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">markdown_vault_mcp.vault</span><span class="w"> </span><span class="kn">import</span> <span class="n">Vault</span>
 
 <span class="n">vault</span> <span class="o">=</span> <span class="n">Vault</span><span class="p">(</span><span class="n">source_dir</span><span class="o">=</span><span class="s2">&quot;/path/to/vault&quot;</span><span class="p">)</span>
 <span class="n">vault</span><span class="o">.</span><span class="n">writer</span><span class="o">.</span><span class="n">write</span><span class="p">(</span>
@@ -2614,7 +2614,7 @@ these conventions and skips or reverses link proposals they forbid.</p>
 <p>The easiest path is to use <code>para-weekly-review</code> Step 7, which handles the full lifecycle (surface candidates, flip status, move) with user confirmation. You can also invoke archiving ad-hoc outside the review cadence: "Claude, list everything with <code>status=completed</code> in <code>1-Projects/</code> and archive them." Claude runs <code>list_documents(folder='1-Projects')</code>, filters client-side on the frontmatter, and proposes each move for your confirmation (or batch confirmation if you prefer).</p>
 <p>For scripting outside the prompt:</p>
 <div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">date</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">markdown_vault_mcp</span><span class="w"> </span><span class="kn">import</span> <span class="n">Vault</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">markdown_vault_mcp.vault</span><span class="w"> </span><span class="kn">import</span> <span class="n">Vault</span>
 
 <span class="n">vault</span> <span class="o">=</span> <span class="n">Vault</span><span class="p">(</span><span class="n">source_dir</span><span class="o">=</span><span class="s2">&quot;/path/to/vault&quot;</span><span class="p">)</span>
 

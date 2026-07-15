@@ -2129,7 +2129,7 @@
 <p>The <code>Vault</code> class is the primary public API for the library. MCP tools, CLI commands, and direct integrations all go through this class. It is a thin composition root: the read / write / graph / index operations live on the four facets, reached through the <code>reader</code> / <code>writer</code> / <code>graph</code> / <code>index</code> accessors (see <a href="../facets/">Facets</a>).</p>
 <h2 id="quick-start">Quick Start<a class="headerlink" href="#quick-start" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">markdown_vault_mcp</span><span class="w"> </span><span class="kn">import</span> <span class="n">Vault</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">markdown_vault_mcp.vault</span><span class="w"> </span><span class="kn">import</span> <span class="n">Vault</span>
 
 <span class="c1"># Basic read-only vault</span>
 <span class="n">vault</span> <span class="o">=</span> <span class="n">Vault</span><span class="p">(</span><span class="n">source_dir</span><span class="o">=</span><span class="n">Path</span><span class="p">(</span><span class="s2">&quot;/path/to/vault&quot;</span><span class="p">))</span>
@@ -2815,7 +2815,8 @@ disk-readable. Must not contain fnmatch metacharacters.</p>
             <td>
               <div class="doc-md-description">
                 <p>If no summarization backend was configured (set
-<code>ANTHROPIC_API_KEY</code> and install the <code>[summarize]</code> extra).</p>
+<code>OPENAI_API_KEY</code> or an OpenAI-compatible base URL and
+install the <code>[summarize]</code> extra).</p>
               </div>
             </td>
           </tr>

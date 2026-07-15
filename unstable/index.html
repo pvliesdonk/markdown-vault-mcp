@@ -1936,7 +1936,7 @@
 <li><strong>Write operations</strong>: create, edit, delete, rename documents with automatic index updates</li>
 <li><strong>Folder conventions</strong>: per-folder <code>_conventions.md</code> files carry your authoring rules, surfaced to LLM clients at write time via <a href="tools/#get_conventions"><code>get_conventions</code></a> and in <code>write</code>/<code>edit</code> results</li>
 <li><strong>Attachment support</strong>: read, write, delete, and list non-markdown files (PDFs, images, and so on)</li>
-<li><strong>LLM summarization</strong>: optional <code>summarize</code> tool condenses a note, a set of notes, or a subtree with a language model (Anthropic Claude Haiku is the first supported backend); the synthesis references the individual source notes by path. Gated on <code>ANTHROPIC_API_KEY</code>.</li>
+<li><strong>LLM summarization</strong>: optional <code>summarize</code> tool condenses a note, a set of notes, or a subtree with a language model via any OpenAI-compatible endpoint (OpenAI, Ollama, Anthropic, vLLM, and others); the synthesis references the individual source notes by path. Gated on <code>OPENAI_API_KEY</code> or a configured base URL.</li>
 <li><strong>Git integration</strong>: optional auto-commit and push on every write via <code>GIT_ASKPASS</code></li>
 <li><strong>OIDC authentication</strong>: optional token-based auth for HTTP deployments</li>
 <li><strong>MCP tools</strong>: search, read, write, edit, delete, rename, link graph analysis, and admin operations</li>
@@ -1961,7 +1961,7 @@
 <h2 id="quick-start">Quick Start<a class="headerlink" href="#quick-start" title="Permanent link">&para;</a></h2>
 <h3 id="as-a-library">As a library<a class="headerlink" href="#as-a-library" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">markdown_vault_mcp</span><span class="w"> </span><span class="kn">import</span> <span class="n">Vault</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">markdown_vault_mcp.vault</span><span class="w"> </span><span class="kn">import</span> <span class="n">Vault</span>
 
 <span class="n">vault</span> <span class="o">=</span> <span class="n">Vault</span><span class="p">(</span><span class="n">source_dir</span><span class="o">=</span><span class="n">Path</span><span class="p">(</span><span class="s2">&quot;/path/to/vault&quot;</span><span class="p">))</span>
 <span class="n">vault</span><span class="o">.</span><span class="n">index</span><span class="o">.</span><span class="n">build_index</span><span class="p">()</span>

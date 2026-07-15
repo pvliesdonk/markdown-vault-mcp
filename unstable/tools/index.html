@@ -2884,7 +2884,7 @@
 <td><a href="#summarize"><code>summarize</code></a></td>
 <td>Summarize Notes</td>
 <td>AI</td>
-<td>Summarize a note, a set of notes, or a subtree with an LLM (needs <code>ANTHROPIC_API_KEY</code>)</td>
+<td>Summarize a note, a set of notes, or a subtree with an LLM (needs <code>OPENAI_API_KEY</code> or an OpenAI-compatible base URL)</td>
 </tr>
 <tr>
 <td><a href="#get_history"><code>get_history</code></a></td>
@@ -4305,7 +4305,7 @@ front.</p>
 <h2 id="ai-summarization">AI Summarization<a class="headerlink" href="#ai-summarization" title="Permanent link">&para;</a></h2>
 <h3 id="summarize"><code>summarize</code><a class="headerlink" href="#summarize" title="Permanent link">&para;</a></h3>
 <p>Summarize a note, a set of notes, or a folder subtree with a language model. In the default <code>synthesis</code> mode the result is one cohesive summary that synthesizes across all the notes and <strong>references the individual source notes by path</strong>, so each point can be traced back to its origin. In <code>per_note</code> mode it returns a separate summary for each note instead.</p>
-<p>The tool is only registered when a summarization backend is configured (an <code>ANTHROPIC_API_KEY</code>); otherwise it does not appear in the tool listing. The backend can be swapped: Anthropic Claude (Haiku by default) is the first supported one, and others can be added later.</p>
+<p>The tool is only registered when a summarization backend is configured: an <code>OPENAI_API_KEY</code>, or an explicit OpenAI-compatible base URL for local endpoints that need no key. Otherwise it does not appear in the tool listing. Any OpenAI-compatible endpoint works: OpenAI, a local Ollama, the Anthropic compatibility endpoint, vLLM, and others.</p>
 <p><strong>Parameters:</strong></p>
 <table>
 <thead>
@@ -4351,7 +4351,7 @@ front.</p>
 </div>
 <div class="admonition note">
 <p class="admonition-title">Dependency</p>
-<p>Requires the <code>anthropic</code> SDK and an <code>ANTHROPIC_API_KEY</code>. Install with <code>pip install 'markdown-vault-mcp[summarize]'</code> (or <code>[all]</code>). Configure the model and limits via the <code>MARKDOWN_VAULT_MCP_SUMMARIZE_*</code> env vars. See <a href="../configuration/">Configuration</a>.</p>
+<p>Requires the <code>openai</code> SDK and an OpenAI-compatible backend (an <code>OPENAI_API_KEY</code>, or a base URL such as a local Ollama). Install with <code>pip install 'markdown-vault-mcp[summarize]'</code> (or <code>[all]</code>). Configure the endpoint, model, and limits via the <code>MARKDOWN_VAULT_MCP_SUMMARIZE_*</code> env vars. See <a href="../configuration/">Configuration</a>.</p>
 </div>
 <hr />
 <h2 id="one-time-transfer-links">One-Time Transfer Links<a class="headerlink" href="#one-time-transfer-links" title="Permanent link">&para;</a></h2>

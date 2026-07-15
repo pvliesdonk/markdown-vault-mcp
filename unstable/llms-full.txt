@@ -23,7 +23,7 @@ Point it at a directory of Markdown files (an Obsidian vault, a docs folder, a Z
 - **Write operations**: create, edit, delete, rename documents with automatic index updates
 - **Folder conventions**: per-folder `_conventions.md` files carry your authoring rules, surfaced to LLM clients at write time via [`get_conventions`](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/tools/#get_conventions) and in `write`/`edit` results
 - **Attachment support**: read, write, delete, and list non-markdown files (PDFs, images, and so on)
-- **LLM summarization**: optional `summarize` tool condenses a note, a set of notes, or a subtree with a language model (Anthropic Claude Haiku is the first supported backend); the synthesis references the individual source notes by path. Gated on `ANTHROPIC_API_KEY`.
+- **LLM summarization**: optional `summarize` tool condenses a note, a set of notes, or a subtree with a language model via any OpenAI-compatible endpoint (OpenAI, Ollama, Anthropic, vLLM, and others); the synthesis references the individual source notes by path. Gated on `OPENAI_API_KEY` or a configured base URL.
 - **Git integration**: optional auto-commit and push on every write via `GIT_ASKPASS`
 - **OIDC authentication**: optional token-based auth for HTTP deployments
 - **MCP tools**: search, read, write, edit, delete, rename, link graph analysis, and admin operations
@@ -50,7 +50,7 @@ See [MCP Prompts](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/promp
 
 ```
 from pathlib import Path
-from markdown_vault_mcp import Vault
+from markdown_vault_mcp.vault import Vault
 
 vault = Vault(source_dir=Path("/path/to/vault"))
 vault.index.build_index()
@@ -126,7 +126,7 @@ Adds FastMCP for running as an MCP server.
 pip install markdown-vault-mcp[embeddings-api]
 ```
 
-Adds httpx + numpy for Ollama/OpenAI embeddings via HTTP.
+Adds the openai SDK + httpx + numpy for Ollama/OpenAI embeddings via API.
 
 ```
 pip install markdown-vault-mcp[embeddings]
@@ -325,20 +325,32 @@ When `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` is not set, the server tries provid
 1. **Ollama** — if `OLLAMA_HOST` is reachable
 1. **FastEmbed** — if the `fastembed` package is installed
 
+Both API providers speak the OpenAI-compatible embeddings protocol through the official `openai` SDK: the `ollama` provider is a preset that targets `{OLLAMA_HOST}/v1` with no key required. The `OLLAMA_*` settings and their behavior are unchanged; `OLLAMA_CPU_ONLY` uses Ollama's native API, which is the only way to request CPU-only inference.
+
 **Explicit vs. auto-detect failure handling:** when you set `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` to a specific backend and it cannot be constructed at startup — a missing dependency, missing/empty credentials, or an unrecognised value — the server **fails fast** with a `ConfigurationError` rather than silently falling back to keyword-only search. (An unreachable Ollama/OpenAI *service* does not prevent startup — the provider still loads; the failure surfaces later as an embedding error during index build.) When the variable is *unset* (auto-detect) and no backend is available, the server logs a warning and continues with semantic search disabled. Set the variable explicitly if you want a missing provider to be a hard startup error.
 
 ## Summarization
 
-Powers the optional [`summarize`](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/tools/#summarize) tool. Anthropic Claude (Haiku by default) is the first supported backend, and others can be added later. The tool is only registered when a backend is configured (an `ANTHROPIC_API_KEY`). Requires the `anthropic` SDK: `pip install 'markdown-vault-mcp[summarize]'`.
+Powers the optional [`summarize`](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/tools/#summarize) tool. The backend speaks the OpenAI-compatible chat-completions API, so one endpoint/key/model triple covers OpenAI, a local Ollama, the Anthropic compatibility endpoint, vLLM, and any other compatible server. The tool is only registered when a backend is configured: an API key, or an explicit base URL for local endpoints that need no key. Requires the `openai` SDK: `pip install 'markdown-vault-mcp[summarize]'`.
 
-| Variable                                       | Type   | Default            | Description                                                                                         |
-| ---------------------------------------------- | ------ | ------------------ | --------------------------------------------------------------------------------------------------- |
-| `MARKDOWN_VAULT_MCP_SUMMARIZE_PROVIDER`        | string | auto-detect        | Summarization backend. Currently `anthropic`. Leave unset to auto-detect from available credentials |
-| `ANTHROPIC_API_KEY`                            | string | (none)             | Anthropic API key. Presence enables the `summarize` tool. **Not** `MARKDOWN_VAULT_MCP_`-prefixed    |
-| `MARKDOWN_VAULT_MCP_SUMMARIZE_ANTHROPIC_MODEL` | string | `claude-haiku-4-5` | Claude model id used for summaries                                                                  |
-| `MARKDOWN_VAULT_MCP_SUMMARIZE_MAX_TOKENS`      | int    | `2048`             | Upper bound on generated summary tokens per call                                                    |
-| `MARKDOWN_VAULT_MCP_SUMMARIZE_MAX_NOTES`       | int    | `50`               | Cap on notes summarised per call (subtree expansion is truncated to this many)                      |
-| `MARKDOWN_VAULT_MCP_SUMMARIZE_MAX_INPUT_CHARS` | int    | `200000`           | Aggregate cap on note characters sent to the model per call                                         |
+| Variable                                       | Type   | Default                     | Description                                                                                                              |
+| ---------------------------------------------- | ------ | --------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `MARKDOWN_VAULT_MCP_SUMMARIZE_PROVIDER`        | string | auto-detect                 | Summarization backend. Currently `openai`. Leave unset to auto-detect from available credentials                         |
+| `MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_API_KEY`  | string | (none)                      | API key for the summarize endpoint. Presence enables the `summarize` tool. Falls back to the bare `OPENAI_API_KEY`       |
+| `OPENAI_API_KEY`                               | string | (none)                      | Fallback API key (shared with embeddings). Presence enables the `summarize` tool. **Not** `MARKDOWN_VAULT_MCP_`-prefixed |
+| `MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_BASE_URL` | string | `https://api.openai.com/v1` | OpenAI-compatible endpoint base URL. Setting it enables the tool even without a key (local endpoints)                    |
+| `MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_MODEL`    | string | `gpt-5-mini`                | Chat model id used for summaries                                                                                         |
+| `MARKDOWN_VAULT_MCP_SUMMARIZE_MAX_TOKENS`      | int    | `2048`                      | Upper bound on generated summary tokens per call                                                                         |
+| `MARKDOWN_VAULT_MCP_SUMMARIZE_MAX_NOTES`       | int    | `50`                        | Cap on notes summarised per call (subtree expansion is truncated to this many)                                           |
+| `MARKDOWN_VAULT_MCP_SUMMARIZE_MAX_INPUT_CHARS` | int    | `200000`                    | Aggregate cap on note characters sent to the model per call                                                              |
+
+The bare `OPENAI_BASE_URL` is honored as a *value* fallback when a key is set (such as an organization-wide proxy), but it never enables the tool by itself: setting it purely for embeddings does not switch summarization on.
+
+Provider recipes
+
+- **OpenAI**: set `OPENAI_API_KEY` (or the prefixed `SUMMARIZE_OPENAI_API_KEY`). Done; the default model is `gpt-5-mini`.
+- **Ollama (local, no key)**: `MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_BASE_URL=http://localhost:11434/v1` and `MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_MODEL=llama3.2` (any installed model). No API key needed.
+- **Anthropic (Claude via the OpenAI compatibility endpoint)**: `MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_BASE_URL=https://api.anthropic.com/v1`, the Anthropic key in `MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_API_KEY`, and `MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_MODEL=claude-haiku-4-5`.
 
 Note content leaves your environment
 
@@ -1638,7 +1650,7 @@ Client → markdown-vault-mcp (present JWT → validate via JWKS)
 The server proxies OIDC itself, with no external auth sidecar to deploy:
 
 ```
-Client → mcp-server → OIDC Provider
+Client → markdown-vault-mcp → OIDC Provider
 ```
 
 1. Client connects to the server
@@ -2779,7 +2791,7 @@ markdown-vault-mcp serve &
 Or programmatically:
 
 ```
-from markdown_vault_mcp import Vault
+from markdown_vault_mcp.vault import Vault
 
 vault = Vault(source_dir="/path/to/vault")
 vault.writer.write(
@@ -3401,7 +3413,7 @@ Use the create_from_template prompt with template_name="inbox"
 **Programmatically (scripting escape hatch):**
 
 ```
-from markdown_vault_mcp import Vault
+from markdown_vault_mcp.vault import Vault
 
 vault = Vault(source_dir="/path/to/vault")
 vault.writer.write(
@@ -3507,7 +3519,7 @@ For scripting outside the prompt:
 
 ```
 from datetime import date
-from markdown_vault_mcp import Vault
+from markdown_vault_mcp.vault import Vault
 
 vault = Vault(source_dir="/path/to/vault")
 
@@ -3691,7 +3703,7 @@ After a triage session produces 5-10 new projects, ask Claude to propose an `are
 
 # MCP Apps
 
-The server ships four browser-based views that MCP clients supporting the [MCP Apps protocol](https://modelcontextprotocol.io/specification/2025-06-18/server/apps) can render inline or in fullscreen. They are delivered as a single HTML resource at `ui://vault/app.html` and use `visibility="app"` so they appear only in supporting clients.
+The server ships four browser-based views that MCP clients supporting the [MCP Apps protocol](https://modelcontextprotocol.io/specification/2025-06-18/server/apps) can render inline or in fullscreen. They are delivered as a single HTML resource at `ui://markdown_vault_mcp/app.html` and use `visibility="app"` so they appear only in supporting clients.
 
 ## Views
 
@@ -4065,43 +4077,43 @@ Every read tool that queries the FTS index (`search`, `list_documents`, `list_fo
 
 ## Quick Reference
 
-| Tool                                            | Title              | Category    | Description                                                                            |
-| ----------------------------------------------- | ------------------ | ----------- | -------------------------------------------------------------------------------------- |
-| [`search`](#search)                             | Search Vault       | Read        | Hybrid full-text + semantic search with optional frontmatter filters                   |
-| [`read`](#read)                                 | Read Note          | Read        | Read a document or attachment by relative path                                         |
-| [`list_documents`](#list_documents)             | List Documents     | Read        | List indexed documents and optionally attachments                                      |
-| [`list_folders`](#list_folders)                 | List Folders       | Read        | List all folder paths in the vault                                                     |
-| [`list_tags`](#list_tags)                       | List Tags          | Read        | List all unique frontmatter tag values                                                 |
-| [`stats`](#stats)                               | Vault Stats        | Read        | Get vault statistics and capabilities                                                  |
-| [`embeddings_status`](#embeddings_status)       | Embeddings Status  | Read        | Check embedding provider and vector index status                                       |
-| [`get_index_status`](#get_index_status)         | Index Status       | Read        | Check background FTS build state (queryable / building / failed)                       |
-| [`get_backlinks`](#get_backlinks)               | Backlinks          | Read        | Find all documents that link to a given document                                       |
-| [`get_outlinks`](#get_outlinks)                 | Outlinks           | Read        | Find all links from a document, with existence check                                   |
-| [`get_broken_links`](#get_broken_links)         | Broken Links       | Read        | Find all links pointing to non-existent documents                                      |
-| [`get_similar`](#get_similar)                   | Similar Notes      | Read        | Find semantically similar notes by document path                                       |
-| [`get_toc`](#get_toc)                           | Table of Contents  | Read        | Heading outline for a note or a folder subtree                                         |
-| [`get_recent`](#get_recent)                     | Recent Notes       | Read        | Get the most recently modified notes                                                   |
-| [`get_context`](#get_context)                   | Note Context       | Read        | Get a consolidated context dossier for a note                                          |
-| [`get_conventions`](#get_conventions)           | Folder Conventions | Read        | Get the authoring conventions that apply to a note or folder                           |
-| [`get_orphan_notes`](#get_orphan_notes)         | Orphan Notes       | Read        | Find notes with no inbound or outbound links                                           |
-| [`get_most_linked`](#get_most_linked)           | Most-Linked Notes  | Read        | Find the most-linked-to notes ranked by backlink count                                 |
-| [`get_connection_path`](#get_connection_path)   | Connection Path    | Read        | Find the shortest path between two notes via link graph                                |
-| [`summarize`](#summarize)                       | Summarize Notes    | AI          | Summarize a note, a set of notes, or a subtree with an LLM (needs `ANTHROPIC_API_KEY`) |
-| [`get_history`](#get_history)                   | Note History       | Read (git)  | List commits that touched a note, attachment, or the whole vault                       |
-| [`get_diff`](#get_diff)                         | Note Diff          | Read (git)  | Return a diff of a note or attachment between two points in history                    |
-| [`reindex`](#reindex)                           | Reindex Vault      | Admin       | Force a full reindex of the vault                                                      |
-| [`build_embeddings`](#build_embeddings)         | Build Embeddings   | Admin       | Build or rebuild vector embeddings                                                     |
-| [`write`](#write)                               | Write Note         | Write       | Create or overwrite a document or attachment                                           |
-| [`edit`](#edit)                                 | Edit Note          | Write       | Replace a unique text span in a document                                               |
-| [`delete`](#delete)                             | Delete Note        | Write       | Delete a document or attachment                                                        |
-| [`rename`](#rename)                             | Rename Note        | Write       | Rename/move a document or attachment                                                   |
-| [`move_folder`](#move_folder)                   | Move Folder        | Write       | Move an entire folder subtree and rewrite vault links                                  |
-| [`fetch`](#fetch)                               | Fetch to Vault     | Write       | Download from URL and save to vault                                                    |
-| [`git_sync`](#git_sync)                         | Sync with Git      | Write (git) | Force an immediate git pull / push / both, bypassing the periodic loops                |
-| [`create_download_link`](#create_download_link) | Download Link      | Transfer    | Mint a one-time capability URL to download a vault file (HTTP/SSE only)                |
-| [`create_upload_link`](#create_upload_link)     | Upload Link        | Transfer    | Mint a one-time capability URL to upload bytes to a fixed vault path (HTTP/SSE only)   |
-| [`browse_vault`](#browse_vault)                 | Browse Vault       | Apps        | Open the vault explorer SPA                                                            |
-| [`show_context`](#show_context)                 | Context Card       | Apps        | Open the Context Card for a note                                                       |
+| Tool                                            | Title              | Category    | Description                                                                                                          |
+| ----------------------------------------------- | ------------------ | ----------- | -------------------------------------------------------------------------------------------------------------------- |
+| [`search`](#search)                             | Search Vault       | Read        | Hybrid full-text + semantic search with optional frontmatter filters                                                 |
+| [`read`](#read)                                 | Read Note          | Read        | Read a document or attachment by relative path                                                                       |
+| [`list_documents`](#list_documents)             | List Documents     | Read        | List indexed documents and optionally attachments                                                                    |
+| [`list_folders`](#list_folders)                 | List Folders       | Read        | List all folder paths in the vault                                                                                   |
+| [`list_tags`](#list_tags)                       | List Tags          | Read        | List all unique frontmatter tag values                                                                               |
+| [`stats`](#stats)                               | Vault Stats        | Read        | Get vault statistics and capabilities                                                                                |
+| [`embeddings_status`](#embeddings_status)       | Embeddings Status  | Read        | Check embedding provider and vector index status                                                                     |
+| [`get_index_status`](#get_index_status)         | Index Status       | Read        | Check background FTS build state (queryable / building / failed)                                                     |
+| [`get_backlinks`](#get_backlinks)               | Backlinks          | Read        | Find all documents that link to a given document                                                                     |
+| [`get_outlinks`](#get_outlinks)                 | Outlinks           | Read        | Find all links from a document, with existence check                                                                 |
+| [`get_broken_links`](#get_broken_links)         | Broken Links       | Read        | Find all links pointing to non-existent documents                                                                    |
+| [`get_similar`](#get_similar)                   | Similar Notes      | Read        | Find semantically similar notes by document path                                                                     |
+| [`get_toc`](#get_toc)                           | Table of Contents  | Read        | Heading outline for a note or a folder subtree                                                                       |
+| [`get_recent`](#get_recent)                     | Recent Notes       | Read        | Get the most recently modified notes                                                                                 |
+| [`get_context`](#get_context)                   | Note Context       | Read        | Get a consolidated context dossier for a note                                                                        |
+| [`get_conventions`](#get_conventions)           | Folder Conventions | Read        | Get the authoring conventions that apply to a note or folder                                                         |
+| [`get_orphan_notes`](#get_orphan_notes)         | Orphan Notes       | Read        | Find notes with no inbound or outbound links                                                                         |
+| [`get_most_linked`](#get_most_linked)           | Most-Linked Notes  | Read        | Find the most-linked-to notes ranked by backlink count                                                               |
+| [`get_connection_path`](#get_connection_path)   | Connection Path    | Read        | Find the shortest path between two notes via link graph                                                              |
+| [`summarize`](#summarize)                       | Summarize Notes    | AI          | Summarize a note, a set of notes, or a subtree with an LLM (needs `OPENAI_API_KEY` or an OpenAI-compatible base URL) |
+| [`get_history`](#get_history)                   | Note History       | Read (git)  | List commits that touched a note, attachment, or the whole vault                                                     |
+| [`get_diff`](#get_diff)                         | Note Diff          | Read (git)  | Return a diff of a note or attachment between two points in history                                                  |
+| [`reindex`](#reindex)                           | Reindex Vault      | Admin       | Force a full reindex of the vault                                                                                    |
+| [`build_embeddings`](#build_embeddings)         | Build Embeddings   | Admin       | Build or rebuild vector embeddings                                                                                   |
+| [`write`](#write)                               | Write Note         | Write       | Create or overwrite a document or attachment                                                                         |
+| [`edit`](#edit)                                 | Edit Note          | Write       | Replace a unique text span in a document                                                                             |
+| [`delete`](#delete)                             | Delete Note        | Write       | Delete a document or attachment                                                                                      |
+| [`rename`](#rename)                             | Rename Note        | Write       | Rename/move a document or attachment                                                                                 |
+| [`move_folder`](#move_folder)                   | Move Folder        | Write       | Move an entire folder subtree and rewrite vault links                                                                |
+| [`fetch`](#fetch)                               | Fetch to Vault     | Write       | Download from URL and save to vault                                                                                  |
+| [`git_sync`](#git_sync)                         | Sync with Git      | Write (git) | Force an immediate git pull / push / both, bypassing the periodic loops                                              |
+| [`create_download_link`](#create_download_link) | Download Link      | Transfer    | Mint a one-time capability URL to download a vault file (HTTP/SSE only)                                              |
+| [`create_upload_link`](#create_upload_link)     | Upload Link        | Transfer    | Mint a one-time capability URL to upload bytes to a fixed vault path (HTTP/SSE only)                                 |
+| [`browse_vault`](#browse_vault)                 | Browse Vault       | Apps        | Open the vault explorer SPA                                                                                          |
+| [`show_context`](#show_context)                 | Context Card       | Apps        | Open the Context Card for a note                                                                                     |
 
 ______________________________________________________________________
 
@@ -4819,7 +4831,7 @@ ______________________________________________________________________
 
 Summarize a note, a set of notes, or a folder subtree with a language model. In the default `synthesis` mode the result is one cohesive summary that synthesizes across all the notes and **references the individual source notes by path**, so each point can be traced back to its origin. In `per_note` mode it returns a separate summary for each note instead.
 
-The tool is only registered when a summarization backend is configured (an `ANTHROPIC_API_KEY`); otherwise it does not appear in the tool listing. The backend can be swapped: Anthropic Claude (Haiku by default) is the first supported one, and others can be added later.
+The tool is only registered when a summarization backend is configured: an `OPENAI_API_KEY`, or an explicit OpenAI-compatible base URL for local endpoints that need no key. Otherwise it does not appear in the tool listing. Any OpenAI-compatible endpoint works: OpenAI, a local Ollama, the Anthropic compatibility endpoint, vLLM, and others.
 
 **Parameters:**
 
@@ -4844,7 +4856,7 @@ The referenced notes are sent to the external model provider to generate the sum
 
 Dependency
 
-Requires the `anthropic` SDK and an `ANTHROPIC_API_KEY`. Install with `pip install 'markdown-vault-mcp[summarize]'` (or `[all]`). Configure the model and limits via the `MARKDOWN_VAULT_MCP_SUMMARIZE_*` env vars. See [Configuration](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/configuration/index.md).
+Requires the `openai` SDK and an OpenAI-compatible backend (an `OPENAI_API_KEY`, or a base URL such as a local Ollama). Install with `pip install 'markdown-vault-mcp[summarize]'` (or `[all]`). Configure the endpoint, model, and limits via the `MARKDOWN_VAULT_MCP_SUMMARIZE_*` env vars. See [Configuration](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/configuration/index.md).
 
 ______________________________________________________________________
 
@@ -4974,7 +4986,7 @@ Open the Context Card view for a specific note, showing backlinks, outlinks, sim
 
 # MCP Resources
 
-MCP resources expose vault metadata that clients can read directly without invoking tools. Most resources return `application/json`; `ui://vault/app.html` is an exception that returns a self-contained HTML SPA for MCP Apps clients.
+MCP resources expose vault metadata that clients can read directly without invoking tools. Most resources return `application/json`; `ui://markdown_vault_mcp/app.html` is an exception that returns a self-contained HTML SPA for MCP Apps clients.
 
 Index freshness (`_meta.index_stale`)
 
@@ -4982,17 +4994,17 @@ The index-querying resources (`config://vault`, `stats://vault`, `tags://vault`,
 
 ## Quick Reference
 
-| URI                                           | Description                                    |
-| --------------------------------------------- | ---------------------------------------------- |
-| [`config://vault`](#configvault)              | Current vault configuration                    |
-| [`stats://vault`](#statsvault)                | Vault statistics                               |
-| [`tags://vault`](#tagsvault)                  | All tags grouped by indexed field              |
-| [`tags://vault/{field}`](#tagsvaultfield)     | Tags for a specific field                      |
-| [`folders://vault`](#foldersvault)            | All folder paths                               |
-| [`toc://vault/{path}`](#tocvaultpath)         | Table of contents for a note or folder subtree |
-| [`similar://vault/{path}`](#similarvaultpath) | Semantically similar notes for a document      |
-| [`recent://vault`](#recentvault)              | Most recently modified notes                   |
-| [`ui://vault/app.html`](#uivaultapphtml)      | Interactive vault explorer SPA (MCP Apps)      |
+| URI                                                                | Description                                    |
+| ------------------------------------------------------------------ | ---------------------------------------------- |
+| [`config://vault`](#configvault)                                   | Current vault configuration                    |
+| [`stats://vault`](#statsvault)                                     | Vault statistics                               |
+| [`tags://vault`](#tagsvault)                                       | All tags grouped by indexed field              |
+| [`tags://vault/{field}`](#tagsvaultfield)                          | Tags for a specific field                      |
+| [`folders://vault`](#foldersvault)                                 | All folder paths                               |
+| [`toc://vault/{path}`](#tocvaultpath)                              | Table of contents for a note or folder subtree |
+| [`similar://vault/{path}`](#similarvaultpath)                      | Semantically similar notes for a document      |
+| [`recent://vault`](#recentvault)                                   | Most recently modified notes                   |
+| [`ui://markdown_vault_mcp/app.html`](#uimarkdown_vault_mcpapphtml) | Interactive vault explorer SPA (MCP Apps)      |
 
 ______________________________________________________________________
 
@@ -5179,7 +5191,7 @@ The 20 most recently modified notes. Each entry is a full `NoteInfo` object with
 ]
 ```
 
-## `ui://vault/app.html`
+## `ui://markdown_vault_mcp/app.html`
 
 Interactive vault explorer delivered as a single self-contained HTML resource. This is an [MCP Apps](https://modelcontextprotocol.io/specification/2025-06-18/server/apps) resource; clients that support the MCP Apps protocol render it as an interactive iframe. See the [MCP Apps guide](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/mcp-apps/index.md) for details on the four views (Context Card, Graph Explorer, Vault Browser, Note Preview).
 
@@ -6050,9 +6062,7 @@ Otherwise, add the server to your Claude Desktop configuration file. The path va
     "markdown-vault-mcp": {
       "command": "markdown-vault-mcp",
       "args": ["serve"],
-      "env": {
-        "MARKDOWN_VAULT_MCP_READ_ONLY": "true"
-      }
+      "env": {}
     }
   }
 }
@@ -6179,9 +6189,7 @@ macOS/Linux:
     "markdown-vault-mcp": {
       "command": "/Users/me/.venvs/mcp/bin/markdown-vault-mcp",
       "args": ["serve"],
-      "env": {
-        "MARKDOWN_VAULT_MCP_READ_ONLY": "true"
-      }
+      "env": {}
     }
   }
 }
@@ -6195,9 +6203,7 @@ Windows (`Scripts\` not `bin\`, `.exe` suffix):
     "markdown-vault-mcp": {
       "command": "C:\\Users\\me\\.venvs\\mcp\\Scripts\\markdown-vault-mcp.exe",
       "args": ["serve"],
-      "env": {
-        "MARKDOWN_VAULT_MCP_READ_ONLY": "true"
-      }
+      "env": {}
     }
   }
 }
@@ -6415,7 +6421,6 @@ networks:
 With the corresponding `.env`:
 
 ```
-MARKDOWN_VAULT_MCP_READ_ONLY=true
 MARKDOWN_VAULT_MCP_BASE_URL=https://mcp.example.com
 MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL=https://auth.example.com/.well-known/openid-configuration
 MARKDOWN_VAULT_MCP_OIDC_CLIENT_ID=markdown-vault-mcp
@@ -6508,7 +6513,7 @@ The `Vault` class is the primary public API for the library. MCP tools, CLI comm
 
 ```
 from pathlib import Path
-from markdown_vault_mcp import Vault
+from markdown_vault_mcp.vault import Vault
 
 # Basic read-only vault
 vault = Vault(source_dir=Path("/path/to/vault"))
@@ -6591,9 +6596,9 @@ Summarize facet: LLM-backed note/subtree summarization.
 
 Raises:
 
-| Type           | Description                                                                                           |
-| -------------- | ----------------------------------------------------------------------------------------------------- |
-| `RuntimeError` | If no summarization backend was configured (set ANTHROPIC_API_KEY and install the [summarize] extra). |
+| Type           | Description                                                                                                                         |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `RuntimeError` | If no summarization backend was configured (set OPENAI_API_KEY or an OpenAI-compatible base URL and install the [summarize] extra). |
 
 ### `conventions`
 
@@ -6666,7 +6671,7 @@ The read / write / graph / index operations live on four cohesive facets, reache
 
 ```
 from pathlib import Path
-from markdown_vault_mcp import Vault
+from markdown_vault_mcp.vault import Vault
 
 vault = Vault(source_dir=Path("/path/to/vault"))
 vault.index.build_index()
@@ -7582,7 +7587,8 @@ The `git` module provides:
 
 ```
 from pathlib import Path
-from markdown_vault_mcp import Vault, GitWriteStrategy
+from markdown_vault_mcp.git import GitWriteStrategy
+from markdown_vault_mcp.vault import Vault
 
 strategy = GitWriteStrategy(
     token="ghp_your_token",
@@ -7844,163 +7850,24 @@ The `config` module loads configuration from environment variables and provides 
 
 ```
 import os
-from markdown_vault_mcp import Vault, ProjectConfig
+from markdown_vault_mcp.config import ProjectConfig
+from markdown_vault_mcp.vault import Vault
+from markdown_vault_mcp.config import to_vault_kwargs
 
 os.environ["MARKDOWN_VAULT_MCP_SOURCE_DIR"] = "/path/to/vault"
 config = ProjectConfig.from_env()
-vault = Vault(**config.to_vault_kwargs())
+vault = Vault(**to_vault_kwargs(config))
 ```
 
 ## API Reference
 
-## `ProjectConfig(source_dir, read_only=True, server_name='markdown-vault-mcp', instructions=None, git=GitConfig(), indexing=IndexingConfig(), embeddings=EmbeddingsConfig(), search=SearchConfig(), summarize=SummarizeConfig(), sync=SyncConfig(), content=ContentConfig(), transfer=TransferConfig(), disable_apps_ui=False, server=ServerConfig())`
+## `ProjectConfig(server=ServerConfig(), source_dir=Path('/data/vault'), read_only=True, server_name='markdown-vault-mcp', instructions=None, git=GitConfig(), indexing=IndexingConfig(), embeddings=EmbeddingsConfig(), search=SearchConfig(), summarize=SummarizeConfig(), sync=SyncConfig(), content=ContentConfig(), transfer=TransferConfig(), disable_apps_ui=False)`
 
-Configuration for a :class:`~markdown_vault_mcp.vault.Vault`.
+Domain config for Markdown Vault MCP. Compose — don't inherit.
 
-Attributes:
+### `from_env()`
 
-| Name              | Type               | Description                                                                                                                                                                                               |
-| ----------------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `source_dir`      | `Path`             | Root directory of the markdown vault.                                                                                                                                                                     |
-| `read_only`       | `bool`             | When True (default), write operations raise :exc:~markdown_vault_mcp.exceptions.ReadOnlyError.                                                                                                            |
-| `server_name`     | `str`              | Display name for the MCP server (default "markdown-vault-mcp").                                                                                                                                           |
-| `instructions`    | \`str              | None\`                                                                                                                                                                                                    |
-| `git`             | `GitConfig`        | Git auth, identity, and sync cadence settings.                                                                                                                                                            |
-| `indexing`        | `IndexingConfig`   | SQLite/vector index paths and frontmatter/exclusion settings.                                                                                                                                             |
-| `embeddings`      | `EmbeddingsConfig` | Embedding provider selection and per-provider settings.                                                                                                                                                   |
-| `search`          | `SearchConfig`     | Search ranking and snippet-truncation knobs.                                                                                                                                                              |
-| `summarize`       | `SummarizeConfig`  | LLM-backed summarize tool backend selection and limits.                                                                                                                                                   |
-| `sync`            | `SyncConfig`       | File-watcher and GitHub-webhook settings.                                                                                                                                                                 |
-| `content`         | `ContentConfig`    | Attachment/note-read limits and template/prompt folder paths.                                                                                                                                             |
-| `transfer`        | `TransferConfig`   | One-time upload/download transfer-link TTL and size settings.                                                                                                                                             |
-| `disable_apps_ui` | `bool`             | When True, hides MCP-Apps UI tools (browse_vault, show_context) from the tool listing so clients that don't render MCP Apps panels don't see them (default False).                                        |
-| `server`          | `ServerConfig`     | Shared server-level configuration (transport, host/port, auth, base URL, event store URL, MCP App domain) populated from MARKDOWN_VAULT_MCP\_\* env vars by :meth:fastmcp_pvl_core.ServerConfig.from_env. |
-
-Example::
-
-```
-config = ProjectConfig.from_env()
-vault = Vault(**config.to_vault_kwargs())
-```
-
-### `to_vault_kwargs()`
-
-Return keyword arguments suitable for `Vault(**kwargs)`.
-
-Resolves the embedding provider (when `indexing.embeddings_path` is set) and creates a :class:`~markdown_vault_mcp.git.GitWriteStrategy`.
-
-Returns:
-
-| Type             | Description                                     |
-| ---------------- | ----------------------------------------------- |
-| `dict[str, Any]` | Dict of keyword arguments accepted by           |
-| `dict[str, Any]` | class:~markdown_vault_mcp.vault.Vault.__init__. |
-
-Example::
-
-```
-config = ProjectConfig.from_env()
-vault = Vault(**config.to_vault_kwargs())
-```
-
-### `from_env(prefix=_ENV_PREFIX)`
-
-Load configuration from environment variables.
-
-Reads the following environment variables:
-
-**Core:**
-
-- `MARKDOWN_VAULT_MCP_SOURCE_DIR` (required): path to markdown files.
-- `MARKDOWN_VAULT_MCP_READ_ONLY`: disable write tools; default `true`.
-- `MARKDOWN_VAULT_MCP_INDEX_PATH`: SQLite index path; default in-memory.
-- `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH`: embeddings directory; default disabled.
-- `MARKDOWN_VAULT_MCP_STATE_PATH`: state file path; default `{source_dir}/.markdown_vault_mcp/state.json`.
-- `MARKDOWN_VAULT_MCP_INDEXED_FIELDS`: comma-separated frontmatter fields to index; default none.
-- `MARKDOWN_VAULT_MCP_REQUIRED_FIELDS`: comma-separated required frontmatter fields; default none.
-- `MARKDOWN_VAULT_MCP_EXCLUDE`: comma-separated glob patterns to exclude; default none.
-- `MARKDOWN_VAULT_MCP_TITLE_FIELD`: frontmatter field used as the document title; default `title`.
-- `MARKDOWN_VAULT_MCP_SEARCHABLE_FIELDS`: comma-separated frontmatter fields whose scalar values are keyword-searchable via the FTS `summary` column. Setting it also activates context-enriched embeddings (format v2), so it triggers a one-time full re-embed even when `EMBED_CONTEXT` is unset; default none.
-
-**Search ranking:**
-
-- `MARKDOWN_VAULT_MCP_FOLDER_WEIGHTS`: `prefix:weight,...` map scaling result scores by folder prefix (weights > 0); default none.
-- `MARKDOWN_VAULT_MCP_FTS_WEIGHTS`: `column:weight,...` per-column BM25 weights (columns `path`, `title`, `folder`, `heading`, `content`, `summary`; weights >= 0); default all `1.0`.
-
-**Git:**
-
-- `MARKDOWN_VAULT_MCP_GIT_TOKEN`: token for git write strategy; default disabled.
-- `MARKDOWN_VAULT_MCP_GIT_REPO_URL`: HTTPS remote URL for managed git mode; when set, startup may clone into `SOURCE_DIR`.
-- `MARKDOWN_VAULT_MCP_GIT_USERNAME`: username for token auth in managed mode; default `x-access-token`.
-- `MARKDOWN_VAULT_MCP_GIT_PUSH_DELAY_S`: seconds of idle before pushing (default `30`). Set to `0` to push only on shutdown.
-- `MARKDOWN_VAULT_MCP_GIT_COMMIT_NAME`: git committer name for auto-commits; default `markdown-vault-mcp`.
-- `MARKDOWN_VAULT_MCP_GIT_COMMIT_EMAIL`: git committer email for auto-commits; default `noreply@markdown-vault-mcp`.
-- `MARKDOWN_VAULT_MCP_GIT_COMMIT_NAME_CLAIM`: OIDC claim key whose value overrides the commit author name when an OIDC access token is present (e.g. `name`). Unset by default (static name used for all commits).
-- `MARKDOWN_VAULT_MCP_GIT_COMMIT_EMAIL_CLAIM`: OIDC claim key whose value overrides the commit author e-mail when an OIDC access token is present (e.g. `email`). Unset by default.
-- `MARKDOWN_VAULT_MCP_GIT_LFS`: run `git lfs pull` during git strategy init to resolve LFS pointers; default `true`.
-- `MARKDOWN_VAULT_MCP_GIT_PULL_INTERVAL_S`: seconds between periodic git fetch + ff-only updates (default `600`). Set to `0` to disable.
-
-**Attachments and templates:**
-
-- `MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS`: comma-separated list of allowed attachment extensions (without dot, e.g. `pdf,png,jpg`); use `*` to allow all non-.md files; default: common document and image types.
-- `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB`: maximum attachment size in megabytes for read and write; `0` disables the limit; default `1.0`.
-- `MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES`: maximum bytes returned by full-document `read()` for `.md` files; `read(path, section=...)` bypasses the cap; `0` disables; default `262144` (256 KB).
-- `MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER`: relative folder path where template markdown files are stored; default `_templates`.
-- `MARKDOWN_VAULT_MCP_PROMPTS_FOLDER`: relative folder path where user-defined prompt markdown files are stored; default `None` (disabled).
-- `MARKDOWN_VAULT_MCP_CONVENTIONS_FILE`: well-known per-folder conventions filename surfaced to clients; default `_conventions.md`; set to `none` to disable folder conventions.
-
-**Server identity:**
-
-- `MARKDOWN_VAULT_MCP_SERVER_NAME`: display name for the MCP server; default `"markdown-vault-mcp"`.
-- `MARKDOWN_VAULT_MCP_INSTRUCTIONS`: server-level instructions surfaced to clients; default `None`.
-
-**Embedding providers:**
-
-- `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER`: embedding provider name (`"ollama"`, `"openai"`, `"fastembed"`); default `None`.
-- `OLLAMA_HOST`: Ollama API base URL (ecosystem standard, bare env var); default `"http://localhost:11434"`.
-- `MARKDOWN_VAULT_MCP_OLLAMA_MODEL`: Ollama model name; default `"nomic-embed-text"`.
-- `MARKDOWN_VAULT_MCP_OLLAMA_CPU_ONLY`: CPU-only Ollama inference; default `false`.
-- `OPENAI_API_KEY`: OpenAI API key (ecosystem standard, bare env var).
-- `MARKDOWN_VAULT_MCP_OPENAI_BASE_URL` or `OPENAI_BASE_URL`: OpenAI-compatible API base URL; default `"https://api.openai.com/v1"`.
-- `MARKDOWN_VAULT_MCP_OPENAI_EMBEDDING_MODEL` or `OPENAI_EMBEDDING_MODEL`: embedding model name; default `"text-embedding-3-small"`.
-- `MARKDOWN_VAULT_MCP_FASTEMBED_MODEL`: FastEmbed model name; default `"BAAI/bge-small-en-v1.5"`.
-- `MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR`: FastEmbed model cache directory; default `None`.
-- `MARKDOWN_VAULT_MCP_EMBED_CONTEXT`: enrich embedding input with the document title and chunk heading (and, when `SEARCHABLE_FIELDS` is set, their first-chunk preamble). Forces format v2 even with no searchable fields; default `false`.
-
-**Transfer links:**
-
-- `MARKDOWN_VAULT_MCP_TRANSFER_TTL_DEFAULT_S`: token lifetime when the caller omits one; default `3600` (1 hour).
-- `MARKDOWN_VAULT_MCP_TRANSFER_TTL_MAX_S`: ceiling a requested TTL is clamped to; default `86400` (24 hours).
-- `MARKDOWN_VAULT_MCP_TRANSFER_MAX_UPLOAD_BYTES`: per-upload size cap in bytes; default `104857600` (100 MiB).
-
-Transport and auth variables (`TRANSPORT`, `HOST`, `PORT`, `BASE_URL`, `AUTH_MODE`, `OIDC_*`, `BEARER_TOKEN`, `KV_STORE_URL` (legacy `EVENT_STORE_URL`), `APP_DOMAIN`) are read into `config.server` by :meth:`fastmcp_pvl_core.ServerConfig.from_env`; see `docs/configuration.md` for the full list.
-
-Parameters:
-
-| Name     | Type  | Description                                       | Default       |
-| -------- | ----- | ------------------------------------------------- | ------------- |
-| `prefix` | `str` | Env var prefix; defaults to "MARKDOWN_VAULT_MCP". | `_ENV_PREFIX` |
-
-Returns:
-
-| Type            | Description                                      |
-| --------------- | ------------------------------------------------ |
-| `ProjectConfig` | A fully populated :class:ProjectConfig instance. |
-
-Raises:
-
-| Type                 | Description                                                                                                 |
-| -------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `ConfigurationError` | If MARKDOWN_VAULT_MCP_SOURCE_DIR is not set, or if a search-ranking env var is non-numeric or out of range. |
-
-Example::
-
-```
-import os
-os.environ["MARKDOWN_VAULT_MCP_SOURCE_DIR"] = "/home/user/vault"
-config = ProjectConfig.from_env()
-vault = Vault(**config.to_vault_kwargs())
-```
+Load :class:`ProjectConfig` from `MARKDOWN_VAULT_MCP_*` env vars.
 
 # Embedding Providers
 
@@ -8081,15 +7948,17 @@ Returns:
 
 Bases: `EmbeddingProvider`
 
-Embedding provider backed by the Ollama REST API.
+Embedding provider backed by an Ollama server.
+
+Embeds via Ollama's OpenAI-compatible endpoint (`{host}/v1`) through the shared :class:`_OpenAICompatEmbeddings` transport — the provider is a preset over one wire protocol, not a second code path (#916). Two capabilities have no OpenAI-API equivalent and keep the native REST API: CPU-only inference (`options.num_gpu`, `embed()` when *cpu_only*) and the `/api/show` context-length probe.
 
 Parameters:
 
-| Name       | Type   | Description                                                                           | Default    |
-| ---------- | ------ | ------------------------------------------------------------------------------------- | ---------- |
-| `host`     | `str`  | Base URL of the Ollama server.                                                        | *required* |
-| `model`    | `str`  | Model name to use for embeddings.                                                     | *required* |
-| `cpu_only` | `bool` | When True, request CPU-only inference (sets num_gpu=0 in the Ollama options payload). | `False`    |
+| Name       | Type   | Description                                                                                       | Default    |
+| ---------- | ------ | ------------------------------------------------------------------------------------------------- | ---------- |
+| `host`     | `str`  | Base URL of the Ollama server.                                                                    | *required* |
+| `model`    | `str`  | Model name to use for embeddings.                                                                 | *required* |
+| `cpu_only` | `bool` | When True, request CPU-only inference (sets num_gpu=0 in the Ollama options payload; native API). | `False`    |
 
 Initialise OllamaProvider with explicit parameters.
 
@@ -8103,9 +7972,9 @@ Parameters:
 
 Raises:
 
-| Type          | Description                |
-| ------------- | -------------------------- |
-| `ImportError` | If httpx is not installed. |
+| Type          | Description                                                                                                       |
+| ------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `ImportError` | If httpx is not installed, or the openai SDK is not installed (unless cpu_only, which only needs the native API). |
 
 ### `dimension`
 
@@ -8127,7 +7996,9 @@ Returns None if the query fails or the field is absent. The result (including `N
 
 ### `embed(texts)`
 
-Embed a batch of texts via the Ollama REST API.
+Embed a batch of texts.
+
+Uses the OpenAI-compatible endpoint; falls back to the native API only when *cpu_only* was requested.
 
 Parameters:
 
@@ -8143,9 +8014,9 @@ Returns:
 
 Raises:
 
-| Type           | Description                                  |
-| -------------- | -------------------------------------------- |
-| `RuntimeError` | If the Ollama API returns an error response. |
+| Type           | Description                      |
+| -------------- | -------------------------------- |
+| `RuntimeError` | If the embeddings request fails. |
 
 ## `OpenAIProvider(api_key, *, base_url=_BASE_URL, model=_MODEL)`
 
@@ -8173,10 +8044,10 @@ Parameters:
 
 Raises:
 
-| Type           | Description                |
-| -------------- | -------------------------- |
-| `ImportError`  | If httpx is not installed. |
-| `RuntimeError` | If api_key is empty.       |
+| Type           | Description                         |
+| -------------- | ----------------------------------- |
+| `ImportError`  | If the openai SDK is not installed. |
+| `RuntimeError` | If api_key is empty.                |
 
 ### `dimension`
 
@@ -8198,7 +8069,7 @@ Returns None for models absent from the table; callers fall back to a conservati
 
 ### `embed(texts)`
 
-Embed a batch of texts via the OpenAI Embeddings API.
+Embed a batch of texts via the OpenAI-compatible Embeddings API.
 
 Parameters:
 
@@ -8214,9 +8085,9 @@ Returns:
 
 Raises:
 
-| Type           | Description                                  |
-| -------------- | -------------------------------------------- |
-| `RuntimeError` | If the OpenAI API returns an error response. |
+| Type           | Description                      |
+| -------------- | -------------------------------- |
+| `RuntimeError` | If the embeddings request fails. |
 
 ## `FastEmbedProvider(model_name='BAAI/bge-small-en-v1.5', cache_dir=None)`
 
@@ -8305,10 +8176,10 @@ Raises:
 
 # Types
 
-All data types returned by the `Vault` API are importable from the top-level `markdown_vault_mcp` package.
+All data types returned by the `Vault` API are importable from the `markdown_vault_mcp.types` module.
 
 ```
-from markdown_vault_mcp import NoteContent, GroupedResult, SectionHit, NoteContext
+from markdown_vault_mcp.types import NoteContent, GroupedResult, SectionHit, NoteContext
 ```
 
 ## Document Types
@@ -8720,10 +8591,10 @@ Arguments received by the callback:
 
 # Exceptions
 
-All exceptions are importable from the top-level `markdown_vault_mcp` package.
+All exceptions are importable from the `markdown_vault_mcp.exceptions` module.
 
 ```
-from markdown_vault_mcp import DocumentNotFoundError, ReadOnlyError
+from markdown_vault_mcp.exceptions import DocumentNotFoundError, ReadOnlyError
 ```
 
 Most exceptions inherit from `MarkdownMCPError`, so callers can catch the base class to handle any library error. The one exception is `ConfigurationError`, which is re-exported from `fastmcp-pvl-core` and is not a `MarkdownMCPError` subclass (see [Configuration Errors](#configuration-errors)). Startup config failures are meant to fail hard rather than be caught by a library-error handler.

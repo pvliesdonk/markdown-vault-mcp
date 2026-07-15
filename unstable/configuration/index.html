@@ -2479,10 +2479,11 @@ chronic backlog.</p>
 <li><strong>Ollama</strong> — if <code>OLLAMA_HOST</code> is reachable</li>
 <li><strong>FastEmbed</strong> — if the <code>fastembed</code> package is installed</li>
 </ol>
+<p>Both API providers speak the OpenAI-compatible embeddings protocol through the official <code>openai</code> SDK: the <code>ollama</code> provider is a preset that targets <code>{OLLAMA_HOST}/v1</code> with no key required. The <code>OLLAMA_*</code> settings and their behavior are unchanged; <code>OLLAMA_CPU_ONLY</code> uses Ollama's native API, which is the only way to request CPU-only inference.</p>
 <p><strong>Explicit vs. auto-detect failure handling:</strong> when you set <code>MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER</code> to a specific backend and it cannot be constructed at startup — a missing dependency, missing/empty credentials, or an unrecognised value — the server <strong>fails fast</strong> with a <code>ConfigurationError</code> rather than silently falling back to keyword-only search. (An unreachable Ollama/OpenAI <em>service</em> does not prevent startup — the provider still loads; the failure surfaces later as an embedding error during index build.) When the variable is <em>unset</em> (auto-detect) and no backend is available, the server logs a warning and continues with semantic search disabled. Set the variable explicitly if you want a missing provider to be a hard startup error.</p>
 </div>
 <h2 id="summarization">Summarization<a class="headerlink" href="#summarization" title="Permanent link">&para;</a></h2>
-<p>Powers the optional <a href="../tools/#summarize"><code>summarize</code></a> tool. Anthropic Claude (Haiku by default) is the first supported backend, and others can be added later. The tool is only registered when a backend is configured (an <code>ANTHROPIC_API_KEY</code>). Requires the <code>anthropic</code> SDK: <code>pip install 'markdown-vault-mcp[summarize]'</code>.</p>
+<p>Powers the optional <a href="../tools/#summarize"><code>summarize</code></a> tool. The backend speaks the OpenAI-compatible chat-completions API, so one endpoint/key/model triple covers OpenAI, a local Ollama, the Anthropic compatibility endpoint, vLLM, and any other compatible server. The tool is only registered when a backend is configured: an API key, or an explicit base URL for local endpoints that need no key. Requires the <code>openai</code> SDK: <code>pip install 'markdown-vault-mcp[summarize]'</code>.</p>
 <table>
 <thead>
 <tr>
@@ -2497,19 +2498,31 @@ chronic backlog.</p>
 <td><code>MARKDOWN_VAULT_MCP_SUMMARIZE_PROVIDER</code></td>
 <td>string</td>
 <td>auto-detect</td>
-<td>Summarization backend. Currently <code>anthropic</code>. Leave unset to auto-detect from available credentials</td>
+<td>Summarization backend. Currently <code>openai</code>. Leave unset to auto-detect from available credentials</td>
 </tr>
 <tr>
-<td><code>ANTHROPIC_API_KEY</code></td>
+<td><code>MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_API_KEY</code></td>
 <td>string</td>
 <td>(none)</td>
-<td>Anthropic API key. Presence enables the <code>summarize</code> tool. <strong>Not</strong> <code>MARKDOWN_VAULT_MCP_</code>-prefixed</td>
+<td>API key for the summarize endpoint. Presence enables the <code>summarize</code> tool. Falls back to the bare <code>OPENAI_API_KEY</code></td>
 </tr>
 <tr>
-<td><code>MARKDOWN_VAULT_MCP_SUMMARIZE_ANTHROPIC_MODEL</code></td>
+<td><code>OPENAI_API_KEY</code></td>
 <td>string</td>
-<td><code>claude-haiku-4-5</code></td>
-<td>Claude model id used for summaries</td>
+<td>(none)</td>
+<td>Fallback API key (shared with embeddings). Presence enables the <code>summarize</code> tool. <strong>Not</strong> <code>MARKDOWN_VAULT_MCP_</code>-prefixed</td>
+</tr>
+<tr>
+<td><code>MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_BASE_URL</code></td>
+<td>string</td>
+<td><code>https://api.openai.com/v1</code></td>
+<td>OpenAI-compatible endpoint base URL. Setting it enables the tool even without a key (local endpoints)</td>
+</tr>
+<tr>
+<td><code>MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_MODEL</code></td>
+<td>string</td>
+<td><code>gpt-5-mini</code></td>
+<td>Chat model id used for summaries</td>
 </tr>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_SUMMARIZE_MAX_TOKENS</code></td>
@@ -2531,6 +2544,15 @@ chronic backlog.</p>
 </tr>
 </tbody>
 </table>
+<p>The bare <code>OPENAI_BASE_URL</code> is honored as a <em>value</em> fallback when a key is set (such as an organization-wide proxy), but it never enables the tool by itself: setting it purely for embeddings does not switch summarization on.</p>
+<div class="admonition example">
+<p class="admonition-title">Provider recipes</p>
+<ul>
+<li><strong>OpenAI</strong>: set <code>OPENAI_API_KEY</code> (or the prefixed <code>SUMMARIZE_OPENAI_API_KEY</code>). Done; the default model is <code>gpt-5-mini</code>.</li>
+<li><strong>Ollama (local, no key)</strong>: <code>MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_BASE_URL=http://localhost:11434/v1</code> and <code>MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_MODEL=llama3.2</code> (any installed model). No API key needed.</li>
+<li><strong>Anthropic (Claude via the OpenAI compatibility endpoint)</strong>: <code>MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_BASE_URL=https://api.anthropic.com/v1</code>, the Anthropic key in <code>MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_API_KEY</code>, and <code>MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_MODEL=claude-haiku-4-5</code>.</li>
+</ul>
+</div>
 <div class="admonition warning">
 <p class="admonition-title">Note content leaves your environment</p>
 <p>The <code>summarize</code> tool sends the referenced notes to the external model provider. Do not enable it for vaults whose content must not leave your environment.</p>

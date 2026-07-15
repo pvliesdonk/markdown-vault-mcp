@@ -1606,17 +1606,6 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#markdown_vault_mcp.config.ProjectConfig.to_vault_kwargs" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        to_vault_kwargs
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
   <a href="#markdown_vault_mcp.config.ProjectConfig.from_env" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1793,17 +1782,6 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#markdown_vault_mcp.config.ProjectConfig.to_vault_kwargs" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        to_vault_kwargs
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
   <a href="#markdown_vault_mcp.config.ProjectConfig.from_env" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1843,11 +1821,13 @@
 <p>The <code>config</code> module loads configuration from environment variables and provides a typed dataclass for all settings.</p>
 <h2 id="quick-start">Quick Start<a class="headerlink" href="#quick-start" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">markdown_vault_mcp</span><span class="w"> </span><span class="kn">import</span> <span class="n">Vault</span><span class="p">,</span> <span class="n">ProjectConfig</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">markdown_vault_mcp.config</span><span class="w"> </span><span class="kn">import</span> <span class="n">ProjectConfig</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">markdown_vault_mcp.vault</span><span class="w"> </span><span class="kn">import</span> <span class="n">Vault</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">markdown_vault_mcp.config</span><span class="w"> </span><span class="kn">import</span> <span class="n">to_vault_kwargs</span>
 
 <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">&quot;MARKDOWN_VAULT_MCP_SOURCE_DIR&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;/path/to/vault&quot;</span>
 <span class="n">config</span> <span class="o">=</span> <span class="n">ProjectConfig</span><span class="o">.</span><span class="n">from_env</span><span class="p">()</span>
-<span class="n">vault</span> <span class="o">=</span> <span class="n">Vault</span><span class="p">(</span><span class="o">**</span><span class="n">config</span><span class="o">.</span><span class="n">to_vault_kwargs</span><span class="p">())</span>
+<span class="n">vault</span> <span class="o">=</span> <span class="n">Vault</span><span class="p">(</span><span class="o">**</span><span class="n">to_vault_kwargs</span><span class="p">(</span><span class="n">config</span><span class="p">))</span>
 </code></pre></div>
 <h2 id="api-reference">API Reference<a class="headerlink" href="#api-reference" title="Permanent link">&para;</a></h2>
 <!-- vale off -->
@@ -1858,7 +1838,7 @@
 
 
 <h2 id="markdown_vault_mcp.config.ProjectConfig" class="doc doc-heading">
-              <code class="highlight language-python"><span class="n">ProjectConfig</span><span class="p">(</span><span class="n">source_dir</span><span class="p">,</span> <span class="n">read_only</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">server_name</span><span class="o">=</span><span class="s1">&#39;markdown-vault-mcp&#39;</span><span class="p">,</span> <span class="n">instructions</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">git</span><span class="o">=</span><span class="n">GitConfig</span><span class="p">(),</span> <span class="n">indexing</span><span class="o">=</span><span class="n">IndexingConfig</span><span class="p">(),</span> <span class="n">embeddings</span><span class="o">=</span><span class="n">EmbeddingsConfig</span><span class="p">(),</span> <span class="n">search</span><span class="o">=</span><span class="n">SearchConfig</span><span class="p">(),</span> <span class="n">summarize</span><span class="o">=</span><span class="n">SummarizeConfig</span><span class="p">(),</span> <span class="n">sync</span><span class="o">=</span><span class="n">SyncConfig</span><span class="p">(),</span> <span class="n">content</span><span class="o">=</span><span class="n">ContentConfig</span><span class="p">(),</span> <span class="n">transfer</span><span class="o">=</span><span class="n">TransferConfig</span><span class="p">(),</span> <span class="n">disable_apps_ui</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">server</span><span class="o">=</span><span class="n">ServerConfig</span><span class="p">())</span></code>
+              <code class="highlight language-python"><span class="n">ProjectConfig</span><span class="p">(</span><span class="n">server</span><span class="o">=</span><span class="n">ServerConfig</span><span class="p">(),</span> <span class="n">source_dir</span><span class="o">=</span><span class="n">Path</span><span class="p">(</span><span class="s1">&#39;/data/vault&#39;</span><span class="p">),</span> <span class="n">read_only</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">server_name</span><span class="o">=</span><span class="s1">&#39;markdown-vault-mcp&#39;</span><span class="p">,</span> <span class="n">instructions</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">git</span><span class="o">=</span><span class="n">GitConfig</span><span class="p">(),</span> <span class="n">indexing</span><span class="o">=</span><span class="n">IndexingConfig</span><span class="p">(),</span> <span class="n">embeddings</span><span class="o">=</span><span class="n">EmbeddingsConfig</span><span class="p">(),</span> <span class="n">search</span><span class="o">=</span><span class="n">SearchConfig</span><span class="p">(),</span> <span class="n">summarize</span><span class="o">=</span><span class="n">SummarizeConfig</span><span class="p">(),</span> <span class="n">sync</span><span class="o">=</span><span class="n">SyncConfig</span><span class="p">(),</span> <span class="n">content</span><span class="o">=</span><span class="n">ContentConfig</span><span class="p">(),</span> <span class="n">transfer</span><span class="o">=</span><span class="n">TransferConfig</span><span class="p">(),</span> <span class="n">disable_apps_ui</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
@@ -1871,187 +1851,7 @@
 
 
 
-        <p>Configuration for a :class:<code>~markdown_vault_mcp.vault.Vault</code>.</p>
-
-
-<p><span class="doc-section-title">Attributes:</span></p>
-    <table>
-      <thead>
-        <tr>
-          <th>Name</th>
-          <th>Type</th>
-          <th>Description</th>
-        </tr>
-      </thead>
-      <tbody>
-          <tr class="doc-section-item">
-            <td><code><span title="markdown_vault_mcp.config.ProjectConfig.source_dir">source_dir</span></code></td>
-            <td>
-                  <code><span title="pathlib.Path">Path</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Root directory of the markdown vault.</p>
-              </div>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td><code><span title="markdown_vault_mcp.config.ProjectConfig.read_only">read_only</span></code></td>
-            <td>
-                  <code><span title="bool">bool</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>When <code>True</code> (default), write operations raise
-:exc:<code>~markdown_vault_mcp.exceptions.ReadOnlyError</code>.</p>
-              </div>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td><code><span title="markdown_vault_mcp.config.ProjectConfig.server_name">server_name</span></code></td>
-            <td>
-                  <code><span title="str">str</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Display name for the MCP server (default
-<code>"markdown-vault-mcp"</code>).</p>
-              </div>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td><code><span title="markdown_vault_mcp.config.ProjectConfig.instructions">instructions</span></code></td>
-            <td>
-                  <code><span title="str">str</span> | None</code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Optional server-level instructions surfaced to clients.</p>
-              </div>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td><code><span title="markdown_vault_mcp.config.ProjectConfig.git">git</span></code></td>
-            <td>
-                  <code><span title="markdown_vault_mcp.config_sections.GitConfig">GitConfig</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Git auth, identity, and sync cadence settings.</p>
-              </div>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td><code><span title="markdown_vault_mcp.config.ProjectConfig.indexing">indexing</span></code></td>
-            <td>
-                  <code><span title="markdown_vault_mcp.config_sections.IndexingConfig">IndexingConfig</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>SQLite/vector index paths and frontmatter/exclusion settings.</p>
-              </div>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td><code><span title="markdown_vault_mcp.config.ProjectConfig.embeddings">embeddings</span></code></td>
-            <td>
-                  <code><span title="markdown_vault_mcp.config_sections.EmbeddingsConfig">EmbeddingsConfig</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Embedding provider selection and per-provider settings.</p>
-              </div>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td><code><span title="markdown_vault_mcp.config.ProjectConfig.search">search</span></code></td>
-            <td>
-                  <code><span title="markdown_vault_mcp.config_sections.SearchConfig">SearchConfig</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Search ranking and snippet-truncation knobs.</p>
-              </div>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td><code><span title="markdown_vault_mcp.config.ProjectConfig.summarize">summarize</span></code></td>
-            <td>
-                  <code><span title="markdown_vault_mcp.config_sections.SummarizeConfig">SummarizeConfig</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>LLM-backed <code>summarize</code> tool backend selection and limits.</p>
-              </div>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td><code><span title="markdown_vault_mcp.config.ProjectConfig.sync">sync</span></code></td>
-            <td>
-                  <code><span title="markdown_vault_mcp.config_sections.SyncConfig">SyncConfig</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>File-watcher and GitHub-webhook settings.</p>
-              </div>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td><code><span title="markdown_vault_mcp.config.ProjectConfig.content">content</span></code></td>
-            <td>
-                  <code><span title="markdown_vault_mcp.config_sections.ContentConfig">ContentConfig</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Attachment/note-read limits and template/prompt folder paths.</p>
-              </div>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td><code><span title="markdown_vault_mcp.config.ProjectConfig.transfer">transfer</span></code></td>
-            <td>
-                  <code><span title="markdown_vault_mcp.config_sections.TransferConfig">TransferConfig</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>One-time upload/download transfer-link TTL and size settings.</p>
-              </div>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td><code><span title="markdown_vault_mcp.config.ProjectConfig.disable_apps_ui">disable_apps_ui</span></code></td>
-            <td>
-                  <code><span title="bool">bool</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>When <code>True</code>, hides MCP-Apps UI tools
-(<code>browse_vault</code>, <code>show_context</code>) from the tool listing so
-clients that don't render MCP Apps panels don't see them
-(default <code>False</code>).</p>
-              </div>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td><code><span title="markdown_vault_mcp.config.ProjectConfig.server">server</span></code></td>
-            <td>
-                  <code><span title="fastmcp_pvl_core.ServerConfig">ServerConfig</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Shared server-level configuration (transport, host/port,
-auth, base URL, event store URL, MCP App domain) populated
-from <code>MARKDOWN_VAULT_MCP_*</code> env vars by
-:meth:<code>fastmcp_pvl_core.ServerConfig.from_env</code>.</p>
-              </div>
-            </td>
-          </tr>
-      </tbody>
-    </table>
-        <p>Example::</p>
-<div class="highlight"><pre><span></span><code>config = ProjectConfig.from_env()
-vault = Vault(**config.to_vault_kwargs())
-</code></pre></div>
+        <p>Domain config for Markdown Vault MCP.  Compose — don't inherit.</p>
 
 
 
@@ -2077,65 +1877,8 @@ vault = Vault(**config.to_vault_kwargs())
 <div class="doc doc-object doc-function">
 
 
-<h3 id="markdown_vault_mcp.config.ProjectConfig.to_vault_kwargs" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">to_vault_kwargs</span><span class="p">()</span></code>
-
-<a href="#markdown_vault_mcp.config.ProjectConfig.to_vault_kwargs" class="headerlink" title="Permanent link">&para;</a></h3>
-
-
-    <div class="doc doc-contents ">
-
-        <p>Return keyword arguments suitable for <code>Vault(**kwargs)</code>.</p>
-<p>Resolves the embedding provider (when <code>indexing.embeddings_path</code>
-is set) and creates a :class:<code>~markdown_vault_mcp.git.GitWriteStrategy</code>.</p>
-
-
-    <p><span class="doc-section-title">Returns:</span></p>
-    <table>
-      <thead>
-        <tr>
-          <th>Type</th>
-          <th>Description</th>
-        </tr>
-      </thead>
-      <tbody>
-          <tr class="doc-section-item">
-            <td>
-                  <code><span title="dict">dict</span>[<span title="str">str</span>, <span title="typing.Any">Any</span>]</code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Dict of keyword arguments accepted by</p>
-              </div>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td>
-                  <code><span title="dict">dict</span>[<span title="str">str</span>, <span title="typing.Any">Any</span>]</code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>class:<code>~markdown_vault_mcp.vault.Vault.__init__</code>.</p>
-              </div>
-            </td>
-          </tr>
-      </tbody>
-    </table>
-        <p>Example::</p>
-<div class="highlight"><pre><span></span><code>config = ProjectConfig.from_env()
-vault = Vault(**config.to_vault_kwargs())
-</code></pre></div>
-
-
-    </div>
-
-</div>
-
-<div class="doc doc-object doc-function">
-
-
 <h3 id="markdown_vault_mcp.config.ProjectConfig.from_env" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">from_env</span><span class="p">(</span><span class="n">prefix</span><span class="o">=</span><span class="n">_ENV_PREFIX</span><span class="p">)</span></code>
+            <code class="highlight language-python"><span class="n">from_env</span><span class="p">()</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-classmethod"><code>classmethod</code></small>
@@ -2146,217 +1889,7 @@ vault = Vault(**config.to_vault_kwargs())
 
     <div class="doc doc-contents ">
 
-        <p>Load configuration from environment variables.</p>
-<p>Reads the following environment variables:</p>
-<p><strong>Core:</strong></p>
-<ul>
-<li><code>MARKDOWN_VAULT_MCP_SOURCE_DIR</code> (required): path to markdown files.</li>
-<li><code>MARKDOWN_VAULT_MCP_READ_ONLY</code>: disable write tools; default <code>true</code>.</li>
-<li><code>MARKDOWN_VAULT_MCP_INDEX_PATH</code>: SQLite index path; default in-memory.</li>
-<li><code>MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH</code>: embeddings directory; default
-  disabled.</li>
-<li><code>MARKDOWN_VAULT_MCP_STATE_PATH</code>: state file path; default
-  <code>{source_dir}/.markdown_vault_mcp/state.json</code>.</li>
-<li><code>MARKDOWN_VAULT_MCP_INDEXED_FIELDS</code>: comma-separated frontmatter
-  fields to index; default none.</li>
-<li><code>MARKDOWN_VAULT_MCP_REQUIRED_FIELDS</code>: comma-separated required
-  frontmatter fields; default none.</li>
-<li><code>MARKDOWN_VAULT_MCP_EXCLUDE</code>: comma-separated glob patterns to
-  exclude; default none.</li>
-<li><code>MARKDOWN_VAULT_MCP_TITLE_FIELD</code>: frontmatter field used as the
-  document title; default <code>title</code>.</li>
-<li><code>MARKDOWN_VAULT_MCP_SEARCHABLE_FIELDS</code>: comma-separated
-  frontmatter fields whose scalar values are keyword-searchable via
-  the FTS <code>summary</code> column. Setting it also activates
-  context-enriched embeddings (format v2), so it triggers a one-time
-  full re-embed even when <code>EMBED_CONTEXT</code> is unset; default none.</li>
-</ul>
-<p><strong>Search ranking:</strong></p>
-<ul>
-<li><code>MARKDOWN_VAULT_MCP_FOLDER_WEIGHTS</code>: <code>prefix:weight,...</code> map
-  scaling result scores by folder prefix (weights &gt; 0); default none.</li>
-<li><code>MARKDOWN_VAULT_MCP_FTS_WEIGHTS</code>: <code>column:weight,...</code> per-column
-  BM25 weights (columns <code>path</code>, <code>title</code>, <code>folder</code>, <code>heading</code>,
-  <code>content</code>, <code>summary</code>; weights &gt;= 0); default all <code>1.0</code>.</li>
-</ul>
-<p><strong>Git:</strong></p>
-<ul>
-<li><code>MARKDOWN_VAULT_MCP_GIT_TOKEN</code>: token for git write strategy; default
-  disabled.</li>
-<li><code>MARKDOWN_VAULT_MCP_GIT_REPO_URL</code>: HTTPS remote URL for managed git mode;
-  when set, startup may clone into <code>SOURCE_DIR</code>.</li>
-<li><code>MARKDOWN_VAULT_MCP_GIT_USERNAME</code>: username for token auth in managed
-  mode; default <code>x-access-token</code>.</li>
-<li><code>MARKDOWN_VAULT_MCP_GIT_PUSH_DELAY_S</code>: seconds of idle before pushing
-  (default <code>30</code>).  Set to <code>0</code> to push only on shutdown.</li>
-<li><code>MARKDOWN_VAULT_MCP_GIT_COMMIT_NAME</code>: git committer name for
-  auto-commits; default <code>markdown-vault-mcp</code>.</li>
-<li><code>MARKDOWN_VAULT_MCP_GIT_COMMIT_EMAIL</code>: git committer email for
-  auto-commits; default <code>noreply@markdown-vault-mcp</code>.</li>
-<li><code>MARKDOWN_VAULT_MCP_GIT_COMMIT_NAME_CLAIM</code>: OIDC claim key whose value
-  overrides the commit author name when an OIDC access token is present
-  (e.g. <code>name</code>).  Unset by default (static name used for all commits).</li>
-<li><code>MARKDOWN_VAULT_MCP_GIT_COMMIT_EMAIL_CLAIM</code>: OIDC claim key whose value
-  overrides the commit author e-mail when an OIDC access token is present
-  (e.g. <code>email</code>).  Unset by default.</li>
-<li><code>MARKDOWN_VAULT_MCP_GIT_LFS</code>: run <code>git lfs pull</code> during git strategy
-  init to resolve LFS pointers; default <code>true</code>.</li>
-<li><code>MARKDOWN_VAULT_MCP_GIT_PULL_INTERVAL_S</code>: seconds between periodic
-  git fetch + ff-only updates (default <code>600</code>). Set to <code>0</code> to disable.</li>
-</ul>
-<p><strong>Attachments and templates:</strong></p>
-<ul>
-<li><code>MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS</code>: comma-separated list of
-  allowed attachment extensions (without dot, e.g. <code>pdf,png,jpg</code>); use
-  <code>*</code> to allow all non-.md files; default: common document and image types.</li>
-<li><code>MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB</code>: maximum attachment size in
-  megabytes for read and write; <code>0</code> disables the limit; default <code>1.0</code>.</li>
-<li><code>MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES</code>: maximum bytes returned by
-  full-document <code>read()</code> for <code>.md</code> files; <code>read(path, section=...)</code>
-  bypasses the cap; <code>0</code> disables; default <code>262144</code> (256 KB).</li>
-<li><code>MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER</code>: relative folder path where
-  template markdown files are stored; default <code>_templates</code>.</li>
-<li><code>MARKDOWN_VAULT_MCP_PROMPTS_FOLDER</code>: relative folder path where
-  user-defined prompt markdown files are stored; default <code>None</code> (disabled).</li>
-<li><code>MARKDOWN_VAULT_MCP_CONVENTIONS_FILE</code>: well-known per-folder
-  conventions filename surfaced to clients; default <code>_conventions.md</code>;
-  set to <code>none</code> to disable folder conventions.</li>
-</ul>
-<p><strong>Server identity:</strong></p>
-<ul>
-<li><code>MARKDOWN_VAULT_MCP_SERVER_NAME</code>: display name for the MCP server;
-  default <code>"markdown-vault-mcp"</code>.</li>
-<li><code>MARKDOWN_VAULT_MCP_INSTRUCTIONS</code>: server-level instructions surfaced
-  to clients; default <code>None</code>.</li>
-</ul>
-<p><strong>Embedding providers:</strong></p>
-<ul>
-<li><code>MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER</code>: embedding provider name
-  (<code>"ollama"</code>, <code>"openai"</code>, <code>"fastembed"</code>); default <code>None</code>.</li>
-<li><code>OLLAMA_HOST</code>: Ollama API base URL (ecosystem standard, bare env var);
-  default <code>"http://localhost:11434"</code>.</li>
-<li><code>MARKDOWN_VAULT_MCP_OLLAMA_MODEL</code>: Ollama model name; default
-  <code>"nomic-embed-text"</code>.</li>
-<li><code>MARKDOWN_VAULT_MCP_OLLAMA_CPU_ONLY</code>: CPU-only Ollama inference;
-  default <code>false</code>.</li>
-<li><code>OPENAI_API_KEY</code>: OpenAI API key (ecosystem standard, bare env var).</li>
-<li><code>MARKDOWN_VAULT_MCP_OPENAI_BASE_URL</code> or <code>OPENAI_BASE_URL</code>:
-  OpenAI-compatible API base URL; default <code>"https://api.openai.com/v1"</code>.</li>
-<li><code>MARKDOWN_VAULT_MCP_OPENAI_EMBEDDING_MODEL</code> or
-  <code>OPENAI_EMBEDDING_MODEL</code>: embedding model name; default
-  <code>"text-embedding-3-small"</code>.</li>
-<li><code>MARKDOWN_VAULT_MCP_FASTEMBED_MODEL</code>: FastEmbed model name; default
-  <code>"BAAI/bge-small-en-v1.5"</code>.</li>
-<li><code>MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR</code>: FastEmbed model cache
-  directory; default <code>None</code>.</li>
-<li><code>MARKDOWN_VAULT_MCP_EMBED_CONTEXT</code>: enrich embedding input with
-  the document title and chunk heading (and, when
-  <code>SEARCHABLE_FIELDS</code> is set, their first-chunk preamble). Forces
-  format v2 even with no searchable fields; default <code>false</code>.</li>
-</ul>
-<p><strong>Transfer links:</strong></p>
-<ul>
-<li><code>MARKDOWN_VAULT_MCP_TRANSFER_TTL_DEFAULT_S</code>: token lifetime when the
-  caller omits one; default <code>3600</code> (1 hour).</li>
-<li><code>MARKDOWN_VAULT_MCP_TRANSFER_TTL_MAX_S</code>: ceiling a requested TTL is
-  clamped to; default <code>86400</code> (24 hours).</li>
-<li><code>MARKDOWN_VAULT_MCP_TRANSFER_MAX_UPLOAD_BYTES</code>: per-upload size cap in
-  bytes; default <code>104857600</code> (100 MiB).</li>
-</ul>
-<p>Transport and auth variables (<code>TRANSPORT</code>, <code>HOST</code>, <code>PORT</code>,
-<code>BASE_URL</code>, <code>AUTH_MODE</code>, <code>OIDC_*</code>, <code>BEARER_TOKEN</code>,
-<code>KV_STORE_URL</code> (legacy <code>EVENT_STORE_URL</code>), <code>APP_DOMAIN</code>) are read
-into <code>config.server</code> by
-:meth:<code>fastmcp_pvl_core.ServerConfig.from_env</code>; see
-<code>docs/configuration.md</code> for the full list.</p>
-
-
-<p><span class="doc-section-title">Parameters:</span></p>
-    <table>
-      <thead>
-        <tr>
-          <th>Name</th>
-          <th>Type</th>
-          <th>Description</th>
-          <th>Default</th>
-        </tr>
-      </thead>
-      <tbody>
-          <tr class="doc-section-item">
-            <td>
-                <code>prefix</code>
-            </td>
-            <td>
-                  <code><span title="str">str</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Env var prefix; defaults to <code>"MARKDOWN_VAULT_MCP"</code>.</p>
-              </div>
-            </td>
-            <td>
-                  <code><span title="markdown_vault_mcp.config._ENV_PREFIX">_ENV_PREFIX</span></code>
-            </td>
-          </tr>
-      </tbody>
-    </table>
-
-
-    <p><span class="doc-section-title">Returns:</span></p>
-    <table>
-      <thead>
-        <tr>
-          <th>Type</th>
-          <th>Description</th>
-        </tr>
-      </thead>
-      <tbody>
-          <tr class="doc-section-item">
-            <td>
-                  <code><a class="autorefs autorefs-internal" title="ProjectConfig(source_dir, read_only=True, server_name='markdown-vault-mcp', instructions=None, git=GitConfig(), indexing=IndexingConfig(), embeddings=EmbeddingsConfig(), search=SearchConfig(), summarize=SummarizeConfig(), sync=SyncConfig(), content=ContentConfig(), transfer=TransferConfig(), disable_apps_ui=False, server=ServerConfig())
-
-  
-      dataclass
-   (markdown_vault_mcp.config.ProjectConfig)" href="#markdown_vault_mcp.config.ProjectConfig">ProjectConfig</a></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>A fully populated :class:<code>ProjectConfig</code> instance.</p>
-              </div>
-            </td>
-          </tr>
-      </tbody>
-    </table>
-
-
-<p><span class="doc-section-title">Raises:</span></p>
-    <table>
-      <thead>
-        <tr>
-          <th>Type</th>
-          <th>Description</th>
-        </tr>
-      </thead>
-      <tbody>
-          <tr class="doc-section-item">
-            <td>
-                  <code><span title="markdown_vault_mcp.exceptions.ConfigurationError">ConfigurationError</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>If <code>MARKDOWN_VAULT_MCP_SOURCE_DIR</code> is not set,
-or if a search-ranking env var is non-numeric or out of range.</p>
-              </div>
-            </td>
-          </tr>
-      </tbody>
-    </table>
-        <p>Example::</p>
-<div class="highlight"><pre><span></span><code>import os
-os.environ[&quot;MARKDOWN_VAULT_MCP_SOURCE_DIR&quot;] = &quot;/home/user/vault&quot;
-config = ProjectConfig.from_env()
-vault = Vault(**config.to_vault_kwargs())
-</code></pre></div>
+        <p>Load :class:<code>ProjectConfig</code> from <code>MARKDOWN_VAULT_MCP_*</code> env vars.</p>
 
 
     </div>

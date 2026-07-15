@@ -8,43 +8,43 @@ Every read tool that queries the FTS index (`search`, `list_documents`, `list_fo
 
 ## Quick Reference
 
-| Tool                                            | Title              | Category    | Description                                                                            |
-| ----------------------------------------------- | ------------------ | ----------- | -------------------------------------------------------------------------------------- |
-| [`search`](#search)                             | Search Vault       | Read        | Hybrid full-text + semantic search with optional frontmatter filters                   |
-| [`read`](#read)                                 | Read Note          | Read        | Read a document or attachment by relative path                                         |
-| [`list_documents`](#list_documents)             | List Documents     | Read        | List indexed documents and optionally attachments                                      |
-| [`list_folders`](#list_folders)                 | List Folders       | Read        | List all folder paths in the vault                                                     |
-| [`list_tags`](#list_tags)                       | List Tags          | Read        | List all unique frontmatter tag values                                                 |
-| [`stats`](#stats)                               | Vault Stats        | Read        | Get vault statistics and capabilities                                                  |
-| [`embeddings_status`](#embeddings_status)       | Embeddings Status  | Read        | Check embedding provider and vector index status                                       |
-| [`get_index_status`](#get_index_status)         | Index Status       | Read        | Check background FTS build state (queryable / building / failed)                       |
-| [`get_backlinks`](#get_backlinks)               | Backlinks          | Read        | Find all documents that link to a given document                                       |
-| [`get_outlinks`](#get_outlinks)                 | Outlinks           | Read        | Find all links from a document, with existence check                                   |
-| [`get_broken_links`](#get_broken_links)         | Broken Links       | Read        | Find all links pointing to non-existent documents                                      |
-| [`get_similar`](#get_similar)                   | Similar Notes      | Read        | Find semantically similar notes by document path                                       |
-| [`get_toc`](#get_toc)                           | Table of Contents  | Read        | Heading outline for a note or a folder subtree                                         |
-| [`get_recent`](#get_recent)                     | Recent Notes       | Read        | Get the most recently modified notes                                                   |
-| [`get_context`](#get_context)                   | Note Context       | Read        | Get a consolidated context dossier for a note                                          |
-| [`get_conventions`](#get_conventions)           | Folder Conventions | Read        | Get the authoring conventions that apply to a note or folder                           |
-| [`get_orphan_notes`](#get_orphan_notes)         | Orphan Notes       | Read        | Find notes with no inbound or outbound links                                           |
-| [`get_most_linked`](#get_most_linked)           | Most-Linked Notes  | Read        | Find the most-linked-to notes ranked by backlink count                                 |
-| [`get_connection_path`](#get_connection_path)   | Connection Path    | Read        | Find the shortest path between two notes via link graph                                |
-| [`summarize`](#summarize)                       | Summarize Notes    | AI          | Summarize a note, a set of notes, or a subtree with an LLM (needs `ANTHROPIC_API_KEY`) |
-| [`get_history`](#get_history)                   | Note History       | Read (git)  | List commits that touched a note, attachment, or the whole vault                       |
-| [`get_diff`](#get_diff)                         | Note Diff          | Read (git)  | Return a diff of a note or attachment between two points in history                    |
-| [`reindex`](#reindex)                           | Reindex Vault      | Admin       | Force a full reindex of the vault                                                      |
-| [`build_embeddings`](#build_embeddings)         | Build Embeddings   | Admin       | Build or rebuild vector embeddings                                                     |
-| [`write`](#write)                               | Write Note         | Write       | Create or overwrite a document or attachment                                           |
-| [`edit`](#edit)                                 | Edit Note          | Write       | Replace a unique text span in a document                                               |
-| [`delete`](#delete)                             | Delete Note        | Write       | Delete a document or attachment                                                        |
-| [`rename`](#rename)                             | Rename Note        | Write       | Rename/move a document or attachment                                                   |
-| [`move_folder`](#move_folder)                   | Move Folder        | Write       | Move an entire folder subtree and rewrite vault links                                  |
-| [`fetch`](#fetch)                               | Fetch to Vault     | Write       | Download from URL and save to vault                                                    |
-| [`git_sync`](#git_sync)                         | Sync with Git      | Write (git) | Force an immediate git pull / push / both, bypassing the periodic loops                |
-| [`create_download_link`](#create_download_link) | Download Link      | Transfer    | Mint a one-time capability URL to download a vault file (HTTP/SSE only)                |
-| [`create_upload_link`](#create_upload_link)     | Upload Link        | Transfer    | Mint a one-time capability URL to upload bytes to a fixed vault path (HTTP/SSE only)   |
-| [`browse_vault`](#browse_vault)                 | Browse Vault       | Apps        | Open the vault explorer SPA                                                            |
-| [`show_context`](#show_context)                 | Context Card       | Apps        | Open the Context Card for a note                                                       |
+| Tool                                            | Title              | Category    | Description                                                                                                          |
+| ----------------------------------------------- | ------------------ | ----------- | -------------------------------------------------------------------------------------------------------------------- |
+| [`search`](#search)                             | Search Vault       | Read        | Hybrid full-text + semantic search with optional frontmatter filters                                                 |
+| [`read`](#read)                                 | Read Note          | Read        | Read a document or attachment by relative path                                                                       |
+| [`list_documents`](#list_documents)             | List Documents     | Read        | List indexed documents and optionally attachments                                                                    |
+| [`list_folders`](#list_folders)                 | List Folders       | Read        | List all folder paths in the vault                                                                                   |
+| [`list_tags`](#list_tags)                       | List Tags          | Read        | List all unique frontmatter tag values                                                                               |
+| [`stats`](#stats)                               | Vault Stats        | Read        | Get vault statistics and capabilities                                                                                |
+| [`embeddings_status`](#embeddings_status)       | Embeddings Status  | Read        | Check embedding provider and vector index status                                                                     |
+| [`get_index_status`](#get_index_status)         | Index Status       | Read        | Check background FTS build state (queryable / building / failed)                                                     |
+| [`get_backlinks`](#get_backlinks)               | Backlinks          | Read        | Find all documents that link to a given document                                                                     |
+| [`get_outlinks`](#get_outlinks)                 | Outlinks           | Read        | Find all links from a document, with existence check                                                                 |
+| [`get_broken_links`](#get_broken_links)         | Broken Links       | Read        | Find all links pointing to non-existent documents                                                                    |
+| [`get_similar`](#get_similar)                   | Similar Notes      | Read        | Find semantically similar notes by document path                                                                     |
+| [`get_toc`](#get_toc)                           | Table of Contents  | Read        | Heading outline for a note or a folder subtree                                                                       |
+| [`get_recent`](#get_recent)                     | Recent Notes       | Read        | Get the most recently modified notes                                                                                 |
+| [`get_context`](#get_context)                   | Note Context       | Read        | Get a consolidated context dossier for a note                                                                        |
+| [`get_conventions`](#get_conventions)           | Folder Conventions | Read        | Get the authoring conventions that apply to a note or folder                                                         |
+| [`get_orphan_notes`](#get_orphan_notes)         | Orphan Notes       | Read        | Find notes with no inbound or outbound links                                                                         |
+| [`get_most_linked`](#get_most_linked)           | Most-Linked Notes  | Read        | Find the most-linked-to notes ranked by backlink count                                                               |
+| [`get_connection_path`](#get_connection_path)   | Connection Path    | Read        | Find the shortest path between two notes via link graph                                                              |
+| [`summarize`](#summarize)                       | Summarize Notes    | AI          | Summarize a note, a set of notes, or a subtree with an LLM (needs `OPENAI_API_KEY` or an OpenAI-compatible base URL) |
+| [`get_history`](#get_history)                   | Note History       | Read (git)  | List commits that touched a note, attachment, or the whole vault                                                     |
+| [`get_diff`](#get_diff)                         | Note Diff          | Read (git)  | Return a diff of a note or attachment between two points in history                                                  |
+| [`reindex`](#reindex)                           | Reindex Vault      | Admin       | Force a full reindex of the vault                                                                                    |
+| [`build_embeddings`](#build_embeddings)         | Build Embeddings   | Admin       | Build or rebuild vector embeddings                                                                                   |
+| [`write`](#write)                               | Write Note         | Write       | Create or overwrite a document or attachment                                                                         |
+| [`edit`](#edit)                                 | Edit Note          | Write       | Replace a unique text span in a document                                                                             |
+| [`delete`](#delete)                             | Delete Note        | Write       | Delete a document or attachment                                                                                      |
+| [`rename`](#rename)                             | Rename Note        | Write       | Rename/move a document or attachment                                                                                 |
+| [`move_folder`](#move_folder)                   | Move Folder        | Write       | Move an entire folder subtree and rewrite vault links                                                                |
+| [`fetch`](#fetch)                               | Fetch to Vault     | Write       | Download from URL and save to vault                                                                                  |
+| [`git_sync`](#git_sync)                         | Sync with Git      | Write (git) | Force an immediate git pull / push / both, bypassing the periodic loops                                              |
+| [`create_download_link`](#create_download_link) | Download Link      | Transfer    | Mint a one-time capability URL to download a vault file (HTTP/SSE only)                                              |
+| [`create_upload_link`](#create_upload_link)     | Upload Link        | Transfer    | Mint a one-time capability URL to upload bytes to a fixed vault path (HTTP/SSE only)                                 |
+| [`browse_vault`](#browse_vault)                 | Browse Vault       | Apps        | Open the vault explorer SPA                                                                                          |
+| [`show_context`](#show_context)                 | Context Card       | Apps        | Open the Context Card for a note                                                                                     |
 
 ______________________________________________________________________
 
@@ -762,7 +762,7 @@ ______________________________________________________________________
 
 Summarize a note, a set of notes, or a folder subtree with a language model. In the default `synthesis` mode the result is one cohesive summary that synthesizes across all the notes and **references the individual source notes by path**, so each point can be traced back to its origin. In `per_note` mode it returns a separate summary for each note instead.
 
-The tool is only registered when a summarization backend is configured (an `ANTHROPIC_API_KEY`); otherwise it does not appear in the tool listing. The backend can be swapped: Anthropic Claude (Haiku by default) is the first supported one, and others can be added later.
+The tool is only registered when a summarization backend is configured: an `OPENAI_API_KEY`, or an explicit OpenAI-compatible base URL for local endpoints that need no key. Otherwise it does not appear in the tool listing. Any OpenAI-compatible endpoint works: OpenAI, a local Ollama, the Anthropic compatibility endpoint, vLLM, and others.
 
 **Parameters:**
 
@@ -787,7 +787,7 @@ The referenced notes are sent to the external model provider to generate the sum
 
 Dependency
 
-Requires the `anthropic` SDK and an `ANTHROPIC_API_KEY`. Install with `pip install 'markdown-vault-mcp[summarize]'` (or `[all]`). Configure the model and limits via the `MARKDOWN_VAULT_MCP_SUMMARIZE_*` env vars. See [Configuration](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/configuration/index.md).
+Requires the `openai` SDK and an OpenAI-compatible backend (an `OPENAI_API_KEY`, or a base URL such as a local Ollama). Install with `pip install 'markdown-vault-mcp[summarize]'` (or `[all]`). Configure the endpoint, model, and limits via the `MARKDOWN_VAULT_MCP_SUMMARIZE_*` env vars. See [Configuration](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/configuration/index.md).
 
 ______________________________________________________________________
 
