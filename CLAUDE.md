@@ -44,7 +44,9 @@ src/markdown_vault_mcp/
   tracker.py           -- hash-based change detection
   vault.py             -- thin composition root: lifecycle, wiring, facet accessors (index-write → indexing/coordinator.py)
   write_callback.py    -- WriteCallbackDispatcher: deferred git-commit callback worker (#599)
-  config.py            -- configuration loading
+  config.py            -- template-owned skeleton: ProjectConfig fields/from_env in CONFIG-* sentinels only (#900)
+  config_sections/
+    _assembly.py         -- domain config-assembly kept out of template-owned config.py: to_vault_kwargs, derive_max_chunk_chars, git-strategy builder (#900)
   domain.py            -- Service: owns the Vault lifecycle (build, boot index/reindex/embeddings jobs, file watcher); get_vault/get_config DI + vault singleton (#902)
   _instructions.py     -- build_default_instructions: domain server-instructions prose, applied in server.py's DOMAIN-WIRING (#901)
   _server_apps.py      -- template-owned MCP Apps scaffold; vault SPA + app-tools confined to DOMAIN-APP-TOOL-NAMES/DOMAIN-APP-RESOURCE/DOMAIN-APP-TOOLS sentinels (#905)

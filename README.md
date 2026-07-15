@@ -631,6 +631,18 @@ When `copier update` introduces new dependencies, CI runs `uv sync --frozen` whi
 
 ## Upgrading from earlier versions
 
+- **Package root minimized (issue #903): import from submodules, not the package root.**
+  The `markdown_vault_mcp` root package no longer re-exports the public API. Update
+  library imports to their submodules:
+
+  ```python
+  # Before: from markdown_vault_mcp import Vault, ProjectConfig
+  # After:  from markdown_vault_mcp.vault import Vault
+  #         from markdown_vault_mcp.config import ProjectConfig
+  ```
+
+  Types such as `GroupedResult` come from `markdown_vault_mcp.types`. Only
+  `__version__` remains importable from the root.
 - **v2.0.0 (issue #469): `search`, `get_similar`, and `get_context.similar` now return grouped results.**
   Each file appears once with a `sections` list; the flat `content`, `heading`, and `score`
   fields have moved inside each `SectionHit`. Library consumers must update iteration:

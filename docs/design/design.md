@@ -69,7 +69,11 @@ markdown-vault-mcp (new package)
 +-- config.py         -- template-owned skeleton: ProjectConfig fields/from_env in sentinels only (#900)
 +-- config_sections/  -- domain-grouped sub-configs (git/indexing/embeddings/search/sync/content)
 |   +-- _assembly.py   -- domain config-assembly kept out of template-owned config.py: to_vault_kwargs, derive_max_chunk_chars, git-strategy builder (#900)
-+-- server.py         -- generic FastMCP server
++-- server.py         -- template-owned skeleton; domain wiring in DOMAIN-UPSTREAM/DOMAIN-WIRING (#901)
++-- _instructions.py  -- build_default_instructions: domain server-instructions prose (#901)
++-- domain.py         -- Service: owns Vault lifecycle + get_vault/set_pending_config singleton (#902)
++-- _server_apps.py   -- template-owned MCP Apps scaffold; domain apps in DOMAIN-APP-* sentinels (#905)
++-- _vault_apps.py    -- domain helpers behind _server_apps sentinels: sandbox-domain + CSP + GraphView serializer (#905)
 +-- cli.py            -- CLI entry point
 +-- utils/
 |   +-- text.py       -- text normalization and fuzzy matching
@@ -1104,9 +1108,12 @@ Vault(...)
 the vault (such as during maintenance or test teardown). It is a no-op if the
 loop was never started.
 
-In the MCP server, `close()` is called in the FastMCP lifespan `finally` block.
-Callers using `Vault` as a Python library must call `close()` explicitly
-(or use it as a context manager if one is added in future).
+In the MCP server, this lifecycle is orchestrated by the `Service` in
+`domain.py` (start/stop/close), which the template-owned `_server_deps.py`
+lifespan scaffold constructs and drives; the lifespan's `finally` block calls
+`Service.stop()`, which calls `close()` (#902/#910). Callers using `Vault` as a
+Python library must call `close()` explicitly (or use it as a context manager if
+one is added in future).
 
 ### One-Time Transfer Links (`transfer/` subsystem)
 
@@ -2079,7 +2086,11 @@ vault) and its data-egress is documented in the tool docstring and README.
 **Dynamic instructions**: the server's MCP `instructions` string varies with
 `read_only` mode. When `read_only=True`, the instructions state this is a
 read-only instance; when `read_only=False`, they describe write tool semantics.
-This signals capability status to clients and reduces irrelevant prompting.
+This signals capability status to clients and reduces irrelevant prompting. The
+default text is built by `build_default_instructions()` in `_instructions.py`
+(kept out of the template-owned `server.py`, #901) and applied in the
+`DOMAIN-WIRING` block; an operator-set `MARKDOWN_VAULT_MCP_INSTRUCTIONS`
+overrides it.
 
 **Tool semantics**:
 - `read(path)` returns full file content + frontmatter metadata
@@ -2098,8 +2109,11 @@ without special prompting.
 
 **Dependency injection**: tools and resources use FastMCP's
 ``Depends(get_vault)`` to access the Vault instance from
-lifespan context, eliminating module-level globals. Prompts are pure
-template functions with no vault dependency.
+lifespan context, eliminating module-level globals. `get_vault` and the vault
+singleton (with `set_pending_config`) are module-level functions in `domain.py`,
+alongside the `Service` that owns the Vault lifecycle — start/stop orchestration
+was moved there out of the template-owned `_server_deps.py` scaffold (#902/#910).
+Prompts are pure template functions with no vault dependency.
 
 **Resources**: the server exposes 6 read-only MCP resources:
 
@@ -2139,9 +2153,10 @@ The library layer returns typed structs (``TocEntry``, ``SubtreeNote``, ``Subtre
 Write-tagged prompts are hidden in read-only mode by the same
 ``mcp.disable(tags={"write"})`` call that hides write tools.
 
-Prompt registration is split by config-dependency (#901). The template-owned
-``make_server`` body calls ``register_prompts(mcp)``, which registers the six
-config-independent built-ins above (every one except ``create_from_template``).
+Prompt registration is split by config-dependency (#901), both entry points
+living in ``_server_prompts.py``. The template-owned ``make_server`` body calls
+``register_prompts(mcp)``, which registers the six config-independent built-ins
+above (every one except ``create_from_template``).
 The config-dependent prompts — ``create_from_template`` (needs the templates
 folder) and user-defined prompts (need the prompts folder) — are registered by
 ``register_domain_prompts(mcp, templates_folder, prompts_folder)``, called from
@@ -2436,7 +2451,9 @@ a load failure degrades to system fonts with no loss of function.
 
 **Source layout and build**: the SPA is authored as partials under `src/markdown_vault_mcp/static/spa/` (`shell.html`, `styles.css`, `core.js`, and one `views/*.js` per view). `scripts/build_spa.py` assembles them into `static/app.src.html` via recursive `/*@@FILE:path@@*/` include markers, then `scripts/vendor_spa.py` embeds the vendored libraries into the served `static/app.html`. Both `app.src.html` and `app.html` are generated, committed artifacts; edit the partials, not the generated files. Each script has a `--check` mode that gates the build in CI and pre-commit, so a stale artifact fails fast.
 
-**Domain configuration**: MCP Apps iframes are sandboxed to a specific Claude app domain. The server computes it from `MARKDOWN_VAULT_MCP_BASE_URL` via `_compute_claude_app_domain()`. Override with `MARKDOWN_VAULT_MCP_APP_DOMAIN` when `BASE_URL` does not reflect the actual hostname visible to the Claude client (such as behind a proxy, or on a custom domain).
+**Module layout**: `_server_apps.py` is the template-owned MCP Apps scaffold — the SPA shell resource and app-tools live inside its `DOMAIN-APP-TOOL-NAMES` / `DOMAIN-APP-RESOURCE` / `DOMAIN-APP-TOOLS` sentinel blocks, so everything outside them stays byte-identical to the template skeleton. The domain helpers that cannot live in the template-owned body — `_compute_claude_app_domain`, `_CDN_RESOURCE_DOMAINS`, and the `GraphView`→SPA `_graph_view_payload` serializer — live in `_vault_apps.py` (#905).
+
+**Domain configuration**: MCP Apps iframes are sandboxed to a specific Claude app domain. The server computes it from `MARKDOWN_VAULT_MCP_BASE_URL` via `_compute_claude_app_domain()` (in `_vault_apps.py`). Override with `MARKDOWN_VAULT_MCP_APP_DOMAIN` when `BASE_URL` does not reflect the actual hostname visible to the Claude client (such as behind a proxy, or on a custom domain).
 
 | Variable | Default | Description |
 |-|-|-|

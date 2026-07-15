@@ -8,13 +8,16 @@ the template-owned body. This module renders the template pristinely with this
 repo's own answers and asserts each file matches the pristine render *outside*
 its sentinel blocks. Any out-of-sentinel divergence is a fork.
 
-The :data:`RATCHET` allowlist carries the files whose de-fork is still in
-progress. Each de-fork PR **removes its file from RATCHET in the same PR**: that
-removal flips the file from the weak "still forked" assertion to the strict
-"conforms" assertion, so a PR cannot claim a de-fork unless the file actually
-conforms. The list can only shrink truthfully — a file that already conforms
-fails the weak assertion. When RATCHET is empty the gate is permanently strict
-and blocks any new fork.
+Epic #898 is complete: all six template-owned files conform, so :data:`RATCHET`
+is empty (asserted by :func:`test_ratchet_is_empty`) and the gate is
+**unconditionally strict** — every file in :data:`FILE_MODULE_PATHS` must match
+the pristine render outside its sentinel blocks, and any new fork fails CI.
+
+During the epic, :data:`RATCHET` carried the files whose de-fork was still in
+progress: each was held to a weak "still forked" check until its de-fork PR
+removed it, the removal being the proof of conformance. That weak branch is
+gone now that the list is empty; should the template ever add a new owned file
+needing a staged de-fork, reintroduce the weak check alongside the entry.
 
 Render uses ``copier copy --trust --skip-tasks`` — ``--trust`` because the
 template declares tasks (copier refuses otherwise), ``--skip-tasks`` so the
@@ -50,9 +53,10 @@ FILE_MODULE_PATHS = {
     "cli.py": f"src/{MODULE}/cli.py",
 }
 
-# Known-forked files, de-fork in progress → tracking issue. REMOVE a file here in
-# the same PR that de-forks it; the removal is the proof (it flips the file to
-# the strict check). Epic #898. Seeded below after measuring actual conformance.
+# Empty — epic #898 is complete and every template-owned file is held to the
+# strict conformance check. Asserted empty by ``test_ratchet_is_empty``; adding
+# a file here does nothing on its own (the weak-check branch was removed at
+# close-out), so a genuine future staged de-fork must reintroduce that branch.
 RATCHET: dict[str, str] = {}
 
 _START = re.compile(r"#\s*([A-Z0-9-]+)-START\b")
@@ -414,14 +418,9 @@ def test_template_owned_file_conforms(fname: str, ctx: _Ctx) -> None:
         _significant(_strip_sentinels(pristine, legal)),
     )
 
-    if fname in RATCHET:
-        assert div is not None, (
-            f"{fname} now CONFORMS to the template skeleton but is still in RATCHET "
-            f"({RATCHET[fname]}). Remove it from RATCHET in THIS PR — that removal is "
-            f"the proof of de-fork. Epic #898."
-        )
-    else:
-        assert div is None, _fork_message(fname, rel, ctx.ref, div, repo)
+    # Unconditionally strict (epic #898 complete): every template-owned file
+    # must conform outside its sentinel blocks. See test_ratchet_is_empty.
+    assert div is None, _fork_message(fname, rel, ctx.ref, div, repo)
 
 
 def test_module_server_is_never_exempt(ctx: _Ctx) -> None:
@@ -434,6 +433,21 @@ def test_module_server_is_never_exempt(ctx: _Ctx) -> None:
 def test_ratchet_only_lists_template_owned_files() -> None:
     unknown = set(RATCHET) - set(FILE_MODULE_PATHS)
     assert not unknown, f"RATCHET lists non-template-owned files: {sorted(unknown)}"
+
+
+def test_ratchet_is_empty() -> None:
+    """Epic #898 close-out: every template-owned file is de-forked.
+
+    An empty RATCHET is the proof the epic is complete and the per-file gate is
+    unconditionally strict. A file cannot be added here to silence a fork
+    without also reintroducing the weak-check branch removed at close-out (see
+    the module docstring), so this assertion keeps the gate honest.
+    """
+    assert RATCHET == {}, (
+        f"RATCHET must stay empty post-#898 (found {sorted(RATCHET)}); the gate "
+        "is unconditionally strict. Re-opening a staged de-fork requires "
+        "restoring the weak-check branch, not just adding an entry here."
+    )
 
 
 # --------------------------------------------------------------------------- #
