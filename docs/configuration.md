@@ -137,7 +137,7 @@ Powers the optional [`summarize`](tools/index.md#summarize) tool. The backend sp
 | `MARKDOWN_VAULT_MCP_SUMMARIZE_MAX_NOTES` | int | `50` | Cap on notes summarised per call (subtree expansion is truncated to this many) |
 | `MARKDOWN_VAULT_MCP_SUMMARIZE_MAX_INPUT_CHARS` | int | `200000` | Aggregate cap on note characters sent to the model per call |
 
-The bare `OPENAI_BASE_URL` is honored as a *value* fallback when a key is set (for example, an organization-wide proxy), but it never enables the tool by itself: setting it purely for embeddings does not switch summarization on.
+The bare `OPENAI_BASE_URL` is honored as a *value* fallback when a key is set (such as an organization-wide proxy), but it never enables the tool by itself: setting it purely for embeddings does not switch summarization on.
 
 !!! example "Provider recipes"
     - **OpenAI**: set `OPENAI_API_KEY` (or the prefixed `SUMMARIZE_OPENAI_API_KEY`). Done; the default model is `gpt-5-mini`.
