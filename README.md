@@ -62,7 +62,7 @@ With optional dependencies:
 
 ```bash
 pip install markdown-vault-mcp[mcp]            # FastMCP server
-pip install markdown-vault-mcp[embeddings-api]  # Ollama/OpenAI embeddings via HTTP
+pip install markdown-vault-mcp[embeddings-api]  # Ollama/OpenAI embeddings via API
 pip install markdown-vault-mcp[embeddings]      # FastEmbed local embeddings
 pip install markdown-vault-mcp[all]             # MCP + FastEmbed + API embeddings
 ```

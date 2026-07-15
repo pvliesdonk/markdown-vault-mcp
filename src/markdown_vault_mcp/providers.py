@@ -2,9 +2,17 @@
 
 Provides an :class:`EmbeddingProvider` ABC and three concrete implementations:
 
-- :class:`OllamaProvider` — HTTP client to Ollama REST API.
-- :class:`OpenAIProvider` — HTTP client to OpenAI Embeddings API.
+- :class:`OllamaProvider` — Ollama server; embeds via Ollama's
+  OpenAI-compatible endpoint (``{host}/v1``), with the native REST API kept
+  for capabilities the compatibility layer cannot express (CPU-only
+  inference, the context-length probe).
+- :class:`OpenAIProvider` — OpenAI-compatible Embeddings API via the
+  official ``openai`` SDK.
 - :class:`FastEmbedProvider` — local fastembed/ONNX runtime embeddings.
+
+Both API providers share one wire protocol and one client
+(:class:`_OpenAICompatEmbeddings`); the provider names are ergonomic presets
+over it, not separate code paths (#916).
 
 Use :func:`get_embedding_provider` to auto-detect and return the best
 available provider based on a :class:`ProjectConfig` instance.
@@ -14,7 +22,7 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from markdown_vault_mcp.exceptions import ConfigurationError
 
@@ -48,6 +56,66 @@ _OPENAI_CONTEXT_LENGTHS: dict[str, int] = {
     "text-embedding-3-large": 8191,
     "text-embedding-ada-002": 8191,
 }
+
+
+# The openai SDK requires a non-None api_key string even for servers that
+# ignore auth (Ollama's own docs suggest this placeholder).
+_PLACEHOLDER_API_KEY = "ollama"
+
+
+class _OpenAICompatEmbeddings:
+    """Shared OpenAI-compatible embeddings transport (official openai SDK).
+
+    Owns the SDK client, the ``embeddings.create`` call, input-order
+    restoration, and error mapping. :class:`OpenAIProvider` and
+    :class:`OllamaProvider` are thin presets over this one code path.
+
+    Args:
+        api_key: API key, or ``None`` for keyless endpoints (a placeholder
+            is sent; e.g. Ollama ignores it).
+        base_url: OpenAI-compatible endpoint base URL.
+        model: Embedding model name.
+        label: Provider label used in error messages.
+    """
+
+    def __init__(
+        self, api_key: str | None, *, base_url: str, model: str, label: str
+    ) -> None:
+        try:
+            import openai
+        except ImportError as exc:
+            raise ImportError(
+                f"{label} requires the 'openai' SDK. "
+                "Install it with: pip install 'markdown-vault-mcp[embeddings-api]'"
+            ) from exc
+        self._openai = openai
+        self._client = openai.OpenAI(
+            api_key=api_key or _PLACEHOLDER_API_KEY, base_url=base_url, timeout=30.0
+        )
+        self._model = model
+        self._label = label
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        """Embed a batch of texts, returning vectors in input order.
+
+        Args:
+            texts: List of strings to embed.
+
+        Returns:
+            List of embedding vectors, one per input text.
+
+        Raises:
+            RuntimeError: If the embeddings request fails.
+        """
+        try:
+            response = self._client.embeddings.create(model=self._model, input=texts)
+        except self._openai.OpenAIError as exc:
+            raise RuntimeError(
+                f"{self._label} embeddings request failed: {exc}"
+            ) from exc
+        # Sort by index to guarantee input order is preserved.
+        items = sorted(response.data, key=lambda d: d.index)
+        return [item.embedding for item in items]
 
 
 class EmbeddingProvider(ABC):
@@ -101,13 +169,20 @@ class EmbeddingProvider(ABC):
 
 
 class OllamaProvider(EmbeddingProvider):
-    """Embedding provider backed by the Ollama REST API.
+    """Embedding provider backed by an Ollama server.
+
+    Embeds via Ollama's OpenAI-compatible endpoint (``{host}/v1``) through
+    the shared :class:`_OpenAICompatEmbeddings` transport — the provider is
+    a preset over one wire protocol, not a second code path (#916). Two
+    capabilities have no OpenAI-API equivalent and keep the native REST API:
+    CPU-only inference (``options.num_gpu``, ``embed()`` when *cpu_only*)
+    and the ``/api/show`` context-length probe.
 
     Args:
         host: Base URL of the Ollama server.
         model: Model name to use for embeddings.
         cpu_only: When ``True``, request CPU-only inference (sets
-            ``num_gpu=0`` in the Ollama options payload).
+            ``num_gpu=0`` in the Ollama options payload; native API).
     """
 
     def __init__(self, host: str, model: str, *, cpu_only: bool = False) -> None:
@@ -119,7 +194,9 @@ class OllamaProvider(EmbeddingProvider):
             cpu_only: When ``True``, request CPU-only inference.
 
         Raises:
-            ImportError: If ``httpx`` is not installed.
+            ImportError: If ``httpx`` is not installed, or the ``openai``
+                SDK is not installed (unless *cpu_only*, which only needs
+                the native API).
         """
         try:
             import httpx
@@ -133,6 +210,18 @@ class OllamaProvider(EmbeddingProvider):
         self._host = host.rstrip("/")
         self._model = model
         self._cpu_only = cpu_only
+        # CPU-only requests need options.num_gpu, which the OpenAI-compat
+        # endpoint cannot express — that path stays native and needs no SDK.
+        self._compat = (
+            None
+            if cpu_only
+            else _OpenAICompatEmbeddings(
+                None,
+                base_url=f"{self._host}/v1",
+                model=model,
+                label="OllamaProvider",
+            )
+        )
         self._dimension: int | None = None
         self._context_length: int | None = None
         self._context_queried = False
@@ -144,8 +233,8 @@ class OllamaProvider(EmbeddingProvider):
             self._cpu_only,
         )
 
-    def embed(self, texts: list[str]) -> list[list[float]]:
-        """Embed a batch of texts via the Ollama REST API.
+    def _embed_native(self, texts: list[str]) -> list[list[float]]:
+        """Embed via the native ``/api/embed`` endpoint (CPU-only path).
 
         Args:
             texts: List of strings to embed.
@@ -156,10 +245,11 @@ class OllamaProvider(EmbeddingProvider):
         Raises:
             RuntimeError: If the Ollama API returns an error response.
         """
-        payload: dict[str, object] = {"model": self._model, "input": texts}
-        if self._cpu_only:
-            payload["options"] = {"num_gpu": 0}
-
+        payload: dict[str, object] = {
+            "model": self._model,
+            "input": texts,
+            "options": {"num_gpu": 0},
+        }
         url = f"{self._host}/api/embed"
         logger.debug("POST %s model=%s texts=%d", url, self._model, len(texts))
 
@@ -173,6 +263,27 @@ class OllamaProvider(EmbeddingProvider):
 
         data = response.json()
         embeddings: list[list[float]] = data["embeddings"]
+        return embeddings
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        """Embed a batch of texts.
+
+        Uses the OpenAI-compatible endpoint; falls back to the native API
+        only when *cpu_only* was requested.
+
+        Args:
+            texts: List of strings to embed.
+
+        Returns:
+            List of embedding vectors, one per input text.
+
+        Raises:
+            RuntimeError: If the embeddings request fails.
+        """
+        if self._compat is None:
+            embeddings = self._embed_native(texts)
+        else:
+            embeddings = self._compat.embed(texts)
 
         # Cache dimension from first successful call.
         if self._dimension is None and embeddings:
@@ -288,24 +399,19 @@ class OpenAIProvider(EmbeddingProvider):
             model: Embedding model name.
 
         Raises:
-            ImportError: If ``httpx`` is not installed.
+            ImportError: If the ``openai`` SDK is not installed.
             RuntimeError: If ``api_key`` is empty.
         """
-        try:
-            import httpx
-        except ImportError as exc:
-            raise ImportError(
-                "OpenAIProvider requires 'httpx'. "
-                "Install it with: pip install 'markdown-vault-mcp[embeddings-api]'"
-            ) from exc
-
-        self._httpx = httpx
         if not api_key:
             raise RuntimeError("OpenAIProvider requires a non-empty api_key.")
-        self._api_key = api_key
         self._base_url = (base_url or self._BASE_URL).rstrip("/")
-        self._endpoint = f"{self._base_url}/embeddings"
         self._model = model or self._MODEL
+        self._compat = _OpenAICompatEmbeddings(
+            api_key,
+            base_url=self._base_url,
+            model=self._model,
+            label="OpenAIProvider",
+        )
         self._dimension: int | None = None
 
         logger.debug(
@@ -315,7 +421,7 @@ class OpenAIProvider(EmbeddingProvider):
         )
 
     def embed(self, texts: list[str]) -> list[list[float]]:
-        """Embed a batch of texts via the OpenAI Embeddings API.
+        """Embed a batch of texts via the OpenAI-compatible Embeddings API.
 
         Args:
             texts: List of strings to embed.
@@ -324,32 +430,9 @@ class OpenAIProvider(EmbeddingProvider):
             List of embedding vectors in input order.
 
         Raises:
-            RuntimeError: If the OpenAI API returns an error response.
+            RuntimeError: If the embeddings request fails.
         """
-        payload = {"input": texts, "model": self._model}
-        headers = {
-            "Authorization": f"Bearer {self._api_key}",
-            "Content-Type": "application/json",
-        }
-
-        logger.debug(
-            "POST %s model=%s texts=%d", self._endpoint, self._model, len(texts)
-        )
-
-        with self._httpx.Client() as client:
-            response = client.post(
-                self._endpoint, json=payload, headers=headers, timeout=30.0
-            )
-
-        if response.status_code != 200:
-            raise RuntimeError(
-                f"OpenAI API error {response.status_code}: {response.text}"
-            )
-
-        data = response.json()
-        # Sort by index to guarantee input order is preserved.
-        items: list[dict[str, Any]] = sorted(data["data"], key=lambda d: d["index"])
-        embeddings: list[list[float]] = [item["embedding"] for item in items]
+        embeddings = self._compat.embed(texts)
 
         # Cache dimension from first successful call.
         if self._dimension is None and embeddings:
@@ -591,7 +674,7 @@ def get_embedding_provider(config: ProjectConfig) -> EmbeddingProvider:
 
     raise RuntimeError(
         "No embedding provider is available. Install one of:\n"
-        "  pip install 'markdown-vault-mcp[embeddings-api]'  # httpx for Ollama or OpenAI\n"
+        "  pip install 'markdown-vault-mcp[embeddings-api]'  # OpenAI or Ollama (API)\n"
         "  pip install 'markdown-vault-mcp[embeddings]'       # fastembed (local)\n"
         "Or set OPENAI_API_KEY for the OpenAI provider, "
         "or start an Ollama server for the Ollama provider."

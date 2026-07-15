@@ -1983,6 +1983,21 @@ Copied from ifcraftcorpus, adapted:
 - Keep the same provider ABC and implementations (Ollama, OpenAI,
   SentenceTransformers)
 
+**Unified wire protocol (#916)**: both API providers embed through one
+shared OpenAI-compatible transport built on the official ``openai`` SDK
+(``_OpenAICompatEmbeddings``). ``OpenAIProvider`` passes its configured
+base URL and key straight through; ``OllamaProvider`` is a preset over the
+same client (``base_url = {OLLAMA_HOST}/v1``, placeholder key). The
+user-facing config surface (``EMBEDDING_PROVIDER=ollama``, ``OLLAMA_HOST``,
+``OLLAMA_MODEL``, ``OLLAMA_CPU_ONLY``, reachability auto-detect) is
+unchanged — provider names are the contract, the wire protocol is an
+implementation detail. Three Ollama capabilities have no OpenAI-API
+equivalent and stay on the native REST API: CPU-only inference
+(``options.num_gpu`` via ``/api/embed``, taken when ``cpu_only`` is set),
+the ``/api/show`` context-length probe, and the ``/api/tags`` reachability
+probe in ``get_embedding_provider``. ``fastembed`` (in-process, non-API)
+is unaffected.
+
 ### `tracker.py`: Change Detection
 
 ```python

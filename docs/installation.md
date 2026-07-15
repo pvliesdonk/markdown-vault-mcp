@@ -20,7 +20,7 @@ With optional dependencies:
     ```bash
     pip install markdown-vault-mcp[embeddings-api]
     ```
-    Adds httpx + numpy for Ollama/OpenAI embeddings via HTTP.
+    Adds the openai SDK + httpx + numpy for Ollama/OpenAI embeddings via API.
 
 === "Local embeddings"
 

@@ -43,7 +43,7 @@ dependencies = [
 [project.optional-dependencies]
 # PROJECT-EXTRAS-START — add domain-specific optional-dependency groups below; kept across copier update
 mcp = ["fastmcp>=3.0,<4"]
-embeddings-api = ["httpx>=0.25", "numpy>=1.20"]
+embeddings-api = ["httpx>=0.25", "numpy>=1.20", "openai>=1.45"]
 embeddings = ["fastembed>=0.3", "numpy>=1.20"]
 file-watcher = ["watchdog>=4.0"]
 # LLM-backed summarize tool (OpenAI-compatible chat-completions backend:

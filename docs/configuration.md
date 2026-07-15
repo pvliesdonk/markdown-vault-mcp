@@ -120,6 +120,8 @@ The first three knobs adjust *ranking and rendering* and take effect immediately
     2. **Ollama** — if `OLLAMA_HOST` is reachable
     3. **FastEmbed** — if the `fastembed` package is installed
 
+    Both API providers speak the OpenAI-compatible embeddings protocol through the official `openai` SDK: the `ollama` provider is a preset that targets `{OLLAMA_HOST}/v1` with no key required. The `OLLAMA_*` settings and their behavior are unchanged; `OLLAMA_CPU_ONLY` uses Ollama's native API, which is the only way to request CPU-only inference.
+
     **Explicit vs. auto-detect failure handling:** when you set `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` to a specific backend and it cannot be constructed at startup — a missing dependency, missing/empty credentials, or an unrecognised value — the server **fails fast** with a `ConfigurationError` rather than silently falling back to keyword-only search. (An unreachable Ollama/OpenAI *service* does not prevent startup — the provider still loads; the failure surfaces later as an embedding error during index build.) When the variable is *unset* (auto-detect) and no backend is available, the server logs a warning and continues with semantic search disabled. Set the variable explicitly if you want a missing provider to be a hard startup error.
 
 ## Summarization

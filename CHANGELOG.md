@@ -5,6 +5,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- Embedding providers are unified on the OpenAI-compatible wire protocol
+  via the official `openai` SDK (#916): `OpenAIProvider` now embeds through
+  the SDK, and `OllamaProvider` targets Ollama's OpenAI-compatible endpoint
+  (`{OLLAMA_HOST}/v1`) through the same shared client. No configuration
+  changes: `EMBEDDING_PROVIDER=ollama`, `OLLAMA_HOST`, `OLLAMA_MODEL`,
+  `OLLAMA_CPU_ONLY`, and auto-detection behave exactly as before.
+  `OLLAMA_CPU_ONLY` keeps using Ollama's native API (the compatibility
+  layer cannot express CPU-only inference). The `embeddings-api` extra now
+  installs the `openai` SDK alongside `httpx` and `numpy`.
+
 ### Changed (BREAKING)
 
 - The `summarize` tool's Anthropic-SDK backend was replaced by a generic

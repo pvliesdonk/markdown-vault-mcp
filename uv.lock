@@ -1507,6 +1507,7 @@ embeddings = [
 embeddings-api = [
     { name = "httpx" },
     { name = "numpy" },
+    { name = "openai" },
 ]
 file-watcher = [
     { name = "watchdog" },
@@ -1557,6 +1558,7 @@ requires-dist = [
     { name = "numpy", marker = "extra == 'embeddings'", specifier = ">=1.20" },
     { name = "numpy", marker = "extra == 'embeddings-api'", specifier = ">=1.20" },
     { name = "openai", marker = "extra == 'all'", specifier = ">=1.45" },
+    { name = "openai", marker = "extra == 'embeddings-api'", specifier = ">=1.45" },
     { name = "openai", marker = "extra == 'summarize'", specifier = ">=1.45" },
     { name = "python-frontmatter", specifier = ">=1.0" },
     { name = "requests", specifier = ">=2.33.0" },
