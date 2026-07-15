@@ -840,7 +840,7 @@ Inputs larger than one model request are handled map-reduce style. Notes are pac
 - `summary` (string): the generated summary text.
 - `sources` (list of `{path, title}`): the notes that were summarised, always populated so individual notes are attributable even when the prose does not name every one.
 - `mode` (string): the mode used.
-- `truncated` (bool): `true` when the input was capped (more notes matched than the server's note limit, or a single note exceeded the per-request character budget and was cut).
+- `truncated` (bool): `true` when content was lost to a cap (more notes matched than the server's note limit, a single note exceeded the per-request character budget and was cut, or a partial summary was clipped while combining results).
 - `notes_included` (int): notes whose content reached the model.
 - `notes_omitted` (int): matched notes dropped by the note limit. When non-zero, the summary does not cover the whole selection.
 
