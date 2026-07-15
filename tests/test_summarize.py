@@ -497,6 +497,9 @@ class TestSummarizeFacet:
         assert [s.path for s in result.sources] == ["alpha.md", "beta.md"]
         system, _user = fake.calls[0]
         assert "reference that note by its path" in system
+        # Tool results are terminal; the prompt must forbid assistant-style
+        # offers of further help (#921).
+        assert "no offers of further help" in system
 
     def test_subtree_expansion(self, make_vault: VaultFactory) -> None:
         vault = make_vault(summarizer=FakeSummarizer())
@@ -514,6 +517,7 @@ class TestSummarizeFacet:
         vault.summarizer.summarize(["alpha.md"], mode="per_note")
         system, _user = fake.calls[0]
         assert "separate concise summary for each note" in system
+        assert "no offers of further help" in system
 
     def test_focus_is_folded_into_system(self, make_vault: VaultFactory) -> None:
         fake = FakeSummarizer()

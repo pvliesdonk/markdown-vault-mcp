@@ -28,20 +28,28 @@ logger = logging.getLogger(__name__)
 
 _VALID_MODES = ("synthesis", "per_note")
 
+# The response is a terminal tool result, not a conversation turn: offers of
+# further help ("If you want I can...") are noise nobody can answer (#921).
+_NO_META = (
+    " Output only the summary itself: no offers of further help, no "
+    "follow-up questions, and no meta-commentary about what you could do next."
+)
+
 _SYSTEM_SYNTHESIS = (
     "You summarize notes from a markdown vault. Produce a single cohesive "
     "summary that synthesizes across all the provided notes. When a point "
     "comes from a specific note, reference that note by its path (e.g. "
     "`folder/note.md`) so the reader can trace each claim back to its source. "
     "Prefer prose over bullet dumps; be faithful to the notes and do not "
-    "invent details."
+    "invent details." + _NO_META
 )
 
 _SYSTEM_PER_NOTE = (
     "You summarize notes from a markdown vault. Produce a separate concise "
     "summary for each note provided. Head each summary with the note's path "
     "exactly as given. Do not merge notes together; keep one summary per note, "
-    "in the order provided. Be faithful to the notes and do not invent details."
+    "in the order provided. Be faithful to the notes and do not invent "
+    "details." + _NO_META
 )
 
 

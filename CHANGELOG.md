@@ -7,6 +7,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- `summarize` output no longer ends with assistant-style offers of further
+  help ("If you want I can..."): the system prompts now instruct the model
+  to output only the summary itself — a tool result is terminal, so such
+  offers are unanswerable noise (#921).
+
 - `summarize` failed with `finish_reason=length` and empty output on
   reasoning models (the default `gpt-5-mini`): the token budget covers
   internal reasoning, so the old 2048 default was exhausted before any
