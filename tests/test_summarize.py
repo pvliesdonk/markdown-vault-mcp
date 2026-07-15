@@ -612,6 +612,13 @@ class TestSummarizeFacet:
         with pytest.raises(ValueError, match="No readable notes"):
             vault.summarizer.summarize(["missing.md"])
 
+    def test_nonexistent_folder_raises_no_notes_found(
+        self, make_vault: VaultFactory
+    ) -> None:
+        vault = make_vault(summarizer=FakeSummarizer())
+        with pytest.raises(ValueError, match="No notes found"):
+            vault.summarizer.summarize(["no-such-folder"])
+
     def test_unconfigured_vault_raises(self, make_vault: VaultFactory) -> None:
         vault = make_vault(summarizer=None)
         with pytest.raises(RuntimeError, match="Summarization is not configured"):

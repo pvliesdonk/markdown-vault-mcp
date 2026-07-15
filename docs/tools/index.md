@@ -825,7 +825,7 @@ Summarize a note, a set of notes, or a folder subtree with a language model. In 
 
 The tool is only registered when a summarization backend is configured: an `OPENAI_API_KEY`, or an explicit OpenAI-compatible base URL for local endpoints that need no key. Otherwise it does not appear in the tool listing. Any OpenAI-compatible endpoint works: OpenAI, a local Ollama, the Anthropic compatibility endpoint, vLLM, and others.
 
-Inputs larger than one model request are handled map-reduce style: notes are packed into batches of at most `SUMMARIZE_MAX_INPUT_CHARS` characters, each batch is summarized, and the partial summaries are combined into the final result. Large folders therefore issue several model calls and take proportionally longer. Coverage is capped at `SUMMARIZE_MAX_NOTES` notes; the response reports exactly how many notes made it in (`notes_included`) and how many were dropped (`notes_omitted`).
+Inputs larger than one model request are handled map-reduce style. Notes are packed into batches of at most `SUMMARIZE_MAX_INPUT_CHARS` characters and each batch is summarized on its own; a final pass combines the partial summaries into one result. Large folders issue several model calls and take proportionally longer. Coverage is capped at `SUMMARIZE_MAX_NOTES` notes; the response reports exactly how many notes made it in (`notes_included`) and how many were dropped (`notes_omitted`).
 
 **Parameters:**
 
