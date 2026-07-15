@@ -225,8 +225,8 @@ def make_server(
 
     # Hide the LLM-backed summarize tool unless a summarization backend is
     # configured (an OpenAI-compatible API key or base URL). Provider-neutral:
-    # the check lives on
-    # config.summarize, never referencing a specific provider. Checked directly
+    # the check lives on config.summarize, never referencing a specific
+    # provider. Checked directly
     # (not via to_vault_kwargs(), which builds an embedding provider and may
     # clone a git repo as a side effect — see the git-managed gate above).
     if not config.summarize.has_provider():

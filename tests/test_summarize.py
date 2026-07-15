@@ -224,6 +224,15 @@ class TestGetSummarizer:
         with pytest.raises(ConfigurationError, match="was removed"):
             get_summarizer(cfg)
 
+    def test_explicit_openai_without_backend_raises_eagerly(
+        self, tmp_path: Path
+    ) -> None:
+        # Explicit provider with no key and no base URL must fail at config
+        # time, not at request time with a placeholder key.
+        cfg = _config_with(SummarizeConfig(provider="openai"), tmp_path)
+        with pytest.raises(RuntimeError, match="no backend is configured"):
+            get_summarizer(cfg)
+
     def test_missing_sdk_raises_import_error(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

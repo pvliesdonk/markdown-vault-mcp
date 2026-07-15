@@ -240,6 +240,17 @@ def get_summarizer(config: ProjectConfig) -> Summarizer:
             "Valid values: 'openai'."
         )
 
+    if explicit == _OPENAI and not summ.has_provider():
+        # An explicit provider with neither a key nor an endpoint would
+        # otherwise construct a client aimed at the SDK default endpoint
+        # with a placeholder key, deferring the failure to request time.
+        raise RuntimeError(
+            "Summarize provider 'openai' is selected but no backend is "
+            "configured. Set OPENAI_API_KEY (or "
+            "MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_BASE_URL for a keyless "
+            "local endpoint)."
+        )
+
     if explicit == _OPENAI or summ.has_provider():
         logger.info(
             "Using OpenAISummarizer (summarize_provider=%s) base_url=%s model=%s",
