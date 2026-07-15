@@ -898,7 +898,7 @@ app.onteardown = () => {
     card.style.display = '';
 
     try {
-      const result = await app.callServerTool({ name: 'vault___vault_context', arguments: { path } });
+      const result = await app.callServerTool({ name: 'app___vault_context', arguments: { path } });
       const data = parseToolResult(result);
       if (!data) { placeholder.style.display = ''; card.style.display = 'none'; return; }
       currentContextPath = path;
@@ -1281,7 +1281,7 @@ app.onteardown = () => {
   async function expandNode(path) {
     try {
       const result = await app.callServerTool({
-        name: 'vault___vault_graph_neighborhood',
+        name: 'app___vault_graph_neighborhood',
         arguments: { path, depth: 1, include_semantic: semanticEnabled },
       });
       const data = parseToolResult(result);
@@ -1297,7 +1297,7 @@ app.onteardown = () => {
 
   async function loadHubs() {
     try {
-      const result = await app.callServerTool({ name: 'vault___vault_graph_hubs', arguments: {} });
+      const result = await app.callServerTool({ name: 'app___vault_graph_hubs', arguments: {} });
       const data = parseToolResult(result);
       if (!data) return;
       addGraphData(data);
@@ -1328,7 +1328,7 @@ app.onteardown = () => {
   // Mini context card on single click
   function showMiniCard(nodeId) {
     const card = document.getElementById('graph-mini-card');
-    app.callServerTool({ name: 'vault___vault_context', arguments: { path: nodeId } }).then(result => {
+    app.callServerTool({ name: 'app___vault_context', arguments: { path: nodeId } }).then(result => {
       const data = parseToolResult(result);
       if (!data) { card.style.display = 'none'; return; }
       const bl = (data.backlinks || []).slice(0, 3);
@@ -1458,7 +1458,7 @@ app.onteardown = () => {
     const key = folder || '__root__';
     if (treeDataCache[key]) return treeDataCache[key];
     try {
-      const result = await app.callServerTool({ name: 'vault___vault_list', arguments: { folder: folder || null } });
+      const result = await app.callServerTool({ name: 'app___vault_list', arguments: { folder: folder || null } });
       const data = parseToolResult(result);
       if (!data) return { folders: [], notes: [] };
       treeDataCache[key] = data;
@@ -1530,7 +1530,7 @@ app.onteardown = () => {
     searchClear.style.display = '';
     try {
       const result = await app.callServerTool({
-        name: 'vault___vault_search', arguments: { query, mode: 'hybrid', limit: 20 }
+        name: 'app___vault_search', arguments: { query, mode: 'hybrid', limit: 20 }
       });
       const data = parseToolResult(result) || [];
       treeEl.innerHTML = '';
@@ -1689,7 +1689,7 @@ app.onteardown = () => {
     });
 
     try {
-      const result = await app.callServerTool({ name: 'vault___vault_read', arguments: { path } });
+      const result = await app.callServerTool({ name: 'app___vault_read', arguments: { path } });
       const data = parseToolResult(result);
       if (!data) { previewEl.innerHTML = '<div class="placeholder">Note not found</div>'; return; }
       currentPreviewData = data;

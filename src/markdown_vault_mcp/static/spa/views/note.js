@@ -119,7 +119,7 @@
     });
 
     try {
-      const result = await app.callServerTool({ name: 'vault___vault_read', arguments: { path } });
+      const result = await app.callServerTool({ name: 'app___vault_read', arguments: { path } });
       const data = parseToolResult(result);
       if (!data) { previewEl.innerHTML = '<div class="placeholder">Note not found</div>'; return; }
       currentPreviewData = data;

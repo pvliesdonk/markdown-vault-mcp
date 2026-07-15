@@ -1,6 +1,6 @@
 # MCP Resources
 
-MCP resources expose vault metadata that clients can read directly without invoking tools. Most resources return `application/json`; `ui://vault/app.html` is an exception that returns a self-contained HTML SPA for MCP Apps clients.
+MCP resources expose vault metadata that clients can read directly without invoking tools. Most resources return `application/json`; `ui://markdown_vault_mcp/app.html` is an exception that returns a self-contained HTML SPA for MCP Apps clients.
 
 !!! note "Index freshness (`_meta.index_stale`)"
     The index-querying resources (`config://vault`, `stats://vault`, `tags://vault`, `tags://vault/{field}`, `folders://vault`, `toc://vault/{path}`, `similar://vault/{path}`, and `recent://vault`) keep their bare JSON contents unchanged and report index freshness out-of-band in the resource read's **`_meta.index_stale`** field (read it via `read_resource_mcp(uri).meta`). It is `true` when a write landed during the read or the IndexWriter was non-idle at response time. Resources carry no `wait_for_pending_writes` parameter (they signal only); use the equivalent MCP tool with `wait_for_pending_writes=true` when you need to block for a fresh read.
@@ -17,7 +17,7 @@ MCP resources expose vault metadata that clients can read directly without invok
 | [`toc://vault/{path}`](#tocvaultpath) | Table of contents for a note or folder subtree |
 | [`similar://vault/{path}`](#similarvaultpath) | Semantically similar notes for a document |
 | [`recent://vault`](#recentvault) | Most recently modified notes |
-| [`ui://vault/app.html`](#uivaultapphtml) | Interactive vault explorer SPA (MCP Apps) |
+| [`ui://markdown_vault_mcp/app.html`](#uimarkdown_vault_mcpapphtml) | Interactive vault explorer SPA (MCP Apps) |
 
 ---
 
@@ -207,6 +207,6 @@ The 20 most recently modified notes. Each entry is a full `NoteInfo` object with
 ]
 ```
 
-## `ui://vault/app.html`
+## `ui://markdown_vault_mcp/app.html`
 
 Interactive vault explorer delivered as a single self-contained HTML resource. This is an [MCP Apps](https://modelcontextprotocol.io/specification/2025-06-18/server/apps) resource; clients that support the MCP Apps protocol render it as an interactive iframe. See the [MCP Apps guide](guides/mcp-apps.md) for details on the four views (Context Card, Graph Explorer, Vault Browser, Note Preview).

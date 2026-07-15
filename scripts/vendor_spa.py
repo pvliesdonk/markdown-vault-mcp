@@ -36,9 +36,9 @@ VENDORED_VERSIONS: dict[str, dict[str, str]] = {
     # The MCP Apps frontend SDK — required by every MCP Apps UI.  Template-owned;
     # bump the version + sha256 here to roll the whole fleet at once.
     "ext-apps": {
-        "version": "1.3.1",
-        "url": "https://unpkg.com/@modelcontextprotocol/ext-apps@1.3.1/app-with-deps",
-        "sha256": "36495489aa8939e4eb7421c8a03c220b9f502d79e87895f88599eb6c02377fdd",
+        "version": "1.7.4",
+        "url": "https://unpkg.com/@modelcontextprotocol/ext-apps@1.7.4/app-with-deps",
+        "sha256": "e72bf921bc15d38951cf85abbb8e572688a30572db89b5344e3a447b1f8d6b40",
         "type": "module",
         "import_specifier": "@modelcontextprotocol/ext-apps",
     },

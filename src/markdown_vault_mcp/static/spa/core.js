@@ -2,7 +2,7 @@
 // Static import required for Android webview compatibility (dynamic import()
 // fails there).  SDK is vendored inline via import map (see issue #302).
 import { App, applyDocumentTheme, applyHostStyleVariables, applyHostFonts }
-  from "https://unpkg.com/@modelcontextprotocol/ext-apps@1.3.1/app-with-deps";
+  from "https://unpkg.com/@modelcontextprotocol/ext-apps@1.7.4/app-with-deps";
 
 try {
 

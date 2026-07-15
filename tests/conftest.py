@@ -208,7 +208,7 @@ async def get_app_html() -> str:
 
     server = make_server()
     async with Client(server) as client:
-        resource = await client.read_resource("ui://vault/app.html")
+        resource = await client.read_resource("ui://markdown_vault_mcp/app.html")
         return resource[0].text if hasattr(resource[0], "text") else str(resource[0])
 
 

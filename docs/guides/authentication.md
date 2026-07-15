@@ -112,7 +112,7 @@ Client → markdown-vault-mcp (present JWT → validate via JWKS)
 The server proxies OIDC itself, with no external auth sidecar to deploy:
 
 ```
-Client → mcp-server → OIDC Provider
+Client → markdown-vault-mcp → OIDC Provider
 ```
 
 1. Client connects to the server

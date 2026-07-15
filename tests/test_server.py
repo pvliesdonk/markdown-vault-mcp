@@ -2693,6 +2693,15 @@ class TestPromptAndResourceIcons:
             resources = await client.list_resources()
 
         for resource in resources:
+            # The MCP Apps shell resource (ui://<module>/app.html) is registered
+            # bare by the template-conformant _server_apps skeleton
+            # (@mcp.resource(_APP_URI, app=app_resource_config) — no icons= and no
+            # description=, both frozen out by the skeleton), so it carries neither
+            # an icon nor a description by design — exempt it (#905). A future
+            # template seam could reinstate them (cf. the DOMAIN-APP-RESOURCE seam
+            # added for AppConfig in template#248).
+            if str(resource.uri) == "ui://markdown_vault_mcp/app.html":
+                continue
             assert resource.icons is not None
             assert len(resource.icons) > 0
             assert resource.icons[0].mimeType == "image/svg+xml"

@@ -36,9 +36,7 @@ Otherwise, add the server to your Claude Desktop configuration file. The path va
     "markdown-vault-mcp": {
       "command": "markdown-vault-mcp",
       "args": ["serve"],
-      "env": {
-        "MARKDOWN_VAULT_MCP_READ_ONLY": "true"
-      }
+      "env": {}
     }
   }
 }
@@ -166,9 +164,7 @@ macOS/Linux:
     "markdown-vault-mcp": {
       "command": "/Users/me/.venvs/mcp/bin/markdown-vault-mcp",
       "args": ["serve"],
-      "env": {
-        "MARKDOWN_VAULT_MCP_READ_ONLY": "true"
-      }
+      "env": {}
     }
   }
 }
@@ -182,9 +178,7 @@ Windows (`Scripts\` not `bin\`, `.exe` suffix):
     "markdown-vault-mcp": {
       "command": "C:\\Users\\me\\.venvs\\mcp\\Scripts\\markdown-vault-mcp.exe",
       "args": ["serve"],
-      "env": {
-        "MARKDOWN_VAULT_MCP_READ_ONLY": "true"
-      }
+      "env": {}
     }
   }
 }

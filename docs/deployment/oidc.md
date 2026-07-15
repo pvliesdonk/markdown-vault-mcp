@@ -205,7 +205,6 @@ networks:
 With the corresponding `.env`:
 
 ```bash
-MARKDOWN_VAULT_MCP_READ_ONLY=true
 MARKDOWN_VAULT_MCP_BASE_URL=https://mcp.example.com
 MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL=https://auth.example.com/.well-known/openid-configuration
 MARKDOWN_VAULT_MCP_OIDC_CLIENT_ID=markdown-vault-mcp

@@ -13,12 +13,12 @@ import pytest
 from fastmcp import Client
 
 from markdown_vault_mcp._server_apps import (
-    _VAULT_APP_TOOL_NAMES,
+    _APP_TOOL_NAMES,
     _app_tool_meta,
-    _compute_claude_app_domain,
     _hashed,
     _rewrite_spa_app_tool_calls,
 )
+from markdown_vault_mcp._vault_apps import _compute_claude_app_domain
 from markdown_vault_mcp.server import make_server
 from tests.conftest import _CLEAR_VARS, wait_for_mcp_writer_drain
 
@@ -99,19 +99,19 @@ class TestComputeClaudeAppDomain:
 
 @pytest.mark.usefixtures("_mcp_env")
 class TestSPAShellResource:
-    """Tests for the ui://vault/app.html resource."""
+    """Tests for the ui://markdown_vault_mcp/app.html resource."""
 
     async def test_resource_registered(self) -> None:
         server = make_server()
         async with Client(server) as client:
             resources = await client.list_resources()
             uris = [str(r.uri) for r in resources]
-            assert "ui://vault/app.html" in uris
+            assert "ui://markdown_vault_mcp/app.html" in uris
 
     async def test_html_contains_ext_apps_sdk(self) -> None:
         server = make_server()
         async with Client(server) as client:
-            resource = await client.read_resource("ui://vault/app.html")
+            resource = await client.read_resource("ui://markdown_vault_mcp/app.html")
             html = (
                 resource[0].text if hasattr(resource[0], "text") else str(resource[0])
             )
@@ -120,7 +120,7 @@ class TestSPAShellResource:
     async def test_html_contains_tab_navigation(self) -> None:
         server = make_server()
         async with Client(server) as client:
-            resource = await client.read_resource("ui://vault/app.html")
+            resource = await client.read_resource("ui://markdown_vault_mcp/app.html")
             html = (
                 resource[0].text if hasattr(resource[0], "text") else str(resource[0])
             )
@@ -131,7 +131,7 @@ class TestSPAShellResource:
     async def test_html_contains_host_theming(self) -> None:
         server = make_server()
         async with Client(server) as client:
-            resource = await client.read_resource("ui://vault/app.html")
+            resource = await client.read_resource("ui://markdown_vault_mcp/app.html")
             html = (
                 resource[0].text if hasattr(resource[0], "text") else str(resource[0])
             )
@@ -146,7 +146,7 @@ class TestSPAShellResource:
         ``--color-text-info`` leaked the host's blue into links/tabs/buttons)."""
         server = make_server()
         async with Client(server) as client:
-            resource = await client.read_resource("ui://vault/app.html")
+            resource = await client.read_resource("ui://markdown_vault_mcp/app.html")
             html = (
                 resource[0].text if hasattr(resource[0], "text") else str(resource[0])
             )
@@ -178,7 +178,7 @@ class TestSPAShellResource:
         either theme fails here."""
         server = make_server()
         async with Client(server) as client:
-            resource = await client.read_resource("ui://vault/app.html")
+            resource = await client.read_resource("ui://markdown_vault_mcp/app.html")
             html = (
                 resource[0].text if hasattr(resource[0], "text") else str(resource[0])
             )
@@ -212,7 +212,7 @@ class TestSPAShellResource:
     async def test_html_handlers_before_connect(self) -> None:
         server = make_server()
         async with Client(server) as client:
-            resource = await client.read_resource("ui://vault/app.html")
+            resource = await client.read_resource("ui://markdown_vault_mcp/app.html")
             html = (
                 resource[0].text if hasattr(resource[0], "text") else str(resource[0])
             )
@@ -224,7 +224,7 @@ class TestSPAShellResource:
     async def test_html_contains_fullscreen_toggle(self) -> None:
         server = make_server()
         async with Client(server) as client:
-            resource = await client.read_resource("ui://vault/app.html")
+            resource = await client.read_resource("ui://markdown_vault_mcp/app.html")
             html = (
                 resource[0].text if hasattr(resource[0], "text") else str(resource[0])
             )
@@ -239,7 +239,7 @@ class TestSPAShellResource:
         vendored-library text."""
         server = make_server()
         async with Client(server) as client:
-            resource = await client.read_resource("ui://vault/app.html")
+            resource = await client.read_resource("ui://markdown_vault_mcp/app.html")
             html = (
                 resource[0].text if hasattr(resource[0], "text") else str(resource[0])
             )
@@ -263,7 +263,7 @@ class TestSPAShellResource:
         (which left mobile hosts unable to learn our height) must be gone."""
         server = make_server()
         async with Client(server) as client:
-            resource = await client.read_resource("ui://vault/app.html")
+            resource = await client.read_resource("ui://markdown_vault_mcp/app.html")
             html = (
                 resource[0].text if hasattr(resource[0], "text") else str(resource[0])
             )
@@ -276,7 +276,7 @@ class TestSPAShellResource:
         right default."""
         server = make_server()
         async with Client(server) as client:
-            resource = await client.read_resource("ui://vault/app.html")
+            resource = await client.read_resource("ui://markdown_vault_mcp/app.html")
             html = (
                 resource[0].text if hasattr(resource[0], "text") else str(resource[0])
             )
@@ -287,7 +287,7 @@ class TestSPAShellResource:
         clears mobile notches / system UI."""
         server = make_server()
         async with Client(server) as client:
-            resource = await client.read_resource("ui://vault/app.html")
+            resource = await client.read_resource("ui://markdown_vault_mcp/app.html")
             html = (
                 resource[0].text if hasattr(resource[0], "text") else str(resource[0])
             )
@@ -300,7 +300,7 @@ class TestSPAShellResource:
     async def test_html_contains_ontoolinput(self) -> None:
         server = make_server()
         async with Client(server) as client:
-            resource = await client.read_resource("ui://vault/app.html")
+            resource = await client.read_resource("ui://markdown_vault_mcp/app.html")
             html = resource[0].text
             assert "app.ontoolinput" in html
             assert "processToolInput" in html
@@ -309,21 +309,21 @@ class TestSPAShellResource:
     async def test_html_contains_ontoolcancelled(self) -> None:
         server = make_server()
         async with Client(server) as client:
-            resource = await client.read_resource("ui://vault/app.html")
+            resource = await client.read_resource("ui://markdown_vault_mcp/app.html")
             html = resource[0].text
             assert "app.ontoolcancelled" in html
 
     async def test_html_contains_onteardown(self) -> None:
         server = make_server()
         async with Client(server) as client:
-            resource = await client.read_resource("ui://vault/app.html")
+            resource = await client.read_resource("ui://markdown_vault_mcp/app.html")
             html = resource[0].text
             assert "app.onteardown" in html
 
     async def test_html_static_import(self) -> None:
         server = make_server()
         async with Client(server) as client:
-            resource = await client.read_resource("ui://vault/app.html")
+            resource = await client.read_resource("ui://markdown_vault_mcp/app.html")
             html = resource[0].text
             # Static import via import map (vendored SDK, Android compatible)
             assert 'from "@modelcontextprotocol/ext-apps"' in html
@@ -333,7 +333,7 @@ class TestSPAShellResource:
     async def test_html_parse_tool_result(self) -> None:
         server = make_server()
         async with Client(server) as client:
-            resource = await client.read_resource("ui://vault/app.html")
+            resource = await client.read_resource("ui://markdown_vault_mcp/app.html")
             html = resource[0].text
             # parseToolResult extracts JSON from CallToolResult.content[0].text
             assert "parseToolResult" in html
@@ -352,7 +352,7 @@ class TestSPAShellResource:
         """After connect, app defaults to browse view when ontoolinput never fires."""
         server = make_server()
         async with Client(server) as client:
-            resource = await client.read_resource("ui://vault/app.html")
+            resource = await client.read_resource("ui://markdown_vault_mcp/app.html")
             html = resource[0].text
             # The else branch after pendingToolInput check must switch to browse
             assert "switchTab('browse')" in html
@@ -361,7 +361,7 @@ class TestSPAShellResource:
     async def test_html_contains_error_handler(self) -> None:
         server = make_server()
         async with Client(server) as client:
-            resource = await client.read_resource("ui://vault/app.html")
+            resource = await client.read_resource("ui://markdown_vault_mcp/app.html")
             html = (
                 resource[0].text if hasattr(resource[0], "text") else str(resource[0])
             )
@@ -370,7 +370,7 @@ class TestSPAShellResource:
     async def test_html_contains_navigate_to(self) -> None:
         server = make_server()
         async with Client(server) as client:
-            resource = await client.read_resource("ui://vault/app.html")
+            resource = await client.read_resource("ui://markdown_vault_mcp/app.html")
             html = (
                 resource[0].text if hasattr(resource[0], "text") else str(resource[0])
             )
@@ -379,7 +379,7 @@ class TestSPAShellResource:
     async def test_html_contains_send_to_llm(self) -> None:
         server = make_server()
         async with Client(server) as client:
-            resource = await client.read_resource("ui://vault/app.html")
+            resource = await client.read_resource("ui://markdown_vault_mcp/app.html")
             html = (
                 resource[0].text if hasattr(resource[0], "text") else str(resource[0])
             )
@@ -389,7 +389,7 @@ class TestSPAShellResource:
     async def test_html_contains_update_context(self) -> None:
         server = make_server()
         async with Client(server) as client:
-            resource = await client.read_resource("ui://vault/app.html")
+            resource = await client.read_resource("ui://markdown_vault_mcp/app.html")
             html = (
                 resource[0].text if hasattr(resource[0], "text") else str(resource[0])
             )
@@ -907,31 +907,31 @@ class TestSPARewriteValidation:
     """
 
     def test_rewrite_no_vault_calls_raises(self) -> None:
-        with pytest.raises(RuntimeError, match=r"^SPA shell rewrite found zero "):
+        with pytest.raises(RuntimeError, match=r"^SPA rewrite found zero "):
             _rewrite_spa_app_tool_calls("<html>no vault calls here</html>")
 
     def test_rewrite_unexpected_tool_raises(self) -> None:
         # Provide every declared name plus one typo so `missing` is empty
         # and only the `unexpected` branch can fire — isolates the test
         # from the production check ordering.
-        all_valid = " ".join(f"vault___{n}" for n in _VAULT_APP_TOOL_NAMES)
-        with pytest.raises(RuntimeError, match=r"^SPA references unknown vault tools:"):
-            _rewrite_spa_app_tool_calls(f"{all_valid} vault___vault_typo_unknown")
+        all_valid = " ".join(f"app___{n}" for n in _APP_TOOL_NAMES)
+        with pytest.raises(RuntimeError, match=r"^SPA references unknown tools:"):
+            _rewrite_spa_app_tool_calls(f"{all_valid} app___vault_typo_unknown")
 
     def test_rewrite_missing_declared_tool_raises(self) -> None:
         # The "missing" branch only fires when at least 2 tools are declared.
         # Assert that precondition explicitly so a future single-tool refactor
         # produces a clear error message instead of a mysterious "expected
         # RuntimeError, got nothing".
-        assert len(_VAULT_APP_TOOL_NAMES) >= 2, (
+        assert len(_APP_TOOL_NAMES) >= 2, (
             "test invariant: needs >=2 declared tools to trigger the missing branch"
         )
-        name = sorted(_VAULT_APP_TOOL_NAMES)[0]
+        name = sorted(_APP_TOOL_NAMES)[0]
         with pytest.raises(
-            RuntimeError, match=r"^SPA HTML doesn't reference declared vault tools:"
+            RuntimeError, match=r"^SPA doesn't reference declared tools:"
         ):
-            _rewrite_spa_app_tool_calls(f"vault___{name}")
+            _rewrite_spa_app_tool_calls(f"app___{name}")
 
     def test_app_tool_meta_unknown_raises(self) -> None:
-        with pytest.raises(ValueError, match=r"^Unknown vault app tool "):
+        with pytest.raises(ValueError, match=r"^Unknown app tool "):
             _app_tool_meta("vault_unknown_tool")

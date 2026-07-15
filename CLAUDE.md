@@ -47,6 +47,8 @@ src/markdown_vault_mcp/
   config.py            -- configuration loading
   domain.py            -- Service: owns the Vault lifecycle (build, boot index/reindex/embeddings jobs, file watcher); get_vault/get_config DI + vault singleton (#902)
   _instructions.py     -- build_default_instructions: domain server-instructions prose, applied in server.py's DOMAIN-WIRING (#901)
+  _server_apps.py      -- template-owned MCP Apps scaffold; vault SPA + app-tools confined to DOMAIN-APP-TOOL-NAMES/DOMAIN-APP-RESOURCE/DOMAIN-APP-TOOLS sentinels (#905)
+  _vault_apps.py       -- domain helpers backing _server_apps sentinels: Claude sandbox-domain compute + CDN CSP + GraphView→SPA wire serializer (#905)
   server.py            -- generic FastMCP server factory (make_server); template-owned, domain customization confined to DOMAIN-UPSTREAM/DOMAIN-WIRING (#901)
   cli.py               -- CLI entry point
 ```
@@ -69,6 +71,9 @@ This project is extracted from [`pvliesdonk/if-craft-corpus`](https://github.com
 - `logging.getLogger(__name__)` throughout, no `print()`
 - Type hints everywhere
 - Tests: `pytest` with fixtures in `tests/fixtures/`
+
+The automated Claude review runs **only after CI passes** — if CI is red, no
+review is posted. Fix CI and push; the review runs on the next green run.
 
 ## Hard PR Acceptance Gates
 

@@ -23,7 +23,7 @@
     const key = folder || '__root__';
     if (treeDataCache[key]) return treeDataCache[key];
     try {
-      const result = await app.callServerTool({ name: 'vault___vault_list', arguments: { folder: folder || null } });
+      const result = await app.callServerTool({ name: 'app___vault_list', arguments: { folder: folder || null } });
       const data = parseToolResult(result);
       if (!data) return { folders: [], notes: [] };
       treeDataCache[key] = data;
@@ -95,7 +95,7 @@
     searchClear.style.display = '';
     try {
       const result = await app.callServerTool({
-        name: 'vault___vault_search', arguments: { query, mode: 'hybrid', limit: 20 }
+        name: 'app___vault_search', arguments: { query, mode: 'hybrid', limit: 20 }
       });
       const data = parseToolResult(result) || [];
       treeEl.innerHTML = '';

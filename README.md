@@ -440,7 +440,7 @@ MCP resources expose vault metadata as structured JSON that clients can read dir
 | `toc://vault/{path}` | Table of contents (heading outline) for a specific document (template) |
 | `similar://vault/{path}` | Top 10 semantically similar notes for a document (template) |
 | `recent://vault` | 20 most recently modified notes with ISO timestamps |
-| `ui://vault/app.html` | Interactive vault explorer SPA for MCP Apps clients |
+| `ui://markdown_vault_mcp/app.html` | Interactive vault explorer SPA for MCP Apps clients |
 
 ### Prompts
 
@@ -469,7 +469,7 @@ For an alternative action-oriented workflow — Projects, Areas, Resources, Arch
 
 ## MCP Apps
 
-The server ships four browser-based views that MCP clients supporting the MCP Apps protocol can render inline or in fullscreen. They are delivered as a single HTML resource at `ui://vault/app.html` and registered using `visibility="app"` so they appear only in supporting clients and do not clutter the standard tool list. See the [MCP Apps guide](https://pvliesdonk.github.io/markdown-vault-mcp/latest/guides/mcp-apps/) for details.
+The server ships four browser-based views that MCP clients supporting the MCP Apps protocol can render inline or in fullscreen. They are delivered as a single HTML resource at `ui://markdown_vault_mcp/app.html` and registered using `visibility="app"` so they appear only in supporting clients and do not clutter the standard tool list. See the [MCP Apps guide](https://pvliesdonk.github.io/markdown-vault-mcp/latest/guides/mcp-apps/) for details.
 
 | View | Description |
 |------|-------------|

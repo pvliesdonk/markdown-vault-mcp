@@ -131,7 +131,7 @@
     card.style.display = '';
 
     try {
-      const result = await app.callServerTool({ name: 'vault___vault_context', arguments: { path } });
+      const result = await app.callServerTool({ name: 'app___vault_context', arguments: { path } });
       const data = parseToolResult(result);
       if (!data) { placeholder.style.display = ''; card.style.display = 'none'; return; }
       currentContextPath = path;

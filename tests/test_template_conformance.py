@@ -53,9 +53,7 @@ FILE_MODULE_PATHS = {
 # Known-forked files, de-fork in progress → tracking issue. REMOVE a file here in
 # the same PR that de-forks it; the removal is the proof (it flips the file to
 # the strict check). Epic #898. Seeded below after measuring actual conformance.
-RATCHET: dict[str, str] = {
-    "_server_apps.py": "#905",
-}
+RATCHET: dict[str, str] = {}
 
 _START = re.compile(r"#\s*([A-Z0-9-]+)-START\b")
 _END = re.compile(r"#\s*([A-Z0-9-]+)-END\b")

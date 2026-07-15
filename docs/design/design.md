@@ -2383,7 +2383,7 @@ A parallel cap on whole-document `read()` for `.md` files (`MARKDOWN_VAULT_MCP_M
 
 MCP Apps are browser-based views that MCP clients supporting the protocol can render inline (in a sidebar or panel) or fullscreen. They augment tool-based interaction with direct visual exploration.
 
-**Resource URI**: `ui://vault/app.html`: the entire application is a single HTML resource registered with `visibility="app"`. This keeps it out of the standard tool list and exposes it only to clients that support the MCP Apps protocol.
+**Resource URI**: `ui://markdown_vault_mcp/app.html`: the entire application is a single HTML resource registered with `visibility="app"`. This keeps it out of the standard tool list and exposes it only to clients that support the MCP Apps protocol.
 
 **Display modes**:
 - **Inline**: rendered in a client sidebar or panel alongside the conversation

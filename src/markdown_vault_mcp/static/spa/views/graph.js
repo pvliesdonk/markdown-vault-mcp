@@ -277,7 +277,7 @@
   async function expandNode(path) {
     try {
       const result = await app.callServerTool({
-        name: 'vault___vault_graph_neighborhood',
+        name: 'app___vault_graph_neighborhood',
         arguments: { path, depth: 1, include_semantic: semanticEnabled },
       });
       const data = parseToolResult(result);
@@ -293,7 +293,7 @@
 
   async function loadHubs() {
     try {
-      const result = await app.callServerTool({ name: 'vault___vault_graph_hubs', arguments: {} });
+      const result = await app.callServerTool({ name: 'app___vault_graph_hubs', arguments: {} });
       const data = parseToolResult(result);
       if (!data) return;
       addGraphData(data);
@@ -324,7 +324,7 @@
   // Mini context card on single click
   function showMiniCard(nodeId) {
     const card = document.getElementById('graph-mini-card');
-    app.callServerTool({ name: 'vault___vault_context', arguments: { path: nodeId } }).then(result => {
+    app.callServerTool({ name: 'app___vault_context', arguments: { path: nodeId } }).then(result => {
       const data = parseToolResult(result);
       if (!data) { card.style.display = 'none'; return; }
       const bl = (data.backlinks || []).slice(0, 3);
