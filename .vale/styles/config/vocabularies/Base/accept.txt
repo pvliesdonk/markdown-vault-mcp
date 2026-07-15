@@ -49,6 +49,7 @@ affordances
 allowlist
 allowlisted
 ANDed
+Anthropic
 APIs
 async
 asyncio
@@ -195,6 +196,7 @@ vendored
 venv
 Vespa
 virtualenv
+vLLM
 walkthrough
 walkthroughs
 whatever

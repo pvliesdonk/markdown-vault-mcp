@@ -823,7 +823,7 @@ Exactly one of `since_sha` / `since_timestamp` must be supplied.
 
 Summarize a note, a set of notes, or a folder subtree with a language model. In the default `synthesis` mode the result is one cohesive summary that synthesizes across all the notes and **references the individual source notes by path**, so each point can be traced back to its origin. In `per_note` mode it returns a separate summary for each note instead.
 
-The tool is only registered when a summarization backend is configured — an `OPENAI_API_KEY`, or an explicit OpenAI-compatible base URL for keyless local endpoints; otherwise it does not appear in the tool listing. Any OpenAI-compatible endpoint works: OpenAI, a local Ollama, Anthropic's compat endpoint, vLLM, and others.
+The tool is only registered when a summarization backend is configured: an `OPENAI_API_KEY`, or an explicit OpenAI-compatible base URL for local endpoints that need no key. Otherwise it does not appear in the tool listing. Any OpenAI-compatible endpoint works: OpenAI, a local Ollama, the Anthropic compatibility endpoint, vLLM, and others.
 
 **Parameters:**
 
