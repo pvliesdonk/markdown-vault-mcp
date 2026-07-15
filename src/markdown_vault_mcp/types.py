@@ -769,15 +769,21 @@ class SummaryResult:
             the model — always populated so individual notes are attributable
             even when the prose does not name every one.
         mode: ``"synthesis"`` or ``"per_note"``.
-        truncated: True when the input was capped — either more notes matched a
-            subtree than ``max_notes``, or the aggregate note text exceeded
-            ``max_input_chars`` and was cut.
+        truncated: True when the input was capped — more notes matched than
+            ``max_notes``, or a single note body exceeded the per-request
+            character budget (``max_input_chars``) and was cut.
+        notes_included: Number of notes whose content reached the model.
+        notes_omitted: Number of matched notes that were dropped by the
+            ``max_notes`` cap (or skipped as unreadable). Callers should
+            surface a warning when this is non-zero (#922).
     """
 
     summary: str
     sources: list[SummarySource]
     mode: str
     truncated: bool
+    notes_included: int = 0
+    notes_omitted: int = 0
 
 
 WriteOperation = Literal["write", "edit", "delete", "rename"]

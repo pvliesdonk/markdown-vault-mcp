@@ -43,6 +43,12 @@ def register(mcp: FastMCP) -> None:
         individual source notes by path, so each point can be traced back to
         its origin. In "per_note" mode it returns one summary per note instead.
 
+        Inputs larger than one model request are handled automatically: notes
+        are split into batches, each batch is summarized, and the partial
+        summaries are combined into the final result (several model calls, so
+        large folders take proportionally longer). Coverage is capped at the
+        server's note limit; check ``notes_omitted`` in the response.
+
         Only available when a summarization backend is configured (an
         OPENAI_API_KEY or an OpenAI-compatible base URL). Note content is
         sent to the external model provider; do not summarize notes whose
@@ -68,9 +74,13 @@ def register(mcp: FastMCP) -> None:
               ``path`` and ``title`` — always populated so individual notes are
               attributable even when the prose does not name every one.
             - mode (str): The mode used ("synthesis" or "per_note").
-            - truncated (bool): True when the input was capped (a subtree had
-              more notes than the server's limit, or the aggregate note text
-              exceeded the character budget and was cut).
+            - truncated (bool): True when the input was capped (more notes
+              matched than the server's note limit, or a single note exceeded
+              the per-request character budget and was cut).
+            - notes_included (int): Notes whose content reached the model.
+            - notes_omitted (int): Matched notes dropped by the note limit.
+              When non-zero, the summary does not cover the whole selection —
+              surface that to the reader.
 
         Raises:
             ValueError: If ``paths`` is empty, ``mode`` is invalid, or no

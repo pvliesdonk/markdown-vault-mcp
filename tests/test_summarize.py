@@ -531,6 +531,9 @@ class TestSummarizeFacet:
         result = vault.summarizer.summarize(["sub"])
         assert len(result.sources) == 1
         assert result.truncated is True
+        # The omission is quantified, not just flagged (#922).
+        assert result.notes_included == 1
+        assert result.notes_omitted == 1
 
     def test_max_input_chars_truncation(self, make_vault: VaultFactory) -> None:
         vault = make_vault(
@@ -540,19 +543,21 @@ class TestSummarizeFacet:
         result = vault.summarizer.summarize(["alpha.md", "beta.md"])
         assert result.truncated is True
 
-    def test_input_cap_exact_boundary_drops_next_note(
+    def test_over_budget_input_spills_into_batches_not_dropped(
         self, make_vault: VaultFactory
     ) -> None:
-        # First note body is exactly the cap → not cut, but the second note
-        # sees zero remaining and is dropped.
+        # Pre-#922 the second note was dropped at the aggregate cap; now the
+        # cap is per-request and both notes are covered via batching.
         vault = make_vault(
             summarizer=FakeSummarizer(),
             notes={"a.md": "hello", "b.md": "world"},
-            summarize_max_input_chars=5,
+            summarize_max_input_chars=40,
         )
         result = vault.summarizer.summarize(["a.md", "b.md"])
-        assert [s.path for s in result.sources] == ["a.md"]
-        assert result.truncated is True
+        assert [s.path for s in result.sources] == ["a.md", "b.md"]
+        assert result.truncated is False
+        assert result.notes_included == 2
+        assert result.notes_omitted == 0
 
     def test_subtree_cap_honours_configured_max_notes_above_200(
         self, make_vault: VaultFactory
@@ -611,6 +616,128 @@ class TestSummarizeFacet:
         vault = make_vault(summarizer=None)
         with pytest.raises(RuntimeError, match="Summarization is not configured"):
             _ = vault.summarizer
+
+
+# ---------------------------------------------------------------------------
+# Map-reduce batching (#922)
+# ---------------------------------------------------------------------------
+
+
+_THREE_NOTES = {
+    "one.md": "# One\n\n" + ("alpha " * 12),
+    "two.md": "# Two\n\n" + ("bravo " * 12),
+    "three.md": "# Three\n\n" + ("charlie " * 10),
+}
+# Each formatted block is ~100 chars: a 130-char request budget fits exactly
+# one block per batch, forcing three map calls.
+_SMALL_BUDGET = 130
+
+
+class TestMapReduce:
+    def test_multi_batch_synthesis_maps_then_reduces(
+        self, make_vault: VaultFactory
+    ) -> None:
+        fake = FakeSummarizer("PART")
+        vault = make_vault(
+            summarizer=fake,
+            notes=_THREE_NOTES,
+            summarize_max_input_chars=_SMALL_BUDGET,
+        )
+        result = vault.summarizer.summarize(["one.md", "two.md", "three.md"])
+
+        # Three parallel map calls plus one final reduce.
+        assert len(fake.calls) == 4
+        map_calls = [c for c in fake.calls if "one part of a larger" in c[0]]
+        reduce_calls = [c for c in fake.calls if "combine partial summaries" in c[0]]
+        assert len(map_calls) == 3
+        assert len(reduce_calls) == 1
+        # The reduce is last and consumes the map outputs.
+        assert "combine partial summaries" in fake.calls[-1][0]
+        assert "PART" in fake.calls[-1][1]
+        assert result.summary == "PART"
+        assert [s.path for s in result.sources] == ["one.md", "two.md", "three.md"]
+        assert result.truncated is False
+        assert result.notes_included == 3
+        assert result.notes_omitted == 0
+
+    def test_multi_batch_per_note_concatenates_without_reduce(
+        self, make_vault: VaultFactory
+    ) -> None:
+        fake = FakeSummarizer("NOTE-SUM")
+        vault = make_vault(
+            summarizer=fake,
+            notes=_THREE_NOTES,
+            summarize_max_input_chars=_SMALL_BUDGET,
+        )
+        result = vault.summarizer.summarize(
+            ["one.md", "two.md", "three.md"], mode="per_note"
+        )
+
+        assert len(fake.calls) == 3
+        assert all("separate concise summary" in system for system, _ in fake.calls)
+        assert not any("combine partial" in system for system, _ in fake.calls)
+        assert result.summary == "NOTE-SUM\n\nNOTE-SUM\n\nNOTE-SUM"
+
+    def test_focus_threads_into_map_and_reduce(self, make_vault: VaultFactory) -> None:
+        fake = FakeSummarizer()
+        vault = make_vault(
+            summarizer=fake,
+            notes=_THREE_NOTES,
+            summarize_max_input_chars=_SMALL_BUDGET,
+        )
+        vault.summarizer.summarize(
+            ["one.md", "two.md", "three.md"], focus="action items"
+        )
+        assert all(
+            "Focus specifically on: action items" in system for system, _ in fake.calls
+        )
+
+    def test_single_batch_keeps_direct_prompt(self, make_vault: VaultFactory) -> None:
+        # Small inputs must not pay map-reduce overhead or prompt changes.
+        fake = FakeSummarizer()
+        vault = make_vault(summarizer=fake, notes=_THREE_NOTES)
+        vault.summarizer.summarize(["one.md", "two.md", "three.md"])
+        assert len(fake.calls) == 1
+        system, _user = fake.calls[0]
+        assert "single cohesive" in system
+        assert "one part of a larger" not in system
+
+    def test_reduce_recurses_when_partials_exceed_budget(
+        self, make_vault: VaultFactory
+    ) -> None:
+        # The fake returns ~100-char summaries against a 130-char budget, so
+        # no two partials fit one request: the reduce phase must recurse
+        # (via the forced pairwise merge) and still terminate.
+        fake = FakeSummarizer("R" * 100)
+        vault = make_vault(
+            summarizer=fake,
+            notes=_THREE_NOTES,
+            summarize_max_input_chars=_SMALL_BUDGET,
+        )
+        result = vault.summarizer.summarize(["one.md", "two.md", "three.md"])
+
+        assert result.summary == "R" * 100
+        reduce_calls = [c for c in fake.calls if "combine partial summaries" in c[0]]
+        # More than one reduce round ran, and the pipeline still converged.
+        assert len(reduce_calls) >= 2
+        assert "combine partial summaries" in fake.calls[-1][0]
+
+    def test_oversized_note_clipped_to_request_budget(
+        self, make_vault: VaultFactory
+    ) -> None:
+        fake = FakeSummarizer()
+        vault = make_vault(
+            summarizer=fake,
+            notes={"big.md": "# Big\n\n" + ("x" * 500)},
+            summarize_max_input_chars=120,
+        )
+        result = vault.summarizer.summarize(["big.md"])
+        assert len(fake.calls) == 1
+        _system, user = fake.calls[0]
+        assert len(user) <= 120
+        assert result.truncated is True
+        assert result.notes_included == 1
+        assert result.notes_omitted == 0
 
 
 # ---------------------------------------------------------------------------

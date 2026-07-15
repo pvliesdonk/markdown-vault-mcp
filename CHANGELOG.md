@@ -5,6 +5,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- `summarize` now handles inputs larger than one model request map-reduce
+  style (#922): notes are packed into batches of at most
+  `SUMMARIZE_MAX_INPUT_CHARS` characters, each batch is summarized (with
+  bounded parallelism), and the partial summaries are combined into the
+  final result. `SUMMARIZE_MAX_INPUT_CHARS` is therefore now a per-request
+  budget rather than a coverage cap — content that previously fell off the
+  end of one request is now covered, at the cost of additional model calls
+  on large selections. Coverage remains capped by `SUMMARIZE_MAX_NOTES`.
+  The response gains `notes_included` / `notes_omitted` counts so callers
+  can see exactly how much of the selection the summary covers.
+
 ### Fixed
 
 - `summarize` output no longer ends with assistant-style offers of further

@@ -2099,6 +2099,20 @@ is read-only with respect to the vault but sends note content to the external
 model provider, so it stays available in read-only mode (it never mutates the
 vault) and its data-egress is documented in the tool docstring and README.
 
+``SummarizeManager`` handles oversize inputs map-reduce style (#922):
+``SUMMARIZE_MAX_INPUT_CHARS`` is the character budget of a *single* model
+request, not a coverage cap. Notes (each clipped to one budget if necessary)
+are greedily packed in order into batches; a single batch takes the direct
+one-call path with the standard prompts, while multiple batches are
+summarized with a partial-summary map prompt (bounded thread-pool
+parallelism, currently 4) and combined by a reduce prompt — recursively
+re-packed if the partial summaries themselves exceed one budget, with a
+forced pairwise merge as the termination guard. ``per_note`` mode simply
+concatenates batch outputs in order (no reduce). Coverage is capped by
+``SUMMARIZE_MAX_NOTES`` alone; the result carries ``notes_included`` /
+``notes_omitted`` so callers can tell exactly how much of the selection the
+summary covers, rather than inferring from a bare ``truncated`` flag.
+
 **Dynamic instructions**: the server's MCP `instructions` string varies with
 `read_only` mode. When `read_only=True`, the instructions state this is a
 read-only instance; when `read_only=False`, they describe write tool semantics.

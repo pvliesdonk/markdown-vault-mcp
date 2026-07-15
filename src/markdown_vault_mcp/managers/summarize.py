@@ -1,16 +1,26 @@
 """LLM-backed note summarization manager.
 
 Resolves a note, a set of notes, or a folder subtree into note bodies, builds
-a prompt, and delegates generation to a provider-neutral
+prompts, and delegates generation to a provider-neutral
 :class:`~markdown_vault_mcp.summarizer.Summarizer`.  Reuses
 :meth:`DocumentManager.get_toc` for subtree expansion and
 :meth:`DocumentManager.read` for bodies, so it depends only on the document
 manager and the summarizer.
+
+Large inputs are handled map-reduce style (#922): notes are packed into
+batches of at most ``max_input_chars`` characters, each batch is summarized
+independently (the map phase, with bounded parallelism), and in synthesis
+mode the batch summaries are combined by a final reduce call (recursively,
+should the summaries themselves exceed one request budget).  A single batch
+takes the direct one-call path, identical to the pre-#922 behavior.  Total
+coverage is governed by ``max_notes``; ``max_input_chars`` bounds each
+individual model request.
 """
 
 from __future__ import annotations
 
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING
 
 from markdown_vault_mcp.types import (
@@ -27,6 +37,18 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _VALID_MODES = ("synthesis", "per_note")
+
+# Ceiling used when expanding subtrees so the pre-cap match count is known
+# (get_toc caps listings itself); the configured max_notes still governs how
+# many notes are actually summarized.
+_RESOLVE_CAP = 10_000
+
+# Concurrent map-phase backend calls. Bounded and small: the library is sync
+# (the MCP layer wraps it in a thread), so this is a nested, short-lived pool.
+_MAP_CONCURRENCY = 4
+
+# Block separator in user prompts; accounted for when packing batches.
+_SEPARATOR = "\n\n---\n\n"
 
 # The response is a terminal tool result, not a conversation turn: offers of
 # further help ("If you want I can...") are noise nobody can answer (#921).
@@ -52,6 +74,34 @@ _SYSTEM_PER_NOTE = (
     "details." + _NO_META
 )
 
+# Map phase over one batch of a larger set: keep enough specifics (and the
+# path references) for the reduce phase to combine partial summaries.
+_SYSTEM_MAP = (
+    "You summarize notes from a markdown vault. The notes provided are one "
+    "part of a larger collection; other parts are summarized separately. "
+    "Produce a detailed partial summary of these notes that preserves "
+    "concrete specifics, and reference each note by its path (e.g. "
+    "`folder/note.md`) so the partial summaries can be combined without "
+    "losing attribution. Be faithful to the notes and do not invent "
+    "details." + _NO_META
+)
+
+# Reduce phase: combine partial summaries into the final synthesis.
+_SYSTEM_REDUCE = (
+    "You combine partial summaries, each covering a different subset of "
+    "notes from one markdown vault, into a single cohesive summary that "
+    "reads as one text. Merge overlapping points, keep the note-path "
+    "references intact, prefer prose over bullet dumps, and do not invent "
+    "details beyond the partial summaries." + _NO_META
+)
+
+
+def _with_focus(system: str, focus: str | None) -> str:
+    """Fold an optional focus instruction into a system prompt."""
+    if focus and focus.strip():
+        return f"{system} Focus specifically on: {focus.strip()}"
+    return system
+
 
 class SummarizeManager:
     """Turn a set of note/subtree paths into an LLM-generated summary."""
@@ -69,8 +119,11 @@ class SummarizeManager:
         Args:
             doc_mgr: Document reads + subtree table-of-contents.
             summarizer: The generation backend.
-            max_notes: Cap on notes summarised per call.
-            max_input_chars: Aggregate cap on note characters sent to the model.
+            max_notes: Cap on notes summarised per call (the coverage and
+                cost lever).
+            max_input_chars: Character budget of a single model request; a
+                larger input is split into batches and combined map-reduce
+                style (#922).
         """
         self._doc_mgr = doc_mgr
         self._summarizer = summarizer
@@ -100,94 +153,88 @@ class SummarizeManager:
         Raises:
             ValueError: If *mode* is invalid, *paths* is empty, or no readable
                 notes were found for the given paths.
-            RuntimeError: If the summarization backend call fails.
+            RuntimeError: If a summarization backend call fails.
         """
         if mode not in _VALID_MODES:
             raise ValueError(f"mode must be one of {_VALID_MODES}, got {mode!r}")
         if not paths:
             raise ValueError("paths must contain at least one note or folder path.")
 
-        resolved, truncated_paths = self._resolve_paths(paths)
+        resolved, matched = self._resolve_paths(paths)
         if not resolved:
             raise ValueError("No notes found for the given paths.")
 
-        notes, truncated_input = self._gather_notes(resolved)
+        notes, note_clipped = self._gather_notes(resolved)
         if not notes:
             raise ValueError("No readable notes found for the given paths.")
 
-        system, user = self._build_prompt(notes, focus=focus, mode=mode)
-        summary = self._summarizer.summarize(system, user)
+        batches = self._pack_batches(notes)
+        summary = self._summarize_batches(batches, focus=focus, mode=mode)
 
+        omitted = matched - len(notes)
         return SummaryResult(
             summary=summary,
             sources=[SummarySource(path=p, title=t) for p, t, _ in notes],
             mode=mode,
-            truncated=truncated_paths or truncated_input,
+            truncated=omitted > 0 or note_clipped,
+            notes_included=len(notes),
+            notes_omitted=omitted,
         )
 
-    def _resolve_paths(self, paths: list[str]) -> tuple[list[str], bool]:
+    def _resolve_paths(self, paths: list[str]) -> tuple[list[str], int]:
         """Expand folders to notes and dedupe; cap at ``max_notes``.
 
-        Returns the ordered, de-duplicated note paths and whether the set was
-        truncated (a subtree exceeded its own cap, or the total exceeded
-        ``max_notes``).
+        Returns the ordered, de-duplicated note paths (capped at
+        ``max_notes``) and the total number of matched notes before the cap,
+        so callers can report how many were omitted (#922).
         """
         resolved: list[str] = []
         seen: set[str] = set()
-        truncated = False
         for path in paths:
-            candidates, sub_truncated = self._expand_path(path)
-            truncated = truncated or sub_truncated
-            for candidate in candidates:
+            for candidate in self._expand_path(path):
                 if candidate not in seen:
                     seen.add(candidate)
                     resolved.append(candidate)
-        if len(resolved) > self._max_notes:
-            resolved = resolved[: self._max_notes]
-            truncated = True
-        return resolved, truncated
+        matched = len(resolved)
+        return resolved[: self._max_notes], matched
 
-    def _expand_path(self, path: str) -> tuple[list[str], bool]:
+    def _expand_path(self, path: str) -> list[str]:
         """Resolve one input path to note paths (single note or subtree)."""
         if path.endswith(".md"):
-            return [path], False
-        # Pass the configured cap through: get_toc defaults max_notes to 200,
-        # which would silently override a SUMMARIZE_MAX_NOTES set above it (the
-        # post-hoc cap in _resolve_paths only masks this when max_notes < 200).
-        toc = self._doc_mgr.get_toc(path, max_notes=self._max_notes)
+            return [path]
+        # Expand generously so the pre-cap match count is known; the
+        # max_notes cap is applied by _resolve_paths afterwards.
+        cap = max(_RESOLVE_CAP, self._max_notes)
+        toc = self._doc_mgr.get_toc(path, max_notes=cap)
         if isinstance(toc, SubtreeToc):
-            return [note.path for note in toc.notes], toc.truncated
-        return [], False
+            return [note.path for note in toc.notes]
+        return []
 
     def _gather_notes(
         self, resolved: list[str]
     ) -> tuple[list[tuple[str, str, str]], bool]:
-        """Read note bodies, enforcing the aggregate character cap.
+        """Read note bodies, clipping any single body to one request budget.
 
-        Returns ``(path, title, body)`` triples in order and whether the input
-        was truncated (a body was cut or later notes were dropped at the cap).
-        Missing or unreadable notes are skipped.
+        Returns ``(path, title, body)`` triples in order and whether any body
+        was cut. Missing or unreadable notes are skipped. There is no
+        aggregate cap here: oversize totals are handled by batching (#922).
         """
         notes: list[tuple[str, str, str]] = []
-        total = 0
-        truncated = False
+        clipped = False
         for path in resolved:
             note = self._read_note(path)
             if note is None:
                 continue
-            remaining = self._max_input_chars - total
-            if remaining <= 0:
-                truncated = True
-                break
             body = note.content
-            if len(body) > remaining:
-                body = body[:remaining]
-                truncated = True
-            total += len(body)
+            # A block must fit one request on its own; leave room for the
+            # header and separator the prompt adds around the body.
+            overhead = len(self._format_block(path, note.title, "")) + len(_SEPARATOR)
+            budget = max(1, self._max_input_chars - overhead)
+            if len(body) > budget:
+                body = body[:budget]
+                clipped = True
             notes.append((path, note.title, body))
-            if truncated:
-                break
-        return notes, truncated
+        return notes, clipped
 
     def _read_note(self, path: str) -> NoteContent | None:
         """Read a note, skipping missing/oversized/unparseable ones.
@@ -204,18 +251,108 @@ class SummarizeManager:
             return None
 
     @staticmethod
-    def _build_prompt(
-        notes: list[tuple[str, str, str]],
+    def _format_block(path: str, title: str, body: str) -> str:
+        """Format one note as a prompt block."""
+        return f"### {path}\n(title: {title})\n\n{body}"
+
+    def _pack_batches(
+        self, notes: list[tuple[str, str, str]]
+    ) -> list[list[tuple[str, str, str]]]:
+        """Greedily pack notes, in order, into per-request character budgets."""
+        batches: list[list[tuple[str, str, str]]] = []
+        current: list[tuple[str, str, str]] = []
+        used = 0
+        for path, title, body in notes:
+            size = len(self._format_block(path, title, body)) + len(_SEPARATOR)
+            if current and used + size > self._max_input_chars:
+                batches.append(current)
+                current = []
+                used = 0
+            current.append((path, title, body))
+            used += size
+        if current:
+            batches.append(current)
+        return batches
+
+    def _summarize_batches(
+        self,
+        batches: list[list[tuple[str, str, str]]],
         *,
         focus: str | None,
         mode: str,
-    ) -> tuple[str, str]:
-        """Build the (system, user) prompt for the given notes."""
-        system = _SYSTEM_SYNTHESIS if mode == "synthesis" else _SYSTEM_PER_NOTE
-        if focus and focus.strip():
-            system = f"{system} Focus specifically on: {focus.strip()}"
-        blocks = [
-            f"### {path}\n(title: {title})\n\n{body}" for path, title, body in notes
-        ]
-        user = "\n\n---\n\n".join(blocks)
-        return system, user
+    ) -> str:
+        """Run the map phase over *batches* and reduce to one summary."""
+        if len(batches) == 1:
+            # Single request: identical to the pre-#922 direct path.
+            system = _SYSTEM_SYNTHESIS if mode == "synthesis" else _SYSTEM_PER_NOTE
+            return self._summarizer.summarize(
+                _with_focus(system, focus), self._join_blocks(batches[0])
+            )
+
+        logger.info(
+            "summarize_map_reduce batches=%d notes=%d mode=%s",
+            len(batches),
+            sum(len(b) for b in batches),
+            mode,
+        )
+        map_system = _with_focus(
+            _SYSTEM_MAP if mode == "synthesis" else _SYSTEM_PER_NOTE, focus
+        )
+        partials = self._run_parallel(
+            [self._join_blocks(batch) for batch in batches], map_system
+        )
+        if mode == "per_note":
+            # Per-note output is already in note order; no reduce needed.
+            return "\n\n".join(partials)
+        return self._reduce(partials, focus=focus)
+
+    def _join_blocks(self, batch: list[tuple[str, str, str]]) -> str:
+        """Join a batch of notes into one user prompt."""
+        return _SEPARATOR.join(
+            self._format_block(path, title, body) for path, title, body in batch
+        )
+
+    def _run_parallel(self, users: list[str], system: str) -> list[str]:
+        """Summarize *users* with bounded parallelism, preserving order."""
+        if len(users) == 1:
+            return [self._summarizer.summarize(system, users[0])]
+        workers = min(_MAP_CONCURRENCY, len(users))
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            return list(
+                pool.map(lambda user: self._summarizer.summarize(system, user), users)
+            )
+
+    def _reduce(self, partials: list[str], *, focus: str | None) -> str:
+        """Combine partial summaries, recursively if they exceed one budget."""
+        system = _with_focus(_SYSTEM_REDUCE, focus)
+        while True:
+            groups = self._pack_texts(partials)
+            if len(groups) == 1:
+                return self._summarizer.summarize(system, groups[0])
+            if len(groups) >= len(partials):
+                # Every group is a singleton (each partial nearly fills the
+                # budget): force pairwise merges, clipped to the budget, so
+                # each round strictly shrinks the list and terminates.
+                groups = [
+                    "\n\n".join(partials[i : i + 2])[: self._max_input_chars]
+                    for i in range(0, len(partials), 2)
+                ]
+            partials = self._run_parallel(groups, system)
+
+    def _pack_texts(self, texts: list[str]) -> list[str]:
+        """Greedily join texts, in order, into per-request character budgets."""
+        groups: list[str] = []
+        current: list[str] = []
+        used = 0
+        for text in texts:
+            clipped = text[: self._max_input_chars]
+            size = len(clipped) + 2  # joined with a blank line
+            if current and used + size > self._max_input_chars:
+                groups.append("\n\n".join(current))
+                current = []
+                used = 0
+            current.append(clipped)
+            used += size
+        if current:
+            groups.append("\n\n".join(current))
+        return groups

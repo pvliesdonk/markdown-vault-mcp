@@ -825,6 +825,8 @@ Summarize a note, a set of notes, or a folder subtree with a language model. In 
 
 The tool is only registered when a summarization backend is configured: an `OPENAI_API_KEY`, or an explicit OpenAI-compatible base URL for local endpoints that need no key. Otherwise it does not appear in the tool listing. Any OpenAI-compatible endpoint works: OpenAI, a local Ollama, the Anthropic compatibility endpoint, vLLM, and others.
 
+Inputs larger than one model request are handled map-reduce style: notes are packed into batches of at most `SUMMARIZE_MAX_INPUT_CHARS` characters, each batch is summarized, and the partial summaries are combined into the final result. Large folders therefore issue several model calls and take proportionally longer. Coverage is capped at `SUMMARIZE_MAX_NOTES` notes; the response reports exactly how many notes made it in (`notes_included`) and how many were dropped (`notes_omitted`).
+
 **Parameters:**
 
 | Parameter | Type | Default | Description |
@@ -838,7 +840,9 @@ The tool is only registered when a summarization backend is configured: an `OPEN
 - `summary` (string): the generated summary text.
 - `sources` (list of `{path, title}`): the notes that were summarised, always populated so individual notes are attributable even when the prose does not name every one.
 - `mode` (string): the mode used.
-- `truncated` (bool): `true` when the input was capped (a subtree had more notes than the server limit, or the aggregate note text exceeded the character budget and was cut).
+- `truncated` (bool): `true` when the input was capped (more notes matched than the server's note limit, or a single note exceeded the per-request character budget and was cut).
+- `notes_included` (int): notes whose content reached the model.
+- `notes_omitted` (int): matched notes dropped by the note limit. When non-zero, the summary does not cover the whole selection.
 
 **Errors:** raises if `paths` is empty, `mode` is invalid, no readable notes were found, or the backend call fails.
 
