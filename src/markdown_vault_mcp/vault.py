@@ -508,12 +508,14 @@ class Vault:
 
         Raises:
             RuntimeError: If no summarization backend was configured (set
-                ``ANTHROPIC_API_KEY`` and install the ``[summarize]`` extra).
+                ``OPENAI_API_KEY`` or an OpenAI-compatible base URL and
+                install the ``[summarize]`` extra).
         """
         if self._summarize_facet is None:
             raise RuntimeError(
-                "Summarization is not configured. Set ANTHROPIC_API_KEY and "
-                "install the SDK with: pip install 'markdown-vault-mcp[summarize]'"
+                "Summarization is not configured. Set OPENAI_API_KEY (or an "
+                "OpenAI-compatible base URL) and install the SDK with: "
+                "pip install 'markdown-vault-mcp[summarize]'"
             )
         return self._summarize_facet
 

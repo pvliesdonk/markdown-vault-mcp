@@ -7,6 +7,26 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed (BREAKING)
 
+- The `summarize` tool's Anthropic-SDK backend was replaced by a generic
+  OpenAI-compatible backend (official `openai` SDK; works with OpenAI,
+  Ollama, Anthropic's OpenAI-compat endpoint, vLLM, ...) (#915).
+  - Bare `ANTHROPIC_API_KEY` and
+    `MARKDOWN_VAULT_MCP_SUMMARIZE_ANTHROPIC_MODEL` are no longer read; a
+    setup relying on them has the `summarize` tool silently hidden until
+    reconfigured.
+  - `MARKDOWN_VAULT_MCP_SUMMARIZE_PROVIDER=anthropic` now fails at startup
+    with migration instructions when summarize credentials are present.
+  - New configuration: `MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_API_KEY`
+    (falls back to bare `OPENAI_API_KEY`),
+    `MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_BASE_URL` (setting it enables the
+    tool even without a key, for keyless local endpoints such as Ollama),
+    and `MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_MODEL` (default `gpt-5-mini`).
+  - Migration for Claude users:
+    `MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_BASE_URL=https://api.anthropic.com/v1`,
+    the Anthropic key in `MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_API_KEY`, and
+    `MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_MODEL=claude-haiku-4-5`.
+  - The `summarize` extra now installs `openai` instead of `anthropic`.
+
 - `Collection.get_index_status` `status` field value renamed from
   `"ready"` to `"queryable"`. MCP clients pattern-matching on the
   old value will silently treat the new value as unknown until

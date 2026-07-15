@@ -1,31 +1,40 @@
 """Summarization backends for the ``summarize`` tool.
 
 Provides a provider-neutral :class:`Summarizer` ABC and one concrete
-implementation, :class:`AnthropicSummarizer` (Claude Messages API).  Use
-:func:`get_summarizer` to resolve a backend from a
+implementation, :class:`OpenAISummarizer`, which speaks the OpenAI-compatible
+chat-completions API.  A single ``base_url`` / ``api_key`` / ``model`` triple
+covers OpenAI, Ollama (``http://localhost:11434/v1``), Anthropic's
+OpenAI-compat endpoint (``https://api.anthropic.com/v1``), vLLM, and any other
+compatible server.  Use :func:`get_summarizer` to resolve a backend from a
 :class:`~markdown_vault_mcp.config.ProjectConfig`.
 
 The abstraction is the seam that keeps everything above it — the manager,
-facet, tool, and gating logic — free of any provider name.  Adding an
-``OpenAISummarizer`` later is one new class plus one branch in
-:func:`get_summarizer`; nothing else changes.
+facet, tool, and gating logic — free of any provider name.
 """
 
 from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from markdown_vault_mcp.exceptions import ConfigurationError
 
 if TYPE_CHECKING:
+    from openai.types.chat import ChatCompletionMessageParam
+
     from markdown_vault_mcp.config import ProjectConfig
 
 logger = logging.getLogger(__name__)
 
 # Recognised backend names for the SUMMARIZE_PROVIDER selector.
-_ANTHROPIC = "anthropic"
+_OPENAI = "openai"
+# Removed backend name, kept for a targeted migration error (#915).
+_ANTHROPIC_REMOVED = "anthropic"
+
+# The openai SDK requires a non-None api_key string even for servers that
+# ignore auth (Ollama's own docs suggest this placeholder).
+_PLACEHOLDER_API_KEY = "ollama"
 
 
 class Summarizer(ABC):
@@ -54,43 +63,91 @@ class Summarizer(ABC):
         ...
 
 
-class AnthropicSummarizer(Summarizer):
-    """Summarizer backed by the Anthropic Claude Messages API.
+class OpenAISummarizer(Summarizer):
+    """Summarizer backed by an OpenAI-compatible chat-completions endpoint.
 
     Args:
-        api_key: Anthropic API key. Must be non-empty.
-        model: Claude model id (e.g. ``"claude-haiku-4-5"``).
+        api_key: API key for the endpoint. ``None`` for keyless local
+            endpoints (a placeholder is sent; e.g. Ollama ignores it).
+        model: Chat model id (e.g. ``"gpt-5-mini"``).
+        base_url: Endpoint base URL. ``None`` uses the SDK default
+            (``https://api.openai.com/v1``).
         max_tokens: Upper bound on generated tokens per call.
     """
 
-    def __init__(self, api_key: str, model: str, *, max_tokens: int) -> None:
-        """Initialise the Anthropic client, lazily importing the SDK.
+    def __init__(
+        self,
+        api_key: str | None,
+        model: str,
+        *,
+        base_url: str | None = None,
+        max_tokens: int,
+    ) -> None:
+        """Initialise the client, lazily importing the openai SDK.
 
         Args:
-            api_key: Anthropic API key. Must be non-empty.
-            model: Claude model id.
+            api_key: API key, or ``None`` for keyless endpoints.
+            model: Chat model id.
+            base_url: Endpoint base URL, or ``None`` for the SDK default.
             max_tokens: Upper bound on generated tokens per call.
 
         Raises:
-            ImportError: If the ``anthropic`` SDK is not installed.
-            RuntimeError: If *api_key* is empty.
+            ImportError: If the ``openai`` SDK is not installed.
         """
-        if not api_key:
-            raise RuntimeError("AnthropicSummarizer requires a non-empty api_key.")
         try:
-            import anthropic
+            import openai
         except ImportError as exc:
             raise ImportError(
-                "AnthropicSummarizer requires the 'anthropic' SDK. "
+                "OpenAISummarizer requires the 'openai' SDK. "
                 "Install it with: pip install 'markdown-vault-mcp[summarize]'"
             ) from exc
-        self._anthropic = anthropic
-        self._client = anthropic.Anthropic(api_key=api_key)
+        self._openai = openai
+        self._client = openai.OpenAI(
+            api_key=api_key or _PLACEHOLDER_API_KEY, base_url=base_url
+        )
         self._model = model
+        self._base_url = base_url
         self._max_tokens = max_tokens
 
+    def _create(self, system: str, user: str) -> Any:
+        """Call chat.completions.create, adapting the token-limit parameter.
+
+        Sends ``max_completion_tokens`` first (required by newer OpenAI
+        models, which reject ``max_tokens``); if the server rejects that
+        parameter name (older strict OpenAI-compatible servers), retries once
+        with legacy ``max_tokens``.
+
+        Args:
+            system: System-prompt text.
+            user: User message content.
+
+        Returns:
+            The chat-completion response object.
+        """
+        messages: list[ChatCompletionMessageParam] = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ]
+        try:
+            return self._client.chat.completions.create(
+                model=self._model,
+                max_completion_tokens=self._max_tokens,
+                messages=messages,
+            )
+        except self._openai.BadRequestError as exc:
+            if "max_completion_tokens" not in str(exc):
+                raise
+            logger.debug(
+                "summarize_token_param_fallback model=%s error=%s", self._model, exc
+            )
+            return self._client.chat.completions.create(
+                model=self._model,
+                max_tokens=self._max_tokens,
+                messages=messages,
+            )
+
     def summarize(self, system: str, user: str) -> str:
-        """Call the Messages API and return the first text block.
+        """Call the chat-completions API and return the message content.
 
         Args:
             system: System-prompt text.
@@ -100,54 +157,56 @@ class AnthropicSummarizer(Summarizer):
             The generated summary text.
 
         Raises:
-            RuntimeError: If the API call fails or returns no text.
+            RuntimeError: If the API call fails, the model refuses, or the
+                response carries no text.
         """
         try:
-            response = self._client.messages.create(
-                model=self._model,
-                max_tokens=self._max_tokens,
-                system=system,
-                messages=[{"role": "user", "content": user}],
-            )
-        except self._anthropic.APIError as exc:
+            response = self._create(system, user)
+        except self._openai.OpenAIError as exc:
             # Expected upstream failures (auth, rate limit, 5xx): surface a
             # user-facing error string rather than leak the SDK exception.
             logger.warning("summarize_api_error model=%s error=%s", self._model, exc)
-            raise RuntimeError(f"Anthropic summarization failed: {exc}") from exc
+            raise RuntimeError(
+                f"OpenAI-compatible summarization failed: {exc}"
+            ) from exc
 
-        # ``response.content`` is a union of block types; only ``text`` blocks
-        # carry ``.text``. Match on the discriminator and read via getattr so we
-        # do not couple to the SDK's block classes at type-check time.
-        text: str | None = None
-        for block in response.content:
-            if getattr(block, "type", None) == "text":
-                text = getattr(block, "text", None)
-                break
-        if not text:
-            # Refusals / empty completions land here (e.g. stop_reason="refusal").
+        choices = getattr(response, "choices", None) or []
+        message = getattr(choices[0], "message", None) if choices else None
+        finish_reason = getattr(choices[0], "finish_reason", None) if choices else None
+        # ``refusal`` exists on modern OpenAI responses; compat servers may
+        # omit the field entirely, hence getattr.
+        refusal = getattr(message, "refusal", None)
+        if refusal:
             logger.warning(
-                "summarize_empty_response model=%s stop_reason=%s",
+                "summarize_refusal model=%s refusal=%s", self._model, refusal
+            )
+            raise RuntimeError(f"Summarization request was refused: {refusal}")
+        text: str | None = getattr(message, "content", None)
+        if not text:
+            logger.warning(
+                "summarize_empty_response model=%s finish_reason=%s",
                 self._model,
-                getattr(response, "stop_reason", None),
+                finish_reason,
             )
             raise RuntimeError(
-                "Anthropic summarization returned no text "
-                f"(stop_reason={getattr(response, 'stop_reason', None)!r})."
+                "OpenAI-compatible summarization returned no text "
+                f"(finish_reason={finish_reason!r})."
             )
         return text
 
     @property
     def provider_name(self) -> str:
         """Stable backend identifier."""
-        return _ANTHROPIC
+        return _OPENAI
 
 
 def get_summarizer(config: ProjectConfig) -> Summarizer:
     """Resolve a summarization backend from config.
 
-    Honours ``config.summarize.provider`` when set; otherwise auto-detects the
-    first backend whose credentials are present (currently: an Anthropic API
-    key).  Mirrors :func:`markdown_vault_mcp.providers.get_embedding_provider`.
+    Honours ``config.summarize.provider`` when set; otherwise auto-detects:
+    the OpenAI-compatible backend is used when an API key or an explicit base
+    URL is configured.  Mirrors
+    :func:`markdown_vault_mcp.providers.get_embedding_provider`.
 
     Args:
         config: Vault configuration containing summarize settings.
@@ -157,36 +216,47 @@ def get_summarizer(config: ProjectConfig) -> Summarizer:
 
     Raises:
         RuntimeError: If no backend is available and no provider is explicitly
-            selected, or if the explicitly requested backend lacks credentials.
-        ConfigurationError: If ``config.summarize.provider`` is unrecognised.
+            selected.
+        ConfigurationError: If ``config.summarize.provider`` is unrecognised
+            (including the removed ``anthropic`` backend).
     """
     summ = config.summarize
     explicit = (summ.provider or "").strip().lower()
 
-    if explicit == _ANTHROPIC:
-        logger.info("Using AnthropicSummarizer (summarize_provider=anthropic)")
-        return AnthropicSummarizer(
-            api_key=summ.anthropic_api_key or "",
-            model=summ.anthropic_model,
-            max_tokens=summ.max_tokens,
+    if explicit == _ANTHROPIC_REMOVED:
+        raise ConfigurationError(
+            "The 'anthropic' summarize backend was removed (#915); Claude "
+            "models are available through Anthropic's OpenAI-compatible "
+            "endpoint instead. Set "
+            "MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_BASE_URL="
+            "https://api.anthropic.com/v1, put the Anthropic API key in "
+            "MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_API_KEY, and set "
+            "MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_MODEL (e.g. claude-haiku-4-5)."
         )
 
-    if explicit:
+    if explicit and explicit != _OPENAI:
         raise ConfigurationError(
             f"Unrecognised summarize provider value: {explicit!r}. "
-            "Valid values: 'anthropic'."
+            "Valid values: 'openai'."
         )
 
-    # Auto-detect: Anthropic API key present?
-    if summ.anthropic_api_key:
-        logger.info("Auto-detected AnthropicSummarizer (ANTHROPIC_API_KEY is set)")
-        return AnthropicSummarizer(
-            api_key=summ.anthropic_api_key,
-            model=summ.anthropic_model,
+    if explicit == _OPENAI or summ.has_provider():
+        logger.info(
+            "Using OpenAISummarizer (summarize_provider=%s) base_url=%s model=%s",
+            explicit or "auto",
+            summ.openai_base_url or "default",
+            summ.openai_model,
+        )
+        return OpenAISummarizer(
+            api_key=summ.openai_api_key,
+            model=summ.openai_model,
+            base_url=summ.openai_base_url,
             max_tokens=summ.max_tokens,
         )
 
     raise RuntimeError(
-        "No summarization backend is available. Set ANTHROPIC_API_KEY and "
-        "install the SDK with: pip install 'markdown-vault-mcp[summarize]'"
+        "No summarization backend is available. Set OPENAI_API_KEY (or "
+        "MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_BASE_URL for a keyless local "
+        "endpoint) and install the SDK with: "
+        "pip install 'markdown-vault-mcp[summarize]'"
     )

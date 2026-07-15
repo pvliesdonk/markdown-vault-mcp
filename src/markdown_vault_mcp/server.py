@@ -224,7 +224,8 @@ def make_server(
         mcp.disable(tags={"git-managed"})
 
     # Hide the LLM-backed summarize tool unless a summarization backend is
-    # configured (an ANTHROPIC_API_KEY). Provider-neutral: the check lives on
+    # configured (an OpenAI-compatible API key or base URL). Provider-neutral:
+    # the check lives on
     # config.summarize, never referencing a specific provider. Checked directly
     # (not via to_vault_kwargs(), which builds an embedding provider and may
     # clone a git repo as a side effect — see the git-managed gate above).

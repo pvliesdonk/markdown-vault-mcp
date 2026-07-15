@@ -40,7 +40,8 @@ def _clear_env(monkeypatch: pytest.MonkeyPatch) -> None:
             monkeypatch.delenv(key, raising=False)
     # Bare ecosystem keys the server reads directly (never prefixed). Strip so
     # an ambient key doesn't silently enable a gated feature mid-test.
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
 
 
 def _parse_tool_data(result: Any) -> Any:

@@ -2063,15 +2063,23 @@ set-union with the ``write`` and ``git-managed`` disable passes.
 
 The LLM-backed ``summarize`` tool is tagged ``tags={"summarize"}``. When no
 summarization backend is configured — ``config.summarize.has_provider()`` is
-``False`` (no ``ANTHROPIC_API_KEY``) — the server calls
+``False`` (no API key and no explicit base URL) — the server calls
 ``mcp.disable(tags={"summarize"})`` to hide it, the same key-based gating shape
 as ``git_sync`` (which gates on ``GIT_REPO_URL``). The check is provider-neutral
 (it never names a specific backend) and reads ``config.summarize`` directly, not
 ``to_vault_kwargs()`` (which builds an embedding provider and can clone a git
 repo as a side effect). The summarization backend sits behind a provider-neutral
-``Summarizer`` abstraction (``summarizer.py``): ``AnthropicSummarizer`` is the
-first implementation, resolved by ``get_summarizer(config)`` with the same
-explicit-provider-vs-auto-detect posture as ``get_embedding_provider``. The tool
+``Summarizer`` abstraction (``summarizer.py``): ``OpenAISummarizer`` speaks the
+OpenAI-compatible chat-completions API (OpenAI, Ollama, Anthropic's compat
+endpoint, vLLM, ...) via a configurable base URL / API key / model, resolved by
+``get_summarizer(config)`` with the same explicit-provider-vs-auto-detect
+posture as ``get_embedding_provider``. Enablement is key-or-base-URL: an API
+key (prefixed ``SUMMARIZE_OPENAI_API_KEY`` or bare ``OPENAI_API_KEY``) or an
+explicit ``SUMMARIZE_OPENAI_BASE_URL`` (keyless local endpoints such as
+Ollama); the bare ``OPENAI_BASE_URL`` only routes traffic when a key is
+present and never enables the tool by itself. The removed ``anthropic``
+backend name (#915) raises a ``ConfigurationError`` with migration
+instructions when explicitly selected. The tool
 is read-only with respect to the vault but sends note content to the external
 model provider, so it stays available in read-only mode (it never mutates the
 vault) and its data-egress is documented in the tool docstring and README.

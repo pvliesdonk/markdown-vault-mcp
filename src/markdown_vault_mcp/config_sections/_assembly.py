@@ -229,7 +229,8 @@ def to_vault_kwargs(config: ProjectConfig) -> dict[str, Any]:
     # cap) so a transient model-context read cannot trigger a rebuild.
     kwargs["max_chunk_chars_override"] = config.search.max_chunk_chars_override
 
-    # LLM summarization is gated on a backend being configured (a key).
+    # LLM summarization is gated on a backend being configured (an API key
+    # or an explicit OpenAI-compatible base URL).
     # Same posture as embeddings: an explicit provider that fails to load is
     # a configuration error; auto-detect failure warns and disables.
     if config.summarize.has_provider():

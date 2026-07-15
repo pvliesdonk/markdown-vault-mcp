@@ -410,7 +410,7 @@ markdown-vault-mcp reindex [--source-dir PATH] [--index-path PATH]
 | `get_orphan_notes` | Find all notes with no inbound or outbound links |
 | `get_most_linked` | Find the most-linked-to notes ranked by backlink count |
 | `get_connection_path` | Find the shortest path between two notes via BFS on the undirected link graph (max 10 hops) |
-| `summarize` | Summarize a note, a set of notes, or a folder subtree with an LLM; the synthesis references the individual source notes by path. Hidden unless `ANTHROPIC_API_KEY` is set. Sends note content to the model provider. |
+| `summarize` | Summarize a note, a set of notes, or a folder subtree with an LLM; the synthesis references the individual source notes by path. Hidden unless an OpenAI-compatible backend is configured (`OPENAI_API_KEY` or a base URL). Sends note content to the model provider. |
 | `get_history` | List commits that touched a note, attachment, or the whole vault (git-backed vaults only) |
 | `get_diff` | Return a diff of a note or attachment between a reference commit/timestamp and HEAD; binary attachments return a `--stat` size summary instead of a unified patch (git-backed vaults only) |
 | `git_sync` | Force an immediate git pull / push / both, bypassing the periodic loops. Returns structured state (SHAs, commit counts, Syncthing-style conflict file paths if any). Hidden when `MARKDOWN_VAULT_MCP_GIT_REPO_URL` isn't set or `READ_ONLY=true`. |
@@ -422,7 +422,7 @@ markdown-vault-mcp reindex [--source-dir PATH] [--index-path PATH]
 
 Write tools (`write`, `edit`, `delete`, `rename`, `move_folder`, `fetch`, `git_sync`, `create_upload_link`) are only available when `MARKDOWN_VAULT_MCP_READ_ONLY=false`. `git_sync` additionally requires managed git mode (`MARKDOWN_VAULT_MCP_GIT_REPO_URL` set).
 
-`summarize` is registered only when a summarization backend is configured (an `ANTHROPIC_API_KEY`); it needs the `anthropic` SDK (`pip install 'markdown-vault-mcp[summarize]'`) and sends note content to the model provider. Anthropic Claude (Haiku by default) is the first supported backend, and others can be added later.
+`summarize` is registered only when a summarization backend is configured — an `OPENAI_API_KEY`, or an OpenAI-compatible base URL for keyless local endpoints. It needs the `openai` SDK (`pip install 'markdown-vault-mcp[summarize]'`) and sends note content to the model provider. Any OpenAI-compatible endpoint works: OpenAI itself, a local Ollama (`http://localhost:11434/v1`, no key needed), Anthropic's compat endpoint (`https://api.anthropic.com/v1`), vLLM, and others. See [Configuration](https://pvliesdonk.github.io/markdown-vault-mcp/latest/configuration/) for provider recipes.
 
 `browse_vault` and `show_context` are LLM-visible in all clients; when called in an MCP Apps-capable client they open the interactive SPA. Six additional internal tools (`vault_context`, `vault_list`, `vault_read`, `vault_search`, `vault_graph_neighborhood`, `vault_graph_hubs`) use `visibility="app"` and are used by the SPA only — they are never visible to the LLM.
 

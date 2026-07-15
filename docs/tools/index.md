@@ -30,7 +30,7 @@ markdown-vault-mcp exposes MCP tools across several categories. Write tools are 
 | [`get_orphan_notes`](#get_orphan_notes) | Orphan Notes | Read | Find notes with no inbound or outbound links |
 | [`get_most_linked`](#get_most_linked) | Most-Linked Notes | Read | Find the most-linked-to notes ranked by backlink count |
 | [`get_connection_path`](#get_connection_path) | Connection Path | Read | Find the shortest path between two notes via link graph |
-| [`summarize`](#summarize) | Summarize Notes | AI | Summarize a note, a set of notes, or a subtree with an LLM (needs `ANTHROPIC_API_KEY`) |
+| [`summarize`](#summarize) | Summarize Notes | AI | Summarize a note, a set of notes, or a subtree with an LLM (needs `OPENAI_API_KEY` or an OpenAI-compatible base URL) |
 | [`get_history`](#get_history) | Note History | Read (git) | List commits that touched a note, attachment, or the whole vault |
 | [`get_diff`](#get_diff) | Note Diff | Read (git) | Return a diff of a note or attachment between two points in history |
 | [`reindex`](#reindex) | Reindex Vault | Admin | Force a full reindex of the vault |
@@ -823,7 +823,7 @@ Exactly one of `since_sha` / `since_timestamp` must be supplied.
 
 Summarize a note, a set of notes, or a folder subtree with a language model. In the default `synthesis` mode the result is one cohesive summary that synthesizes across all the notes and **references the individual source notes by path**, so each point can be traced back to its origin. In `per_note` mode it returns a separate summary for each note instead.
 
-The tool is only registered when a summarization backend is configured (an `ANTHROPIC_API_KEY`); otherwise it does not appear in the tool listing. The backend can be swapped: Anthropic Claude (Haiku by default) is the first supported one, and others can be added later.
+The tool is only registered when a summarization backend is configured — an `OPENAI_API_KEY`, or an explicit OpenAI-compatible base URL for keyless local endpoints; otherwise it does not appear in the tool listing. Any OpenAI-compatible endpoint works: OpenAI, a local Ollama, Anthropic's compat endpoint, vLLM, and others.
 
 **Parameters:**
 
@@ -846,7 +846,7 @@ The tool is only registered when a summarization backend is configured (an `ANTH
     The referenced notes are sent to the external model provider to generate the summary. Do not summarize notes whose content must not leave your environment.
 
 !!! note "Dependency"
-    Requires the `anthropic` SDK and an `ANTHROPIC_API_KEY`. Install with `pip install 'markdown-vault-mcp[summarize]'` (or `[all]`). Configure the model and limits via the `MARKDOWN_VAULT_MCP_SUMMARIZE_*` env vars. See [Configuration](../configuration.md).
+    Requires the `openai` SDK and an OpenAI-compatible backend (an `OPENAI_API_KEY`, or a base URL such as a local Ollama). Install with `pip install 'markdown-vault-mcp[summarize]'` (or `[all]`). Configure the endpoint, model, and limits via the `MARKDOWN_VAULT_MCP_SUMMARIZE_*` env vars. See [Configuration](../configuration.md).
 
 ---
 

@@ -3,7 +3,7 @@
 Covers the provider-neutral config, the Summarizer abstraction + factory, the
 SummarizeManager orchestration, the SummarizeFacet/Vault wiring, and the
 end-to-end MCP tool gating. Uses a deterministic fake Summarizer and a fake
-``anthropic`` module so no network or real SDK is required.
+``openai`` module so no network or real SDK is required.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from markdown_vault_mcp.config_sections import SummarizeConfig
 from markdown_vault_mcp.exceptions import ConfigurationError
 from markdown_vault_mcp.server import make_server
 from markdown_vault_mcp.summarizer import (
-    AnthropicSummarizer,
+    OpenAISummarizer,
     Summarizer,
     get_summarizer,
 )
@@ -104,27 +104,80 @@ class TestSummarizeConfig:
     def test_from_env_reads_bare_key_and_prefixed_model(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
-        monkeypatch.setenv(
-            "MARKDOWN_VAULT_MCP_SUMMARIZE_ANTHROPIC_MODEL", "claude-opus-4-8"
-        )
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_MODEL", "gpt-5")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SUMMARIZE_MAX_NOTES", "7")
         cfg = SummarizeConfig.from_env("MARKDOWN_VAULT_MCP")
         assert cfg.has_provider() is True
-        assert cfg.anthropic_api_key == "sk-test"
-        assert cfg.anthropic_model == "claude-opus-4-8"
+        assert cfg.openai_api_key == "sk-test"
+        assert cfg.openai_model == "gpt-5"
         assert cfg.max_notes == 7
 
     def test_defaults_no_key(self) -> None:
         cfg = SummarizeConfig.from_env("MARKDOWN_VAULT_MCP")
         assert cfg.has_provider() is False
-        assert cfg.anthropic_model == "claude-haiku-4-5"
+        assert cfg.openai_model == "gpt-5-mini"
+        assert cfg.openai_base_url is None
         assert cfg.provider is None
 
     def test_blank_key_is_unset(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("ANTHROPIC_API_KEY", "   ")
+        monkeypatch.setenv("OPENAI_API_KEY", "   ")
         cfg = SummarizeConfig.from_env("MARKDOWN_VAULT_MCP")
-        assert cfg.anthropic_api_key is None
+        assert cfg.openai_api_key is None
+        assert cfg.has_provider() is False
+
+    def test_prefixed_key_wins_over_bare(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-bare")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_API_KEY", "sk-prefixed")
+        cfg = SummarizeConfig.from_env("MARKDOWN_VAULT_MCP")
+        assert cfg.openai_api_key == "sk-prefixed"
+
+    def test_prefixed_base_url_alone_enables_keyless(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv(
+            "MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_BASE_URL",
+            "http://localhost:11434/v1/",
+        )
+        cfg = SummarizeConfig.from_env("MARKDOWN_VAULT_MCP")
+        assert cfg.openai_api_key is None
+        # __post_init__ strips the trailing slash.
+        assert cfg.openai_base_url == "http://localhost:11434/v1"
+        assert cfg.has_provider() is True
+
+    def test_bare_base_url_alone_does_not_enable(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # A bare OPENAI_BASE_URL set purely for embeddings must not
+        # surprise-enable the summarize tool.
+        monkeypatch.setenv("OPENAI_BASE_URL", "http://proxy.example/v1")
+        cfg = SummarizeConfig.from_env("MARKDOWN_VAULT_MCP")
+        assert cfg.openai_base_url is None
+        assert cfg.has_provider() is False
+
+    def test_bare_base_url_routes_when_key_present(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+        monkeypatch.setenv("OPENAI_BASE_URL", "http://proxy.example/v1")
+        cfg = SummarizeConfig.from_env("MARKDOWN_VAULT_MCP")
+        assert cfg.openai_base_url == "http://proxy.example/v1"
+
+    def test_prefixed_base_url_wins_over_bare(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+        monkeypatch.setenv("OPENAI_BASE_URL", "http://bare.example/v1")
+        monkeypatch.setenv(
+            "MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_BASE_URL",
+            "http://prefixed.example/v1",
+        )
+        cfg = SummarizeConfig.from_env("MARKDOWN_VAULT_MCP")
+        assert cfg.openai_base_url == "http://prefixed.example/v1"
+
+    def test_blank_base_url_is_unset(self) -> None:
+        cfg = SummarizeConfig(openai_base_url="   ")
+        assert cfg.openai_base_url is None
         assert cfg.has_provider() is False
 
     @pytest.mark.parametrize(
@@ -157,122 +210,210 @@ class TestGetSummarizer:
 
     def test_unknown_provider_raises_configuration_error(self, tmp_path: Path) -> None:
         cfg = _config_with(
-            SummarizeConfig(provider="bogus", anthropic_api_key="k"), tmp_path
+            SummarizeConfig(provider="bogus", openai_api_key="k"), tmp_path
         )
         with pytest.raises(ConfigurationError, match="Unrecognised summarize"):
+            get_summarizer(cfg)
+
+    def test_removed_anthropic_provider_raises_migration_error(
+        self, tmp_path: Path
+    ) -> None:
+        cfg = _config_with(
+            SummarizeConfig(provider="anthropic", openai_api_key="k"), tmp_path
+        )
+        with pytest.raises(ConfigurationError, match="was removed"):
             get_summarizer(cfg)
 
     def test_missing_sdk_raises_import_error(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # Force `import anthropic` to fail regardless of install state.
-        monkeypatch.setitem(sys.modules, "anthropic", None)
-        cfg = _config_with(SummarizeConfig(anthropic_api_key="k"), tmp_path)
+        # Force `import openai` to fail regardless of install state.
+        monkeypatch.setitem(sys.modules, "openai", None)
+        cfg = _config_with(SummarizeConfig(openai_api_key="k"), tmp_path)
         with pytest.raises(ImportError, match="markdown-vault-mcp\\[summarize\\]"):
             get_summarizer(cfg)
 
 
 # ---------------------------------------------------------------------------
-# AnthropicSummarizer (against a fake `anthropic` module)
+# OpenAISummarizer (against a fake `openai` module)
 # ---------------------------------------------------------------------------
 
 
-def _install_fake_anthropic(
+def _install_fake_openai(
     monkeypatch: pytest.MonkeyPatch,
     *,
-    text_blocks: list[tuple[str, str]] | None = None,
-    stop_reason: str = "end_turn",
-    raise_api_error: bool = False,
+    content: str | None = "SUMMARY",
+    refusal: str | None = None,
+    finish_reason: str | None = "stop",
+    no_choices: bool = False,
+    raise_error: str | None = None,
+    reject_max_completion_tokens: bool = False,
 ) -> dict[str, Any]:
-    """Inject a minimal fake ``anthropic`` module; return a capture dict."""
-    captured: dict[str, Any] = {}
+    """Inject a minimal fake ``openai`` module; return a capture dict.
 
-    class APIError(Exception):
+    The capture dict records the constructor's ``api_key`` / ``base_url`` and
+    a ``calls`` list with the kwargs of every ``chat.completions.create``
+    invocation (a list, so the token-parameter retry can assert both calls).
+    """
+    captured: dict[str, Any] = {"calls": []}
+
+    class OpenAIError(Exception):
         pass
 
-    class _Block:
-        def __init__(self, btype: str, btext: str) -> None:
-            self.type = btype
-            self.text = btext
+    class BadRequestError(OpenAIError):
+        pass
+
+    class _Message:
+        def __init__(self) -> None:
+            self.content = content
+            self.refusal = refusal
+
+    class _Choice:
+        def __init__(self) -> None:
+            self.message = _Message()
+            self.finish_reason = finish_reason
 
     class _Response:
         def __init__(self) -> None:
-            self.content = [
-                _Block(t, x) for t, x in (text_blocks or [("text", "SUMMARY")])
-            ]
-            self.stop_reason = stop_reason
+            self.choices = [] if no_choices else [_Choice()]
 
-    class _Messages:
+    class _Completions:
         def create(self, **kwargs: Any) -> _Response:
-            captured["kwargs"] = kwargs
-            if raise_api_error:
-                raise APIError("upstream boom")
+            captured["calls"].append(kwargs)
+            if raise_error == "api":
+                raise OpenAIError("upstream boom")
+            if raise_error == "bad_request":
+                raise BadRequestError("model not found")
+            if reject_max_completion_tokens and "max_completion_tokens" in kwargs:
+                raise BadRequestError("Unsupported parameter: 'max_completion_tokens'")
             return _Response()
 
-    class Anthropic:
-        def __init__(self, api_key: str | None = None) -> None:
-            captured["api_key"] = api_key
-            self.messages = _Messages()
+    class _Chat:
+        def __init__(self) -> None:
+            self.completions = _Completions()
 
-    mod = types.ModuleType("anthropic")
-    mod.Anthropic = Anthropic  # type: ignore[attr-defined]
-    mod.APIError = APIError  # type: ignore[attr-defined]
-    monkeypatch.setitem(sys.modules, "anthropic", mod)
+    class OpenAI:
+        def __init__(
+            self, api_key: str | None = None, base_url: str | None = None
+        ) -> None:
+            captured["api_key"] = api_key
+            captured["base_url"] = base_url
+            self.chat = _Chat()
+
+    mod = types.ModuleType("openai")
+    mod.OpenAI = OpenAI  # type: ignore[attr-defined]
+    mod.OpenAIError = OpenAIError  # type: ignore[attr-defined]
+    mod.BadRequestError = BadRequestError  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "openai", mod)
     return captured
 
 
-class TestAnthropicSummarizer:
-    def test_empty_api_key_rejected(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        _install_fake_anthropic(monkeypatch)
-        with pytest.raises(RuntimeError, match="non-empty api_key"):
-            AnthropicSummarizer("", "claude-haiku-4-5", max_tokens=100)
-
-    def test_summarize_returns_first_text_block(
+class TestOpenAISummarizer:
+    def test_summarize_sends_expected_request(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        captured = _install_fake_anthropic(
-            monkeypatch, text_blocks=[("text", "the answer")]
-        )
-        summ = AnthropicSummarizer("k", "claude-haiku-4-5", max_tokens=99)
+        captured = _install_fake_openai(monkeypatch, content="the answer")
+        summ = OpenAISummarizer("sk-k", "gpt-5-mini", max_tokens=99)
         out = summ.summarize("SYS", "USR")
         assert out == "the answer"
-        assert captured["kwargs"]["model"] == "claude-haiku-4-5"
-        assert captured["kwargs"]["max_tokens"] == 99
-        assert captured["kwargs"]["system"] == "SYS"
-        assert summ.provider_name == "anthropic"
+        assert captured["api_key"] == "sk-k"
+        assert captured["base_url"] is None
+        (kwargs,) = captured["calls"]
+        assert kwargs["model"] == "gpt-5-mini"
+        assert kwargs["max_completion_tokens"] == 99
+        assert "temperature" not in kwargs
+        assert kwargs["messages"] == [
+            {"role": "system", "content": "SYS"},
+            {"role": "user", "content": "USR"},
+        ]
+        assert summ.provider_name == "openai"
+
+    def test_keyless_uses_placeholder_and_threads_base_url(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        captured = _install_fake_openai(monkeypatch)
+        summ = OpenAISummarizer(
+            None, "llama3.2", base_url="http://localhost:11434/v1", max_tokens=10
+        )
+        summ.summarize("s", "u")
+        assert captured["api_key"] == "ollama"
+        assert captured["base_url"] == "http://localhost:11434/v1"
+
+    def test_token_param_fallback_retries_with_max_tokens(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        captured = _install_fake_openai(monkeypatch, reject_max_completion_tokens=True)
+        summ = OpenAISummarizer("k", "old-model", max_tokens=42)
+        assert summ.summarize("s", "u") == "SUMMARY"
+        first, second = captured["calls"]
+        assert first["max_completion_tokens"] == 42
+        assert "max_completion_tokens" not in second
+        assert second["max_tokens"] == 42
+
+    def test_unrelated_bad_request_is_not_retried(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        captured = _install_fake_openai(monkeypatch, raise_error="bad_request")
+        summ = OpenAISummarizer("k", "m", max_tokens=10)
+        with pytest.raises(
+            RuntimeError, match="OpenAI-compatible summarization failed"
+        ):
+            summ.summarize("s", "u")
+        assert len(captured["calls"]) == 1
 
     def test_api_error_becomes_runtime_error(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        _install_fake_anthropic(monkeypatch, raise_api_error=True)
-        summ = AnthropicSummarizer("k", "m", max_tokens=10)
-        with pytest.raises(RuntimeError, match="Anthropic summarization failed"):
+        _install_fake_openai(monkeypatch, raise_error="api")
+        summ = OpenAISummarizer("k", "m", max_tokens=10)
+        with pytest.raises(
+            RuntimeError, match="OpenAI-compatible summarization failed"
+        ):
             summ.summarize("s", "u")
 
-    def test_empty_response_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        _install_fake_anthropic(
-            monkeypatch, text_blocks=[("thinking", "")], stop_reason="refusal"
-        )
-        summ = AnthropicSummarizer("k", "m", max_tokens=10)
+    def test_refusal_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _install_fake_openai(monkeypatch, content=None, refusal="nope")
+        summ = OpenAISummarizer("k", "m", max_tokens=10)
+        with pytest.raises(RuntimeError, match="was refused: nope"):
+            summ.summarize("s", "u")
+
+    def test_empty_content_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _install_fake_openai(monkeypatch, content=None, finish_reason="length")
+        summ = OpenAISummarizer("k", "m", max_tokens=10)
         with pytest.raises(RuntimeError, match="returned no text"):
             summ.summarize("s", "u")
 
-    def test_get_summarizer_auto_detects(
+    def test_empty_choices_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _install_fake_openai(monkeypatch, no_choices=True)
+        summ = OpenAISummarizer("k", "m", max_tokens=10)
+        with pytest.raises(RuntimeError, match="returned no text"):
+            summ.summarize("s", "u")
+
+    def test_get_summarizer_auto_detects_on_key(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        _install_fake_anthropic(monkeypatch)
-        cfg = _config_with(SummarizeConfig(anthropic_api_key="k"), tmp_path)
-        summ = get_summarizer(cfg)
-        assert isinstance(summ, AnthropicSummarizer)
+        _install_fake_openai(monkeypatch)
+        cfg = _config_with(SummarizeConfig(openai_api_key="k"), tmp_path)
+        assert isinstance(get_summarizer(cfg), OpenAISummarizer)
+
+    def test_get_summarizer_auto_detects_on_base_url(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        captured = _install_fake_openai(monkeypatch)
+        cfg = _config_with(
+            SummarizeConfig(openai_base_url="http://localhost:11434/v1"), tmp_path
+        )
+        assert isinstance(get_summarizer(cfg), OpenAISummarizer)
+        assert captured["base_url"] == "http://localhost:11434/v1"
 
     def test_get_summarizer_explicit_provider(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        _install_fake_anthropic(monkeypatch)
+        _install_fake_openai(monkeypatch)
         cfg = _config_with(
-            SummarizeConfig(provider="anthropic", anthropic_api_key="k"), tmp_path
+            SummarizeConfig(provider="openai", openai_api_key="k"), tmp_path
         )
-        assert isinstance(get_summarizer(cfg), AnthropicSummarizer)
+        assert isinstance(get_summarizer(cfg), OpenAISummarizer)
 
 
 # ---------------------------------------------------------------------------
@@ -422,31 +563,41 @@ class TestToVaultKwargsSummarizer:
     def test_backend_loaded_passes_summarizer_and_caps(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        _install_fake_anthropic(monkeypatch)
+        _install_fake_openai(monkeypatch)
         cfg = _config_with(
-            SummarizeConfig(anthropic_api_key="k", max_notes=9, max_input_chars=1234),
+            SummarizeConfig(openai_api_key="k", max_notes=9, max_input_chars=1234),
             tmp_path,
         )
         kwargs = to_vault_kwargs(cfg)
-        assert isinstance(kwargs["summarizer"], AnthropicSummarizer)
+        assert isinstance(kwargs["summarizer"], OpenAISummarizer)
         assert kwargs["summarize_max_notes"] == 9
         assert kwargs["summarize_max_input_chars"] == 1234
 
     def test_explicit_provider_load_failure_raises(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setitem(sys.modules, "anthropic", None)  # force ImportError
+        monkeypatch.setitem(sys.modules, "openai", None)  # force ImportError
         cfg = _config_with(
-            SummarizeConfig(provider="anthropic", anthropic_api_key="k"), tmp_path
+            SummarizeConfig(provider="openai", openai_api_key="k"), tmp_path
         )
         with pytest.raises(ConfigurationError, match="explicitly configured"):
+            to_vault_kwargs(cfg)
+
+    def test_removed_anthropic_provider_raises_migration_error(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _install_fake_openai(monkeypatch)
+        cfg = _config_with(
+            SummarizeConfig(provider="anthropic", openai_api_key="k"), tmp_path
+        )
+        with pytest.raises(ConfigurationError, match="was removed"):
             to_vault_kwargs(cfg)
 
     def test_autodetect_load_failure_disables_silently(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setitem(sys.modules, "anthropic", None)  # force ImportError
-        cfg = _config_with(SummarizeConfig(anthropic_api_key="k"), tmp_path)
+        monkeypatch.setitem(sys.modules, "openai", None)  # force ImportError
+        cfg = _config_with(SummarizeConfig(openai_api_key="k"), tmp_path)
         kwargs = to_vault_kwargs(cfg)
         assert "summarizer" not in kwargs
 
@@ -478,12 +629,32 @@ async def test_summarize_hidden_without_key(
     assert "summarize" not in names
 
 
+async def test_summarize_visible_with_base_url_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Keyless local endpoints (Ollama) enable the tool via the prefixed
+    # base URL alone.
+    (tmp_path / "simple.md").write_text("# Simple\n\nhi", encoding="utf-8")
+    _base_env(monkeypatch, tmp_path)
+    monkeypatch.setenv(
+        "MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_BASE_URL", "http://localhost:11434/v1"
+    )
+    monkeypatch.setattr(
+        "markdown_vault_mcp.summarizer.get_summarizer",
+        lambda _config: FakeSummarizer(),
+    )
+    server = make_server()
+    async with Client(server) as client:
+        names = {t.name for t in await client.list_tools()}
+    assert "summarize" in names
+
+
 async def test_summarize_visible_and_callable_with_key(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     (tmp_path / "simple.md").write_text("# Simple\n\nabout cats", encoding="utf-8")
     _base_env(monkeypatch, tmp_path)
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
 
     fake = FakeSummarizer("SERVER SUMMARY")
     monkeypatch.setattr(

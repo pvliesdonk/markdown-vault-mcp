@@ -44,7 +44,8 @@ def register(mcp: FastMCP) -> None:
         its origin. In "per_note" mode it returns one summary per note instead.
 
         Only available when a summarization backend is configured (an
-        ANTHROPIC_API_KEY). Note content is sent to the external model
+        OPENAI_API_KEY or an OpenAI-compatible base URL). Note content is
+        sent to the external model
         provider; do not summarize notes whose content must not leave your
         environment.
 
