@@ -113,11 +113,14 @@ def register(mcp: FastMCP) -> None:
 
 
 def apply_summarize_limits(mcp: FastMCP, *, max_notes: int) -> None:
-    """Substitute the live note limit into the summarize tool description.
+    """Substitute the live note limit into the summarize tool schema.
 
     A calling model can plan folder splits before its first call only when
     the real configured number is visible in the tool schema; the docstring
-    above carries a ``{max_notes}`` placeholder for that purpose (#925).
+    above carries ``{max_notes}`` placeholders for that purpose (#925).
+    FastMCP splits the docstring at decoration time: the free text becomes
+    ``Tool.description`` while each ``Args:`` entry lands in the JSON
+    schema's per-parameter ``description`` — so both must be patched.
     Called from ``make_server``'s DOMAIN-WIRING block, where the loaded
     config is available (registration itself is config-free by template
     contract). Uses the same ``local_provider._components`` access as
@@ -140,11 +143,13 @@ def apply_summarize_limits(mcp: FastMCP, *, max_notes: int) -> None:
             "local_provider._components."
         ) from exc
     for component in components.values():
-        if (
-            isinstance(component, Tool)
-            and component.name == "summarize"
-            and component.description
-        ):
+        if not (isinstance(component, Tool) and component.name == "summarize"):
+            continue
+        if component.description:
             component.description = component.description.replace(
                 "{max_notes}", str(max_notes)
             )
+        for prop in component.parameters.get("properties", {}).values():
+            description = prop.get("description")
+            if description and "{max_notes}" in description:
+                prop["description"] = description.replace("{max_notes}", str(max_notes))

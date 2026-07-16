@@ -881,6 +881,13 @@ async def test_summarize_description_carries_live_note_limit(
     description = tools["summarize"].description or ""
     assert "note limit of 7 notes" in description
     assert "{max_notes}" not in description
+    # The Args: docstring entry lands in the parameter schema, a separate
+    # field from the tool description — it must be substituted too.
+    param_desc = tools["summarize"].inputSchema["properties"]["max_notes"][
+        "description"
+    ]
+    assert "cap of 7" in param_desc
+    assert "{max_notes}" not in param_desc
 
 
 def test_instructions_carry_live_note_limit() -> None:
