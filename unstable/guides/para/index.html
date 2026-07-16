@@ -2463,6 +2463,7 @@
 <p>Configure <code>MARKDOWN_VAULT_MCP_INDEXED_FIELDS</code> so that <code>type</code>, <code>status</code>, <code>tags</code>, and <code>area</code> become structured filters in the search API:</p>
 <div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">MARKDOWN_VAULT_MCP_INDEXED_FIELDS</span><span class="o">=</span>type,status,tags,area
 </code></pre></div>
+<p>Indexed fields are also keyword-searchable by default (<code>SEARCHABLE_FIELDS</code> inherits this value; set it to <code>none</code> to keep them filter-only).</p>
 <p>Then you can run targeted queries via the Python API:</p>
 <div class="highlight"><pre><span></span><code><span class="c1"># All active projects</span>
 <span class="n">results</span> <span class="o">=</span> <span class="n">vault</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">search</span><span class="p">(</span>

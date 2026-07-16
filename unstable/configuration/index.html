@@ -2184,7 +2184,7 @@ questions and copy a ready-made <code>.env</code>, Docker, or Claude config.</p>
 <td>csv</td>
 <td>(none)</td>
 <td>No</td>
-<td>Comma-separated frontmatter fields to promote to the tag index for structured filtering</td>
+<td>Comma-separated frontmatter fields to promote to the tag index for structured filtering. Recorded as a warm-restart key, so setting or changing it cold-rebuilds the index once on next startup. When <code>SEARCHABLE_FIELDS</code> is unset, it defaults to this value, so a field indexed for filtering is also keyword/semantically searchable out of the box; a change here then also activates context-enriched embeddings and re-embeds the vault once. Set <code>SEARCHABLE_FIELDS</code> explicitly (or to <code>none</code>) to decouple. <strong>One-time rebuild on upgrade:</strong> a vault with <code>INDEXED_FIELDS</code> already configured cold-rebuilds once on its first startup after upgrading to the release that introduced this tracking (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/927">#927</a>), and (if embeddings are enabled and <code>SEARCHABLE_FIELDS</code> was unset) also re-embeds once as the inherited default takes effect. No action is required; subsequent restarts warm-restart as normal</td>
 </tr>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_REQUIRED_FIELDS</code></td>
@@ -2210,9 +2210,9 @@ questions and copy a ready-made <code>.env</code>, Docker, or Claude config.</p>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_SEARCHABLE_FIELDS</code></td>
 <td>csv</td>
-<td>(none)</td>
+<td>defaults to <code>INDEXED_FIELDS</code></td>
 <td>No</td>
-<td>Comma-separated frontmatter fields whose scalar values are indexed into the FTS <code>summary</code> column (chunk-0 row of each document), making them keyword-searchable (including <code>summary:term</code> column filters). They are also prefixed to first-chunk embedding text (format v2), independent of <code>EMBED_CONTEXT</code>. Recorded as a warm-restart key, so setting or changing it cold-rebuilds the index and re-embeds the vault once on next startup</td>
+<td>Comma-separated frontmatter fields whose scalar values are indexed into the FTS <code>summary</code> column (chunk-0 row of each document), making them keyword-searchable (including <code>summary:term</code> column filters). They are also prefixed to first-chunk embedding text (format v2), independent of <code>EMBED_CONTEXT</code>. When unset, defaults to <code>INDEXED_FIELDS</code>; set explicitly to a different field list to diverge from that default, or to the sentinel <code>none</code> for no searchable fields at all ("filterable but not searchable"). An empty string is treated the same as unset, matching every other list-valued config var. Recorded as a warm-restart key, so setting or changing it cold-rebuilds the index and re-embeds the vault once on next startup</td>
 </tr>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER</code></td>
