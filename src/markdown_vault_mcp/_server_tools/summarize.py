@@ -48,7 +48,7 @@ def register(mcp: FastMCP) -> None:
         are split into batches, each batch is summarized, and the partial
         summaries are combined into the final result (several model calls, so
         large folders take proportionally longer). Coverage per call is capped
-        at the server's note limit (50 unless the operator raised it); the
+        at the server's note limit (50 unless the operator changed it); the
         response reports the effective limit as ``notes_limit``. When
         ``notes_omitted`` is non-zero, the summary does NOT cover the whole
         selection: for full coverage, summarize subfolders or smaller sets of
