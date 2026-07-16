@@ -764,15 +764,16 @@ Summarize a note, a set of notes, or a folder subtree with a language model. In 
 
 The tool is only registered when a summarization backend is configured: an `OPENAI_API_KEY`, or an explicit OpenAI-compatible base URL for local endpoints that need no key. Otherwise it does not appear in the tool listing. Any OpenAI-compatible endpoint works: OpenAI, a local Ollama, the Anthropic compatibility endpoint, vLLM, and others.
 
-Inputs larger than one model request are handled map-reduce style. Notes are packed into batches of at most `SUMMARIZE_MAX_INPUT_CHARS` characters and each batch is summarized on its own; a final pass combines the partial summaries into one result. Large folders issue several model calls and take proportionally longer. Coverage is capped at `SUMMARIZE_MAX_NOTES` notes; the response reports exactly how many notes made it in (`notes_included`) and how many were dropped (`notes_omitted`).
+Inputs larger than one model request are handled map-reduce style. Notes are packed into batches of at most `SUMMARIZE_MAX_INPUT_CHARS` characters and each batch is summarized on its own; a final pass combines the partial summaries into one result. Large folders issue several model calls and take proportionally longer. Coverage per call is capped at the note limit (`SUMMARIZE_MAX_NOTES`, also the ceiling for the per-call `max_notes` parameter); the response reports exactly how many notes made it in (`notes_included`) and how many were dropped (`notes_omitted`). When notes were dropped, the response carries a `hint` telling the caller that full coverage needs separate calls on subfolders or smaller path sets. The live configured limit is substituted into the tool description and into the server instructions at startup, so a calling model can plan those splits before its first call.
 
 **Parameters:**
 
-| Parameter | Type            | Default      | Description                                                                                                                                                                                      |
-| --------- | --------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `paths`   | array of string | required     | Note paths (`"notes/topic.md"`) and/or folder prefixes (`"notes/project"`). Folders expand to every note in the subtree (capped by the server's summarize limits). Duplicates are de-duplicated. |
-| `focus`   | string          | `null`       | Optional free-text instruction that steers the summary, such as `"extract action items"` or `"focus on decisions and their rationale"`. Omit for a general-purpose summary.                      |
-| `mode`    | `"synthesis"`   | `"per_note"` | `"synthesis"`                                                                                                                                                                                    |
+| Parameter   | Type            | Default      | Description                                                                                                                                                                                      |
+| ----------- | --------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `paths`     | array of string | required     | Note paths (`"notes/topic.md"`) and/or folder prefixes (`"notes/project"`). Folders expand to every note in the subtree (capped by the server's summarize limits). Duplicates are de-duplicated. |
+| `focus`     | string          | `null`       | Optional free-text instruction that steers the summary, such as `"extract action items"` or `"focus on decisions and their rationale"`. Omit for a general-purpose summary.                      |
+| `mode`      | `"synthesis"`   | `"per_note"` | `"synthesis"`                                                                                                                                                                                    |
+| `max_notes` | int             | server limit | Per-call note limit. Values above the server's configured cap are clamped to it; values below it narrow the work.                                                                                |
 
 **Returns:** Dict with:
 
@@ -782,6 +783,8 @@ Inputs larger than one model request are handled map-reduce style. Notes are pac
 - `truncated` (bool): `true` when content was lost to a cap. This covers the server's note limit and the per-request character budget, which can cut a single note as well as a partial summary during the combine step.
 - `notes_included` (int): notes whose content reached the model.
 - `notes_omitted` (int): matched notes dropped by the note limit. When non-zero, the summary does not cover the whole selection.
+- `notes_limit` (int): the note limit in effect for this call.
+- `hint` (string or null): recovery guidance when notes were omitted; `null` when the selection was fully covered.
 
 **Errors:** raises if `paths` is empty, `mode` is invalid, no readable notes were found, or the backend call fails.
 

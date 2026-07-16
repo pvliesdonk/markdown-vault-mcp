@@ -2534,7 +2534,7 @@ chronic backlog.</p>
 <td><code>MARKDOWN_VAULT_MCP_SUMMARIZE_MAX_NOTES</code></td>
 <td>int</td>
 <td><code>50</code></td>
-<td>Cap on notes summarised per tool call; this is the coverage and cost lever. Notes beyond it are omitted and counted in the response's <code>notes_omitted</code></td>
+<td>Cap on notes summarised per tool call; this is the coverage and cost lever. It is also the ceiling for the tool's per-call <code>max_notes</code> parameter. Notes beyond it are omitted and counted in the response's <code>notes_omitted</code></td>
 </tr>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_SUMMARIZE_MAX_INPUT_CHARS</code></td>
