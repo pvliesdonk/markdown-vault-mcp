@@ -1168,6 +1168,25 @@ def test_chunking_meta_stores_none_as_empty(tmp_path):
     )
 
 
+def test_chunking_meta_indexed_frontmatter_fields_roundtrip(tmp_path):
+    """indexed_frontmatter_fields persists and defaults to ``""``."""
+    from markdown_vault_mcp.fts_index import ChunkingMeta, FTSIndex
+
+    idx = FTSIndex(db_path=str(tmp_path / "i.db"))
+    idx.set_chunking_meta(
+        model=None,
+        max_chunk_chars_override=None,
+        indexed_frontmatter_fields="tags,category",
+    )
+    assert idx.get_chunking_meta() == ChunkingMeta(
+        model=None,
+        max_chunk_chars_override=None,
+        indexed_frontmatter_fields="tags,category",
+    )
+    idx2 = FTSIndex(db_path=str(tmp_path / "j.db"))
+    assert idx2.get_chunking_meta().indexed_frontmatter_fields == ""
+
+
 # ---------------------------------------------------------------------------
 # Curated ranking: summary column, legacy migration, persisted rank config
 # ---------------------------------------------------------------------------

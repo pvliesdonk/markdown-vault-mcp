@@ -393,6 +393,7 @@ class Vault:
             max_chunk_chars_override=self._max_chunk_chars_override,
             title_field=self._title_field,
             searchable_fields=",".join(self._searchable_frontmatter_fields),
+            indexed_frontmatter_fields=",".join(self._indexed_frontmatter_fields),
         )
         # 3. SearchManager (receives IndexManager callbacks via constructor)
         self._search_mgr = SearchManager(

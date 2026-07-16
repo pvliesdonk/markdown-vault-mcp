@@ -106,6 +106,8 @@ Configure `MARKDOWN_VAULT_MCP_INDEXED_FIELDS` so that `type`, `status`, `tags`, 
 export MARKDOWN_VAULT_MCP_INDEXED_FIELDS=type,status,tags,area
 ```
 
+Indexed fields are also keyword-searchable by default (`SEARCHABLE_FIELDS` inherits this value; set it to `none` to keep them filter-only).
+
 Then you can run targeted queries via the Python API:
 
 ```python

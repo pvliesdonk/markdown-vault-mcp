@@ -31,6 +31,7 @@ def make_coordinator(
     db: Path | None = None,
     title_field: str = "title",
     searchable_fields: tuple[str, ...] = (),
+    indexed_frontmatter_fields: tuple[str, ...] = (),
 ) -> IndexWriteCoordinator:
     """Build a wired coordinator over a tmp vault (mirrors Vault wiring)."""
     from markdown_vault_mcp.embed_text import EmbedTextBuilder
@@ -53,7 +54,7 @@ def make_coordinator(
         chunk_strategy=HeadingChunker(max_chunk_words=400),
         exclude_patterns=None,
         required_frontmatter=None,
-        indexed_frontmatter_fields=[],
+        indexed_frontmatter_fields=list(indexed_frontmatter_fields),
         get_vectors=lambda: holder["v"],
         set_vectors=lambda v: holder.__setitem__("v", v),
         embed_model_name=embed_model_name,
@@ -70,6 +71,7 @@ def make_coordinator(
         max_chunk_chars_override=max_chunk_chars_override,
         title_field=title_field,
         searchable_fields=",".join(searchable_fields),
+        indexed_frontmatter_fields=",".join(indexed_frontmatter_fields),
     )
 
 
@@ -790,6 +792,34 @@ def test_searchable_fields_change_rejects_warm_restart(tmp_path: Path) -> None:
         coord2.close(timeout=5)
 
 
+def test_indexed_frontmatter_fields_change_rejects_warm_restart(
+    tmp_path: Path,
+) -> None:
+    """Changing indexed frontmatter fields forces a rebuild (document_tags)."""
+    db = tmp_path / "index.db"
+    coord = make_coordinator(tmp_path, db=db)
+    try:
+        coord.build_index()
+        meta = coord._fts.get_chunking_meta()
+        assert meta.indexed_frontmatter_fields == ""
+    finally:
+        coord.close(timeout=5)
+
+    coord2 = make_coordinator(
+        tmp_path, db=db, indexed_frontmatter_fields=("tags", "category")
+    )
+    try:
+        assert coord2._chunking_meta_matches() is False
+        stats = coord2.build_index()
+        assert stats.chunks_indexed > 0  # full build ran, not warm O(1)
+        assert (
+            coord2._fts.get_chunking_meta().indexed_frontmatter_fields
+            == "tags,category"
+        )
+    finally:
+        coord2.close(timeout=5)
+
+
 def test_absent_provenance_keys_keep_warm_restart_under_defaults(
     tmp_path: Path,
 ) -> None:
@@ -803,7 +833,8 @@ def test_absent_provenance_keys_keep_warm_restart_under_defaults(
         conn = coord._fts._conn()
         with conn:
             conn.execute(
-                "DELETE FROM meta WHERE key IN ('title_field', 'searchable_fields')"
+                "DELETE FROM meta WHERE key IN ('title_field', 'searchable_fields', "
+                "'indexed_frontmatter_fields')"
             )
     finally:
         coord.close(timeout=5)
@@ -834,11 +865,12 @@ def test_legacy_five_column_db_migrates_and_warm_restarts_via_coordinator(
     try:
         coord.build_index()
         # Downgrade the on-disk index to the genuine pre-feature shape: a
-        # 5-column notes_fts and no title_field/searchable_fields meta keys.
+        # 5-column notes_fts and none of the curated-provenance meta keys.
         conn = coord._fts._conn()
         with conn:
             conn.execute(
-                "DELETE FROM meta WHERE key IN ('title_field', 'searchable_fields')"
+                "DELETE FROM meta WHERE key IN ('title_field', 'searchable_fields', "
+                "'indexed_frontmatter_fields')"
             )
         conn.execute("BEGIN")
         conn.execute("DROP TABLE notes_fts")
@@ -873,6 +905,60 @@ def test_legacy_five_column_db_migrates_and_warm_restarts_via_coordinator(
         assert len(coord2._fts.search("body")) >= 1
     finally:
         coord2.close(timeout=5)
+
+
+@pytest.mark.parametrize(
+    "vault_kwargs",
+    [
+        {"indexed_frontmatter_fields": ["cluster"]},
+        {"title_field": "name"},
+        {"searchable_frontmatter_fields": ["summary"]},
+    ],
+    ids=["indexed_fields", "title_field", "searchable_fields"],
+)
+def test_vault_wiring_provenance_warm_restarts_on_same_config(
+    tmp_path: Path, vault_kwargs: dict
+) -> None:
+    """Provenance knobs wired through Vault warm-restart under identical config.
+
+    Guards the composition-root wiring itself: if Vault stopped threading a
+    knob into the coordinator's comparison side, the persisted value would
+    mismatch the compared default and every restart would silently cold
+    rebuild.
+    """
+    from markdown_vault_mcp.vault import Vault
+
+    (tmp_path / "vault").mkdir()
+    (tmp_path / "vault" / "a.md").write_text("# A\n\nbody\n", encoding="utf-8")
+    common = {
+        "source_dir": tmp_path / "vault",
+        "index_path": tmp_path / "fts.db",
+        "state_path": tmp_path / "s.json",
+        **vault_kwargs,
+    }
+    pre = Vault(**common)
+    try:
+        assert pre.index.build_index().chunks_indexed > 0
+    finally:
+        pre.close()
+
+    post = Vault(**common)
+    try:
+        # Identical config → warm O(1) hold, no silent rescan.
+        assert post.index.build_index().chunks_indexed == 0
+    finally:
+        post.close()
+
+    # And dropping the knob (back to default) rejects the warm restart.
+    changed = Vault(
+        source_dir=tmp_path / "vault",
+        index_path=tmp_path / "fts.db",
+        state_path=tmp_path / "s.json",
+    )
+    try:
+        assert changed.index.build_index().chunks_indexed > 0
+    finally:
+        changed.close()
 
 
 def test_default_curated_knobs_keep_warm_restart(tmp_path: Path) -> None:

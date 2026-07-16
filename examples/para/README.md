@@ -64,7 +64,8 @@ Recommended env vars for a PARA vault:
 export MARKDOWN_VAULT_MCP_SOURCE_DIR=/path/to/vault
 export MARKDOWN_VAULT_MCP_READ_ONLY=false
 
-# Indexing — make type/status/tags/area filterable in search
+# Indexing — make type/status/tags/area filterable in search (also
+# keyword-searchable by default; SEARCHABLE_FIELDS=none keeps them filter-only)
 export MARKDOWN_VAULT_MCP_INDEXED_FIELDS=type,status,tags,area
 
 # Templates and Prompts

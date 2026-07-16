@@ -81,16 +81,32 @@ class IndexingConfig:
             raw = (env(prefix, name) or "").strip()
             return Path(raw) if raw else None
 
+        indexed_frontmatter_fields = (
+            parse_list(env(prefix, "INDEXED_FIELDS") or "") or None
+        )
+        # SEARCHABLE_FIELDS defaults to INDEXED_FIELDS when unset: a field
+        # configured for structured filtering is also full-text/semantically
+        # searchable out of the box, no separate config needed. An explicit
+        # SEARCHABLE_FIELDS still overrides (env() treats "" as unset too,
+        # matching every other list field's empty-as-unset convention), and
+        # the sentinel "none" (the CONVENTIONS_FILE=none idiom) expresses
+        # "filterable but not searchable" — no fields, no inherit.
+        raw_searchable = env(prefix, "SEARCHABLE_FIELDS") or ""
+        if raw_searchable.strip().lower() == "none":
+            searchable_frontmatter = None
+        else:
+            searchable_frontmatter = (
+                parse_list(raw_searchable) or None
+            ) or indexed_frontmatter_fields
+
         return cls(
             index_path=_path("INDEX_PATH"),
             state_path=_path("STATE_PATH"),
             embeddings_path=_path("EMBEDDINGS_PATH"),
-            indexed_frontmatter_fields=parse_list(env(prefix, "INDEXED_FIELDS") or "")
-            or None,
+            indexed_frontmatter_fields=indexed_frontmatter_fields,
             required_frontmatter=parse_list(env(prefix, "REQUIRED_FIELDS") or "")
             or None,
             exclude_patterns=parse_list(env(prefix, "EXCLUDE") or "") or None,
             title_field=(env(prefix, "TITLE_FIELD") or "").strip() or "title",
-            searchable_frontmatter=parse_list(env(prefix, "SEARCHABLE_FIELDS") or "")
-            or None,
+            searchable_frontmatter=searchable_frontmatter,
         )

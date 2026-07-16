@@ -48,7 +48,8 @@ Recommended env vars for a Zettelkasten vault:
 export MARKDOWN_VAULT_MCP_SOURCE_DIR=/path/to/vault
 export MARKDOWN_VAULT_MCP_READ_ONLY=false
 
-# Indexing
+# Indexing (indexed fields are also keyword-searchable by default;
+# set MARKDOWN_VAULT_MCP_SEARCHABLE_FIELDS=none to keep them filter-only)
 export MARKDOWN_VAULT_MCP_INDEXED_FIELDS=type,tags
 
 # Templates and Prompts

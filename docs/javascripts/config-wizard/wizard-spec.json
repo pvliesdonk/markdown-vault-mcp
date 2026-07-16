@@ -759,6 +759,7 @@
       "label": "Indexed frontmatter fields (CSV)",
       "type": "text",
       "var": "MARKDOWN_VAULT_MCP_INDEXED_FIELDS",
+      "help": "Frontmatter fields promoted to structured filters (document_tags). Changing it cold-rebuilds the index once on next startup. Searchable frontmatter fields default to this value when left unset below — so on an embedding-enabled vault a change here also re-embeds once, unless searchable fields are set explicitly (or to 'none').",
       "advancedGroup": "Frontmatter"
     },
     {
@@ -788,7 +789,7 @@
       "label": "Searchable frontmatter fields (CSV)",
       "type": "text",
       "var": "MARKDOWN_VAULT_MCP_SEARCHABLE_FIELDS",
-      "help": "Frontmatter fields whose text values become keyword-searchable (and, with context-enriched embeddings, are prefixed to first-chunk embedding text). Changing it cold-rebuilds the index once on next startup.",
+      "help": "Frontmatter fields whose text values become keyword-searchable (and, with context-enriched embeddings, are prefixed to first-chunk embedding text). Defaults to Indexed frontmatter fields when left blank; fill in to diverge, or enter 'none' for no searchable fields at all. Changing it cold-rebuilds the index and re-embeds the vault once on next startup.",
       "advancedGroup": "Frontmatter"
     },
     {

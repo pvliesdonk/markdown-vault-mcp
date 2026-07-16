@@ -499,15 +499,16 @@ class IndexManager:
                 skipped,
             )
 
-        # Record the embedding model + explicit override so a later warm
-        # restart can reject the short-circuit on a model/override change
-        # (#649). Paired with the completeness sentinel the coordinator sets
-        # after this returns.
+        # Record the build provenance (model, char-cap override, curated
+        # fields) so a later warm restart can reject the short-circuit on a
+        # genuine option change (#649, #927). Paired with the completeness
+        # sentinel the coordinator sets after this returns.
         self._fts.set_chunking_meta(
             model=self._embed_model_name,
             max_chunk_chars_override=self._max_chunk_chars_override,
             title_field=self._title_field,
             searchable_fields=",".join(self._embed_builder.searchable_fields),
+            indexed_frontmatter_fields=",".join(self._indexed_frontmatter_fields),
         )
         return IndexStats(
             documents_indexed=len(notes) - errored,

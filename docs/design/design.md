@@ -177,7 +177,13 @@ Hybrid approach:
    `(document_id, tag_key, tag_value)` tuple produces one row (duplicates in
    source lists are deduplicated). Complex types (nested dicts, objects) in
    frontmatter are stored in the JSON blob but are not indexed; only
-   scalar and simple list values are indexed.
+   scalar and simple list values are indexed. `indexed_frontmatter_fields`
+   is recorded in the FTS chunking provenance alongside `title_field` and
+   `searchable_fields` (#649, #927), so changing it rejects the
+   warm-restart short-circuit and cold-rebuilds `document_tags` for the
+   whole vault once on next startup — a config-only change never alters any
+   file's content hash, so the hash-based incremental `reindex()` cannot
+   detect it on its own.
 2. **Raw frontmatter JSON blob** stored in the `documents` table for display
    and retrieval only (not queried via index).
 
@@ -262,8 +268,10 @@ Four complementary mechanisms improve result diversity and bound LLM context cos
 
 ### Curated Ranking
 
-Five opt-in knobs let an operator tune retrieval for curated vaults (all
-defaults are exact behavioural no-ops):
+Five opt-in knobs let an operator tune retrieval for curated vaults. With
+no knob set, every default is an exact behavioural no-op; the one coupling
+is knob 2, which inherits `INDEXED_FIELDS` when unset (#927), so
+configuring structured filters activates it too:
 
 1. **Title field** (`MARKDOWN_VAULT_MCP_TITLE_FIELD`). Title resolution
    consults the configured frontmatter field first, then falls back to
@@ -273,6 +281,13 @@ defaults are exact behavioural no-ops):
 2. **Searchable frontmatter** (`MARKDOWN_VAULT_MCP_SEARCHABLE_FIELDS`).
    Scalar values of the listed fields populate the FTS `summary` column
    (chunk-0 row only), making summaries/descriptions keyword-searchable.
+   When unset, defaults to `MARKDOWN_VAULT_MCP_INDEXED_FIELDS` (#927): a
+   field configured for structured filtering (knob-1's `document_tags`
+   sibling above) is also full-text/semantically searchable out of the box,
+   with no separate config required. Set `SEARCHABLE_FIELDS` explicitly to
+   diverge from that default (a narrower, wider, or disjoint field list),
+   or to the sentinel `none` for no searchable fields at all — "filterable
+   but not searchable" (the `CONVENTIONS_FILE=none` idiom).
    Date/time-typed values are ISO-coerced (matching `_json_default`) so they
    stay searchable and identical across the build and convergence paths.
    Configuring this field **also** activates context-enriched embeddings
@@ -290,7 +305,9 @@ defaults are exact behavioural no-ops):
    multiplicative in hybrid). Query-time only; `get_similar`/`get_context`
    are deliberately unaffected.
 5. **Context-enriched embeddings** (`MARKDOWN_VAULT_MCP_EMBED_CONTEXT`, or
-   any `SEARCHABLE_FIELDS`). Format v2 is active when either knob is set. A
+   any effective `SEARCHABLE_FIELDS` — including the set inherited from
+   `INDEXED_FIELDS` when `SEARCHABLE_FIELDS` is unset, #927). Format v2 is
+   active when either knob is set. A
    single shared `EmbedTextBuilder` (constructed once in `Vault.__init__`)
    prefixes embedding input with the note title, chunk heading, and — first
    chunk only — the searchable-field preamble. `EMBED_CONTEXT` forces v2 even
@@ -304,11 +321,15 @@ defaults are exact behavioural no-ops):
    `VectorIndexCompatibilityError`, which routes to the existing
    `build_embeddings(force=True)` self-heal.
 
-`TITLE_FIELD` and `SEARCHABLE_FIELDS` are recorded in the FTS chunking
-provenance (alongside the embedding model and char-cap override, #649), so
-flipping either rejects the warm-restart short-circuit and cold-rebuilds
-once; absent keys read back as the defaults, keeping pre-upgrade indexes
-warm.
+`TITLE_FIELD`, `SEARCHABLE_FIELDS`, and `INDEXED_FIELDS` are recorded in
+the FTS chunking provenance (alongside the embedding model and char-cap
+override, #649/#927), so flipping any of them rejects the warm-restart
+short-circuit and cold-rebuilds once. Absent keys read back as the
+defaults, keeping pre-upgrade indexes warm under default configuration; a
+deployment with `INDEXED_FIELDS` configured cold-rebuilds once on its
+first post-upgrade start (the key was not tracked before #927) — which
+doubles as the self-heal for any vault whose `document_tags` went stale
+from an earlier untracked `INDEXED_FIELDS` change.
 
 ### Field collapsing
 
@@ -2276,9 +2297,9 @@ For MCP server deployment:
 | `MARKDOWN_VAULT_MCP_READ_ONLY` | Disable write tools | `true` |
 | `MARKDOWN_VAULT_MCP_INDEX_PATH` | SQLite index path | in-memory |
 | `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` | Embeddings directory | disabled |
-| `MARKDOWN_VAULT_MCP_INDEXED_FIELDS` | Comma-separated frontmatter fields to index | none |
+| `MARKDOWN_VAULT_MCP_INDEXED_FIELDS` | Comma-separated frontmatter fields to index into `document_tags` | none |
 | `MARKDOWN_VAULT_MCP_TITLE_FIELD` | Frontmatter field used as the document title | `title` |
-| `MARKDOWN_VAULT_MCP_SEARCHABLE_FIELDS` | Comma-separated frontmatter fields indexed into the FTS `summary` column | none |
+| `MARKDOWN_VAULT_MCP_SEARCHABLE_FIELDS` | Comma-separated frontmatter fields indexed into the FTS `summary` column | defaults to `INDEXED_FIELDS` |
 | `MARKDOWN_VAULT_MCP_FOLDER_WEIGHTS` | Folder-prefix score multipliers (`prefix:weight,...`) | none |
 | `MARKDOWN_VAULT_MCP_FTS_WEIGHTS` | Per-column BM25 weights (`column:weight,...`) | all `1.0` |
 | `MARKDOWN_VAULT_MCP_EMBED_CONTEXT` | Enrich embedding input with title/heading/searchable-field context | `false` |

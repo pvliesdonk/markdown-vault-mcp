@@ -59,6 +59,7 @@ class IndexWriteCoordinator:
         max_chunk_chars_override: int | None = None,
         title_field: str = "title",
         searchable_fields: str = "",
+        indexed_frontmatter_fields: str = "",
     ) -> None:
         self._fts = fts
         self._index_path = index_path
@@ -77,6 +78,12 @@ class IndexWriteCoordinator:
         # comma-joined canonical form ("" when none configured).
         self._title_field = title_field
         self._searchable_fields = searchable_fields
+        # Structured-filter provenance: the indexed (document_tags)
+        # frontmatter field set, tracked separately from searchable_fields
+        # so an INDEXED_FIELDS-only change also rejects the warm-restart
+        # short-circuit (#927) even when SEARCHABLE_FIELDS is explicitly
+        # overridden and would otherwise stay unchanged.
+        self._indexed_frontmatter_fields = indexed_frontmatter_fields
         self._readiness = ReadinessState()
         # Deprecated background-build thread bookkeeping (guarded by the
         # injected file-write lock, matching the former Vault locking).
@@ -209,20 +216,22 @@ class IndexWriteCoordinator:
 
         Compares the STABLE inputs to the FTS build's contents — the model
         name and the explicit ``MAX_CHUNK_CHARS`` override (the shared
-        chunker's char-cap inputs, #649), plus the title field and the
-        searchable frontmatter fields (which shape FTS titles and the
-        ``summary`` column) — never the runtime-derived cap. A genuine
-        option change rejects the warm-restart short-circuit (cold rebuild);
-        a derived cap that merely differs because the model context was read
-        transiently differently (e.g. an Ollama instance briefly
-        unreachable) changes no input, so it does NOT force a rebuild
-        (avoid flapping)."""
+        chunker's char-cap inputs, #649), plus the title field (which
+        shapes FTS titles), the searchable frontmatter fields (which shape
+        the ``summary`` column), and the indexed frontmatter fields (which
+        shape the ``document_tags`` structured-filter set, #927) — never the
+        runtime-derived cap. A genuine option change rejects the
+        warm-restart short-circuit (cold rebuild); a derived cap that merely
+        differs because the model context was read transiently differently
+        (e.g. an Ollama instance briefly unreachable) changes no input, so
+        it does NOT force a rebuild (avoid flapping)."""
         stored = self._fts.get_chunking_meta()
         return (
             stored.model == self._embed_model_name
             and stored.max_chunk_chars_override == self._max_chunk_chars_override
             and stored.title_field == self._title_field
             and stored.searchable_fields == self._searchable_fields
+            and stored.indexed_frontmatter_fields == self._indexed_frontmatter_fields
         )
 
     def build_index(self, *, force: bool = False) -> IndexStats:

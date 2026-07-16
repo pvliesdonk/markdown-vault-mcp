@@ -1509,6 +1509,47 @@ class TestIndexingConfigFromEnv:
         cfg = IndexingConfig.from_env("MARKDOWN_VAULT_MCP")
         assert cfg.indexed_frontmatter_fields is None
 
+    def test_searchable_frontmatter_defaults_to_indexed_frontmatter_fields(
+        self, monkeypatch
+    ):
+        """SEARCHABLE_FIELDS unset inherits INDEXED_FIELDS (one config, one intent)."""
+        from markdown_vault_mcp.config_sections import IndexingConfig
+
+        monkeypatch.delenv("MARKDOWN_VAULT_MCP_SEARCHABLE_FIELDS", raising=False)
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_INDEXED_FIELDS", "type,status,tags")
+        cfg = IndexingConfig.from_env("MARKDOWN_VAULT_MCP")
+        assert cfg.indexed_frontmatter_fields == ("type", "status", "tags")
+        assert cfg.searchable_frontmatter == ("type", "status", "tags")
+
+    def test_searchable_frontmatter_explicit_overrides_indexed_frontmatter_fields(
+        self, monkeypatch
+    ):
+        """An explicit SEARCHABLE_FIELDS still wins over the INDEXED_FIELDS default."""
+        from markdown_vault_mcp.config_sections import IndexingConfig
+
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_INDEXED_FIELDS", "type,status,tags")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SEARCHABLE_FIELDS", "type,status")
+        cfg = IndexingConfig.from_env("MARKDOWN_VAULT_MCP")
+        assert cfg.indexed_frontmatter_fields == ("type", "status", "tags")
+        assert cfg.searchable_frontmatter == ("type", "status")
+
+    def test_searchable_frontmatter_none_sentinel_opts_out_of_inherit(
+        self, monkeypatch
+    ):
+        """SEARCHABLE_FIELDS=none expresses 'filterable but not searchable'."""
+        from markdown_vault_mcp.config_sections import IndexingConfig
+
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_INDEXED_FIELDS", "type,status,tags")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SEARCHABLE_FIELDS", "none")
+        cfg = IndexingConfig.from_env("MARKDOWN_VAULT_MCP")
+        assert cfg.indexed_frontmatter_fields == ("type", "status", "tags")
+        assert cfg.searchable_frontmatter is None
+        # Case-insensitive, whitespace-tolerant (matching CONVENTIONS_FILE=none).
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SEARCHABLE_FIELDS", " None ")
+        assert (
+            IndexingConfig.from_env("MARKDOWN_VAULT_MCP").searchable_frontmatter is None
+        )
+
     def test_frozen(self):
         import dataclasses
 

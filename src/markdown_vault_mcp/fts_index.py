@@ -180,6 +180,14 @@ _META_MAX_CHUNK_CHARS_OVERRIDE_KEY = "max_chunk_chars_override"
 # warm-restart short-circuit intact.
 _META_TITLE_FIELD_KEY = "title_field"
 _META_SEARCHABLE_FIELDS_KEY = "searchable_fields"
+# Structured-filter provenance: the frontmatter fields promoted to
+# document_tags at build time. Tracked separately from searchable_fields
+# (#927) because indexed_frontmatter_fields feeds document_tags only, never
+# FTS summary/embedding text, so a change must reject the warm-restart
+# short-circuit on its own trigger rather than piggybacking on
+# searchable_fields (which only shares its value when SEARCHABLE_FIELDS is
+# left to default to INDEXED_FIELDS).
+_META_INDEXED_FIELDS_KEY = "indexed_frontmatter_fields"
 
 
 class ChunkingMeta(NamedTuple):
@@ -196,12 +204,16 @@ class ChunkingMeta(NamedTuple):
         searchable_fields: Comma-joined canonical form of the searchable
             frontmatter fields feeding the FTS ``summary`` column (default
             ``""`` — none configured).
+        indexed_frontmatter_fields: Comma-joined canonical form of the
+            frontmatter fields promoted to ``document_tags`` for structured
+            filtering (default ``""`` — none configured).
     """
 
     model: str | None
     max_chunk_chars_override: int | None
     title_field: str = "title"
     searchable_fields: str = ""
+    indexed_frontmatter_fields: str = ""
 
 
 def _escape_like(value: str) -> str:
@@ -1018,14 +1030,16 @@ class FTSIndex:
         max_chunk_chars_override: int | None,
         title_field: str = "title",
         searchable_fields: str = "",
+        indexed_frontmatter_fields: str = "",
     ) -> None:
         """Record the embedding/indexing provenance used for this build.
 
         Persists the stable inputs that determine the FTS build's contents —
         the embedding model name, the explicit char-cap override, the title
-        field, and the searchable frontmatter fields — so a later
-        warm-restart can detect a genuine option change and reject the
-        short-circuit, triggering a cold rebuild (#649).
+        field, the searchable frontmatter fields, and the indexed
+        (structured-filter) frontmatter fields — so a later warm-restart can
+        detect a genuine option change and reject the short-circuit,
+        triggering a cold rebuild (#649, #927).
 
         Args:
             model: Embedding model name, or ``None`` when no provider is
@@ -1039,6 +1053,9 @@ class FTSIndex:
                 pre-upgrade index (absent key) reads back as the default.
             searchable_fields: Comma-joined canonical searchable-field list.
                 The default (no fields) is already the empty string.
+            indexed_frontmatter_fields: Comma-joined canonical
+                structured-filter field list. The default (no fields) is
+                already the empty string.
         """
         conn = self._conn()
         model_value = "" if model is None else model
@@ -1054,6 +1071,7 @@ class FTSIndex:
                 (_META_MAX_CHUNK_CHARS_OVERRIDE_KEY, override_value),
                 (_META_TITLE_FIELD_KEY, title_value),
                 (_META_SEARCHABLE_FIELDS_KEY, searchable_fields),
+                (_META_INDEXED_FIELDS_KEY, indexed_frontmatter_fields),
             ):
                 conn.execute(
                     "INSERT OR REPLACE INTO meta(key, value) VALUES(?, ?)",
@@ -1068,18 +1086,20 @@ class FTSIndex:
             A :class:`ChunkingMeta`. An absent key or a stored empty string
             reads back as the default (``None`` for ``model`` and
             ``max_chunk_chars_override``, ``"title"`` for ``title_field``,
-            ``""`` for ``searchable_fields``);
+            ``""`` for ``searchable_fields`` and
+            ``indexed_frontmatter_fields``);
             ``max_chunk_chars_override`` reads back as ``int``.
         """
         conn = self._conn()
         with conn:
             rows = conn.execute(
-                "SELECT key, value FROM meta WHERE key IN (?, ?, ?, ?)",
+                "SELECT key, value FROM meta WHERE key IN (?, ?, ?, ?, ?)",
                 (
                     _META_EMBED_MODEL_KEY,
                     _META_MAX_CHUNK_CHARS_OVERRIDE_KEY,
                     _META_TITLE_FIELD_KEY,
                     _META_SEARCHABLE_FIELDS_KEY,
+                    _META_INDEXED_FIELDS_KEY,
                 ),
             ).fetchall()
         stored = {row[0]: row[1] for row in rows}
@@ -1094,6 +1114,7 @@ class FTSIndex:
             max_chunk_chars_override=override,
             title_field=stored.get(_META_TITLE_FIELD_KEY) or "title",
             searchable_fields=stored.get(_META_SEARCHABLE_FIELDS_KEY) or "",
+            indexed_frontmatter_fields=stored.get(_META_INDEXED_FIELDS_KEY) or "",
         )
 
     @_retry_on_locked
