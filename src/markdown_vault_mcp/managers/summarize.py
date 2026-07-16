@@ -136,6 +136,7 @@ class SummarizeManager:
         *,
         focus: str | None = None,
         mode: str = "synthesis",
+        max_notes: int | None = None,
     ) -> SummaryResult:
         """Summarize one or more notes and/or folder subtrees.
 
@@ -146,21 +147,32 @@ class SummarizeManager:
                 ``"extract action items"``). ``None`` yields a general summary.
             mode: ``"synthesis"`` (default) for one cross-note summary that
                 references sources, or ``"per_note"`` for one summary per note.
+            max_notes: Optional per-call note limit. Clamped to the server's
+                configured cap, which stays the operator's per-call cost and
+                latency ceiling (#925). ``None`` uses the server cap.
 
         Returns:
             A :class:`~markdown_vault_mcp.types.SummaryResult`.
 
         Raises:
-            ValueError: If *mode* is invalid, *paths* is empty, or no readable
-                notes were found for the given paths.
+            ValueError: If *mode* is invalid, *paths* is empty, *max_notes*
+                is below 1, or no readable notes were found for the given
+                paths.
             RuntimeError: If a summarization backend call fails.
         """
         if mode not in _VALID_MODES:
             raise ValueError(f"mode must be one of {_VALID_MODES}, got {mode!r}")
         if not paths:
             raise ValueError("paths must contain at least one note or folder path.")
+        if max_notes is not None and max_notes < 1:
+            raise ValueError(f"max_notes must be >= 1, got {max_notes!r}")
 
-        resolved, matched = self._resolve_paths(paths)
+        limit = (
+            min(max_notes, self._max_notes)
+            if max_notes is not None
+            else self._max_notes
+        )
+        resolved, matched = self._resolve_paths(paths, limit)
         if not resolved:
             raise ValueError("No notes found for the given paths.")
 
@@ -181,14 +193,31 @@ class SummarizeManager:
             truncated=omitted > 0 or note_clipped or reduce_clipped,
             notes_included=len(notes),
             notes_omitted=omitted,
+            notes_limit=limit,
+            hint=self._coverage_hint(len(notes), matched, limit),
         )
 
-    def _resolve_paths(self, paths: list[str]) -> tuple[list[str], int]:
-        """Expand folders to notes and dedupe; cap at ``max_notes``.
+    @staticmethod
+    def _coverage_hint(included: int, matched: int, limit: int) -> str | None:
+        """Build the caller-facing recovery hint when notes were omitted.
 
-        Returns the ordered, de-duplicated note paths (capped at
-        ``max_notes``) and the total number of matched notes before the cap,
-        so callers can report how many were omitted (#922).
+        Guidance placed in the result reaches the calling model at the
+        moment it matters; schema docs alone are often ignored (#925).
+        """
+        if matched <= included:
+            return None
+        return (
+            f"Only {included} of {matched} matched notes were summarized "
+            f"(note limit {limit}). For full coverage, summarize subfolders "
+            "or smaller sets of paths in separate calls."
+        )
+
+    def _resolve_paths(self, paths: list[str], limit: int) -> tuple[list[str], int]:
+        """Expand folders to notes and dedupe; cap at *limit*.
+
+        Returns the ordered, de-duplicated note paths (capped at *limit*)
+        and the total number of matched notes before the cap, so callers can
+        report how many were omitted (#922).
         """
         resolved: list[str] = []
         seen: set[str] = set()
@@ -198,14 +227,14 @@ class SummarizeManager:
                     seen.add(candidate)
                     resolved.append(candidate)
         matched = len(resolved)
-        return resolved[: self._max_notes], matched
+        return resolved[:limit], matched
 
     def _expand_path(self, path: str) -> list[str]:
         """Resolve one input path to note paths (single note or subtree)."""
         if path.endswith(".md"):
             return [path]
         # Expand generously so the pre-cap match count is known; the
-        # max_notes cap is applied by _resolve_paths afterwards.
+        # note limit is applied by _resolve_paths afterwards.
         cap = max(_RESOLVE_CAP, self._max_notes)
         toc = self._doc_mgr.get_toc(path, max_notes=cap)
         if isinstance(toc, SubtreeToc):

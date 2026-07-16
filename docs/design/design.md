@@ -2119,6 +2119,12 @@ concatenates batch outputs in order (no reduce). Coverage is capped by
 ``SUMMARIZE_MAX_NOTES`` alone; the result carries ``notes_included`` /
 ``notes_omitted`` so callers can tell exactly how much of the selection the
 summary covers, rather than inferring from a bare ``truncated`` flag.
+The tool also accepts a per-call ``max_notes`` argument, clamped to the
+configured cap so the operator keeps the per-call cost and latency ceiling
+(#925). The result reports the effective limit as ``notes_limit`` and, when
+notes were omitted, a ``hint`` string instructing the calling model to
+summarize subfolders in separate calls — guidance placed in the result is
+acted on far more reliably than schema documentation.
 
 **Dynamic instructions**: the server's MCP `instructions` string varies with
 `read_only` mode. When `read_only=True`, the instructions state this is a

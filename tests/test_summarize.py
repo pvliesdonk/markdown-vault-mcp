@@ -531,9 +531,48 @@ class TestSummarizeFacet:
         result = vault.summarizer.summarize(["sub"])
         assert len(result.sources) == 1
         assert result.truncated is True
-        # The omission is quantified, not just flagged (#922).
+        # The omission is quantified, not just flagged (#922), the effective
+        # limit is reported, and the result carries recovery guidance (#925).
         assert result.notes_included == 1
         assert result.notes_omitted == 1
+        assert result.notes_limit == 1
+        assert result.hint is not None
+        assert "1 of 2 matched notes" in result.hint
+        assert "subfolders" in result.hint
+
+    def test_per_call_max_notes_narrows_coverage(
+        self, make_vault: VaultFactory
+    ) -> None:
+        vault = make_vault(summarizer=FakeSummarizer())
+        result = vault.summarizer.summarize(["sub"], max_notes=1)
+        assert result.notes_included == 1
+        assert result.notes_omitted == 1
+        assert result.notes_limit == 1
+        assert result.hint is not None
+
+    def test_per_call_max_notes_clamped_to_server_cap(
+        self, make_vault: VaultFactory
+    ) -> None:
+        # The server cap is the operator's per-call ceiling; a caller cannot
+        # exceed it (#925).
+        vault = make_vault(summarizer=FakeSummarizer(), summarize_max_notes=1)
+        result = vault.summarizer.summarize(["sub"], max_notes=99)
+        assert result.notes_limit == 1
+        assert result.notes_included == 1
+        assert result.notes_omitted == 1
+
+    def test_per_call_max_notes_below_one_rejected(
+        self, make_vault: VaultFactory
+    ) -> None:
+        vault = make_vault(summarizer=FakeSummarizer())
+        with pytest.raises(ValueError, match="max_notes must be >= 1"):
+            vault.summarizer.summarize(["sub"], max_notes=0)
+
+    def test_full_coverage_has_no_hint(self, make_vault: VaultFactory) -> None:
+        vault = make_vault(summarizer=FakeSummarizer())
+        result = vault.summarizer.summarize(["sub"])
+        assert result.notes_omitted == 0
+        assert result.hint is None
 
     def test_max_input_chars_truncation(self, make_vault: VaultFactory) -> None:
         vault = make_vault(
@@ -870,9 +909,14 @@ async def test_summarize_visible_and_callable_with_key(
         assert ann.destructiveHint is False
 
         await wait_for_mcp_writer_drain(client)
-        result = await client.call_tool("summarize", {"paths": ["simple.md"]})
+        result = await client.call_tool(
+            "summarize", {"paths": ["simple.md"], "max_notes": 5}
+        )
     data = result.data
     assert data["summary"] == "SERVER SUMMARY"
     assert data["sources"] == [{"path": "simple.md", "title": "Simple"}]
+    # The per-call limit is accepted end to end and reported back (#925).
+    assert data["notes_limit"] == 5
+    assert data["hint"] is None
     # The note content reached the (fake) model.
     assert "cats" in fake.calls[0][1]

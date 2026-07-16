@@ -43,6 +43,7 @@ class SummarizeFacet:
         *,
         focus: str | None = None,
         mode: str = "synthesis",
+        max_notes: int | None = None,
     ) -> SummaryResult:
         """Summarize a note, a set of notes, or a folder subtree.
 
@@ -51,6 +52,8 @@ class SummarizeFacet:
                 notes via the subtree table-of-contents.
             focus: Optional free-text steer folded into the prompt.
             mode: ``"synthesis"`` (default) or ``"per_note"``.
+            max_notes: Optional per-call note limit, clamped to the server's
+                configured cap (#925). ``None`` uses the server cap.
 
         Returns:
             A :class:`~markdown_vault_mcp.types.SummaryResult`.
@@ -60,4 +63,6 @@ class SummarizeFacet:
             RuntimeError: If the summarization backend call fails.
         """
         self._require_built()
-        return self._summarize_mgr.summarize(paths, focus=focus, mode=mode)
+        return self._summarize_mgr.summarize(
+            paths, focus=focus, mode=mode, max_notes=max_notes
+        )

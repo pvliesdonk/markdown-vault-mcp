@@ -775,8 +775,14 @@ class SummaryResult:
             summary was clipped during the reduce phase.
         notes_included: Number of notes whose content reached the model.
         notes_omitted: Number of matched notes that were dropped by the
-            ``max_notes`` cap (or skipped as unreadable). Callers should
-            surface a warning when this is non-zero (#922).
+            note limit (or skipped as unreadable). Callers should surface a
+            warning when this is non-zero (#922).
+        notes_limit: The note limit in effect for this call: the per-call
+            ``max_notes`` argument clamped to the server's configured cap
+            (#925).
+        hint: Recovery guidance for the caller, set when notes were omitted;
+            ``None`` when the selection was fully covered. Guidance in the
+            result is acted on more reliably than schema docs (#925).
     """
 
     summary: str
@@ -785,6 +791,8 @@ class SummaryResult:
     truncated: bool
     notes_included: int = 0
     notes_omitted: int = 0
+    notes_limit: int = 0
+    hint: str | None = None
 
 
 WriteOperation = Literal["write", "edit", "delete", "rename"]
