@@ -2527,20 +2527,20 @@ chronic backlog.</p>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_SUMMARIZE_MAX_TOKENS</code></td>
 <td>int</td>
-<td><code>2048</code></td>
-<td>Upper bound on generated summary tokens per call</td>
+<td><code>8192</code></td>
+<td>Upper bound on generated tokens per call. On reasoning models (such as the default <code>gpt-5-mini</code>) this budget also covers internal reasoning tokens, so it must be comfortably larger than the summary itself; the server requests low reasoning effort where supported. Raise this if summarize fails with an exhausted-budget error</td>
 </tr>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_SUMMARIZE_MAX_NOTES</code></td>
 <td>int</td>
 <td><code>50</code></td>
-<td>Cap on notes summarised per call (subtree expansion is truncated to this many)</td>
+<td>Cap on notes summarised per tool call; this is the coverage and cost lever. Notes beyond it are omitted and counted in the response's <code>notes_omitted</code></td>
 </tr>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_SUMMARIZE_MAX_INPUT_CHARS</code></td>
 <td>int</td>
 <td><code>200000</code></td>
-<td>Aggregate cap on note characters sent to the model per call</td>
+<td>Character budget of a single model request. A larger input is split into batches, each batch summarized, and the partial summaries combined (map-reduce), so this bounds request size, not coverage. Smaller values mean more model calls</td>
 </tr>
 </tbody>
 </table>
