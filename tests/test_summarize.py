@@ -890,6 +890,22 @@ async def test_summarize_description_carries_live_note_limit(
     assert "{max_notes}" not in param_desc
 
 
+def test_apply_summarize_limits_tolerates_missing_description() -> None:
+    # A summarize tool registered without a docstring has description=None;
+    # the substitution must skip it rather than crash on None.replace().
+    from fastmcp import FastMCP
+
+    from markdown_vault_mcp._server_tools.summarize import apply_summarize_limits
+
+    mcp = FastMCP(name="test")
+
+    @mcp.tool(name="summarize")
+    def summarize(paths: list[str]) -> str:
+        return ",".join(paths)
+
+    apply_summarize_limits(mcp, max_notes=5)
+
+
 def test_instructions_carry_live_note_limit() -> None:
     from markdown_vault_mcp._instructions import build_default_instructions
 
