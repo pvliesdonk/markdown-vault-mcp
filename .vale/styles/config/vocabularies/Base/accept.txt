@@ -167,6 +167,8 @@ sdist
 SELinux
 stderr
 streamable
+subfolder
+subfolders
 subprocess
 subqueries
 subtree
