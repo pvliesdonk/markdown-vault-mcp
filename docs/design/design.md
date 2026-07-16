@@ -2124,7 +2124,14 @@ configured cap so the operator keeps the per-call cost and latency ceiling
 (#925). The result reports the effective limit as ``notes_limit`` and, when
 notes were omitted, a ``hint`` string instructing the calling model to
 summarize subfolders in separate calls — guidance placed in the result is
-acted on far more reliably than schema documentation.
+acted on far more reliably than schema documentation. The live configured
+limit is also substituted into the tool description at startup (a
+``{max_notes}`` placeholder in the docstring, rewritten by
+``apply_summarize_limits`` from the DOMAIN-WIRING block, which owns the
+loaded config) and surfaced in the server instructions via
+``build_default_instructions(summarize_note_limit=...)``, so a calling
+model can plan folder splits before its first call rather than reacting
+to a truncated result.
 
 **Dynamic instructions**: the server's MCP `instructions` string varies with
 `read_only` mode. When `read_only=True`, the instructions state this is a

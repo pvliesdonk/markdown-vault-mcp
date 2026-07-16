@@ -15,7 +15,10 @@ from markdown_vault_mcp.config import _ENV_PREFIX
 
 
 def build_default_instructions(
-    *, read_only: bool, conventions_file: str | None = None
+    *,
+    read_only: bool,
+    conventions_file: str | None = None,
+    summarize_note_limit: int | None = None,
 ) -> str:
     """Build the default instructions string based on read-only state.
 
@@ -34,6 +37,9 @@ def build_default_instructions(
             sentence and the read-only/read-write line.
         conventions_file: The configured per-folder conventions filename, or
             ``None`` when conventions are not configured.
+        summarize_note_limit: The configured summarize note limit, surfaced so
+            calling models can plan folder splits before their first call
+            (#925), or ``None`` when the summarize tool is not configured.
 
     Returns:
         The composed instructions string.
@@ -72,7 +78,19 @@ def build_default_instructions(
             "write/edit results."
         )
     )
-    domain_line = f"{prelude}{write_guidance}{search_guidance}{conventions_guidance}"
+    summarize_guidance = (
+        ""
+        if summarize_note_limit is None
+        else (
+            f" The 'summarize' tool reads at most {summarize_note_limit} "
+            "notes per call; for a folder larger than that (check with "
+            "'get_toc'), call it once per subfolder and combine the results."
+        )
+    )
+    domain_line = (
+        f"{prelude}{write_guidance}{search_guidance}"
+        f"{summarize_guidance}{conventions_guidance}"
+    )
     return _core_build_instructions(
         read_only=read_only,
         env_prefix=_ENV_PREFIX,

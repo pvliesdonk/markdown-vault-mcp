@@ -11,7 +11,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   server's `SUMMARIZE_MAX_NOTES` cap, and the response now reports the
   effective limit as `notes_limit`. When notes were omitted the response
   also carries a `hint` string telling the calling model to summarize
-  subfolders in separate calls for full coverage (#925).
+  subfolders in separate calls for full coverage (#925). The live
+  configured limit is substituted into the tool description and the server
+  instructions at startup, so calling models can plan folder splits before
+  their first call.
 
 ### Changed
 

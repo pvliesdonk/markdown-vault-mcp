@@ -866,6 +866,32 @@ async def test_summarize_hidden_without_key(
     assert "summarize" not in names
 
 
+async def test_summarize_description_carries_live_note_limit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The configured limit is substituted into the tool description so a
+    # calling model can plan folder splits before its first call (#925).
+    (tmp_path / "simple.md").write_text("# Simple\n\nhi", encoding="utf-8")
+    _base_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SUMMARIZE_MAX_NOTES", "7")
+    server = make_server()
+    async with Client(server) as client:
+        tools = {t.name: t for t in await client.list_tools()}
+    description = tools["summarize"].description or ""
+    assert "note limit of 7 notes" in description
+    assert "{max_notes}" not in description
+
+
+def test_instructions_carry_live_note_limit() -> None:
+    from markdown_vault_mcp._instructions import build_default_instructions
+
+    with_limit = build_default_instructions(read_only=True, summarize_note_limit=7)
+    assert "at most 7 notes per call" in with_limit
+    without = build_default_instructions(read_only=True)
+    assert "notes per call" not in without
+
+
 async def test_summarize_visible_with_base_url_only(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -48,11 +48,13 @@ def register(mcp: FastMCP) -> None:
         are split into batches, each batch is summarized, and the partial
         summaries are combined into the final result (several model calls, so
         large folders take proportionally longer). Coverage per call is capped
-        at the server's note limit (50 unless the operator changed it); the
-        response reports the effective limit as ``notes_limit``. When
-        ``notes_omitted`` is non-zero, the summary does NOT cover the whole
-        selection: for full coverage, summarize subfolders or smaller sets of
-        paths in separate calls and combine the results yourself.
+        at this server's note limit of {max_notes} notes; the response reports
+        the effective limit as ``notes_limit``. Plan ahead: when a folder
+        holds more notes than the limit (check with ``get_toc`` or
+        ``list_documents``), call this tool once per subfolder or per smaller
+        set of paths and combine the results yourself. When ``notes_omitted``
+        in a response is non-zero, the summary did NOT cover the whole
+        selection.
 
         Only available when a summarization backend is configured (an
         OPENAI_API_KEY or an OpenAI-compatible base URL). Note content is
@@ -71,9 +73,9 @@ def register(mcp: FastMCP) -> None:
                 references sources, or "per_note" for a separate summary per
                 note.
             max_notes: Optional per-call note limit. Values above the server's
-                configured cap are clamped to it (the cap bounds per-call cost
-                and latency); values below it narrow the work. Omit to use the
-                server cap.
+                cap of {max_notes} are clamped to it (the cap bounds per-call
+                cost and latency); values below it narrow the work. Omit to
+                use the server cap.
 
         Returns:
             A dict with:
@@ -108,3 +110,41 @@ def register(mcp: FastMCP) -> None:
             max_notes=max_notes,
         )
         return asdict(result)
+
+
+def apply_summarize_limits(mcp: FastMCP, *, max_notes: int) -> None:
+    """Substitute the live note limit into the summarize tool description.
+
+    A calling model can plan folder splits before its first call only when
+    the real configured number is visible in the tool schema; the docstring
+    above carries a ``{max_notes}`` placeholder for that purpose (#925).
+    Called from ``make_server``'s DOMAIN-WIRING block, where the loaded
+    config is available (registration itself is config-free by template
+    contract). Uses the same ``local_provider._components`` access as
+    ``fastmcp_pvl_core.register_tool_icons``, with the same guard.
+
+    Args:
+        mcp: The FastMCP instance the summarize tool was registered on.
+        max_notes: The configured per-call note limit to surface.
+
+    Raises:
+        RuntimeError: If FastMCP's internal component API changed.
+    """
+    from fastmcp.tools.base import Tool
+
+    try:
+        components = mcp.local_provider._components
+    except AttributeError as exc:  # pragma: no cover - fastmcp API drift
+        raise RuntimeError(
+            "FastMCP internal API changed: cannot enumerate tools via "
+            "local_provider._components."
+        ) from exc
+    for component in components.values():
+        if (
+            isinstance(component, Tool)
+            and component.name == "summarize"
+            and component.description
+        ):
+            component.description = component.description.replace(
+                "{max_notes}", str(max_notes)
+            )

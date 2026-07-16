@@ -164,6 +164,9 @@ def make_server(
     mcp.instructions = config.instructions or build_default_instructions(
         read_only=is_read_only,
         conventions_file=config.content.conventions_file,
+        summarize_note_limit=(
+            config.summarize.max_notes if config.summarize.has_provider() else None
+        ),
     )
 
     # Honor the passed config's server name the same way as instructions/icons.
@@ -231,6 +234,14 @@ def make_server(
     # clone a git repo as a side effect — see the git-managed gate above).
     if not config.summarize.has_provider():
         mcp.disable(tags={"summarize"})
+    else:
+        # Substitute the live note limit into the tool description so calling
+        # models can plan folder splits before their first call (#925).
+        from markdown_vault_mcp._server_tools.summarize import (
+            apply_summarize_limits,
+        )
+
+        apply_summarize_limits(mcp, max_notes=config.summarize.max_notes)
 
     # Hide MCP-Apps UI tools (browse_vault, show_context) when the client
     # does not render the MCP Apps panels. Set
