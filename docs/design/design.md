@@ -706,6 +706,24 @@ merely leaves a larger diff for the next successful run to converge. A
 cold build (empty vector index) and `force=True` behave exactly as
 before.
 
+The **incremental reindex** honours the same contract when the vector
+sidecar is already loaded (#930). `reindex()` upserts every changed note
+into the FTS index and then inline-embeds it, in the same bounded batches
+as the cold and convergence paths — never a note's whole chunk list in one
+oversized request. A provider failure (a request timeout being the
+motivating case, but also token-context rejection or a transient outage)
+is logged and skipped for that one note, leaving its existing vectors
+intact, rather than aborting the whole reindex. This keeps the FTS
+refresh — including the `document_tags` structured-filter set — committed
+for **all** changed notes even while the embedding backend is timing out,
+so filters on freshly-edited frontmatter work immediately; the skipped
+notes converge on the next `build_embeddings` pass (their FTS rows differ
+from the stale vectors, so the signature diff re-embeds them). Before this
+fix a single inline-embed timeout raised out of `reindex()`, stranding the
+FTS/`document_tags` refresh half-applied while the tracker never advanced,
+so every retry re-detected the same diff and failed identically until a
+cold-boot rebuild ran the resilient batch path instead.
+
 ### Error Handling
 
 Two-layer model:

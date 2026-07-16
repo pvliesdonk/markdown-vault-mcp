@@ -658,6 +658,51 @@ class TestSkipStateMemory:
         assert result.deleted == 1
         vectors.save.assert_called_once()
 
+    def test_inline_embed_timeout_does_not_abort_reindex(
+        self, index_vault: Path, tmp_path: Path
+    ) -> None:
+        """A provider timeout during inline reindex embedding is non-fatal (#930).
+
+        The cold-boot path tolerates provider failures per batch; the
+        incremental path must do the same. A timeout while embedding one
+        changed note may not abort the whole reindex — the FTS refresh must
+        still commit for that note (so structured filters on freshly-edited
+        frontmatter work immediately) and the note's existing vectors must
+        be left intact for the next ``build_embeddings`` convergence pass.
+        """
+        mgr, holder = self._mgr_with_embeddings(index_vault, tmp_path)
+        mgr.build_index()
+        mgr.build_embeddings()
+        vectors = holder["vectors"]
+        assert vectors is not None
+        # Old vectors exist for alpha.md before the edit.
+        assert "alpha.md" in vectors.chunks_by_path()
+
+        # Arm the provider to time out on every embed call from now on.
+        def _boom(_texts: list[str]) -> list[list[float]]:
+            raise RuntimeError("OllamaProvider embeddings request failed: timed out")
+
+        mgr._embedding_provider.embed = _boom  # type: ignore[method-assign,union-attr]
+
+        (index_vault / "alpha.md").write_text(
+            "---\ntitle: Alpha\nstatus: active\n---\n# Alpha\n\nEdited body.\n",
+            encoding="utf-8",
+        )
+
+        # Reindex must NOT raise even though every embed call fails.
+        result = mgr.reindex()
+        assert result.modified == 1
+
+        # FTS committed the edit: the new body is queryable/filterable.
+        alpha_text = "\n".join(
+            r["content"] for r in mgr._fts.list_chunks() if r["path"] == "alpha.md"
+        )
+        assert "Edited body." in alpha_text
+
+        # The stale vectors for alpha.md are kept (not dropped) so semantic
+        # search stays usable until convergence re-embeds them.
+        assert "alpha.md" in vectors.chunks_by_path()
+
 
 # ---------------------------------------------------------------------------
 # build_embeddings

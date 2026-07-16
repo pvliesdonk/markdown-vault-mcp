@@ -720,6 +720,12 @@ class IndexManager:
         Inline embedding runs only when the vector sidecar is already
         loaded — :meth:`reindex` deliberately keeps provider failures on
         the converge-and-skip path otherwise (see the purge comments).
+        When it does run, a provider failure for one note is logged and
+        skipped rather than aborting the whole reindex (#930): the FTS
+        refresh must commit for every changed note (so structured filters
+        on freshly-edited frontmatter work immediately) even while the
+        embedding backend is timing out, and the skipped note's vectors
+        converge on the next ``build_embeddings`` pass.
 
         Args:
             parsed: ``(path, note)`` pairs from :meth:`_parse_changed_notes`.
@@ -731,6 +737,7 @@ class IndexManager:
         """
         indexed_added = 0
         indexed_modified = 0
+        embed_failed = 0
         for path, note in parsed:
             try:
                 self._fts.upsert_note(note)
@@ -743,17 +750,74 @@ class IndexManager:
                 indexed_modified += 1
 
             if vectors is not None and self._embeddings_path is not None:
-                vectors.delete_by_path(note.path)
-                texts, meta = self._embed_inputs(
-                    path=note.path,
-                    title=note.title,
-                    folder=_derive_folder(note.path),
-                    frontmatter=note.frontmatter,
-                    chunks=note.chunks,
-                )
-                if texts:
-                    vectors.add(texts, meta)
+                embed_failed += self._embed_note_inline(vectors, note)
+        if embed_failed:
+            logger.warning(
+                "reindex_inline_embed_failed_docs total=%d "
+                "(existing vectors kept; retried on the next build_embeddings)",
+                embed_failed,
+            )
         return indexed_added, indexed_modified
+
+    def _embed_note_inline(self, vectors: VectorIndex, note: ParsedNote) -> int:
+        """Embed one changed note's chunks inline, resiliently (#930).
+
+        Mirrors the cold-build / convergence contract: chunks are embedded
+        in bounded batches (:data:`_EMBEDDING_BATCH_SIZE`) — not the whole
+        note in one oversized request — and a provider failure (a request
+        timeout being the motivating case, but also token-context rejection
+        or a transient outage) is logged and swallowed, leaving the note's
+        existing vectors untouched. Embedding runs to completion *before*
+        the index is mutated, so a mid-note failure can neither drop the
+        old vectors nor leave a partial row set. A failed note is left for
+        the next ``build_embeddings`` convergence pass to re-embed (its FTS
+        row differs from the stale vector, so the signature diff refreshes
+        it).
+
+        Args:
+            vectors: The loaded vector index to mutate.
+            note: The parsed note whose chunks to (re-)embed.
+
+        Returns:
+            ``0`` on success (including an empty chunk set), ``1`` when the
+            provider failed and the note's vectors were left unchanged.
+        """
+        if self._embedding_provider is None:
+            return 0
+        texts, meta = self._embed_inputs(
+            path=note.path,
+            title=note.title,
+            folder=_derive_folder(note.path),
+            frontmatter=note.frontmatter,
+            chunks=note.chunks,
+        )
+        if not texts:
+            # No embeddable content — drop any stale vectors for the path.
+            vectors.delete_by_path(note.path)
+            return 0
+        raw: list[list[float]] = []
+        try:
+            for start in range(0, len(texts), _EMBEDDING_BATCH_SIZE):
+                raw.extend(
+                    self._embedding_provider.embed(
+                        texts[start : start + _EMBEDDING_BATCH_SIZE]
+                    )
+                )
+        except Exception as exc:
+            # Broad by design: providers raise heterogeneous types for a
+            # timeout or oversized batch (RuntimeError, httpx errors, ...).
+            # Keep the traceback diagnosable while the reindex carries on.
+            logger.warning(
+                "reindex_inline_embed_skip_doc path=%s chunks=%d err=%s",
+                note.path,
+                len(texts),
+                exc,
+                exc_info=True,
+            )
+            return 1
+        vectors.delete_by_path(note.path)
+        vectors.add_vectors(raw, meta)
+        return 0
 
     # ------------------------------------------------------------------
     # Embeddings
