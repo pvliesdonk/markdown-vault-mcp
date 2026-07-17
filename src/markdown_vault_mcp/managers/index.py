@@ -49,6 +49,15 @@ logger = logging.getLogger(__name__)
 # when the entire corpus is sent in one batch (see issue #159).
 _EMBEDDING_BATCH_SIZE = 4
 
+# Disposition codes returned by IndexManager._embed_note_inline so the caller
+# can log an accurate aggregate: a provider failure is caught before the index
+# is touched (old vectors kept), whereas a dimension mismatch is caught after
+# delete_by_path has run (old vectors removed) — the two must not share a
+# "vectors kept" message (#935).
+_EMBED_OK = 0  # embedded (or nothing to embed)
+_EMBED_KEPT = 1  # provider failed before mutation — existing vectors preserved
+_EMBED_DROPPED = 2  # dimension mismatch after delete — existing vectors removed
+
 
 class IndexManager:
     """Manages index building, reindexing, and embedding lifecycle.
@@ -737,7 +746,8 @@ class IndexManager:
         """
         indexed_added = 0
         indexed_modified = 0
-        embed_failed = 0
+        embed_kept = 0
+        embed_dropped = 0
         for path, note in parsed:
             try:
                 self._fts.upsert_note(note)
@@ -750,12 +760,22 @@ class IndexManager:
                 indexed_modified += 1
 
             if vectors is not None and self._embeddings_path is not None:
-                embed_failed += self._embed_note_inline(vectors, note)
-        if embed_failed:
+                outcome = self._embed_note_inline(vectors, note)
+                if outcome == _EMBED_KEPT:
+                    embed_kept += 1
+                elif outcome == _EMBED_DROPPED:
+                    embed_dropped += 1
+        if embed_kept:
             logger.warning(
                 "reindex_inline_embed_failed_docs total=%d "
                 "(existing vectors kept; retried on the next build_embeddings)",
-                embed_failed,
+                embed_kept,
+            )
+        if embed_dropped:
+            logger.warning(
+                "reindex_inline_embed_dropped_docs total=%d "
+                "(vectors removed; re-embedded on the next build_embeddings)",
+                embed_dropped,
             )
         return indexed_added, indexed_modified
 
@@ -775,7 +795,11 @@ class IndexManager:
         mismatch raises :class:`ValueError` from
         :meth:`~markdown_vault_mcp.vector_index.VectorIndex.add_vectors`, and
         that too must skip only this one note rather than abort the whole
-        reindex loop. Either way a failed note is left for the next
+        reindex loop. The two failure dispositions differ, though — a provider
+        failure is caught *before* the index is touched (old vectors kept),
+        while a dimension mismatch is caught *after* ``delete_by_path`` (old
+        vectors removed) — so they return distinct codes for accurate
+        aggregate logging. Either way the note is left for the next
         ``build_embeddings`` convergence pass to re-embed (its FTS row differs
         from the stale vector, so the signature diff refreshes it).
 
@@ -784,12 +808,13 @@ class IndexManager:
             note: The parsed note whose chunks to (re-)embed.
 
         Returns:
-            ``0`` on success (including an empty chunk set), ``1`` when the
-            provider failed or the vector mutation was rejected, leaving the
-            note for the next convergence pass.
+            :data:`_EMBED_OK` on success (including an empty chunk set),
+            :data:`_EMBED_KEPT` when the provider failed before any mutation
+            (existing vectors preserved), or :data:`_EMBED_DROPPED` when the
+            vector mutation was rejected after the stale vectors were removed.
         """
         if self._embedding_provider is None:
-            return 0
+            return _EMBED_OK
         texts, meta = self._embed_inputs(
             path=note.path,
             title=note.title,
@@ -800,7 +825,7 @@ class IndexManager:
         if not texts:
             # No embeddable content — drop any stale vectors for the path.
             vectors.delete_by_path(note.path)
-            return 0
+            return _EMBED_OK
         raw: list[list[float]] = []
         try:
             for start in range(0, len(texts), _EMBEDDING_BATCH_SIZE):
@@ -813,6 +838,7 @@ class IndexManager:
             # Broad by design: providers raise heterogeneous types for a
             # timeout or oversized batch (RuntimeError, httpx errors, ...).
             # Keep the traceback diagnosable while the reindex carries on.
+            # Caught before any mutation, so the note's old vectors are kept.
             logger.warning(
                 "reindex_inline_embed_skip_doc path=%s chunks=%d err=%s",
                 note.path,
@@ -820,7 +846,7 @@ class IndexManager:
                 exc,
                 exc_info=True,
             )
-            return 1
+            return _EMBED_KEPT
         try:
             vectors.delete_by_path(note.path)
             vectors.add_vectors(raw, meta)
@@ -828,7 +854,8 @@ class IndexManager:
             # A dimension mismatch (add_vectors, vector_index.py) must not
             # abort the reindex loop with the note half-updated (#935).
             # Narrow to ValueError so genuine programming errors still
-            # surface; the note is left for the next convergence pass.
+            # surface; delete_by_path has already run, so the note's old
+            # vectors are gone until the next convergence pass re-embeds it.
             logger.warning(
                 "reindex_inline_embed_dim_mismatch path=%s chunks=%d err=%s",
                 note.path,
@@ -836,8 +863,8 @@ class IndexManager:
                 exc,
                 exc_info=True,
             )
-            return 1
-        return 0
+            return _EMBED_DROPPED
+        return _EMBED_OK
 
     # ------------------------------------------------------------------
     # Embeddings
@@ -1098,6 +1125,7 @@ class IndexManager:
         added = 0
         removed = 0
         failed = 0
+        dropped = 0
         # Embed per document, in bounded batches (#159), so a provider
         # failure affects exactly one document: its old vectors stay
         # untouched and every other document still converges.
@@ -1156,8 +1184,10 @@ class IndexManager:
                 # A dimension mismatch (add_vectors, vector_index.py) must
                 # skip only this document, not abort the whole convergence
                 # pass (#935). Narrow to ValueError so genuine programming
-                # errors still surface; the doc converges on the next run.
-                failed += len(texts)
+                # errors still surface. delete_by_path has already run, so
+                # this document's vectors are removed (unlike the provider
+                # branch above); tracked separately for an accurate log.
+                dropped += len(texts)
                 logger.warning(
                     "build_embeddings_converge_dim_mismatch path=%s chunks=%d err=%s",
                     path,
@@ -1178,6 +1208,12 @@ class IndexManager:
                 "build_embeddings_converge_failed_chunks total=%d "
                 "(existing vectors kept; retried on the next run)",
                 failed,
+            )
+        if dropped:
+            logger.warning(
+                "build_embeddings_converge_dropped_chunks total=%d "
+                "(vectors removed; re-embedded on the next run)",
+                dropped,
             )
         logger.info(
             "build_embeddings_converged added=%d removed=%d up_to_date=%d",

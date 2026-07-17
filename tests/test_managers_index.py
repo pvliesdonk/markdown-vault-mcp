@@ -659,7 +659,7 @@ class TestSkipStateMemory:
         vectors.save.assert_called_once()
 
     def test_inline_embed_timeout_does_not_abort_reindex(
-        self, index_vault: Path, tmp_path: Path
+        self, index_vault: Path, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
         """A provider timeout during inline reindex embedding is non-fatal (#930).
 
@@ -690,7 +690,8 @@ class TestSkipStateMemory:
         )
 
         # Reindex must NOT raise even though every embed call fails.
-        result = mgr.reindex()
+        with caplog.at_level(logging.WARNING):
+            result = mgr.reindex()
         assert result.modified == 1
 
         # FTS committed the edit: the new body is queryable/filterable.
@@ -702,6 +703,12 @@ class TestSkipStateMemory:
         # The stale vectors for alpha.md are kept (not dropped) so semantic
         # search stays usable until convergence re-embeds them.
         assert "alpha.md" in vectors.chunks_by_path()
+
+        # A provider failure is caught before mutation, so the aggregate log
+        # accurately reports the vectors as kept — not dropped (#935).
+        messages = [r.getMessage() for r in caplog.records]
+        assert any("reindex_inline_embed_failed_docs" in m for m in messages)
+        assert not any("reindex_inline_embed_dropped_docs" in m for m in messages)
 
     def test_embed_note_inline_empty_chunks_drops_stale_vectors(
         self, index_vault: Path, tmp_path: Path
@@ -769,7 +776,7 @@ class TestSkipStateMemory:
         assert "alpha.md" in vectors.chunks_by_path()
 
     def test_inline_embed_dimension_mismatch_does_not_abort_reindex(
-        self, index_vault: Path, tmp_path: Path
+        self, index_vault: Path, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
         """A dimension mismatch on one note skips it, not the whole loop (#935).
 
@@ -777,7 +784,9 @@ class TestSkipStateMemory:
         not match the dimension of the vectors already in the index. That
         must skip only the offending note — the FTS refresh still commits and
         every other document's vectors survive — rather than propagating out
-        of ``reindex()``.
+        of ``reindex()``. Because ``delete_by_path`` runs before the mismatch
+        is raised, the note's own vectors are *removed*, so the aggregate log
+        must report them as dropped, not kept.
         """
         mgr, holder = self._mgr_with_embeddings(index_vault, tmp_path)
         mgr.build_index()
@@ -802,7 +811,8 @@ class TestSkipStateMemory:
         )
 
         # Must NOT raise even though add_vectors rejects the mismatched batch.
-        result = mgr.reindex()
+        with caplog.at_level(logging.WARNING):
+            result = mgr.reindex()
         assert result.modified == 1
 
         # FTS committed the edit.
@@ -815,6 +825,12 @@ class TestSkipStateMemory:
         after = vectors.chunks_by_path()
         assert "beta.md" in after
         assert "alpha.md" not in after
+
+        # The aggregate log reports the removed vectors accurately — dropped,
+        # not "kept" (#935).
+        messages = [r.getMessage() for r in caplog.records]
+        assert any("reindex_inline_embed_dropped_docs" in m for m in messages)
+        assert not any("reindex_inline_embed_failed_docs" in m for m in messages)
 
 
 # ---------------------------------------------------------------------------
@@ -853,13 +869,13 @@ class TestBuildEmbeddings:
         assert vectors_holder["vectors"] is not None
 
     def test_converge_dimension_mismatch_skips_only_that_document(
-        self, index_vault: Path, tmp_path: Path
+        self, index_vault: Path, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
         """A dim mismatch on one doc skips it, not the whole converge (#935).
 
         Convergence embeds per document and mutates the index per document;
         an ``add_vectors`` dimension mismatch must skip just the offending
-        document (counted as failed, retried next run) while every other
+        document (counted as dropped, retried next run) while every other
         document still converges — not abort ``build_embeddings``.
         """
         from tests.conftest import MockEmbeddingProvider
@@ -896,12 +912,18 @@ class TestBuildEmbeddings:
         provider.embed = _wrong_dim  # type: ignore[method-assign]
 
         # Converge must not raise; alpha is skipped (0 net adds), others stay.
-        added = mgr.build_embeddings()
+        with caplog.at_level(logging.WARNING):
+            added = mgr.build_embeddings()
         assert added == 0
 
         after = vectors.chunks_by_path()
         assert "beta.md" in after
         assert "alpha.md" not in after
+
+        # alpha's vectors were removed by delete_by_path before the mismatch,
+        # so the aggregate log reports them as dropped, not kept (#935).
+        messages = [r.getMessage() for r in caplog.records]
+        assert any("build_embeddings_converge_dropped_chunks" in m for m in messages)
 
     def test_progress_logging_throttled_and_per_batch_at_debug(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
