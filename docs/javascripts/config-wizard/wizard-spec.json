@@ -330,6 +330,32 @@
       "advancedGroup": "Summarization"
     },
     {
+      "id": "summarize_timeout",
+      "label": "Summarize per-request timeout (seconds)",
+      "help": "Wall-clock budget for one backend call. On timeout the tool returns an actionable error instead of a vague client timeout. Set below your MCP client's request timeout. Default 120.",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_SUMMARIZE_TIMEOUT",
+      "showIf": {
+        "summarize": [
+          "openai"
+        ]
+      },
+      "advancedGroup": "Summarization"
+    },
+    {
+      "id": "summarize_inline_timeout",
+      "label": "Summarize inline deadline (seconds)",
+      "help": "How long summarize waits before promoting a slow call to a background job (retrieved via get_summary). Keep below your MCP client's request timeout. Must be <= the per-request timeout. Default 30.",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_SUMMARIZE_INLINE_TIMEOUT",
+      "showIf": {
+        "summarize": [
+          "openai"
+        ]
+      },
+      "advancedGroup": "Summarization"
+    },
+    {
       "id": "git",
       "label": "Git integration",
       "help": "no-git: plain dir. commit-only: local commits. managed: server clones/pulls/pushes.",

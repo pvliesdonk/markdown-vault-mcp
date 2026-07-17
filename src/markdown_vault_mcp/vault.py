@@ -37,6 +37,7 @@ if TYPE_CHECKING:
     from markdown_vault_mcp.git import GitWriteStrategy, PullResult
     from markdown_vault_mcp.providers import EmbeddingProvider
     from markdown_vault_mcp.summarizer import Summarizer
+    from markdown_vault_mcp.summary_jobs import SummaryJobStore
     from markdown_vault_mcp.types import (
         WriteCallback,
     )
@@ -231,6 +232,7 @@ class Vault:
         summarizer: Summarizer | None = None,
         summarize_max_notes: int = 50,
         summarize_max_input_chars: int = 200_000,
+        summarize_inline_timeout: float = 30.0,
         title_field: str = "title",
         searchable_frontmatter_fields: list[str] | None = None,
         embed_context: bool = False,
@@ -312,6 +314,7 @@ class Vault:
         self._summarizer = summarizer
         self._summarize_max_notes = summarize_max_notes
         self._summarize_max_input_chars = summarize_max_input_chars
+        self._summarize_inline_timeout = summarize_inline_timeout
 
         # Default state path: {source_dir}/.markdown_vault_mcp/state.json
         if state_path is None:
@@ -463,10 +466,14 @@ class Vault:
             coordinator=self._coordinator, index_mgr=self._index_mgr
         )
         # Summarize facet is present only when a backend was supplied (the
-        # summarize tool is otherwise hidden at the server layer).
+        # summarize tool is otherwise hidden at the server layer). The
+        # background-job store rides alongside it: it only ever holds
+        # promoted summarize jobs, so it shares the facet's lifetime (#937).
         self._summarize_facet: SummarizeFacet | None = None
+        self._summary_jobs: SummaryJobStore | None = None
         if self._summarizer is not None:
             from markdown_vault_mcp.managers.summarize import SummarizeManager
+            from markdown_vault_mcp.summary_jobs import SummaryJobStore
 
             summarize_mgr = SummarizeManager(
                 doc_mgr=self._doc_mgr,
@@ -478,6 +485,7 @@ class Vault:
                 summarize_mgr=summarize_mgr,
                 require_built=self._require_built,
             )
+            self._summary_jobs = SummaryJobStore()
 
     # ------------------------------------------------------------------
     # Facets (#604)
@@ -519,6 +527,31 @@ class Vault:
                 "pip install 'markdown-vault-mcp[summarize]'"
             )
         return self._summarize_facet
+
+    @property
+    def summary_jobs(self) -> SummaryJobStore:
+        """Background-summarize job store (#937).
+
+        Holds summaries promoted to background jobs when a ``summarize`` call
+        exceeds its inline deadline; polled by the ``get_summary`` tool.
+
+        Raises:
+            RuntimeError: If no summarization backend was configured (the
+                store rides alongside the summarize facet).
+        """
+        if self._summary_jobs is None:
+            raise RuntimeError(
+                "Summarization is not configured. Set OPENAI_API_KEY (or an "
+                "OpenAI-compatible base URL) and install the SDK with: "
+                "pip install 'markdown-vault-mcp[summarize]'"
+            )
+        return self._summary_jobs
+
+    @property
+    def summarize_inline_timeout(self) -> float:
+        """Soft deadline (seconds) before a ``summarize`` call is promoted to
+        a background job (#937)."""
+        return self._summarize_inline_timeout
 
     @property
     def conventions(self) -> ConventionsResolver:

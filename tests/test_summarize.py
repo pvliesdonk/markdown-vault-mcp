@@ -189,11 +189,31 @@ class TestSummarizeConfig:
             {"max_tokens": 0},
             {"max_notes": 0},
             {"max_input_chars": 0},
+            {"timeout": 0},
+            {"timeout": -1.0},
+            {"inline_timeout": 0},
+            {"inline_timeout": -5.0},
         ],
     )
     def test_validation_rejects_non_positive(self, kwargs: dict[str, int]) -> None:
         with pytest.raises(ValueError):
             SummarizeConfig(**kwargs)
+
+    def test_inline_timeout_above_timeout_rejected(self) -> None:
+        with pytest.raises(ValueError, match="inline_timeout"):
+            SummarizeConfig(timeout=30.0, inline_timeout=60.0)
+
+    def test_timeout_defaults(self) -> None:
+        cfg = SummarizeConfig()
+        assert cfg.timeout == 120.0
+        assert cfg.inline_timeout == 30.0
+
+    def test_from_env_reads_timeouts(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SUMMARIZE_TIMEOUT", "200")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SUMMARIZE_INLINE_TIMEOUT", "45")
+        cfg = SummarizeConfig.from_env("MARKDOWN_VAULT_MCP")
+        assert cfg.timeout == 200.0
+        assert cfg.inline_timeout == 45.0
 
 
 # ---------------------------------------------------------------------------
@@ -276,6 +296,9 @@ def _install_fake_openai(
     class BadRequestError(OpenAIError):
         pass
 
+    class APITimeoutError(OpenAIError):
+        pass
+
     class _Message:
         def __init__(self) -> None:
             self.content = content
@@ -295,6 +318,8 @@ def _install_fake_openai(
             captured["calls"].append(kwargs)
             if raise_error == "api":
                 raise OpenAIError("upstream boom")
+            if raise_error == "timeout":
+                raise APITimeoutError("request timed out")
             if raise_error == "bad_request":
                 raise BadRequestError("model not found")
             if reject_reasoning_effort and "reasoning_effort" in kwargs:
@@ -309,16 +334,21 @@ def _install_fake_openai(
 
     class OpenAI:
         def __init__(
-            self, api_key: str | None = None, base_url: str | None = None
+            self,
+            api_key: str | None = None,
+            base_url: str | None = None,
+            timeout: float | None = None,
         ) -> None:
             captured["api_key"] = api_key
             captured["base_url"] = base_url
+            captured["timeout"] = timeout
             self.chat = _Chat()
 
     mod = types.ModuleType("openai")
     mod.OpenAI = OpenAI  # type: ignore[attr-defined]
     mod.OpenAIError = OpenAIError  # type: ignore[attr-defined]
     mod.BadRequestError = BadRequestError  # type: ignore[attr-defined]
+    mod.APITimeoutError = APITimeoutError  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "openai", mod)
     return captured
 
@@ -414,6 +444,23 @@ class TestOpenAISummarizer:
         with pytest.raises(
             RuntimeError, match="OpenAI-compatible summarization failed"
         ):
+            summ.summarize("s", "u")
+
+    def test_client_gets_configured_timeout(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        captured = _install_fake_openai(monkeypatch, content="ok")
+        OpenAISummarizer("k", "m", max_tokens=10, timeout=42.0)
+        assert captured["timeout"] == 42.0
+
+    def test_timeout_becomes_actionable_runtime_error(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # A backend timeout must surface as a specific, actionable message
+        # (not the generic "failed") so the model/user knows what to do (#937).
+        _install_fake_openai(monkeypatch, raise_error="timeout")
+        summ = OpenAISummarizer("k", "m", max_tokens=10, timeout=90.0)
+        with pytest.raises(RuntimeError, match="exceeded the 90s per-request budget"):
             summ.summarize("s", "u")
 
     def test_refusal_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:

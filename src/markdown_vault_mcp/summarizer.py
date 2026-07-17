@@ -73,6 +73,9 @@ class OpenAISummarizer(Summarizer):
         base_url: Endpoint base URL. ``None`` uses the SDK default
             (``https://api.openai.com/v1``).
         max_tokens: Upper bound on generated tokens per call.
+        timeout: Per-request wall-clock budget in seconds. Exceeding it
+            raises a clear, actionable :class:`RuntimeError` instead of
+            running to the SDK's ~600s default (#937).
     """
 
     def __init__(
@@ -82,6 +85,7 @@ class OpenAISummarizer(Summarizer):
         *,
         base_url: str | None = None,
         max_tokens: int,
+        timeout: float = 120.0,
     ) -> None:
         """Initialise the client, lazily importing the openai SDK.
 
@@ -90,6 +94,7 @@ class OpenAISummarizer(Summarizer):
             model: Chat model id.
             base_url: Endpoint base URL, or ``None`` for the SDK default.
             max_tokens: Upper bound on generated tokens per call.
+            timeout: Per-request wall-clock budget in seconds.
 
         Raises:
             ImportError: If the ``openai`` SDK is not installed.
@@ -102,12 +107,19 @@ class OpenAISummarizer(Summarizer):
                 "Install it with: pip install 'markdown-vault-mcp[summarize]'"
             ) from exc
         self._openai = openai
+        # A bounded per-request timeout (mirrors the embeddings transport's
+        # 30s) so a slow synthesis fails fast server-side with an actionable
+        # message rather than running to the SDK's ~600s default while the
+        # MCP client abandons the request at its own opaque timeout (#937).
         self._client = openai.OpenAI(
-            api_key=api_key or _PLACEHOLDER_API_KEY, base_url=base_url
+            api_key=api_key or _PLACEHOLDER_API_KEY,
+            base_url=base_url,
+            timeout=timeout,
         )
         self._model = model
         self._base_url = base_url
         self._max_tokens = max_tokens
+        self._timeout = timeout
 
     def _create(self, system: str, user: str) -> Any:
         """Call chat.completions.create, adapting parameters to the server.
@@ -183,6 +195,23 @@ class OpenAISummarizer(Summarizer):
         """
         try:
             response = self._create(system, user)
+        except self._openai.APITimeoutError as exc:
+            # A vague client-side timeout is exactly what #937 is about:
+            # convert it into a specific, actionable server-side error that
+            # names the budget and the concrete ways to fit under it, so the
+            # model/user sees guidance instead of an opaque "timed out".
+            logger.warning(
+                "summarize_timeout model=%s timeout=%ss", self._model, self._timeout
+            )
+            raise RuntimeError(
+                f"Summarization exceeded the {self._timeout:g}s per-request budget. "
+                "The selection is too large or the focus too demanding to "
+                "generate within the limit. Narrow the request — fewer paths, "
+                "a smaller max_notes, a more focused 'focus', or mode='per_note' "
+                "— or, if the backend is simply slow, raise "
+                "MARKDOWN_VAULT_MCP_SUMMARIZE_TIMEOUT (keep it below your MCP "
+                "client's request timeout)."
+            ) from exc
         except self._openai.OpenAIError as exc:
             # Expected upstream failures (auth, rate limit, 5xx): surface a
             # user-facing error string rather than leak the SDK exception.
@@ -295,6 +324,7 @@ def get_summarizer(config: ProjectConfig) -> Summarizer:
             model=summ.openai_model,
             base_url=summ.openai_base_url,
             max_tokens=summ.max_tokens,
+            timeout=summ.timeout,
         )
 
     raise RuntimeError(

@@ -66,6 +66,7 @@ markdown-vault-mcp (new package)
 +-- tracker.py        -- hash-based change detection
 +-- vault.py          -- thin composition root: lifecycle, wiring, facet accessors (index-write → indexing/coordinator.py)
 +-- write_callback.py -- WriteCallbackDispatcher: deferred git-commit callback worker (#599)
++-- summary_jobs.py   -- SummaryJobStore: in-memory background-summarize job store for the get_summary poll tool (#937)
 +-- config.py         -- template-owned skeleton: ProjectConfig fields/from_env in sentinels only (#900)
 +-- config_sections/  -- domain-grouped sub-configs (git/indexing/embeddings/search/sync/content)
 |   +-- _assembly.py   -- domain config-assembly kept out of template-owned config.py: to_vault_kwargs, derive_max_chunk_chars, git-strategy builder (#900)
@@ -2108,7 +2109,8 @@ pattern). Each tool is annotated with MCP `ToolAnnotations`:
 | `get_orphan_notes` | Find notes with no inbound or outbound links | `True` | `False` | `True` |
 | `get_most_linked` | Find notes ranked by number of inbound links | `True` | `False` | `True` |
 | `get_connection_path` | Shortest undirected path between two notes (BFS, max 10 hops) | `True` | `False` | `True` |
-| `summarize` | LLM summary of a note/set/subtree (references sources by path) | `True` | `False` | **`False`** |
+| `summarize` | LLM summary of a note/set/subtree (references sources by path); slow calls promote to a background job (#937) | `True` | `False` | **`False`** |
+| `get_summary` | Retrieve a promoted `summarize` job by `job_id` (#937) | `True` | `False` | **`False`** |
 | `fetch` | Download from URL and save to vault (MCP-to-MCP transfer) | `False` | `False` | `True` |
 
 **Tool name note**: the MCP tool is registered as `list_documents` (not `list`)
@@ -2179,6 +2181,35 @@ loaded config) and surfaced in the server instructions via
 ``build_default_instructions(summarize_note_limit=...)``, so a calling
 model can plan folder splits before its first call rather than reacting
 to a truncated result.
+
+**Latency containment (#937).** An LLM summary is a long, unbounded
+operation; left unguarded it outruns the MCP client's request timeout and
+surfaces as an opaque client-side "timed out" while the backend call keeps
+running to the SDK's ~600 s default and the work is discarded. Two bounds
+contain this, both operator-tunable:
+
+- **Per-request timeout** — ``OpenAISummarizer`` constructs its client with
+  ``timeout=SUMMARIZE_TIMEOUT`` (default 120 s, mirroring the embeddings
+  transport's fixed 30 s). An ``openai.APITimeoutError`` is mapped to a
+  specific, actionable ``RuntimeError`` — naming the budget and the ways to
+  fit under it (fewer paths, a smaller ``max_notes``, a tighter ``focus``,
+  ``per_note`` mode, or a higher ``SUMMARIZE_TIMEOUT``) — so the caller sees
+  guidance rather than a bare timeout.
+- **Inline soft-deadline with background promotion** — the ``summarize``
+  tool runs the work as an asyncio task and waits ``SUMMARIZE_INLINE_TIMEOUT``
+  (default 30 s, ``<= SUMMARIZE_TIMEOUT``) for it. A summary that finishes in
+  time returns inline with ``"status": "completed"``. A slower one is
+  *promoted*: the tool registers a job in the process-local
+  ``SummaryJobStore``, returns ``{"status": "in_progress", "job_id": …}``
+  immediately, and lets the task keep running (held alive in a module-level
+  set; a done-callback records its result or failure into the store). The
+  ``get_summary`` tool polls the store by ``job_id`` and returns
+  ``in_progress`` / ``completed`` (with the full summary payload) / ``failed``
+  (with the error) / ``not_found``. The store is ephemeral — finished jobs
+  carry a TTL and the store is capped, both swept lazily on access — matching
+  the non-durable posture of index status and transfer tokens. ``get_summary``
+  is tagged ``tags={"summarize"}`` so the same backend gate that hides
+  ``summarize`` hides it too.
 
 **Dynamic instructions**: the server's MCP `instructions` string varies with
 `read_only` mode. When `read_only=True`, the instructions state this is a

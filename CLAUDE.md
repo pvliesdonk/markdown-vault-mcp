@@ -44,6 +44,7 @@ src/markdown_vault_mcp/
   tracker.py           -- hash-based change detection
   vault.py             -- thin composition root: lifecycle, wiring, facet accessors (index-write → indexing/coordinator.py)
   write_callback.py    -- WriteCallbackDispatcher: deferred git-commit callback worker (#599)
+  summary_jobs.py      -- SummaryJobStore: in-memory background-summarize job store backing the get_summary poll tool (#937)
   config.py            -- template-owned skeleton: ProjectConfig fields/from_env in CONFIG-* sentinels only (#900)
   config_sections/
     _assembly.py         -- domain config-assembly kept out of template-owned config.py: to_vault_kwargs, derive_max_chunk_chars, git-strategy builder (#900)
