@@ -710,6 +710,19 @@ class TestSummarizeFacet:
         with pytest.raises(RuntimeError, match="Summarization is not configured"):
             _ = vault.summarizer
 
+    def test_unconfigured_summary_jobs_raises(self, make_vault: VaultFactory) -> None:
+        vault = make_vault(summarizer=None)
+        with pytest.raises(RuntimeError, match="Summarization is not configured"):
+            _ = vault.summary_jobs
+
+    def test_configured_vault_exposes_summary_jobs(
+        self, make_vault: VaultFactory
+    ) -> None:
+        vault = make_vault(summarizer=FakeSummarizer(), summarize_inline_timeout=12.0)
+        assert vault.summarize_inline_timeout == 12.0
+        # A fresh store with no jobs.
+        assert vault.summary_jobs.get("nope") is None
+
 
 # ---------------------------------------------------------------------------
 # Map-reduce batching (#922)
