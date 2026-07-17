@@ -703,6 +703,71 @@ class TestSkipStateMemory:
         # search stays usable until convergence re-embeds them.
         assert "alpha.md" in vectors.chunks_by_path()
 
+    def test_embed_note_inline_empty_chunks_drops_stale_vectors(
+        self, index_vault: Path, tmp_path: Path
+    ) -> None:
+        """A note that parses to zero chunks drops its stale vectors (#930).
+
+        Inline embedding of a chunkless note must remove any existing
+        vectors for the path and report success (0 failures) without
+        calling the provider.
+        """
+        from markdown_vault_mcp.types import ParsedNote
+
+        mgr, holder = self._mgr_with_embeddings(index_vault, tmp_path)
+        mgr.build_index()
+        mgr.build_embeddings()
+        vectors = holder["vectors"]
+        assert vectors is not None
+        assert "alpha.md" in vectors.chunks_by_path()
+
+        # A parsed note with no embeddable chunks.
+        note = ParsedNote(
+            path="alpha.md",
+            frontmatter={},
+            title="Alpha",
+            chunks=[],
+            content_hash="deadbeef",
+            modified_at=0.0,
+        )
+        failed = mgr._embed_note_inline(vectors, note)
+
+        assert failed == 0
+        assert "alpha.md" not in vectors.chunks_by_path()
+
+    def test_embed_note_inline_without_provider_is_noop(
+        self, index_vault: Path, tmp_path: Path
+    ) -> None:
+        """The defensive provider guard returns 0 and touches nothing (#930).
+
+        ``_embed_note_inline`` narrows ``_embedding_provider`` before use;
+        with it cleared the helper must short-circuit, leaving the note's
+        existing vectors intact.
+        """
+        from markdown_vault_mcp.types import ParsedNote
+
+        mgr, holder = self._mgr_with_embeddings(index_vault, tmp_path)
+        mgr.build_index()
+        mgr.build_embeddings()
+        vectors = holder["vectors"]
+        assert vectors is not None
+        assert "alpha.md" in vectors.chunks_by_path()
+
+        mgr._embedding_provider = None
+        note = ParsedNote(
+            path="alpha.md",
+            frontmatter={},
+            title="Alpha",
+            chunks=[],
+            content_hash="deadbeef",
+            modified_at=0.0,
+        )
+        failed = mgr._embed_note_inline(vectors, note)
+
+        assert failed == 0
+        # Untouched: the guard returned before any delete/add.
+        assert "alpha.md" in vectors.chunks_by_path()
+
 
 # ---------------------------------------------------------------------------
 # build_embeddings
