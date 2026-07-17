@@ -769,10 +769,15 @@ class IndexManager:
         or a transient outage) is logged and swallowed, leaving the note's
         existing vectors untouched. Embedding runs to completion *before*
         the index is mutated, so a mid-note failure can neither drop the
-        old vectors nor leave a partial row set. A failed note is left for
-        the next ``build_embeddings`` convergence pass to re-embed (its FTS
-        row differs from the stale vector, so the signature diff refreshes
-        it).
+        old vectors nor leave a partial row set.
+
+        The index mutation is likewise guarded (#935): an embedding-dimension
+        mismatch raises :class:`ValueError` from
+        :meth:`~markdown_vault_mcp.vector_index.VectorIndex.add_vectors`, and
+        that too must skip only this one note rather than abort the whole
+        reindex loop. Either way a failed note is left for the next
+        ``build_embeddings`` convergence pass to re-embed (its FTS row differs
+        from the stale vector, so the signature diff refreshes it).
 
         Args:
             vectors: The loaded vector index to mutate.
@@ -780,7 +785,8 @@ class IndexManager:
 
         Returns:
             ``0`` on success (including an empty chunk set), ``1`` when the
-            provider failed and the note's vectors were left unchanged.
+            provider failed or the vector mutation was rejected, leaving the
+            note for the next convergence pass.
         """
         if self._embedding_provider is None:
             return 0
@@ -815,8 +821,22 @@ class IndexManager:
                 exc_info=True,
             )
             return 1
-        vectors.delete_by_path(note.path)
-        vectors.add_vectors(raw, meta)
+        try:
+            vectors.delete_by_path(note.path)
+            vectors.add_vectors(raw, meta)
+        except ValueError as exc:
+            # A dimension mismatch (add_vectors, vector_index.py) must not
+            # abort the reindex loop with the note half-updated (#935).
+            # Narrow to ValueError so genuine programming errors still
+            # surface; the note is left for the next convergence pass.
+            logger.warning(
+                "reindex_inline_embed_dim_mismatch path=%s chunks=%d err=%s",
+                note.path,
+                len(texts),
+                exc,
+                exc_info=True,
+            )
+            return 1
         return 0
 
     # ------------------------------------------------------------------
@@ -1129,8 +1149,23 @@ class IndexManager:
                     exc_info=True,
                 )
                 continue
-            removed += vectors.delete_by_path(path)
-            added += vectors.add_vectors(raw, metas)
+            try:
+                removed += vectors.delete_by_path(path)
+                added += vectors.add_vectors(raw, metas)
+            except ValueError as exc:
+                # A dimension mismatch (add_vectors, vector_index.py) must
+                # skip only this document, not abort the whole convergence
+                # pass (#935). Narrow to ValueError so genuine programming
+                # errors still surface; the doc converges on the next run.
+                failed += len(texts)
+                logger.warning(
+                    "build_embeddings_converge_dim_mismatch path=%s chunks=%d err=%s",
+                    path,
+                    len(texts),
+                    exc,
+                    exc_info=True,
+                )
+                continue
 
         for path in stale_paths:
             removed += vectors.delete_by_path(path)

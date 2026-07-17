@@ -699,7 +699,11 @@ the vault, so a steady-state boot does zero embedding work.
 Convergence embeds per document, in the same bounded batches as the cold
 build (#159): a provider failure on one document's chunks (token-context
 rejection, transient outage) skips exactly that document (its existing
-vectors stay intact) and the rest still converge. This is also the
+vectors stay intact) and the rest still converge. The subsequent vector
+mutation is guarded the same way (#935): an embedding-dimension mismatch
+raises `ValueError` from `VectorIndex.add_vectors`, and that too skips only
+the offending document rather than aborting the pass — the document is
+counted as failed and re-tried on the next run. This is also the
 self-healing property: a boot `BuildEmbeddings` job that failed outright
 (recorded in `last_build_embeddings_error`, never retried in-process)
 merely leaves a larger diff for the next successful run to converge. A
@@ -713,7 +717,10 @@ as the cold and convergence paths — never a note's whole chunk list in one
 oversized request. A provider failure (a request timeout being the
 motivating case, but also token-context rejection or a transient outage)
 is logged and skipped for that one note, leaving its existing vectors
-intact, rather than aborting the whole reindex. This keeps the FTS
+intact, rather than aborting the whole reindex. The vector mutation that
+follows is guarded identically to the convergence path (#935): a dimension
+mismatch from `add_vectors` skips just that note instead of aborting the
+loop. This keeps the FTS
 refresh — including the `document_tags` structured-filter set — committed
 for **all** changed notes even while the embedding backend is timing out,
 so filters on freshly-edited frontmatter work immediately; the skipped
