@@ -702,8 +702,9 @@ rejection, transient outage) skips exactly that document (its existing
 vectors stay intact) and the rest still converge. The subsequent vector
 mutation is guarded the same way (#935): an embedding-dimension mismatch
 raises `ValueError` from `VectorIndex.add_vectors`, and that too skips only
-the offending document rather than aborting the pass — the document is
-counted as failed and re-tried on the next run. This is also the
+the offending document rather than aborting the pass — tallied separately
+(its stale vectors were already removed, so it is logged as *dropped*
+rather than *kept*) and re-tried on the next run. This is also the
 self-healing property: a boot `BuildEmbeddings` job that failed outright
 (recorded in `last_build_embeddings_error`, never retried in-process)
 merely leaves a larger diff for the next successful run to converge. A
