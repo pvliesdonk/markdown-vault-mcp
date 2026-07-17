@@ -1057,6 +1057,16 @@ class IndexManager:
         also what makes a failed boot ``BuildEmbeddings`` job self-heal:
         the drift it left behind is just a larger diff for the next run.
 
+        The vector mutation is guarded the same way (#935): an
+        embedding-dimension mismatch raises :class:`ValueError` from
+        :meth:`~markdown_vault_mcp.vector_index.VectorIndex.add_vectors`
+        and skips only that document rather than aborting the pass. Unlike
+        a provider failure (caught before the index is touched), this fires
+        *after* ``delete_by_path`` has run, so the document's stale vectors
+        are removed — tallied under the separate ``dropped`` counter (logged
+        as ``build_embeddings_converge_dropped_chunks``) and re-embedded on
+        the next run.
+
         Thread-safety: runs on the single-owner
         :class:`~markdown_vault_mcp.indexing.IndexWriter` thread via
         :meth:`build_embeddings`, so no internal lock is required.
