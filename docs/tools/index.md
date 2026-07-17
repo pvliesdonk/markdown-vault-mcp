@@ -828,7 +828,7 @@ The tool is only registered when a summarization backend is configured: an `OPEN
 
 Inputs larger than one model request are handled map-reduce style. Notes are packed into batches of at most `SUMMARIZE_MAX_INPUT_CHARS` characters and each batch is summarized on its own; a final pass combines the partial summaries into one result. Large folders issue several model calls and take proportionally longer. Coverage per call is capped at the note limit (`SUMMARIZE_MAX_NOTES`, also the ceiling for the per-call `max_notes` parameter); the response reports exactly how many notes made it in (`notes_included`) and how many were dropped (`notes_omitted`). When notes were dropped, the response carries a `hint` telling the caller that full coverage needs separate calls on subfolders or smaller path sets. The live configured limit is substituted into the tool description and into the server instructions at startup, so a calling model can plan those splits before its first call.
 
-**Slow summaries do not block.** A summary that finishes within the inline deadline (`SUMMARIZE_INLINE_TIMEOUT`, default 30 s) returns inline with `"status": "completed"` and the fields below. If it is still running when the deadline elapses, the tool returns `{"status": "in_progress", "job_id": ...}` immediately and keeps generating in the background; fetch the result with [`get_summary`](#get_summary) using that `job_id`. Each individual backend call is itself bounded by `SUMMARIZE_TIMEOUT` (default 120 s); on timeout the summary fails with an actionable message rather than a vague client-side hang.
+**Slow summaries do not block.** A summary that finishes within the inline deadline (`SUMMARIZE_INLINE_TIMEOUT`, default 30 s) returns inline with `"status": "completed"` and the fields below. If it is still running when the deadline elapses, the tool returns `{"status": "in_progress", "job_id": ...}` immediately and keeps generating in the background; fetch the result with [`get_summary`](#get_summary) using that `job_id`. Each individual backend call is itself bounded by `SUMMARIZE_TIMEOUT` (default 120 s); on timeout the summary fails with a clear message that says how to retry rather than a vague client-side hang.
 
 **Parameters:**
 
@@ -878,8 +878,8 @@ Registered under the same conditions as `summarize` (a summarization backend mus
 
 - `"completed"`: the summary is ready; the dict also carries the same fields as a completed `summarize` result (`summary`, `sources`, `mode`, `truncated`, `notes_included`, `notes_omitted`, `notes_limit`, `hint`).
 - `"in_progress"`: still generating; poll again shortly.
-- `"failed"`: generation failed; see `error` for the reason (for example, the backend timed out; narrow the request and retry).
-- `"not_found"`: no such job; it was never created, was already evicted, or the id is wrong.
+- `"failed"`: generation failed; see `error` for the reason (often a backend timeout; narrow the request and retry).
+- `"not_found"`: no such job. The id is unknown, or the job has already expired.
 
 ---
 
