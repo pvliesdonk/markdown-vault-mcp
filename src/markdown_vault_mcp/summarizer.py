@@ -107,10 +107,11 @@ class OpenAISummarizer(Summarizer):
                 "Install it with: pip install 'markdown-vault-mcp[summarize]'"
             ) from exc
         self._openai = openai
-        # A bounded per-request timeout (mirrors the embeddings transport's
-        # 30s) so a slow synthesis fails fast server-side with an actionable
-        # message rather than running to the SDK's ~600s default while the
-        # MCP client abandons the request at its own opaque timeout (#937).
+        # A bounded per-request timeout (default 120s; same fixed-client-side-
+        # timeout pattern as the embeddings transport, which pins 30s) so a
+        # slow synthesis fails fast server-side with a specific error rather
+        # than running to the SDK's ~600s default while the MCP client
+        # abandons the request at its own opaque timeout (#937).
         self._client = openai.OpenAI(
             api_key=api_key or _PLACEHOLDER_API_KEY,
             base_url=base_url,
