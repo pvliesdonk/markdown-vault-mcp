@@ -235,6 +235,7 @@ Domain environment variables use the `MARKDOWN_VAULT_MCP_` prefix:
 |---|---|---|---|
 | `OLLAMA_HOST` | `http://localhost:11434` | No | Ollama server URL for the ollama embedding provider. Bare (not MARKDOWN_VAULT_MCP_-prefixed), matching the Ollama ecosystem convention. |
 | `OPENAI_API_KEY` | (none) | No | OpenAI API key for the openai embedding provider, and the fallback key for the summarize tool when MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_API_KEY is unset. Bare (not MARKDOWN_VAULT_MCP_-prefixed), matching the OpenAI ecosystem convention. |
+| `VOYAGE_API_KEY` | (none) | No | Voyage AI API key for the voyage embedding provider. Bare (not MARKDOWN_VAULT_MCP_-prefixed), matching the OPENAI_API_KEY / OLLAMA_HOST convention. Setting it never auto-selects the provider; choose it explicitly with MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER=voyage. |
 | `OPENAI_BASE_URL` | (none) | No | Bare fallback for MARKDOWN_VAULT_MCP_OPENAI_BASE_URL (embeddings). For the summarize tool it only routes traffic when an API key already enables the feature; it never enables summarize by itself. |
 | `OPENAI_EMBEDDING_MODEL` | (none) | No | Bare fallback for MARKDOWN_VAULT_MCP_OPENAI_EMBEDDING_MODEL. |
 | `MARKDOWN_VAULT_MCP_BUILD_TIMEOUT_S` | `60` | No | Maximum seconds an index-backed tool or resource waits for the FTS index to become queryable during a cold-start background build before raising IndexUnavailableError(reason="timeout"). Increase for large vaults. |
@@ -267,9 +268,10 @@ Domain environment variables use the `MARKDOWN_VAULT_MCP_` prefix:
 | `MARKDOWN_VAULT_MCP_CHUNK_OVERLAP_WORDS` | `40` | No | Words of overlap between adjacent budget-split fragments of the same heading section (0 disables). A reindex applies a new value. |
 | `MARKDOWN_VAULT_MCP_FOLDER_WEIGHTS` | (none) | No | Folder-prefix score multipliers (`prefix:weight` pairs, comma-separated, weights > 0) applied to all search modes; the deepest matching prefix wins (sessions:0.5 demotes sessions/**). |
 | `MARKDOWN_VAULT_MCP_FTS_WEIGHTS` | (none) | No | Per-column BM25 weights (`column:weight` pairs, comma-separated, weights >= 0) for keyword ranking. Columns: path, title, folder, heading, content, summary. |
-| `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` | (none) | No | Embedding provider: openai, ollama, or fastembed. Unset auto-detects from the environment. |
+| `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` | (none) | No | Embedding provider: openai, voyage, ollama, or fastembed. Unset auto-detects from the environment (never voyage). |
 | `MARKDOWN_VAULT_MCP_OLLAMA_MODEL` | `nomic-embed-text` | No | Ollama embedding model name. |
 | `MARKDOWN_VAULT_MCP_OLLAMA_CPU_ONLY` | `false` | No | Force Ollama to embed on CPU only. |
+| `MARKDOWN_VAULT_MCP_VOYAGE_MODEL` | `voyage-4` | No | Voyage AI embedding model name. |
 | `MARKDOWN_VAULT_MCP_OPENAI_BASE_URL` | `https://api.openai.com/v1` | No | OpenAI-compatible API base URL for embeddings; the bare OPENAI_BASE_URL is honoured as a fallback. |
 | `MARKDOWN_VAULT_MCP_OPENAI_EMBEDDING_MODEL` | `text-embedding-3-small` | No | OpenAI-compatible embedding model name; the bare OPENAI_EMBEDDING_MODEL is honoured as a fallback. |
 | `MARKDOWN_VAULT_MCP_FASTEMBED_MODEL` | `BAAI/bge-small-en-v1.5` | No | FastEmbed model name. |

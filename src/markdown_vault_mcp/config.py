@@ -428,19 +428,29 @@ class ProjectConfig:
         default=None,
         metadata={
             "help": (
-                "Embedding provider: openai, ollama, or fastembed. Unset "
-                "auto-detects from the environment."
+                "Embedding provider: openai, voyage, ollama, or fastembed. "
+                "Unset auto-detects from the environment (never voyage)."
             ),
             "tags": ("embeddings",),
             "wizard": {"group": "Embeddings"},
         },
     )
-    # ollama_host / (embeddings) openai_api_key are read from the BARE
-    # environment (OLLAMA_HOST / OPENAI_API_KEY, ecosystem conventions) —
-    # invisible to the prefixed AST scan, so they are declared in
-    # config-presentation.domain.yml instead of via metadata here.
+    # ollama_host / (embeddings) openai_api_key / voyage_api_key are read
+    # from the BARE environment (OLLAMA_HOST / OPENAI_API_KEY /
+    # VOYAGE_API_KEY, ecosystem conventions) — invisible to the prefixed AST
+    # scan, so they are declared in config-presentation.domain.yml instead of
+    # via metadata here.
     ollama_host: str = "http://localhost:11434"
     openai_api_key: str | None = None
+    voyage_api_key: str | None = None
+    voyage_model: str = field(
+        default="voyage-4",
+        metadata={
+            "help": "Voyage AI embedding model name.",
+            "tags": ("embeddings",),
+            "wizard": {"group": "Embeddings"},
+        },
+    )
     ollama_model: str = field(
         default="nomic-embed-text",
         metadata={
@@ -853,6 +863,8 @@ class ProjectConfig:
             openai_api_key=self.openai_api_key,
             openai_base_url=self.openai_base_url,
             openai_embedding_model=self.openai_embedding_model,
+            voyage_api_key=self.voyage_api_key,
+            voyage_model=self.voyage_model,
             fastembed_model=self.fastembed_model,
             fastembed_cache_dir=self.fastembed_cache_dir,
             embed_context=self.embed_context,
@@ -1046,6 +1058,8 @@ class ProjectConfig:
             ollama_model=env(_ENV_PREFIX, "OLLAMA_MODEL") or "nomic-embed-text",
             ollama_cpu_only=to_bool(env(_ENV_PREFIX, "OLLAMA_CPU_ONLY"), default=False),
             openai_api_key=(os.environ.get("OPENAI_API_KEY") or "").strip() or None,
+            voyage_api_key=(os.environ.get("VOYAGE_API_KEY") or "").strip() or None,
+            voyage_model=env(_ENV_PREFIX, "VOYAGE_MODEL") or "voyage-4",
             openai_base_url=(
                 env(_ENV_PREFIX, "OPENAI_BASE_URL")
                 or os.environ.get("OPENAI_BASE_URL")

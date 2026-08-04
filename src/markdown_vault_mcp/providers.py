@@ -1,6 +1,6 @@
 """Embedding providers for markdown-vault-mcp.
 
-Provides an :class:`EmbeddingProvider` ABC and three concrete implementations:
+Provides an :class:`EmbeddingProvider` ABC and four concrete implementations:
 
 - :class:`OllamaProvider` — Ollama server; embeds via Ollama's
   OpenAI-compatible endpoint (``{host}/v1``), with the native REST API kept
@@ -8,9 +8,11 @@ Provides an :class:`EmbeddingProvider` ABC and three concrete implementations:
   inference, the context-length probe).
 - :class:`OpenAIProvider` — OpenAI-compatible Embeddings API via the
   official ``openai`` SDK.
+- :class:`VoyageProvider` — Voyage AI's OpenAI-compatible Embeddings API,
+  with the base URL pinned to ``https://api.voyageai.com/v1``.
 - :class:`FastEmbedProvider` — local fastembed/ONNX runtime embeddings.
 
-Both API providers share one wire protocol and one client
+All three API providers share one wire protocol and one client
 (:class:`_OpenAICompatEmbeddings`); the provider names are ergonomic presets
 over it, not separate code paths (#916).
 
@@ -55,6 +57,22 @@ _OPENAI_CONTEXT_LENGTHS: dict[str, int] = {
     "text-embedding-3-small": 8191,
     "text-embedding-3-large": 8191,
     "text-embedding-ada-002": 8191,
+}
+
+# Voyage's embeddings API does not report a model's context length either, so
+# the same table treatment applies. Values from https://docs.voyageai.com —
+# the voyage-4 and voyage-3.5 families, voyage-code-3 and voyage-finance-2 all
+# take 32k tokens; voyage-law-2 takes 16k. Unknown models return None and fall
+# back to a conservative chunk cap.
+_VOYAGE_CONTEXT_LENGTHS: dict[str, int] = {
+    "voyage-4-large": 32000,
+    "voyage-4": 32000,
+    "voyage-4-lite": 32000,
+    "voyage-3.5": 32000,
+    "voyage-3.5-lite": 32000,
+    "voyage-code-3": 32000,
+    "voyage-finance-2": 32000,
+    "voyage-law-2": 16000,
 }
 
 
@@ -495,6 +513,124 @@ class OpenAIProvider(EmbeddingProvider):
         return _OPENAI_CONTEXT_LENGTHS.get(self._model)
 
 
+class VoyageProvider(EmbeddingProvider):
+    """Embedding provider backed by Voyage AI's Embeddings API.
+
+    Voyage serves ``/v1/embeddings`` in the OpenAI request/response shape, so
+    this is a preset over the shared :class:`_OpenAICompatEmbeddings`
+    transport with the base URL pinned to Voyage's endpoint — the same
+    relationship :class:`OllamaProvider` has to it (#916). Pointing
+    :class:`OpenAIProvider` at ``https://api.voyageai.com/v1`` by hand keeps
+    working; the dedicated provider name exists so the endpoint, the key
+    variable and the model default are discoverable rather than folklore.
+
+    Voyage rejects OpenAI request fields it does not implement: ``dimensions``
+    and ``user`` are answered with HTTP 400, and ``encoding_format="float"``
+    with "accepted values are 'base64'". The shared transport sends only
+    ``model`` and ``input`` and leaves ``encoding_format`` to the ``openai``
+    SDK, whose base64 default Voyage accepts — so no request shaping is needed
+    here, but none of those three fields may start being sent either.
+
+    Args:
+        api_key: Voyage API key for authentication.
+        model: Embedding model name.
+        timeout: Per-request timeout in seconds for HTTP calls to Voyage.
+    """
+
+    # Voyage's own guidance is voyage-4-large for the best quality,
+    # voyage-4-lite for the lowest latency and cost, and voyage-4 for the
+    # balance between them, so the balanced member is the default — the same
+    # posture as text-embedding-3-small for OpenAI. The whole voyage-4 family
+    # returns 1024-dimensional vectors by default.
+    _MODEL = "voyage-4"
+    _BASE_URL = "https://api.voyageai.com/v1"
+
+    def __init__(
+        self, api_key: str, *, model: str = _MODEL, timeout: float = 30.0
+    ) -> None:
+        """Initialise VoyageProvider with an explicit API key.
+
+        Args:
+            api_key: Voyage API key for authentication.
+            model: Embedding model name.
+            timeout: Per-request timeout in seconds for HTTP calls to Voyage.
+
+        Raises:
+            ImportError: If the ``openai`` SDK is not installed.
+            RuntimeError: If ``api_key`` is empty.
+        """
+        if not api_key:
+            raise RuntimeError(
+                "VoyageProvider requires a non-empty api_key. Set VOYAGE_API_KEY."
+            )
+        self._model = model or self._MODEL
+        self._compat = _OpenAICompatEmbeddings(
+            api_key,
+            base_url=self._BASE_URL,
+            model=self._model,
+            label="VoyageProvider",
+            timeout=timeout,
+        )
+        self._dimension: int | None = None
+
+        logger.debug("VoyageProvider initialised: model=%s", self._model)
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        """Embed a batch of texts via Voyage's Embeddings API.
+
+        Args:
+            texts: List of strings to embed.
+
+        Returns:
+            List of embedding vectors in input order.
+
+        Raises:
+            RuntimeError: If the embeddings request fails.
+        """
+        embeddings = self._compat.embed(texts)
+
+        # Cache dimension from first successful call.
+        if self._dimension is None and embeddings:
+            self._dimension = len(embeddings[0])
+
+        return embeddings
+
+    @property
+    def dimension(self) -> int:
+        """Embedding dimension size.
+
+        Embeds a test string on first access to determine the dimension.
+
+        Returns:
+            Integer dimension of each embedding vector.
+        """
+        if self._dimension is None:
+            self.embed(["dimension probe"])
+        if self._dimension is None:
+            raise RuntimeError(
+                "VoyageProvider.embed() returned no embeddings; "
+                "cannot determine dimension."
+            )
+        return self._dimension
+
+    @property
+    def provider_name(self) -> str:
+        return "voyage"
+
+    @property
+    def model_name(self) -> str:
+        return self._model
+
+    @property
+    def context_length(self) -> int | None:
+        """Return the model's context length from the known-model table.
+
+        Returns None for models absent from the table; callers fall back to a
+        conservative chunk cap.
+        """
+        return _VOYAGE_CONTEXT_LENGTHS.get(self._model)
+
+
 class FastEmbedProvider(EmbeddingProvider):
     """Embedding provider backed by the local fastembed library.
 
@@ -592,6 +728,62 @@ class FastEmbedProvider(EmbeddingProvider):
         return _FASTEMBED_CONTEXT_LENGTHS.get(self._model_name)
 
 
+def _explicit_provider(name: str, config: ProjectConfig) -> EmbeddingProvider:
+    """Build the provider named by ``EMBEDDING_PROVIDER``.
+
+    Split out of :func:`get_embedding_provider` so the explicit dispatch and
+    the auto-detect probe stay independently readable as provider names are
+    added.
+
+    Args:
+        name: Normalised (stripped, lower-cased) provider name; never empty.
+        config: Vault configuration containing embedding settings.
+
+    Returns:
+        An initialised :class:`EmbeddingProvider` instance.
+
+    Raises:
+        ConfigurationError: If *name* is not a recognised provider.
+    """
+    if name == "openai":
+        logger.info("Using OpenAIProvider (embedding_provider=openai)")
+        return OpenAIProvider(
+            api_key=config.embeddings.openai_api_key or "",
+            base_url=config.embeddings.openai_base_url,
+            model=config.embeddings.openai_embedding_model,
+            timeout=config.embeddings.embed_timeout_s,
+        )
+
+    if name == "voyage":
+        logger.info("Using VoyageProvider (embedding_provider=voyage)")
+        return VoyageProvider(
+            api_key=config.embeddings.voyage_api_key or "",
+            model=config.embeddings.voyage_model,
+            timeout=config.embeddings.embed_timeout_s,
+        )
+
+    if name == "ollama":
+        logger.info("Using OllamaProvider (embedding_provider=ollama)")
+        return OllamaProvider(
+            host=config.embeddings.ollama_host,
+            model=config.embeddings.ollama_model,
+            cpu_only=config.embeddings.ollama_cpu_only,
+            timeout=config.embeddings.embed_timeout_s,
+        )
+
+    if name == "fastembed":
+        logger.info("Using FastEmbedProvider (embedding_provider=%s)", name)
+        return FastEmbedProvider(
+            model_name=config.embeddings.fastembed_model,
+            cache_dir=config.embeddings.fastembed_cache_dir,
+        )
+
+    raise ConfigurationError(
+        f"Unrecognised embedding_provider value: {name!r}. "
+        "Valid values: 'openai', 'voyage', 'ollama', 'fastembed'."
+    )
+
+
 def get_embedding_provider(config: ProjectConfig) -> EmbeddingProvider:
     """Auto-detect and return an embedding provider from config.
 
@@ -604,6 +796,10 @@ def get_embedding_provider(config: ProjectConfig) -> EmbeddingProvider:
     3. If ``fastembed`` can be imported →
        :class:`FastEmbedProvider`.
     4. Raises :class:`RuntimeError` with installation instructions.
+
+    :class:`VoyageProvider` is deliberately absent from that probe: a
+    ``VOYAGE_API_KEY`` exported for some other tool must not silently take over
+    an existing index. Select it explicitly with ``EMBEDDING_PROVIDER=voyage``.
 
     Args:
         config: Vault configuration containing embedding settings.
@@ -620,39 +816,8 @@ def get_embedding_provider(config: ProjectConfig) -> EmbeddingProvider:
     """
     explicit = (config.embeddings.provider or "").strip().lower()
 
-    if explicit == "openai":
-        logger.info("Using OpenAIProvider (embedding_provider=openai)")
-        return OpenAIProvider(
-            api_key=config.embeddings.openai_api_key or "",
-            base_url=config.embeddings.openai_base_url,
-            model=config.embeddings.openai_embedding_model,
-            timeout=config.embeddings.embed_timeout_s,
-        )
-
-    if explicit == "ollama":
-        logger.info("Using OllamaProvider (embedding_provider=ollama)")
-        return OllamaProvider(
-            host=config.embeddings.ollama_host,
-            model=config.embeddings.ollama_model,
-            cpu_only=config.embeddings.ollama_cpu_only,
-            timeout=config.embeddings.embed_timeout_s,
-        )
-
-    if explicit == "fastembed":
-        logger.info(
-            "Using FastEmbedProvider (embedding_provider=%s)",
-            explicit,
-        )
-        return FastEmbedProvider(
-            model_name=config.embeddings.fastembed_model,
-            cache_dir=config.embeddings.fastembed_cache_dir,
-        )
-
     if explicit:
-        raise ConfigurationError(
-            f"Unrecognised embedding_provider value: {explicit!r}. "
-            "Valid values: 'openai', 'ollama', 'fastembed'."
-        )
+        return _explicit_provider(explicit, config)
 
     # Auto-detect: OpenAI API key present?
     if config.embeddings.openai_api_key:

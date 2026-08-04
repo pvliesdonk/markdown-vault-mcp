@@ -18,6 +18,8 @@
       "OPENAI_API_KEY": "${user_config.openai_api_key}",
       "OPENAI_BASE_URL": "${user_config.openai_base_url}",
       "OPENAI_EMBEDDING_MODEL": "${user_config.openai_embedding_model}",
+      "VOYAGE_API_KEY": "${user_config.voyage_api_key}",
+      "MARKDOWN_VAULT_MCP_VOYAGE_MODEL": "${user_config.voyage_model}",
       "MARKDOWN_VAULT_MCP_GIT_REPO_URL": "${user_config.git_repo_url}",
       "MARKDOWN_VAULT_MCP_GIT_TOKEN": "${user_config.git_token}",
       "MARKDOWN_VAULT_MCP_SERVER_NAME": "${user_config.server_name}",

@@ -27,7 +27,7 @@ empty. Highlights of the screen:
 | Vault directory | *(required)* | `MARKDOWN_VAULT_MCP_SOURCE_DIR` |
 | Read-only mode | `false` | `MARKDOWN_VAULT_MCP_READ_ONLY`; set `true` to hide the write tools and serve a search-only vault |
 | Exclude patterns | `.obsidian/**,.trash/**,.git/**` | `MARKDOWN_VAULT_MCP_EXCLUDE` |
-| Embedding provider | *(empty)* | `fastembed` / `ollama` / `openai`; empty means keyword-only search |
+| Embedding provider | *(empty)* | `fastembed` / `ollama` / `openai` / `voyage`; empty means keyword-only search |
 
 Your answers persist across plugin updates, and sensitive fields (the OpenAI
 API key, the git access token) are masked and stored in secure storage.

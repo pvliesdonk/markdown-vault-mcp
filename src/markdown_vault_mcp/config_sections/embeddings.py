@@ -18,6 +18,8 @@ class EmbeddingsConfig:
     openai_api_key: str | None = None
     openai_base_url: str = "https://api.openai.com/v1"
     openai_embedding_model: str = "text-embedding-3-small"
+    voyage_api_key: str | None = None
+    voyage_model: str = "voyage-4"
     fastembed_model: str = "BAAI/bge-small-en-v1.5"
     fastembed_cache_dir: str | None = None
     embed_context: bool = False

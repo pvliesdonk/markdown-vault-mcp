@@ -44,13 +44,15 @@ The configuration prompt covers these settings, each wired to the matching serve
 | Vault directory | _(required)_ | `MARKDOWN_VAULT_MCP_SOURCE_DIR`: the vault to serve |
 | Read-only mode | `false` | `MARKDOWN_VAULT_MCP_READ_ONLY`; the write tools (`write`, `edit`, `append`, `delete`, `rename`, `move_folder`, `fetch`, `git_sync`, the `okf_*` tools, `create_upload_link`) are available out of the box. Set `true` for a search-only vault |
 | Exclude patterns | `.obsidian/**,.trash/**,.git/**` | `MARKDOWN_VAULT_MCP_EXCLUDE`: comma-separated globs kept out of the index |
-| Embedding provider | _(empty)_ | `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` (`fastembed`, `ollama`, `openai`); empty means keyword-only search |
+| Embedding provider | _(empty)_ | `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` (`fastembed`, `ollama`, `openai`, `voyage`); empty means keyword-only search |
 | Ollama host | `http://localhost:11434` | `OLLAMA_HOST`; used only with the `ollama` provider |
 | Ollama embedding model | `nomic-embed-text` | `MARKDOWN_VAULT_MCP_OLLAMA_MODEL` |
 | FastEmbed model | `BAAI/bge-small-en-v1.5` | `MARKDOWN_VAULT_MCP_FASTEMBED_MODEL` |
 | OpenAI API key | _(empty, masked)_ | `OPENAI_API_KEY`; used only with the `openai` provider |
 | OpenAI base URL | `https://api.openai.com/v1` | `OPENAI_BASE_URL` |
 | OpenAI embedding model | `text-embedding-3-small` | `OPENAI_EMBEDDING_MODEL` |
+| Voyage API key | _(empty, masked)_ | `VOYAGE_API_KEY`; used only with the `voyage` provider |
+| Voyage embedding model | `voyage-4` | `MARKDOWN_VAULT_MCP_VOYAGE_MODEL` |
 | Git sync repository URL | _(empty)_ | `MARKDOWN_VAULT_MCP_GIT_REPO_URL`; empty disables git integration |
 | Git access token | _(empty, masked)_ | `MARKDOWN_VAULT_MCP_GIT_TOKEN` |
 | Server name | `markdown-vault-mcp` | `MARKDOWN_VAULT_MCP_SERVER_NAME` |

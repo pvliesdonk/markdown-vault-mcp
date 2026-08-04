@@ -7,8 +7,9 @@ This guide covers configuring each supported embedding provider for semantic sea
 | [Ollama](#ollama) | Yes | No (CPU works fine) | No | ~2 GB (model) | ~2-4 GB (separate process) |
 | [FastEmbed](#fastembed) | Yes | No | First run only (model download) | Small runtime + model | ~1-2 GB (in-process) |
 | [OpenAI](#openai) | No (API call) | N/A | Yes | Minimal | Negligible |
+| [Voyage AI](#voyage-ai) | No (API call) | N/A | Yes | Minimal | Negligible |
 
-All three providers produce embeddings that enable the `semantic` and `hybrid` search modes in the `search` tool.
+All four providers produce embeddings that enable the `semantic` and `hybrid` search modes in the `search` tool.
 
 ## Ollama
 
@@ -213,6 +214,55 @@ You should get a JSON response with an embedding array. After starting the serve
 
 ---
 
+## Voyage AI
+
+Uses [Voyage AI](https://www.voyageai.com/) embeddings (`voyage-4` by default). Voyage serves its Embeddings API in the OpenAI request/response shape, so this provider is the `openai` one with the base URL pinned to `https://api.voyageai.com/v1` and its own key and model variables.
+
+### Get an API key
+
+1. Go to the [Voyage dashboard](https://dashboard.voyageai.com/)
+2. Create an API key
+3. Copy it
+
+### Configure
+
+```bash
+MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER=voyage
+VOYAGE_API_KEY=pa-your-api-key-here
+MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH=/path/to/store/embeddings
+```
+
+To pick a different model:
+
+```bash
+MARKDOWN_VAULT_MCP_VOYAGE_MODEL=voyage-4-large
+```
+
+The default is `voyage-4`, the balanced member of the family; `voyage-4-large` trades cost for retrieval quality and `voyage-4-lite` trades quality for cost. The voyage-4 and voyage-3.5 families take 32,000 tokens of input and return 1024-dimensional vectors by default. Changing the model re-embeds the vault once on the next startup.
+
+!!! note "Voyage must be selected explicitly"
+    Unlike the other three, `voyage` is not in the auto-detection chain. A `VOYAGE_API_KEY` exported for some other tool would otherwise take over an existing index and force a full re-embed.
+
+!!! warning "Privacy"
+    Document content (titles, headings, body text) is sent to Voyage AI for embedding. Use Ollama or FastEmbed for fully local, private embeddings.
+
+!!! info "You could always do this by hand"
+    Setting `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER=openai` with `OPENAI_BASE_URL=https://api.voyageai.com/v1` still works and is wire-identical. The `voyage` name exists so the endpoint, the key variable, and a sensible model default are discoverable, and so the vector sidecar records `voyage` as the provider rather than `openai`.
+
+### Verify
+
+```bash
+# Test your API key (replace $VOYAGE_API_KEY with your key, or export it first)
+curl https://api.voyageai.com/v1/embeddings \
+  -H "Authorization: Bearer $VOYAGE_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"input": "test", "model": "voyage-4"}'
+```
+
+You should get a JSON response with an embedding array.
+
+---
+
 ## Auto-detection
 
 If you don't set `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER`, the server tries providers in this order:
@@ -220,6 +270,8 @@ If you don't set `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER`, the server tries provi
 1. **OpenAI:** if `OPENAI_API_KEY` is set
 2. **Ollama:** if `OLLAMA_HOST` is reachable
 3. **FastEmbed:** if the package is installed
+
+`voyage` is never auto-detected; select it explicitly.
 
 Set `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` explicitly to avoid surprises when your environment changes (setting `OPENAI_API_KEY` for another tool will cause the server to switch from Ollama to OpenAI).
 

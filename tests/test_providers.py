@@ -15,6 +15,7 @@ from markdown_vault_mcp.providers import (
     FastEmbedProvider,
     OllamaProvider,
     OpenAIProvider,
+    VoyageProvider,
     get_embedding_provider,
 )
 
@@ -335,6 +336,13 @@ class TestEmbedTimeout:
         OpenAIProvider(api_key="sk-test")
         assert captured["timeout"] == 30.0
 
+    def test_voyage_provider_threads_timeout_to_sdk_client(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        captured = _install_fake_openai(monkeypatch, vectors=[[0.1, 0.2, 0.3]])
+        VoyageProvider(api_key="pa-test", timeout=120.0)
+        assert captured["timeout"] == 120.0
+
     def test_ollama_compat_threads_timeout_to_sdk_client(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -361,6 +369,92 @@ class TestEmbedTimeout:
         cfg = _config(provider="ollama", embed_timeout_s=77.0)
         get_embedding_provider(cfg)
         assert captured["timeout"] == 77.0
+
+
+class TestVoyageProvider:
+    def test_init_raises_without_api_key(self) -> None:
+        with pytest.raises(RuntimeError, match="VOYAGE_API_KEY"):
+            VoyageProvider(api_key="")
+
+    def test_embed_pins_voyage_base_url_and_default_model(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        captured = _install_fake_openai(monkeypatch, vectors=[[0.1, 0.2]])
+        provider = VoyageProvider(api_key="pa-test-key-123")
+        result = provider.embed(["hello"])
+
+        assert captured["api_key"] == "pa-test-key-123"
+        assert captured["base_url"] == "https://api.voyageai.com/v1"
+        (kwargs,) = captured["create_calls"]
+        assert kwargs["model"] == "voyage-4"
+        assert kwargs["input"] == ["hello"]
+        assert result == [[0.1, 0.2]]
+        assert provider.provider_name == "voyage"
+        assert provider.model_name == "voyage-4"
+
+    def test_embed_sends_no_params_voyage_rejects(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Only ``model``/``input`` go on the wire.
+
+        Voyage answers ``dimensions`` and ``user`` with HTTP 400 and rejects
+        ``encoding_format="float"`` outright, so the request must carry neither
+        — ``encoding_format`` is left to the SDK, whose base64 default Voyage
+        accepts.
+        """
+        captured = _install_fake_openai(monkeypatch, vectors=[[0.1]])
+        VoyageProvider(api_key="pa-test").embed(["hello"])
+
+        (kwargs,) = captured["create_calls"]
+        assert set(kwargs) == {"model", "input"}
+
+    def test_custom_model(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        captured = _install_fake_openai(monkeypatch, vectors=[[0.1]])
+        provider = VoyageProvider(api_key="pa-test", model="voyage-4-large")
+        provider.embed(["hello"])
+
+        (kwargs,) = captured["create_calls"]
+        assert kwargs["model"] == "voyage-4-large"
+        assert provider.model_name == "voyage-4-large"
+
+    def test_blank_model_falls_back_to_default(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _install_fake_openai(monkeypatch)
+        assert VoyageProvider(api_key="pa-test", model="").model_name == "voyage-4"
+
+    def test_embed_maps_sdk_error_to_runtime_error(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _install_fake_openai(monkeypatch, raise_error=True)
+        provider = VoyageProvider(api_key="pa-test")
+        with pytest.raises(RuntimeError, match="VoyageProvider embeddings request"):
+            provider.embed(["hello"])
+
+    def test_dimension_triggers_embed_then_caches(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        captured = _install_fake_openai(monkeypatch, vectors=[[0.1] * 1024])
+        provider = VoyageProvider(api_key="pa-test")
+
+        assert provider.dimension == 1024
+        assert provider.dimension == 1024
+        assert len(captured["create_calls"]) == 1
+
+    def test_dimension_raises_on_empty_embeddings(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _install_fake_openai(monkeypatch, indexed=[])
+        provider = VoyageProvider(api_key="pa-test")
+        with pytest.raises(RuntimeError, match="cannot determine dimension"):
+            _ = provider.dimension
+
+    def test_missing_openai_sdk_raises_import_error(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setitem(sys.modules, "openai", None)  # force ImportError
+        with pytest.raises(ImportError, match="markdown-vault-mcp\\[embeddings-api\\]"):
+            VoyageProvider(api_key="pa-test")
 
 
 class TestFastEmbedProvider:
@@ -441,6 +535,38 @@ class TestGetEmbeddingProvider:
         assert isinstance(provider, OpenAIProvider)
         assert provider.model_name == "BAAI/bge-m3"
 
+    def test_explicit_voyage_returns_voyage_provider(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _install_fake_openai(monkeypatch)
+        cfg = _config(
+            provider="voyage",
+            voyage_api_key="pa-test",
+            voyage_model="voyage-4-lite",
+        )
+        provider = get_embedding_provider(cfg)
+        assert isinstance(provider, VoyageProvider)
+        assert provider.model_name == "voyage-4-lite"
+
+    def test_explicit_voyage_without_key_raises(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A missing VOYAGE_API_KEY fails fast instead of embedding anonymously."""
+        _install_fake_openai(monkeypatch)
+        with pytest.raises(RuntimeError, match="VOYAGE_API_KEY"):
+            get_embedding_provider(_config(provider="voyage"))
+
+    def test_voyage_key_alone_does_not_autodetect(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Voyage is opt-in: a stray VOYAGE_API_KEY never takes over the index."""
+        _install_fake_openai(monkeypatch)
+        cfg = _config(voyage_api_key="pa-test")
+        probe_client = self._ollama_mock_client(reachable=True)
+        with patch("httpx.Client", return_value=probe_client):
+            provider = get_embedding_provider(cfg)
+        assert isinstance(provider, OllamaProvider)
+
     def test_explicit_ollama_returns_ollama_provider(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -462,7 +588,8 @@ class TestGetEmbeddingProvider:
 
         cfg = _config(provider="unknown_value")
         with pytest.raises(
-            ConfigurationError, match="Valid values: 'openai', 'ollama', 'fastembed'"
+            ConfigurationError,
+            match="Valid values: 'openai', 'voyage', 'ollama', 'fastembed'",
         ):
             get_embedding_provider(cfg)
 
@@ -726,4 +853,16 @@ def test_openai_context_length_table():
     p._model = "text-embedding-3-small"
     assert p.context_length == 8191
     p._model = "unknown-embedding-model"
+    assert p.context_length is None
+
+
+def test_voyage_context_length_table():
+    from markdown_vault_mcp.providers import VoyageProvider
+
+    p = VoyageProvider.__new__(VoyageProvider)
+    p._model = "voyage-4"
+    assert p.context_length == 32000
+    p._model = "voyage-law-2"  # the one 16k model in the family
+    assert p.context_length == 16000
+    p._model = "voyage-99-unreleased"
     assert p.context_length is None

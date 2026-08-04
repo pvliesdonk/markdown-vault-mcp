@@ -42,6 +42,7 @@ def _clear_env(monkeypatch: pytest.MonkeyPatch) -> None:
     # an ambient key doesn't silently enable a gated feature mid-test.
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
+    monkeypatch.delenv("VOYAGE_API_KEY", raising=False)
     # ProjectConfig.from_env hard-requires SOURCE_DIR (fail-fast startup
     # contract). Preset a stable default so env-less from_env construction
     # works in tests. A test that asserts the missing-var error deletes it
