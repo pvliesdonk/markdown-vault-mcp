@@ -84,6 +84,7 @@
           "description": "Embedding provider to use",
           "choices": [
             "openai",
+            "voyage",
             "ollama",
             "fastembed",
             "fastembed-gpu"
@@ -103,6 +104,16 @@
           "name": "OPENAI_EMBEDDING_MODEL",
           "description": "OpenAI-compatible embedding model name; also accepts MARKDOWN_VAULT_MCP_OPENAI_EMBEDDING_MODEL",
           "default": "text-embedding-3-small"
+        },
+        {
+          "name": "VOYAGE_API_KEY",
+          "description": "Voyage AI API key (required when MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER=voyage)",
+          "isSecret": true
+        },
+        {
+          "name": "MARKDOWN_VAULT_MCP_VOYAGE_MODEL",
+          "description": "Voyage AI embedding model name",
+          "default": "voyage-4"
         },
         {
           "name": "MARKDOWN_VAULT_MCP_OLLAMA_MODEL",
@@ -316,6 +327,7 @@
           "description": "Embedding provider to use",
           "choices": [
             "openai",
+            "voyage",
             "ollama",
             "fastembed",
             "fastembed-gpu"
@@ -335,6 +347,16 @@
           "name": "OPENAI_EMBEDDING_MODEL",
           "description": "OpenAI-compatible embedding model name; also accepts MARKDOWN_VAULT_MCP_OPENAI_EMBEDDING_MODEL",
           "default": "text-embedding-3-small"
+        },
+        {
+          "name": "VOYAGE_API_KEY",
+          "description": "Voyage AI API key (required when MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER=voyage)",
+          "isSecret": true
+        },
+        {
+          "name": "MARKDOWN_VAULT_MCP_VOYAGE_MODEL",
+          "description": "Voyage AI embedding model name",
+          "default": "voyage-4"
         },
         {
           "name": "MARKDOWN_VAULT_MCP_OLLAMA_MODEL",

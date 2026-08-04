@@ -42,6 +42,7 @@ def _clear_env(monkeypatch: pytest.MonkeyPatch) -> None:
     # an ambient key doesn't silently enable a gated feature mid-test.
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
+    monkeypatch.delenv("VOYAGE_API_KEY", raising=False)
 
 
 def _parse_tool_data(result: Any) -> Any:

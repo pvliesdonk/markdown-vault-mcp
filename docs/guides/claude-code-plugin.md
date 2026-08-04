@@ -57,7 +57,7 @@ The plugin wires up the following env vars. Vars with a default are filled in wh
 |---------|---------|-------------|
 | `MARKDOWN_VAULT_MCP_SOURCE_DIR` | _(required)_ | Path to your vault directory |
 | `MARKDOWN_VAULT_MCP_READ_ONLY` | `true` | Set to `false` to enable write/edit/delete/rename tools |
-| `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` | _(empty)_ | Embedding backend (`fastembed`, `ollama`, `openai`); leave empty for keyword-only search |
+| `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` | _(empty)_ | Embedding backend (`fastembed`, `ollama`, `openai`, `voyage`); leave empty for keyword-only search |
 | `MARKDOWN_VAULT_MCP_EXCLUDE` | `.obsidian/**,.trash/**,.git/**` | Comma-separated glob patterns to exclude from indexing |
 | `MARKDOWN_VAULT_MCP_GIT_REPO_URL` | _(empty)_ | Remote repository URL for git-backed vault sync; leave empty to disable git integration |
 | `MARKDOWN_VAULT_MCP_GIT_TOKEN` | _(empty)_ | Personal access token for the git remote; leave empty to disable git integration |

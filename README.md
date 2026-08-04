@@ -15,7 +15,7 @@ Point it at a directory of Markdown files (an Obsidian vault, a docs folder, a Z
 
 <!-- DOMAIN-START -->
 - **Full-text search** — SQLite FTS5 with BM25 scoring, porter stemming
-- **Semantic search** — cosine similarity over embedding vectors (FastEmbed, Ollama, or OpenAI)
+- **Semantic search** — cosine similarity over embedding vectors (FastEmbed, Ollama, OpenAI, or Voyage AI)
 - **Hybrid search** — Reciprocal Rank Fusion combining FTS5 and vector results
 - **Diversity-aware ranking** — each search result list caps a single document at 2 chunks (configurable), downweights chunks of long documents, and returns sentence-scale snippets — bounded LLM context cost per query, with full-section recovery via `read(path, section=heading)`
 - **Adaptive heading-level chunking** — long sections are recursively re-split at deeper heading levels (H1 → H6) until each chunk fits a configurable word budget, improving retrieval precision on synthesising essays without manual restructuring
@@ -62,7 +62,7 @@ With optional dependencies:
 
 ```bash
 pip install markdown-vault-mcp[mcp]            # FastMCP server
-pip install markdown-vault-mcp[embeddings-api]  # Ollama/OpenAI embeddings via API
+pip install markdown-vault-mcp[embeddings-api]  # Ollama/OpenAI/Voyage embeddings via API
 pip install markdown-vault-mcp[embeddings]      # FastEmbed local embeddings
 pip install markdown-vault-mcp[all]             # MCP + FastEmbed + API embeddings
 ```
@@ -83,7 +83,7 @@ docker pull ghcr.io/pvliesdonk/markdown-vault-mcp:latest
 ```
 
 <!-- DOMAIN-START -->
-The Docker image uses `[all]` (MCP + FastEmbed + API embeddings). By default, semantic search works locally with FastEmbed and can switch to Ollama/OpenAI when configured. A `compose.yml` ships at the repo root as a starting point — copy `.env.example` to `.env`, edit, and `docker compose up -d`.
+The Docker image uses `[all]` (MCP + FastEmbed + API embeddings). By default, semantic search works locally with FastEmbed and can switch to Ollama/OpenAI/Voyage when configured. A `compose.yml` ships at the repo root as a starting point — copy `.env.example` to `.env`, edit, and `docker compose up -d`.
 
 To attach a remote Python debugger (development only; the protocol is unauthenticated), see [Remote debugging](docs/deployment/docker.md#remote-debugging).
 
@@ -213,11 +213,13 @@ All configuration is via environment variables with the `MARKDOWN_VAULT_MCP_` pr
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` | auto-detect | Embedding provider: `openai`, `ollama`, or `fastembed` |
+| `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` | auto-detect | Embedding provider: `openai`, `voyage`, `ollama`, or `fastembed`. Only the first three are auto-detected; `voyage` is opt-in |
 | `OLLAMA_HOST` | `http://localhost:11434` | Ollama server URL (**not** `MARKDOWN_VAULT_MCP_`-prefixed) |
 | `OPENAI_API_KEY` | — | OpenAI API key for the OpenAI embedding provider (**not** `MARKDOWN_VAULT_MCP_`-prefixed) |
 | `MARKDOWN_VAULT_MCP_OPENAI_BASE_URL` / `OPENAI_BASE_URL` | `https://api.openai.com/v1` | OpenAI-compatible API base URL for embeddings |
 | `MARKDOWN_VAULT_MCP_OPENAI_EMBEDDING_MODEL` / `OPENAI_EMBEDDING_MODEL` | `text-embedding-3-small` | OpenAI-compatible embedding model name |
+| `VOYAGE_API_KEY` | — | Voyage AI API key for the `voyage` embedding provider (**not** `MARKDOWN_VAULT_MCP_`-prefixed) |
+| `MARKDOWN_VAULT_MCP_VOYAGE_MODEL` | `voyage-4` | Voyage AI embedding model name |
 | `MARKDOWN_VAULT_MCP_OLLAMA_MODEL` | `nomic-embed-text` | Ollama embedding model name |
 | `MARKDOWN_VAULT_MCP_OLLAMA_CPU_ONLY` | `false` | Force Ollama to use CPU only |
 | `MARKDOWN_VAULT_MCP_FASTEMBED_MODEL` | `BAAI/bge-small-en-v1.5` | FastEmbed model name |

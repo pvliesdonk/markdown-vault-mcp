@@ -8,6 +8,7 @@
   "secretKeys": [
     "MARKDOWN_VAULT_MCP_GIT_TOKEN",
     "OPENAI_API_KEY",
+    "VOYAGE_API_KEY",
     "MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_API_KEY",
     "MARKDOWN_VAULT_MCP_BEARER_TOKEN",
     "MARKDOWN_VAULT_MCP_OIDC_CLIENT_SECRET",
@@ -96,7 +97,7 @@
     {
       "id": "embeddings",
       "label": "Semantic search (embeddings)",
-      "help": "FTS-only needs no model. fastembed is local & zero-config. ollama/openai need a backend.",
+      "help": "FTS-only needs no model. fastembed is local & zero-config. ollama/openai/voyage need a backend.",
       "type": "select",
       "options": [
         {
@@ -123,6 +124,13 @@
           "emit": {
             "MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER": "openai"
           }
+        },
+        {
+          "value": "voyage",
+          "label": "Voyage AI",
+          "emit": {
+            "MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER": "voyage"
+          }
         }
       ]
     },
@@ -136,7 +144,8 @@
         "embeddings": [
           "fastembed",
           "ollama",
-          "openai"
+          "openai",
+          "voyage"
         ]
       },
       "dockerPath": "/data/state/embeddings/embeddings"
@@ -208,6 +217,31 @@
       "showIf": {
         "embeddings": [
           "openai"
+        ]
+      },
+      "advancedGroup": "Embeddings"
+    },
+    {
+      "id": "voyage_api_key",
+      "label": "Voyage API key",
+      "help": "Browser-only; never sent anywhere and never put in the shareable link.",
+      "type": "text",
+      "var": "VOYAGE_API_KEY",
+      "showIf": {
+        "embeddings": [
+          "voyage"
+        ]
+      }
+    },
+    {
+      "id": "voyage_model",
+      "label": "Voyage embedding model",
+      "help": "Default voyage-4 (balanced). voyage-4-large for quality, voyage-4-lite for cost.",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_VOYAGE_MODEL",
+      "showIf": {
+        "embeddings": [
+          "voyage"
         ]
       },
       "advancedGroup": "Embeddings"

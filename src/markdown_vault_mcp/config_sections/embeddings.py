@@ -16,6 +16,8 @@ class EmbeddingsConfig:
     openai_api_key: str | None = None
     openai_base_url: str = "https://api.openai.com/v1"
     openai_embedding_model: str = "text-embedding-3-small"
+    voyage_api_key: str | None = None
+    voyage_model: str = "voyage-4"
     fastembed_model: str = "BAAI/bge-small-en-v1.5"
     fastembed_cache_dir: str | None = None
     embed_context: bool = False
@@ -31,9 +33,10 @@ class EmbeddingsConfig:
     def from_env(cls, prefix: str) -> EmbeddingsConfig:
         """Construct EmbeddingsConfig by reading ``{prefix}_*`` env vars.
 
-        Reads ``OLLAMA_HOST`` and ``OPENAI_API_KEY`` from the bare (unprefixed)
-        environment, matching the ecosystem conventions.  ``OPENAI_BASE_URL``
-        and ``OPENAI_EMBEDDING_MODEL`` use prefixed-wins-bare-fallback semantics.
+        Reads ``OLLAMA_HOST``, ``OPENAI_API_KEY`` and ``VOYAGE_API_KEY`` from the
+        bare (unprefixed) environment, matching the ecosystem conventions.
+        ``OPENAI_BASE_URL`` and ``OPENAI_EMBEDDING_MODEL`` use
+        prefixed-wins-bare-fallback semantics.
 
         Args:
             prefix: Env var prefix, e.g. ``"MARKDOWN_VAULT_MCP"``.
@@ -67,6 +70,8 @@ class EmbeddingsConfig:
             openai_api_key=(os.environ.get("OPENAI_API_KEY") or "").strip() or None,
             openai_base_url=openai_base_url,
             openai_embedding_model=openai_model,
+            voyage_api_key=(os.environ.get("VOYAGE_API_KEY") or "").strip() or None,
+            voyage_model=env(prefix, "VOYAGE_MODEL") or "voyage-4",
             fastembed_model=env(prefix, "FASTEMBED_MODEL") or "BAAI/bge-small-en-v1.5",
             fastembed_cache_dir=env(prefix, "FASTEMBED_CACHE_DIR") or None,
             embed_context=(

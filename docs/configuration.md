@@ -102,12 +102,14 @@ The first three knobs adjust *ranking and rendering* and take effect immediately
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
-| `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` | string | auto-detect | Embedding provider: `openai`, `ollama`, or `fastembed`. **Breaking change** from `EMBEDDING_PROVIDER` in older versions |
+| `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` | string | auto-detect | Embedding provider: `openai`, `voyage`, `ollama`, or `fastembed`. `voyage` must be selected explicitly (it is not auto-detected). **Breaking change** from `EMBEDDING_PROVIDER` in older versions |
 | `MARKDOWN_VAULT_MCP_EMBED_CONTEXT` | bool | `false` | Enrich each chunk's embedding input with the note title, the chunk heading, and (on the first chunk) the `SEARCHABLE_FIELDS` values, improving semantic recall for short or context-poor chunks. The raw note content on disk and in search snippets is unchanged. The active format is recorded in the vector sidecar, so flipping this (or changing `SEARCHABLE_FIELDS`) re-embeds the whole vault once on next startup |
 | `OLLAMA_HOST` | url | `http://localhost:11434` | Ollama server URL. **Not** `MARKDOWN_VAULT_MCP_`-prefixed |
 | `OPENAI_API_KEY` | string | (none) | OpenAI API key for the OpenAI embedding provider. **Not** `MARKDOWN_VAULT_MCP_`-prefixed |
 | `MARKDOWN_VAULT_MCP_OPENAI_BASE_URL` / `OPENAI_BASE_URL` | url | `https://api.openai.com/v1` | OpenAI-compatible API base URL for embeddings |
 | `MARKDOWN_VAULT_MCP_OPENAI_EMBEDDING_MODEL` / `OPENAI_EMBEDDING_MODEL` | string | `text-embedding-3-small` | OpenAI-compatible embedding model name |
+| `VOYAGE_API_KEY` | string | (none) | Voyage AI API key for the `voyage` embedding provider. **Not** `MARKDOWN_VAULT_MCP_`-prefixed |
+| `MARKDOWN_VAULT_MCP_VOYAGE_MODEL` | string | `voyage-4` | Voyage AI embedding model name. `voyage-4-large` for quality, `voyage-4-lite` for cost |
 | `MARKDOWN_VAULT_MCP_OLLAMA_MODEL` | string | `nomic-embed-text` | Ollama embedding model name |
 | `MARKDOWN_VAULT_MCP_OLLAMA_CPU_ONLY` | bool | `false` | Force Ollama to use CPU only |
 | `MARKDOWN_VAULT_MCP_FASTEMBED_MODEL` | string | `BAAI/bge-small-en-v1.5` | FastEmbed model name |
@@ -120,7 +122,9 @@ The first three knobs adjust *ranking and rendering* and take effect immediately
     2. **Ollama** — if `OLLAMA_HOST` is reachable
     3. **FastEmbed** — if the `fastembed` package is installed
 
-    Both API providers speak the OpenAI-compatible embeddings protocol through the official `openai` SDK: the `ollama` provider is a preset that targets `{OLLAMA_HOST}/v1` with no key required. The `OLLAMA_*` settings and their behavior are unchanged; `OLLAMA_CPU_ONLY` uses Ollama's native API, which is the only way to request CPU-only inference.
+    All three API providers speak the OpenAI-compatible embeddings protocol through the official `openai` SDK: the `ollama` provider is a preset that targets `{OLLAMA_HOST}/v1` with no key required, and `voyage` is a preset that targets `https://api.voyageai.com/v1`. The `OLLAMA_*` settings and their behavior are unchanged; `OLLAMA_CPU_ONLY` uses Ollama's native API, which is the only way to request CPU-only inference.
+
+    `voyage` is not in the auto-detect chain: a `VOYAGE_API_KEY` exported for another tool must not silently take over an existing index, so set `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER=voyage` to use it.
 
     **Explicit vs. auto-detect failure handling:** when you set `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` to a specific backend and it cannot be constructed at startup — a missing dependency, missing/empty credentials, or an unrecognised value — the server **fails fast** with a `ConfigurationError` rather than silently falling back to keyword-only search. (An unreachable Ollama/OpenAI *service* does not prevent startup — the provider still loads; the failure surfaces later as an embedding error during index build.) When the variable is *unset* (auto-detect) and no backend is available, the server logs a warning and continues with semantic search disabled. Set the variable explicitly if you want a missing provider to be a hard startup error.
 

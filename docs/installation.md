@@ -20,7 +20,7 @@ With optional dependencies:
     ```bash
     pip install markdown-vault-mcp[embeddings-api]
     ```
-    Adds the openai SDK + httpx + numpy for Ollama/OpenAI embeddings via API.
+    Adds the openai SDK + httpx + numpy for Ollama/OpenAI/Voyage embeddings via API.
 
 === "Local embeddings"
 
@@ -56,7 +56,7 @@ uv sync --all-extras --all-groups
 docker pull ghcr.io/pvliesdonk/markdown-vault-mcp:latest
 ```
 
-The Docker image uses `[all]` (MCP + FastEmbed + API embeddings). Semantic search is available by default with FastEmbed and can switch to Ollama/OpenAI when configured.
+The Docker image uses `[all]` (MCP + FastEmbed + API embeddings). Semantic search is available by default with FastEmbed and can switch to Ollama/OpenAI/Voyage when configured.
 
 For early adopters who want to test unreleased changes, an `:unstable` tag is published by the release workflow's pre-release mode. It tracks the latest release candidate and may include in-progress features. The floating `:latest`, `:vN`, and `:vN.M` tags only move on stable releases.
 
