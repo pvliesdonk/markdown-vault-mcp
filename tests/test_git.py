@@ -783,12 +783,11 @@ class TestConfigIntegration:
     def test_git_token_wires_up_strategy(self, tmp_path: Path) -> None:
         """Legacy mode: token-only config still wires pull+push strategy."""
         from markdown_vault_mcp.config import ProjectConfig
-        from markdown_vault_mcp.config_sections import GitConfig
 
         config = ProjectConfig(
             source_dir=tmp_path,
             read_only=False,
-            git=GitConfig(token="ghp_test"),
+            git_token="ghp_test",
         )
         kwargs = to_vault_kwargs(config)
         assert "on_write" in kwargs
@@ -811,7 +810,6 @@ class TestConfigIntegration:
         """Managed mode uses configured pull interval and write callback."""
 
         from markdown_vault_mcp.config import ProjectConfig
-        from markdown_vault_mcp.config_sections import GitConfig
 
         bare = tmp_path / "remote.git"
         subprocess.run(
@@ -823,7 +821,9 @@ class TestConfigIntegration:
         config = ProjectConfig(
             source_dir=tmp_path / "vault",
             read_only=False,
-            git=GitConfig(repo_url=str(bare), token="ghp_test", pull_interval_s=321),
+            git_repo_url=str(bare),
+            git_token="ghp_test",
+            git_pull_interval_s=321,
         )
         kwargs = to_vault_kwargs(config)
         assert "on_write" in kwargs
@@ -832,12 +832,12 @@ class TestConfigIntegration:
     def test_push_delay_passed_to_strategy(self, tmp_path: Path) -> None:
         """to_vault_kwargs() passes git_push_delay_s to strategy."""
         from markdown_vault_mcp.config import ProjectConfig
-        from markdown_vault_mcp.config_sections import GitConfig
 
         config = ProjectConfig(
             source_dir=tmp_path,
             read_only=False,
-            git=GitConfig(token="ghp_test", push_delay_s=60.0),
+            git_token="ghp_test",
+            git_push_delay_s=60.0,
         )
         kwargs = to_vault_kwargs(config)
         strategy = kwargs["on_write"]
@@ -5021,12 +5021,12 @@ class TestGitClaimConfig:
     def test_claim_config_passed_to_strategy(self, tmp_path: Path) -> None:
         """to_vault_kwargs() passes claim keys to GitWriteStrategy."""
         from markdown_vault_mcp.config import ProjectConfig
-        from markdown_vault_mcp.config_sections import GitConfig
 
         config = ProjectConfig(
             source_dir=tmp_path,
             read_only=False,
-            git=GitConfig(commit_name_claim="name", commit_email_claim="email"),
+            git_commit_name_claim="name",
+            git_commit_email_claim="email",
         )
         kwargs = to_vault_kwargs(config)
         strategy = kwargs["on_write"]

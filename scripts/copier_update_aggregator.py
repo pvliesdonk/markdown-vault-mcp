@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
 
 
 @dataclass
@@ -150,18 +150,56 @@ def _file_label(entry: dict) -> str:
     return f"`{name}`" if name is not None else "`(unnamed)`"
 
 
+def _job_payload(
+    data: dict | None,
+    validate: Callable[[dict | None], dict | None],
+    section_title: str,
+) -> dict | str:
+    """Resolve one job's validate/status preamble, shared by all three jobs.
+
+    Returns the validated payload dict when its status is ``ok``; otherwise
+    the section's early-out string (a state-specific placeholder) for the
+    caller to return as-is. Callers own their *own* gating (conflict count,
+    template_advanced) — that decides whether a section exists at all, while
+    this decides only how a section that does exist reports agent state.
+    """
+    data = validate(data)
+    if data is None:
+        return _placeholder(section_title, "error")
+    status = data.get("status", "error")
+    if status == "rate_limited":
+        return _placeholder(section_title, "rate_limited")
+    if status != "ok":
+        return _placeholder(section_title, "error")
+    return data
+
+
+def _classify(
+    items: list[dict], buckets: Sequence[str], fallback: str
+) -> dict[str, list[dict]]:
+    """Bucket *items* by their "classification" field, in *buckets* order.
+
+    Any unknown classification lands in *fallback* so the render loop (which
+    only iterates the declared buckets) doesn't silently drop entries with
+    off-spec classification strings (e.g., the LLM emits "NEEDS-OPT-IN" or a
+    typo). A `setdefault`-style pattern would have created a new dict key the
+    render loop never visits.
+    """
+    by_class: dict[str, list[dict]] = {bucket: [] for bucket in buckets}
+    for item in items:
+        cls = item.get("classification")
+        by_class[cls if cls in by_class else fallback].append(item)
+    return by_class
+
+
 def _render_job_a(data: dict | None, conflict_count: int) -> str:
     """Render the 🔧 Conflict resolutions section."""
     if conflict_count == 0:
         return ""  # Job A is gated; no section if no conflicts
-    data = _validate_job_a(data)
-    if data is None:
-        return _placeholder("🔧 Conflict resolutions", "error")
-    status = data.get("status", "error")
-    if status == "rate_limited":
-        return _placeholder("🔧 Conflict resolutions", "rate_limited")
-    if status != "ok":
-        return _placeholder("🔧 Conflict resolutions", "error")
+    payload = _job_payload(data, _validate_job_a, "🔧 Conflict resolutions")
+    if isinstance(payload, str):
+        return payload
+    data = payload
 
     content: list[str] = []
     auto = data.get("auto_resolved", [])
@@ -196,16 +234,11 @@ def _render_job_b(data: dict | None, template_advanced: bool = True) -> str:
     """Render the ✨ New features in this update section."""
     if not template_advanced:
         return ""  # Job B is gated; no section if refs didn't differ
-    data = _validate_job_b(data)
-    if data is None:
-        return _placeholder("✨ New features in this update", "error")
-    status = data.get("status", "error")
-    if status == "rate_limited":
-        return _placeholder("✨ New features in this update", "rate_limited")
-    if status != "ok":
-        return _placeholder("✨ New features in this update", "error")
+    payload = _job_payload(data, _validate_job_b, "✨ New features in this update")
+    if isinstance(payload, str):
+        return payload
 
-    entries = data.get("entries", [])
+    entries = payload.get("entries", [])
     if not entries:
         return ""  # No features = no section (rare — refs differed but changelog empty)
 
@@ -219,20 +252,22 @@ def _render_job_b(data: dict | None, template_advanced: bool = True) -> str:
         key=lambda e: int(str(e.get("pr_number") or "0").lstrip("#") or "0"),
     )
 
-    by_class: dict[str, list[dict]] = {
-        "needs-opt-in": [],
-        "ships-automatically": [],
-        "informational": [],
-    }
-    # Map any unknown classification to "informational" so the render loop
-    # (which only iterates the three keys above) doesn't silently drop entries
-    # with off-spec classification strings (e.g., LLM emits "NEEDS-OPT-IN" or
-    # a typo). The `setdefault`-style pattern would have created a new dict
-    # key but the render loop wouldn't have visited it.
-    for e in entries:
-        cls = e.get("classification")
-        by_class[cls if cls in by_class else "informational"].append(e)
+    by_class = _classify(
+        entries,
+        ("needs-opt-in", "ships-automatically", "informational"),
+        fallback="informational",
+    )
+    content = _job_b_content(by_class)
+    if not content:
+        # Entries existed but every stratum filtered out (e.g. all
+        # informational with null pr_number); suppress the section entirely
+        # rather than emit an orphaned `### ✨` header above empty content.
+        return ""
+    return "\n".join(["### ✨ New features in this update", "", *content])
 
+
+def _job_b_content(by_class: dict[str, list[dict]]) -> list[str]:
+    """Render Job B's three classification strata as body lines."""
     content: list[str] = []
     if by_class["needs-opt-in"]:
         content.append("**Needs your attention** (action-required):")
@@ -265,28 +300,18 @@ def _render_job_b(data: dict | None, template_advanced: bool = True) -> str:
                 f"**Internal / no downstream effect** ({n} {'entry' if n == 1 else 'entries'}): {ids}"
             )
             content.append("")
-    if not content:
-        # Entries existed but every stratum filtered out (e.g. all
-        # informational with null pr_number); suppress the section entirely
-        # rather than emit an orphaned `### ✨` header above empty content.
-        return ""
-    return "\n".join(["### ✨ New features in this update", "", *content])
+    return content
 
 
 def _render_job_c(data: dict | None, template_advanced: bool = True) -> str:
     """Render the 📦 Excluded-file upstream changes section."""
     if not template_advanced:
         return ""  # Job C is gated; no section if refs didn't differ
-    data = _validate_job_c(data)
-    if data is None:
-        return _placeholder("📦 Excluded-file upstream changes", "error")
-    status = data.get("status", "error")
-    if status == "rate_limited":
-        return _placeholder("📦 Excluded-file upstream changes", "rate_limited")
-    if status != "ok":
-        return _placeholder("📦 Excluded-file upstream changes", "error")
+    payload = _job_payload(data, _validate_job_c, "📦 Excluded-file upstream changes")
+    if isinstance(payload, str):
+        return payload
 
-    files = data.get("files", [])
+    files = payload.get("files", [])
     if not files:
         return ""
 
@@ -296,17 +321,21 @@ def _render_job_c(data: dict | None, template_advanced: bool = True) -> str:
     # malformed entry). Same robustness rationale as Job B's pr_number sort.
     files = sorted(files, key=lambda f: str(f.get("file") or ""))
 
-    by_class: dict[str, list[dict]] = {
-        "recommend-port": [],
-        "informational": [],
-        "skip": [],
-    }
-    # Map unknown classifications to "informational" — same rationale as
-    # Job B (avoid silent data loss from off-spec classification strings).
-    for f in files:
-        cls = f.get("classification")
-        by_class[cls if cls in by_class else "informational"].append(f)
+    by_class = _classify(
+        files, ("recommend-port", "informational", "skip"), fallback="informational"
+    )
+    content = _job_c_content(by_class)
+    if not content:
+        # Files existed but the skip rollup was the only non-empty
+        # stratum and every entry in it had null file (so the rollup
+        # got filtered out).  Suppress the section entirely rather
+        # than emit an orphaned `### 📦` header above empty content.
+        return ""
+    return "\n".join(["### 📦 Excluded-file upstream changes", "", *content])
 
+
+def _job_c_content(by_class: dict[str, list[dict]]) -> list[str]:
+    """Render Job C's three classification strata as body lines."""
     content: list[str] = []
     if by_class["recommend-port"]:
         content.append("**Recommended to port** (action-required):")
@@ -332,13 +361,7 @@ def _render_job_c(data: dict | None, template_advanced: bool = True) -> str:
                 f"**Skipped (template-internal)** ({n} {'file' if n == 1 else 'files'}): {names}"
             )
             content.append("")
-    if not content:
-        # Files existed but the skip rollup was the only non-empty
-        # stratum and every entry in it had null file (so the rollup
-        # got filtered out).  Suppress the section entirely rather
-        # than emit an orphaned `### 📦` header above empty content.
-        return ""
-    return "\n".join(["### 📦 Excluded-file upstream changes", "", *content])
+    return content
 
 
 _DISABLED_NOTICE = (

@@ -246,7 +246,6 @@ class TestConfigDrivenPrompts:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         from markdown_vault_mcp.config import ProjectConfig
-        from markdown_vault_mcp.config_sections.content import ContentConfig
 
         # env deliberately carries NO prompts folder ...
         monkeypatch.delenv("MARKDOWN_VAULT_MCP_PROMPTS_FOLDER", raising=False)
@@ -258,7 +257,7 @@ class TestConfigDrivenPrompts:
         (prompts_dir / "greet.md").write_text("Hello from config", encoding="utf-8")
         config = ProjectConfig(
             source_dir=tmp_path,
-            content=ContentConfig(prompts_folder=str(prompts_dir)),
+            prompts_folder=str(prompts_dir),
         )
 
         server = make_server(config=config)

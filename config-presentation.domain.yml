@@ -1,0 +1,86 @@
+# Domain presentation layer — YOURS to edit.  Preserved across copier update.
+#
+# Domain env vars are discovered automatically from your ProjectConfig's
+# CONFIG-FIELDS block, using each field's `metadata={"help": ..., "tags": ...}`.
+# Declare a var here only when it is read somewhere the scan cannot see it —
+# a deprecated alias no longer read inside ProjectConfig.from_env, or a var
+# read outside ProjectConfig.from_env entirely.
+#
+# Same shape as the template-owned config-presentation.yml.  `{PREFIX}` is
+# substituted with your env_prefix.
+#
+# A var's `default:` key controls whether it renders required, the same way
+# a dataclass field does: omit `default:` entirely to mark the var required,
+# or give it `default: null` (or a real default) to mark it optional.
+vars:
+  # Bare (unprefixed) embedding-provider conventions, read via os.environ
+  # inside ProjectConfig.from_env — invisible to the prefixed AST scan.
+  - name: "OLLAMA_HOST"
+    type_name: "str"
+    default: "http://localhost:11434"
+    help: >-
+      Ollama server URL for the ollama embedding provider. Bare (not
+      {PREFIX}_-prefixed), matching the Ollama ecosystem convention.
+    tags: [embeddings]
+    wizard: {group: Embeddings}
+
+  - name: "OPENAI_API_KEY"
+    type_name: "str"
+    default: null
+    help: >-
+      OpenAI API key for the openai embedding provider, and the fallback key
+      for the summarize tool when {PREFIX}_SUMMARIZE_OPENAI_API_KEY is unset.
+      Bare (not {PREFIX}_-prefixed), matching the OpenAI ecosystem convention.
+    tags: [embeddings]
+    wizard: {group: Embeddings, secret: true}
+
+  - name: "OPENAI_BASE_URL"
+    type_name: "str"
+    default: null
+    help: >-
+      Bare fallback for {PREFIX}_OPENAI_BASE_URL (embeddings). For the
+      summarize tool it only routes traffic when an API key already enables
+      the feature; it never enables summarize by itself.
+    tags: [embeddings]
+    # No wizard question: the prefixed {PREFIX}_OPENAI_BASE_URL is the
+    # offered control and the two would collide on one question id.
+    wizard: {control: none}
+
+  - name: "OPENAI_EMBEDDING_MODEL"
+    type_name: "str"
+    default: null
+    help: >-
+      Bare fallback for {PREFIX}_OPENAI_EMBEDDING_MODEL.
+    tags: [embeddings]
+    # No wizard question — same id-collision rationale as OPENAI_BASE_URL.
+    wizard: {control: none}
+
+  # MCP-layer timeouts, read via os.environ in the server layer (outside
+  # ProjectConfig.from_env), so the AST scan cannot see them.
+  - name: "{PREFIX}_BUILD_TIMEOUT_S"
+    type_name: "float"
+    default: 60
+    help: >-
+      Maximum seconds an index-backed tool or resource waits for the FTS
+      index to become queryable during a cold-start background build before
+      raising IndexUnavailableError(reason="timeout"). Increase for
+      large vaults.
+    tags: [timeouts]
+    wizard: {group: Timeouts}
+
+  - name: "{PREFIX}_DRAIN_TIMEOUT_S"
+    type_name: "float"
+    default: 60
+    help: >-
+      Maximum seconds an index-querying read tool waits for the IndexWriter
+      to drain when called with wait_for_pending_writes=true. On timeout the
+      tool answers from the current index and reports index_stale=true in
+      the response _meta.
+    tags: [timeouts]
+    wizard: {group: Timeouts}
+
+# Extra wizard questions specific to this project.
+wizard_routing: []
+
+# Extra wizard guards specific to this project.
+wizard_guards: []

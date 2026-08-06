@@ -69,20 +69,33 @@ VENDORED_VERSIONS: dict[str, dict[str, str]] = {
 _SOURCE_HASH_MARKER = "<!-- vendor-spa-source-sha256:{hash} -->"
 _SOURCE_HASH_RE = re.compile(r"<!-- vendor-spa-source-sha256:([0-9a-f]{64}) -->")
 
+# The ES-module host tag, matched case-insensitively to stay consistent with
+# _inline_script's <script src> pattern (HTML tag/attribute names are
+# case-insensitive, so a `<SCRIPT TYPE="module">` in app.src.html must not be
+# treated as absent).  ONE pattern drives both the presence guard and the
+# import-map insertion point, so the two can never disagree about what counts
+# as the module tag.
+_MODULE_TAG_RE = re.compile(r"<script\s+type=\"module\"\s*>", re.IGNORECASE)
+
 
 def _discover_static_dir() -> Path:
     """Locate the single ``src/<module>/static`` dir containing app.src.html.
 
     Called lazily from main() (never at import) so the module stays importable
     for unit tests without a project tree present.
+
+    Raises ``ValueError`` rather than ``SystemExit`` so failure reporting stays
+    main()'s job — it catches this alongside the inlining failures and uses the
+    same ``print(..., file=sys.stderr); return 1`` idiom as every other error
+    path here.  The message carries no ``ERROR:`` prefix; main() adds it.
     """
     src_root = Path(__file__).resolve().parent.parent / "src"
     candidates = sorted(src_root.glob("*/static/app.src.html"))
     if not candidates:
-        raise SystemExit(f"ERROR: no src/*/static/app.src.html found under {src_root}")
+        raise ValueError(f"no src/*/static/app.src.html found under {src_root}")
     if len(candidates) > 1:
         found = ", ".join(str(c) for c in candidates)
-        raise SystemExit(f"ERROR: multiple app.src.html found: {found}")
+        raise ValueError(f"multiple app.src.html found: {found}")
     return candidates[0].parent
 
 
@@ -132,7 +145,8 @@ def _inline_module(html: str, _name: str, cfg: dict[str, str], js: str) -> str:
         raise ValueError(
             f"Module-type dependency '{_name}' requires an 'import_specifier' key"
         )
-    if '<script type="module">' not in html:
+    module_tag = _MODULE_TAG_RE.search(html)
+    if module_tag is None:
         raise ValueError(
             'No <script type="module"> tag found — cannot insert import map'
         )
@@ -142,10 +156,9 @@ def _inline_module(html: str, _name: str, cfg: dict[str, str], js: str) -> str:
     import_map_obj = {"imports": {specifier: data_uri}}
     import_map = f'<script type="importmap">\n{json.dumps(import_map_obj)}\n</script>\n'
 
-    # Insert the import map immediately before <script type="module">
-    html = html.replace(
-        '<script type="module">', import_map + '<script type="module">', 1
-    )
+    # Insert the import map immediately before the module tag.  Slicing at the
+    # match offset preserves the tag's original casing/spacing verbatim.
+    html = html[: module_tag.start()] + import_map + html[module_tag.start() :]
 
     # Rewrite the import URL → bare specifier (derive pattern from cfg["url"])
     cdn_url = re.escape(cfg["url"])
@@ -175,7 +188,11 @@ def main() -> int:
     """Entry point.  Returns 0 on success, 1 on failure."""
     check_mode = "--check" in sys.argv
 
-    static_dir = _discover_static_dir()
+    try:
+        static_dir = _discover_static_dir()
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
     src_html_path = static_dir / "app.src.html"
     out_html_path = static_dir / "app.html"
 

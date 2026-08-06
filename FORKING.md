@@ -58,6 +58,7 @@ sed -i.bak \
   -e 's/ on top of the shipped defaults survive `copier update`\./ on top of the shipped defaults are yours to maintain./' \
   -e 's/ are preserved across `copier update`\./ are domain-owned./' \
   -e 's/The block is preserved across `copier update`\./The block is domain-owned./' \
+  -e 's| on every `copier copy`/`copier update` and re-verified by| whenever config fields change, and re-verified by|' \
   CLAUDE.md && rm -f CLAUDE.md.bak
 ```
 
@@ -66,8 +67,10 @@ paragraph, **Shared Infrastructure**, and **Contributing fixes upstream** — an
 strips the copier-update wording that no longer describes a detached fork: the
 `TEMPLATE-OWNED SECTIONS` banner fences (a fork owns every section, so the
 template/domain split is moot), the "Kept across copier update" notes on the
-DOMAIN blocks, and the remaining "preserved/survive across copier update" notes
-(the pre-commit defaults, the `Dockerfile` sentinels, and the upstream sentinel).
+DOMAIN blocks, the remaining "preserved/survive across copier update" notes
+(the pre-commit defaults, the `Dockerfile` sentinels, and the upstream sentinel),
+and the copier-specific trigger on the config-wizard spec generation note (the
+generator still runs in a fork, just not on a copier lifecycle event).
 The fork-neutral contributor guidance
 (Conventions, the PR acceptance gates, the Logging Standard, the config
 contract, GitHub Review Types) is kept. If your fork added its own

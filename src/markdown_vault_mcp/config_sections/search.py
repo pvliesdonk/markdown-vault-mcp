@@ -111,37 +111,3 @@ class SearchConfig:
             raise ConfigurationError(
                 f"chunk_overlap_words must be >= 0, got {self.chunk_overlap_words}"
             )
-
-    @classmethod
-    def from_env(cls, prefix: str) -> SearchConfig:
-        """Construct SearchConfig by reading ``{prefix}_*`` env vars.
-
-        Args:
-            prefix: Env var prefix, e.g. ``"MARKDOWN_VAULT_MCP"``.
-
-        Returns:
-            Populated SearchConfig with defaults for unset vars.
-
-        Raises:
-            ConfigurationError: If any search integer/float env var is invalid
-                (non-numeric) or out of range, or if a weight-map env var
-                (``FOLDER_WEIGHTS``, ``FTS_WEIGHTS``) is malformed or carries
-                an out-of-range weight.
-        """
-        from markdown_vault_mcp.config_sections._helpers import (
-            env_float,
-            env_int,
-            env_weight_map,
-            opt_int,
-        )
-
-        return cls(
-            chunks_per_file=env_int(prefix, "CHUNKS_PER_FILE", 2),
-            snippet_words=env_int(prefix, "SNIPPET_WORDS", 200),
-            length_downweight_alpha=env_float(prefix, "LENGTH_DOWNWEIGHT_ALPHA", 0.25),
-            max_chunk_words=env_int(prefix, "MAX_CHUNK_WORDS", 400),
-            max_chunk_chars_override=opt_int(prefix, "MAX_CHUNK_CHARS"),
-            chunk_overlap_words=env_int(prefix, "CHUNK_OVERLAP_WORDS", 40),
-            folder_weights=env_weight_map(prefix, "FOLDER_WEIGHTS"),
-            fts_weights=env_weight_map(prefix, "FTS_WEIGHTS"),
-        )

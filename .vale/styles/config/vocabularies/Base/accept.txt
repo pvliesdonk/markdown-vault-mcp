@@ -44,6 +44,7 @@ validators
 traceback
 
 # --- #686 domain vocabulary (jargon, identifiers, tools, file types) ---
+_meta
 accessors
 affordances
 allowlist
@@ -63,6 +64,7 @@ beartype
 binariness
 bool
 broken_links
+browse_vault
 build_embeddings
 build_index
 callouts
@@ -70,9 +72,11 @@ chowns
 chunker
 classmethod
 codec
+codecov
 commit
 composable
 connection_path
+create_from_template
 csv
 dataclass
 datetime
@@ -91,14 +95,18 @@ dominators
 DOMPurify
 downloader
 downweight
+downweights
 embeddings_status
 errorname
 etag
+fastembed
 float
 flush_dirty_embeddings
 freelist
 frontmatter
+FSEvents
 fullscreen
+get_summary
 git
 globals
 gosu
@@ -110,12 +118,15 @@ int
 invalid_client
 IPs
 jpg
+keyless
 keyspace
+lfs
 lifespan
 linux
 litellm
 LLM
 LLMs
+lockfile
 MCP
 mcpb
 middleware
@@ -127,6 +138,7 @@ numpy
 OIDCProxy
 Ollama
 onboarding
+openai
 outlink
 outlinks
 Pandoc
@@ -165,6 +177,8 @@ sanitization
 scaffolded
 sdist
 SELinux
+SHAs
+show_context
 stderr
 streamable
 subfolder
@@ -172,6 +186,7 @@ subfolders
 subprocess
 subqueries
 subtree
+subtrees
 svg
 syscalls
 teardown
@@ -181,6 +196,7 @@ tokenizer
 Tracebacks
 triages
 TTLs
+ttl_seconds
 unbuilt
 unicode
 unmanaged

@@ -295,3 +295,194 @@ def to_vault_kwargs(config: ProjectConfig) -> dict[str, Any]:
     kwargs["git_strategy"] = git_strategy
     kwargs["on_write"] = git_strategy
     return kwargs
+
+
+def read_server_name(prefix: str) -> str:
+    """Read ``{prefix}_SERVER_NAME``, falling back to the project name.
+
+    Lives outside ``ProjectConfig.from_env`` deliberately: the var is
+    declared by the template-owned ``config-presentation.yml`` (``template``
+    provenance), so a literal ``env(...)`` read inside ``from_env`` would be
+    AST-discovered as a ``domain`` var too and trip the generator's
+    duplicate-name guard.
+
+    Args:
+        prefix: Env var prefix, e.g. ``"MARKDOWN_VAULT_MCP"``.
+
+    Returns:
+        The configured server name, or ``markdown-vault-mcp``.
+    """
+    from fastmcp_pvl_core import env as _env
+
+    return (_env(prefix, "SERVER_NAME") or "").strip() or "markdown-vault-mcp"
+
+
+def read_instructions(prefix: str) -> str | None:
+    """Read ``{prefix}_INSTRUCTIONS`` (template provenance — see above).
+
+    Args:
+        prefix: Env var prefix, e.g. ``"MARKDOWN_VAULT_MCP"``.
+
+    Returns:
+        The custom MCP instructions text, or ``None`` when unset.
+    """
+    from fastmcp_pvl_core import env as _env
+
+    return (_env(prefix, "INSTRUCTIONS") or "").strip() or None
+
+
+def resolve_git_repo_url(raw: str | None, token: str | None, prefix: str) -> str | None:
+    """Resolve ``GIT_REPO_URL``, warning when a token is set without it.
+
+    Args:
+        raw: The already-read ``GIT_REPO_URL`` env value.
+        token: The already-resolved ``GIT_TOKEN`` value (or ``None``).
+        prefix: Env var prefix, used in the warning message.
+
+    Returns:
+        The repo URL, or ``None`` when unset.
+    """
+    repo_url = raw or None
+    if token and not repo_url:
+        logger.warning(
+            "from_env: %s_GIT_TOKEN is set without %s_GIT_REPO_URL. This "
+            "legacy mode is deprecated; set GIT_REPO_URL to enable explicit "
+            "managed mode.",
+            prefix,
+            prefix,
+        )
+    return repo_url
+
+
+def resolve_summarize_api_key(prefixed_raw: str | None) -> str | None:
+    """Resolve the summarize API key: prefixed value, bare fallback, or None.
+
+    Args:
+        prefixed_raw: The already-read ``SUMMARIZE_OPENAI_API_KEY`` value.
+
+    Returns:
+        The effective API key (bare ``OPENAI_API_KEY`` as fallback), or
+        ``None`` when neither is set.
+    """
+    import os
+
+    return (prefixed_raw or os.environ.get("OPENAI_API_KEY") or "").strip() or None
+
+
+def resolve_summarize_base_url(prefixed_raw: str | None, key: str | None) -> str | None:
+    """Resolve the summarize base URL with enablement-safe bare fallback.
+
+    The bare ``OPENAI_BASE_URL`` is a value fallback only: it routes traffic
+    when a key already enables summarize, but never enables the tool by
+    itself — a user setting it purely for embeddings must not get a surprise
+    summarize tool. Only the prefixed var counts toward enablement.
+
+    Args:
+        prefixed_raw: The already-read ``SUMMARIZE_OPENAI_BASE_URL`` value.
+        key: The already-resolved summarize API key (or ``None``).
+
+    Returns:
+        The effective base URL, or ``None``.
+    """
+    import os
+
+    prefixed = (prefixed_raw or "").strip() or None
+    bare = (os.environ.get("OPENAI_BASE_URL") or "").strip() or None
+    return prefixed or (bare if key else None)
+
+
+def resolve_searchable_fields(
+    raw: str | None, indexed: tuple[str, ...] | None
+) -> tuple[str, ...] | None:
+    """Resolve the ``SEARCHABLE_FIELDS`` env value against ``INDEXED_FIELDS``.
+
+    Unset/empty inherits *indexed* (a field configured for structured
+    filtering is searchable out of the box); the sentinel ``none`` means
+    "filterable but not searchable" — no fields, no inherit; anything else
+    is parsed as a comma-separated list.
+
+    Args:
+        raw: The already-read ``SEARCHABLE_FIELDS`` env value.
+        indexed: The already-parsed ``INDEXED_FIELDS`` tuple (or ``None``).
+
+    Returns:
+        The resolved searchable-fields tuple, or ``None``.
+    """
+    from markdown_vault_mcp.config_sections._helpers import opt_list
+
+    if (raw or "").strip().lower() == "none":
+        return None
+    return opt_list(raw) or indexed
+
+
+def resolve_conventions_file(raw: str | None) -> str | None:
+    """Resolve the ``CONVENTIONS_FILE`` env value.
+
+    Unset/empty defaults to ``_conventions.md``; the sentinel ``none``
+    disables folder conventions entirely.
+
+    Args:
+        raw: The already-read ``CONVENTIONS_FILE`` env value.
+
+    Returns:
+        The conventions filename, or ``None`` when disabled.
+    """
+    cleaned = (raw or "").strip()
+    if not cleaned:
+        return "_conventions.md"
+    if cleaned.lower() == "none":
+        return None
+    return cleaned
+
+
+def resolve_attachment_extensions(raw: str | None) -> tuple[str, ...] | None:
+    """Resolve the ``ATTACHMENT_EXTENSIONS`` env value.
+
+    ``*`` allows every non-markdown extension; unset/empty selects the
+    built-in allowlist (``None``); anything else parses as a list.
+
+    Args:
+        raw: The already-read ``ATTACHMENT_EXTENSIONS`` env value.
+
+    Returns:
+        The extensions tuple, ``("*",)``, or ``None`` for the built-in list.
+    """
+    from markdown_vault_mcp.config_sections._helpers import opt_list
+
+    cleaned = (raw or "").strip()
+    if not cleaned:
+        return None
+    if cleaned == "*":
+        return ("*",)
+    return opt_list(cleaned)
+
+
+def resolve_prompts_folder(raw: str | None, source_dir: Path) -> str | None:
+    """Resolve the ``PROMPTS_FOLDER`` value, joining a relative path to the vault.
+
+    Args:
+        raw: The prompts-folder value (env-read or field-supplied).
+        source_dir: Vault root; used to resolve a relative prompts folder.
+
+    Returns:
+        The absolute prompts-folder path as a string, or ``None`` when unset.
+    """
+    cleaned = (raw or "").strip()
+    if not cleaned:
+        return None
+    pf = Path(cleaned.replace("\\", "/"))
+    if not pf.is_absolute():
+        pf = source_dir / pf
+    return str(pf)
+
+
+def normalize_templates_folder(raw: str | None) -> str:
+    """Normalize a templates-folder value (backslashes, edge slashes, default).
+
+    Args:
+        raw: The templates-folder value (env-read or field-supplied).
+
+    Returns:
+        The normalized relative folder path, defaulting to ``_templates``.
+    """
+    return ((raw or "").strip().replace("\\", "/").strip("/")) or "_templates"

@@ -14,23 +14,23 @@ Point it at a directory of Markdown files (an Obsidian vault, a docs folder, a Z
 ## Features
 
 <!-- DOMAIN-START -->
-- **Full-text search** — SQLite FTS5 with BM25 scoring, porter stemming
-- **Semantic search** — cosine similarity over embedding vectors (FastEmbed, Ollama, or OpenAI)
-- **Hybrid search** — Reciprocal Rank Fusion combining FTS5 and vector results
-- **Diversity-aware ranking** — each search result list caps a single document at 2 chunks (configurable), downweights chunks of long documents, and returns sentence-scale snippets — bounded LLM context cost per query, with full-section recovery via `read(path, section=heading)`
-- **Adaptive heading-level chunking** — long sections are recursively re-split at deeper heading levels (H1 → H6) until each chunk fits a configurable word budget, improving retrieval precision on synthesising essays without manual restructuring
+- **Full-text search**: SQLite FTS5 with BM25 scoring, porter stemming
+- **Semantic search**: cosine similarity over embedding vectors (FastEmbed, Ollama, or OpenAI)
+- **Hybrid search**: Reciprocal Rank Fusion combining FTS5 and vector results
+- **Diversity-aware ranking**: each search result list caps a single document at 2 chunks (configurable) and downweights chunks of long documents, returning sentence-scale snippets. This bounds LLM context cost per query, with full-section recovery via `read(path, section=heading)`
+- **Adaptive heading-level chunking**: long sections are recursively re-split at deeper heading levels (H1 → H6) until each chunk fits a configurable word budget, improving retrieval precision on synthesising essays without manual restructuring
 
 > **Upgrading.** As of this release, `search` returns query-relevant snippets in the `content` field by default (approximately 200 words). Pass `snippet_words=0` to recover the prior full-chunk behaviour, or use `read(path, section=heading)` to fetch the full section after seeing a snippet. Documents are also re-chunked on next `reindex` to honour the adaptive `MARKDOWN_VAULT_MCP_MAX_CHUNK_WORDS` threshold (default 400).
-- **Frontmatter-aware** — indexes YAML frontmatter fields, supports required field enforcement
-- **Incremental reindexing** — hash-based change detection, only re-processes modified files; an automatic boot-time reconciliation pass picks up changes made while no server was running, and the vector index converges to the reconciled chunk set (embedding exactly the delta)
-- **Write operations** — create, edit, delete, rename documents, and move entire folder subtrees with automatic index updates
+- **Frontmatter-aware**: indexes YAML frontmatter fields, supports required field enforcement
+- **Incremental reindexing**: hash-based change detection, only re-processes modified files; an automatic boot-time reconciliation pass picks up changes made while no server was running, and the vector index converges to the reconciled chunk set (embedding exactly the delta)
+- **Write operations**: create, edit, delete, rename documents, and move entire folder subtrees with automatic index updates
 - **Folder conventions**: per-folder `_conventions.md` files carry your authoring rules, such as "reference notes stay self-contained"; the server surfaces them to LLM clients at write time via the `get_conventions` tool and in `write`/`edit` results, without interpreting them
-- **Attachment support** — read, write, delete, and list non-markdown files (PDFs, images, etc.)
-- **Git integration** — optional auto-commit and push on every write via `GIT_ASKPASS`
-- **OIDC authentication** — optional token-based auth for HTTP deployments (Authelia, Keycloak, etc.)
+- **Attachment support**: read, write, delete, and list non-markdown files (PDFs, images, etc.)
+- **Git integration**: optional auto-commit and push on every write via `GIT_ASKPASS`
+- **OIDC authentication**: optional token-based auth for HTTP deployments (Authelia, Keycloak, etc.)
 - **MCP tools**: 33 LLM-visible tools including search, read, write, edit, delete, rename, `move_folder`, git history, manual git sync, one-time transfer links, and admin operations; plus 6 app-only tools for MCP Apps clients
-- **MCP resources** — 9 resources exposing vault configuration, statistics, tags, folders, document outlines, similar notes, recent notes, and an interactive SPA
-- **MCP prompts** — 7 prompt templates including template-driven note creation
+- **MCP resources**: 9 resources exposing vault configuration, statistics, tags, folders, document outlines, similar notes, recent notes, and an interactive SPA
+- **MCP prompts**: 7 prompt templates including template-driven note creation
 <!-- DOMAIN-END -->
 
 ## What you can do with it
@@ -38,13 +38,13 @@ Point it at a directory of Markdown files (an Obsidian vault, a docs folder, a Z
 <!-- DOMAIN-START -->
 With this server mounted in Claude, you can:
 
-- **Capture a URL as a note.** "Fetch <url>, summarize as a Resource note under `3-Resources/`, and link any existing notes on the topic." — Claude composes `fetch` + `search` + `write`.
-- **Research a topic into your vault.** "Research product security regulations, compare them, and create a set of interlinked notes — one per regulation, plus a map-of-content." — Claude composes web-search tools (client-side) + `write` with wikilinks. See the [Research workflows guide](https://pvliesdonk.github.io/markdown-vault-mcp/latest/guides/research-workflows/) for the full loop.
-- **Distill today's thinking.** "Summarize today's conversations into Inbox notes." — Claude.ai only; uses `conversation_search` + `recent_chats` + `write`. The [`para-capture-chats`](examples/para/prompts/para-capture-chats.md) prompt is the one-click version.
-- **Find missing links.** Fire the [`propose-links`](https://pvliesdonk.github.io/markdown-vault-mcp/latest/prompts/#propose-links) prompt from the `+` menu — it scans recently-modified notes, proposes meaningful connections, and writes them on confirmation.
-- **Split or merge captures.** "Split this Inbox note into two." / "Merge this into `<existing note>` instead of duplicating." — Claude composes `read` + `write` + `delete`.
+- **Capture a URL as a note.** "Fetch <url>, summarize as a Resource note under `3-Resources/`, and link any existing notes on the topic." Claude composes `fetch` + `search` + `write`.
+- **Research a topic into your vault.** "Research product security regulations, compare them, and create a set of interlinked notes: one per regulation, plus a map-of-content." Claude composes web-search tools (client-side) + `write` with wikilinks. See the [Research workflows guide](https://pvliesdonk.github.io/markdown-vault-mcp/latest/guides/research-workflows/) for the full loop.
+- **Distill today's thinking.** "Summarize today's conversations into Inbox notes." Claude.ai only; uses `conversation_search` + `recent_chats` + `write`. The [`para-capture-chats`](examples/para/prompts/para-capture-chats.md) prompt is the one-click version.
+- **Find missing links.** Fire the [`propose-links`](https://pvliesdonk.github.io/markdown-vault-mcp/latest/prompts/#propose-links) prompt from the `+` menu: it scans recently modified notes and proposes links between notes that aren't yet connected, writing them on confirmation.
+- **Split or merge captures.** "Split this Inbox note into two." / "Merge this into `<existing note>` instead of duplicating." Claude composes `read` + `write` + `delete`.
 
-No external scheduler, no separate capture app — the vault sits behind your conversations and absorbs their output.
+The vault needs no external scheduler or separate capture app: it sits behind your conversations and absorbs their output.
 <!-- DOMAIN-END -->
 
 <!-- ===== TEMPLATE-OWNED SECTIONS BELOW — DO NOT EDIT; CHANGES WILL BE OVERWRITTEN ON COPIER UPDATE ===== -->
@@ -83,7 +83,7 @@ docker pull ghcr.io/pvliesdonk/markdown-vault-mcp:latest
 ```
 
 <!-- DOMAIN-START -->
-The Docker image uses `[all]` (MCP + FastEmbed + API embeddings). By default, semantic search works locally with FastEmbed and can switch to Ollama/OpenAI when configured. A `compose.yml` ships at the repo root as a starting point — copy `.env.example` to `.env`, edit, and `docker compose up -d`.
+The Docker image uses `[all]` (MCP + FastEmbed + API embeddings). By default, semantic search works locally with FastEmbed and can switch to Ollama/OpenAI when configured. A `compose.yml` ships at the repo root as a starting point: copy `.env.example` to `.env`, edit, and `docker compose up -d`.
 
 To attach a remote Python debugger (development only; the protocol is unauthenticated), see [Remote debugging](docs/deployment/docker.md#remote-debugging).
 
@@ -101,7 +101,7 @@ mcpb install markdown-vault-mcp-<version>.mcpb
 ```
 
 <!-- DOMAIN-START -->
-Claude Desktop opens a GUI wizard that prompts for required env vars — no manual JSON editing needed. See [Step 0 of the Claude Desktop guide](https://pvliesdonk.github.io/markdown-vault-mcp/latest/guides/claude-desktop/#step-0-install-via-mcpb-bundle-easiest) for details.
+Claude Desktop opens a GUI wizard that prompts for required env vars; no manual JSON editing is needed. See [Step 0 of the Claude Desktop guide](https://pvliesdonk.github.io/markdown-vault-mcp/latest/guides/claude-desktop/#step-0-install-via-mcpb-bundle-easiest) for details.
 
 ### Claude Code plugin
 
@@ -174,65 +174,100 @@ The server registers a built-in `get_server_info` tool (via `fastmcp_pvl_core.re
 All configuration is via environment variables with the `MARKDOWN_VAULT_MCP_` prefix (except embedding provider settings, which use their own conventions).
 
 - [Configuration Generator](https://pvliesdonk.github.io/markdown-vault-mcp/latest/configuration-generator/): in-browser config / Docker / systemd builder
+- [Configuration reference](https://pvliesdonk.github.io/markdown-vault-mcp/latest/configuration/): detailed per-variable documentation with operational caveats
 
-### Core
+### Domain variables
 
+Domain environment variables use the `MARKDOWN_VAULT_MCP_` prefix (except the
+embedding-provider conventions `OLLAMA_HOST`, `OPENAI_API_KEY`,
+`OPENAI_BASE_URL`, and `OPENAI_EMBEDDING_MODEL`, which are also honoured bare):
+
+<!-- GENERATED-ENV-TABLE-DOMAIN-START — generated by scripts/gen_config_surface.py; do not edit -->
 | Variable | Default | Required | Description |
-|----------|---------|----------|-------------|
-| `MARKDOWN_VAULT_MCP_SOURCE_DIR` | — | **Yes** | Path to the markdown vault directory |
-| `MARKDOWN_VAULT_MCP_READ_ONLY` | `true` | No | Set to `false` to enable write operations |
-| `MARKDOWN_VAULT_MCP_INDEX_PATH` | in-memory | No | Path to the SQLite FTS5 index file; set for persistence across restarts |
-| `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` | disabled | No | Path to the numpy embeddings file; required to enable semantic search |
-| `MARKDOWN_VAULT_MCP_STATE_PATH` | `{SOURCE_DIR}/.markdown_vault_mcp/state.json` | No | Path to the change-tracking state file |
-| `MARKDOWN_VAULT_MCP_INDEXED_FIELDS` | (none) | No | Comma-separated frontmatter fields to promote to the tag index for structured filtering. Changing it cold-rebuilds the index once on next startup (and, when `SEARCHABLE_FIELDS` is unset, also re-embeds the vault, since the searchable set inherits this value) |
-| `MARKDOWN_VAULT_MCP_REQUIRED_FIELDS` | — | No | Comma-separated frontmatter fields required on every document; documents missing any are excluded from the index |
-| `MARKDOWN_VAULT_MCP_EXCLUDE` | — | No | Comma-separated glob patterns to exclude from scanning (e.g. `.obsidian/**,.trash/**`) |
-| `MARKDOWN_VAULT_MCP_TITLE_FIELD` | `title` | No | Frontmatter field used as the document title (falls back to `title`, the first H1, then the filename). Changing it cold-rebuilds the index once on next startup |
-| `MARKDOWN_VAULT_MCP_SEARCHABLE_FIELDS` | defaults to `INDEXED_FIELDS` | No | Comma-separated frontmatter fields whose text values become keyword-searchable, and also enrich first-chunk embedding input (independent of `EMBED_CONTEXT`). Defaults to `INDEXED_FIELDS` when unset; set explicitly to diverge, or to `none` for no searchable fields at all. Setting or changing it cold-rebuilds the index and re-embeds the vault once on next startup |
-| `MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER` | `_templates` | No | Relative folder path where note templates live (used by the `create_from_template` prompt) |
-| `MARKDOWN_VAULT_MCP_PROMPTS_FOLDER` | — | No | Path to a directory of `.md` prompt files that extend or override built-in prompts (see [User-defined prompts](#user-defined-prompts)) |
-| `MARKDOWN_VAULT_MCP_CONVENTIONS_FILE` | `_conventions.md` | No | Filename of the per-folder conventions files surfaced to clients at write time (bare `.md` filename without glob characters; `none` disables). Convention files are excluded from the search index but stay readable. Existing notes matching the configured name are removed from the index on the next boot reconcile; set `none` to keep them indexed |
-| `MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S` | `60` | No | Maximum seconds an index-querying read tool waits for the IndexWriter to drain when called with `wait_for_pending_writes=True`. On timeout the tool answers from the current index rather than raising and reports `index_stale=True` in the response's `_meta`. |
-| `MARKDOWN_VAULT_MCP_BUILD_TIMEOUT_S` | `60` | No | Maximum seconds a relational/FTS-backed tool or resource waits for the index to become queryable during a cold-start background build before raising `IndexUnavailableError(reason="timeout")`. Increase for very large vaults. |
+|---|---|---|---|
+| `OLLAMA_HOST` | `http://localhost:11434` | No | Ollama server URL for the ollama embedding provider. Bare (not MARKDOWN_VAULT_MCP_-prefixed), matching the Ollama ecosystem convention. |
+| `OPENAI_API_KEY` | (none) | No | OpenAI API key for the openai embedding provider, and the fallback key for the summarize tool when MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_API_KEY is unset. Bare (not MARKDOWN_VAULT_MCP_-prefixed), matching the OpenAI ecosystem convention. |
+| `OPENAI_BASE_URL` | (none) | No | Bare fallback for MARKDOWN_VAULT_MCP_OPENAI_BASE_URL (embeddings). For the summarize tool it only routes traffic when an API key already enables the feature; it never enables summarize by itself. |
+| `OPENAI_EMBEDDING_MODEL` | (none) | No | Bare fallback for MARKDOWN_VAULT_MCP_OPENAI_EMBEDDING_MODEL. |
+| `MARKDOWN_VAULT_MCP_BUILD_TIMEOUT_S` | `60` | No | Maximum seconds an index-backed tool or resource waits for the FTS index to become queryable during a cold-start background build before raising IndexUnavailableError(reason="timeout"). Increase for large vaults. |
+| `MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S` | `60` | No | Maximum seconds an index-querying read tool waits for the IndexWriter to drain when called with wait_for_pending_writes=true. On timeout the tool answers from the current index and reports index_stale=true in the response _meta. |
+| `MARKDOWN_VAULT_MCP_SOURCE_DIR` | `/data/vault` | No | Path to the markdown vault directory. Required; the server refuses to start without it. Symbolic links inside the vault are followed on Python 3.13+. |
+| `MARKDOWN_VAULT_MCP_READ_ONLY` | `true` | No | Set to false to enable write tools (write, edit, delete, rename). |
+| `MARKDOWN_VAULT_MCP_DISABLE_APPS_UI` | `false` | No | Hide the MCP Apps UI tools (browse_vault, show_context) from the tool listing for clients that do not render MCP Apps panels. |
+| `MARKDOWN_VAULT_MCP_INDEX_PATH` | (none) | No | Path to the SQLite FTS5 index file; unset keeps the index in memory. Set it for persistence across restarts. |
+| `MARKDOWN_VAULT_MCP_STATE_PATH` | (none) | No | Path to the change-tracking state file. Defaults to {SOURCE_DIR}/.markdown_vault_mcp/state.json. |
+| `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` | (none) | No | Path to the numpy embeddings file; required to enable semantic search. |
+| `MARKDOWN_VAULT_MCP_INDEXED_FIELDS` | (none) | No | Comma-separated frontmatter fields promoted to the tag index for structured filtering. Changing it cold-rebuilds the index once on next startup; SEARCHABLE_FIELDS inherits this value when unset. |
+| `MARKDOWN_VAULT_MCP_REQUIRED_FIELDS` | (none) | No | Comma-separated frontmatter fields required on every document; documents missing any are excluded from the index. |
+| `MARKDOWN_VAULT_MCP_EXCLUDE` | (none) | No | Comma-separated glob patterns excluded from scanning (.obsidian/**,.trash/**). |
+| `MARKDOWN_VAULT_MCP_TITLE_FIELD` | `title` | No | Frontmatter field used as the document title (falls back to title, the first H1, then the filename). Changing it cold-rebuilds the index once on next startup. |
+| `MARKDOWN_VAULT_MCP_SEARCHABLE_FIELDS` | (none) | No | Comma-separated frontmatter fields whose text values become keyword-searchable and enrich first-chunk embeddings. Inherits INDEXED_FIELDS when unset; the sentinel none means filterable but not searchable. Changing it cold-rebuilds the index and re-embeds once on next startup. |
+| `MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER` | `_templates` | No | Relative folder where note templates live (used by the create_from_template prompt). |
+| `MARKDOWN_VAULT_MCP_PROMPTS_FOLDER` | (none) | No | Directory of .md prompt files that extend or override built-in prompts; a relative path is resolved against SOURCE_DIR. |
+| `MARKDOWN_VAULT_MCP_CONVENTIONS_FILE` | `_conventions.md` | No | Filename of the per-folder conventions files surfaced to clients at write time (bare .md filename without glob characters). Set to none to disable folder conventions. |
+| `MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS` | (none) | No | Comma-separated allowed attachment extensions without the dot (such as pdf,png,jpg); use * to allow every non-markdown file. Unset selects the built-in allowlist. |
+| `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB` | `1.0` | No | Maximum attachment size in MB returned by read / accepted by write; 0 disables the limit. |
+| `MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES` | `262144` | No | Maximum bytes returned by a full-document read of a note; use `read(path, section=…)` for partial reads. 0 disables the limit. |
+| `MARKDOWN_VAULT_MCP_CHUNKS_PER_FILE` | `2` | No | Maximum chunks returned per document in search results. |
+| `MARKDOWN_VAULT_MCP_SNIPPET_WORDS` | `200` | No | Width of the snippet window (words) in search results; 0 returns full chunk content. |
+| `MARKDOWN_VAULT_MCP_LENGTH_DOWNWEIGHT_ALPHA` | `0.25` | No | Down-weights longer chunks in ranking: score / (1 + alpha * log(chunk_count)). |
+| `MARKDOWN_VAULT_MCP_MAX_CHUNK_WORDS` | `400` | No | Word cap per chunk; the adaptive chunker splits at deeper heading levels, then paragraph/word boundaries, to respect it. Match it to the embedding model's context. A reindex applies a new value. |
+| `MARKDOWN_VAULT_MCP_MAX_CHUNK_CHARS` | (none) | No | Character cap enforced alongside MAX_CHUNK_WORDS to bound token-dense chunks. Unset derives min(1500, model context * 2.8). Set a positive value for an exact cap, or -1 to scale with the model's full context (can exhaust memory on long-context models). A reindex applies a new value. |
+| `MARKDOWN_VAULT_MCP_CHUNK_OVERLAP_WORDS` | `40` | No | Words of overlap between adjacent budget-split fragments of the same heading section (0 disables). A reindex applies a new value. |
+| `MARKDOWN_VAULT_MCP_FOLDER_WEIGHTS` | (none) | No | Folder-prefix score multipliers (`prefix:weight` pairs, comma-separated, weights > 0) applied to all search modes; the deepest matching prefix wins (sessions:0.5 demotes sessions/**). |
+| `MARKDOWN_VAULT_MCP_FTS_WEIGHTS` | (none) | No | Per-column BM25 weights (`column:weight` pairs, comma-separated, weights >= 0) for keyword ranking. Columns: path, title, folder, heading, content, summary. |
+| `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` | (none) | No | Embedding provider: openai, ollama, or fastembed. Unset auto-detects from the environment. |
+| `MARKDOWN_VAULT_MCP_OLLAMA_MODEL` | `nomic-embed-text` | No | Ollama embedding model name. |
+| `MARKDOWN_VAULT_MCP_OLLAMA_CPU_ONLY` | `false` | No | Force Ollama to embed on CPU only. |
+| `MARKDOWN_VAULT_MCP_OPENAI_BASE_URL` | `https://api.openai.com/v1` | No | OpenAI-compatible API base URL for embeddings; the bare OPENAI_BASE_URL is honoured as a fallback. |
+| `MARKDOWN_VAULT_MCP_OPENAI_EMBEDDING_MODEL` | `text-embedding-3-small` | No | OpenAI-compatible embedding model name; the bare OPENAI_EMBEDDING_MODEL is honoured as a fallback. |
+| `MARKDOWN_VAULT_MCP_FASTEMBED_MODEL` | `BAAI/bge-small-en-v1.5` | No | FastEmbed model name. |
+| `MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR` | (none) | No | FastEmbed model cache directory (in Docker, stored under /data/state/fastembed). |
+| `MARKDOWN_VAULT_MCP_EMBED_CONTEXT` | `false` | No | Enrich embedding input with the note title, chunk heading, and (first chunk) searchable-field values. Flipping it re-embeds the whole vault once on next startup. |
+| `MARKDOWN_VAULT_MCP_GIT_REPO_URL` | (none) | No | HTTPS remote URL for managed git mode: the server clones into an empty SOURCE_DIR on startup (or validates an existing origin) and enables the pull loop, auto-commit, and deferred push. |
+| `MARKDOWN_VAULT_MCP_GIT_TOKEN` | (none) | No | Token/password for HTTPS git auth; remotes must be HTTPS when set. |
+| `MARKDOWN_VAULT_MCP_GIT_USERNAME` | `x-access-token` | No | Username for HTTPS git auth prompts (x-access-token for GitHub, oauth2 for GitLab, the account name for Bitbucket). |
+| `MARKDOWN_VAULT_MCP_GIT_PULL_INTERVAL_S` | `600` | No | Seconds between git fetch + fast-forward update attempts; 0 disables periodic pull. |
+| `MARKDOWN_VAULT_MCP_GIT_PUSH_DELAY_S` | `30.0` | No | Seconds of write-idle time before pushing; 0 pushes only on shutdown. |
+| `MARKDOWN_VAULT_MCP_GIT_COMMIT_NAME` | `markdown-vault-mcp` | No | Git committer name for auto-commits; set this in Docker where git config user.name is empty. |
+| `MARKDOWN_VAULT_MCP_GIT_COMMIT_EMAIL` | `noreply@markdown-vault-mcp` | No | Git committer email for auto-commits. |
+| `MARKDOWN_VAULT_MCP_GIT_COMMIT_NAME_CLAIM` | (none) | No | OIDC claim key used as the commit author name (such as name); overrides GIT_COMMIT_NAME per request when an OIDC token is present. |
+| `MARKDOWN_VAULT_MCP_GIT_COMMIT_EMAIL_CLAIM` | (none) | No | OIDC claim key used as the commit author email (such as email); overrides GIT_COMMIT_EMAIL per request when an OIDC token is present. |
+| `MARKDOWN_VAULT_MCP_GIT_LFS` | `true` | No | Run git lfs pull on startup to fetch LFS-tracked attachments; set to false for repos without LFS. |
+| `MARKDOWN_VAULT_MCP_FILE_WATCHER` | `true` | No | Watch the vault for external filesystem changes; auto-disabled when git pull or the webhook is active. Requires the file-watcher extra. |
+| `MARKDOWN_VAULT_MCP_FILE_WATCHER_DEBOUNCE_S` | `2.0` | No | Seconds of quiet after the last filesystem event before reindexing. |
+| `MARKDOWN_VAULT_MCP_FILE_WATCHER_ROOT_FLOOR` | `true` | No | Keep the non-recursive watch on the vault root; set false to register zero source-dir-rooted FSEvents streams (avoids repeated macOS access prompts on a home-rooted vault) at the cost of root-level files relying on scans. |
+| `MARKDOWN_VAULT_MCP_GITHUB_WEBHOOK_SECRET` | (none) | No | Shared secret for the GitHub push-event webhook; when set, mounts POST /github-webhook on HTTP/SSE transports to trigger an immediate pull + reindex on push events. |
+| `MARKDOWN_VAULT_MCP_SUMMARIZE_PROVIDER` | (none) | No | Summarization backend (only openai is recognised). Unset auto-detects: the backend activates when credentials or an explicit endpoint are present. |
+| `MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_API_KEY` | (none) | No | API key for the OpenAI-compatible summarize endpoint; the bare OPENAI_API_KEY is honoured as a fallback. Unset works for keyless local endpoints (Ollama). |
+| `MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_BASE_URL` | (none) | No | OpenAI-compatible endpoint base URL for the summarize tool; setting it enables the tool even without an API key. The bare OPENAI_BASE_URL routes traffic only when a key already enables the feature. |
+| `MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_MODEL` | `gpt-5-mini` | No | Chat model id used for summaries. |
+| `MARKDOWN_VAULT_MCP_SUMMARIZE_MAX_TOKENS` | `8192` | No | Upper bound on generated tokens per summarize call; on reasoning models this budget also covers internal reasoning tokens. |
+| `MARKDOWN_VAULT_MCP_SUMMARIZE_MAX_NOTES` | `50` | No | Cap on the number of notes summarised in one call (subtree expansion truncates to this many). |
+| `MARKDOWN_VAULT_MCP_SUMMARIZE_MAX_INPUT_CHARS` | `200000` | No | Aggregate cap on note characters sent to the model in one call; excess is truncated with a flag on the result. |
+| `MARKDOWN_VAULT_MCP_SUMMARIZE_TIMEOUT` | `120.0` | No | Per-request wall-clock budget in seconds for a single summarize backend call; keep it below the MCP client's request timeout so the server-side error wins the race. |
+| `MARKDOWN_VAULT_MCP_SUMMARIZE_INLINE_TIMEOUT` | `30.0` | No | Soft deadline in seconds before a still-running summarize call is promoted to a background job retrievable via get_summary. Must be <= SUMMARIZE_TIMEOUT. |
+| `MARKDOWN_VAULT_MCP_TRANSFER_TTL_DEFAULT_S` | `3600` | No | Default one-time transfer-link lifetime in seconds when the caller omits ttl_seconds; clamped to TRANSFER_TTL_MAX_S. HTTP transports only. |
+| `MARKDOWN_VAULT_MCP_TRANSFER_TTL_MAX_S` | `86400` | No | Ceiling in seconds a caller-requested transfer-link lifetime is clamped to. |
+| `MARKDOWN_VAULT_MCP_TRANSFER_MAX_UPLOAD_BYTES` | `104857600` | No | Per-upload size cap in bytes for transfer-link uploads; larger request bodies are rejected with HTTP 413. |
+<!-- GENERATED-ENV-TABLE-DOMAIN-END -->
 
-### Server identity
+Domain-config fields are composed inside `src/markdown_vault_mcp/config.py` between the `CONFIG-FIELDS-START` / `CONFIG-FIELDS-END` sentinels; env reads go through `fastmcp_pvl_core.env(_ENV_PREFIX, "SUFFIX", default)` so naming stays consistent, and field invariants go in `__post_init__` between the `CONFIG-VALIDATE-START` / `CONFIG-VALIDATE-END` sentinels. Each field's `metadata` `help` and `tags` generate the table above directly, so keep them accurate and complete. See the [configuration reference](https://pvliesdonk.github.io/markdown-vault-mcp/latest/configuration/) for the detailed prose documentation of every variable.
 
+### Core settings
+
+<!-- GENERATED-ENV-TABLE-CORE-START — generated by scripts/gen_config_surface.py; do not edit -->
 | Variable | Default | Description |
-|----------|---------|-------------|
-| `MARKDOWN_VAULT_MCP_SERVER_NAME` | `markdown-vault-mcp` | MCP server name shown to clients; useful for multi-instance setups |
-| `MARKDOWN_VAULT_MCP_INSTRUCTIONS` | (auto) | System-level instructions injected into LLM context; defaults to a description that reflects read-only vs read-write state |
-| `MARKDOWN_VAULT_MCP_DISABLE_APPS_UI` | `false` | Hide MCP-Apps UI tools (`browse_vault`, `show_context`) from the tool listing for clients that do not render MCP Apps panels (saves a few listing tokens) |
-| `MARKDOWN_VAULT_MCP_HTTP_PATH` | `/mcp` | HTTP endpoint path for streamable HTTP transport (used by `serve --transport http`) |
-| `MARKDOWN_VAULT_MCP_KV_STORE_URL` | `file:///data/state` | Unified key-value backend for HTTP session persistence (the `events` keyspace is namespaced inside the directory). `file:///path` (default) survives restarts; `memory://` for dev (lost on restart). Preferred over `EVENT_STORE_URL`. |
-| `MARKDOWN_VAULT_MCP_EVENT_STORE_URL` | (unset) | Legacy alias for `KV_STORE_URL`; honoured only when `KV_STORE_URL` is unset, and logs a one-shot deprecation warning. Prefer `KV_STORE_URL`. |
-| `MARKDOWN_VAULT_MCP_APP_DOMAIN` | (auto) | Override the Claude app domain used for MCP Apps iframe sandboxing. Auto-computed from `BASE_URL` when not set. |
-| `FASTMCP_LOG_LEVEL` | `INFO` | Log level for FastMCP internals (`DEBUG`, `INFO`, `WARNING`, `ERROR`). App loggers default to `INFO`. `-v` overrides both to `DEBUG`. |
-| `FASTMCP_ENABLE_RICH_LOGGING` | `true` | Rich `key=value` text by default. Set to `false` for one-JSON-object-per-record output — recommended for production / log-aggregator deployments. |
+|---|---|---|
+| `MARKDOWN_VAULT_MCP_KV_STORE_URL` | `file:///data/state` | Persistent-state backend URL shared by every pvl-core subsystem that needs state. `memory://` is in-process and lost on restart; `file:///path` persists on one server; `redis://`, `dynamodb://` and `mongodb://` each need their matching extra. Defaults to `file:///data/state` when unset. |
+| `FASTMCP_LOG_LEVEL` | `INFO` | Log level for FastMCP internals and app loggers (DEBUG / INFO / WARNING / ERROR / CRITICAL). The -v CLI flag overrides to DEBUG. |
+| `FASTMCP_ENABLE_RICH_LOGGING` | `true` | Set false for plain or structured JSON log output. |
+<!-- GENERATED-ENV-TABLE-CORE-END -->
+
 
 ### Search and embeddings
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` | auto-detect | Embedding provider: `openai`, `ollama`, or `fastembed` |
-| `OLLAMA_HOST` | `http://localhost:11434` | Ollama server URL (**not** `MARKDOWN_VAULT_MCP_`-prefixed) |
-| `OPENAI_API_KEY` | — | OpenAI API key for the OpenAI embedding provider (**not** `MARKDOWN_VAULT_MCP_`-prefixed) |
-| `MARKDOWN_VAULT_MCP_OPENAI_BASE_URL` / `OPENAI_BASE_URL` | `https://api.openai.com/v1` | OpenAI-compatible API base URL for embeddings |
-| `MARKDOWN_VAULT_MCP_OPENAI_EMBEDDING_MODEL` / `OPENAI_EMBEDDING_MODEL` | `text-embedding-3-small` | OpenAI-compatible embedding model name |
-| `MARKDOWN_VAULT_MCP_OLLAMA_MODEL` | `nomic-embed-text` | Ollama embedding model name |
-| `MARKDOWN_VAULT_MCP_OLLAMA_CPU_ONLY` | `false` | Force Ollama to use CPU only |
-| `MARKDOWN_VAULT_MCP_FASTEMBED_MODEL` | `BAAI/bge-small-en-v1.5` | FastEmbed model name |
-| `MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR` | FastEmbed default | FastEmbed model cache directory (in Docker, stored under `/data/state/fastembed`) |
-| `MARKDOWN_VAULT_MCP_EMBED_CONTEXT` | `false` | Enrich embedding input with the note title, chunk heading, and (first chunk) searchable-field values. Flipping it re-embeds the whole vault once on next startup |
-| `MARKDOWN_VAULT_MCP_MAX_CHUNK_WORDS` | `400` | Word cap per chunk; the adaptive chunker splits at deeper heading levels, then paragraph/word boundaries, to respect it. Match it to the embedding model's context. A non-zero `CHUNK_OVERLAP_WORDS` can push an overlapped fragment past this cap. A reindex applies a new value. |
-| `MARKDOWN_VAULT_MCP_MAX_CHUNK_CHARS` | *(bounded default)* | Character cap the chunker enforces alongside `MAX_CHUNK_WORDS` to bound token-dense chunks (CJK, code, tables) that fit the word cap yet exceed the model's token context. Unset → `min(1500, round(context_length × 2.8))`, so the default stays retrieval-sized and memory-safe regardless of model context. The default `BAAI/bge-small-en-v1.5` (512 tokens) derives ~1434 chars, below the ceiling and unchanged; a longer-context model (context above ~536 tokens) is capped at 1500; an unknown context falls back to 1500. Set a positive value to force an exact cap. Set `-1` to scale with the model's full context with no ceiling, or 1500 when the context is unknown, which can OOM the fastembed/ONNX path on a long-context model. A reindex applies a new value. |
-| `MARKDOWN_VAULT_MCP_CHUNK_OVERLAP_WORDS` | `40` | Words of overlap between adjacent budget-split fragments of the same heading section (`0` disables). Applies to new/re-indexed notes; run `reindex` to apply to an existing vault. |
-| `MARKDOWN_VAULT_MCP_CHUNKS_PER_FILE` | `2` | Maximum chunks returned per document in `search` results. |
-| `MARKDOWN_VAULT_MCP_SNIPPET_WORDS` | `200` | Width of the snippet window (words) in `search` results; `0` returns full chunk content. |
-| `MARKDOWN_VAULT_MCP_LENGTH_DOWNWEIGHT_ALPHA` | `0.25` | Down-weights longer chunks in ranking (`score / (1 + alpha · log(chunk_count))`). |
-| `MARKDOWN_VAULT_MCP_FOLDER_WEIGHTS` | none | Folder-prefix score multipliers (`prefix:weight,...`, weights > 0) applied to all search modes; the deepest matching prefix wins (`sessions:0.5` demotes `sessions/**`). |
-| `MARKDOWN_VAULT_MCP_FTS_WEIGHTS` | all `1.0` | Per-column BM25 weights (`column:weight,...`, weights ≥ 0) for keyword ranking. Columns: `path`, `title`, `folder`, `heading`, `content`, `summary`. |
-
-> **Note:** the chunker's character cap (`MARKDOWN_VAULT_MCP_MAX_CHUNK_CHARS`) is derived from the embedding model's context length, so changing the embedding model re-chunks the FTS index — not just the embeddings — and triggers an automatic cold rebuild of the index on the next startup. The defaults stay memory-light (`BAAI/bge-small-en-v1.5` for FastEmbed, `nomic-embed-text` for Ollama); long-context models — `nomic-ai/nomic-embed-text-v1.5` (8192 tokens) for FastEmbed, or `bge-m3:latest` for Ollama — are opt-in and need substantially more RAM/VRAM during indexing.
+> The chunker's character cap (`MARKDOWN_VAULT_MCP_MAX_CHUNK_CHARS`) is derived from the embedding model's context length, so changing the embedding model re-chunks the FTS index (not just the embeddings) and triggers an automatic cold rebuild of the index on the next startup. The defaults stay memory-light (`BAAI/bge-small-en-v1.5` for FastEmbed, `nomic-embed-text` for Ollama); long-context models, such as `nomic-ai/nomic-embed-text-v1.5` (8192 tokens) for FastEmbed or `bge-m3:latest` for Ollama, are opt-in and need substantially more RAM/VRAM during indexing.
 
 ### Git integration
 
@@ -241,36 +276,18 @@ Git integration has three modes:
 - **Managed mode** (`MARKDOWN_VAULT_MCP_GIT_REPO_URL` set): server owns repo setup.
   On startup it clones into `SOURCE_DIR` when empty, or validates existing `origin`.
   Pull loop + auto-commit + deferred push are enabled.
-- **Unmanaged / commit-only mode** (no `GIT_REPO_URL`): writes are committed to a local git repo if `SOURCE_DIR` is already a git checkout. No pull, no push.
+- **Unmanaged / commit-only mode** (no `GIT_REPO_URL`): writes are committed to a local git repo if `SOURCE_DIR` is already a git checkout. The server neither pulls nor pushes.
 - **No-git mode**: if `SOURCE_DIR` is not a git repo, git callbacks are no-ops.
 
 When token auth is used (`MARKDOWN_VAULT_MCP_GIT_TOKEN`), remotes must be HTTPS.
-SSH remotes (for example `git@github.com:owner/repo.git`) are rejected with a startup error.
+SSH remotes (such as `git@github.com:owner/repo.git`) are rejected with a startup error.
 Fix with: `git -C /path/to/vault remote set-url origin https://github.com/owner/repo.git`
 
 Backward compatibility: `MARKDOWN_VAULT_MCP_GIT_TOKEN` without `GIT_REPO_URL` still works (legacy mode) but logs a deprecation warning.
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `MARKDOWN_VAULT_MCP_GIT_REPO_URL` | — | HTTPS remote URL for managed mode; enables clone/remote validation on startup |
-| `MARKDOWN_VAULT_MCP_GIT_USERNAME` | `x-access-token` | Username for HTTPS auth prompts (`x-access-token` for GitHub, `oauth2` for GitLab, account name for Bitbucket) |
-| `MARKDOWN_VAULT_MCP_GIT_TOKEN` | — | Token/password for HTTPS auth (`GIT_ASKPASS`) |
-| `MARKDOWN_VAULT_MCP_GIT_PULL_INTERVAL_S` | `600` | Seconds between `git fetch` + ff-only update attempts; `0` disables periodic pull |
-| `MARKDOWN_VAULT_MCP_GIT_PUSH_DELAY_S` | `30` | Seconds of write-idle time before pushing; `0` = push only on shutdown |
-| `MARKDOWN_VAULT_MCP_GIT_COMMIT_NAME` | `markdown-vault-mcp` | Git committer name for auto-commits; **set this in Docker** where `git config user.name` is empty |
-| `MARKDOWN_VAULT_MCP_GIT_COMMIT_EMAIL` | `noreply@markdown-vault-mcp` | Git committer email for auto-commits |
-| `MARKDOWN_VAULT_MCP_GIT_COMMIT_NAME_CLAIM` | — | OIDC claim key to use as the commit author name (e.g. `name`); overrides `GIT_COMMIT_NAME` per-request when an OIDC token is present |
-| `MARKDOWN_VAULT_MCP_GIT_COMMIT_EMAIL_CLAIM` | — | OIDC claim key to use as the commit author e-mail (e.g. `email`); overrides `GIT_COMMIT_EMAIL` per-request when an OIDC token is present |
-| `MARKDOWN_VAULT_MCP_GIT_LFS` | `true` | Enable Git LFS — runs `git lfs pull` on startup to fetch LFS-tracked attachments (PDFs, images). Set to `false` for repos without LFS. |
-| `MARKDOWN_VAULT_MCP_GITHUB_WEBHOOK_SECRET` | — | Shared secret for GitHub push-event webhook; when set, mounts `POST /github-webhook` on HTTP/SSE transports to trigger immediate pull + reindex on push events |
 
 ### File Watcher
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `MARKDOWN_VAULT_MCP_FILE_WATCHER` | `true` | Enable filesystem-event watcher for external changes; auto-disabled when git pull or webhook is active |
-| `MARKDOWN_VAULT_MCP_FILE_WATCHER_DEBOUNCE_S` | `2.0` | Seconds of quiet after the last event before triggering reindex |
-| `MARKDOWN_VAULT_MCP_FILE_WATCHER_ROOT_FLOOR` | `true` | Keep the non-recursive watch on the vault root; set `false` to register zero source-directory-rooted `FSEvents` streams (avoids repeated macOS access prompts on a `$HOME`-rooted vault), at the cost of root-level files relying on scans |
 
 Requires the `watchdog` optional extra: `pip install 'markdown-vault-mcp[file-watcher]'`. Automatically disabled when `GIT_PULL_INTERVAL_S > 0` or `GITHUB_WEBHOOK_SECRET` is set. The watcher scopes one recursive watch per non-excluded top-level directory (not a single recursive watch on the root), so excluded directories are never registered and content under a deliberately watched dot-directory delivers its own edits. See [docs/configuration.md](docs/configuration.md#file-watcher) for details.
 
@@ -278,15 +295,10 @@ Requires the `watchdog` optional extra: `pip install 'markdown-vault-mcp[file-wa
 
 Non-markdown file support. See [Attachments](#attachments) for details.
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS` | (built-in list) | Comma-separated allowed extensions without dot (e.g. `pdf,png,jpg`); use `*` to allow all non-`.md` files |
-| `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB` | `1.0` | Maximum attachment size in MB returned by `read()` / accepted by `write()`; `0` disables the limit |
-| `MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES` | `262144` (256 KB) | Maximum bytes returned by full-document `read()` for `.md` files; raises `ValueError` if exceeded. Use `read(path, section=...)` for partial reads. `0` disables the limit. |
 
 ### Bearer token authentication
 
-Simple static token auth for HTTP deployments. Set a single env var — clients must send `Authorization: Bearer <token>`.
+Simple static token auth for HTTP deployments. Set a single env var; clients must send `Authorization: Bearer <token>`.
 
 | Variable | Required | Description |
 |----------|----------|-------------|
@@ -296,15 +308,15 @@ Simple static token auth for HTTP deployments. Set a single env var — clients 
 
 Full OAuth 2.1 authentication for HTTP deployments. OIDC activates when all four required variables are set. See [Authentication](#authentication) for setup details.
 
-> **Multi-auth:** If both `BEARER_TOKEN` and all OIDC variables are set, the server accepts **either** credential — a valid bearer token or a valid OIDC session. This is useful when different clients use different auth flows (e.g. Claude web via OIDC and Claude Code via bearer token).
+> **Multi-auth:** If both `BEARER_TOKEN` and all OIDC variables are set, the server accepts **either** credential: a valid bearer token or a valid OIDC session. This is useful when different clients use different auth flows (such as Claude web via OIDC and Claude Code via bearer token).
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `MARKDOWN_VAULT_MCP_BASE_URL` | Yes | Public base URL of the server (e.g. `https://mcp.example.com`; include prefix if mounted under subpath, e.g. `https://mcp.example.com/vault`). Used for OIDC auth and to auto-compute the MCP Apps domain. |
-| `MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL` | Yes | OIDC discovery endpoint (e.g. `https://auth.example.com/.well-known/openid-configuration`) |
+| `MARKDOWN_VAULT_MCP_BASE_URL` | Yes | Public base URL of the server (such as `https://mcp.example.com`; include prefix if mounted under subpath, such as `https://mcp.example.com/vault`). Used for OIDC auth and to auto-compute the MCP Apps domain. |
+| `MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL` | Yes | OIDC discovery endpoint (such as `https://auth.example.com/.well-known/openid-configuration`) |
 | `MARKDOWN_VAULT_MCP_OIDC_CLIENT_ID` | Yes | OIDC client ID registered with your provider |
 | `MARKDOWN_VAULT_MCP_OIDC_CLIENT_SECRET` | Yes | OIDC client secret |
-| `MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY` | No | JWT signing key; **required on Linux/Docker** — the default is ephemeral and invalidates tokens on restart. Generate with `openssl rand -hex 32` |
+| `MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY` | No | JWT signing key. When unset, derived deterministically from the OIDC client secret, so tokens survive restarts; rotating the secret invalidates issued tokens. Set explicitly (generate with `openssl rand -hex 32`) to decouple token validity from secret rotation |
 | `MARKDOWN_VAULT_MCP_OIDC_AUDIENCE` | No | Expected JWT audience claim; leave unset if your provider does not set one |
 | `MARKDOWN_VAULT_MCP_OIDC_REQUIRED_SCOPES` | No | Comma-separated required scopes; default `openid` |
 | `MARKDOWN_VAULT_MCP_OIDC_VERIFY_ACCESS_TOKEN` | No | Set `true` to verify the upstream access token as a JWT instead of the id token. Only needed when your provider issues JWT access tokens and you require audience-claim validation on that token. Default: verify the id token (works with all providers, including opaque-token issuers like Authelia) |
@@ -328,7 +340,7 @@ markdown-vault-mcp serve [--transport {stdio|sse|http}] [--host HOST] [--port PO
 | `--transport` | `stdio` | MCP transport: `stdio` (stdin/stdout, default), `sse` (Server-Sent Events), `http` (streamable-HTTP). Use `http` for Docker with a reverse proxy or when OIDC is enabled. |
 | `--host` | `127.0.0.1` | Bind host for the `http` transport (ignored for `stdio` and `sse`); pass `0.0.0.0` to bind all interfaces inside Docker |
 | `--port` | `8000` | Port for the `http` transport (ignored for `stdio` and `sse`) |
-| `--http-path` (alias `--path`) | env `MARKDOWN_VAULT_MCP_HTTP_PATH` or `/mcp` | MCP HTTP path for `http` transport; useful for reverse-proxy subpath mounting (e.g. `/vault/mcp`). The legacy `--path` spelling is still accepted. |
+| `--http-path` (alias `--path`) | env `MARKDOWN_VAULT_MCP_HTTP_PATH` or `/mcp` | MCP HTTP path for `http` transport; useful for reverse-proxy subpath mounting (such as `/vault/mcp`). The legacy `--path` spelling is still accepted. |
 
 ### Reverse Proxy Subpath Mounts
 
@@ -375,7 +387,7 @@ markdown-vault-mcp search <query> [-n LIMIT] [-m {keyword|semantic|hybrid}] [--f
 
 ### `reindex`
 
-Incrementally reindex the vault (only processes changed files). When semantic search is configured, the vector index is converged to the updated chunk set — exactly the changed documents are re-embedded and orphaned vectors dropped, never the whole corpus.
+Incrementally reindex the vault (only processes changed files). When semantic search is configured, the vector index is converged to the updated chunk set: exactly the changed documents are re-embedded and orphaned vectors dropped, never the whole corpus.
 
 ```bash
 markdown-vault-mcp reindex [--source-dir PATH] [--index-path PATH]
@@ -388,7 +400,7 @@ markdown-vault-mcp reindex [--source-dir PATH] [--index-path PATH]
 | `search` | Hybrid full-text + semantic search with optional frontmatter filters |
 | `read` | Read a document or attachment by relative path |
 | `write` | Create or overwrite a document or attachment |
-| `edit` | Replace text in a document — exact match, line-range, or scoped match with normalized fallback |
+| `edit` | Replace text in a document: exact match, line-range, or scoped match with normalized fallback |
 | `delete` | Delete a document or attachment and its index entries |
 | `rename` | Rename/move a document or attachment, updating all index entries; pass `update_links=true` to also rewrite backlinks in other notes |
 | `move_folder` | Move an entire folder subtree to a new prefix, rewriting all vault links that point into the moved subtree in one call |
@@ -421,11 +433,11 @@ markdown-vault-mcp reindex [--source-dir PATH] [--index-path PATH]
 | `browse_vault` | Open the vault explorer SPA in a supporting MCP Apps client |
 | `show_context` | Open the Context Card for a specific note in a supporting MCP Apps client |
 
-Write tools (`write`, `edit`, `delete`, `rename`, `move_folder`, `fetch`, `git_sync`, `create_upload_link`) are only available when `MARKDOWN_VAULT_MCP_READ_ONLY=false`. `git_sync` additionally requires managed git mode (`MARKDOWN_VAULT_MCP_GIT_REPO_URL` set).
+Write tools (`write`, `edit`, `delete`, `rename`, `move_folder`, `fetch`, `git_sync`, `create_upload_link`) are only available when `MARKDOWN_VAULT_MCP_READ_ONLY=false`. `git_sync` also requires managed git mode (`MARKDOWN_VAULT_MCP_GIT_REPO_URL` set).
 
 `summarize` is registered only when a summarization backend is configured: an `OPENAI_API_KEY`, or an OpenAI-compatible base URL for local endpoints that need no key. It needs the `openai` SDK (`pip install 'markdown-vault-mcp[summarize]'`) and sends note content to the model provider. Any OpenAI-compatible endpoint works: OpenAI itself, a local Ollama (`http://localhost:11434/v1`, no key needed), the Anthropic compatibility endpoint (`https://api.anthropic.com/v1`), vLLM, and others. See [Configuration](https://pvliesdonk.github.io/markdown-vault-mcp/latest/configuration/) for provider recipes.
 
-`browse_vault` and `show_context` are LLM-visible in all clients; when called in an MCP Apps-capable client they open the interactive SPA. Six additional internal tools (`vault_context`, `vault_list`, `vault_read`, `vault_search`, `vault_graph_neighborhood`, `vault_graph_hubs`) use `visibility="app"` and are used by the SPA only — they are never visible to the LLM.
+`browse_vault` and `show_context` are LLM-visible in all clients; when called in an MCP Apps-capable client they open the interactive SPA. Six additional internal tools (`vault_context`, `vault_list`, `vault_read`, `vault_search`, `vault_graph_neighborhood`, `vault_graph_hubs`) use `visibility="app"` and are used by the SPA only; they are never visible to the LLM.
 
 ### Resources
 
@@ -455,18 +467,18 @@ Prompt templates guide the LLM through multi-step workflows using the vault tool
 | `create_from_template` | `template_name` (optional) | Discover templates (if needed), read a template, gather user values, and write a new note |
 | `related` | `path` | Find related notes via search and suggest cross-references as markdown links |
 | `compare` | `path1`, `path2` | Read two documents and produce a side-by-side comparison |
-| `propose-links` | `scope` (optional), `per_note_limit` (optional) | Scan a candidate set of notes (a folder, `recent`, or `all`), propose meaningful links between semantically-close notes that aren't already connected, and write them on confirmation |
+| `propose-links` | `scope` (optional), `per_note_limit` (optional) | Scan a candidate set of notes (a folder, `recent`, or `all`), propose links between semantically close notes that aren't already connected, and write them on confirmation |
 
 Write prompts (`research`, `discuss`, `create_from_template`, `propose-links`) are only available when `MARKDOWN_VAULT_MCP_READ_ONLY=false`.
 
-Templates are regular markdown files. If placeholder template text pollutes search results, add your templates folder to `MARKDOWN_VAULT_MCP_EXCLUDE` (for example `_templates/**`).
+Templates are regular markdown files. If placeholder template text pollutes search results, add your templates folder to `MARKDOWN_VAULT_MCP_EXCLUDE` (such as `_templates/**`).
 
 ### User-defined prompts
 
 Mount a directory of `.md` prompt files to override or extend the built-in prompts. Set `MARKDOWN_VAULT_MCP_PROMPTS_FOLDER` to the path. Each file's frontmatter defines `description`, `arguments` (a list of objects, each with `name`, `description`, and `required` fields), and optional `tags`. A user prompt with the same name as a built-in replaces it.
 
-For a complete example — including Zettelkasten capture, development, and review prompts — see the [Zettelkasten guide](https://pvliesdonk.github.io/markdown-vault-mcp/latest/guides/zettelkasten/).
-For an alternative action-oriented workflow — Projects, Areas, Resources, Archive with triage, kickoff, and weekly review prompts — see the [PARA guide](https://pvliesdonk.github.io/markdown-vault-mcp/latest/guides/para/).
+For a complete example, including Zettelkasten capture, development, and review prompts, see the [Zettelkasten guide](https://pvliesdonk.github.io/markdown-vault-mcp/latest/guides/zettelkasten/).
+For an alternative action-oriented workflow (Projects, Areas, Resources, Archive with triage, kickoff, and weekly review prompts), see the [PARA guide](https://pvliesdonk.github.io/markdown-vault-mcp/latest/guides/para/).
 
 ## MCP Apps
 
@@ -492,7 +504,7 @@ Vendored dependencies (JavaScript libraries bundled at build time, no runtime CD
 
 ## One-Time Transfer Links
 
-`create_download_link` and `create_upload_link` mint short-lived capability URLs so vault files can move to a browser or another service without inflating the LLM context window. The token embedded in the URL is the only credential — no `Authorization` header is required on the `/transfer/{token}` route.
+`create_download_link` and `create_upload_link` mint short-lived capability URLs so vault files can move to a browser or another service without inflating the LLM context window. The token embedded in the URL is the only credential; no `Authorization` header is required on the `/transfer/{token}` route.
 
 ```
 # Download a vault file
@@ -506,19 +518,14 @@ create_upload_link(path="assets/new-diagram.png")
 curl -X POST --data-binary @new-diagram.png "https://mcp.example.com/transfer/<token>"
 ```
 
-Each token is consumed on its first **successful** use. A failed or interrupted transfer does not burn the token — retry is permitted until the TTL expires.
+Each token is consumed on its first **successful** use. A failed or interrupted transfer does not burn the token; retry is permitted until the TTL expires.
 
 Requirements: HTTP or SSE transport; `MARKDOWN_VAULT_MCP_BASE_URL` set. See the [transfer links guide](https://pvliesdonk.github.io/markdown-vault-mcp/latest/guides/transfer-links/) for the full walkthrough and security model.
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `MARKDOWN_VAULT_MCP_TRANSFER_TTL_DEFAULT_S` | `3600` | Default token lifetime (seconds) when the caller omits `ttl_seconds`; clamped to the max below. |
-| `MARKDOWN_VAULT_MCP_TRANSFER_TTL_MAX_S` | `86400` | Maximum permitted TTL; any larger `ttl_seconds` is silently clamped to this ceiling. |
-| `MARKDOWN_VAULT_MCP_TRANSFER_MAX_UPLOAD_BYTES` | `104857600` (100 MiB) | Per-upload size cap; requests whose body exceeds it are rejected with HTTP 413. |
 
 ## Attachments
 
-In addition to Markdown notes, the server can read, write, delete, rename, and list non-markdown files (PDFs, images, spreadsheets, etc.). All existing tools are overloaded — no new tool names.
+Beyond Markdown notes, the server can read, write, delete, rename, and list non-markdown files (PDFs, images, spreadsheets, etc.). All existing tools are overloaded; there are no new tool names.
 
 ### How it works
 
@@ -569,10 +576,10 @@ Override with `MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS`. Use `*` to allow all n
 
 The server supports four auth modes:
 
-1. **Multi-auth** — both bearer token and OIDC configured; either credential accepted (e.g. Claude web via OIDC + Claude Code via bearer token on the same instance)
-2. **Bearer token** — set `MARKDOWN_VAULT_MCP_BEARER_TOKEN` to a secret string
-3. **OIDC** — full OAuth 2.1 flow via `OIDC_CONFIG_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, and `BASE_URL`
-4. **No auth** — server accepts all connections (default)
+1. **Multi-auth**: both bearer token and OIDC configured; either credential accepted (such as Claude web via OIDC + Claude Code via bearer token on the same instance)
+2. **Bearer token**: set `MARKDOWN_VAULT_MCP_BEARER_TOKEN` to a secret string
+3. **OIDC**: full OAuth 2.1 flow via `OIDC_CONFIG_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, and `BASE_URL`
+4. **No auth**: server accepts all connections (default)
 
 **Auth requires `--transport http` (or `sse`).** It has no effect with `--transport stdio`.
 
@@ -603,11 +610,17 @@ CI workflows reference three repository secrets. Configure them via **Settings �
 
 | Secret | Used by | How to generate |
 |---|---|---|
-| `RELEASE_TOKEN` | `release.yml`, `copier-update.yml` | Fine-grained PAT at <https://github.com/settings/personal-access-tokens/new> with `contents: write` and `pull_requests: write` (the `copier-update` cron opens PRs). Scoped to this repo. |
-| `CODECOV_TOKEN` | `ci.yml` | <https://codecov.io> — sign in with GitHub, add the repo, copy the upload token from the repo settings page. |
+| `RELEASE_TOKEN` | `release.yml`, `copier-update.yml`, `renovate.yml`, `bootstrap.yml` | Fine-grained PAT at <https://github.com/settings/personal-access-tokens/new> with `contents: write`, `pull_requests: write`, and `administration: write` (bootstrap sets branch protection + auto-merge). Scoped to this repo. |
+| `CODECOV_TOKEN` | `ci.yml` | Sign in at <https://codecov.io> with GitHub, add the repo, then copy the upload token from the repo settings page. |
 | `CLAUDE_CODE_OAUTH_TOKEN` | `claude.yml`, `claude-code-review.yml` | Run `claude setup-token` locally and paste the result. |
 
-`GITHUB_TOKEN` is auto-provided — no action needed.
+`GITHUB_TOKEN` is auto-provided; no action needed.
+
+> Dependency updates are handled by **Renovate** (`renovate.yml`), which reuses
+> `RELEASE_TOKEN`. It maintains `uv.lock` and auto-merges patch/minor bumps once
+> the `CI Success` check is green; `bootstrap.yml` enables auto-merge and branch
+> protection on first push. GitHub Actions are updated in the copier template
+> and arrive via `copier update`, not per-repo.
 
 ## Troubleshooting
 
@@ -657,7 +670,7 @@ When `copier update` introduces new dependencies, CI runs `uv sync --frozen` whi
   `SimilarItem` is removed; use `GroupedResult` (from `markdown_vault_mcp.types`).
 - `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB` default lowered from **10 MB**
   to **1 MB**.  Most LLM contexts can't survive a 10 MB base64-encoded
-  attachment; the old default was a silent context-blow-up.  If you have
+  attachment; the old default was a silent context-blow-up. If you have
   non-LLM consumers (scripts, CI) that need the old behaviour, set
   `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB=10` explicitly.
 - `MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES` is a **new** env var (default

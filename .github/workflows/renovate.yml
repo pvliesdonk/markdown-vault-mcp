@@ -1,0 +1,32 @@
+name: Renovate
+
+# Self-hosted Renovate for this project. Keeps uv.lock current within the
+# pyproject.toml floors (lockFileMaintenance) and auto-merges patch/minor
+# updates once CI is green. GitHub Actions are intentionally NOT managed here —
+# their pins are maintained upstream in the template and arrive via template
+# updates, not per-repo.
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # Monday 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  renovate:
+    name: Renovate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Run Renovate
+        # @v46 bundles a Renovate CLI well past the >=43.59.0 floor (fixes the
+        # PEP 735 [dependency-groups] depName bug); do not pin an older renovate-version.
+        uses: renovatebot/github-action@v46
+        with:
+          configurationFile: renovate.json
+          token: ${{ secrets.RELEASE_TOKEN }}
+        env:
+          RENOVATE_REPOSITORIES: ${{ github.repository }}

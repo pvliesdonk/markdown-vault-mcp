@@ -45,9 +45,9 @@ src/markdown_vault_mcp/
   vault.py             -- thin composition root: lifecycle, wiring, facet accessors (index-write → indexing/coordinator.py)
   write_callback.py    -- WriteCallbackDispatcher: deferred git-commit callback worker (#599)
   summary_jobs.py      -- SummaryJobStore: in-memory background-summarize job store backing the get_summary poll tool (#937)
-  config.py            -- template-owned skeleton: ProjectConfig fields/from_env in CONFIG-* sentinels only (#900)
+  config.py            -- template-owned skeleton: flat metadata-carrying ProjectConfig fields + section-view properties + from_env, all inside CONFIG-* sentinels (#900, #952)
   config_sections/
-    _assembly.py         -- domain config-assembly kept out of template-owned config.py: to_vault_kwargs, derive_max_chunk_chars, git-strategy builder (#900)
+    _assembly.py         -- domain config-assembly kept out of template-owned config.py: to_vault_kwargs, derive_max_chunk_chars, git-strategy builder, from_env value resolvers (#900, #952)
   domain.py            -- Service: owns the Vault lifecycle (build, boot index/reindex/embeddings jobs, file watcher); get_vault/get_config DI + vault singleton (#902)
   _instructions.py     -- build_default_instructions: domain server-instructions prose, applied in server.py's DOMAIN-WIRING (#901)
   _server_apps.py      -- template-owned MCP Apps scaffold; vault SPA + app-tools confined to DOMAIN-APP-TOOL-NAMES/DOMAIN-APP-RESOURCE/DOMAIN-APP-TOOLS sentinels (#905)
@@ -109,7 +109,7 @@ This project ships a `.pre-commit-config.yaml` that runs ruff (check + format), 
 
 - **Never bypass with `--no-verify`.** A failing hook means the same check will fail in CI; fix the underlying issue rather than silencing it.
 
-The config is in `_skip_if_exists`, so domain-specific additions (shellcheck, yamllint, project-specific linters, additional file checks) on top of the shipped defaults survive `copier update`.
+Domain-specific additions (shellcheck, yamllint, project-specific linters, additional file checks) belong between the `DOMAIN-HOOKS` markers at the end of the config, never outside them; hooks inside that block on top of the shipped defaults survive `copier update`.
 
 
 ## Structural health
@@ -147,7 +147,7 @@ Constrain issues to **decay that will compound**, not anything imperfect. The di
 
 **Every PR must have at least one associated issue.** If the work doesn't have one yet — a bug found in the wild, an opportunistic cleanup, a small improvement — create the issue first, then open the PR with `Closes #N` (or `Refs #N`) in the body. A single PR may close multiple issues (`Closes #A, closes #B`) — bundling related fixes is fine; the rule is "no orphan PRs", not "one PR per issue". This keeps the changelog, release notes, and cross-repo history coherent.
 
-Trivial exceptions: pure typo fixes and automated dependency bumps (Dependabot / Renovate) may skip the issue.
+Trivial exceptions: pure typo fixes and automated dependency bumps (Renovate) may skip the issue.
 
 <!-- TEMPLATE-TRACKING-START -->
 **The bot reviewer (claude-review) is a merge gate, not a pair reviewer.** Local review must be complete before the PR opens. If it finds anything on first run, the local review was incomplete — that is a discipline failure to investigate, not "address-and-move-on." Run a local code-review pass on the cumulative diff before `gh pr create`; it is not a substitute.
@@ -255,7 +255,7 @@ try to make them conform:
 
 ## Config & Customization Contract
 
-Domain configuration composes `fastmcp_pvl_core.ServerConfig` inside your domain config class (see `src/markdown_vault_mcp/config.py`).  Add domain fields between the `CONFIG-FIELDS-START` / `CONFIG-FIELDS-END` sentinels and populate them in `from_env` between the `CONFIG-FROM-ENV-START` / `CONFIG-FROM-ENV-END` sentinels.  Never inherit from `ServerConfig`; always compose.
+Domain configuration composes `fastmcp_pvl_core.ServerConfig` inside your domain config class (see `src/markdown_vault_mcp/config.py`).  Add domain fields between the `CONFIG-FIELDS-START` / `CONFIG-FIELDS-END` sentinels, populate them in `from_env` between the `CONFIG-FROM-ENV-START` / `CONFIG-FROM-ENV-END` sentinels, and enforce their invariants in `__post_init__` between the `CONFIG-VALIDATE-START` / `CONFIG-VALIDATE-END` sentinels.  Validation belongs in `__post_init__` rather than `from_env` because it then also covers a direct `ProjectConfig(field=...)`; `env_float` / `env_int` bounds check only the env-sourced value, are inclusive-only, and cannot express cross-field rules.  The dataclass is frozen — read fields, don't assign (use `object.__setattr__` if a field must be normalised).  Never inherit from `ServerConfig`; always compose.
 
 Env var prefix is `MARKDOWN_VAULT_MCP_` — all env reads go through `fastmcp_pvl_core.env(_ENV_PREFIX, "SUFFIX", default)` so naming stays consistent.
 
@@ -263,13 +263,13 @@ Env var prefix is `MARKDOWN_VAULT_MCP_` — all env reads go through `fastmcp_pv
 
 ### Config wizard
 
-`docs/javascripts/config-wizard/wizard-spec.json` drives the guided-setup page. It is **domain-owned and write-once** (`_skip_if_exists`): the runtime (`wizard.js`, `generators.js`, `wizard-spec-schema.json`, the generic tests) is template-owned and re-rendered, but the spec itself is never re-rendered, so it does **not** auto-update when you add config or when the template grows new questions. Reconcile it by hand.
+`docs/javascripts/config-wizard/wizard-spec.json` drives the guided-setup page. It is **generated**, produced by `scripts/gen_config_surface.py` on every `copier copy`/`copier update` and re-verified by `scripts/gen_config_surface.py --check` in CI — never hand-edit it. The runtime (`wizard.js`, `generators.js`, `wizard-spec-schema.json`, the generic tests) is template-owned and re-rendered the same way it always was.
 
-Two rules keep the spec honest:
+To change what the wizard asks:
 
-- **Cover the `ServerConfig` surface.** The seed covers the full `ServerConfig` surface plus logging; the drift test enforces completeness, so no explicit field list needs hand-maintaining here. When you add a domain setting that an operator would plausibly configure, add a question for it. When you adopt a new upstream setting, surface it too.
-- **Coverage is CI-enforced:** `tests/test_config_wizard_drift.py` fails if the wizard offers a var no read site consumes (orphan) or omits a setting the server reads: both `ServerConfig` (via `server_config_env_suffixes()`) and your `ProjectConfig` (via `domain_env_suffixes(ProjectConfig)`, which recurses into any sub-config sections it composes — not just the reads in `ProjectConfig.from_env` itself). Offer every setting; hide niche ones with `advancedGroup`, never by omission. For the coverage check, the only escape is `_COVERED_BY_INFERENCE`, for settings with no dedicated control by design (for example, `AUTH_MODE`, inferred from which auth vars are set). For the orphan check, `FASTMCP_*` vars are exempt: their prefix never matches `MARKDOWN_VAULT_MCP_`, so they sit outside the coverage check by construction, and they are read by FastMCP itself rather than by project code.
-- **Only offer vars the server actually consumes.** Every `var` must resolve to a real read site (`ServerConfig.from_env`, your `ProjectConfig.from_env`, the CLI, or a native `FASTMCP_*` var) — *advertised but unread* env vars (e.g. a hint that mentions `MARKDOWN_VAULT_MCP_SERVER_NAME` while the scaffold hardcodes the name) must not appear. List secret-bearing vars in `secretKeys` so the wizard masks them and keeps them out of the shareable link. A question may legitimately have **no `var`** when it is a wizard-internal routing key — the seed's `auth` select drives `showIf` but maps to no single env var (auth mode is inferred by `ServerConfig` from which vars are set), so it is not an orphan. Gate `showIf`/`guards` on the questions that are actually visible, and make every `showIf` self-contained: because the runtime checks raw answers with no cascade, a question gated on `auth` must *also* gate on `deployment=server` (the gate on `auth` itself), or it leaks — and emits its var — when `auth` is hidden but its stale answer lingers.
+- **A domain setting your project reads** — give its `ProjectConfig` field (between the `CONFIG-FIELDS-START`/`-END` sentinels in `config.py`) a `metadata={"help": ..., "tags": (...)}`. The generator's AST scan discovers it from there; no wizard-spec edits needed.
+- **A var the scan cannot see** (a deprecated alias no longer read inside `ProjectConfig.from_env`, or something read outside it entirely) — declare it in `config-presentation.domain.yml` instead.
+- **Coverage is enforced, not automatic** — the generator fails loudly (`SystemExit`, naming the var and its tags) if a collected `Var`'s tags match no env-file section, rather than silently dropping it from every generated file. Giving a domain field a tag no section lists is a config-presentation bug, and this catches it at generation time instead of shipping an undocumented var. There is, however, **no orphan check**: a stale or mistaken entry in `config-presentation.domain.yml` that nothing actually reads will generate into the wizard and env files anyway. Keep that file's contents matched to real reads yourself.
 
 ### Tool icons
 
@@ -309,7 +309,7 @@ Shared infrastructure (auth providers, middleware stack, logging bootstrap, even
 - [`fastmcp-pvl-core`](https://github.com/pvliesdonk/fastmcp-pvl-core) — the Python library that provides `ServerConfig`, auth builders, middleware helpers, and the `make_serve_parser` / `configure_logging_from_env` / `normalise_http_path` CLI helpers.
 - [`fastmcp-server-template`](https://github.com/pvliesdonk/fastmcp-server-template) — the copier template this project was generated from. Ships the CI/release workflows, `Dockerfile`, `packaging/nfpm.yaml`, `packaging/mcpb/*`, `scripts/bump_manifests.py`, server.py skeleton, and this very section of CLAUDE.md.
 
-Fixes and improvements to shared code land in those repos and propagate here via `copier update` against the template's latest tag — run manually or via the weekly `.github/workflows/copier-update.yml` cron. Starter files listed in `_skip_if_exists` (e.g. `scripts/bump_manifests.py`, `packaging/mcpb/*`, the `tools.py` / `resources.py` / `prompts.py` / `domain.py` scaffolds, `README.md`, `CHANGELOG.md`, `LICENSE`, `.env.example`) are written once and require manual reconciliation on template updates — review `_skip_if_exists` in the template's `copier.yml` if you need to force-sync a file. Domain-specific code (tools, resources, prompts, and the fields and logic inside the `CONFIG-FIELDS-START` / `CONFIG-FIELDS-END` and `CONFIG-FROM-ENV-START` / `CONFIG-FROM-ENV-END` sentinels) stays in this repo.
+Fixes and improvements to shared code land in those repos and propagate here via `copier update` against the template's latest tag — run manually or via the weekly `.github/workflows/copier-update.yml` cron. Starter files listed in `_skip_if_exists` (e.g. `scripts/bump_manifests.py`, `packaging/mcpb/*`, the `tools.py` / `resources.py` / `prompts.py` / `domain.py` scaffolds, `README.md`, `CHANGELOG.md`, `LICENSE`) are written once and require manual reconciliation on template updates — review `_skip_if_exists` in the template's `copier.yml` if you need to force-sync a file. Domain-specific code (tools, resources, prompts, and the fields and logic inside the `CONFIG-FIELDS-START` / `CONFIG-FIELDS-END`, `CONFIG-FROM-ENV-START` / `CONFIG-FROM-ENV-END`, and `CONFIG-VALIDATE-START` / `CONFIG-VALIDATE-END` sentinels) stays in this repo.
 
 ## Contributing fixes upstream
 

@@ -25,7 +25,7 @@ jobs:
       (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude') && github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     permissions:
-      contents: write        # Commit fixes when @claude is asked to fix something
+      contents: read         # Read-only: @claude answers and comments, never commits
       pull-requests: write   # Post inline review comments
       issues: write          # Update issue/PR comments
       id-token: write
@@ -49,7 +49,14 @@ jobs:
           # Optional: Give a custom prompt to Claude. If this is not specified, Claude will perform the instructions specified in the comment that tagged it.
           # prompt: 'Update the pull request description to include a summary of changes.'
 
-          # Optional: Add claude_args to customize behavior and configuration
+          track_progress: true
+          display_report: true
+          include_fix_links: false
+
+          # Grant the built-in GitHub MCP servers' read/search/CI tools, the
+          # inline-comment tool, and `gh api` for read-only GitHub access. These
+          # ADD to the action's defaults (Edit/Write/git stay available), but
+          # `contents: read` above is what keeps this workflow from committing.
           # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
-          # or https://code.claude.com/docs/en/cli-reference for available options
-          # claude_args: '--allowed-tools Bash(gh pr *)'
+          claude_args: |
+            --allowedTools "mcp__github__get_*,mcp__github__list_*,mcp__github__search_*,mcp__github_ci__*,mcp__github_inline_comment__*,Bash(gh api *)"

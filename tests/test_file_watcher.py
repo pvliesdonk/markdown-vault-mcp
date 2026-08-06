@@ -606,7 +606,6 @@ def test_lifespan_passes_configured_internal_dirs_to_watcher(tmp_path: Path) -> 
     import asyncio
 
     from markdown_vault_mcp.config import ProjectConfig
-    from markdown_vault_mcp.config_sections import IndexingConfig
 
     (tmp_path / "note.md").write_text("# note\n\nbody", encoding="utf-8")
     state_dir = tmp_path / "state_area"
@@ -618,11 +617,9 @@ def test_lifespan_passes_configured_internal_dirs_to_watcher(tmp_path: Path) -> 
     config = ProjectConfig(
         source_dir=tmp_path,
         read_only=False,
-        indexing=IndexingConfig(
-            state_path=state_dir / "state.json",
-            index_path=index_dir / "index.db",
-            embeddings_path=emb_dir / "embeddings",
-        ),
+        state_path=state_dir / "state.json",
+        index_path=index_dir / "index.db",
+        embeddings_path=emb_dir / "embeddings",
     )
     lifespan_fn = _make_test_lifespan(config)
 
@@ -663,12 +660,12 @@ def test_lifespan_skips_watcher_when_git_pull_active(tmp_path: Path) -> None:
     from markdown_vault_mcp.config import ProjectConfig
 
     (tmp_path / "note.md").write_text("# note\n\nbody", encoding="utf-8")
-    from markdown_vault_mcp.config_sections import GitConfig
 
     config = ProjectConfig(
         source_dir=tmp_path,
         read_only=False,
-        git=GitConfig(token="fake-token", pull_interval_s=600),
+        git_token="fake-token",
+        git_pull_interval_s=600,
     )
     lifespan_fn = _make_test_lifespan(config)
 
@@ -1287,12 +1284,11 @@ def test_lifespan_skips_watcher_when_webhook_active(tmp_path: Path) -> None:
     from markdown_vault_mcp.config import ProjectConfig
 
     (tmp_path / "note.md").write_text("# note\n\nbody", encoding="utf-8")
-    from markdown_vault_mcp.config_sections import SyncConfig
 
     config = ProjectConfig(
         source_dir=tmp_path,
         read_only=False,
-        sync=SyncConfig(github_webhook_secret="shhh"),
+        github_webhook_secret="shhh",
     )
     lifespan_fn = _make_test_lifespan(config)
 

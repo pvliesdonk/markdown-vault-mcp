@@ -42,6 +42,13 @@ def _clear_env(monkeypatch: pytest.MonkeyPatch) -> None:
     # an ambient key doesn't silently enable a gated feature mid-test.
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
+    # ProjectConfig.from_env hard-requires SOURCE_DIR (fail-fast startup
+    # contract). Preset a stable default so env-less from_env construction
+    # works in tests — including the template-owned config-contract tests,
+    # which call from_env with an otherwise-empty environment. A test that
+    # asserts the missing-var error deletes it explicitly; a test-local
+    # setenv overrides it (fixtures run before the test body).
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/data/vault")
 
 
 def _parse_tool_data(result: Any) -> Any:

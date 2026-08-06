@@ -105,9 +105,16 @@ jobs:
           # Surface progress so a silent failure is visible.
           track_progress: true
           display_report: true
-          # Grant the inline-comment tool (NOT in the default allow-set — this is
-          # what lets the reviewer post inline), gh read tools to read CI results,
-          # and scoped `uv run` for targeted investigation (REVIEW.md sets norms).
+          include_fix_links: false
+          # Read CI results through the built-in GitHub CI MCP server.
+          additional_permissions: |
+            actions: read
+          # Grant the built-in GitHub read/search MCP tools, the CI tools, the
+          # inline-comment tool (what lets the reviewer post inline — not in the
+          # default allow-set), `gh api` for read-only API access, gh pr/run read
+          # commands, and scoped `uv run` for targeted investigation (REVIEW.md
+          # sets norms). contents: read above keeps the reviewer from committing —
+          # it only reads and comments.
           claude_args: |
-            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh run view:*),Bash(gh run list:*),Bash(uv run pytest:*),Bash(uv run mypy:*),Bash(uv run ruff:*)"
+            --allowedTools "mcp__github__get_*,mcp__github__list_*,mcp__github__search_*,mcp__github_ci__*,mcp__github_inline_comment__*,Bash(gh api *),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh run view:*),Bash(gh run list:*),Bash(uv run pytest:*),Bash(uv run mypy:*),Bash(uv run ruff:*)"
           # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md

@@ -41,25 +41,3 @@ class TransferConfig:
             raise ConfigurationError(
                 f"max_upload_bytes must be >= 1, got {self.max_upload_bytes}"
             )
-
-    @classmethod
-    def from_env(cls, prefix: str) -> TransferConfig:
-        """Construct TransferConfig by reading ``{prefix}_TRANSFER_*`` env vars.
-
-        Args:
-            prefix: Env var prefix, e.g. ``"MARKDOWN_VAULT_MCP"``.
-
-        Returns:
-            Populated TransferConfig with defaults for unset vars.
-
-        Raises:
-            ConfigurationError: If any ``TRANSFER_*`` value is non-numeric or
-                out of range.
-        """
-        from markdown_vault_mcp.config_sections._helpers import env_int
-
-        return cls(
-            ttl_default_s=env_int(prefix, "TRANSFER_TTL_DEFAULT_S", 3600),
-            ttl_max_s=env_int(prefix, "TRANSFER_TTL_MAX_S", 86400),
-            max_upload_bytes=env_int(prefix, "TRANSFER_MAX_UPLOAD_BYTES", 104857600),
-        )

@@ -107,14 +107,14 @@ class TestSummarizeConfig:
         monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_MODEL", "gpt-5")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SUMMARIZE_MAX_NOTES", "7")
-        cfg = SummarizeConfig.from_env("MARKDOWN_VAULT_MCP")
+        cfg = ProjectConfig.from_env().summarize
         assert cfg.has_provider() is True
         assert cfg.openai_api_key == "sk-test"
         assert cfg.openai_model == "gpt-5"
         assert cfg.max_notes == 7
 
     def test_defaults_no_key(self) -> None:
-        cfg = SummarizeConfig.from_env("MARKDOWN_VAULT_MCP")
+        cfg = ProjectConfig.from_env().summarize
         assert cfg.has_provider() is False
         assert cfg.openai_model == "gpt-5-mini"
         assert cfg.openai_base_url is None
@@ -125,14 +125,14 @@ class TestSummarizeConfig:
 
     def test_blank_key_is_unset(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("OPENAI_API_KEY", "   ")
-        cfg = SummarizeConfig.from_env("MARKDOWN_VAULT_MCP")
+        cfg = ProjectConfig.from_env().summarize
         assert cfg.openai_api_key is None
         assert cfg.has_provider() is False
 
     def test_prefixed_key_wins_over_bare(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("OPENAI_API_KEY", "sk-bare")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_API_KEY", "sk-prefixed")
-        cfg = SummarizeConfig.from_env("MARKDOWN_VAULT_MCP")
+        cfg = ProjectConfig.from_env().summarize
         assert cfg.openai_api_key == "sk-prefixed"
 
     def test_prefixed_base_url_alone_enables_keyless(
@@ -142,7 +142,7 @@ class TestSummarizeConfig:
             "MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_BASE_URL",
             "http://localhost:11434/v1/",
         )
-        cfg = SummarizeConfig.from_env("MARKDOWN_VAULT_MCP")
+        cfg = ProjectConfig.from_env().summarize
         assert cfg.openai_api_key is None
         # __post_init__ strips the trailing slash.
         assert cfg.openai_base_url == "http://localhost:11434/v1"
@@ -154,7 +154,7 @@ class TestSummarizeConfig:
         # A bare OPENAI_BASE_URL set purely for embeddings must not
         # surprise-enable the summarize tool.
         monkeypatch.setenv("OPENAI_BASE_URL", "http://proxy.example/v1")
-        cfg = SummarizeConfig.from_env("MARKDOWN_VAULT_MCP")
+        cfg = ProjectConfig.from_env().summarize
         assert cfg.openai_base_url is None
         assert cfg.has_provider() is False
 
@@ -163,7 +163,7 @@ class TestSummarizeConfig:
     ) -> None:
         monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
         monkeypatch.setenv("OPENAI_BASE_URL", "http://proxy.example/v1")
-        cfg = SummarizeConfig.from_env("MARKDOWN_VAULT_MCP")
+        cfg = ProjectConfig.from_env().summarize
         assert cfg.openai_base_url == "http://proxy.example/v1"
 
     def test_prefixed_base_url_wins_over_bare(
@@ -175,7 +175,7 @@ class TestSummarizeConfig:
             "MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_BASE_URL",
             "http://prefixed.example/v1",
         )
-        cfg = SummarizeConfig.from_env("MARKDOWN_VAULT_MCP")
+        cfg = ProjectConfig.from_env().summarize
         assert cfg.openai_base_url == "http://prefixed.example/v1"
 
     def test_blank_base_url_is_unset(self) -> None:
@@ -211,7 +211,7 @@ class TestSummarizeConfig:
     def test_from_env_reads_timeouts(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SUMMARIZE_TIMEOUT", "200")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SUMMARIZE_INLINE_TIMEOUT", "45")
-        cfg = SummarizeConfig.from_env("MARKDOWN_VAULT_MCP")
+        cfg = ProjectConfig.from_env().summarize
         assert cfg.timeout == 200.0
         assert cfg.inline_timeout == 45.0
 
@@ -222,7 +222,19 @@ class TestSummarizeConfig:
 
 
 def _config_with(summarize: SummarizeConfig, tmp_path: Path) -> ProjectConfig:
-    return ProjectConfig(source_dir=tmp_path, summarize=summarize)
+    """Build a ProjectConfig whose flat summarize_* fields mirror *summarize*."""
+    return ProjectConfig(
+        source_dir=tmp_path,
+        summarize_provider=summarize.provider,
+        summarize_openai_api_key=summarize.openai_api_key,
+        summarize_openai_base_url=summarize.openai_base_url,
+        summarize_openai_model=summarize.openai_model,
+        summarize_max_tokens=summarize.max_tokens,
+        summarize_max_notes=summarize.max_notes,
+        summarize_max_input_chars=summarize.max_input_chars,
+        summarize_timeout=summarize.timeout,
+        summarize_inline_timeout=summarize.inline_timeout,
+    )
 
 
 class TestGetSummarizer:

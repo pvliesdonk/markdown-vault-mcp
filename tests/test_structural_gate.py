@@ -126,6 +126,9 @@ def _diff_quality(repo: Path, extend: bool) -> subprocess.CompletedProcess[str]:
         "-m",
         "diff_cover.diff_quality_tool",
         "--violations=ruff.check",
+        # `main`, NOT `origin/main` as the rendered pre-push hook and CI use:
+        # the tmp_path repo this drives is `git init`-ed with no remote, so
+        # `origin/main` does not resolve. Do not "fix" this to match the hook.
         "--compare-branch=main",
         "--fail-under=100",
     ]
@@ -168,20 +171,43 @@ def test_options_reach_ruff_and_gate_is_diff_scoped(tmp_path: Path) -> None:
     )
 
 
+def _structural_hook_block(text: str) -> str:
+    """The `structural-diff-gate` hook's own YAML block, sliced out of the config.
+
+    Whole-file `in text` checks are too weak here: `types: [python]`,
+    `language: system` and friends also appear in the ruff/mypy hooks, so
+    dropping one from THIS hook would still leave it present elsewhere and the
+    assertion would pass. Slice from this hook's `- id:` to the next one and
+    assert inside that window instead.
+    """
+    start = text.index("- id: structural-diff-gate")
+    # End at whichever comes first: the next hook, or the next repo block (this
+    # hook is currently last in `- repo: local`, so the repo boundary is the
+    # real terminator today).
+    ends = [
+        pos
+        for marker in ("\n      - id:", "\n  - repo:")
+        if (pos := text.find(marker, start)) != -1
+    ]
+    return text[start : min(ends)] if ends else text[start:]
+
+
 def test_precommit_config_wires_pre_push_hook() -> None:
     text = (REPO_ROOT / ".pre-commit-config.yaml").read_text()
     assert "default_install_hook_types: [pre-commit, pre-push]" in text
     assert "id: structural-diff-gate" in text
-    assert "stages: [pre-push]" in text
-    assert "language: system" in text
+
+    block = _structural_hook_block(text)
+    assert "stages: [pre-push]" in block
+    assert "language: system" in block
     # Mirrors the CI HAS_PY skip: no Python in the push → hook does not run.
-    assert "types: [python]" in text
+    assert "types: [python]" in block
     # The `entry: bash -c` wrapper is load-bearing: it makes the shell (not
     # pre-commit's arg splitter) own the --options quoting verified by the
     # end-to-end test. Assert it so a refactor to a direct `uv run` entry —
     # which would break that quoting — can't pass silently.
-    assert "entry: bash -c " in text
-    assert f"--extend-select={STRUCTURAL}" in text
+    assert "entry: bash -c " in block
+    assert f"--extend-select={STRUCTURAL}" in block
 
 
 def test_ci_has_structure_job() -> None:
@@ -197,8 +223,10 @@ def test_claudemd_documents_the_gate_command() -> None:
     text = (REPO_ROOT / "CLAUDE.md").read_text()
     assert "diff-quality" in text
     assert f"--extend-select={STRUCTURAL}" in text
-    # Advisory audit + eyes content present.
-    assert "radon" in text and "vulture" in text
+    # Advisory audit + eyes content present. Split, not `and`-joined, so a
+    # failure names which tool went missing instead of a bare AssertionError.
+    assert "radon" in text
+    assert "vulture" in text
     assert "Why it compounds" in text  # decay-issue template marker
 
 

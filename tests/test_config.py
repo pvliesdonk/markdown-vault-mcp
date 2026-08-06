@@ -353,7 +353,7 @@ class TestToVaultKwargs:
     def test_includes_exclude_patterns(self) -> None:
         config = ProjectConfig(
             source_dir=Path("/tmp/vault"),
-            indexing=IndexingConfig(exclude_patterns=[".obsidian/**"]),
+            exclude=[".obsidian/**"],
         )
         kwargs = to_vault_kwargs(config)
         # Configured patterns pass through verbatim; the conventions-file
@@ -365,7 +365,7 @@ class TestToVaultKwargs:
     def test_conventions_file_disabled_passes_none(self, tmp_path: Path) -> None:
         config = ProjectConfig(
             source_dir=tmp_path / "vault",
-            content=ContentConfig(conventions_file=None),
+            conventions_file=None,
         )
         kwargs = to_vault_kwargs(config)
         assert kwargs["conventions_file"] is None
@@ -374,7 +374,7 @@ class TestToVaultKwargs:
         fake_token = "".join(["ghp_", "secret"])
         config = ProjectConfig(
             source_dir=tmp_path / "vault",
-            git=GitConfig(token=fake_token),
+            git_token=fake_token,
         )
         kwargs = to_vault_kwargs(config)
         assert "git_token" not in kwargs
@@ -394,14 +394,12 @@ class TestToVaultKwargs:
         config = ProjectConfig(
             source_dir=Path("/tmp/vault"),
             read_only=False,
-            indexing=IndexingConfig(
-                index_path=Path("/tmp/index.db"),
-                embeddings_path=Path("/tmp/emb"),
-                state_path=Path("/tmp/state.json"),
-                indexed_frontmatter_fields=["cluster"],
-                required_frontmatter=["title"],
-                exclude_patterns=[".obsidian/**"],
-            ),
+            index_path=Path("/tmp/index.db"),
+            embeddings_path=Path("/tmp/emb"),
+            state_path=Path("/tmp/state.json"),
+            indexed_fields=["cluster"],
+            required_fields=["title"],
+            exclude=[".obsidian/**"],
         )
         kwargs = to_vault_kwargs(config)
         assert kwargs["source_dir"] == Path("/tmp/vault")
@@ -435,7 +433,9 @@ class TestToVaultKwargs:
 
         config = ProjectConfig(
             source_dir=source_dir,
-            git=GitConfig(repo_url=str(bare), token="ghp_secret", pull_interval_s=123),
+            git_repo_url=str(bare),
+            git_token="ghp_secret",
+            git_pull_interval_s=123,
         )
         kwargs = to_vault_kwargs(config)
         assert kwargs["git_pull_interval_s"] == 123
@@ -453,8 +453,8 @@ class TestToVaultKwargsProvider:
     def _config(self, *, provider: str | None, tmp_path: Path) -> ProjectConfig:
         return ProjectConfig(
             source_dir=tmp_path,
-            embeddings=EmbeddingsConfig(provider=provider),
-            indexing=IndexingConfig(embeddings_path=tmp_path / "emb"),
+            embedding_provider=provider,
+            embeddings_path=tmp_path / "emb",
         )
 
     @pytest.mark.parametrize("exc", [ImportError("missing dep"), RuntimeError("boom")])
@@ -503,8 +503,8 @@ class TestToVaultKwargsProvider:
         monkeypatch.setattr(providers_mod, "get_embedding_provider", _boom)
         config = ProjectConfig(
             source_dir=tmp_path,
-            embeddings=EmbeddingsConfig(provider="openai"),
-            indexing=IndexingConfig(embeddings_path=None),
+            embedding_provider="openai",
+            embeddings_path=None,
         )
         kwargs = to_vault_kwargs(config)
         assert "embedding_provider" not in kwargs
@@ -597,7 +597,8 @@ class TestGitCommitterConfig:
         """ProjectConfig accepts custom committer name and email."""
         config = ProjectConfig(
             source_dir=Path("/tmp/vault"),
-            git=GitConfig(commit_name="CI", commit_email="ci@example.com"),
+            git_commit_name="CI",
+            git_commit_email="ci@example.com",
         )
         assert config.git.commit_name == "CI"
         assert config.git.commit_email == "ci@example.com"
@@ -608,9 +609,9 @@ class TestGitCommitterConfig:
 
         config = ProjectConfig(
             source_dir=Path("/tmp/vault"),
-            git=GitConfig(
-                token="ghp_test", commit_name="TestBot", commit_email="test@example.com"
-            ),
+            git_token="ghp_test",
+            git_commit_name="TestBot",
+            git_commit_email="test@example.com",
         )
         kwargs = to_vault_kwargs(config)
 
@@ -627,7 +628,7 @@ class TestGitCommitterConfig:
 
         config = ProjectConfig(
             source_dir=Path("/tmp/vault"),
-            git=GitConfig(token="ghp_test"),
+            git_token="ghp_test",
         )
         kwargs = to_vault_kwargs(config)
 
@@ -764,7 +765,8 @@ class TestGitLfsConfig:
 
         config = ProjectConfig(
             source_dir=tmp_path,
-            git=GitConfig(token="ghp_test", lfs=False),
+            git_token="ghp_test",
+            git_lfs=False,
         )
         kwargs = to_vault_kwargs(config)
         strategy = kwargs["on_write"]
@@ -777,7 +779,7 @@ class TestGitLfsConfig:
 
         config = ProjectConfig(
             source_dir=tmp_path,
-            git=GitConfig(token="ghp_test"),
+            git_token="ghp_test",
         )
         kwargs = to_vault_kwargs(config)
         strategy = kwargs["on_write"]
@@ -786,8 +788,9 @@ class TestGitLfsConfig:
 
 
 class TestGitConfigFromEnv:
+    """Env parsing for the git section via ProjectConfig.from_env().git."""
+
     def test_defaults(self, monkeypatch):
-        from markdown_vault_mcp.config_sections import GitConfig
 
         for k in (
             "GIT_TOKEN",
@@ -796,39 +799,32 @@ class TestGitConfigFromEnv:
             "GIT_PUSH_DELAY_S",
         ):
             monkeypatch.delenv(f"MARKDOWN_VAULT_MCP_{k}", raising=False)
-        g = GitConfig.from_env("MARKDOWN_VAULT_MCP")
+        g = ProjectConfig.from_env().git
         assert g == GitConfig()
 
     def test_pull_interval_negative_raises(self, monkeypatch):
         """A negative GIT_PULL_INTERVAL_S raises (no longer clamps to 0; #638)."""
-        from markdown_vault_mcp.config_sections import GitConfig
-
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_PULL_INTERVAL_S", "-5")
         with pytest.raises(ConfigurationError, match="pull_interval_s"):
-            GitConfig.from_env("MARKDOWN_VAULT_MCP")
+            ProjectConfig.from_env()
 
     def test_push_delay_invalid_raises(self, monkeypatch):
         """A non-numeric GIT_PUSH_DELAY_S raises (no warn-and-default; #638)."""
-        from markdown_vault_mcp.config_sections import GitConfig
-
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_PUSH_DELAY_S", "nope")
         with pytest.raises(ConfigurationError):
-            GitConfig.from_env("MARKDOWN_VAULT_MCP")
+            ProjectConfig.from_env()
 
     @pytest.mark.parametrize(
         "kwargs", [{"push_delay_s": -1.0}, {"pull_interval_s": -5}]
     )
     def test_direct_construction_validates(self, kwargs):
         """__post_init__ rejects negative cadences on direct construction (#638)."""
-        from markdown_vault_mcp.config_sections import GitConfig
 
         with pytest.raises(ConfigurationError):
             GitConfig(**kwargs)
 
     def test_frozen(self):
         import dataclasses
-
-        from markdown_vault_mcp.config_sections import GitConfig
 
         with pytest.raises(dataclasses.FrozenInstanceError):
             GitConfig().token = "x"  # type: ignore[misc]
@@ -862,17 +858,15 @@ class TestProjectConfigDefaults:
             source_dir=Path("/tmp/vault"),
             server_name="my-server",
             instructions="Be helpful",
-            embeddings=EmbeddingsConfig(
-                provider="ollama",
-                ollama_host="http://gpu-server:11434",
-                ollama_model="mxbai-embed-large",
-                ollama_cpu_only=True,
-                openai_api_key="sk-test",
-                openai_base_url="https://api.siliconflow.cn/v1",
-                openai_embedding_model="BAAI/bge-m3",
-                fastembed_model="BAAI/bge-base-en-v1.5",
-                fastembed_cache_dir="/tmp/cache",
-            ),
+            embedding_provider="ollama",
+            ollama_host="http://gpu-server:11434",
+            ollama_model="mxbai-embed-large",
+            ollama_cpu_only=True,
+            openai_api_key="sk-test",
+            openai_base_url="https://api.siliconflow.cn/v1",
+            openai_embedding_model="BAAI/bge-m3",
+            fastembed_model="BAAI/bge-base-en-v1.5",
+            fastembed_cache_dir="/tmp/cache",
         )
         assert config.server_name == "my-server"
         assert config.instructions == "Be helpful"
@@ -1480,44 +1474,34 @@ class TestIndexingConfigFromEnv:
             "EXCLUDE",
         ):
             monkeypatch.delenv(f"MARKDOWN_VAULT_MCP_{k}", raising=False)
-        cfg = IndexingConfig.from_env("MARKDOWN_VAULT_MCP")
+        cfg = ProjectConfig.from_env().indexing
         assert cfg == IndexingConfig()
 
     def test_index_path_set(self, monkeypatch):
         from pathlib import Path
 
-        from markdown_vault_mcp.config_sections import IndexingConfig
-
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_INDEX_PATH", "/x/index.db")
-        assert IndexingConfig.from_env("MARKDOWN_VAULT_MCP").index_path == Path(
-            "/x/index.db"
-        )
+        assert ProjectConfig.from_env().indexing.index_path == Path("/x/index.db")
 
     def test_list_fields_parsed(self, monkeypatch):
-        from markdown_vault_mcp.config_sections import IndexingConfig
-
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_INDEXED_FIELDS", "a, b, c")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_EXCLUDE", ".obsidian/**")
-        cfg = IndexingConfig.from_env("MARKDOWN_VAULT_MCP")
+        cfg = ProjectConfig.from_env().indexing
         assert cfg.indexed_frontmatter_fields == ("a", "b", "c")
         assert cfg.exclude_patterns == (".obsidian/**",)
 
     def test_empty_list_yields_none(self, monkeypatch):
-        from markdown_vault_mcp.config_sections import IndexingConfig
-
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_INDEXED_FIELDS", "")
-        cfg = IndexingConfig.from_env("MARKDOWN_VAULT_MCP")
+        cfg = ProjectConfig.from_env().indexing
         assert cfg.indexed_frontmatter_fields is None
 
     def test_searchable_frontmatter_defaults_to_indexed_frontmatter_fields(
         self, monkeypatch
     ):
         """SEARCHABLE_FIELDS unset inherits INDEXED_FIELDS (one config, one intent)."""
-        from markdown_vault_mcp.config_sections import IndexingConfig
-
         monkeypatch.delenv("MARKDOWN_VAULT_MCP_SEARCHABLE_FIELDS", raising=False)
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_INDEXED_FIELDS", "type,status,tags")
-        cfg = IndexingConfig.from_env("MARKDOWN_VAULT_MCP")
+        cfg = ProjectConfig.from_env().indexing
         assert cfg.indexed_frontmatter_fields == ("type", "status", "tags")
         assert cfg.searchable_frontmatter == ("type", "status", "tags")
 
@@ -1525,11 +1509,9 @@ class TestIndexingConfigFromEnv:
         self, monkeypatch
     ):
         """An explicit SEARCHABLE_FIELDS still wins over the INDEXED_FIELDS default."""
-        from markdown_vault_mcp.config_sections import IndexingConfig
-
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_INDEXED_FIELDS", "type,status,tags")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SEARCHABLE_FIELDS", "type,status")
-        cfg = IndexingConfig.from_env("MARKDOWN_VAULT_MCP")
+        cfg = ProjectConfig.from_env().indexing
         assert cfg.indexed_frontmatter_fields == ("type", "status", "tags")
         assert cfg.searchable_frontmatter == ("type", "status")
 
@@ -1537,18 +1519,14 @@ class TestIndexingConfigFromEnv:
         self, monkeypatch
     ):
         """SEARCHABLE_FIELDS=none expresses 'filterable but not searchable'."""
-        from markdown_vault_mcp.config_sections import IndexingConfig
-
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_INDEXED_FIELDS", "type,status,tags")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SEARCHABLE_FIELDS", "none")
-        cfg = IndexingConfig.from_env("MARKDOWN_VAULT_MCP")
+        cfg = ProjectConfig.from_env().indexing
         assert cfg.indexed_frontmatter_fields == ("type", "status", "tags")
         assert cfg.searchable_frontmatter is None
         # Case-insensitive, whitespace-tolerant (matching CONVENTIONS_FILE=none).
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SEARCHABLE_FIELDS", " None ")
-        assert (
-            IndexingConfig.from_env("MARKDOWN_VAULT_MCP").searchable_frontmatter is None
-        )
+        assert ProjectConfig.from_env().indexing.searchable_frontmatter is None
 
     def test_frozen(self):
         import dataclasses
@@ -1576,39 +1554,31 @@ class TestEmbeddingsConfigFromEnv:
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
         monkeypatch.delenv("OPENAI_EMBEDDING_MODEL", raising=False)
-        cfg = EmbeddingsConfig.from_env("MARKDOWN_VAULT_MCP")
+        cfg = ProjectConfig.from_env().embeddings
         assert cfg == EmbeddingsConfig()
 
     def test_ollama_host_bare_read(self, monkeypatch):
-        from markdown_vault_mcp.config_sections import EmbeddingsConfig
-
         monkeypatch.setenv("OLLAMA_HOST", "http://gpu-server:11434/")
-        cfg = EmbeddingsConfig.from_env("MARKDOWN_VAULT_MCP")
+        cfg = ProjectConfig.from_env().embeddings
         assert cfg.ollama_host == "http://gpu-server:11434"
 
     def test_openai_base_url_prefixed_wins(self, monkeypatch):
-        from markdown_vault_mcp.config_sections import EmbeddingsConfig
-
         monkeypatch.setenv(
             "MARKDOWN_VAULT_MCP_OPENAI_BASE_URL", "https://api.prefixed.example/v1"
         )
         monkeypatch.setenv("OPENAI_BASE_URL", "https://api.bare.example/v1")
-        cfg = EmbeddingsConfig.from_env("MARKDOWN_VAULT_MCP")
+        cfg = ProjectConfig.from_env().embeddings
         assert cfg.openai_base_url == "https://api.prefixed.example/v1"
 
     def test_openai_base_url_bare_fallback(self, monkeypatch):
-        from markdown_vault_mcp.config_sections import EmbeddingsConfig
-
         monkeypatch.delenv("MARKDOWN_VAULT_MCP_OPENAI_BASE_URL", raising=False)
         monkeypatch.setenv("OPENAI_BASE_URL", "https://api.bare.example/v1")
-        cfg = EmbeddingsConfig.from_env("MARKDOWN_VAULT_MCP")
+        cfg = ProjectConfig.from_env().embeddings
         assert cfg.openai_base_url == "https://api.bare.example/v1"
 
     def test_openai_api_key_bare_read(self, monkeypatch):
-        from markdown_vault_mcp.config_sections import EmbeddingsConfig
-
         monkeypatch.setenv("OPENAI_API_KEY", "sk-test123")
-        cfg = EmbeddingsConfig.from_env("MARKDOWN_VAULT_MCP")
+        cfg = ProjectConfig.from_env().embeddings
         assert cfg.openai_api_key == "sk-test123"
 
     def test_post_init_still_normalizes_on_direct_construction(self):
@@ -1655,37 +1625,31 @@ class TestSearchConfigFromEnv:
             "MAX_CHUNK_WORDS",
         ):
             monkeypatch.delenv(f"MARKDOWN_VAULT_MCP_{k}", raising=False)
-        cfg = SearchConfig.from_env("MARKDOWN_VAULT_MCP")
+        cfg = ProjectConfig.from_env().search
         assert cfg == SearchConfig()
 
     def test_overrides(self, monkeypatch):
-        from markdown_vault_mcp.config_sections import SearchConfig
-
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_CHUNKS_PER_FILE", "3")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SNIPPET_WORDS", "100")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_LENGTH_DOWNWEIGHT_ALPHA", "0.5")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_MAX_CHUNK_WORDS", "800")
-        cfg = SearchConfig.from_env("MARKDOWN_VAULT_MCP")
+        cfg = ProjectConfig.from_env().search
         assert cfg.chunks_per_file == 3
         assert cfg.snippet_words == 100
         assert cfg.length_downweight_alpha == 0.5
         assert cfg.max_chunk_words == 800
 
     def test_chunks_per_file_zero_raises(self, monkeypatch):
-        from markdown_vault_mcp.config_sections import SearchConfig
-
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_CHUNKS_PER_FILE", "0")
         with pytest.raises(ConfigurationError, match="chunks_per_file"):
-            SearchConfig.from_env("MARKDOWN_VAULT_MCP")
+            ProjectConfig.from_env()
 
     def test_chunks_per_file_invalid_raises(self, monkeypatch):
-        from markdown_vault_mcp.config_sections import SearchConfig
-
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_CHUNKS_PER_FILE", "nope")
         with pytest.raises(
             ConfigurationError, match="MARKDOWN_VAULT_MCP_CHUNKS_PER_FILE"
         ):
-            SearchConfig.from_env("MARKDOWN_VAULT_MCP")
+            ProjectConfig.from_env()
 
     @pytest.mark.parametrize(
         ("var", "value"),
@@ -1698,20 +1662,16 @@ class TestSearchConfigFromEnv:
         ],
     )
     def test_invalid_or_out_of_range_raises(self, monkeypatch, var, value):
-        from markdown_vault_mcp.config_sections import SearchConfig
-
         monkeypatch.setenv(f"MARKDOWN_VAULT_MCP_{var}", value)
         with pytest.raises(ConfigurationError):
-            SearchConfig.from_env("MARKDOWN_VAULT_MCP")
+            ProjectConfig.from_env()
 
     def test_alpha_invalid_raises(self, monkeypatch):
-        from markdown_vault_mcp.config_sections import SearchConfig
-
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_LENGTH_DOWNWEIGHT_ALPHA", "abc")
         with pytest.raises(
             ConfigurationError, match="MARKDOWN_VAULT_MCP_LENGTH_DOWNWEIGHT_ALPHA"
         ):
-            SearchConfig.from_env("MARKDOWN_VAULT_MCP")
+            ProjectConfig.from_env()
 
     def test_frozen(self):
         import dataclasses
@@ -1759,54 +1719,42 @@ class TestSyncConfigFromEnv:
             "GITHUB_WEBHOOK_SECRET",
         ):
             monkeypatch.delenv(f"MARKDOWN_VAULT_MCP_{k}", raising=False)
-        cfg = SyncConfig.from_env("MARKDOWN_VAULT_MCP")
+        cfg = ProjectConfig.from_env().sync
         assert cfg == SyncConfig()
 
     def test_file_watcher_false(self, monkeypatch):
-        from markdown_vault_mcp.config_sections import SyncConfig
-
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_FILE_WATCHER", "false")
-        assert SyncConfig.from_env("MARKDOWN_VAULT_MCP").file_watcher_enabled is False
+        assert ProjectConfig.from_env().sync.file_watcher_enabled is False
 
     def test_file_watcher_root_floor_false(self, monkeypatch):
         """FILE_WATCHER_ROOT_FLOOR=false sets file_watcher_root_floor=False."""
-        from markdown_vault_mcp.config_sections import SyncConfig
-
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_FILE_WATCHER_ROOT_FLOOR", "false")
-        cfg = SyncConfig.from_env("MARKDOWN_VAULT_MCP")
+        cfg = ProjectConfig.from_env().sync
         assert cfg.file_watcher_root_floor is False
 
     def test_file_watcher_root_floor_default_true(self, monkeypatch):
         """An unset FILE_WATCHER_ROOT_FLOOR defaults to True."""
-        from markdown_vault_mcp.config_sections import SyncConfig
-
         monkeypatch.delenv("MARKDOWN_VAULT_MCP_FILE_WATCHER_ROOT_FLOOR", raising=False)
-        cfg = SyncConfig.from_env("MARKDOWN_VAULT_MCP")
+        cfg = ProjectConfig.from_env().sync
         assert cfg.file_watcher_root_floor is True
 
     def test_debounce_invalid_raises(self, monkeypatch):
         """A non-numeric FILE_WATCHER_DEBOUNCE_S raises (no warn-and-default; #638)."""
-        from markdown_vault_mcp.config_sections import SyncConfig
-
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_FILE_WATCHER_DEBOUNCE_S", "notanumber")
         with pytest.raises(ConfigurationError):
-            SyncConfig.from_env("MARKDOWN_VAULT_MCP")
+            ProjectConfig.from_env()
 
     def test_debounce_zero_raises(self, monkeypatch):
         """A zero FILE_WATCHER_DEBOUNCE_S raises (must be > 0; #638)."""
-        from markdown_vault_mcp.config_sections import SyncConfig
-
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_FILE_WATCHER_DEBOUNCE_S", "0")
         with pytest.raises(ConfigurationError, match="file_watcher_debounce_s"):
-            SyncConfig.from_env("MARKDOWN_VAULT_MCP")
+            ProjectConfig.from_env()
 
     def test_debounce_negative_raises(self, monkeypatch):
         """A negative FILE_WATCHER_DEBOUNCE_S raises (#638)."""
-        from markdown_vault_mcp.config_sections import SyncConfig
-
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_FILE_WATCHER_DEBOUNCE_S", "-1.0")
         with pytest.raises(ConfigurationError, match="file_watcher_debounce_s"):
-            SyncConfig.from_env("MARKDOWN_VAULT_MCP")
+            ProjectConfig.from_env()
 
     @pytest.mark.parametrize("debounce", [0, -1.0])
     def test_direct_construction_validates(self, debounce):
@@ -1817,13 +1765,8 @@ class TestSyncConfigFromEnv:
             SyncConfig(file_watcher_debounce_s=debounce)
 
     def test_github_webhook_secret(self, monkeypatch):
-        from markdown_vault_mcp.config_sections import SyncConfig
-
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_GITHUB_WEBHOOK_SECRET", "mysecret")
-        assert (
-            SyncConfig.from_env("MARKDOWN_VAULT_MCP").github_webhook_secret
-            == "mysecret"
-        )
+        assert ProjectConfig.from_env().sync.github_webhook_secret == "mysecret"
 
     def test_frozen(self):
         import dataclasses
@@ -1850,7 +1793,7 @@ class TestContentConfigFromEnv:
             ContentConfig(attachment_extensions="pdf")
         assert ContentConfig().attachment_extensions is None
 
-    def test_defaults(self, monkeypatch, tmp_path):
+    def test_defaults(self, monkeypatch):
         from markdown_vault_mcp.config_sections import ContentConfig
 
         for k in (
@@ -1861,32 +1804,30 @@ class TestContentConfigFromEnv:
             "PROMPTS_FOLDER",
         ):
             monkeypatch.delenv(f"MARKDOWN_VAULT_MCP_{k}", raising=False)
-        cfg = ContentConfig.from_env("MARKDOWN_VAULT_MCP", tmp_path)
+        cfg = ProjectConfig.from_env().content
         assert cfg == ContentConfig()
 
-    def test_conventions_file_default(self, monkeypatch, tmp_path):
+    def test_conventions_file_default(self, monkeypatch):
         monkeypatch.delenv("MARKDOWN_VAULT_MCP_CONVENTIONS_FILE", raising=False)
-        cfg = ContentConfig.from_env("MARKDOWN_VAULT_MCP", tmp_path)
+        cfg = ProjectConfig.from_env().content
         assert cfg.conventions_file == "_conventions.md"
 
-    def test_conventions_file_custom(self, monkeypatch, tmp_path):
+    def test_conventions_file_custom(self, monkeypatch):
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_CONVENTIONS_FILE", "AGENTS.md")
-        cfg = ContentConfig.from_env("MARKDOWN_VAULT_MCP", tmp_path)
+        cfg = ProjectConfig.from_env().content
         assert cfg.conventions_file == "AGENTS.md"
 
     @pytest.mark.parametrize("raw", ["none", "None", " NONE "])
-    def test_conventions_file_none_sentinel_disables(
-        self, monkeypatch, tmp_path, raw: str
-    ):
+    def test_conventions_file_none_sentinel_disables(self, monkeypatch, raw: str):
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_CONVENTIONS_FILE", raw)
-        cfg = ContentConfig.from_env("MARKDOWN_VAULT_MCP", tmp_path)
+        cfg = ProjectConfig.from_env().content
         assert cfg.conventions_file is None
 
-    def test_conventions_file_empty_keeps_default(self, monkeypatch, tmp_path):
+    def test_conventions_file_empty_keeps_default(self, monkeypatch):
         # The shared env() helper treats empty-as-unset, so an empty value
         # falls back to the default rather than disabling.
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_CONVENTIONS_FILE", "")
-        cfg = ContentConfig.from_env("MARKDOWN_VAULT_MCP", tmp_path)
+        cfg = ProjectConfig.from_env().content
         assert cfg.conventions_file == "_conventions.md"
 
     @pytest.mark.parametrize(
@@ -1899,71 +1840,62 @@ class TestContentConfigFromEnv:
         with pytest.raises(ConfigurationError, match="conventions_file"):
             ContentConfig(conventions_file=bad)
 
-    def test_attachment_extensions_wildcard(self, monkeypatch, tmp_path):
-        from markdown_vault_mcp.config_sections import ContentConfig
+    def test_attachment_extensions_wildcard(self, monkeypatch):
 
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS", "*")
-        cfg = ContentConfig.from_env("MARKDOWN_VAULT_MCP", tmp_path)
+        cfg = ProjectConfig.from_env().content
         assert cfg.attachment_extensions == ("*",)
 
-    def test_attachment_extensions_list(self, monkeypatch, tmp_path):
-        from markdown_vault_mcp.config_sections import ContentConfig
+    def test_attachment_extensions_list(self, monkeypatch):
 
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS", "pdf,png,docx")
-        cfg = ContentConfig.from_env("MARKDOWN_VAULT_MCP", tmp_path)
+        cfg = ProjectConfig.from_env().content
         assert cfg.attachment_extensions == ("pdf", "png", "docx")
 
-    def test_attachment_extensions_empty_is_none(self, monkeypatch, tmp_path):
-        from markdown_vault_mcp.config_sections import ContentConfig
+    def test_attachment_extensions_empty_is_none(self, monkeypatch):
 
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS", "")
-        cfg = ContentConfig.from_env("MARKDOWN_VAULT_MCP", tmp_path)
+        cfg = ProjectConfig.from_env().content
         assert cfg.attachment_extensions is None
 
-    def test_max_attachment_invalid_raises(self, monkeypatch, tmp_path):
+    def test_max_attachment_invalid_raises(self, monkeypatch):
         """A non-numeric MAX_ATTACHMENT_SIZE_MB raises (#638)."""
-        from markdown_vault_mcp.config_sections import ContentConfig
 
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB", "not-a-number")
         with pytest.raises(ConfigurationError):
-            ContentConfig.from_env("MARKDOWN_VAULT_MCP", tmp_path)
+            ProjectConfig.from_env()
 
-    def test_max_attachment_negative_raises(self, monkeypatch, tmp_path):
+    def test_max_attachment_negative_raises(self, monkeypatch):
         """A negative MAX_ATTACHMENT_SIZE_MB raises (#638)."""
-        from markdown_vault_mcp.config_sections import ContentConfig
 
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB", "-5")
         with pytest.raises(ConfigurationError, match="max_attachment_size_mb"):
-            ContentConfig.from_env("MARKDOWN_VAULT_MCP", tmp_path)
+            ProjectConfig.from_env()
 
-    def test_max_attachment_zero_allowed(self, monkeypatch, tmp_path):
-        from markdown_vault_mcp.config_sections import ContentConfig
+    def test_max_attachment_zero_allowed(self, monkeypatch):
 
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB", "0")
-        cfg = ContentConfig.from_env("MARKDOWN_VAULT_MCP", tmp_path)
+        cfg = ProjectConfig.from_env().content
         assert cfg.max_attachment_size_mb == 0.0
 
-    def test_max_note_read_bytes_invalid_raises(self, monkeypatch, tmp_path):
+    def test_max_note_read_bytes_invalid_raises(self, monkeypatch):
         """A non-numeric MAX_NOTE_READ_BYTES raises (#638)."""
-        from markdown_vault_mcp.config_sections import ContentConfig
 
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES", "nope")
         with pytest.raises(ConfigurationError):
-            ContentConfig.from_env("MARKDOWN_VAULT_MCP", tmp_path)
+            ProjectConfig.from_env()
 
-    def test_max_note_read_bytes_negative_raises(self, monkeypatch, tmp_path):
+    def test_max_note_read_bytes_negative_raises(self, monkeypatch):
         """A negative MAX_NOTE_READ_BYTES raises (#638)."""
-        from markdown_vault_mcp.config_sections import ContentConfig
 
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES", "-1")
         with pytest.raises(ConfigurationError, match="max_note_read_bytes"):
-            ContentConfig.from_env("MARKDOWN_VAULT_MCP", tmp_path)
+            ProjectConfig.from_env()
 
-    def test_max_note_read_bytes_zero_allowed(self, monkeypatch, tmp_path):
-        from markdown_vault_mcp.config_sections import ContentConfig
+    def test_max_note_read_bytes_zero_allowed(self, monkeypatch):
 
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES", "0")
-        cfg = ContentConfig.from_env("MARKDOWN_VAULT_MCP", tmp_path)
+        cfg = ProjectConfig.from_env().content
         assert cfg.max_note_read_bytes == 0
 
     @pytest.mark.parametrize(
@@ -1986,32 +1918,28 @@ class TestContentConfigFromEnv:
 
         assert ContentConfig(**kwargs) is not None
 
-    def test_templates_folder_backslash_trailing_slash(self, monkeypatch, tmp_path):
-        from markdown_vault_mcp.config_sections import ContentConfig
+    def test_templates_folder_backslash_trailing_slash(self, monkeypatch):
 
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER", "Templates\\Notes\\")
-        cfg = ContentConfig.from_env("MARKDOWN_VAULT_MCP", tmp_path)
+        cfg = ProjectConfig.from_env().content
         assert cfg.templates_folder == "Templates/Notes"
 
-    def test_templates_folder_slash_only_falls_back(self, monkeypatch, tmp_path):
-        from markdown_vault_mcp.config_sections import ContentConfig
+    def test_templates_folder_slash_only_falls_back(self, monkeypatch):
 
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER", "/")
-        cfg = ContentConfig.from_env("MARKDOWN_VAULT_MCP", tmp_path)
+        cfg = ProjectConfig.from_env().content
         assert cfg.templates_folder == "_templates"
 
     def test_prompts_folder_relative_joined_to_source_dir(self, monkeypatch, tmp_path):
-        from markdown_vault_mcp.config_sections import ContentConfig
-
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_PROMPTS_FOLDER", "prompts")
-        cfg = ContentConfig.from_env("MARKDOWN_VAULT_MCP", tmp_path)
+        cfg = ProjectConfig.from_env().content
         assert cfg.prompts_folder == str(tmp_path / "prompts")
 
     def test_prompts_folder_absolute_kept(self, monkeypatch, tmp_path):
-        from markdown_vault_mcp.config_sections import ContentConfig
-
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_PROMPTS_FOLDER", "/abs/prompts")
-        cfg = ContentConfig.from_env("MARKDOWN_VAULT_MCP", tmp_path)
+        cfg = ProjectConfig.from_env().content
         assert cfg.prompts_folder == "/abs/prompts"
 
     def test_frozen(self):
@@ -2033,35 +1961,29 @@ class TestTransferConfigFromEnv:
             "TRANSFER_MAX_UPLOAD_BYTES",
         ):
             monkeypatch.delenv(f"MARKDOWN_VAULT_MCP_{k}", raising=False)
-        cfg = TransferConfig.from_env("MARKDOWN_VAULT_MCP")
+        cfg = ProjectConfig.from_env().transfer
         assert cfg == TransferConfig()
 
     def test_env_overrides(self, monkeypatch):
-        from markdown_vault_mcp.config_sections import TransferConfig
-
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_TRANSFER_TTL_DEFAULT_S", "120")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_TRANSFER_TTL_MAX_S", "600")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_TRANSFER_MAX_UPLOAD_BYTES", "2048")
-        cfg = TransferConfig.from_env("MARKDOWN_VAULT_MCP")
+        cfg = ProjectConfig.from_env().transfer
         assert cfg.ttl_default_s == 120
         assert cfg.ttl_max_s == 600
         assert cfg.max_upload_bytes == 2048
 
     def test_invalid_raises(self, monkeypatch):
         """A non-numeric TRANSFER_TTL_DEFAULT_S raises (no warn-and-default; #638)."""
-        from markdown_vault_mcp.config_sections import TransferConfig
-
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_TRANSFER_TTL_DEFAULT_S", "nope")
         with pytest.raises(ConfigurationError):
-            TransferConfig.from_env("MARKDOWN_VAULT_MCP")
+            ProjectConfig.from_env()
 
     def test_post_init_raises_on_default_above_max(self, monkeypatch):
-        from markdown_vault_mcp.config_sections import TransferConfig
-
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_TRANSFER_TTL_DEFAULT_S", "7200")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_TRANSFER_TTL_MAX_S", "3600")
         with pytest.raises(ConfigurationError, match="ttl_max_s"):
-            TransferConfig.from_env("MARKDOWN_VAULT_MCP")
+            ProjectConfig.from_env()
 
     @pytest.mark.parametrize(
         ("kwargs", "match"),

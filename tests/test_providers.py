@@ -11,7 +11,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from markdown_vault_mcp.config import ProjectConfig
-from markdown_vault_mcp.config_sections import EmbeddingsConfig
 from markdown_vault_mcp.providers import (
     FastEmbedProvider,
     OllamaProvider,
@@ -97,12 +96,15 @@ def _install_fake_openai(
     return captured
 
 
-def _config(**embedding_overrides: object) -> ProjectConfig:
-    """Build a minimal ProjectConfig with optional embedding overrides."""
-    return ProjectConfig(
-        source_dir=Path("/tmp/vault"),
-        embeddings=EmbeddingsConfig(**embedding_overrides),  # type: ignore[arg-type]
-    )
+def _config(**embedding_overrides: Any) -> ProjectConfig:
+    """Build a minimal ProjectConfig with optional flat embedding overrides.
+
+    Accepts the embeddings-section attribute names; ``provider`` maps to the
+    flat ``embedding_provider`` field, the rest keep their names.
+    """
+    if "provider" in embedding_overrides:
+        embedding_overrides["embedding_provider"] = embedding_overrides.pop("provider")
+    return ProjectConfig(source_dir=Path("/tmp/vault"), **embedding_overrides)
 
 
 class TestOllamaProvider:

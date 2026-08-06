@@ -31,7 +31,7 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
-    "fastmcp-pvl-core>=4.3.0,<5",
+    "fastmcp-pvl-core>=4.5.0,<5",
     "typer>=0.12",
 
     # PROJECT-DEPS-START — add domain dependencies below; kept across copier update
@@ -140,9 +140,24 @@ ignore = ["E501"]
 # module; all three are safe in test code. No-op for the base whole-repo select
 # (which excludes S). If your project needs its own tests/** ignores, EXTEND
 # this list in place — do not add a second "tests/**" key (duplicate TOML key).
-"tests/**" = ["S101", "S603", "S607"]
+# S105/S106: tests construct configs with fake literal tokens/secrets
+# (git_token="...", github_webhook_secret="...") — not real credentials.
+# S108: fixture paths under /tmp are inputs to pure config objects, never
+# actually opened.
+"tests/**" = ["S101", "S603", "S607", "S105", "S106", "S108"]
+# The config-surface generator's bootstrap re-execs itself under `uv run`
+# (os.execvpe with a `shutil.which`-resolved absolute path — see
+# ensure_core_available). S606 flags any no-shell process start for review;
+# here the no-shell form is the safer one, and a `# noqa` instead of this
+# entry would trip RUF100 on the whole-repo pass, where `S` isn't selected.
+"scripts/gen_config_surface.py" = ["S606"]
 
 # PROJECT-RUFF-IGNORES-START — replace, extend, or override the entries below
+# config.py needs Sequence importable at runtime: the config-surface
+# generator resolves ProjectConfig's field annotations via get_type_hints,
+# which fails if the name only exists under TYPE_CHECKING (matches the
+# indexing.py / content.py suppressions below).
+"src/markdown_vault_mcp/config.py" = ["TC003"]
 # for your project's real source/test paths (split _server_apps.py into
 # per-domain modules, rename tests, add per-file overrides as needed); kept
 # across copier update.

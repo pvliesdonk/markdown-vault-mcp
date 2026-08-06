@@ -39,6 +39,9 @@ jobs:
       - name: Verify vendored SPA is up-to-date
         run: uv run python scripts/vendor_spa.py --check
 
+      - name: Verify generated config artifacts are up-to-date
+        run: uv run python scripts/gen_config_surface.py --check
+
       - name: Run ruff check
         run: uv run ruff check src/ tests/
 
@@ -287,9 +290,28 @@ jobs:
         # stay authoritative from checkout. Caching the whole .vale/styles tree
         # would let restore-keys overwrite a newly-added vocab term with the
         # stale snapshot on the exact PR that adds the term.
-        # Pack list mirrors the Packages = line in .vale.ini; if you add or
-        # remove a pack, update both. Bump the v1- prefix to evict all cached
+        # Pack list mirrors the Packages = line in .vale.ini. That line is the
+        # source of truth and THREE places restate it by hand: this path: list,
+        # BasedOnStyles in .vale.ini, and the `for p in` list in the vale-sync
+        # pre-commit hook. Adding or removing a pack means changing all three —
+        # a stale BasedOnStyles makes vale exit E100 [loadStyles], and a stale
+        # `for p in` leaves the pre-commit hook blind to the new pack so it
+        # never triggers a sync.
+        # Bump the v1- prefix to evict all cached
         # packs if Vale changes pack format backward-incompatibly.
+        #
+        # NOTE: this cache does not prevent a re-download, and cannot while
+        # this job uses vale-action. `vale sync` wipes and re-creates every
+        # directory in `Packages =` rather than consulting what is on disk
+        # (verified with canary files), so a restored cache is discarded before
+        # it is read unless the sync is skipped — and vale-action runs
+        # `vale sync` unconditionally (`src/input.ts:67`) with no input to skip
+        # it (both checked at the pinned SHA below). This is a constraint of
+        # the action, not a trade being declined: the only route to a
+        # load-bearing cache here is replacing vale-action with a direct
+        # invocation, giving up reviewdog annotations, filter_mode and
+        # fail_on_error. The template's own CI gate calls vale directly and so
+        # does guard its sync.
         uses: actions/cache@v6
         with:
           path: |
@@ -298,9 +320,12 @@ jobs:
             .vale/styles/write-good
             .vale/styles/ai-tells
           key: vale-styles-v1-${{ hashFiles('.vale.ini') }}
-          # Warm-start fallback: restores the most recent pack snapshot when
-          # .vale.ini changes (e.g. URL bump). vale sync then only re-fetches
-          # the changed pack rather than re-downloading all four.
+          # Warm-start fallback, kept for symmetry with the key. It does NOT
+          # save a re-fetch: per the NOTE above, `vale sync` discards whatever
+          # was restored and re-creates every pack directory. An earlier
+          # revision of this comment claimed the restore let vale sync
+          # "re-fetch only the changed pack"; that is not how vale sync
+          # behaves.
           restore-keys: vale-styles-v1-
 
       - name: Run Vale
@@ -397,3 +422,37 @@ jobs:
           uv run diff-quality --violations=ruff.check \
             --options="--extend-select=C901,PLR0911,PLR0912,PLR0913,PLR0915,S" \
             --compare-branch="origin/${BASE_REF}" --fail-under=100
+
+
+  ci-success:
+    name: CI Success
+    # Single aggregate gate for branch protection / Renovate auto-merge to
+    # require. Succeeds only if every upstream job succeeded or was skipped;
+    # fails if any failed or was cancelled. Requiring this ONE context is
+    # drift-proof — renaming an individual job never silently disables the gate.
+    needs:
+      - lint
+      - typecheck
+      - test
+      - audit
+      - secrets
+      - vale
+
+      - structure
+
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify all required jobs passed
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "Upstream job results: $RESULTS"
+          for result in $RESULTS; do
+            if [ "$result" != "success" ] && [ "$result" != "skipped" ]; then
+              echo "::error::A required job did not pass (result: $result)"
+              exit 1
+            fi
+          done
+          echo "All required jobs passed."

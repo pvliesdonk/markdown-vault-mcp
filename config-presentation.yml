@@ -1,0 +1,444 @@
+# Presentation layer for generated config artifacts.  Template-owned.
+#
+# Ships byte-identical to every project: `{PREFIX}` is replaced with the
+# project's env_prefix at generation time.  Core `ServerConfig` vars are NOT
+# listed here — they come from fastmcp_pvl_core.server_config_surface(), which
+# owns their help text and tags.  This file declares only the vars core does
+# not know about, plus how every var is laid out in each artifact.
+
+# Vars read outside ServerConfig.  Same metadata shape core uses.
+vars:
+  - name: "{PREFIX}_SERVER_NAME"
+    provenance: template
+    type_name: "str"
+    default: null
+    help: "Rename this server instance; defaults to the project name."
+    tags: [server]
+    wizard: {group: Server, when: server}
+
+  - name: "{PREFIX}_INSTRUCTIONS"
+    provenance: template
+    type_name: "str"
+    default: null
+    help: "Replaces the default MCP instructions text sent to clients."
+    tags: [server]
+    wizard: {group: Server, when: server}
+
+  - name: "{PREFIX}_HTTP_PATH"
+    provenance: template
+    type_name: "str"
+    default: "/mcp"
+    help: "Mount path for the MCP endpoint."
+    tags: [server]
+    wizard: {group: Server, when: server}
+
+  - name: "{PREFIX}_DEBUG_PORT"
+    provenance: template
+    type_name: "int"
+    default: 5678
+    help: "debugpy listen port; the image must be built with --build-arg DEBUG=true."
+    tags: [debug]
+    # Development-only; read inside core's maybe_start_debugpy, not project
+    # src/. Documented in the env artifacts but offered no wizard control —
+    # `control: none`, not `inferred`, since the value is not derived from
+    # anything else.
+    wizard: {control: none}
+
+  - name: "{PREFIX}_DEBUG_WAIT"
+    provenance: template
+    type_name: "bool"
+    default: false
+    help: "Block startup until a debugger attaches."
+    tags: [debug]
+    wizard: {control: none}
+
+  # Read by the container entrypoint, not by any Python config object — but
+  # an operator setting them sees no difference from any other env var, so
+  # they are declared here rather than kept as a hand-written special case in
+  # the one artifact that happens to mention them.
+  - name: "PUID"
+    provenance: template
+    type_name: "int"
+    default: 1000
+    help: "Run the server process as this UID; the container entrypoint chowns writable paths to match."
+    tags: [container]
+    wizard: {control: none}
+
+  - name: "PGID"
+    provenance: template
+    type_name: "int"
+    default: 1000
+    help: "Run the server process as this GID; pair with PUID to match the owner of a mounted volume."
+    tags: [container]
+    wizard: {control: none}
+
+  - name: "FASTMCP_LOG_LEVEL"
+    provenance: external
+    type_name: "str"
+    default: "INFO"
+    help: "Log level for FastMCP internals and app loggers (DEBUG / INFO / WARNING / ERROR / CRITICAL). The -v CLI flag overrides to DEBUG."
+    tags: [observability, readme]
+    wizard: {group: Logging}
+
+  - name: "FASTMCP_ENABLE_RICH_LOGGING"
+    provenance: external
+    type_name: "bool"
+    default: true
+    help: "Set false for plain or structured JSON log output."
+    tags: [observability, readme]
+    wizard: {group: Logging}
+
+  - name: "{PREFIX}_ACL_PATH"
+    provenance: template
+    when_answer: enable_authorization
+    type_name: "Path"
+    default: null
+    help: "Subject-to-scope ACL file (TOML), for bearer and any auth mode."
+    tags: [authz]
+    wizard: {group: Authorization, when: server}
+
+  - name: "{PREFIX}_AUTHZ_CLAIM"
+    provenance: template
+    when_answer: enable_authorization
+    type_name: "str"
+    default: null
+    help: "OIDC claim to read scopes from, e.g. groups. Identity mapping when IdP group names already match scope names."
+    tags: [authz]
+    wizard: {group: Authorization, when: server}
+
+  - name: "{PREFIX}_AUTHZ_GRANTS"
+    provenance: template
+    when_answer: enable_authorization
+    type_name: "str"
+    default: null
+    help: "Inline-JSON translation map for when group names differ from scope names."
+    tags: [authz]
+    wizard: {group: Authorization, when: server}
+
+# Vars without which a feature cannot function at all, regardless of
+# provenance. Consulted by `_is_required`/`_md_required_cell` (the
+# `required_names` parameter) so a spliced table's `Required` column and any
+# region's own `required:` filter can never disagree about this list.
+#
+# The four OIDC entries below are exactly `build_oidc_proxy_auth`'s guard
+# (`fastmcp_pvl_core._auth.build_oidc_proxy_auth`): it builds
+# `required_public = {"BASE_URL": ..., "OIDC_CONFIG_URL": ..., "OIDC_CLIENT_ID": ...}`
+# plus a separately-checked `oidc_client_secret`, and returns `None` — no
+# OIDC provider at all — unless all four are set. `OIDC_JWT_SIGNING_KEY` is
+# deliberately absent: the same function derives it from
+# `oidc_client_secret` when unset (`jwt_signing_key=config.oidc_jwt_signing_key`
+# passed straight through to `OIDCProxy`, which itself derives when `None`),
+# so the proxy still builds without it.
+required_vars:
+  - "{PREFIX}_BASE_URL"
+  - "{PREFIX}_OIDC_CONFIG_URL"
+  - "{PREFIX}_OIDC_CLIENT_ID"
+  - "{PREFIX}_OIDC_CLIENT_SECRET"
+
+# Which package shapes each var is relevant to, keyed by full var name —
+# the same override-map shape as `examples` and `wizard_labels`, and for the
+# same reason: a core var's `tags` belong to core, so relevance-per-packaging
+# cannot be expressed as a tag from here.
+#
+# `server.json` declares one `environmentVariables` array per package, and
+# the right contents differ. A `pypi` install runs under `uvx` over stdio: no
+# HTTP listener, no OAuth callback, no shared session state, so the auth,
+# persistence and MCP Apps knobs are inert there and would only add noise to
+# a client's install prompt. An `oci` deployment is the HTTP one, where all
+# of them apply.
+#
+# A var listed nowhere here appears in no package — the arrays are a curated
+# per-packaging selection, not a dump of the whole surface. Deliberately
+# absent: TRANSPORT (fixed by the packaging itself), PORT (an `oci`
+# packageArguments entry, not an env var), HOST (the entrypoint owns the
+# in-container bind address), DEBUG_PORT/DEBUG_WAIT (they do nothing unless
+# the image was built with --build-arg DEBUG=true), and EVENT_STORE_URL (a
+# legacy fallback honoured only when KV_STORE_URL is unset; offering a
+# deprecated knob in an install prompt is noise, and it stays fully
+# documented in the env files and the docs either way).
+#
+# A `domain`-provenance var needs no entry: a project's own ProjectConfig
+# fields cannot be enumerated by this template-owned map and are relevant
+# wherever that project runs, so they land in every package automatically.
+packaging:
+  FASTMCP_LOG_LEVEL: [pypi, oci]
+  FASTMCP_ENABLE_RICH_LOGGING: [pypi, oci]
+  "{PREFIX}_SERVER_NAME": [pypi, oci]
+  "{PREFIX}_INSTRUCTIONS": [pypi, oci]
+  "{PREFIX}_HTTP_PATH": [oci]
+  "{PREFIX}_BASE_URL": [oci]
+  "{PREFIX}_AUTH_MODE": [oci]
+  "{PREFIX}_BEARER_TOKEN": [oci]
+  "{PREFIX}_BEARER_TOKENS_FILE": [oci]
+  "{PREFIX}_BEARER_DEFAULT_SUBJECT": [oci]
+  "{PREFIX}_OIDC_CONFIG_URL": [oci]
+  "{PREFIX}_OIDC_CLIENT_ID": [oci]
+  "{PREFIX}_OIDC_CLIENT_SECRET": [oci]
+  "{PREFIX}_OIDC_JWT_SIGNING_KEY": [oci]
+  "{PREFIX}_OIDC_AUDIENCE": [oci]
+  "{PREFIX}_OIDC_REQUIRED_SCOPES": [oci]
+  "{PREFIX}_OIDC_VERIFY_ACCESS_TOKEN": [oci]
+  # Not HTTP-specific despite the wizard's shorthand label: this backs every
+  # pvl-core subsystem that keeps state, so a stdio install still wants it to
+  # persist to a file instead of losing everything on restart.
+  "{PREFIX}_KV_STORE_URL": [pypi, oci]
+  "{PREFIX}_APP_DOMAIN": [oci]
+  "{PREFIX}_ACL_PATH": [oci]
+  "{PREFIX}_AUTHZ_CLAIM": [oci]
+  "{PREFIX}_AUTHZ_GRANTS": [oci]
+  PUID: [oci]
+  PGID: [oci]
+
+# Term-replacement map applied to help text on the Vale-linted markdown
+# table splice path only (`_clean_help_for_markdown_table`). Can't live in
+# `.vale.ini`/`accept.txt` instead: that file is `_skip_if_exists`, so a term
+# added there never reaches an existing downstream, while a generated table
+# arrives on every `copier update` — this file is the only lever that does.
+markdown_vocabulary:
+  JWTs: "JSON Web Tokens"
+
+# The effective value a var falls back to at runtime when its own dataclass
+# `default` renders empty (see `_is_empty_default`) — core's field metadata
+# carries no such key, so this template asserts it here, and it must be
+# re-verified against core on every dependency bump. Keyed by full var name,
+# same lookup shape as `examples:` below.
+documented_defaults:
+  # `build_oidc_proxy_auth`: `required_scopes = list(config.oidc_required_scopes)
+  # or ["openid"]`. The field default itself is `()`
+  # (`fastmcp_pvl_core._config.ServerConfig.oidc_required_scopes`,
+  # `default_factory=tuple`) — non-`None` but empty, so `_is_empty_default`
+  # routes it here instead of printing the literal `()`.
+  "{PREFIX}_OIDC_REQUIRED_SCOPES": "openid"
+  # Not a literal fallback value: `OIDCProxy` derives the signing key from
+  # `oidc_client_secret` when this is unset, so there is no string to print.
+  # Declared anyway so the `Default` column reads `` `derived` `` instead of
+  # the self-contradicting bare `(none)` — the Description column (and
+  # `wizard_help` above) already carries the "derived from the client
+  # secret; set explicitly to keep tokens valid across a secret rotation"
+  # explanation.
+  "{PREFIX}_OIDC_JWT_SIGNING_KEY": "derived"
+  # `kv_store_url`'s own field default is `None` (verified:
+  # `fastmcp_pvl_core.ServerConfig.kv_store_url`,
+  # `default=None`/`default_factory=MISSING`) — the runtime fallback to
+  # `file:///data/state` lives in pvl-core's KV-backend selection, not in
+  # this field, and the help text (`"Defaults to ``file:///data/state`` when
+  # unset."`) already promises exactly that. Without this entry the
+  # generated README CORE table's Default cell would regress from the
+  # pre-generation hand-written table's `` `file:///data/state` `` to a bare
+  # `(none)`; the generated table must keep showing the real runtime default.
+  "{PREFIX}_KV_STORE_URL": "file:///data/state"
+
+# The schema is normative here: "If provided, the user must select one of
+# these values", so an omission blocks a valid configuration. This set is
+# fastmcp's own `Settings.log_level` Literal, verified against the pinned
+# runtime rather than copied from the previous hand-written manifest, which
+# omitted CRITICAL.
+choices:
+  FASTMCP_LOG_LEVEL: [DEBUG, INFO, WARNING, ERROR, CRITICAL]
+
+# Placeholder example values, shown as the `=` value only for a var whose
+# real `default` is null — so a reader sees the expected *shape* of the
+# value (a URL, a path, a JSON blob) instead of a bare, uninformative `=`.
+# Keyed by full var name (not just template/external ones — a core var's
+# default/help/tags are core's to own, but this template can still give it
+# an example) since core vars aren't declared in `vars:` above at all.
+examples:
+  "{PREFIX}_BASE_URL": "https://mcp.example.com"
+  "{PREFIX}_BEARER_TOKEN": "<secret>"
+  "{PREFIX}_BEARER_TOKENS_FILE": "/etc/{PROJECT_NAME}/tokens.toml"
+  "{PREFIX}_ACL_PATH": "/etc/{PROJECT_NAME}/acl.toml"
+  "{PREFIX}_AUTHZ_GRANTS": '{"app-writers": ["read", "write"], "app-admins": ["*"]}'
+  # Without the first four, examples/oidc.env rendered every
+  # OIDC var required to actually enable OIDC as blank — core's env() treats
+  # empty-after-strip as unset, so an operator copying that file got
+  # auth_mode=None (no authentication) with no error at all. Those four
+  # reuse the values the old hand-written oidc.env.jinja shipped. AUDIENCE is
+  # a new addition (the old file omitted it); its default is null too, so
+  # the fuller, generated oidc.env would otherwise render it blank alongside
+  # the four. REQUIRED_SCOPES needs no entry — its real default is `()`, an
+  # empty-but-non-null "no restriction" value that always wins over any
+  # example (see `_format_value`), so declaring one here would be dead YAML.
+  "{PREFIX}_OIDC_CONFIG_URL": "https://auth.example.com/.well-known/openid-configuration"
+  "{PREFIX}_OIDC_CLIENT_ID": "mcp-client"
+  "{PREFIX}_OIDC_CLIENT_SECRET": "your-client-secret"
+  "{PREFIX}_OIDC_JWT_SIGNING_KEY": "your-signing-key"
+  "{PREFIX}_OIDC_AUDIENCE": "mcp-api"
+
+# Wizard-question label overrides, keyed by full var name — same lookup
+# shape as `examples`. `_wizard_label`'s mechanical suffix-derived fallback
+# (`OIDC_CLIENT_ID` -> "Oidc Client Id") reads as env-file prose, not UI
+# copy; override it wherever the mechanical form mangles an acronym or loses
+# meaning (e.g. a bool label that needs to name the contrasting case).
+wizard_labels:
+  "{PREFIX}_BASE_URL": "Public base URL"
+  "{PREFIX}_HTTP_PATH": "HTTP endpoint path"
+  "{PREFIX}_HOST": "Bind host"
+  "{PREFIX}_BEARER_TOKEN": "Bearer token"
+  "{PREFIX}_BEARER_TOKENS_FILE": "Bearer tokens file (TOML)"
+  "{PREFIX}_BEARER_DEFAULT_SUBJECT": "Bearer default subject"
+  "{PREFIX}_OIDC_CONFIG_URL": "OIDC discovery URL"
+  "{PREFIX}_OIDC_CLIENT_ID": "OIDC client ID"
+  "{PREFIX}_OIDC_CLIENT_SECRET": "OIDC client secret"
+  "{PREFIX}_OIDC_JWT_SIGNING_KEY": "OIDC JWT signing key"
+  "{PREFIX}_OIDC_AUDIENCE": "OIDC audience"
+  "{PREFIX}_OIDC_REQUIRED_SCOPES": "OIDC required scopes (CSV)"
+  "{PREFIX}_OIDC_VERIFY_ACCESS_TOKEN": "Verify access token (not id token)"
+  "{PREFIX}_KV_STORE_URL": "KV store URL (HTTP session persistence)"
+  "{PREFIX}_EVENT_STORE_URL": "Event store URL (HTTP resumability)"
+  "{PREFIX}_APP_DOMAIN": "MCP Apps domain"
+  "{PREFIX}_ACL_PATH": "ACL path"
+  "{PREFIX}_AUTHZ_CLAIM": "Authorization claim"
+  "{PREFIX}_AUTHZ_GRANTS": "Authorization grants (JSON)"
+  "FASTMCP_LOG_LEVEL": "Log level"
+  "FASTMCP_ENABLE_RICH_LOGGING": "Rich logging"
+
+# Wizard-question help-text overrides, keyed by full var name. `wizard.js`
+# renders `question.help` verbatim as `help.textContent` — core's env-file
+# help is written as file-comment prose (markdown backticks, 300+ character
+# paragraphs) and is wrong for a UI hint. Override wherever the core help
+# text is too long or carries markup the wizard can't render.
+wizard_help:
+  "{PREFIX}_KV_STORE_URL": "Persistent-state backend URL: memory://, file:///path, redis://, dynamodb://, or mongodb://. Defaults to file:///data/state when unset."
+  "{PREFIX}_OIDC_JWT_SIGNING_KEY": "Optional signing key for issued JWTs. When unset it is derived from the client secret; set explicitly to keep tokens valid across a secret rotation. Generate: openssl rand -hex 32."
+
+# Wizard routing questions that emit a var rather than mapping 1:1 to one.
+wizard_routing:
+  - id: deployment
+    label: "Where will the server run?"
+    help: "Local stdio for Claude Desktop/Code, or an HTTP server for Docker/systemd."
+    type: select
+    options:
+      - {value: local, label: "Local (Claude Desktop / Claude Code, stdio)", emit: {"{PREFIX}_TRANSPORT": stdio}}
+      - {value: server, label: "Server (HTTP — Docker / Compose / systemd)", emit: {"{PREFIX}_TRANSPORT": http}}
+  - id: auth
+    label: "Authentication"
+    type: select
+    when: server
+    options:
+      - {value: none, label: "None"}
+      - {value: bearer, label: "Bearer token"}
+      - {value: oidc, label: "OIDC"}
+      - {value: both, label: "Bearer + OIDC"}
+
+wizard_guards:
+  - when: {deployment: [server], auth: [oidc, both]}
+    level: warning
+    message: "OIDC needs BASE_URL set. Leaving OIDC_JWT_SIGNING_KEY unset derives the key from the client secret, so rotating that secret invalidates every issued token."
+
+# Whole-file artifacts.  `tags: []` selects every var.
+files:
+  .env.example:
+    kind: env
+    header: "{HUMAN_NAME} environment variables (copy to .env and fill in)."
+    commented: true
+    sections:
+      - {title: Server, tags: [server]}
+      - {title: Authentication, tags: [auth]}
+      - {title: Persistence, tags: [persistence]}
+      - {title: "MCP Apps", tags: [apps]}
+      - {title: Authorization, tags: [authz], when_answer: enable_authorization}
+      - {title: Logging, tags: [observability]}
+      - {title: "Container runtime (Docker / Compose)", tags: [container]}
+      - {title: "Remote debugger (development only)", tags: [debug]}
+      - {title: Domain, tags: [domain], note: "Populated from your ProjectConfig CONFIG-FIELDS block."}
+
+  packaging/env.example:
+    kind: env
+    header: |
+      {HUMAN_NAME} environment configuration
+
+      Installed to /etc/{PROJECT_NAME}/env.example.
+      Copy to /etc/{PROJECT_NAME}/env and edit for your deployment; the systemd
+      unit (/usr/lib/systemd/system/{PROJECT_NAME}.service) sources
+      /etc/{PROJECT_NAME}/env via EnvironmentFile=.
+    commented: false
+    sections:
+      - {title: Logging, tags: [observability]}
+      - title: Domain
+        tags: [domain]
+        note: |
+          All domain env vars use the {PREFIX}_ prefix.
+          See the README and `{PROJECT_NAME} serve --help` for the full list.
+
+          Example:
+          {PREFIX}_EXAMPLE_VAR=value
+
+  examples/bearer-auth.env:
+    kind: env
+    header: "Bearer token authentication example. Generate a token: openssl rand -hex 32"
+    commented: false
+    sections:
+      # BEARER_TOKENS_FILE is excluded — its placeholder
+      # example path doesn't exist, and core prefers a tokens file over
+      # BEARER_TOKEN whenever both are set, so shipping both here produced a
+      # server that refuses to start (ConfigurationError: tokens file not
+      # found). The single-token BEARER_TOKEN below is the whole example.
+      - {title: null, tags: [bearer], exclude: ["{PREFIX}_BEARER_TOKENS_FILE"]}
+      - {title: null, tags: [domain]}
+
+  examples/oidc.env:
+    kind: env
+    header: "OIDC authentication example. See docs/guides/authentication.md for setup."
+    commented: false
+    sections:
+      - {title: null, tags: [oidc]}
+      - {title: null, tags: [domain]}
+
+  docs/javascripts/config-wizard/wizard-spec.json:
+    kind: wizard
+
+  docs/guides/authentication.md:
+    kind: splice
+    regions:
+      - id: OIDC-REQUIRED
+        tags: [oidc]
+        required: true
+        columns: [variable, description]
+      - id: OIDC-OPTIONAL
+        tags: [oidc]
+        required: false
+        columns: [variable, default, description]
+
+  docs/deployment/oidc.md:
+    kind: splice
+    regions:
+      - id: OIDC-REQUIRED
+        tags: [oidc]
+        required: true
+        columns: [variable, description]
+      - id: OIDC-OPTIONAL
+        tags: [oidc]
+        required: false
+        columns: [variable, default, description]
+
+  README.md:
+    kind: splice
+    regions:
+      # A deliberately curated landing-page subset, not the full surface —
+      # `readme` is a hand-picked tag on a handful of vars, not a
+      # section-wide selector like the env-file `tags:` above. Do not widen
+      # it to cover more ground; that is what the full `.env.example` and
+      # the Domain region below are for.
+      - id: CORE
+        tags: [readme]
+        columns: [variable, default, description]
+      # A fresh scaffold has no domain fields yet, so this renders as an
+      # empty table (header + separator only, no data rows) until the
+      # project's own `ProjectConfig` grows some.
+      - id: DOMAIN
+        tags: [domain]
+        columns: [variable, default, required, description]
+
+  # JSON has no comment syntax, so there is nowhere for a GENERATED-* marker
+  # pair to live. This kind splices structurally instead: each declared
+  # `path` is replaced wholesale and every other key survives untouched —
+  # which is what keeps `version` and the OCI `identifier` suffix, both
+  # rewritten by scripts/bump_manifests.py on every release, out of this
+  # generator's reach. Membership per array comes from `packaging:` above.
+  server.json:
+    kind: json-splice
+    arrays:
+      - path: [packages, 0, environmentVariables]
+        packaging: pypi
+      - path: [packages, 1, environmentVariables]
+        packaging: oci

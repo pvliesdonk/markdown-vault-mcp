@@ -5,7 +5,6 @@ from fastmcp_pvl_core import ServerConfig
 
 from markdown_vault_mcp import _server_transfer as T
 from markdown_vault_mcp.config import ProjectConfig
-from markdown_vault_mcp.config_sections import ContentConfig
 from markdown_vault_mcp.transfer.store import TransferStore
 from markdown_vault_mcp.vault import Vault
 
@@ -21,7 +20,7 @@ def env(tmp_path):
     col.index.build_index()
     config = ProjectConfig(
         source_dir=src,
-        content=ContentConfig(attachment_extensions=["png"]),
+        attachment_extensions=["png"],
         server=ServerConfig(base_url="https://host"),
     )
     store = TransferStore()
@@ -52,7 +51,7 @@ async def test_base_url_unset_raises(env):
     store, config, vault = env
     config_no_url = ProjectConfig(
         source_dir=config.source_dir,
-        content=ContentConfig(attachment_extensions=["png"]),
+        attachment_extensions=["png"],
     )
     with pytest.raises(ValueError, match="BASE_URL"):
         await T._create_download_link(store, config_no_url, vault, "note.md", None)

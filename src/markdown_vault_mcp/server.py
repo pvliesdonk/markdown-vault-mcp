@@ -46,8 +46,10 @@ def make_server(
     """Construct the Markdown Vault MCP FastMCP server.
 
     Args:
-        transport: ``"stdio"`` / ``"http"`` / ``"sse"``.  Used here for
-            logging only.
+        transport: ``"stdio"`` / ``"http"`` / ``"sse"``.  Gates any
+            transport-specific wiring added in the DOMAIN-WIRING block
+            (e.g. HTTP-only custom routes, which cannot be served under
+            stdio) and appears as ``transport=%s`` in the startup log.
         config: Optional pre-loaded config; default loads from env.
 
     Returns:

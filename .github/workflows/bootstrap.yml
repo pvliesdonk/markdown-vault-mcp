@@ -1,21 +1,27 @@
 name: Bootstrap repo
 
-# Seeds repository labels that checked-in config references but that GitHub
-# does not create on its own.  `.github/dependabot.yml` applies the
-# `dependencies` label to the PRs it opens; a freshly generated repo has no
-# such label, so without this those PRs would land unlabelled (Dependabot
-# silently drops labels that don't exist).
+# Seeds repository state that checked-in config references but GitHub does not
+# create on its own:
+#   1. The `dependencies` label Renovate applies to its PRs (GitHub silently
+#      drops labels that don't exist).
+#   2. Repository settings that make Renovate auto-merge SAFE — "Allow
+#      auto-merge" plus branch protection requiring the `CI Success` check.
+#      Without a required check, enabling auto-merge on a PR merges it
+#      immediately; the gate is what holds the merge until CI is green.
 #
-# Idempotent: `gh label create --force` creates the label or updates it in
-# place, so every run is a no-op once the label exists.  The first push to the
-# default branch seeds it; `workflow_dispatch` lets you re-seed on demand.
+# Idempotent: label create is `--force`; the settings/branch-protection calls
+# are PATCH/PUT that converge to the same state on every run. The first push to
+# the default branch applies everything; `workflow_dispatch` re-applies on demand.
+#
+# Auth: the settings + branch-protection calls need `administration:write`,
+# which the default GITHUB_TOKEN lacks — they use RELEASE_TOKEN.
 
 on:
   push:
     branches: [main]
     paths:
       - .github/workflows/bootstrap.yml
-      - .github/dependabot.yml
+      - renovate.json
   workflow_dispatch:
 
 permissions:
@@ -35,3 +41,39 @@ jobs:
             --color 0366d6 \
             --description "Pull requests that update a dependency" \
             --force
+
+  settings:
+    name: Enable auto-merge + branch protection
+    runs-on: ubuntu-latest
+    steps:
+      - name: Allow auto-merge and require CI Success on main
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          # Enable repository-level auto-merge.
+          gh api -X PATCH "repos/${REPO}" -F allow_auto_merge=true
+
+          # Require the single drift-proof CI Success context. No required
+          # reviews (a solo account has no second reviewer — requiring one would
+          # deadlock patch/minor auto-merge). enforce_admins=false keeps a
+          # direct-push hotfix path for the owner.
+          #
+          # DESTRUCTIVE-IDEMPOTENT: this is a full PUT of the desired protection
+          # state, not a read-merge-write. Bootstrap declaratively OWNS main's
+          # branch protection — any protections added by hand via the GitHub UI
+          # (extra required checks, required reviewers, push restrictions) are
+          # reset to exactly the state below on the next run. Add such settings
+          # here, not in the UI, or they will not stick.
+          gh api -X PUT "repos/${REPO}/branches/main/protection" \
+            --input - <<'JSON'
+          {
+            "required_status_checks": {
+              "strict": true,
+              "contexts": ["CI Success"]
+            },
+            "enforce_admins": false,
+            "required_pull_request_reviews": null,
+            "restrictions": null
+          }
+          JSON

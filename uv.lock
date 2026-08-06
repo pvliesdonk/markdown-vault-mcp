@@ -784,15 +784,15 @@ wheels = [
 
 [[package]]
 name = "fastmcp-pvl-core"
-version = "4.3.0"
+version = "4.5.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "fastmcp" },
     { name = "httpx" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/c5/f4/dbc52de485e5eaaf89cbfa48d2c12b1ed52c2885884d03eb77e0c0e429df/fastmcp_pvl_core-4.3.0.tar.gz", hash = "sha256:4ba4be9e7ba76b65d8d6323e7d0829566e297fce59ddf0e47d24ce8d3bed9308", size = 363413, upload-time = "2026-06-29T14:01:26.489Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/76/5c/5d1ea65b94bd2c31a4c778f4a887c763082e9e25075d61486c214825c845/fastmcp_pvl_core-4.5.0.tar.gz", hash = "sha256:a271ce9d177c5c0ff6d3f447633615cedd1d7d9c0aae88f49e7b08ac2bd80413", size = 426242, upload-time = "2026-07-25T15:37:33.868Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/58/96/4eeaa02d1fa6f60e9f720a5d4fad3150250ed58dcbd03e10937348512c84/fastmcp_pvl_core-4.3.0-py3-none-any.whl", hash = "sha256:60322ff55ab70ecffff4c9f2377ef46b97aafc6b9e5b3be7702fa745922e94f5", size = 55379, upload-time = "2026-06-29T14:01:25.107Z" },
+    { url = "https://files.pythonhosted.org/packages/d0/53/b43f7f64d4159a55d3810823ea5e9d6136afb78257afcda9a5821d3fc1c1/fastmcp_pvl_core-4.5.0-py3-none-any.whl", hash = "sha256:bca8cf2d3078f87b1a9fb676b70307db44eeaad7cf2e0131d86cbfaf9c2d06f5", size = 82987, upload-time = "2026-07-25T15:37:32.549Z" },
 ]
 
 [package.optional-dependencies]
@@ -1550,7 +1550,7 @@ requires-dist = [
     { name = "fastembed", marker = "extra == 'embeddings'", specifier = ">=0.3" },
     { name = "fastmcp", marker = "extra == 'all'", specifier = ">=3.0,<4" },
     { name = "fastmcp", marker = "extra == 'mcp'", specifier = ">=3.0,<4" },
-    { name = "fastmcp-pvl-core", specifier = ">=4.3.0,<5" },
+    { name = "fastmcp-pvl-core", specifier = ">=4.5.0,<5" },
     { name = "fastmcp-pvl-core", extras = ["debug"], marker = "extra == 'debug'" },
     { name = "httpx", marker = "extra == 'all'", specifier = ">=0.25" },
     { name = "httpx", marker = "extra == 'embeddings-api'", specifier = ">=0.25" },
