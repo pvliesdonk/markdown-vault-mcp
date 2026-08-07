@@ -498,7 +498,6 @@ class Vault:
             link_mgr=self._link_mgr,
             search_mgr=self._search_mgr,
             git_query_mgr=self._git_query_mgr,
-            source_dir=self._source_dir,
             require_built=self._require_built,
         )
         self._writer_facet = WriterFacet(self._doc_mgr, okf_migrate=self._okf_migrate)

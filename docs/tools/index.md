@@ -433,17 +433,17 @@ Rewrite `[[wikilinks]]` as OKF's recommended bundle-root-absolute markdown links
 
 #### `okf_generate_index`
 
-Generate (or overwrite) a folder's reserved `index.md` as a progressive-disclosure listing — `- [title](/path.md) - description` per note, description drawn from frontmatter. Existing frontmatter is preserved, so regenerating the bundle-root `index.md` keeps its `okf_version` declaration. Reserved files are omitted from the listing.
+Generate (or overwrite) a folder's reserved `index.md` as a progressive-disclosure listing: `- [title](/path.md) - description` per note, description drawn from frontmatter. Existing frontmatter is preserved, so regenerating the bundle-root `index.md` keeps its `okf_version` declaration. Reserved files are omitted from the listing.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `folder` | string | Folder to index; omit for the bundle root |
 
-**Returns:** `path` (string), `entries` (integer), `frontmatter_preserved` (boolean).
+**Returns:** `path` (string), `entries` (integer), `frontmatter_preserved` (bool).
 
 #### `okf_seed_log`
 
-Seed a folder's reserved `log.md` change history from the vault's git commit history — newest-first `## YYYY-MM-DD` sections, one bullet per commit. Refuses to overwrite an existing `log.md` (a change history is hand-maintained after seeding).
+Seed a folder's reserved `log.md` change history from the vault's git commit history, newest-first `## YYYY-MM-DD` sections, one bullet per commit. Refuses to overwrite an existing `log.md` (a change history is hand-maintained after seeding).
 
 | Parameter | Type | Description |
 |-----------|------|-------------|

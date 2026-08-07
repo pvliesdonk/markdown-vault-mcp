@@ -35,7 +35,6 @@ from markdown_vault_mcp.okf import (
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-    from pathlib import Path
 
     from markdown_vault_mcp.managers.document import DocumentManager
     from markdown_vault_mcp.managers.git_query import GitQueryManager
@@ -55,18 +54,17 @@ class OkfMigrationManager:
         link_mgr: LinkManager,
         search_mgr: SearchManager,
         git_query_mgr: GitQueryManager,
-        source_dir: Path,
         require_built: Callable[[], None],
     ) -> None:
         """Hold the collaborators the transforms delegate to.
 
         Args:
-            doc_mgr: Reads (raw content, TOC) and writes (the shared write
-                path); supplies the read-only gate and git-commit callback.
+            doc_mgr: Reads (raw content, TOC, reserved-file existence) and
+                writes (the shared write path); supplies the read-only gate
+                and git-commit callback.
             link_mgr: Resolved outlinks for the link converter.
             search_mgr: Note listing and per-note metadata (descriptions).
             git_query_mgr: Vault-wide history for the log seeder.
-            source_dir: Vault root, for the reserved-file existence check.
             require_built: Index-readiness gate; the link/TOC-dependent
                 transforms call it first.
         """
@@ -74,7 +72,6 @@ class OkfMigrationManager:
         self._link_mgr = link_mgr
         self._search_mgr = search_mgr
         self._git_query_mgr = git_query_mgr
-        self._source_dir = source_dir
         self._require_built = require_built
 
     def convert_links(self, *, folder: str | None = None) -> OkfConvertResult:
@@ -188,7 +185,7 @@ class OkfMigrationManager:
         """
         self._doc_mgr.ensure_writable()
         log_path = f"{folder}/log.md" if folder else "log.md"
-        if (self._source_dir / log_path).exists():
+        if self._doc_mgr.read(log_path) is not None:
             raise FileExistsError(
                 f"{log_path} already exists; seeding would overwrite the "
                 "change history. Remove or rename it first."
