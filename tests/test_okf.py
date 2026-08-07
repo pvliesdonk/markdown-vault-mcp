@@ -99,6 +99,36 @@ class TestOkfDetector:
         _write_root_index(tmp_path, '---\nokf_version: "0.2"\n---\n')
         assert detector.state().active is True
 
+    def test_mode_property(self, tmp_path: Path) -> None:
+        assert OkfDetector(tmp_path, mode="on").mode == "on"
+
+
+class TestVaultIntegration:
+    def test_okf_stats_none_without_detector(self, tmp_path: Path) -> None:
+        from markdown_vault_mcp.fts_index import FTSIndex
+        from markdown_vault_mcp.managers.search import SearchManager
+
+        manager = SearchManager(FTSIndex(db_path=":memory:"), tmp_path)
+        assert manager.okf_stats() is None
+
+    def test_extension_skipped_when_fields_already_indexed(
+        self, tmp_path: Path
+    ) -> None:
+        from markdown_vault_mcp.okf import OKF_INDEXED_FIELDS
+        from markdown_vault_mcp.vault import Vault
+
+        _write_root_index(tmp_path, '---\nokf_version: "0.2"\n---\n')
+        vault = Vault(
+            source_dir=tmp_path,
+            okf_mode="auto",
+            indexed_frontmatter_fields=list(OKF_INDEXED_FIELDS),
+        )
+        try:
+            fields = vault.reader.stats().indexed_frontmatter_fields
+            assert fields == list(OKF_INDEXED_FIELDS)
+        finally:
+            vault.close()
+
 
 @pytest.mark.parametrize(
     ("metadata", "expected"),
