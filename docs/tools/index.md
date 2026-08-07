@@ -433,7 +433,7 @@ Rewrite `[[wikilinks]]` as the bundle-root-absolute markdown links OKF recommend
 
 #### `okf_generate_index`
 
-Generate (or overwrite) a folder's reserved `index.md` as a progressive-disclosure listing: `- [title](/path.md) - description` per note, description drawn from frontmatter. Existing frontmatter is preserved, so regenerating the bundle-root `index.md` keeps its `okf_version` declaration. Reserved files are omitted from the listing.
+Generate (or overwrite) a folder's reserved `index.md` as a progressive-disclosure listing: `- [title](/path.md) - description` for each note directly in the folder, plus a pointer into each immediate subfolder's own `index.md`. Descriptions are drawn from frontmatter. The listing is one level deep (it does not flatten the subtree). Existing frontmatter is preserved, so regenerating the bundle-root `index.md` keeps its `okf_version` declaration. Reserved files are omitted.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|

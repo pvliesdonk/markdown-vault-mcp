@@ -70,6 +70,28 @@ class TestConvertLinks:
         assert "[playbook](/guides/playbook.md)" in body
         assert "[the playbook](/guides/playbook.md)" in body
 
+    def test_frontmatter_preserved(self, vault: Vault) -> None:
+        # read() returns the full raw file (frontmatter included) in
+        # NoteContent.content, and the converter writes it back verbatim, so
+        # frontmatter — including OKF conformance fields — must survive.
+        _write(vault, "target.md", "# Target\n")
+        _write(
+            vault,
+            "note.md",
+            "---\ntype: Playbook\ntags: [a, b]\nstatus: stable\n---\n"
+            "# Note\nSee [[target]].\n",
+        )
+        vault.writer.okf_convert_links()
+        wait_for_writer_drain(vault)
+        read = vault.reader.read("note.md")
+        assert read.frontmatter == {
+            "type": "Playbook",
+            "tags": ["a", "b"],
+            "status": "stable",
+        }
+        assert "[target](/target.md)" in read.content
+        assert "[[target]]" not in read.content
+
     def test_unresolvable_wikilink_skipped(self, vault: Vault) -> None:
         _write(vault, "note.md", "# Note\nSee [[ghost]].\n")
         result = vault.writer.okf_convert_links()
@@ -132,6 +154,28 @@ class TestGenerateIndex:
         assert result.path == "guides/index.md"
         assert result.frontmatter_preserved is False
         assert "# guides" in vault.reader.read("guides/index.md").content
+
+    def test_progressive_disclosure_one_level(self, vault: Vault) -> None:
+        # index.md lists only immediate notes plus a pointer per immediate
+        # subfolder — it does not flatten the whole subtree.
+        _write(vault, "top.md", "# Top\n")
+        _write(vault, "guides/one.md", "# One\n")
+        _write(vault, "guides/sub/two.md", "# Two\n")
+
+        vault.writer.okf_generate_index()
+        wait_for_writer_drain(vault)
+        root = vault.reader.read("index.md").content
+        assert "- [Top](/top.md)" in root
+        assert "- [guides/](/guides/index.md)" in root
+        assert "/guides/one.md" not in root  # deferred to guides/index.md
+        assert "/two.md" not in root
+
+        vault.writer.okf_generate_index(folder="guides")
+        wait_for_writer_drain(vault)
+        guides = vault.reader.read("guides/index.md").content
+        assert "- [One](/guides/one.md)" in guides
+        assert "- [sub/](/guides/sub/index.md)" in guides
+        assert "/two.md" not in guides  # deferred to guides/sub/index.md
 
 
 class TestSeedLog:

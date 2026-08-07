@@ -120,8 +120,12 @@ class OkfMigrationManager:
     def generate_index(self, *, folder: str = "") -> OkfIndexResult:
         """Generate a reserved ``index.md`` listing for *folder* from the TOC.
 
-        Existing frontmatter is preserved (the root ``index.md``'s
-        ``okf_version`` declaration must survive regeneration).
+        Progressive disclosure (OKF spec): the listing carries only the
+        folder's *immediate* notes plus a pointer to each immediate
+        subfolder's own ``index.md`` — it does not flatten the whole
+        subtree, so each level defers depth to the level below. Existing
+        frontmatter is preserved (the root ``index.md``'s ``okf_version``
+        declaration must survive regeneration).
 
         Args:
             folder: Vault-relative folder (``""`` for the bundle root).
@@ -137,12 +141,18 @@ class OkfMigrationManager:
         self._require_built()
         from markdown_vault_mcp.types import NoteInfo
 
-        entries: list[tuple[str, str, str | None]] = []
+        prefix = f"{folder}/" if folder else ""
+        note_entries: list[tuple[str, str, str | None]] = []
+        subfolders: set[str] = set()
         for note in self._search_mgr.list(folder=folder or None):
             if not isinstance(note, NoteInfo):  # pragma: no cover - mypy narrowing
                 continue
-            name = note.path.rsplit("/", 1)[-1]
-            if name in OKF_RESERVED_FILENAMES:
+            rel = note.path[len(prefix) :]
+            if "/" in rel:
+                # A deeper note: record its immediate subfolder, don't list it.
+                subfolders.add(rel.split("/", 1)[0])
+                continue
+            if rel in OKF_RESERVED_FILENAMES:
                 continue
             raw_desc = note.frontmatter.get("description")
             description = (
@@ -150,7 +160,12 @@ class OkfMigrationManager:
                 if isinstance(raw_desc, str) and raw_desc.strip()
                 else None
             )
-            entries.append((note.title, f"/{note.path}", description))
+            note_entries.append((note.title, f"/{note.path}", description))
+
+        # Immediate notes first, then a pointer into each subfolder's index.
+        entries = note_entries + [
+            (f"{sub}/", f"/{prefix}{sub}/index.md", None) for sub in sorted(subfolders)
+        ]
 
         index_path = f"{folder}/index.md" if folder else "index.md"
         existing = self._doc_mgr.read(index_path)
