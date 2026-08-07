@@ -840,7 +840,10 @@ def _resolve_link_path(target: str, source_rel: str) -> tuple[str, str | None]:
         # style, #969): resolve against the vault root. Joining an absolute
         # path onto a base with pathlib would *replace* the base and keep
         # the leading slash, serializing as an unresolvable `//...` target.
-        resolved = PurePosixPath(target.lstrip("/"))
+        # removeprefix (not lstrip): exactly one slash marks root-relative;
+        # `//`-prefixed targets never reach here (external-URL filter), and
+        # this keeps that invariant from silently mattering.
+        resolved = PurePosixPath(target.removeprefix("/"))
     else:
         # Resolve relative to the source document's directory.
         resolved = PurePosixPath(source_rel).parent / target
