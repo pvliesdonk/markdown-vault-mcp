@@ -120,6 +120,10 @@ class OkfDetector:
         if self._mode == "off":
             return OkfState(mode=self._mode, declared_version=None, active=False)
         version = self._probe_declared_version()
+        # Warn-once dedup is best-effort: concurrent first probes may each
+        # log the warning (set membership is checked without a lock). The
+        # worst case is a duplicate log line, which does not justify
+        # synchronizing a read path.
         if (
             version is not None
             and version not in KNOWN_OKF_VERSIONS
