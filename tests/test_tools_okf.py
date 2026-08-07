@@ -444,6 +444,16 @@ class TestOkfMigrationTools:
         data = _parse_tool_data(result)
         assert data["path"] == "log.md"
 
+    async def test_seed_log_refuses_overwrite_as_tool_error(self) -> None:
+        from fastmcp.exceptions import ToolError
+
+        async with Client(make_server()) as client:
+            await wait_for_mcp_writer_drain(client)
+            await client.call_tool("okf_seed_log", {})
+            await wait_for_mcp_writer_drain(client)
+            with pytest.raises(ToolError, match=r"log\.md"):
+                await client.call_tool("okf_seed_log", {})
+
     async def test_tools_hidden_when_mode_off(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:

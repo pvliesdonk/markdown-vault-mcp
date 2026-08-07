@@ -100,7 +100,7 @@ class OkfMigrationManager:
             if not any(link.link_type == "wikilink" for link in outlinks):
                 continue
             note_content = self._doc_mgr.read(note.path)
-            if note_content is None:
+            if note_content is None:  # pragma: no cover - listed-then-deleted race
                 continue
             new_content, n_conv, n_skip = convert_wikilinks_to_markdown(
                 note_content.content, outlinks
@@ -139,7 +139,7 @@ class OkfMigrationManager:
 
         entries: list[tuple[str, str, str | None]] = []
         for note in self._search_mgr.list(folder=folder or None):
-            if not isinstance(note, NoteInfo):
+            if not isinstance(note, NoteInfo):  # pragma: no cover - mypy narrowing
                 continue
             name = note.path.rsplit("/", 1)[-1]
             if name in OKF_RESERVED_FILENAMES:

@@ -149,3 +149,16 @@ class TestSeedLog:
             vault.writer.okf_seed_log()
         # The hand-written log is untouched.
         assert "hand-written" in vault.reader.read("log.md").content
+
+
+def test_facet_without_migration_manager_raises(vault: Vault) -> None:
+    """WriterFacet built without a migration manager rejects okf_* calls."""
+    from markdown_vault_mcp.facets.writer import WriterFacet
+
+    facet = WriterFacet(vault._doc_mgr)
+    with pytest.raises(RuntimeError, match="migration manager"):
+        facet.okf_convert_links()
+    with pytest.raises(RuntimeError, match="migration manager"):
+        facet.okf_generate_index()
+    with pytest.raises(RuntimeError, match="migration manager"):
+        facet.okf_seed_log()
