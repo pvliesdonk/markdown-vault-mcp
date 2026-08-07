@@ -75,6 +75,8 @@ codec
 codecov
 commit
 composable
+conformant
+conformantly
 connection_path
 create_from_template
 csv
