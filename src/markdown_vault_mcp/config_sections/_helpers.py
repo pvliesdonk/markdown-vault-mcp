@@ -56,26 +56,6 @@ def opt_int(prefix: str, name: str) -> int | None:
     return _core_env_int(prefix, name, None, strict=True)
 
 
-def env_weight_map(prefix: str, name: str) -> dict[str, float] | None:
-    """Read a ``"key:float,key:float,..."`` env var into a weight map.
-
-    Thin wrapper over :func:`parse_weight_map` for callers that read and
-    parse in one step.
-
-    Args:
-        prefix: Env var prefix, e.g. ``"MARKDOWN_VAULT_MCP"``.
-        name: Env var suffix, e.g. ``"FOLDER_WEIGHTS"``.
-
-    Returns:
-        Mapping of key to float weight, or ``None`` when unset.
-
-    Raises:
-        ConfigurationError: If an entry lacks a ``:``, has an empty key, or
-            carries a non-numeric weight. The message names the env var.
-    """
-    return parse_weight_map(env(prefix, name), f"{prefix}_{name}")
-
-
 def parse_weight_map(raw: str | None, var: str) -> dict[str, float] | None:
     """Parse a ``"key:float,key:float,..."`` value into a weight map.
 

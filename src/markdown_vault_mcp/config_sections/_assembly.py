@@ -119,19 +119,20 @@ def _build_git_strategy(
     ``enable_sync`` toggles both pull and push together — every call site enables
     or disables them in lockstep.
     """
+    git = config.git
     return GitWriteStrategy(
         token=token,
         repo_url=repo_url,
         managed=managed,
         enable_pull=enable_sync,
         enable_push=enable_sync,
-        username=config.git.username,
-        push_delay_s=config.git.push_delay_s,
-        commit_name=config.git.commit_name,
-        commit_email=config.git.commit_email,
-        commit_name_claim=config.git.commit_name_claim,
-        commit_email_claim=config.git.commit_email_claim,
-        git_lfs=config.git.lfs,
+        username=git.username,
+        push_delay_s=git.push_delay_s,
+        commit_name=git.commit_name,
+        commit_email=git.commit_email,
+        commit_name_claim=git.commit_name_claim,
+        commit_email_claim=git.commit_email_claim,
+        git_lfs=git.lfs,
         repo_path=config.source_dir,
     )
 

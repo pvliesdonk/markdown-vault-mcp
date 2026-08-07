@@ -11,7 +11,7 @@ from markdown_vault_mcp.exceptions import ConfigurationError
 _FTS_COLUMNS = ("path", "title", "folder", "heading", "content", "summary")
 
 # Type accepted for the weight-map fields: a mapping (e.g. from
-# env_weight_map) or an already-frozen tuple of (key, weight) pairs.
+# parse_weight_map) or an already-frozen tuple of (key, weight) pairs.
 _WeightMap = Mapping[str, float] | Sequence[tuple[str, float]]
 
 

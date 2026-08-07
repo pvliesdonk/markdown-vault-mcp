@@ -880,6 +880,15 @@ class TestProjectConfigDefaults:
         assert config.embeddings.fastembed_model == "BAAI/bge-base-en-v1.5"
         assert config.embeddings.fastembed_cache_dir == "/tmp/cache"
 
+    def test_flat_sequence_field_rejects_bare_str(self) -> None:
+        """ProjectConfig's own freeze rejects a bare str, not just the sections'.
+
+        A bare str is itself a Sequence[str]; without the guard it would be
+        silently split into single-character entries (#639).
+        """
+        with pytest.raises(ConfigurationError, match="must be a sequence of strings"):
+            ProjectConfig(source_dir=Path("/tmp/vault"), indexed_fields="tags")
+
 
 class TestLoadConfigServerIdentityFields:
     """Verify server identity env vars are read by ProjectConfig.from_env()."""
