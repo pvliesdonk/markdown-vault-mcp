@@ -953,3 +953,44 @@ def register(mcp: FastMCP) -> None:
             return data
 
         return await asyncio.to_thread(_lookup)
+
+    @mcp.tool(
+        icons=_TOOL_ICONS["okf_validate"],
+        tags={"okf"},
+        annotations={
+            "title": "Validate OKF Bundle",
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+        },
+    )
+    async def okf_validate(vault: Vault = Depends(get_vault)) -> dict[str, Any]:
+        """Audit the vault's OKF (Open Knowledge Format) conformance.
+
+        Reports conformance as degrees, not a verdict — during a migration
+        this is the progress meter. Reads the vault from disk (works before
+        the index is built and before the vault declares 'okf_version'), and
+        skips paths matching the vault's effective exclude patterns.
+
+        Findings come in three severities. Conformance (spec violations):
+        notes missing a non-empty 'type', notes with unparseable
+        frontmatter, and 'okf_version' declared outside the root index.md.
+        Advisory (tolerated but worth fixing): 'status' values outside
+        draft/stable/deprecated, log.md files whose '##' headings are not
+        YYYY-MM-DD dates, and a missing root index.md. Informational (not
+        deviations): notes containing wikilinks (relevant only when
+        exporting; internal links resolve fine either way) and notes
+        lacking the recommended 'title'/'description'. Reserved files
+        (index.md, log.md) are exempt from the 'type' rule.
+
+        Returns:
+            Report dict: 'mode', 'declared_version', 'active' (detection
+            state); 'total_notes' and 'conformant_notes' (the progress
+            ratio); per-rule findings each carrying 'count' and up to 20
+            'examples' paths ('missing_type', 'unparseable_frontmatter',
+            'misplaced_okf_version', 'unknown_status', 'log_heading_shape',
+            'wikilink_files', 'missing_recommended'); and
+            'root_index_missing' (bool).
+        """
+        report = await asyncio.to_thread(vault.reader.okf_validate)
+        return asdict(report)

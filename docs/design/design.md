@@ -1174,6 +1174,24 @@ what is implemented today:
   each node, extracted from metadata already fetched for labels (hub
   nodes stay untyped: their construction deliberately avoids per-node
   metadata reads) — only on an active bundle.
+- **Conformance audit (phase 3, #962)**: ``okf_validate`` reports bundle
+  conformance as a degree (``conformant_notes`` of ``total_notes``), not
+  a verdict — during a migration it is the progress meter. The audit
+  (``okf.audit_bundle``) is pure disk I/O on the detection-probe pattern:
+  index-independent, per-file reads capped at the probe's read limit
+  (frontmatter always fits; a wikilink beyond the cap goes uncounted),
+  usable pre-index and pre-declaration. The vault's *effective* exclude
+  patterns double as the audit whitelist. Findings carry a count plus up
+  to 20 example paths and come in three severities — conformance
+  (missing ``type``, unparseable frontmatter, ``okf_version`` outside the
+  bundle root), advisory (unknown ``status`` vocabulary, ``log.md``
+  heading shape, missing root ``index.md``), informational (wikilink
+  usage, missing recommended fields). Reserved files are exempt from the
+  ``type`` rule. The tool is registered with an ``okf`` tag and hidden
+  via ``mcp.disable(tags={"okf"})`` when ``OKF_MODE=off`` (the
+  ``disable_apps_ui`` pattern); it is deliberately *not* gated on live
+  detection, because auditing before declaring is the migration
+  ratchet's first step. Validation is never wired into the write path.
 - **Field vocabulary as data**: the OKF key names, known spec versions,
   and tier/lifecycle constants live as module constants in `okf.py`
   because the spec is pre-1.0 with one breaking rename behind it — a

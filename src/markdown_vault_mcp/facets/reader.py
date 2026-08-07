@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from markdown_vault_mcp.managers.document import DocumentManager
     from markdown_vault_mcp.managers.git_query import GitQueryManager
     from markdown_vault_mcp.managers.search import SearchManager
+    from markdown_vault_mcp.okf import OkfAuditReport
     from markdown_vault_mcp.types import (
         AttachmentContent,
         AttachmentInfo,
@@ -47,6 +48,7 @@ class ReaderFacet:
         doc_mgr: DocumentManager,
         git_query_mgr: GitQueryManager,
         require_built: Callable[[], None],
+        okf_audit: Callable[[], OkfAuditReport] | None = None,
     ) -> None:
         """Hold the managers the read methods delegate to.
 
@@ -56,11 +58,32 @@ class ReaderFacet:
             doc_mgr: Document and attachment reads, table-of-contents.
             git_query_mgr: Git history / diff reads.
             require_built: Index-readiness gate for the bucket-3 methods.
+            okf_audit: Bound OKF conformance audit (#962), or ``None`` when
+                the composition root does not provide one.
         """
         self._search_mgr = search_mgr
         self._doc_mgr = doc_mgr
         self._git_query_mgr = git_query_mgr
         self._require_built = require_built
+        self._okf_audit = okf_audit
+
+    def okf_validate(self) -> OkfAuditReport:
+        """Run the OKF bundle-conformance audit (design §4; #962).
+
+        Disk-based and index-independent: usable before the index is
+        built and before the vault declares itself a bundle (the audit is
+        the "should I declare?" tool of the migration ratchet).
+
+        Returns:
+            The audit report.
+
+        Raises:
+            RuntimeError: If no audit callable was wired (direct facet
+                construction without the composition root).
+        """
+        if self._okf_audit is None:
+            raise RuntimeError("okf_validate requires a wired audit callable")
+        return self._okf_audit()
 
     def search(
         self,

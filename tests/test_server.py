@@ -381,6 +381,7 @@ class TestToolManifest:
             "list_folders",
             "list_tags",
             "move_folder",
+            "okf_validate",
             "read",
             "reindex",
             "rename",

@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import logging
+import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -331,3 +332,235 @@ def matches_okf_filters(
         elif annotation.get(key) != value:
             return False
     return True
+
+
+@dataclass(frozen=True)
+class OkfFinding:
+    """One audit rule's result: a count plus capped example paths."""
+
+    count: int
+    examples: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class OkfAuditReport:
+    """Bundle-conformance audit result (design §4; #962).
+
+    Degrees, not verdicts: during a migration the audit is a progress
+    meter, so partial conformance is first-class. ``conformance`` findings
+    violate the spec's single hard rule (parseable frontmatter with a
+    non-empty ``type``) or its placement rule for ``okf_version``;
+    ``advisories`` are tolerated-by-spec deviations worth fixing;
+    ``informational`` entries are not deviations at all (wikilinks only
+    matter at export; recommended fields are optional).
+
+    Attributes:
+        mode: Configured OKF mode at audit time.
+        declared_version: Declared ``okf_version``, or ``None``.
+        active: Whether read semantics were active at audit time.
+        total_notes: Non-reserved markdown files examined.
+        conformant_notes: Notes with parseable frontmatter and a
+            non-empty ``type``.
+        missing_type: Notes lacking a non-empty ``type``.
+        unparseable_frontmatter: Notes whose frontmatter fails to parse.
+        misplaced_okf_version: Notes outside the bundle root carrying
+            ``okf_version``.
+        unknown_status: Notes with a ``status`` outside the spec
+            vocabulary (tolerated; advisory).
+        log_heading_shape: ``log.md`` files with ``##`` headings that are
+            not ``YYYY-MM-DD`` dates (advisory).
+        root_index_missing: Whether the bundle-root ``index.md`` is absent
+            (advisory; consumers must tolerate it).
+        wikilink_files: Notes containing wikilinks (informational; only
+            matters at export).
+        missing_recommended: Notes lacking a recommended ``title`` or
+            ``description`` (informational).
+    """
+
+    mode: str
+    declared_version: str | None
+    active: bool
+    total_notes: int
+    conformant_notes: int
+    missing_type: OkfFinding
+    unparseable_frontmatter: OkfFinding
+    misplaced_okf_version: OkfFinding
+    unknown_status: OkfFinding
+    log_heading_shape: OkfFinding
+    root_index_missing: bool
+    wikilink_files: OkfFinding
+    missing_recommended: OkfFinding
+
+
+class _FindingAccumulator:
+    """Count occurrences and keep the first *cap* example paths."""
+
+    def __init__(self, cap: int) -> None:
+        self._cap = cap
+        self.count = 0
+        self.examples: list[str] = []
+
+    def add(self, path: str) -> None:
+        self.count += 1
+        if len(self.examples) < self._cap:
+            self.examples.append(path)
+
+    def finding(self) -> OkfFinding:
+        return OkfFinding(count=self.count, examples=tuple(self.examples))
+
+
+class _AuditCounters:
+    """Mutable working state for one :func:`audit_bundle` run."""
+
+    def __init__(self, cap: int) -> None:
+        self.missing_type = _FindingAccumulator(cap)
+        self.unparseable = _FindingAccumulator(cap)
+        self.misplaced = _FindingAccumulator(cap)
+        self.unknown_status = _FindingAccumulator(cap)
+        self.log_shape = _FindingAccumulator(cap)
+        self.wikilinks = _FindingAccumulator(cap)
+        self.missing_recommended = _FindingAccumulator(cap)
+        self.total = 0
+        self.conformant = 0
+        self.root_index_seen = False
+
+
+_LOG_HEADING_RE = re.compile(r"^## (\d{4}-\d{2}-\d{2})\s*$")
+
+
+def _log_headings_conform(body: str) -> bool:
+    """Whether every ``##`` heading in a ``log.md`` body is a date heading."""
+    return all(
+        _LOG_HEADING_RE.match(line)
+        for line in body.splitlines()
+        if line.startswith("## ")
+    )
+
+
+def _read_capped(file_path: Path, rel: str) -> str | None:
+    """Read up to :data:`_MAX_READ_CHARS` of *file_path*, ``None`` on error."""
+    try:
+        with file_path.open(encoding="utf-8") as fh:
+            return fh.read(_MAX_READ_CHARS)
+    except (OSError, UnicodeDecodeError):
+        logger.debug("okf_audit_read_failed path=%s", rel, exc_info=True)
+        return None
+
+
+def _evaluate_note(
+    rel: str, metadata: dict[str, Any], body: str, acc: _AuditCounters
+) -> None:
+    """Apply the non-reserved-note rules to one parsed note."""
+    note_type = metadata.get("type")
+    if isinstance(note_type, str) and note_type.strip():
+        acc.conformant += 1
+    else:
+        acc.missing_type.add(rel)
+    status = metadata.get("status")
+    if (
+        isinstance(status, str)
+        and status.strip()
+        and status.strip() not in OKF_STATUS_VALUES
+    ):
+        acc.unknown_status.add(rel)
+    if "[[" in body:
+        acc.wikilinks.add(rel)
+    if not metadata.get("title") or not metadata.get("description"):
+        acc.missing_recommended.add(rel)
+
+
+def _audit_file(rel: str, raw: str, acc: _AuditCounters) -> None:
+    """Classify one markdown file and update the audit counters."""
+    try:
+        post = fm.loads(raw)
+        metadata: dict[str, Any] = dict(post.metadata)
+        body = post.content
+        parse_ok = True
+    except yaml.YAMLError:
+        metadata, body, parse_ok = {}, raw, False
+
+    name = rel.rsplit("/", 1)[-1]
+    if rel == _ROOT_INDEX:
+        acc.root_index_seen = True
+    elif "okf_version" in metadata:
+        acc.misplaced.add(rel)
+    if name in OKF_RESERVED_FILENAMES:
+        if name == "log.md" and not _log_headings_conform(body):
+            acc.log_shape.add(rel)
+        return
+
+    acc.total += 1
+    if not parse_ok:
+        acc.unparseable.add(rel)
+    else:
+        _evaluate_note(rel, metadata, body, acc)
+
+
+def audit_bundle(
+    source_dir: Path,
+    *,
+    exclude_patterns: list[str] | None = None,
+    detector: OkfDetector | None = None,
+    example_cap: int = 20,
+) -> OkfAuditReport:
+    """Audit the vault's OKF conformance from disk (design §4; #962).
+
+    Pure disk I/O, index-independent (the detection-probe pattern): each
+    file is read up to :data:`_MAX_READ_CHARS` characters — frontmatter
+    always fits; a wikilink beyond the cap in a pathological note goes
+    uncounted. The index's effective exclude patterns double as the audit
+    whitelist, so known-nonconforming zones (convention files, configured
+    excludes) are skipped via existing config.
+
+    Args:
+        source_dir: Root directory of the markdown vault.
+        exclude_patterns: Effective vault exclude patterns (audit
+            whitelist).
+        detector: Optional detection probe for reporting mode/version
+            state; ``None`` reports an inactive, mode-``"off"``-like state.
+        example_cap: Maximum example paths kept per finding.
+
+    Returns:
+        The audit report. Empty or missing vault directories yield an
+        all-zero report rather than an error.
+    """
+    from markdown_vault_mcp.utils import is_path_excluded
+    from markdown_vault_mcp.utils.fs import iter_markdown_files
+
+    state = (
+        detector.state()
+        if detector is not None
+        else OkfState(mode="off", declared_version=None, active=False)
+    )
+    excludes = list(exclude_patterns or [])
+    acc = _AuditCounters(example_cap)
+    paths = (
+        sorted(
+            p.relative_to(source_dir).as_posix()
+            for p in iter_markdown_files(source_dir, excludes)
+        )
+        if source_dir.is_dir()
+        else []
+    )
+    for rel in paths:
+        if is_path_excluded(rel, excludes):
+            continue
+        raw = _read_capped(source_dir / rel, rel)
+        if raw is not None:
+            _audit_file(rel, raw, acc)
+
+    return OkfAuditReport(
+        mode=state.mode,
+        declared_version=state.declared_version,
+        active=state.active,
+        total_notes=acc.total,
+        conformant_notes=acc.conformant,
+        missing_type=acc.missing_type.finding(),
+        unparseable_frontmatter=acc.unparseable.finding(),
+        misplaced_okf_version=acc.misplaced.finding(),
+        unknown_status=acc.unknown_status.finding(),
+        log_heading_shape=acc.log_shape.finding(),
+        root_index_missing=not acc.root_index_seen,
+        wikilink_files=acc.wikilinks.finding(),
+        missing_recommended=acc.missing_recommended.finding(),
+    )

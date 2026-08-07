@@ -252,6 +252,10 @@ def make_server(
     # listing (saves a few tokens; the LLM cannot call them anyway).
     if config.disable_apps_ui:
         mcp.disable(tags={"apps-ui"})
+    if config.content.okf_mode == "off":
+        # OKF semantics vetoed by the operator: hide the OKF tool surface
+        # entirely (same pattern as the apps-ui toggle).
+        mcp.disable(tags={"okf"})
     # DOMAIN-WIRING-END
 
     return mcp

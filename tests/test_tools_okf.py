@@ -361,3 +361,39 @@ class TestFilterDimensionsModeOff:
             # 'status' tag is indexed with OKF off, so nothing matches.
             hits = await _search(client, filters={"status": "stable"})
         assert hits == []
+
+
+@pytest.mark.usefixtures("_okf_env")
+class TestOkfValidateTool:
+    """Phase 3 (#962): the okf_validate conformance audit tool."""
+
+    async def test_report_on_declared_vault(self) -> None:
+        async with Client(make_server()) as client:
+            report = _structured(await client.call_tool("okf_validate", {}))
+        assert report["active"] is True
+        assert report["declared_version"] == "0.2"
+        assert report["total_notes"] == 2  # playbook + plain (index.md reserved)
+        assert report["conformant_notes"] == 1
+        assert report["missing_type"]["examples"] == ["guides/plain.md"]
+        assert report["root_index_missing"] is False
+
+    async def test_hidden_when_mode_off(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_MODE", "off")
+        async with Client(make_server()) as client:
+            tools = {t.name for t in await client.list_tools()}
+        assert "okf_validate" not in tools
+
+
+@pytest.mark.usefixtures("_plain_env")
+class TestOkfValidatePreDeclaration:
+    """The audit is the "should I declare?" tool: usable before declaring."""
+
+    async def test_report_on_undeclared_vault(self) -> None:
+        async with Client(make_server()) as client:
+            tools = {t.name for t in await client.list_tools()}
+            assert "okf_validate" in tools
+            report = _structured(await client.call_tool("okf_validate", {}))
+        assert report["active"] is False
+        assert report["declared_version"] is None
+        assert report["root_index_missing"] is True
+        assert report["total_notes"] == 2

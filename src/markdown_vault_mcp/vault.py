@@ -22,7 +22,12 @@ from markdown_vault_mcp.facets import (
 )
 from markdown_vault_mcp.fts_index import FTSIndex
 from markdown_vault_mcp.indexing import IndexWriteCoordinator
-from markdown_vault_mcp.okf import OKF_INDEXED_FIELDS, OkfDetector
+from markdown_vault_mcp.okf import (
+    OKF_INDEXED_FIELDS,
+    OkfAuditReport,
+    OkfDetector,
+    audit_bundle,
+)
 from markdown_vault_mcp.scanner import (
     ChunkStrategy,
     HeadingChunker,
@@ -485,6 +490,7 @@ class Vault:
             doc_mgr=self._doc_mgr,
             git_query_mgr=self._git_query_mgr,
             require_built=self._require_built,
+            okf_audit=self._okf_audit,
         )
         self._writer_facet = WriterFacet(self._doc_mgr)
         self._graph_facet = GraphFacet(
@@ -593,6 +599,19 @@ class Vault:
     def okf(self) -> OkfDetector:
         """OKF detection probe (disk-read, index-independent)."""
         return self._okf
+
+    def _okf_audit(self) -> OkfAuditReport:
+        """Run the OKF conformance audit over this vault (#962).
+
+        Bound into :class:`ReaderFacet` so the audit uses the vault's
+        effective exclude patterns as its whitelist and reports the live
+        detection state.
+        """
+        return audit_bundle(
+            self._source_dir,
+            exclude_patterns=self._exclude_patterns,
+            detector=self._okf,
+        )
 
     @property
     def exclude_patterns(self) -> list[str] | None:

@@ -37,6 +37,7 @@ _TOOL_ICONS: dict[str, list[Icon]] = {
         "list_folders",
         "list_tags",
         "stats",
+        "okf_validate",
         "embeddings_status",
         "reindex",
         "build_embeddings",

@@ -547,3 +547,126 @@ def test_graph_view_payload_emits_note_type_only_when_set() -> None:
     payload = _graph_view_payload(view, include_truncated=False)
     assert "note_type" not in payload["nodes"][0]
     assert payload["nodes"][1]["note_type"] == "Playbook"
+
+
+def _build_audit_vault(root: Path) -> None:
+    """A mixed-conformance bundle exercising every audit rule."""
+    (root / "guides").mkdir(parents=True)
+    (root / "junk").mkdir()
+    _write_root_index(root, '---\nokf_version: "0.2"\n---\n# Bundle\n')
+    (root / "guides" / "good.md").write_text(
+        "---\ntype: Playbook\ntitle: Good\ndescription: A conformant note.\n---\n"
+        "# Good\n",
+        encoding="utf-8",
+    )
+    (root / "guides" / "untyped.md").write_text(
+        "---\ntitle: Untyped\n---\n# Untyped\nSee [[good]].\n", encoding="utf-8"
+    )
+    (root / "guides" / "broken.md").write_text(
+        "---\n: [broken\n---\n# Broken\n", encoding="utf-8"
+    )
+    (root / "guides" / "misplaced.md").write_text(
+        '---\ntype: Note\nokf_version: "0.2"\n---\n# Misplaced\n', encoding="utf-8"
+    )
+    (root / "guides" / "odd-status.md").write_text(
+        "---\ntype: Note\nstatus: archived\n---\n# Odd\n", encoding="utf-8"
+    )
+    (root / "guides" / "log.md").write_text(
+        "# Log\n\n## 2026-08-07\n\n- **Update**: fine\n", encoding="utf-8"
+    )
+    (root / "junk" / "log.md").write_text(
+        "# Log\n\n## Not A Date\n\n- broken\n", encoding="utf-8"
+    )
+    (root / "junk" / "excluded.md").write_text("# No type here\n", encoding="utf-8")
+
+
+class TestOkfAudit:
+    def test_mixed_vault_report(self, tmp_path: Path) -> None:
+        from markdown_vault_mcp.okf import OkfDetector, audit_bundle
+
+        _build_audit_vault(tmp_path)
+        report = audit_bundle(tmp_path, detector=OkfDetector(tmp_path, mode="auto"))
+        assert report.active is True
+        assert report.declared_version == "0.2"
+        # Non-reserved notes: good, untyped, broken, misplaced, odd-status,
+        # junk/excluded (not excluded in this run).
+        assert report.total_notes == 6
+        assert report.conformant_notes == 3  # good, misplaced, odd-status
+        assert report.missing_type.count == 2  # untyped, junk/excluded
+        assert report.unparseable_frontmatter.examples == ("guides/broken.md",)
+        assert report.misplaced_okf_version.examples == ("guides/misplaced.md",)
+        assert report.unknown_status.examples == ("guides/odd-status.md",)
+        assert report.log_heading_shape.examples == ("junk/log.md",)
+        assert report.root_index_missing is False
+        assert report.wikilink_files.examples == ("guides/untyped.md",)
+        assert report.missing_recommended.count >= 3
+
+    def test_exclude_patterns_whitelist(self, tmp_path: Path) -> None:
+        from markdown_vault_mcp.okf import audit_bundle
+
+        _build_audit_vault(tmp_path)
+        report = audit_bundle(tmp_path, exclude_patterns=["junk/**"])
+        assert report.missing_type.count == 1  # junk/excluded.md skipped
+        assert report.log_heading_shape.count == 0  # junk/log.md skipped
+
+    def test_example_cap(self, tmp_path: Path) -> None:
+        from markdown_vault_mcp.okf import audit_bundle
+
+        for i in range(5):
+            (tmp_path / f"n{i}.md").write_text("# untyped\n", encoding="utf-8")
+        report = audit_bundle(tmp_path, example_cap=2)
+        assert report.missing_type.count == 5
+        assert len(report.missing_type.examples) == 2
+
+    def test_missing_vault_dir_zero_report(self, tmp_path: Path) -> None:
+        from markdown_vault_mcp.okf import audit_bundle
+
+        report = audit_bundle(tmp_path / "nope")
+        assert report.total_notes == 0
+        assert report.root_index_missing is True
+        assert report.mode == "off"
+        assert report.active is False
+
+    def test_undeclared_vault_reports_inactive(self, tmp_path: Path) -> None:
+        from markdown_vault_mcp.okf import OkfDetector, audit_bundle
+
+        (tmp_path / "note.md").write_text("---\ntype: Note\n---\n# N\n")
+        report = audit_bundle(tmp_path, detector=OkfDetector(tmp_path, mode="auto"))
+        assert report.active is False
+        assert report.conformant_notes == 1
+        assert report.root_index_missing is True
+
+    def test_unreadable_file_skipped(self, tmp_path: Path) -> None:
+        from markdown_vault_mcp.okf import audit_bundle
+
+        (tmp_path / "good.md").write_text("---\ntype: Note\n---\n# G\n")
+        (tmp_path / "binary.md").write_bytes(b"\xff\xfe\x00broken")
+        report = audit_bundle(tmp_path)
+        assert report.total_notes == 1
+        assert report.conformant_notes == 1
+
+    def test_facet_without_wired_audit_raises(self, tmp_path: Path) -> None:
+        from markdown_vault_mcp.facets.reader import ReaderFacet
+        from markdown_vault_mcp.fts_index import FTSIndex
+        from markdown_vault_mcp.managers.search import SearchManager
+
+        facet = ReaderFacet(
+            search_mgr=SearchManager(FTSIndex(db_path=":memory:"), tmp_path),
+            doc_mgr=None,  # type: ignore[arg-type] — unused by okf_validate
+            git_query_mgr=None,  # type: ignore[arg-type] — unused
+            require_built=lambda: None,
+        )
+        with pytest.raises(RuntimeError, match="okf_validate"):
+            facet.okf_validate()
+
+    def test_vault_facet_wiring(self, tmp_path: Path) -> None:
+        from markdown_vault_mcp.vault import Vault
+
+        _build_audit_vault(tmp_path)
+        vault = Vault(source_dir=tmp_path, exclude_patterns=["junk/**"])
+        try:
+            report = vault.reader.okf_validate()
+            assert report.active is True
+            assert report.missing_type.count == 1
+        finally:
+            vault.close()

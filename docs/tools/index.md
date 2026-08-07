@@ -30,6 +30,7 @@ markdown-vault-mcp exposes MCP tools across several categories. Write tools are 
 | [`get_orphan_notes`](#get_orphan_notes) | Orphan Notes | Read | Find notes with no inbound or outbound links |
 | [`get_most_linked`](#get_most_linked) | Most-Linked Notes | Read | Find the most-linked-to notes ranked by backlink count |
 | [`get_connection_path`](#get_connection_path) | Connection Path | Read | Find the shortest path between two notes via link graph |
+| [`okf_validate`](#okf_validate) | Validate OKF Bundle | Read | Audit the vault's Open Knowledge Format conformance |
 | [`summarize`](#summarize) | Summarize Notes | AI | Summarize a note, a set of notes, or a subtree with an LLM (needs `OPENAI_API_KEY` or an OpenAI-compatible base URL) |
 | [`get_summary`](#get_summary) | Get Summary | AI | Retrieve a summary that `summarize` promoted to a background job |
 | [`get_history`](#get_history) | Note History | Read (git) | List commits that touched a note, attachment, or the whole vault |
@@ -246,6 +247,14 @@ build attempt.
 **Tags:** read-only.
 
 ---
+
+### `okf_validate`
+
+Audit the vault's [OKF (Open Knowledge Format)](https://github.com/GoogleCloudPlatform/knowledge-catalog) conformance. Reports degrees, not a verdict: during a migration to OKF this is the progress meter. The audit reads the vault from disk, so it works before the index is built and before the vault declares `okf_version` (run it first to decide whether to declare). Paths matching the vault's effective exclude patterns are skipped, which doubles as the whitelist for known-nonconforming zones. The tool is hidden when `MARKDOWN_VAULT_MCP_OKF_MODE` is `off`.
+
+No parameters.
+
+**Returns:** Report object with the detection state (`mode`, `declared_version`, `active`), the progress ratio (`total_notes`, `conformant_notes`), `root_index_missing` (bool), and per-rule findings that each carry `count` and up to 20 `examples` paths. Conformance findings: `missing_type`, `unparseable_frontmatter`, `misplaced_okf_version`. Advisory: `unknown_status`, `log_heading_shape`. Informational: `wikilink_files`, `missing_recommended`. Reserved files (`index.md`, `log.md`) are exempt from the `type` rule.
 
 ## Index Management
 
