@@ -469,6 +469,16 @@ class TestOkfFilters:
                 )
                 assert results, mode
                 assert all(r.path != "guides/playbook.md" for r in results), mode
+            # get_similar has its own split/widen/post-filter call site.
+            similar = vault.reader.get_similar(
+                "guides/plain.md", filters={"stale": "true"}
+            )
+            assert [r.path for r in similar] == ["guides/playbook.md"]
+            none_similar = vault.reader.get_similar(
+                "guides/plain.md",
+                filters={"trust_tier": "human-reviewed", "status": "stable"},
+            )
+            assert none_similar == []
         finally:
             vault.close()
 

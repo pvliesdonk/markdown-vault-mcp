@@ -558,7 +558,10 @@ def register(mcp: FastMCP) -> None:
                 candidate's full frontmatter, so any frontmatter key works
                 (unlike keyword 'search' filters, which are limited to
                 indexed_frontmatter_fields). List-valued fields match if
-                the value is among them.
+                the value is among them. On an OKF bundle three keys carry
+                OKF semantics, exactly as in 'search': status ("stable"
+                also matches notes without a status field), stale
+                ("true"/"false"), and trust_tier.
             wait_for_pending_writes: When True, wait until your recent
                 write/edit/delete/rename operations have been applied to the
                 index before answering, so the results reflect those changes.
