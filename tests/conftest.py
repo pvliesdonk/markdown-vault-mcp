@@ -44,11 +44,30 @@ def _clear_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
     # ProjectConfig.from_env hard-requires SOURCE_DIR (fail-fast startup
     # contract). Preset a stable default so env-less from_env construction
-    # works in tests — including the template-owned config-contract tests,
-    # which call from_env with an otherwise-empty environment. A test that
-    # asserts the missing-var error deletes it explicitly; a test-local
-    # setenv overrides it (fixtures run before the test body).
+    # works in tests. A test that asserts the missing-var error deletes it
+    # explicitly; a test-local setenv overrides it (fixtures run before the
+    # test body). The template-owned config-contract tests preset the same
+    # var through the ``config_contract_env`` seam below.
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/data/vault")
+
+
+@pytest.fixture
+def config_contract_env() -> dict[str, str]:
+    """Env vars the template-owned config-contract tests preset before ``from_env()``.
+
+    The template's ``tests/test_config_contract.py`` resolves this fixture via
+    ``getfixturevalue`` and sets each entry before calling
+    ``ProjectConfig.from_env()``, so a domain whose ``from_env`` hard-requires
+    a var (here ``SOURCE_DIR``) can construct in an otherwise-empty
+    environment. This is the sanctioned seam for that integration
+    (fastmcp-server-template#293); the autouse ``_clear_env`` fixture already
+    presets the same var suite-wide, so this only makes the contract-test
+    contract explicit.
+
+    Returns:
+        A mapping of env var name to value to set before ``from_env()``.
+    """
+    return {"MARKDOWN_VAULT_MCP_SOURCE_DIR": "/data/vault"}
 
 
 def _parse_tool_data(result: Any) -> Any:

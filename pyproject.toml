@@ -31,7 +31,7 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
-    "fastmcp-pvl-core>=4.5.0,<5",
+    "fastmcp-pvl-core>=4.6.1,<5",
     "typer>=0.12",
 
     # PROJECT-DEPS-START — add domain dependencies below; kept across copier update
@@ -302,6 +302,10 @@ assets = [
     "server.json",
     ".claude-plugin/plugin/.claude-plugin/plugin.json",
     ".claude-plugin/plugin/.mcp.json",
+    # bump_manifests.py also refreshes uv.lock's self-version entry, so the
+    # release commit carries a consistent lockfile instead of leaving drift
+    # for the next `uv run` to re-sync as a side effect.
+    "uv.lock",
 ]
 
 [tool.semantic_release.changelog]

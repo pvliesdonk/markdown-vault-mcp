@@ -1,15 +1,19 @@
 name: "CodeQL config"
 
-# Add project-specific CodeQL tuning here, e.g. `paths-ignore:` to skip
-# generated/vendored code, or a `query-filters:` block to suppress a
-# specific alert on a specific path once you've reviewed it.  Example:
+# Add project-specific CodeQL tuning here.  Two mechanisms exist, with
+# different granularity:
 #
-#   query-filters:
-#     - exclude:
-#         id: py/clear-text-storage-of-sensitive-information
-#         paths:
-#           - src/markdown_vault_mcp/some_module.py
+# - `paths-ignore:` (top level, this file) skips files from analysis
+#   entirely — every rule, so reserve it for generated/vendored code.
+# - `query-filters:` (this file) excludes a rule by its query metadata
+#   (`id:`, `tags:`) across the WHOLE repo.  It cannot be scoped to a
+#   path — CodeQL query filters know queries, not source files.
 #
-# This scaffold ships no filters: suppress an alert only after you've
-# confirmed it's a false positive for a path that actually exists, so a
-# real finding is never silently hidden.
+# For a single rule on a single file — a reviewed false positive — use
+# neither: extend the `Filter known false positives` step in
+# `.github/workflows/codeql.yml`, which strips `path:rule-id` pairs from
+# the SARIF before upload while everything else keeps scanning.
+#
+# This scaffold ships no filters here: suppress an alert only after
+# you've confirmed it's a false positive for a path that actually
+# exists, so a real finding is never silently hidden.

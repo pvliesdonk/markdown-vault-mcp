@@ -15,6 +15,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+import pytest
+
 from markdown_vault_mcp import config as config_module
 from markdown_vault_mcp.config import ProjectConfig
 
@@ -23,6 +25,26 @@ def _config_text() -> str:
     """The rendered `config.py` source — the sentinels live in the file, not the AST."""
     assert config_module.__file__ is not None
     return Path(config_module.__file__).read_text(encoding="utf-8")
+
+
+def _preset_contract_env(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Apply the domain's `config_contract_env` fixture before `from_env()`.
+
+    A domain whose `from_env` hard-requires an env var (a fail-fast startup
+    contract) cannot construct env-less. The domain-owned `tests/conftest.py`
+    may define a `config_contract_env` fixture returning the vars to preset;
+    resolved via `getfixturevalue` so a conftest that predates the seam (the
+    file is `_skip_if_exists`, so `copier update` never adds the fixture)
+    keeps passing with no vars set.
+    """
+    try:
+        env = request.getfixturevalue("config_contract_env")
+    except pytest.FixtureLookupError:
+        return
+    for key, value in dict(env).items():
+        monkeypatch.setenv(key, value)
 
 
 def test_all_three_domain_sentinels_are_present() -> None:
@@ -54,7 +76,9 @@ def test_validate_sentinel_lives_inside_post_init() -> None:
     assert post_init < start < end < from_env
 
 
-def test_post_init_runs_on_both_construction_paths() -> None:
+def test_post_init_runs_on_both_construction_paths(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Validation added to CONFIG-VALIDATE fires for direct construction AND from_env.
 
     This is what `env_float` / `env_int` bounds cannot do — they check only the
@@ -62,6 +86,7 @@ def test_post_init_runs_on_both_construction_paths() -> None:
     A subclass standing in for a domain's filled-in CONFIG-VALIDATE block
     proves the dataclass actually dispatches to `__post_init__` on both paths.
     """
+    _preset_contract_env(request, monkeypatch)
     calls: list[str] = []
 
     @dataclass(frozen=True)
@@ -76,8 +101,11 @@ def test_post_init_runs_on_both_construction_paths() -> None:
     assert calls == ["post_init", "post_init"], "from_env did not run __post_init__"
 
 
-def test_post_init_can_reject_a_value() -> None:
+def test_post_init_can_reject_a_value(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A raise inside the seam propagates out of both construction paths."""
+    _preset_contract_env(request, monkeypatch)
 
     @dataclass(frozen=True)
     class _Rejecting(ProjectConfig):

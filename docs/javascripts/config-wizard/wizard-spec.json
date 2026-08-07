@@ -665,19 +665,19 @@
       "advancedGroup": "Embeddings"
     },
     {
-      "id": "git_repo_url",
-      "label": "Git Repo Url",
-      "type": "text",
-      "var": "MARKDOWN_VAULT_MCP_GIT_REPO_URL",
-      "help": "HTTPS remote URL for managed git mode: the server clones into an empty SOURCE_DIR on startup (or validates an existing origin) and enables the pull loop, auto-commit, and deferred push.",
-      "advancedGroup": "Git sync"
-    },
-    {
       "id": "git_token",
       "label": "Git Token",
       "type": "text",
       "var": "MARKDOWN_VAULT_MCP_GIT_TOKEN",
       "help": "Token/password for HTTPS git auth; remotes must be HTTPS when set.",
+      "advancedGroup": "Git sync"
+    },
+    {
+      "id": "git_repo_url",
+      "label": "Git Repo Url",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_GIT_REPO_URL",
+      "help": "HTTPS remote URL for managed git mode: the server clones into an empty SOURCE_DIR on startup (or validates an existing origin) and enables the pull loop, auto-commit, and deferred push.",
       "advancedGroup": "Git sync"
     },
     {

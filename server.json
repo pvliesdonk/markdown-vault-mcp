@@ -253,13 +253,13 @@
           "default": "false"
         },
         {
-          "name": "MARKDOWN_VAULT_MCP_GIT_REPO_URL",
-          "description": "HTTPS remote URL for managed git mode: the server clones into an empty SOURCE_DIR on startup (or validates an existing origin) and enables the pull loop, auto-commit, and deferred push."
-        },
-        {
           "name": "MARKDOWN_VAULT_MCP_GIT_TOKEN",
           "description": "Token/password for HTTPS git auth; remotes must be HTTPS when set.",
           "isSecret": true
+        },
+        {
+          "name": "MARKDOWN_VAULT_MCP_GIT_REPO_URL",
+          "description": "HTTPS remote URL for managed git mode: the server clones into an empty SOURCE_DIR on startup (or validates an existing origin) and enables the pull loop, auto-commit, and deferred push."
         },
         {
           "name": "MARKDOWN_VAULT_MCP_GIT_USERNAME",
@@ -728,13 +728,13 @@
           "default": "false"
         },
         {
-          "name": "MARKDOWN_VAULT_MCP_GIT_REPO_URL",
-          "description": "HTTPS remote URL for managed git mode: the server clones into an empty SOURCE_DIR on startup (or validates an existing origin) and enables the pull loop, auto-commit, and deferred push."
-        },
-        {
           "name": "MARKDOWN_VAULT_MCP_GIT_TOKEN",
           "description": "Token/password for HTTPS git auth; remotes must be HTTPS when set.",
           "isSecret": true
+        },
+        {
+          "name": "MARKDOWN_VAULT_MCP_GIT_REPO_URL",
+          "description": "HTTPS remote URL for managed git mode: the server clones into an empty SOURCE_DIR on startup (or validates an existing origin) and enables the pull loop, auto-commit, and deferred push."
         },
         {
           "name": "MARKDOWN_VAULT_MCP_GIT_USERNAME",

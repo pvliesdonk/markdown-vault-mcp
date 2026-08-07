@@ -29,3 +29,28 @@ jobs:
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4
+        with:
+          # Successful runs upload nothing here — the filtered SARIF two
+          # steps down is what reaches code scanning. failure-only still
+          # uploads debug info when the analysis itself breaks.
+          upload: failure-only
+          output: sarif-results
+
+      - name: Filter known false positives
+        # scripts/gen_config_surface.py writes placeholder text (BEARER_TOKEN=
+        # and friends) into generated example/doc files; security-extended's
+        # py/clear-text-storage-sensitive-data reads that artifact write as
+        # storing a real secret and raises a high-severity alert on the file.
+        # Strip exactly that rule on exactly that file — every other rule
+        # still scans it, and the rule still covers the rest of the repo.
+        uses: advanced-security/filter-sarif@v1
+        with:
+          patterns: |
+            -scripts/gen_config_surface.py:py/clear-text-storage-sensitive-data
+          input: sarif-results/python.sarif
+          output: sarif-results/python.sarif
+
+      - name: Upload filtered SARIF
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: sarif-results/python.sarif

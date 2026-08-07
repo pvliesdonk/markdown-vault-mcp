@@ -20,9 +20,12 @@ is changing now.
 All four files are now `generated`, produced by
 `scripts/gen_config_surface.py` from
 `fastmcp_pvl_core.server_config_surface()` plus `config-presentation.yml`,
-and re-run on every `copier copy` and `copier update`. The first `copier
-update` that pulls this change **overwrites whatever you hand-wrote in those
-four files** with the generator's own output.
+and re-run on every `copier copy` (as a post-copy task) and at the end of
+every `copier update` (as an after-stage migration, once the update has
+restored your domain `config.py` — so the regenerated artifacts always
+reflect your real domain fields). The first `copier update` that pulls
+this change **overwrites whatever you hand-wrote in those four files**
+with the generator's own output.
 
 If you customised the help text or example value of a **core** var (as
 opposed to adding a domain var), there is no preservation path at all:
@@ -55,6 +58,14 @@ For every domain env var you found in step 1, add or update its field in
     )
 ```
 
+A composed sub-config section works as well: a `ProjectConfig` field whose
+type is a dataclass with its own `from_env` (core's `TransferConfig`, or a
+project-local section) contributes its vars with each *section* field's own
+`metadata` — no need to flatten the section into top-level fields. This
+needs `fastmcp-pvl-core` 4.6.0 or later, and each section read must stay
+inline in its constructor keyword (`field=env(prefix, "LITERAL")`) for the
+scan to attach the field's metadata.
+
 **This step needs a human or a capable agent, not mechanical substitution.**
 Deciding which sentence in a paragraph holds the actual help text, as
 opposed to surrounding narrative that stays in prose docs, or a caveat that
@@ -67,6 +78,20 @@ Also update `from_env` (between `CONFIG-FROM-ENV-START` / `CONFIG-FROM-ENV-END`)
 to read the var if it doesn't already, and `__post_init__` (between
 `CONFIG-VALIDATE-START` / `CONFIG-VALIDATE-END`) for any invariant the old
 prose described.
+
+A **top-level** field carries its metadata whether you read it inline in the
+constructor keyword (`cls(read_only=env(_ENV_PREFIX, "READ_ONLY"), ...)`) or
+read it into a local first and pass it by name
+(`read_only = parse(env(...))` then `cls(read_only=read_only)`): core resolves
+a local-read var to the field whose name matches its suffix. A **composed
+sub-config section** field does not get that fallback — its suffix carries the
+section's prefix, which core cannot unambiguously strip — so a section field
+must be read inline in its own constructor keyword
+(`field=env(prefix, "LITERAL")`, with `env_int` / `env_float` for parsed
+numbers) for its help, default, required-ness, and secret masking to reach the
+generated artifacts. A value that genuinely cannot be built inline (a
+deprecation remap of a legacy var name) belongs in `__post_init__`, off the
+scanned path.
 
 ### 3. Declare only what the AST scan cannot see
 
@@ -87,6 +112,26 @@ see:
 Do not duplicate a var here that already has a `CONFIG-FIELDS` entry, or one
 still read inside `from_env` without a field; either produces a
 duplicate-name error from the generator.
+
+Breaking the literal-read rule inside `from_env` — reading a var through a
+project helper (`opt_int(prefix, "MAX_CHUNK_CHARS")`) or `os.environ`
+instead of `env`/`env_int`/`env_float` — fails generation with an error
+naming the call site, rather than silently dropping the var from every
+generated artifact. Fix it by switching to a literal `env(...)` read (plus
+a value-parsing helper if needed) or by declaring the var here. For a
+flagged string literal that is not an env var at all, list it under
+`scan_ignore:` in `config-presentation.domain.yml`.
+
+The inverse direction raises the same duplicate-name error: a var the scan
+*does* see that the template already declares. `config-presentation.yml`
+declares `MARKDOWN_VAULT_MCP_SERVER_NAME` and `MARKDOWN_VAULT_MCP_INSTRUCTIONS`
+with template provenance, so a literal `env(...)` read of either inside
+`from_env` gets discovered as a domain var too, and the generator exits with
+the duplicate-name error. If your project honors either var (an anticipated
+pattern since the template started honoring them), keep the field but move
+the read outside `from_env` — for example a module-level helper your server
+assembly calls. The scan only walks `from_env`, so the read stays invisible
+to it while runtime behavior is unchanged.
 
 ### 4. Run the generator and diff
 
@@ -235,6 +280,19 @@ key in the document, including `version` and the `oci` package's
 `identifier`, untouched. Those two keys are rewritten separately by
 `scripts/bump_manifests.py` on release, so keeping the generator off them
 is intentional, not an oversight.
+
+**Merge hazard for the release-managed keys:** `copier update` can leave
+conflict hunks in `server.json` whose template side carries the
+fresh-scaffold values — `"version": "0.1.0"` and an `oci` identifier
+ending `:v0.1.0`. Resolving toward the template side (natural, since the
+env-var arrays get regenerated anyway) silently regresses those
+release-managed keys, and no shipped gate catches it: the generator
+leaves both keys alone by design, and `gen_config_surface.py --check`
+passes either way. When resolving such a conflict, keep your side's
+`version` and `oci` `identifier` (or restore them from the pre-update
+commit), and diff `server.json` against your default branch before
+committing. A regressed identifier ships a wrong manifest until the next
+release re-bumps it.
 
 **Overwrite hazard:** if you hand-edited entries inside either
 `environmentVariables` array, the next `gen_config_surface.py --check`
