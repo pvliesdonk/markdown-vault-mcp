@@ -3,7 +3,7 @@
 [Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog) (OKF) is a vendor-neutral convention for a folder of markdown files that serves as curated context for AI agents. A bundle is a directory of notes with YAML frontmatter: one concept per file, the file path as the concept identity, and a small set of frontmatter fields that describe each note's type, lifecycle, provenance, and trust. This guide shows how markdown-vault-mcp recognises OKF bundles, what it does with the metadata, and how to move an existing vault into the format.
 
 !!! note
-    OKF support is read-only by default. Recognising a bundle only ever adds annotations and advice; it never changes your files. The migration tools that do change files are separate, explicit, and covered near the end of this guide.
+    OKF support is read-only by default. Recognising a bundle only ever adds annotations and advice; it never changes your files. The migration tools that do change files are explicit, and this guide covers them near the end.
 
 ## How the server recognises a bundle
 
@@ -64,7 +64,7 @@ Adoption is incremental. A note is either conformant or not, and the server tole
 
 ### 1. Audit
 
-Run the `okf_validate` tool to see where the vault stands. It reports conformance as a degree, not a pass or fail: how many notes are conformant out of the total, plus per-rule findings (notes missing a `type`, unknown `status` values, and so on) with example paths. The audit reads from disk, so it works before you declare anything. Use it to decide whether to start.
+Run the `okf_validate` tool to see where the vault stands. It reports conformance as a degree rather than a pass or fail: how many notes are conformant out of the total, plus per-rule findings (notes missing a `type`, unknown `status` values, and so on) with example paths. The audit reads from disk, so it works before you declare anything. Use it to decide whether to start.
 
 ### 2. Declare
 
@@ -72,13 +72,13 @@ Add `okf_version: "0.2"` to the root `index.md` frontmatter. From this point the
 
 ### 3. Enrich
 
-Backfill the missing metadata. This is where most of the work is, and it suits an agent working note by note: propose a `type` from each note's content, add a `title` and `description`, and normalise tags. Approve the changes in batches, then re-run `okf_validate` to watch the conformant count climb.
+Backfill the missing metadata. This is where most of the work is, and it suits an agent working note by note: for each note, propose a `type` from the content, then add a `title`, a `description`, and tags. Approve the changes in batches, then re-run `okf_validate` to watch the conformant count climb.
 
 ### 4. Mechanical transforms
 
 Three tools handle the changes you should not make by hand. They are write tools, so they are hidden in read-only mode and when `OKF_MODE` is `off`, and on a git-backed vault each change is committed.
 
-- **`okf_convert_links`** rewrites `[[wikilinks]]` as OKF's recommended root-absolute markdown links, for example `[text](/guides/note.md)`. Only links whose target exists are converted, so your link graph is preserved exactly. Unresolvable wikilinks are left alone and reported. You can write in either link style day to day; run this before sharing the bundle.
+- **`okf_convert_links`** rewrites `[[wikilinks]]` as the root-absolute markdown links OKF recommends, for example `[text](/guides/note.md)`. Only links whose target exists are converted, so your link graph is preserved exactly. Unresolvable wikilinks are left alone and reported. You can write in either link style day to day; run this before sharing the bundle.
 - **`okf_generate_index`** writes a folder's `index.md` as a listing of its notes, drawing the description from each note's frontmatter. It preserves existing frontmatter, so regenerating the root `index.md` keeps your `okf_version` declaration.
 - **`okf_seed_log`** creates a `log.md` change history from the vault's git commits, newest first. It refuses to overwrite an existing `log.md`, so a hand-maintained history is safe.
 

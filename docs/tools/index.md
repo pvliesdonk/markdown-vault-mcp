@@ -419,11 +419,11 @@ Move an entire folder subtree to a new prefix and rewrite all vault links that p
 
 ### OKF migration transforms
 
-Three one-shot [OKF (Open Knowledge Format)](https://github.com/GoogleCloudPlatform/knowledge-catalog) migration tools for moving a vault toward the bundle conventions. They are write tools (hidden in read-only mode and when `MARKDOWN_VAULT_MCP_OKF_MODE` is `off`), and they run through the normal write path, so a git-backed vault commits each change. They are deliberate one-shot migrations, not ongoing enforcement.
+Three one-shot [OKF (Open Knowledge Format)](https://github.com/GoogleCloudPlatform/knowledge-catalog) migration tools for moving a vault toward the bundle conventions. They are write tools (hidden in read-only mode and when `MARKDOWN_VAULT_MCP_OKF_MODE` is `off`), and they run through the normal write path, so a git-backed vault commits each change. Run each one once when moving a vault into the format.
 
 #### `okf_convert_links`
 
-Rewrite `[[wikilinks]]` as OKF's recommended bundle-root-absolute markdown links (`[text](/path/note.md)`) across the vault or one folder. Only links whose target is indexed are converted, so the link graph is preserved edge-for-edge; unresolvable wikilinks are left untouched and counted as skipped. Re-running is safe (already-converted markdown links are not touched).
+Rewrite `[[wikilinks]]` as the bundle-root-absolute markdown links OKF recommends (`[text](/path/note.md)`) across the vault or one folder. Only links whose target is indexed are converted, so the link graph is preserved edge-for-edge; unresolvable wikilinks are left untouched and counted as skipped. Re-running is safe (already-converted markdown links are not touched).
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
