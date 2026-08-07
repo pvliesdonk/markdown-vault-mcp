@@ -68,7 +68,7 @@ Find documents matching a query using full-text or semantic search.
 | `chunks_per_file` | int | server default (`2`) | Maximum number of matching sections returned per file. Overrides `MARKDOWN_VAULT_MCP_CHUNKS_PER_FILE` for this call. `0` is rejected. |
 | `snippet_words` | int | server default (`200`) | Approximate word budget for each section's `content` field. `0` returns the full chunk. Overrides `MARKDOWN_VAULT_MCP_SNIPPET_WORDS` for this call. |
 
-**Returns:** List of grouped result dicts ranked by relevance, one entry per file with up to `chunks_per_file` best-matching sections. Each entry contains: `path`, `title`, `folder`, `score` (max section score), `search_type`, `frontmatter`, and `sections` (a list of `{heading, content, score}` dicts sorted by score then document order).
+**Returns:** List of grouped result dicts ranked by relevance, one entry per file with up to `chunks_per_file` best-matching sections. Each entry contains: `path`, `title`, `folder`, `score` (max section score), `search_type`, `frontmatter`, and `sections` (a list of `{heading, content, score}` dicts sorted by score then document order). On an [OKF](../guides/index.md) bundle (`MARKDOWN_VAULT_MCP_OKF_MODE`), each entry also carries an `okf` dict with the note's `type`, lifecycle `status`, `stale` flag, `trust_tier`, and `sources_count`.
 
 !!! note "Grouped result shape"
     Each file appears at most once in results, with up to `chunks_per_file` sections nested under `sections`. The top-level `score` is the maximum of the section scores (MaxP aggregation). Iterate `sections` to drill into individual matches.
@@ -133,6 +133,8 @@ partial markdown reads (see the tip above).
     }
     ```
 
+    On an OKF bundle, whole-document reads additionally carry an `okf` dict (`type`, `status`, `stale`, `trust_tier`, and the note's full `sources` list). Section reads omit it — they carry no frontmatter to derive it from.
+
 === "Attachment"
 
     ```json
@@ -193,6 +195,8 @@ Get an overview of the vault's size, capabilities, and configuration. Call this 
   "attachment_extensions": ["pdf", "png", "jpg"]
 }
 ```
+
+On an OKF bundle (see `MARKDOWN_VAULT_MCP_OKF_MODE` in [Configuration](../configuration.md)), the response additionally carries an `okf` section: the configured mode, the declared spec version, a per-`type` histogram plus an untyped count, `status` and trust-tier breakdowns, and the stale-note count.
 
 ### `embeddings_status`
 
@@ -693,7 +697,7 @@ Get a consolidated context dossier for a note. Combines backlinks, outlinks, sim
 | `link_limit` | int | `10` | Max backlinks and outlinks to include each |
 | `wait_for_pending_writes` | bool | `false` | Block until the IndexWriter drains before answering, then report freshness via `_meta.index_stale` (see the *Index freshness on read tools* note at the top of this page). |
 
-**Returns:** Object with `path`, `title`, `folder`, `frontmatter`, `modified_at`, `backlinks`, `outlinks`, `similar`, `folder_notes`, and `tags` fields. The `similar` list contains grouped result dicts, one entry per file with up to `chunks_per_file` best-matching sections (default 1 for `get_context` to keep dossiers compact). May also include a `conventions` list: the [folder conventions](#get_conventions) that apply to the note's folder. Index freshness is reported in `_meta.index_stale` (see the freshness note at the top of this page).
+**Returns:** Object with `path`, `title`, `folder`, `frontmatter`, `modified_at`, `backlinks`, `outlinks`, `similar`, `folder_notes`, and `tags` fields. The `similar` list contains grouped result dicts, one entry per file with up to `chunks_per_file` best-matching sections (default 1 for `get_context` to keep dossiers compact). May also include a `conventions` list: the [folder conventions](#get_conventions) that apply to the note's folder. On an OKF bundle it also carries the note's `okf` annotation (`type`, `status`, `stale`, `trust_tier`, `sources_count`). Index freshness is reported in `_meta.index_stale` (see the freshness note at the top of this page).
 
 !!! note "Grouped similar shape"
     Each `similar` entry contains `path`, `title`, `folder`, `score`, `search_type`, `frontmatter`, and `sections` (a list of `{heading, content, score}` dicts). `get_context` defaults to one section per file for compact dossiers; `search` and `get_similar` default to 2.

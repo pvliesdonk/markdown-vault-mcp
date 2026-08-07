@@ -13,7 +13,13 @@ from markdown_vault_mcp.vault import Vault
 from .._icons import _TOOL_ICONS
 from .._server_queryable import needs_queryable
 from ..domain import get_vault
-from ._common import _maybe_wait_for_drain, _staleness_result, attach_conventions
+from ._common import (
+    _maybe_wait_for_drain,
+    _staleness_result,
+    attach_conventions,
+    attach_okf,
+    attach_okf_to_results,
+)
 
 
 def register(mcp: FastMCP) -> None:
@@ -95,6 +101,12 @@ def register(mcp: FastMCP) -> None:
               hybrid); not comparable across modes.
             - search_type (str): "keyword", "semantic", or "hybrid".
             - frontmatter (dict): Parsed YAML frontmatter of the document.
+            - okf (dict, optional): OKF read annotation — present only when
+              the vault is an active OKF bundle. Carries ``type`` (when
+              declared), ``status`` (defaults to "stable"), ``stale``
+              (bool, ``stale_after`` passed), ``trust_tier`` ("unverified" /
+              "machine-confirmed" / "human-reviewed"), and
+              ``sources_count`` (when the note cites sources).
             - sections (list[dict]): Up to ``chunks_per_file`` best-matching
               sections, each with:
 
@@ -129,9 +141,10 @@ def register(mcp: FastMCP) -> None:
             chunks_per_file=chunks_per_file,
             snippet_words=snippet_words,
         )
+        hits = await attach_okf_to_results(vault, [asdict(r) for r in results])
         return _staleness_result(
             vault,
-            [asdict(r) for r in results],
+            hits,
             drained_on_request=drained,
             gen_before=gen_before,
         )
@@ -190,6 +203,10 @@ def register(mcp: FastMCP) -> None:
             empty {} when section= is provided; call read(path) without
             section= to get the full document's frontmatter),
             modified_at (Unix timestamp), etag (SHA-256 hex str or null).
+            On an active OKF bundle, whole-document reads additionally carry
+            an 'okf' dict (type, status, stale, trust_tier, and the note's
+            'sources' list when present); section reads omit it because they
+            carry no frontmatter to derive it from.
             For attachments: dict with path, mime_type (str or null),
             size_bytes (int), content_base64 (str), modified_at (Unix timestamp),
             etag (SHA-256 hex str or null).
@@ -220,7 +237,12 @@ def register(mcp: FastMCP) -> None:
         note = await asyncio.to_thread(vault.reader.read, path, section=section)
         if note is None:
             raise ValueError(f"Document not found: {path}")
-        return asdict(note)
+        data = asdict(note)
+        if section is None:
+            # Section reads carry no frontmatter (see the docstring caveat),
+            # so an annotation would be derived from defaults and mislead.
+            data = await attach_okf(vault, data, note.frontmatter, include_sources=True)
+        return data
 
     @mcp.tool(
         icons=_TOOL_ICONS["list_documents"],
@@ -455,6 +477,10 @@ def register(mcp: FastMCP) -> None:
               Call 'get_broken_links' if non-zero.
             - orphan_count (int): Notes with no inbound or outbound links.
               Call 'get_orphan_notes' if non-zero.
+            - okf (dict, optional): Present only when the vault is an active
+              OKF (Open Knowledge Format) bundle. Carries mode,
+              declared_version, a per-``type`` histogram plus untyped_count,
+              status and trust-tier breakdowns, and stale_count.
 
             Index freshness rides in the response's ``_meta.index_stale``
             field — True when the IndexWriter was non-idle, a write completed
@@ -464,8 +490,12 @@ def register(mcp: FastMCP) -> None:
         drained = await _maybe_wait_for_drain(vault, wait_for_pending_writes, "stats")
         gen_before = vault.index.write_generation()
         result = await asyncio.to_thread(vault.reader.stats)
+        payload = asdict(result)
+        okf_section = await asyncio.to_thread(vault.reader.okf_stats)
+        if okf_section is not None:
+            payload["okf"] = okf_section
         return _staleness_result(
-            vault, asdict(result), drained_on_request=drained, gen_before=gen_before
+            vault, payload, drained_on_request=drained, gen_before=gen_before
         )
 
     @mcp.tool(
@@ -806,6 +836,9 @@ def register(mcp: FastMCP) -> None:
               content}). Present only when convention files apply. Honor
               them when writing to or proposing links involving this note —
               some folders are self-contained by design.
+            - okf (dict, optional): OKF read annotation for this note
+              (type, status, stale, trust_tier, sources_count). Present
+              only when the vault is an active OKF bundle.
 
             Index freshness is reported out-of-band in the response's
             ``_meta.index_stale`` field — True when the IndexWriter had
@@ -833,6 +866,7 @@ def register(mcp: FastMCP) -> None:
             link_limit=link_limit,
         )
         data = await attach_conventions(vault, asdict(result), path)
+        data = await attach_okf(vault, data, result.frontmatter)
         return _staleness_result(
             vault, data, drained_on_request=drained, gen_before=gen_before
         )

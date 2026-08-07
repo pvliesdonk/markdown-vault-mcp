@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-    from typing import Literal
+    from typing import Any, Literal
 
     from markdown_vault_mcp.managers.document import DocumentManager
     from markdown_vault_mcp.managers.git_query import GitQueryManager
@@ -429,6 +429,18 @@ class ReaderFacet:
             :class:`~markdown_vault_mcp.types.VaultStats` snapshot.
         """
         return self._search_mgr.stats()
+
+    def okf_stats(self) -> dict[str, Any] | None:
+        """Return the OKF statistics section, or ``None`` when inactive.
+
+        Delegates to :meth:`SearchManager.okf_stats`.
+
+        Returns:
+            The OKF aggregate dict (mode, declared version, type histogram,
+            status/trust breakdowns, stale count), or ``None`` when OKF
+            read semantics are not active.
+        """
+        return self._search_mgr.okf_stats()
 
     def attachment_size(self, path: str) -> int:
         """Return an attachment's on-disk byte size without reading it.

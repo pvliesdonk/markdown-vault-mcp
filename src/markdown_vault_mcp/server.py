@@ -169,6 +169,7 @@ def make_server(
         summarize_note_limit=(
             config.summarize.max_notes if config.summarize.has_provider() else None
         ),
+        okf_mode=config.content.okf_mode,
     )
 
     # Honor the passed config's server name the same way as instructions/icons.

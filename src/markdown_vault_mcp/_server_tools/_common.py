@@ -8,6 +8,7 @@ from typing import Any, TypeVar
 
 from fastmcp.tools import ToolResult
 
+from markdown_vault_mcp.okf import derive_annotation
 from markdown_vault_mcp.vault import Vault
 
 logger = logging.getLogger(__name__)
@@ -61,6 +62,76 @@ async def attach_conventions(
     if conventions:
         data["conventions"] = conventions
     return data
+
+
+async def okf_active(vault: Vault) -> bool:
+    """Probe whether OKF read semantics are active for *vault*.
+
+    The detection probe is disk I/O (it reads the root ``index.md``), so it
+    runs off the event loop like every other per-request disk touch.
+
+    Args:
+        vault: The vault whose OKF detector to consult.
+
+    Returns:
+        ``True`` when OKF annotations should be attached.
+    """
+    return (await asyncio.to_thread(vault.okf.state)).active
+
+
+async def attach_okf(
+    vault: Vault,
+    data: dict[str, Any],
+    metadata: dict[str, Any] | None,
+    *,
+    include_sources: bool = False,
+) -> dict[str, Any]:
+    """Add the OKF read annotation for one note to a tool result dict.
+
+    The ``okf`` key is omitted entirely when OKF read semantics are not
+    active (no declaration under ``auto`` mode, or mode ``off``), keeping
+    non-OKF payloads byte-identical to the pre-OKF behavior. Mirrors
+    :func:`attach_conventions`.
+
+    Args:
+        vault: The vault whose OKF detector to consult.
+        data: The tool result dict to enrich (mutated and returned).
+        metadata: The note's frontmatter dict; ``None`` is treated as
+            empty.
+        include_sources: Forwarded to
+            :func:`~markdown_vault_mcp.okf.derive_annotation` — full
+            ``sources`` on read payloads, ``sources_count`` on hits.
+
+    Returns:
+        *data*, with the ``okf`` key added when active.
+    """
+    if await okf_active(vault):
+        data["okf"] = derive_annotation(metadata or {}, include_sources=include_sources)
+    return data
+
+
+async def attach_okf_to_results(
+    vault: Vault, results: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Add OKF read annotations to a list of search-hit dicts.
+
+    One detection probe covers the whole batch; each hit's annotation is
+    derived from the ``frontmatter`` the hit already carries, so no extra
+    index or disk reads happen per result. Hits are annotated with
+    ``sources_count`` rather than the full ``sources`` list.
+
+    Args:
+        vault: The vault whose OKF detector to consult.
+        results: Search-hit dicts carrying a ``frontmatter`` key (mutated
+            and returned).
+
+    Returns:
+        *results*, each with an ``okf`` key when active.
+    """
+    if await okf_active(vault):
+        for hit in results:
+            hit["okf"] = derive_annotation(hit.get("frontmatter") or {})
+    return results
 
 
 def _resolve_drain_timeout() -> float:

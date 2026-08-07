@@ -149,6 +149,11 @@
           "default": "_conventions.md"
         },
         {
+          "name": "MARKDOWN_VAULT_MCP_OKF_MODE",
+          "description": "OKF (Open Knowledge Format) read semantics: auto follows the vault's okf_version declaration in the root index.md, off never applies OKF semantics, on forces them without a declaration. Read-only annotations either way; OKF never changes write behavior in this mode.",
+          "default": "auto"
+        },
+        {
           "name": "MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS",
           "description": "Comma-separated allowed attachment extensions without the dot (e.g. pdf,png,jpg); use * to allow every non-markdown file. Unset selects the built-in allowlist."
         },
@@ -617,6 +622,11 @@
           "name": "MARKDOWN_VAULT_MCP_CONVENTIONS_FILE",
           "description": "Filename of the per-folder conventions files surfaced to clients at write time (bare .md filename without glob characters). Set to none to disable folder conventions.",
           "default": "_conventions.md"
+        },
+        {
+          "name": "MARKDOWN_VAULT_MCP_OKF_MODE",
+          "description": "OKF (Open Knowledge Format) read semantics: auto follows the vault's okf_version declaration in the root index.md, off never applies OKF semantics, on forces them without a declaration. Read-only annotations either way; OKF never changes write behavior in this mode.",
+          "default": "auto"
         },
         {
           "name": "MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS",

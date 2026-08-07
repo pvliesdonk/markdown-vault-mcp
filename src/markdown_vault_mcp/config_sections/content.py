@@ -17,6 +17,11 @@ class ContentConfig:
 
     ``conventions_file`` names the well-known per-folder conventions file
     (``None`` disables the folder-conventions feature entirely).
+
+    ``okf_mode`` controls OKF (Open Knowledge Format) read semantics:
+    ``"auto"`` follows the vault's ``okf_version`` declaration in the root
+    ``index.md``, ``"off"`` never applies OKF semantics, ``"on"`` forces
+    them without a declaration.
     """
 
     attachment_extensions: Sequence[str] | None = None
@@ -25,6 +30,7 @@ class ContentConfig:
     templates_folder: str = "_templates"
     prompts_folder: str | None = None
     conventions_file: str | None = "_conventions.md"
+    okf_mode: str = "auto"
 
     def __post_init__(self) -> None:
         """Validate size limits (#638) and freeze attachment_extensions (#639).
@@ -74,3 +80,7 @@ class ContentConfig:
                     "conventions_file must not contain fnmatch metacharacters "
                     f"(*, ?, [, ]), got {cf!r}"
                 )
+        if self.okf_mode not in ("auto", "off", "on"):
+            raise ConfigurationError(
+                f"okf_mode must be one of auto/off/on, got {self.okf_mode!r}"
+            )

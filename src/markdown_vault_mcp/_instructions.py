@@ -19,6 +19,7 @@ def build_default_instructions(
     read_only: bool,
     conventions_file: str | None = None,
     summarize_note_limit: int | None = None,
+    okf_mode: str = "off",
 ) -> str:
     """Build the default instructions string based on read-only state.
 
@@ -40,6 +41,13 @@ def build_default_instructions(
         summarize_note_limit: The configured summarize note limit, surfaced so
             calling models can plan folder splits before their first call
             (#925), or ``None`` when the summarize tool is not configured.
+        okf_mode: The configured OKF mode (``"auto"`` / ``"off"`` / ``"on"``).
+            Any mode other than ``"off"`` emits the OKF guidance sentence.
+            Like the conventions sentence, it is emitted when the mode
+            *permits* detection rather than gated on the ``okf_version``
+            marker existing on disk — in managed-git mode the clone happens
+            after instructions are composed — so the sentence is phrased
+            conditionally.
 
     Returns:
         The composed instructions string.
@@ -87,9 +95,24 @@ def build_default_instructions(
             "'get_toc'), call it once per subfolder and combine the results."
         )
     )
+    okf_guidance = (
+        ""
+        if okf_mode == "off"
+        else (
+            " When the vault is an OKF bundle (Open Knowledge Format — "
+            "'okf_version' declared in the root 'index.md'; check the 'okf' "
+            "section of 'stats'), search/read results carry an 'okf' key with "
+            "each note's type, lifecycle status, staleness, and trust tier "
+            "(unverified / machine-confirmed / human-reviewed) — weigh "
+            "deprecated, stale, or unverified notes accordingly. When editing "
+            "such a vault, follow OKF conventions: record changes in 'log.md', "
+            "keep 'index.md' listings current, and prefer root-relative "
+            "markdown links for new cross-references."
+        )
+    )
     domain_line = (
         f"{prelude}{write_guidance}{search_guidance}"
-        f"{summarize_guidance}{conventions_guidance}"
+        f"{summarize_guidance}{conventions_guidance}{okf_guidance}"
     )
     return _core_build_instructions(
         read_only=read_only,

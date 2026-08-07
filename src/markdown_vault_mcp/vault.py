@@ -22,6 +22,7 @@ from markdown_vault_mcp.facets import (
 )
 from markdown_vault_mcp.fts_index import FTSIndex
 from markdown_vault_mcp.indexing import IndexWriteCoordinator
+from markdown_vault_mcp.okf import OKF_INDEXED_FIELDS, OkfDetector
 from markdown_vault_mcp.scanner import (
     ChunkStrategy,
     HeadingChunker,
@@ -201,6 +202,12 @@ class Vault:
             automatically appended to *exclude_patterns* (in both fnmatch
             forms) so convention files stay out of the index while remaining
             disk-readable. Must not contain fnmatch metacharacters.
+        okf_mode: OKF (Open Knowledge Format) read-semantics mode —
+            ``"auto"`` (default; follow the vault's ``okf_version``
+            declaration in the root ``index.md``), ``"off"``, or ``"on"``.
+            When read semantics are active at construction time, the OKF
+            scalar keys (``type`` / ``status`` / ``stale_after``) extend the
+            effective *indexed_frontmatter_fields* set. See :attr:`okf`.
     """
 
     def __init__(
@@ -239,6 +246,7 @@ class Vault:
         folder_weights: dict[str, float] | None = None,
         fts_weights: dict[str, float] | None = None,
         conventions_file: str | None = "_conventions.md",
+        okf_mode: str = "auto",
     ) -> None:
         self._source_dir = source_dir
         self._index_path = index_path
@@ -246,6 +254,27 @@ class Vault:
         self._embedding_provider = embedding_provider
         self._read_only = read_only
         self._indexed_frontmatter_fields: list[str] = indexed_frontmatter_fields or []
+        # OKF detection (disk probe, index-independent). When read semantics
+        # are active at construction time, the OKF scalar keys join the
+        # effective indexed-field set so `document_tags` carries them; the
+        # extended set also feeds the chunking provenance string, so the
+        # startup where detection first flips cold-rebuilds the tag table
+        # once (design okf.md §3). A vault that declares OKF mid-session
+        # gains annotations immediately but indexed OKF tags only on the
+        # next startup.
+        self._okf = OkfDetector(source_dir, okf_mode)
+        if self._okf.state().active:
+            extended = [
+                key
+                for key in OKF_INDEXED_FIELDS
+                if key not in self._indexed_frontmatter_fields
+            ]
+            if extended:
+                self._indexed_frontmatter_fields = [
+                    *self._indexed_frontmatter_fields,
+                    *extended,
+                ]
+                logger.info("okf_indexed_fields_extended fields=%s", ",".join(extended))
         self._required_frontmatter = required_frontmatter
         # Only inject max_chunk_words when the caller has not provided a
         # custom ChunkStrategy instance or an explicit string name override.
@@ -405,6 +434,7 @@ class Vault:
             embeddings_path=self._embeddings_path,
             embedding_provider=self._embedding_provider,
             indexed_frontmatter_fields=self._indexed_frontmatter_fields,
+            okf_detector=self._okf,
             exclude_patterns=self._exclude_patterns,
             attachment_extensions=self._attachment_extensions,
             link_manager=self._link_mgr,
@@ -557,6 +587,11 @@ class Vault:
     def conventions(self) -> ConventionsResolver:
         """Folder-conventions resolver (disk-read, index-independent)."""
         return self._conventions
+
+    @property
+    def okf(self) -> OkfDetector:
+        """OKF detection probe (disk-read, index-independent)."""
+        return self._okf
 
     @property
     def exclude_patterns(self) -> list[str] | None:

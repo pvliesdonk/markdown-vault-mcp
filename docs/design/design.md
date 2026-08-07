@@ -1110,6 +1110,50 @@ ones).
    default string entirely, including this sentence.
 5. `config://vault` reports `conventions_file` and `convention_folders`.
 
+### OKF Read Semantics (phase 1, #960)
+
+The vault can declare itself an [OKF (Open Knowledge Format)](https://github.com/GoogleCloudPlatform/knowledge-catalog)
+bundle via an `okf_version` field in the root `index.md` frontmatter. The
+full design (trust model, later phases) lives in `docs/design/okf.md`;
+what is implemented today:
+
+- **Detection** (`okf.py::OkfDetector`): a pure disk-I/O probe in the
+  `ConventionsResolver` mold — no index coupling, works pre-clone, and a
+  mid-session declaration takes effect on the next call. Unknown declared
+  versions log a `WARNING` once and are treated as detected (the spec's
+  permissive-consumer rule, applied to the marker itself). Configured via
+  `MARKDOWN_VAULT_MCP_OKF_MODE` (`auto` default / `off` / `on`); the
+  vault-side declaration only ever enables *read* semantics — write
+  behavior is a later, operator-gated phase.
+- **Annotations** (`okf.py::derive_annotation`, attached in
+  `_server_tools/_common.py` mirroring `attach_conventions`): when active,
+  `search` hits, whole-document `read`s, and `get_context` carry an `okf`
+  key — `type` (when declared), `status` (absent ⇒ `stable` per spec),
+  `stale` (`stale_after` strictly before today, server-local date), and
+  `trust_tier` (`human-reviewed` if any `verified[].by` has the `human:`
+  prefix, else `machine-confirmed` if `verified` is non-empty, else
+  `unverified`). Reads carry the full `sources` list; search hits carry
+  `sources_count`. Section reads omit the key (no frontmatter to derive
+  from). When inactive, no payload changes at all — the non-OKF baseline
+  is byte-identical.
+- **Stats & config surface**: `stats` gains an `okf` section (mode,
+  declared version, `type` histogram + untyped count, status/trust
+  breakdowns, stale count — aggregated from the same `documents` rows
+  `stats` already reads); `config://vault` reports `okf_mode` /
+  `okf_active` / `okf_declared_version`; the default server instructions
+  gain an OKF guidance sentence whenever the mode permits detection
+  (same pre-clone rationale as the conventions sentence).
+- **Indexed-field extension**: when detection is active at `Vault`
+  construction, the OKF scalar keys (`type`, `status`, `stale_after`)
+  join the effective `indexed_frontmatter_fields` set — feeding
+  `document_tags` (so `filters={"type": ...}` works immediately) and the
+  chunking provenance string, so the startup where detection first flips
+  cold-rebuilds the tag table once (see Frontmatter Filtering, #927).
+- **Field vocabulary as data**: the OKF key names, known spec versions,
+  and tier/lifecycle constants live as module constants in `okf.py`
+  because the spec is pre-1.0 with one breaking rename behind it — a
+  future revision should be a table edit.
+
 ### Security: Path Traversal Protection
 
 All public **write** methods accepting a `path` parameter call

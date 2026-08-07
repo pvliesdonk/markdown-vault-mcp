@@ -505,6 +505,14 @@
       "advancedGroup": "Content"
     },
     {
+      "id": "okf_mode",
+      "label": "Okf Mode",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_OKF_MODE",
+      "help": "OKF (Open Knowledge Format) read semantics: auto follows the vault's okf_version declaration in the root index.md, off never applies OKF semantics, on forces them without a declaration. Read-only annotations either way; OKF never changes write behavior in this mode.",
+      "advancedGroup": "Content"
+    },
+    {
       "id": "attachment_extensions",
       "label": "Attachment Extensions",
       "type": "text",

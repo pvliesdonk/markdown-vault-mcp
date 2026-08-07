@@ -40,6 +40,7 @@ from markdown_vault_mcp.managers._ranking import (
     group_by_path as _group_by_path,
 )
 from markdown_vault_mcp.managers._vector_loader import load_or_self_heal
+from markdown_vault_mcp.okf import derive_annotation
 from markdown_vault_mcp.types import (
     AttachmentInfo,
     BacklinkInfo,
@@ -65,6 +66,7 @@ if TYPE_CHECKING:
 
     from markdown_vault_mcp.fts_index import FTSIndex
     from markdown_vault_mcp.managers.link import LinkManager
+    from markdown_vault_mcp.okf import OkfDetector
     from markdown_vault_mcp.providers import EmbeddingProvider
     from markdown_vault_mcp.types import FTSResult
     from markdown_vault_mcp.vector_index import VectorIndex
@@ -136,6 +138,8 @@ class SearchManager:
         attachment_extensions: Allowed non-.md extensions.  ``None`` uses
             the default set.
         link_manager: Optional :class:`LinkManager` for context queries.
+        okf_detector: Optional OKF detection probe; enables
+            :meth:`okf_stats`. ``None`` keeps every OKF surface inert.
         rebuild_embeddings: Callback to rebuild all embeddings from scratch.
             Invoked by ``_load_vectors`` on any unrecoverable sidecar fault —
             a provider/model mismatch, an embedding-text format mismatch, a
@@ -159,6 +163,7 @@ class SearchManager:
         exclude_patterns: list[str] | None = None,
         attachment_extensions: list[str] | None = None,
         link_manager: LinkManager | None = None,
+        okf_detector: OkfDetector | None = None,
         rebuild_embeddings: Callable[[], None] | None = None,
         chunks_per_file: int = 2,
         snippet_words: int = 200,
@@ -174,6 +179,7 @@ class SearchManager:
         self._exclude_patterns = exclude_patterns
         self._attachment_extensions = attachment_extensions
         self._link_manager = link_manager
+        self._okf = okf_detector
         self._rebuild_embeddings = rebuild_embeddings or (lambda: None)
         self._chunks_per_file = chunks_per_file
         self._snippet_words = snippet_words
@@ -1076,6 +1082,57 @@ class SearchManager:
             broken_link_count=self._fts.count_broken_links(),
             orphan_count=self._fts.count_orphans(),
         )
+
+    def okf_stats(self) -> dict[str, Any] | None:
+        """Return the OKF section of the vault statistics, if active.
+
+        Iterates the same ``documents`` rows :meth:`stats` already counts
+        and aggregates the OKF read annotations: a ``type`` histogram (plus
+        an untyped count), lifecycle-``status`` and trust-tier breakdowns,
+        and the stale-note count. Reserved bundle files (``index.md`` /
+        ``log.md``) are ordinary indexed notes and are included.
+
+        Returns:
+            The aggregate dict, or ``None`` when no OKF detector is wired
+            or OKF read semantics are not active — callers omit the
+            ``okf`` key entirely in that case, keeping non-OKF payloads
+            byte-identical.
+        """
+        if self._okf is None:
+            return None
+        state = self._okf.state()
+        if not state.active:
+            return None
+        types: dict[str, int] = {}
+        status: dict[str, int] = {}
+        trust: dict[str, int] = {}
+        untyped = 0
+        stale = 0
+        for row in self._fts.list_notes():
+            metadata = self._parse_frontmatter_json(
+                row.get("frontmatter_json"), row["path"]
+            )
+            annotation = derive_annotation(metadata)
+            note_type = annotation.get("type")
+            if note_type is None:
+                untyped += 1
+            else:
+                types[note_type] = types.get(note_type, 0) + 1
+            note_status = annotation["status"]
+            status[note_status] = status.get(note_status, 0) + 1
+            tier = annotation["trust_tier"]
+            trust[tier] = trust.get(tier, 0) + 1
+            if annotation["stale"]:
+                stale += 1
+        return {
+            "mode": state.mode,
+            "declared_version": state.declared_version,
+            "types": dict(sorted(types.items())),
+            "untyped_count": untyped,
+            "status": dict(sorted(status.items())),
+            "trust": dict(sorted(trust.items())),
+            "stale_count": stale,
+        }
 
     # ------------------------------------------------------------------
     # Recent / similar / context

@@ -163,6 +163,7 @@ def to_vault_kwargs(config: ProjectConfig) -> dict[str, Any]:
         "searchable_frontmatter_fields": config.indexing.searchable_frontmatter,
         "embed_context": config.embeddings.embed_context,
         "conventions_file": config.content.conventions_file,
+        "okf_mode": config.content.okf_mode,
         "attachment_extensions": config.content.attachment_extensions,
         "max_attachment_size_mb": config.content.max_attachment_size_mb,
         "max_note_read_bytes": config.content.max_note_read_bytes,

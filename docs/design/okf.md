@@ -1,15 +1,19 @@
 # OKF (Open Knowledge Format) Support — Design
 
-**Status:** proposal — tracking issue
+**Status:** phase 1 (#960 — detection, config surface, read annotations,
+stats/config reporting, indexed-field extension) implemented; its design
+has graduated into `design.md` ("OKF Read Semantics"). Later phases remain
+proposals — tracking issue
 [#959](https://github.com/pvliesdonk/markdown-vault-mcp/issues/959).
 **Spec targeted:** OKF v0.2
 ([`GoogleCloudPlatform/knowledge-catalog` → `okf/SPEC.md`](https://github.com/GoogleCloudPlatform/knowledge-catalog),
 Apache 2.0; announced 2026-06-12 on the
 [Google Cloud blog](https://cloud.google.com/blog/products/data-analytics/how-the-open-knowledge-format-can-improve-data-sharing)).
 
-This document is the authoritative design for OKF support. Once phases land,
-the relevant subsections graduate into `design.md` alongside the features they
-describe; until then `design.md` does not reference OKF.
+This document is the authoritative design for OKF support. As phases land,
+the relevant subsections graduate into `design.md` alongside the features
+they describe (phase 1 has); sections below covering unimplemented phases
+remain proposals.
 
 ---
 

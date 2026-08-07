@@ -88,6 +88,7 @@ def register_resources(mcp: FastMCP) -> None:
         gen_before = vault.index.write_generation()
         stats = await asyncio.to_thread(vault.reader.stats)
         convention_folders = await asyncio.to_thread(vault.conventions.list_folders)
+        okf_state = await asyncio.to_thread(vault.okf.state)
         return _stale_resource(
             vault,
             json.dumps(
@@ -103,6 +104,11 @@ def register_resources(mcp: FastMCP) -> None:
                     "templates_folder": config.content.templates_folder,
                     "conventions_file": config.content.conventions_file,
                     "convention_folders": convention_folders,
+                    # OKF: configured mode plus the vault-side detection
+                    # outcome (okf_version declared in the root index.md).
+                    "okf_mode": okf_state.mode,
+                    "okf_active": okf_state.active,
+                    "okf_declared_version": okf_state.declared_version,
                     "semantic_search_available": stats.semantic_search_available,
                     "attachment_extensions": stats.attachment_extensions,
                 }
