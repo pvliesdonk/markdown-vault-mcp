@@ -501,8 +501,8 @@ class TestOkfFilters:
         _build_filter_vault(tmp_path, declared=True)
         vault = self._vault(tmp_path)
         try:
-            manager = vault.reader._search_mgr  # noqa: SLF001
-            assert manager._path_matches_okf("missing.md", {"stale": "true"}) is False  # noqa: SLF001
+            manager = vault.reader._search_mgr
+            assert manager._path_matches_okf("missing.md", {"stale": "true"}) is False
         finally:
             vault.close()
 
