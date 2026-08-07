@@ -70,7 +70,13 @@ def register(mcp: FastMCP) -> None:
                 in indexed_frontmatter_fields (see 'stats') can be filtered.
                 Multiple filters are ANDed. For list fields (e.g. tags),
                 this checks membership — {"tags": "pacing"} matches any
-                document where "pacing" appears in the tags list.
+                document where "pacing" appears in the tags list. On an OKF
+                bundle three keys carry OKF semantics: status ("draft"/
+                "stable"/"deprecated"; "stable" also matches notes without
+                a status field), stale ("true"/"false" — stale_after
+                passed), and trust_tier ("unverified"/"machine-confirmed"/
+                "human-reviewed"); "type" filters normally, e.g.
+                {"type": "Playbook", "stale": "false"}.
             chunks_per_file: Maximum number of sections to return per file
                 (default 2).  Set to 1 to get only the top-ranked section
                 per file.  Must be >= 1.
@@ -257,6 +263,7 @@ def register(mcp: FastMCP) -> None:
         folder: str | None = None,
         pattern: str | None = None,
         include_attachments: bool = False,
+        filters: dict[str, str] | None = None,
         wait_for_pending_writes: bool = False,
         vault: Vault = Depends(get_vault),
     ) -> list[dict[str, Any]]:
@@ -275,6 +282,16 @@ def register(mcp: FastMCP) -> None:
                 images, etc.) that match the configured allowlist. Each
                 attachment entry includes kind="attachment" and mime_type.
                 Default False (notes only).
+            filters: Frontmatter equality filters, ANDed (e.g.
+                {"tags": "craft"}); any frontmatter key works and list
+                fields match by membership. On an OKF bundle three keys
+                carry OKF semantics: status ("draft"/"stable"/"deprecated";
+                "stable" also matches notes without a status field), stale
+                ("true"/"false" — stale_after passed), and trust_tier
+                ("unverified"/"machine-confirmed"/"human-reviewed"). Use
+                {"status": "deprecated"} or {"stale": "true"} to build
+                triage listings. Any filter excludes attachments (they
+                carry no frontmatter).
             wait_for_pending_writes: When True, wait until your recent
                 write/edit/delete/rename operations have been applied to the
                 index before answering, so the results reflect those changes.
@@ -309,6 +326,7 @@ def register(mcp: FastMCP) -> None:
             folder=folder,
             pattern=pattern,
             include_attachments=include_attachments,
+            filters=filters,
         )
         return _staleness_result(
             vault,

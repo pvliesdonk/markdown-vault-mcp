@@ -1149,6 +1149,31 @@ what is implemented today:
   `document_tags` (so `filters={"type": ...}` works immediately) and the
   chunking provenance string, so the startup where detection first flips
   cold-rebuilds the tag table once (see Frontmatter Filtering, #927).
+- **Query dimensions (phase 2, #961)**: on an active bundle, three
+  ``filters`` keys carry OKF semantics in ``search``, ``list_documents``,
+  and ``get_similar`` — ``status`` (evaluated against the derived
+  lifecycle value, so ``stable`` also matches notes with no ``status``
+  field), ``stale`` (``true``/``false``), and ``trust_tier``; ``type``
+  stays a plain indexed tag lookup. Implementation: the manager splits
+  the ``filters`` dict (``SearchManager._split_okf_filters``) and
+  evaluates the OKF dimensions as a per-document post-filter over the
+  same annotation derivation the read surfaces use — one code path for
+  all three search modes (the vector channel must post-filter anyway) —
+  with the candidate pool widened (×4, floor 200; the ``get_similar``
+  precedent) so post-filtering cannot starve the file limit, and
+  verdicts memoized per path so evaluation costs one ``get_note`` per
+  distinct document. This deliberately trades the design sketch's SQL
+  ``NOT EXISTS`` branch for uniformity; ``document_tags`` still
+  accelerates ``type`` (and plain filters) in the FTS channel. With
+  detection off, the dimension keys fall back to plain tag semantics
+  (no error, no matches unless such tags exist). An invalid ``stale``
+  spelling raises ``ValueError`` eagerly. Any filter excludes
+  attachments from ``list_documents`` (they carry no frontmatter).
+  Graph views (``get_neighborhood`` / ``get_hub_graph`` and the SPA
+  wire payload) additively carry ``note_type`` — the OKF ``type`` of
+  each node, extracted from metadata already fetched for labels (hub
+  nodes stay untyped: their construction deliberately avoids per-node
+  metadata reads) — only on an active bundle.
 - **Field vocabulary as data**: the OKF key names, known spec versions,
   and tier/lifecycle constants live as module constants in `okf.py`
   because the spec is pre-1.0 with one breaking rename behind it — a

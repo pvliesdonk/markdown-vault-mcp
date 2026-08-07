@@ -60,6 +60,16 @@ _HUMAN_ACTOR_PREFIX = "human:"
 #: exempt from the ``type`` rule) and ranking downweights (#965).
 OKF_RESERVED_FILENAMES: tuple[str, ...] = ("index.md", "log.md")
 
+#: ``filters`` keys that carry OKF semantics on an active bundle (phase 2,
+#: #961). ``type`` is deliberately absent: it is a plain indexed tag lookup
+#: with no special semantics, so the ordinary ``document_tags`` path
+#: handles it.
+OKF_FILTER_KEYS: tuple[str, ...] = ("status", "stale", "trust_tier")
+
+#: Accepted spellings for the boolean ``stale`` filter value.
+_STALE_TRUE = frozenset({"true", "1", "yes"})
+_STALE_FALSE = frozenset({"false", "0", "no"})
+
 #: Bundle-root file allowed to carry ``okf_version``.
 _ROOT_INDEX = "index.md"
 
@@ -266,3 +276,58 @@ def derive_annotation(
     elif source_list:
         annotation["sources_count"] = len(source_list)
     return annotation
+
+
+def parse_stale_filter(value: str) -> bool:
+    """Parse the ``stale`` filter value into a boolean.
+
+    Args:
+        value: The raw filter value (``filters`` is ``dict[str, str]``).
+
+    Returns:
+        The requested staleness.
+
+    Raises:
+        ValueError: If *value* is not a recognized true/false spelling.
+    """
+    normalized = value.strip().lower()
+    if normalized in _STALE_TRUE:
+        return True
+    if normalized in _STALE_FALSE:
+        return False
+    raise ValueError(f"stale filter must be true or false, got {value!r}")
+
+
+def matches_okf_filters(
+    metadata: dict[str, Any],
+    okf_filters: dict[str, str],
+    *,
+    today: _dt.date | None = None,
+) -> bool:
+    """Evaluate the OKF filter dimensions against one note's frontmatter.
+
+    Semantics (design §4): ``status`` matches the derived lifecycle value,
+    so ``status=stable`` matches notes with *absent* ``status`` (the spec
+    default); ``stale`` compares the derived staleness; ``trust_tier``
+    compares the derived tier. Filters compose with AND.
+
+    Args:
+        metadata: The note's frontmatter dict (may be empty).
+        okf_filters: The OKF-dimension subset of a ``filters`` dict —
+            keys from :data:`OKF_FILTER_KEYS` only.
+        today: Server-local date for staleness; defaults to today.
+
+    Returns:
+        ``True`` when every given dimension matches.
+
+    Raises:
+        ValueError: If a ``stale`` value is not a true/false spelling.
+    """
+    annotation = derive_annotation(metadata, today=today)
+    for key, value in okf_filters.items():
+        if key == "stale":
+            if annotation["stale"] is not parse_stale_filter(value):
+                return False
+        elif annotation.get(key) != value:
+            return False
+    return True

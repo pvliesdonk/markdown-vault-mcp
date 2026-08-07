@@ -64,6 +64,10 @@ def _graph_view_payload(view: GraphView, *, include_truncated: bool) -> dict[str
                 "group": n.group,
                 "folder": n.folder,
                 "backlink_count": n.backlink_count,
+                # OKF type (phase 2, #961): present only on an active OKF
+                # bundle for notes that declare one, so non-OKF payloads
+                # keep their exact prior shape.
+                **({"note_type": n.note_type} if n.note_type is not None else {}),
             }
             for n in view.nodes
         ],

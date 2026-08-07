@@ -1,9 +1,10 @@
 # OKF (Open Knowledge Format) Support — Design
 
-**Status:** phase 1 (#960 — detection, config surface, read annotations,
-stats/config reporting, indexed-field extension) implemented; its design
-has graduated into `design.md` ("OKF Read Semantics"). Later phases remain
-proposals — tracking issue
+**Status:** phases 1 (#960 — detection, config surface, read annotations,
+stats/config reporting, indexed-field extension) and 2 (#961 — filter
+dimensions, graph typing) implemented; their design has graduated into
+`design.md` ("OKF Read Semantics"). Later phases remain proposals —
+tracking issue
 [#959](https://github.com/pvliesdonk/markdown-vault-mcp/issues/959).
 **Spec targeted:** OKF v0.2
 ([`GoogleCloudPlatform/knowledge-catalog` → `okf/SPEC.md`](https://github.com/GoogleCloudPlatform/knowledge-catalog),
@@ -199,6 +200,12 @@ than a per-vault authoring task.
 ---
 
 ## 4. Layer 2 — query dimensions, and `okf_validate`
+
+*Filters status:* implemented (#961); `design.md`'s "OKF Read Semantics"
+section carries the as-built details, which supersede the sketch below
+(notably: the OKF dimensions are a uniform manager-level post-filter with
+pool widening, not a SQL `NOT EXISTS` branch). `okf_validate` remains a
+proposal (#962).
 
 ### Filters
 

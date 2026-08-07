@@ -40,7 +40,12 @@ from markdown_vault_mcp.managers._ranking import (
     group_by_path as _group_by_path,
 )
 from markdown_vault_mcp.managers._vector_loader import load_or_self_heal
-from markdown_vault_mcp.okf import derive_annotation
+from markdown_vault_mcp.okf import (
+    OKF_FILTER_KEYS,
+    derive_annotation,
+    matches_okf_filters,
+    parse_stale_filter,
+)
 from markdown_vault_mcp.types import (
     AttachmentInfo,
     BacklinkInfo,
@@ -343,8 +348,26 @@ class SearchManager:
         if fm_raw:
             with contextlib.suppress(json.JSONDecodeError, TypeError):
                 fm = json.loads(fm_raw)
+        return self._metadata_matches_filters(fm, filters)
+
+    @staticmethod
+    def _metadata_matches_filters(
+        metadata: dict[str, Any], filters: dict[str, str]
+    ) -> bool:
+        """Match a frontmatter dict against plain equality filters.
+
+        List-valued fields are matched by membership; scalars by ``str``
+        equality. Absent keys never match.
+
+        Args:
+            metadata: Parsed frontmatter dict.
+            filters: ``{frontmatter_key: value}`` pairs (AND semantics).
+
+        Returns:
+            ``True`` when every pair matches.
+        """
         for key, value in filters.items():
-            fm_val = fm.get(key)
+            fm_val = metadata.get(key)
             if fm_val is None:
                 return False
             if isinstance(fm_val, list):
@@ -355,12 +378,109 @@ class SearchManager:
                     return False
         return True
 
+    def _split_okf_filters(
+        self, filters: dict[str, str] | None
+    ) -> tuple[dict[str, str] | None, dict[str, str]]:
+        """Split *filters* into plain tag filters and OKF dimensions.
+
+        The OKF dimensions (:data:`~markdown_vault_mcp.okf.OKF_FILTER_KEYS`:
+        ``status`` / ``stale`` / ``trust_tier``) get OKF semantics only when
+        a detector is wired and read semantics are active; otherwise every
+        key stays a plain filter, preserving pre-OKF behavior byte for
+        byte. A ``stale`` value is validated eagerly so an invalid spelling
+        fails the whole call instead of silently matching nothing.
+
+        Args:
+            filters: The caller's ``filters`` dict, or ``None``.
+
+        Returns:
+            ``(plain_filters_or_None, okf_filters)`` — the second dict is
+            empty when OKF semantics do not apply.
+
+        Raises:
+            ValueError: If an active ``stale`` filter value is not a
+                true/false spelling.
+        """
+        if not filters or self._okf is None:
+            return filters, {}
+        okf_filters = {k: v for k, v in filters.items() if k in OKF_FILTER_KEYS}
+        if not okf_filters or not self._okf.state().active:
+            return filters, {}
+        if "stale" in okf_filters:
+            parse_stale_filter(okf_filters["stale"])
+        plain = {k: v for k, v in filters.items() if k not in OKF_FILTER_KEYS}
+        return (plain or None), okf_filters
+
+    def _path_matches_okf(self, path: str, okf_filters: dict[str, str]) -> bool:
+        """Evaluate the OKF filter dimensions for one document path.
+
+        Args:
+            path: Relative document path.
+            okf_filters: OKF-dimension filters (non-empty).
+
+        Returns:
+            ``True`` when the document exists and matches.
+        """
+        note_row = self._fts.get_note(path)
+        if note_row is None:
+            return False
+        metadata = self._parse_frontmatter_json(note_row.get("frontmatter_json"), path)
+        return matches_okf_filters(metadata, okf_filters)
+
+    def _filter_rows_okf(
+        self, rows: builtins.list[FTSResult], okf_filters: dict[str, str]
+    ) -> builtins.list[FTSResult]:
+        """Drop FTS chunk rows whose document fails the OKF dimensions.
+
+        Verdicts are memoized per path: chunk rows repeat documents, and
+        the evaluation costs one ``get_note`` lookup per distinct path.
+
+        Args:
+            rows: Candidate chunk rows.
+            okf_filters: OKF-dimension filters; empty passes rows through.
+
+        Returns:
+            The surviving rows, order preserved.
+        """
+        if not okf_filters:
+            return rows
+        verdicts: dict[str, bool] = {}
+        kept: builtins.list[FTSResult] = []
+        for row in rows:
+            verdict = verdicts.get(row.path)
+            if verdict is None:
+                verdict = self._path_matches_okf(row.path, okf_filters)
+                verdicts[row.path] = verdict
+            if verdict:
+                kept.append(row)
+        return kept
+
+    @staticmethod
+    def _widen_for_okf(candidate_limit: int, okf_filters: dict[str, str]) -> int:
+        """Widen a candidate pool when OKF dimensions will post-filter it.
+
+        Post-filtering discards candidates after the pool is capped, so a
+        narrow filter could otherwise starve the result list (same
+        rationale as the ``get_similar`` folder/filter widening).
+
+        Args:
+            candidate_limit: The mode's normal candidate cap.
+            okf_filters: OKF-dimension filters; empty leaves the cap alone.
+
+        Returns:
+            The (possibly widened) cap.
+        """
+        if not okf_filters:
+            return candidate_limit
+        return max(candidate_limit * 4, 200)
+
     def _post_filter_semantic_rows(
         self,
         raw: builtins.list[dict[str, Any]],
         *,
         folder: str | None,
         filters: dict[str, str] | None,
+        okf_filters: dict[str, str] | None = None,
     ) -> builtins.list[dict[str, Any]]:
         """Apply folder-prefix and frontmatter filters to vector-search rows.
 
@@ -384,6 +504,8 @@ class SearchManager:
         """
         if folder is not None:
             folder = folder.replace("\\", "/").strip("/") or None
+        okf_filters = okf_filters or {}
+        okf_verdicts: dict[str, bool] = {}
         filtered: builtins.list[dict[str, Any]] = []
         for r in raw:
             if folder is not None:
@@ -392,6 +514,13 @@ class SearchManager:
                     continue
             if filters and not self._row_matches_filters(r["path"], filters):
                 continue
+            if okf_filters:
+                verdict = okf_verdicts.get(r["path"])
+                if verdict is None:
+                    verdict = self._path_matches_okf(r["path"], okf_filters)
+                    okf_verdicts[r["path"]] = verdict
+                if not verdict:
+                    continue
             filtered.append(r)
         return filtered
 
@@ -463,6 +592,7 @@ class SearchManager:
             chunks_per_file if chunks_per_file is not None else self._chunks_per_file
         )
         eff_snip = snippet_words if snippet_words is not None else self._snippet_words
+        filters, okf_filters = self._split_okf_filters(filters)
 
         if mode == "keyword":
             return self._keyword_search(
@@ -472,6 +602,7 @@ class SearchManager:
                 folder=folder,
                 chunks_per_file=eff_cap,
                 snippet_words=eff_snip,
+                okf_filters=okf_filters,
             )
 
         if mode == "semantic":
@@ -483,6 +614,7 @@ class SearchManager:
                 folder=folder,
                 chunks_per_file=eff_cap,
                 snippet_words=eff_snip,
+                okf_filters=okf_filters,
             )
 
         # hybrid
@@ -494,6 +626,7 @@ class SearchManager:
             folder=folder,
             chunks_per_file=eff_cap,
             snippet_words=eff_snip,
+            okf_filters=okf_filters,
         )
 
     def _adapt_semantic_rows(
@@ -599,8 +732,12 @@ class SearchManager:
         folder: str | None,
         chunks_per_file: int,
         snippet_words: int,
+        okf_filters: dict[str, str] | None = None,
     ) -> list[GroupedResult]:
-        candidate_limit = max(limit * (chunks_per_file + 4), 50)
+        okf_filters = okf_filters or {}
+        candidate_limit = self._widen_for_okf(
+            max(limit * (chunks_per_file + 4), 50), okf_filters
+        )
 
         raw = self._fts.search(
             query,
@@ -609,6 +746,7 @@ class SearchManager:
             folder=folder,
             snippet_words=None,
         )
+        raw = self._filter_rows_okf(raw, okf_filters)
         downweighted = _apply_length_downweight(
             raw, alpha=self._length_downweight_alpha
         )
@@ -711,12 +849,18 @@ class SearchManager:
         folder: str | None = None,
         chunks_per_file: int,
         snippet_words: int,
+        okf_filters: dict[str, str] | None = None,
     ) -> list[GroupedResult]:
+        okf_filters = okf_filters or {}
         vectors = self._load_vectors()
-        candidate_limit = max(limit * (chunks_per_file + 4), _SEMANTIC_CANDIDATE_FLOOR)
+        candidate_limit = self._widen_for_okf(
+            max(limit * (chunks_per_file + 4), _SEMANTIC_CANDIDATE_FLOOR), okf_filters
+        )
         raw = vectors.search(query, limit=candidate_limit)
 
-        filtered = self._post_filter_semantic_rows(raw, folder=folder, filters=filters)
+        filtered = self._post_filter_semantic_rows(
+            raw, folder=folder, filters=filters, okf_filters=okf_filters
+        )
         rows = self._adapt_semantic_rows(filtered)
 
         downweighted = _apply_length_downweight(
@@ -743,17 +887,21 @@ class SearchManager:
         folder: str | None,
         chunks_per_file: int,
         snippet_words: int,
+        okf_filters: dict[str, str] | None = None,
     ) -> list[GroupedResult]:
         """RRF merge of keyword and semantic results, then field-collapse."""
+        okf_filters = okf_filters or {}
         # The two channels size their candidate pools independently. FTS keeps a
         # floor of 50 (a BM25 query does real work per candidate). The vector
         # channel uses the same full-scan floor as _semantic_search, since it
         # goes through the identical VectorIndex.search and the same recall cap
         # applies: a floor-50 pool drops a document whose best chunk ranks just
         # past 50 from the RRF merge at small limits.
-        fts_candidate_limit = max(limit * (chunks_per_file + 4), 50)
-        vec_candidate_limit = max(
-            limit * (chunks_per_file + 4), _SEMANTIC_CANDIDATE_FLOOR
+        fts_candidate_limit = self._widen_for_okf(
+            max(limit * (chunks_per_file + 4), 50), okf_filters
+        )
+        vec_candidate_limit = self._widen_for_okf(
+            max(limit * (chunks_per_file + 4), _SEMANTIC_CANDIDATE_FLOOR), okf_filters
         )
 
         fts_raw: list[FTSResult] = self._fts.search(
@@ -763,6 +911,7 @@ class SearchManager:
             folder=folder,
             snippet_words=None,
         )
+        fts_raw = self._filter_rows_okf(fts_raw, okf_filters)
         fts_results: list[FTSResult] = _apply_length_downweight(
             fts_raw, alpha=self._length_downweight_alpha
         )
@@ -770,7 +919,7 @@ class SearchManager:
         vectors = self._load_vectors()
         vec_raw = vectors.search(query, limit=vec_candidate_limit)
         vec_filtered = self._post_filter_semantic_rows(
-            vec_raw, folder=folder, filters=filters
+            vec_raw, folder=folder, filters=filters, okf_filters=okf_filters
         )
         vec_rows = _apply_length_downweight(
             self._adapt_semantic_rows(vec_filtered),
@@ -882,6 +1031,7 @@ class SearchManager:
         folder: str | None = None,
         pattern: str | None = None,
         include_attachments: bool = False,
+        filters: dict[str, str] | None = None,
     ) -> list[NoteInfo | AttachmentInfo]:
         """List documents (and optionally attachments) in the vault.
 
@@ -894,21 +1044,43 @@ class SearchManager:
                 that match the attachment allowlist.  Each
                 :class:`~markdown_vault_mcp.types.AttachmentInfo` entry
                 includes ``kind="attachment"`` and ``mime_type``.
+            filters: Optional ``{frontmatter_key: value}`` equality filters
+                (AND semantics), evaluated against each note's stored
+                frontmatter (any key, list membership for list values). On
+                an active OKF bundle the dimensions ``status`` (absent
+                means ``stable``), ``stale`` (``true``/``false``), and
+                ``trust_tier`` carry OKF semantics. Attachments carry no
+                frontmatter, so any filter excludes them.
 
         Returns:
             List of :class:`~markdown_vault_mcp.types.NoteInfo` (and
             optionally :class:`~markdown_vault_mcp.types.AttachmentInfo`)
             objects.
+
+        Raises:
+            ValueError: If an active OKF ``stale`` filter value is not a
+                true/false spelling.
         """
+        plain_filters, okf_filters = self._split_okf_filters(filters)
         rows = self._fts.list_notes(folder=folder)
-        notes: list[NoteInfo | AttachmentInfo] = [
-            fts_row_to_note_info(row) for row in rows
-        ]
+        note_infos = [fts_row_to_note_info(row) for row in rows]
 
         if pattern:
-            notes = [n for n in notes if fnmatch.fnmatch(n.path, pattern)]
+            note_infos = [n for n in note_infos if fnmatch.fnmatch(n.path, pattern)]
+        if plain_filters:
+            note_infos = [
+                n
+                for n in note_infos
+                if self._metadata_matches_filters(n.frontmatter, plain_filters)
+            ]
+        if okf_filters:
+            note_infos = [
+                n for n in note_infos if matches_okf_filters(n.frontmatter, okf_filters)
+            ]
+        notes: list[NoteInfo | AttachmentInfo] = list(note_infos)
 
-        if not include_attachments:
+        if not include_attachments or filters:
+            # Attachments carry no frontmatter: any filter excludes them.
             return notes
 
         return notes + self._list_attachments(pattern=pattern, folder=folder)
@@ -1207,14 +1379,15 @@ class SearchManager:
         eff_cpf = (
             chunks_per_file if chunks_per_file is not None else self._chunks_per_file
         )
+        filters, okf_filters = self._split_okf_filters(filters)
         candidate_limit = max(limit * (eff_cpf + 4), 50)
-        if folder is not None or filters:
+        if folder is not None or filters or okf_filters:
             # Post-filtering discards candidates; widen the pool so a
             # narrow folder/filter cannot starve the result list.
             candidate_limit = max(candidate_limit * 4, 200)
         raw_results = self._vectors.search_by_path(path, limit=candidate_limit)
         raw_results = self._post_filter_semantic_rows(
-            raw_results, folder=folder, filters=filters
+            raw_results, folder=folder, filters=filters, okf_filters=okf_filters
         )
 
         rows = self._adapt_semantic_rows(raw_results)

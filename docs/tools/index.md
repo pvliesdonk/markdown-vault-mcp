@@ -64,7 +64,7 @@ Find documents matching a query using full-text or semantic search.
 | `limit` | int | `10` | Maximum results to return |
 | `mode` | string | `"keyword"` | `"keyword"` (FTS5/BM25), `"semantic"` (vector similarity), or `"hybrid"` (reciprocal rank fusion) |
 | `folder` | string | `null` | Restrict to documents under this folder path |
-| `filters` | object | `null` | Filter by indexed frontmatter field values (such as `{"tags": "pacing"}`) |
+| `filters` | object | `null` | Filter by indexed frontmatter field values (such as `{"tags": "pacing"}`), ANDed. On an OKF bundle, `status` (`stable` also matches notes without one), `stale` (`true`/`false`), and `trust_tier` carry OKF semantics; `type` filters normally |
 | `chunks_per_file` | int | server default (`2`) | Maximum number of matching sections returned per file. Overrides `MARKDOWN_VAULT_MCP_CHUNKS_PER_FILE` for this call. `0` is rejected. |
 | `snippet_words` | int | server default (`200`) | Approximate word budget for each section's `content` field. `0` returns the full chunk. Overrides `MARKDOWN_VAULT_MCP_SNIPPET_WORDS` for this call. |
 
@@ -158,6 +158,7 @@ List documents (and optionally attachments) in the vault.
 | `folder` | string | `null` | Return only documents in this folder |
 | `pattern` | string | `null` | Unix glob matched against relative paths (such as `"Journal/*.md"`) |
 | `include_attachments` | bool | `false` | When true, also returns non-`.md` files that match the configured allowlist |
+| `filters` | object | `null` | Frontmatter equality filters, ANDed (any key; list fields match by membership). On an OKF bundle, `status` / `stale` / `trust_tier` carry OKF semantics — `{"stale": "true"}` or `{"status": "deprecated"}` builds a triage listing. Any filter excludes attachments |
 
 **Returns:** List of info dicts. Every entry has a `kind` field (`"note"` or `"attachment"`). Body content is not included; call `read` for full text.
 
@@ -640,7 +641,7 @@ Find semantically similar notes by document path. Requires embeddings to be buil
 | `limit` | int | `10` | Maximum files to return |
 | `chunks_per_file` | int | server default (`2`) | Maximum number of matching sections returned per file. Overrides `MARKDOWN_VAULT_MCP_CHUNKS_PER_FILE` for this call. `0` is rejected. |
 | `folder` | string | `null` | Restrict results to this folder (exact match or sub-folder prefix), such as `3-Resources` |
-| `filters` | object | `null` | Frontmatter equality filters, ANDed, such as `{"type": "resource"}`. List-valued fields match by membership |
+| `filters` | object | `null` | Frontmatter equality filters, ANDed, such as `{"type": "resource"}`. List-valued fields match by membership. On an OKF bundle, `status` / `stale` / `trust_tier` carry OKF semantics |
 | `wait_for_pending_writes` | bool | `false` | Block until the IndexWriter drains before answering, then report freshness via `_meta.index_stale` (see the *Index freshness on read tools* note at the top of this page). |
 
 **Returns:** List of grouped similar-document dicts ranked by cosine similarity, one entry per file with up to `chunks_per_file` best-matching sections. Each entry contains: `path`, `title`, `folder`, `score` (max section score), `search_type` (`"semantic"`), `frontmatter`, and `sections` (a list of `{heading, content, score}` dicts sorted by score then document order). Index freshness is reported in `_meta.index_stale` (see the freshness note at the top of this page).

@@ -21,6 +21,7 @@ if TYPE_CHECKING:
 
     from markdown_vault_mcp.managers.link import LinkManager
     from markdown_vault_mcp.managers.search import SearchManager
+    from markdown_vault_mcp.okf import OkfDetector
     from markdown_vault_mcp.types import (
         BacklinkInfo,
         BrokenLinkInfo,
@@ -41,6 +42,7 @@ class GraphFacet:
         link_mgr: LinkManager,
         search_mgr: SearchManager,
         require_built: Callable[[], None],
+        okf_detector: OkfDetector | None = None,
     ) -> None:
         """Hold the managers and the index-readiness gate.
 
@@ -52,10 +54,18 @@ class GraphFacet:
                 (:meth:`SearchManager.get_similar`).
             require_built: Raises :exc:`IndexUnavailableError` if the index has
                 not been built; called by the bucket-3 query methods.
+            okf_detector: Optional OKF detection probe; when read semantics
+                are active, graph-view nodes carry the note's OKF ``type``
+                (#961). ``None`` leaves ``note_type`` unset everywhere.
         """
         self._link_mgr = link_mgr
         self._search_mgr = search_mgr
         self._require_built = require_built
+        self._okf = okf_detector
+
+    def _okf_active(self) -> bool:
+        """Whether OKF read semantics are active (one disk probe)."""
+        return self._okf is not None and self._okf.state().active
 
     def get_backlinks(
         self, path: str, *, limit: int | None = None
@@ -169,21 +179,31 @@ class GraphFacet:
     # of one asyncio.to_thread hop per node.
     # ------------------------------------------------------------------
 
-    def _node_label(self, path: str) -> tuple[str, str]:
-        """Return ``(label, folder)`` for *path* from indexed metadata.
+    def _node_label(
+        self, path: str, *, include_type: bool = False
+    ) -> tuple[str, str, str | None]:
+        """Return ``(label, folder, note_type)`` from indexed metadata.
 
-        Only indexed metadata (title/folder) is consulted — reading the full
-        document would load it into memory and, for a note over
-        ``MAX_NOTE_READ_BYTES``, raise and fail the whole graph. Falls back
-        to the filename stem for unindexed paths.
+        Only indexed metadata (title/folder/frontmatter) is consulted —
+        reading the full document would load it into memory and, for a note
+        over ``MAX_NOTE_READ_BYTES``, raise and fail the whole graph. Falls
+        back to the filename stem for unindexed paths. ``note_type`` is the
+        OKF ``type`` frontmatter value and is extracted only when
+        *include_type* is set (an active OKF bundle); it costs nothing
+        extra — the metadata row is already in hand.
         """
         meta = self._search_mgr.get_metadata(path)
         label = meta.title if meta else path.rsplit("/", 1)[-1].replace(".md", "")
         folder = meta.folder if meta else ""
-        return label, folder
+        note_type: str | None = None
+        if include_type and meta is not None:
+            raw = meta.frontmatter.get("type")
+            if isinstance(raw, str) and raw.strip():
+                note_type = raw.strip()
+        return label, folder, note_type
 
     def _expand_node(
-        self, current: str
+        self, current: str, *, okf_active: bool = False
     ) -> tuple[GraphNode, list[GraphEdge], list[str]]:
         """Build *current*'s interior node, its edges, and its link partners.
 
@@ -196,7 +216,7 @@ class GraphFacet:
             existing-outbound edges, and the partner paths for the caller
             to enqueue (in backlink-then-outlink order).
         """
-        label, folder = self._node_label(current)
+        label, folder, note_type = self._node_label(current, include_type=okf_active)
         try:
             backlinks = self.get_backlinks(current)
         except ValueError:
@@ -213,6 +233,7 @@ class GraphFacet:
             group="orphan" if is_orphan else "note",
             folder=folder,
             backlink_count=len(backlinks),
+            note_type=note_type,
         )
 
         edges: list[GraphEdge] = []
@@ -238,6 +259,7 @@ class GraphFacet:
         edges: list[GraphEdge],
         *,
         max_nodes: int,
+        okf_active: bool = False,
     ) -> bool:
         """Append dashed similarity edges for each current node.
 
@@ -273,13 +295,16 @@ class GraphFacet:
                     if len(nodes) >= max_nodes:
                         truncated = True
                         break
-                    label, folder = self._node_label(sr.path)
+                    label, folder, note_type = self._node_label(
+                        sr.path, include_type=okf_active
+                    )
                     nodes[sr.path] = GraphNode(
                         id=sr.path,
                         label=label,
                         group="note",
                         folder=folder,
                         backlink_count=0,
+                        note_type=note_type,
                     )
                 edges.append(
                     GraphEdge(source=node_path, target=sr.path, link_type="semantic")
@@ -329,6 +354,7 @@ class GraphFacet:
         visited: set[str] = set()
         queue: deque[tuple[str, int]] = deque([(path, 0)])
         truncated = False
+        okf_active = self._okf_active()
 
         while queue:
             if len(nodes) >= max_nodes:
@@ -341,17 +367,22 @@ class GraphFacet:
 
             if hop >= depth:
                 # Boundary nodes are reachable by definition — skip DB calls.
-                label, folder = self._node_label(current)
+                label, folder, note_type = self._node_label(
+                    current, include_type=okf_active
+                )
                 nodes[current] = GraphNode(
                     id=current,
                     label=label,
                     group="note",
                     folder=folder,
                     backlink_count=0,
+                    note_type=note_type,
                 )
                 continue
 
-            node, node_edges, partners = self._expand_node(current)
+            node, node_edges, partners = self._expand_node(
+                current, okf_active=okf_active
+            )
             nodes[current] = node
             edges.extend(node_edges)
             for partner in partners:
@@ -369,7 +400,9 @@ class GraphFacet:
 
         if include_semantic:
             truncated = (
-                self._add_semantic_edges(nodes, unique_edges, max_nodes=max_nodes)
+                self._add_semantic_edges(
+                    nodes, unique_edges, max_nodes=max_nodes, okf_active=okf_active
+                )
                 or truncated
             )
 
@@ -395,6 +428,7 @@ class GraphFacet:
         nodes: dict[str, GraphNode] = {}
         edges: list[GraphEdge] = []
         seen_edges: set[tuple[str, str]] = set()
+        okf_active = self._okf_active()
 
         for hub in hubs:
             nodes[hub.path] = GraphNode(
@@ -412,13 +446,16 @@ class GraphFacet:
                 backlinks = []
             for bl in backlinks:
                 if bl.source_path not in nodes:
-                    label, folder = self._node_label(bl.source_path)
+                    label, folder, note_type = self._node_label(
+                        bl.source_path, include_type=okf_active
+                    )
                     nodes[bl.source_path] = GraphNode(
                         id=bl.source_path,
                         label=label,
                         group="note",
                         folder=folder,
                         backlink_count=0,
+                        note_type=note_type,
                     )
                 edge_key = (bl.source_path, hub.path)
                 if edge_key not in seen_edges:

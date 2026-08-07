@@ -11,6 +11,8 @@ import pytest
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from markdown_vault_mcp.vault import Vault
+
 from markdown_vault_mcp.okf import (
     OKF_STATUS_DEFAULT,
     TRUST_HUMAN,
@@ -285,3 +287,226 @@ class TestOkfInstructions:
         from markdown_vault_mcp._instructions import build_default_instructions
 
         assert "OKF" not in build_default_instructions(read_only=True)
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("true", True),
+        ("TRUE ", True),
+        ("1", True),
+        ("yes", True),
+        ("false", False),
+        ("0", False),
+        ("No", False),
+    ],
+)
+def test_parse_stale_filter(value: str, expected: bool) -> None:
+    from markdown_vault_mcp.okf import parse_stale_filter
+
+    assert parse_stale_filter(value) is expected
+
+
+def test_parse_stale_filter_rejects_garbage() -> None:
+    from markdown_vault_mcp.okf import parse_stale_filter
+
+    with pytest.raises(ValueError, match="stale filter"):
+        parse_stale_filter("banana")
+
+
+@pytest.mark.parametrize(
+    ("metadata", "okf_filters", "expected"),
+    [
+        ({}, {"status": "stable"}, True),  # absent status means stable
+        ({"status": "draft"}, {"status": "stable"}, False),
+        ({"status": "deprecated"}, {"status": "deprecated"}, True),
+        ({"status": "archived"}, {"status": "archived"}, True),  # unknown passes
+        ({}, {"stale": "false"}, True),
+        ({"stale_after": "2000-01-01"}, {"stale": "true"}, True),
+        ({"stale_after": "2999-01-01"}, {"stale": "true"}, False),
+        ({}, {"trust_tier": "unverified"}, True),
+        (
+            {"verified": [{"by": "human:a"}]},
+            {"trust_tier": "human-reviewed"},
+            True,
+        ),
+        ({"verified": [{"by": "process:x"}]}, {"trust_tier": "human-reviewed"}, False),
+        (
+            {"type": "Playbook", "stale_after": "2000-01-01"},
+            {"stale": "true", "status": "stable"},
+            True,
+        ),
+        (
+            {"status": "deprecated", "stale_after": "2000-01-01"},
+            {"stale": "true", "status": "stable"},
+            False,
+        ),
+    ],
+)
+def test_matches_okf_filters(
+    metadata: dict, okf_filters: dict[str, str], expected: bool
+) -> None:
+    from markdown_vault_mcp.okf import matches_okf_filters
+
+    assert matches_okf_filters(metadata, okf_filters, today=TODAY) is expected
+
+
+PLAYBOOK_NOTE = """---
+type: Playbook
+status: deprecated
+stale_after: 2000-01-01
+verified:
+  - by: human:peter
+---
+# Playbook
+
+Zebra steps.
+"""
+
+PLAIN_NOTE = """# Plain
+
+Zebra notes. See [Playbook](playbook.md).
+"""
+
+
+def _build_filter_vault(root: Path, *, declared: bool) -> None:
+    (root / "guides").mkdir(parents=True)
+    if declared:
+        _write_root_index(root, '---\nokf_version: "0.2"\n---\n# Bundle\n')
+    (root / "guides" / "playbook.md").write_text(PLAYBOOK_NOTE, encoding="utf-8")
+    (root / "guides" / "plain.md").write_text(PLAIN_NOTE, encoding="utf-8")
+
+
+class TestOkfFilters:
+    def _vault(self, root: Path, **kwargs: object) -> Vault:
+        from markdown_vault_mcp.vault import Vault
+
+        vault = Vault(source_dir=root, **kwargs)  # type: ignore[arg-type]
+        vault.index.build_index()
+        return vault
+
+    def test_keyword_filters_on_declared_vault(self, tmp_path: Path) -> None:
+        _build_filter_vault(tmp_path, declared=True)
+        vault = self._vault(tmp_path)
+        try:
+            paths = lambda rs: sorted(r.path for r in rs)  # noqa: E731
+            search = vault.reader.search
+            assert paths(search("zebra", filters={"stale": "true"})) == [
+                "guides/playbook.md"
+            ]
+            assert paths(search("zebra", filters={"status": "stable"})) == [
+                "guides/plain.md"
+            ]
+            assert paths(search("zebra", filters={"trust_tier": "human-reviewed"})) == [
+                "guides/playbook.md"
+            ]
+            assert paths(
+                search("zebra", filters={"type": "Playbook", "stale": "true"})
+            ) == ["guides/playbook.md"]
+            assert (
+                search("zebra", filters={"status": "deprecated", "stale": "false"})
+                == []
+            )
+        finally:
+            vault.close()
+
+    def test_filters_inert_without_declaration(self, tmp_path: Path) -> None:
+        _build_filter_vault(tmp_path, declared=False)
+        vault = self._vault(tmp_path)
+        try:
+            # Plain tag semantics: no 'stale' tag exists, so no matches —
+            # and no error either.
+            assert vault.reader.search("zebra", filters={"stale": "true"}) == []
+        finally:
+            vault.close()
+
+    def test_invalid_stale_value_raises(self, tmp_path: Path) -> None:
+        _build_filter_vault(tmp_path, declared=True)
+        vault = self._vault(tmp_path)
+        try:
+            with pytest.raises(ValueError, match="stale filter"):
+                vault.reader.search("zebra", filters={"stale": "banana"})
+        finally:
+            vault.close()
+
+    def test_list_documents_filters(self, tmp_path: Path) -> None:
+        _build_filter_vault(tmp_path, declared=True)
+        (tmp_path / "guides" / "img.png").write_bytes(b"\x89PNG\r\n")
+        vault = self._vault(tmp_path)
+        try:
+            listing = vault.reader.list_documents(filters={"status": "deprecated"})
+            assert [n.path for n in listing] == ["guides/playbook.md"]
+            stale = vault.reader.list_documents(filters={"stale": "true"})
+            assert [n.path for n in stale] == ["guides/playbook.md"]
+            with_attachments = vault.reader.list_documents(include_attachments=True)
+            assert any(n.path.endswith(".png") for n in with_attachments)
+            filtered = vault.reader.list_documents(
+                include_attachments=True, filters={"stale": "false"}
+            )
+            assert not any(n.path.endswith(".png") for n in filtered)
+        finally:
+            vault.close()
+
+    def test_semantic_and_hybrid_filters(
+        self, tmp_path: Path, mock_provider: object
+    ) -> None:
+        root = tmp_path / "vault"
+        _build_filter_vault(root, declared=True)
+        vault = self._vault(
+            root,
+            embeddings_path=tmp_path / "embeddings",
+            embedding_provider=mock_provider,
+        )
+        try:
+            vault.index.build_embeddings()
+            for mode in ("semantic", "hybrid"):
+                results = vault.reader.search(
+                    "zebra", mode=mode, filters={"stale": "false"}
+                )
+                assert results, mode
+                assert all(r.path != "guides/playbook.md" for r in results), mode
+        finally:
+            vault.close()
+
+    def test_graph_nodes_carry_note_type_when_declared(self, tmp_path: Path) -> None:
+        _build_filter_vault(tmp_path, declared=True)
+        vault = self._vault(tmp_path)
+        try:
+            view = vault.graph.get_neighborhood("guides/plain.md")
+            by_id = {n.id: n for n in view.nodes}
+            assert by_id["guides/playbook.md"].note_type == "Playbook"
+            assert by_id["guides/plain.md"].note_type is None
+        finally:
+            vault.close()
+
+    def test_graph_nodes_untyped_without_declaration(self, tmp_path: Path) -> None:
+        _build_filter_vault(tmp_path, declared=False)
+        vault = self._vault(tmp_path)
+        try:
+            view = vault.graph.get_neighborhood("guides/plain.md")
+            assert all(n.note_type is None for n in view.nodes)
+        finally:
+            vault.close()
+
+
+def test_graph_view_payload_emits_note_type_only_when_set() -> None:
+    from markdown_vault_mcp._vault_apps import _graph_view_payload
+    from markdown_vault_mcp.types import GraphNode, GraphView
+
+    view = GraphView(
+        nodes=[
+            GraphNode(id="a.md", label="A", group="note", folder="", backlink_count=0),
+            GraphNode(
+                id="b.md",
+                label="B",
+                group="note",
+                folder="",
+                backlink_count=1,
+                note_type="Playbook",
+            ),
+        ],
+        edges=[],
+    )
+    payload = _graph_view_payload(view, include_truncated=False)
+    assert "note_type" not in payload["nodes"][0]
+    assert payload["nodes"][1]["note_type"] == "Playbook"

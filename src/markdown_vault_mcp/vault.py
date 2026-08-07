@@ -491,6 +491,7 @@ class Vault:
             link_mgr=self._link_mgr,
             search_mgr=self._search_mgr,
             require_built=self._require_built,
+            okf_detector=self._okf,
         )
         self._index_facet = IndexFacet(
             coordinator=self._coordinator, index_mgr=self._index_mgr

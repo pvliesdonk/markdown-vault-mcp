@@ -399,6 +399,9 @@ def register_apps(mcp: FastMCP) -> None:
               - group (str): "note" or "orphan".
               - folder (str): Parent folder path.
               - backlink_count (int): Number of inbound links.
+              - note_type (str, optional): The note's OKF ``type``
+                frontmatter value; present only on an active OKF
+                bundle for notes that declare one.
 
             - edges (list): List of dicts, each with:
 
@@ -451,6 +454,9 @@ def register_apps(mcp: FastMCP) -> None:
               - group (str): "hub" or "note".
               - folder (str): Parent folder path.
               - backlink_count (int): Number of inbound links.
+              - note_type (str, optional): The note's OKF ``type``
+                frontmatter value; present only on an active OKF
+                bundle for notes that declare one.
 
             - edges (list): List of dicts, each with:
 

@@ -287,3 +287,77 @@ class TestModeOn:
             stats = _structured(await client.call_tool("stats", {}))
         assert stats["okf"]["mode"] == "on"
         assert stats["okf"]["declared_version"] is None
+
+
+@pytest.mark.usefixtures("_okf_env")
+class TestOkfFilterDimensions:
+    """Phase 2 (#961): OKF semantics for status/stale/trust_tier filters."""
+
+    async def test_status_stable_matches_absent_status(self) -> None:
+        async with Client(make_server()) as client:
+            hits = await _search(client, filters={"status": "stable"})
+        assert sorted(h["path"] for h in hits) == ["guides/plain.md"]
+
+    async def test_status_deprecated(self) -> None:
+        async with Client(make_server()) as client:
+            hits = await _search(client, filters={"status": "deprecated"})
+        assert [h["path"] for h in hits] == ["guides/playbook.md"]
+
+    async def test_stale_filter(self) -> None:
+        async with Client(make_server()) as client:
+            stale = await _search(client, filters={"stale": "true"})
+            fresh = await _search(client, filters={"stale": "false"})
+        assert [h["path"] for h in stale] == ["guides/playbook.md"]
+        assert "guides/playbook.md" not in [h["path"] for h in fresh]
+
+    async def test_trust_tier_filter_composes_with_type(self) -> None:
+        async with Client(make_server()) as client:
+            hits = await _search(
+                client,
+                filters={"trust_tier": "human-reviewed", "type": "Playbook"},
+            )
+        assert [h["path"] for h in hits] == ["guides/playbook.md"]
+
+    async def test_invalid_stale_value_is_a_tool_error(self) -> None:
+        from fastmcp.exceptions import ToolError
+
+        async with Client(make_server()) as client:
+            await wait_for_mcp_writer_drain(client)
+            with pytest.raises(ToolError, match="stale filter"):
+                await client.call_tool(
+                    "search", {"query": "zebra", "filters": {"stale": "banana"}}
+                )
+
+    async def test_list_documents_triage_listing(self) -> None:
+        async with Client(make_server()) as client:
+            await wait_for_mcp_writer_drain(client)
+            result = await client.call_tool(
+                "list_documents", {"filters": {"stale": "true"}}
+            )
+        listing = _parse_tool_data(result)
+        assert [n["path"] for n in listing] == ["guides/playbook.md"]
+
+
+@pytest.mark.usefixtures("_okf_env")
+class TestFilterDimensionsModeOff:
+    """With OKF off, the dimension keys fall back to plain tag filters."""
+
+    @pytest.fixture(autouse=True)
+    def _off(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_MODE", "off")
+
+    async def test_stale_filter_is_inert(self) -> None:
+        async with Client(make_server()) as client:
+            hits = await _search(client, filters={"stale": "true"})
+            listing = _parse_tool_data(
+                await client.call_tool("list_documents", {"filters": {"stale": "true"}})
+            )
+        assert hits == []
+        assert listing == []
+
+    async def test_status_is_plain_equality(self) -> None:
+        async with Client(make_server()) as client:
+            # Plain semantics: no absent-means-stable defaulting, and no
+            # 'status' tag is indexed with OKF off, so nothing matches.
+            hits = await _search(client, filters={"status": "stable"})
+        assert hits == []

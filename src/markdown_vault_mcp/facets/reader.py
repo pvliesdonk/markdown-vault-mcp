@@ -148,8 +148,11 @@ class ReaderFacet:
         folder: str | None = None,
         pattern: str | None = None,
         include_attachments: bool = False,
+        filters: dict[str, str] | None = None,
     ) -> list[NoteInfo | AttachmentInfo]:
         """List documents (and optionally attachments) in the vault.
+
+        Delegates to :meth:`SearchManager.list`.
 
         Args:
             folder: If provided, only return documents in this folder (and
@@ -160,6 +163,10 @@ class ReaderFacet:
                 that match the attachment allowlist.  Each
                 :class:`~markdown_vault_mcp.types.AttachmentInfo` entry
                 includes ``kind="attachment"`` and ``mime_type``.
+            filters: Optional ``{frontmatter_key: value}`` equality filters
+                (AND semantics). On an active OKF bundle, ``status`` /
+                ``stale`` / ``trust_tier`` carry OKF semantics. Any filter
+                excludes attachments (they carry no frontmatter).
 
         Returns:
             List of :class:`~markdown_vault_mcp.types.NoteInfo` (and
@@ -167,7 +174,10 @@ class ReaderFacet:
             objects.
         """
         return self._search_mgr.list(
-            folder=folder, pattern=pattern, include_attachments=include_attachments
+            folder=folder,
+            pattern=pattern,
+            include_attachments=include_attachments,
+            filters=filters,
         )
 
     def list_folders(self) -> list[str]:

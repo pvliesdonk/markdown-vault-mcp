@@ -585,6 +585,7 @@ class GraphNode:
     group: str
     folder: str
     backlink_count: int
+    note_type: str | None = None
 
 
 @dataclass
