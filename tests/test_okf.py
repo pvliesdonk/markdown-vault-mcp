@@ -361,6 +361,10 @@ verified:
 # Playbook
 
 Zebra steps.
+
+## Checklist
+
+Zebra checklist details.
 """
 
 PLAIN_NOTE = """# Plain
@@ -476,6 +480,29 @@ class TestOkfFilters:
             by_id = {n.id: n for n in view.nodes}
             assert by_id["guides/playbook.md"].note_type == "Playbook"
             assert by_id["guides/plain.md"].note_type is None
+        finally:
+            vault.close()
+
+    def test_filters_plain_without_detector(self, tmp_path: Path) -> None:
+        from markdown_vault_mcp.fts_index import FTSIndex
+        from markdown_vault_mcp.managers.search import SearchManager
+        from markdown_vault_mcp.scanner import scan_directory
+
+        _build_filter_vault(tmp_path, declared=True)
+        fts = FTSIndex(db_path=":memory:")
+        for note in scan_directory(tmp_path):
+            fts.upsert_note(note)
+        manager = SearchManager(fts, tmp_path)
+        # No detector wired: 'stale' is a plain frontmatter key nothing
+        # carries, so the listing is empty rather than OKF-evaluated.
+        assert manager.list(filters={"stale": "true"}) == []
+
+    def test_path_matches_okf_missing_document(self, tmp_path: Path) -> None:
+        _build_filter_vault(tmp_path, declared=True)
+        vault = self._vault(tmp_path)
+        try:
+            manager = vault.reader._search_mgr  # noqa: SLF001
+            assert manager._path_matches_okf("missing.md", {"stale": "true"}) is False  # noqa: SLF001
         finally:
             vault.close()
 
