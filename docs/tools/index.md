@@ -158,7 +158,7 @@ List documents (and optionally attachments) in the vault.
 | `folder` | string | `null` | Return only documents in this folder |
 | `pattern` | string | `null` | Unix glob matched against relative paths (such as `"Journal/*.md"`) |
 | `include_attachments` | bool | `false` | When true, also returns non-`.md` files that match the configured allowlist |
-| `filters` | object | `null` | Frontmatter equality filters, ANDed (any key; list fields match by membership). On an OKF bundle, `status` / `stale` / `trust_tier` carry OKF semantics — `{"stale": "true"}` or `{"status": "deprecated"}` builds a triage listing. Any filter excludes attachments |
+| `filters` | object | `null` | Frontmatter equality filters, ANDed (any key; list fields match by membership). On an OKF bundle, `status` / `stale` / `trust_tier` carry OKF semantics: `{"stale": "true"}` or `{"status": "deprecated"}` builds a triage listing. Any filter excludes attachments |
 
 **Returns:** List of info dicts. Every entry has a `kind` field (`"note"` or `"attachment"`). Body content is not included; call `read` for full text.
 
