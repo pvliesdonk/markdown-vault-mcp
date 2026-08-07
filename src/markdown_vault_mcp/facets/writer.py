@@ -14,6 +14,12 @@ if TYPE_CHECKING:
     from typing import Any
 
     from markdown_vault_mcp.managers.document import DocumentManager
+    from markdown_vault_mcp.managers.okf_migrate import OkfMigrationManager
+    from markdown_vault_mcp.okf import (
+        OkfConvertResult,
+        OkfIndexResult,
+        OkfLogResult,
+    )
     from markdown_vault_mcp.types import (
         DeleteResult,
         EditResult,
@@ -26,13 +32,61 @@ if TYPE_CHECKING:
 class WriterFacet:
     """Document-mutation operations, backed by :class:`DocumentManager`."""
 
-    def __init__(self, doc_mgr: DocumentManager) -> None:
-        """Hold the document manager the write operations delegate to.
+    def __init__(
+        self,
+        doc_mgr: DocumentManager,
+        *,
+        okf_migrate: OkfMigrationManager | None = None,
+    ) -> None:
+        """Hold the managers the write operations delegate to.
 
         Args:
             doc_mgr: The shared :class:`DocumentManager` owned by the root.
+            okf_migrate: The OKF migration manager (#963); ``None`` leaves
+                the ``okf_*`` migration methods unavailable.
         """
         self._doc_mgr = doc_mgr
+        self._okf_migrate = okf_migrate
+
+    def _migrate(self) -> OkfMigrationManager:
+        """Return the migration manager or raise if it was not wired."""
+        if self._okf_migrate is None:
+            raise RuntimeError("OKF migration manager is not configured")
+        return self._okf_migrate
+
+    def okf_convert_links(self, *, folder: str | None = None) -> OkfConvertResult:
+        """Rewrite resolvable wikilinks as root-absolute markdown links (#963).
+
+        Args:
+            folder: Restrict to this folder subtree; ``None`` covers the
+                whole vault.
+
+        Returns:
+            An :class:`~markdown_vault_mcp.okf.OkfConvertResult`.
+        """
+        return self._migrate().convert_links(folder=folder)
+
+    def okf_generate_index(self, *, folder: str = "") -> OkfIndexResult:
+        """Generate a reserved ``index.md`` listing from the TOC (#963).
+
+        Args:
+            folder: Vault-relative folder (``""`` for the bundle root).
+
+        Returns:
+            An :class:`~markdown_vault_mcp.okf.OkfIndexResult`.
+        """
+        return self._migrate().generate_index(folder=folder)
+
+    def okf_seed_log(self, *, folder: str = "") -> OkfLogResult:
+        """Seed a reserved ``log.md`` from git history (#963).
+
+        Args:
+            folder: Vault-relative folder (``""`` for the bundle root).
+
+        Returns:
+            An :class:`~markdown_vault_mcp.okf.OkfLogResult`.
+        """
+        return self._migrate().seed_log(folder=folder)
 
     def write(
         self,

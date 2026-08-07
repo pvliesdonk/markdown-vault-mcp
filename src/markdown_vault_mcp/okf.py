@@ -564,3 +564,148 @@ def audit_bundle(
         wikilink_files=acc.wikilinks.finding(),
         missing_recommended=acc.missing_recommended.finding(),
     )
+
+
+# --- Phase 4 migration transforms (#963): pure content builders -------------
+
+
+@dataclass(frozen=True)
+class OkfConvertResult:
+    """Result of the wikilink-to-markdown-link conversion (#963).
+
+    Attributes:
+        files_changed: Notes whose body was rewritten.
+        links_converted: Wikilink occurrences turned into markdown links.
+        links_skipped: Unresolvable wikilink occurrences left untouched
+            (their target is not indexed, so no root-absolute path exists).
+        notes_scanned: Notes examined.
+    """
+
+    files_changed: int
+    links_converted: int
+    links_skipped: int
+    notes_scanned: int
+
+
+@dataclass(frozen=True)
+class OkfIndexResult:
+    """Result of generating a reserved ``index.md`` listing (#963)."""
+
+    path: str
+    entries: int
+    frontmatter_preserved: bool
+
+
+@dataclass(frozen=True)
+class OkfLogResult:
+    """Result of seeding a reserved ``log.md`` from git history (#963)."""
+
+    path: str
+    commits: int
+    dates: int
+
+
+def convert_wikilinks_to_markdown(content: str, outlinks: Any) -> tuple[str, int, int]:
+    """Rewrite resolvable wikilinks in *content* as root-absolute md links.
+
+    Only wikilinks whose target is indexed (``exists``) are converted, so
+    the link graph is preserved edge-for-edge — a converted link points at
+    the same resolved ``target_path`` the wikilink already resolved to.
+    Unresolvable wikilinks are left as-is and counted as skipped. Interior
+    whitespace and the table-cell ``\\|`` escape are not matched (the same
+    limitation as the rename/move link-rewrite engine).
+
+    Args:
+        content: Raw note text (frontmatter included).
+        outlinks: The note's outlinks (objects with ``link_type``,
+            ``raw_target``, ``target_path``, ``link_text``, ``fragment``,
+            ``exists``).
+
+    Returns:
+        ``(new_content, converted, skipped)`` — occurrence counts, not
+        distinct-target counts.
+    """
+    converted = 0
+    skipped = 0
+    # Group resolvable wikilinks by raw_target: every occurrence of one
+    # raw_target resolves to the same path/fragment, but each occurrence may
+    # carry a different alias, so the display text is computed per match.
+    by_target: dict[str, tuple[str, str | None]] = {}
+    for link in outlinks:
+        if link.link_type != "wikilink":
+            continue
+        if not link.exists:
+            skipped += 1
+            continue
+        by_target.setdefault(link.raw_target, (link.target_path, link.fragment))
+    for raw_target, (target_path, fragment) in by_target.items():
+        frag_suffix = f"#{fragment}" if fragment else ""
+        default_display = raw_target
+        if fragment and default_display.endswith("#" + fragment):
+            default_display = default_display[: -(len(fragment) + 1)]
+
+        def _replace(
+            match: re.Match[str],
+            *,
+            tp: str = target_path,
+            fs: str = frag_suffix,
+            fallback: str = default_display,
+        ) -> str:
+            alias = match.group(1)
+            display = alias.strip() if alias and alias.strip() else fallback
+            return f"[{display}](/{tp}{fs})"
+
+        pattern = re.compile(r"\[\[" + re.escape(raw_target) + r"(?:\|([^\]]*))?\]\]")
+        content, n = pattern.subn(_replace, content)
+        converted += n
+    return content, converted, skipped
+
+
+def build_index_markdown(
+    heading: str, entries: list[tuple[str, str, str | None]]
+) -> str:
+    """Build an OKF ``index.md`` progressive-disclosure listing.
+
+    Args:
+        heading: The H1 heading (bundle or folder name).
+        entries: ``(title, root_absolute_path, description)`` per note,
+            already ordered; ``root_absolute_path`` is emitted verbatim in
+            the link target.
+
+    Returns:
+        The markdown body (no frontmatter).
+    """
+    lines = [f"# {heading}", ""]
+    for title, path, description in entries:
+        line = f"- [{title}]({path})"
+        if description:
+            line += f" - {description}"
+        lines.append(line)
+    return "\n".join(lines) + "\n"
+
+
+def build_log_markdown(entries: Any) -> tuple[str, int, int]:
+    """Build an OKF ``log.md`` from newest-first history entries.
+
+    Args:
+        entries: History entries (objects with ``timestamp`` ISO string,
+            ``message``, ``short_sha``), newest first.
+
+    Returns:
+        ``(markdown, commit_count, date_count)``.
+    """
+    by_date: dict[str, list[Any]] = {}
+    order: list[str] = []
+    for entry in entries:
+        date = str(entry.timestamp)[:10]
+        if date not in by_date:
+            by_date[date] = []
+            order.append(date)
+        by_date[date].append(entry)
+    sections: list[str] = []
+    for date in order:
+        block = [f"## {date}", ""]
+        block.extend(f"- **{c.message}** ({c.short_sha})" for c in by_date[date])
+        sections.append("\n".join(block))
+    body = "# Log\n\n" + "\n\n".join(sections) + "\n" if sections else "# Log\n"
+    return body, sum(len(v) for v in by_date.values()), len(order)

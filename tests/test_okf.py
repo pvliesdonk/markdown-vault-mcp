@@ -682,3 +682,134 @@ class TestOkfAudit:
             assert report.missing_type.count == 1
         finally:
             vault.close()
+
+
+# --- Phase 4 (#963): migration transform pure helpers -----------------------
+
+
+def _wl(raw_target, target_path, *, text=None, fragment=None, exists=True):
+    from markdown_vault_mcp.types import OutlinkInfo
+
+    return OutlinkInfo(
+        target_path=target_path,
+        link_text=text if text is not None else raw_target,
+        link_type="wikilink",
+        fragment=fragment,
+        raw_target=raw_target,
+        exists=exists,
+    )
+
+
+class TestConvertWikilinks:
+    def test_basic_and_aliased_and_skipped(self) -> None:
+        from markdown_vault_mcp.okf import convert_wikilinks_to_markdown
+
+        content = "See [[note]] and [[folder/other|Other]] and [[missing]]."
+        outlinks = [
+            _wl("note", "guides/note.md"),
+            _wl("folder/other", "folder/other.md", text="Other"),
+            _wl("missing", "missing.md", exists=False),
+        ]
+        new, conv, skip = convert_wikilinks_to_markdown(content, outlinks)
+        assert new == (
+            "See [note](/guides/note.md) and [Other](/folder/other.md) and [[missing]]."
+        )
+        assert conv == 2
+        assert skip == 1
+
+    def test_fragment_preserved_and_stripped_from_display(self) -> None:
+        from markdown_vault_mcp.okf import convert_wikilinks_to_markdown
+
+        content = "[[note#Section]]"
+        outlinks = [_wl("note#Section", "guides/note.md", fragment="Section")]
+        new, conv, _ = convert_wikilinks_to_markdown(content, outlinks)
+        assert new == "[note](/guides/note.md#Section)"
+        assert conv == 1
+
+    def test_repeated_target_converts_all_occurrences(self) -> None:
+        from markdown_vault_mcp.okf import convert_wikilinks_to_markdown
+
+        content = "[[a]] then [[a]] again"
+        outlinks = [_wl("a", "a.md"), _wl("a", "a.md")]
+        new, conv, _ = convert_wikilinks_to_markdown(content, outlinks)
+        assert new == "[a](/a.md) then [a](/a.md) again"
+        assert conv == 2
+
+    def test_markdown_links_untouched(self) -> None:
+        from markdown_vault_mcp.okf import convert_wikilinks_to_markdown
+        from markdown_vault_mcp.types import OutlinkInfo
+
+        content = "[already](/a.md)"
+        outlinks = [
+            OutlinkInfo(
+                target_path="a.md",
+                link_text="already",
+                link_type="markdown",
+                raw_target="/a.md",
+                exists=True,
+            )
+        ]
+        new, conv, skip = convert_wikilinks_to_markdown(content, outlinks)
+        assert new == content
+        assert conv == 0 and skip == 0
+
+
+class TestBuildIndexMarkdown:
+    def test_entries_with_and_without_description(self) -> None:
+        from markdown_vault_mcp.okf import build_index_markdown
+
+        body = build_index_markdown(
+            "Guides",
+            [
+                ("Playbook", "/guides/playbook.md", "A guide."),
+                ("Plain", "/guides/plain.md", None),
+            ],
+        )
+        assert body == (
+            "# Guides\n\n"
+            "- [Playbook](/guides/playbook.md) - A guide.\n"
+            "- [Plain](/guides/plain.md)\n"
+        )
+
+    def test_empty(self) -> None:
+        from markdown_vault_mcp.okf import build_index_markdown
+
+        assert build_index_markdown("Index", []) == "# Index\n\n"
+
+
+class TestBuildLogMarkdown:
+    def _entry(self, ts, short, msg):
+        from markdown_vault_mcp.types import HistoryEntry
+
+        return HistoryEntry(
+            sha=short * 5,
+            short_sha=short,
+            timestamp=ts,
+            author="Tester <t@example.com>",
+            message=msg,
+            paths_changed=[],
+        )
+
+    def test_groups_by_date_newest_first(self) -> None:
+        from markdown_vault_mcp.okf import build_log_markdown
+
+        entries = [
+            self._entry("2026-08-07T12:00:00+00:00", "aaaaaaa", "second"),
+            self._entry("2026-08-07T09:00:00+00:00", "bbbbbbb", "first"),
+            self._entry("2026-08-06T09:00:00+00:00", "ccccccc", "older"),
+        ]
+        body, commits, dates = build_log_markdown(entries)
+        assert commits == 3
+        assert dates == 2
+        assert body == (
+            "# Log\n\n"
+            "## 2026-08-07\n\n- **second** (aaaaaaa)\n- **first** (bbbbbbb)\n\n"
+            "## 2026-08-06\n\n- **older** (ccccccc)\n"
+        )
+
+    def test_empty_history(self) -> None:
+        from markdown_vault_mcp.okf import build_log_markdown
+
+        body, commits, dates = build_log_markdown([])
+        assert body == "# Log\n"
+        assert commits == 0 and dates == 0

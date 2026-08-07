@@ -687,3 +687,109 @@ def register(mcp: FastMCP) -> None:
         if is_markdown:
             data = await attach_conventions(vault, data, path)
         return data
+
+    @mcp.tool(
+        tags={"okf", "write"},
+        icons=_TOOL_ICONS["okf_convert_links"],
+        annotations={
+            "title": "OKF: Convert Wikilinks",
+            "readOnlyHint": False,
+            "destructiveHint": True,
+            "idempotentHint": True,
+        },
+    )
+    async def okf_convert_links(
+        folder: str | None = None,
+        vault: Vault = Depends(get_vault),
+    ) -> dict[str, Any]:
+        """Rewrite wikilinks as OKF bundle-root-absolute markdown links.
+
+        A migration transform (Open Knowledge Format): converts every
+        resolvable `[[wikilink]]` in the vault (or one folder) into
+        `[text](/path/note.md)`, OKF's recommended link style. Only links
+        whose target is indexed are converted, so the link graph is
+        preserved exactly — a converted link points at the same note the
+        wikilink resolved to. Unresolvable wikilinks are left untouched and
+        counted as skipped. Each changed note is written through the normal
+        write path (git commit if configured). Re-running is safe: already-
+        converted links are plain markdown and are not touched again.
+
+        Args:
+            folder: Restrict to this folder subtree (e.g. "guides"). Omit to
+                convert the whole vault.
+
+        Returns:
+            Dict with files_changed, links_converted, links_skipped, and
+            notes_scanned.
+        """
+        result = await asyncio.to_thread(vault.writer.okf_convert_links, folder=folder)
+        return asdict(result)
+
+    @mcp.tool(
+        tags={"okf", "write"},
+        icons=_TOOL_ICONS["okf_generate_index"],
+        annotations={
+            "title": "OKF: Generate index.md",
+            "readOnlyHint": False,
+            "destructiveHint": True,
+            "idempotentHint": True,
+        },
+    )
+    async def okf_generate_index(
+        folder: str = "",
+        vault: Vault = Depends(get_vault),
+    ) -> dict[str, Any]:
+        """Generate a reserved OKF index.md listing from the table of contents.
+
+        A migration transform (Open Knowledge Format): writes (or overwrites)
+        the folder's `index.md` as a progressive-disclosure listing —
+        `- [title](/path.md) - description` per note, description drawn from
+        frontmatter. Existing frontmatter is preserved, so regenerating the
+        bundle-root index.md keeps its `okf_version` declaration. Reserved
+        files (index.md, log.md) are omitted from the listing.
+
+        Args:
+            folder: Vault-relative folder to index (e.g. "guides"). Omit for
+                the bundle root.
+
+        Returns:
+            Dict with path, entries (count), and frontmatter_preserved (bool).
+        """
+        result = await asyncio.to_thread(vault.writer.okf_generate_index, folder=folder)
+        return asdict(result)
+
+    @mcp.tool(
+        tags={"okf", "write"},
+        icons=_TOOL_ICONS["okf_seed_log"],
+        annotations={
+            "title": "OKF: Seed log.md",
+            "readOnlyHint": False,
+            "destructiveHint": False,
+            "idempotentHint": False,
+        },
+    )
+    async def okf_seed_log(
+        folder: str = "",
+        vault: Vault = Depends(get_vault),
+    ) -> dict[str, Any]:
+        """Seed a reserved OKF log.md change history from git history.
+
+        A migration transform (Open Knowledge Format): writes a `log.md` with
+        newest-first `## YYYY-MM-DD` sections built from the vault's git
+        commit history (one bullet per commit). Refuses to overwrite an
+        existing log.md — a change history is hand-maintained after seeding,
+        so it is never clobbered. Requires the vault to be git-backed; with no
+        git history the log is written empty.
+
+        Args:
+            folder: Vault-relative folder to write log.md into (e.g.
+                "guides"). Omit for the bundle root.
+
+        Returns:
+            Dict with path, commits (count), and dates (distinct-day count).
+        """
+        try:
+            result = await asyncio.to_thread(vault.writer.okf_seed_log, folder=folder)
+        except FileExistsError as exc:
+            raise ToolError(str(exc)) from exc
+        return asdict(result)

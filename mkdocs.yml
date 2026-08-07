@@ -85,6 +85,7 @@ plugins:
           - guides/research-workflows.md: Research workflows (seed → ground → absorb → interconnect → produce, with optional scholar-mcp integration)
           - guides/zettelkasten.md: Zettelkasten workflow (fleeting → literature → permanent notes, MOCs, graph navigation)
           - guides/para.md: PARA workflow (Projects/Areas/Resources/Archive with triage, kickoff, and weekly review prompts)
+          - guides/okf.md: Open Knowledge Format (OKF) support and migrating a vault into the format
           - guides/mcp-apps.md: MCP Apps — Context Card, Graph Explorer, Vault Browser, and Note Preview views
           - guides/transfer-links.md: One-time transfer links — capability-URL download and upload without inflating LLM context
           - guides/claude-code-plugin.md: Claude Code plugin — install via /plugin marketplace
@@ -166,6 +167,7 @@ nav:
       - Research Workflows: guides/research-workflows.md
       - Zettelkasten: guides/zettelkasten.md
       - PARA: guides/para.md
+      - Open Knowledge Format: guides/okf.md
       - MCP Apps: guides/mcp-apps.md
       - Transfer Links: guides/transfer-links.md
       - Claude Code Plugin: guides/claude-code-plugin.md

@@ -383,6 +383,7 @@ class Vault:
         from markdown_vault_mcp.managers.git_query import GitQueryManager
         from markdown_vault_mcp.managers.index import IndexManager
         from markdown_vault_mcp.managers.link import LinkManager
+        from markdown_vault_mcp.managers.okf_migrate import OkfMigrationManager
         from markdown_vault_mcp.managers.search import SearchManager
 
         # 1. LinkManager (no deps)
@@ -492,7 +493,15 @@ class Vault:
             require_built=self._require_built,
             okf_audit=self._okf_audit,
         )
-        self._writer_facet = WriterFacet(self._doc_mgr)
+        self._okf_migrate = OkfMigrationManager(
+            doc_mgr=self._doc_mgr,
+            link_mgr=self._link_mgr,
+            search_mgr=self._search_mgr,
+            git_query_mgr=self._git_query_mgr,
+            source_dir=self._source_dir,
+            require_built=self._require_built,
+        )
+        self._writer_facet = WriterFacet(self._doc_mgr, okf_migrate=self._okf_migrate)
         self._graph_facet = GraphFacet(
             link_mgr=self._link_mgr,
             search_mgr=self._search_mgr,

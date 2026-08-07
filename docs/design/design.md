@@ -1192,6 +1192,28 @@ what is implemented today:
   ``disable_apps_ui`` pattern); it is deliberately *not* gated on live
   detection, because auditing before declaring is the migration
   ratchet's first step. Validation is never wired into the write path.
+- **Migration transforms (phase 4, #963)**: three one-shot write tools
+  move a vault toward the bundle conventions, each built on the existing
+  ``DocumentManager.write`` path (atomic write, read-only gate, index
+  dirtying, git-commit callback all reused) and orchestrated by
+  ``managers/okf_migrate.py::OkfMigrationManager`` behind
+  ``WriterFacet.okf_*``. ``okf_convert_links`` rewrites ``[[wikilinks]]``
+  as root-absolute markdown links reusing the *already-resolved* outlink
+  targets from the link index, so the graph is preserved edge-for-edge
+  (unresolvable wikilinks are skipped, not converted); the whole-``[[..]]``
+  substitution is a new rewrite the rename/move engine does not provide,
+  computed per occurrence so distinct aliases survive.
+  ``okf_generate_index`` writes a folder's reserved ``index.md`` listing
+  from the note list, preserving existing frontmatter (the root
+  ``okf_version`` declaration survives regeneration). ``okf_seed_log``
+  writes a reserved ``log.md`` from vault-wide git history (newest-first
+  ``## YYYY-MM-DD`` sections), refusing to overwrite an existing log. The
+  tools are tagged ``{"okf", "write"}`` — hidden in read-only mode and
+  under ``OKF_MODE=off`` — and gate on read-only only, not a future
+  ``OKF_WRITE`` flag (they are migrations, not enforcement). Export
+  (``okf_export``) is deferred: the local transfer subsystem serves
+  existing vault files by path, not generated bundles, so export needs a
+  different carrier (tracked separately under #963).
 - **Field vocabulary as data**: the OKF key names, known spec versions,
   and tier/lifecycle constants live as module constants in `okf.py`
   because the spec is pre-1.0 with one breaking rename behind it — a

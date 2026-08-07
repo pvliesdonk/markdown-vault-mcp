@@ -153,6 +153,16 @@ class DocumentManager:
                 "Vault is read-only; write operations are not permitted."
             )
 
+    def ensure_writable(self) -> None:
+        """Raise :exc:`ReadOnlyError` if the vault is read-only.
+
+        Public entry point for collaborators (e.g. the OKF migration
+        manager) that need to reject up front, before any per-note write is
+        reached — a whole-vault transform over an empty read-only vault
+        would otherwise silently no-op.
+        """
+        self._check_writable()
+
     def _effective_attachment_extensions(self) -> frozenset[str]:
         """Return the effective set of allowed attachment extensions.
 

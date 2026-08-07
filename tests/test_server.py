@@ -381,6 +381,9 @@ class TestToolManifest:
             "list_folders",
             "list_tags",
             "move_folder",
+            "okf_convert_links",
+            "okf_generate_index",
+            "okf_seed_log",
             "okf_validate",
             "read",
             "reindex",
@@ -430,7 +433,7 @@ class TestToolAnnotations:
             assert ann.readOnlyHint is False, f"{name} readOnlyHint"
 
         # Write tools — not readOnly
-        for name in ("write", "edit", "rename"):
+        for name in ("write", "edit", "rename", "okf_seed_log"):
             ann = by_name[name].annotations
             assert ann is not None
             assert ann.readOnlyHint is False, f"{name} readOnlyHint"
@@ -438,7 +441,12 @@ class TestToolAnnotations:
 
         # Delete and move_folder are destructive (move_folder removes the
         # source directory tree and can leave a partial state on OS failure)
-        for name in ("delete", "move_folder"):
+        for name in (
+            "delete",
+            "move_folder",
+            "okf_convert_links",
+            "okf_generate_index",
+        ):
             ann = by_name[name].annotations
             assert ann is not None
             assert ann.readOnlyHint is False, f"{name} readOnlyHint"

@@ -2,9 +2,11 @@
 
 **Status:** phases 1 (#960 — detection, config surface, read annotations,
 stats/config reporting, indexed-field extension), 2 (#961 — filter
-dimensions, graph typing), and 3 (#962 — `okf_validate` conformance
-audit) implemented; their design has graduated into `design.md`
-("OKF Read Semantics"). Later phases remain proposals — tracking issue
+dimensions, graph typing), 3 (#962 — `okf_validate` conformance audit), and the migration-transform
+half of 4 (#963 — `okf_convert_links` / `okf_generate_index` /
+`okf_seed_log`; `okf_export` deferred) implemented; their design has
+graduated into `design.md` ("OKF Read Semantics"). Later phases remain
+proposals — tracking issue
 [#959](https://github.com/pvliesdonk/markdown-vault-mcp/issues/959).
 **Spec targeted:** OKF v0.2
 ([`GoogleCloudPlatform/knowledge-catalog` → `okf/SPEC.md`](https://github.com/GoogleCloudPlatform/knowledge-catalog),
@@ -13,8 +15,8 @@ Apache 2.0; announced 2026-06-12 on the
 
 This document is the authoritative design for OKF support. As phases land,
 the relevant subsections graduate into `design.md` alongside the features
-they describe (phases 1-3 have); sections below covering unimplemented
-phases remain proposals.
+they describe (phases 1-3 and the migration transforms of phase 4 have);
+sections below covering unimplemented phases remain proposals.
 
 ---
 

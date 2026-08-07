@@ -42,6 +42,9 @@ markdown-vault-mcp exposes MCP tools across several categories. Write tools are 
 | [`delete`](#delete) | Delete Note | Write | Delete a document or attachment |
 | [`rename`](#rename) | Rename Note | Write | Rename/move a document or attachment |
 | [`move_folder`](#move_folder) | Move Folder | Write | Move an entire folder subtree and rewrite vault links |
+| [`okf_convert_links`](#okf_convert_links) | OKF: Convert Wikilinks | Write | Rewrite wikilinks as OKF root-absolute markdown links |
+| [`okf_generate_index`](#okf_generate_index) | OKF: Generate index.md | Write | Generate a reserved `index.md` listing from the TOC |
+| [`okf_seed_log`](#okf_seed_log) | OKF: Seed log.md | Write | Seed a reserved `log.md` change history from git |
 | [`fetch`](#fetch) | Fetch to Vault | Write | Download from URL and save to vault |
 | [`git_sync`](#git_sync) | Sync with Git | Write (git) | Force an immediate git pull / push / both, bypassing the periodic loops |
 | [`create_download_link`](#create_download_link) | Download Link | Transfer | Mint a one-time capability URL to download a vault file (HTTP/SSE only) |
@@ -413,6 +416,40 @@ Move an entire folder subtree to a new prefix and rewrite all vault links that p
 
 !!! warning
     Link rewrites are not rolled back if the process is interrupted after the move phase begins. The move phase itself is not OS-failure-atomic: an OS error during file moves (permission error, full disk, concurrent removal) can leave the subtree partially moved with the index unchanged; run `reindex` to recover. Use `rename` for single-file moves where full atomicity is required.
+
+### OKF migration transforms
+
+Three one-shot [OKF (Open Knowledge Format)](https://github.com/GoogleCloudPlatform/knowledge-catalog) migration tools for moving a vault toward the bundle conventions. They are write tools (hidden in read-only mode and when `MARKDOWN_VAULT_MCP_OKF_MODE` is `off`), and they run through the normal write path, so a git-backed vault commits each change. They are deliberate one-shot migrations, not ongoing enforcement.
+
+#### `okf_convert_links`
+
+Rewrite `[[wikilinks]]` as OKF's recommended bundle-root-absolute markdown links (`[text](/path/note.md)`) across the vault or one folder. Only links whose target is indexed are converted, so the link graph is preserved edge-for-edge; unresolvable wikilinks are left untouched and counted as skipped. Re-running is safe (already-converted markdown links are not touched).
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `folder` | string | Restrict to this folder subtree; omit to convert the whole vault |
+
+**Returns:** `files_changed`, `links_converted`, `links_skipped`, `notes_scanned` (all integers).
+
+#### `okf_generate_index`
+
+Generate (or overwrite) a folder's reserved `index.md` as a progressive-disclosure listing — `- [title](/path.md) - description` per note, description drawn from frontmatter. Existing frontmatter is preserved, so regenerating the bundle-root `index.md` keeps its `okf_version` declaration. Reserved files are omitted from the listing.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `folder` | string | Folder to index; omit for the bundle root |
+
+**Returns:** `path` (string), `entries` (integer), `frontmatter_preserved` (boolean).
+
+#### `okf_seed_log`
+
+Seed a folder's reserved `log.md` change history from the vault's git commit history — newest-first `## YYYY-MM-DD` sections, one bullet per commit. Refuses to overwrite an existing `log.md` (a change history is hand-maintained after seeding).
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `folder` | string | Folder to write `log.md` into; omit for the bundle root |
+
+**Returns:** `path` (string), `commits` (integer), `dates` (integer, distinct-day count).
 
 ### `fetch`
 

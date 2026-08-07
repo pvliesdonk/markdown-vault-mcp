@@ -397,3 +397,65 @@ class TestOkfValidatePreDeclaration:
         assert report["declared_version"] is None
         assert report["root_index_missing"] is True
         assert report["total_notes"] == 2
+
+
+@pytest.fixture
+def _okf_env_writable(okf_vault: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A declared OKF bundle, writable (for the migration transforms, #963)."""
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(okf_vault))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
+    for var in _CLEAR_VARS:
+        monkeypatch.delenv(var, raising=False)
+
+
+@pytest.mark.usefixtures("_okf_env_writable")
+class TestOkfMigrationTools:
+    """Phase 4 (#963): the migration transform tools end-to-end."""
+
+    async def test_convert_links_runs(self) -> None:
+        async with Client(make_server()) as client:
+            await wait_for_mcp_writer_drain(client)
+            result = await client.call_tool("okf_convert_links", {})
+        data = _parse_tool_data(result)
+        # The seed bundle's index.md links to the playbook via a wikilink-free
+        # markdown link already, so nothing to convert — but the tool runs and
+        # reports the scan.
+        assert set(data) == {
+            "files_changed",
+            "links_converted",
+            "links_skipped",
+            "notes_scanned",
+        }
+
+    async def test_generate_index_preserves_declaration(self) -> None:
+        async with Client(make_server()) as client:
+            await wait_for_mcp_writer_drain(client)
+            result = await client.call_tool("okf_generate_index", {})
+            data = _parse_tool_data(result)
+            assert data["path"] == "index.md"
+            assert data["frontmatter_preserved"] is True
+            read = _structured(await client.call_tool("read", {"path": "index.md"}))
+        assert read["frontmatter"]["okf_version"] == "0.2"
+
+    async def test_seed_log_writes(self) -> None:
+        async with Client(make_server()) as client:
+            await wait_for_mcp_writer_drain(client)
+            result = await client.call_tool("okf_seed_log", {})
+        data = _parse_tool_data(result)
+        assert data["path"] == "log.md"
+
+    async def test_tools_hidden_when_mode_off(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_MODE", "off")
+        async with Client(make_server()) as client:
+            names = {t.name for t in await client.list_tools()}
+        assert not ({"okf_convert_links", "okf_generate_index", "okf_seed_log"} & names)
+
+    async def test_tools_hidden_when_read_only(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "true")
+        async with Client(make_server()) as client:
+            names = {t.name for t in await client.list_tools()}
+        assert not ({"okf_convert_links", "okf_generate_index", "okf_seed_log"} & names)

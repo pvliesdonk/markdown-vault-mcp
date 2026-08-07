@@ -76,6 +76,11 @@ _TOOL_ICONS["get_index_status"] = _TOOL_ICONS["embeddings_status"]
 # get_toc reuses the read icon.
 _TOOL_ICONS["get_toc"] = _TOOL_ICONS["read"]
 
+# OKF migration transforms reuse existing icons (#963).
+_TOOL_ICONS["okf_convert_links"] = _TOOL_ICONS["rename"]
+_TOOL_ICONS["okf_generate_index"] = _TOOL_ICONS["get_toc"]
+_TOOL_ICONS["okf_seed_log"] = _TOOL_ICONS["get_history"]
+
 # App-only tools reuse existing icons rather than introducing new SVG files.
 _TOOL_ICONS["vault_context"] = _TOOL_ICONS["get_context"]
 _TOOL_ICONS["vault_list"] = _TOOL_ICONS["list_documents"]
