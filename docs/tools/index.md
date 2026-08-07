@@ -133,7 +133,7 @@ partial markdown reads (see the tip above).
     }
     ```
 
-    On an OKF bundle, whole-document reads additionally carry an `okf` dict (`type`, `status`, `stale`, `trust_tier`, and the note's full `sources` list). Section reads omit it — they carry no frontmatter to derive it from.
+    On an OKF bundle, whole-document reads also carry an `okf` dict (`type`, `status`, `stale`, `trust_tier`, and the note's full `sources` list). Section reads omit it — they carry no frontmatter to derive it from.
 
 === "Attachment"
 
@@ -196,7 +196,7 @@ Get an overview of the vault's size, capabilities, and configuration. Call this 
 }
 ```
 
-On an OKF bundle (see `MARKDOWN_VAULT_MCP_OKF_MODE` in [Configuration](../configuration.md)), the response additionally carries an `okf` section: the configured mode, the declared spec version, a per-`type` histogram plus an untyped count, `status` and trust-tier breakdowns, and the stale-note count.
+On an OKF bundle (see `MARKDOWN_VAULT_MCP_OKF_MODE` in [Configuration](../configuration.md)), the response also carries an `okf` section: the configured mode, the declared spec version, a per-`type` histogram plus an untyped count, `status` and trust-tier breakdowns, and the stale-note count.
 
 ### `embeddings_status`
 

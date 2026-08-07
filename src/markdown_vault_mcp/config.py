@@ -243,11 +243,12 @@ class ProjectConfig:
         default="auto",
         metadata={
             "help": (
-                "OKF (Open Knowledge Format) read semantics: auto follows "
-                "the vault's okf_version declaration in the root index.md, "
-                "off never applies OKF semantics, on forces them without a "
-                "declaration. Read-only annotations either way; OKF never "
-                "changes write behavior in this mode."
+                "OKF (Open Knowledge Format) read semantics. With auto "
+                "(the default), read annotations switch on when the vault "
+                "declares an OKF version in its root index.md. Use off to "
+                "disable OKF semantics entirely, or on to force them for an "
+                "undeclared vault. Annotations are read-only; write "
+                "behavior is never affected."
             ),
             "tags": ("content",),
             "wizard": {"group": "Content"},
