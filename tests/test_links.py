@@ -122,6 +122,29 @@ class TestExtractInlineLinks:
         assert len(links) == 1
         assert links[0].target_path == "Journal/other.md"
 
+    def test_root_absolute_path_resolved(self) -> None:
+        """Leading-slash targets resolve against the vault root (#969).
+
+        This is OKF's recommended link style; pathlib's join semantics
+        previously produced an unresolvable ``//...`` target.
+        """
+        links = extract_links("[Note](/guides/playbook.md)", "guides/plain.md")
+        assert len(links) == 1
+        assert links[0].target_path == "guides/playbook.md"
+        assert links[0].raw_target == "/guides/playbook.md"
+
+    def test_root_absolute_with_fragment(self) -> None:
+        links = extract_links("[S](/a/b.md#section)", "deep/nested/src.md")
+        assert links[0].target_path == "a/b.md"
+        assert links[0].fragment == "section"
+
+    def test_root_absolute_reference_link(self) -> None:
+        links = extract_links(
+            "[Note][ref]\n\n[ref]: /guides/playbook.md", "guides/plain.md"
+        )
+        assert len(links) == 1
+        assert links[0].target_path == "guides/playbook.md"
+
     def test_traversal_above_root_clamped(self) -> None:
         """Path traversal above vault root is clamped to root level."""
         links = extract_links("[Note](../../escape.md)", "a/b/c.md")

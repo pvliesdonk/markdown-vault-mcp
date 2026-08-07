@@ -835,9 +835,15 @@ def _resolve_link_path(target: str, source_rel: str) -> tuple[str, str | None]:
         # Link with only a fragment — points to the source document itself.
         return source_rel, fragment
 
-    # Resolve relative to the source document's directory.
-    source_dir_parts = PurePosixPath(source_rel).parent
-    resolved = source_dir_parts / target
+    if target.startswith("/"):
+        # Vault-root-absolute link (`/guides/note.md` — OKF's recommended
+        # style, #969): resolve against the vault root. Joining an absolute
+        # path onto a base with pathlib would *replace* the base and keep
+        # the leading slash, serializing as an unresolvable `//...` target.
+        resolved = PurePosixPath(target.lstrip("/"))
+    else:
+        # Resolve relative to the source document's directory.
+        resolved = PurePosixPath(source_rel).parent / target
 
     # Normalise (collapse /../ and /./) without going above root.
     parts = resolved.parts

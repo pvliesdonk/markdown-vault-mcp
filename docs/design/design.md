@@ -1699,7 +1699,10 @@ are not extracted. External URLs (`http://`, `https://`, `mailto:`) and pure anc
 
 **Path resolution for markdown links**: relative paths are resolved against the
 source document's directory. `../sibling.md` from `Journal/2024/today.md` resolves
-to `Journal/sibling.md`. Traversal above the vault root clamps to root.
+to `Journal/sibling.md`. A leading slash makes the target vault-root-relative
+(#969): `/guides/note.md` resolves to `guides/note.md` regardless of the source
+document's location — this is OKF's recommended link style. Traversal above the
+vault root clamps to root.
 
 **Fragment handling**: `path.md#heading` splits into `target_path=path.md` and
 `fragment=heading`. The fragment is preserved on `LinkInfo` but the target path
