@@ -55,7 +55,9 @@ TRUST_HUMAN = "human-reviewed"
 #: ``verified[].by`` prefix that marks a human verifier.
 _HUMAN_ACTOR_PREFIX = "human:"
 
-#: Reserved bundle filenames (navigation, not concepts).
+#: Reserved bundle filenames (navigation, not concepts). Not consumed in
+#: phase 1 — staged for the conformance audit (#962: reserved files are
+#: exempt from the ``type`` rule) and ranking downweights (#965).
 OKF_RESERVED_FILENAMES: tuple[str, ...] = ("index.md", "log.md")
 
 #: Bundle-root file allowed to carry ``okf_version``.
