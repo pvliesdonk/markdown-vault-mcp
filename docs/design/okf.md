@@ -125,10 +125,10 @@ metadata via field `metadata={"help": ..., "tags": (...)}`:
 `okf_version` is read from the root `index.md` frontmatter by a small pure
 disk-I/O probe (same pattern as `ConventionsResolver`: no index coupling, so
 detection works before the index is built — relevant in managed-git mode where
-the clone happens inside the server lifespan). Detection result (mode,
-declared version, effective read/write state) is exposed via `stats`,
-`config://vault`, and `get_server_info` cannot carry it (template-owned) —
-`stats` is the authoritative reporting surface.
+the clone happens inside the server lifespan). The detection result (mode,
+declared version, effective read/write state) is exposed via `stats` and
+`config://vault`. `get_server_info` cannot carry it because that tool is
+template-owned; `stats` is the authoritative reporting surface.
 
 Unknown `okf_version` values (e.g. a future `"0.3"`) log a `WARNING` and are
 treated as detected — permissive-consumer behavior extends to the marker
@@ -148,10 +148,10 @@ frontmatter blob; not persisted):
 - `staleness`: `stale` iff `stale_after` < today (date-only comparison,
   server-local date); absent field → not stale.
 - `trust_tier`: `human-reviewed` if any `verified[].by` has the `human:`
-  prefix; else `machine-confirmed` if `verified` is non-empty or
-  `generated.by` is a `process:`/tool actor with any verification; else
-  `unverified`. Exact tier algorithm lives in the field-mapping table
-  (§1 spec-stability caveat) with table-driven tests.
+  prefix; else `machine-confirmed` if `verified` is non-empty (all
+  verifiers non-human); else `unverified`. Exact tier algorithm lives in
+  the field-mapping table (§1 spec-stability caveat) with table-driven
+  tests.
 - `okf.status`: the raw `status` value, defaulted to `stable` when absent
   (per spec); unknown values pass through unmapped (no semantics attached).
 
@@ -324,7 +324,11 @@ Per-file conformance makes incremental adoption natural. Recommended order —
 
 Mechanical transforms are tools the operator/agent invokes deliberately; they
 are not gated on `OKF_WRITE` (they are one-shot migrations, not ongoing
-enforcement) but are write tools and respect read-only mode.
+enforcement) but are write tools and respect read-only mode. Every tool in
+this section — the migration transforms and `okf_export` — is registered per
+the Tool Registration Checklist, with `destructiveHint`/`idempotentHint`
+reflecting that the in-place transforms mutate the vault while `okf_export`
+is read-only.
 
 ### Export
 
