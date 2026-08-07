@@ -776,7 +776,9 @@ def register(mcp: FastMCP) -> None:
 
         A migration transform (Open Knowledge Format): writes a `log.md` with
         newest-first `## YYYY-MM-DD` sections built from the vault's git
-        commit history (one bullet per commit). Refuses to overwrite an
+        commit history (one bullet per commit). `folder` chooses where
+        log.md is written; the content is always the whole vault's history.
+        Refuses to overwrite an
         existing log.md — a change history is hand-maintained after seeding,
         so it is never clobbered. Requires the vault to be git-backed; with no
         git history the log is written empty.

@@ -172,6 +172,12 @@ class OkfMigrationManager:
         hand-maintained after seeding, so clobbering it would destroy real
         content.
 
+        *folder* chooses where ``log.md`` is written; the content is always
+        the **whole bundle's** history. Scoping the history to a subtree is
+        not offered here because the read-only git-history API validates its
+        path as a note or attachment file and rejects a bare directory;
+        per-folder history is tracked as a follow-up (#974).
+
         Args:
             folder: Vault-relative folder (``""`` for the bundle root).
             limit: Maximum commits to read (clamped to 100 by the git layer).

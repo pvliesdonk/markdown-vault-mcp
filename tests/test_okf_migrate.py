@@ -143,6 +143,15 @@ class TestSeedLog:
         assert result.commits == 0
         assert vault.reader.read("log.md").content == "# Log\n"
 
+    def test_folder_scopes_write_path_only(self, vault: Vault) -> None:
+        # folder chooses where log.md is written; its content is always the
+        # whole bundle's history (a directory is not a valid git-history path).
+        _write(vault, "guides/note.md", "# Note\n")
+        result = vault.writer.okf_seed_log(folder="guides")
+        wait_for_writer_drain(vault)
+        assert result.path == "guides/log.md"
+        assert vault.reader.read("guides/log.md") is not None
+
     def test_refuses_to_overwrite_existing_log(self, vault: Vault) -> None:
         _write(vault, "log.md", "# Log\n\n## 2026-01-01\n\n- **hand-written**\n")
         with pytest.raises(FileExistsError, match=r"log\.md"):
