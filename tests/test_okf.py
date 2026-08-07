@@ -609,6 +609,18 @@ class TestOkfAudit:
         assert report.missing_type.count == 1  # junk/excluded.md skipped
         assert report.log_heading_shape.count == 0  # junk/log.md skipped
 
+    def test_unprunable_exclude_pattern_filters_per_file(self, tmp_path: Path) -> None:
+        from markdown_vault_mcp.okf import audit_bundle
+
+        # A mid-name glob cannot be pruned at directory level by
+        # iter_markdown_files, so the per-file is_path_excluded check (the
+        # correctness layer) must fire.
+        (tmp_path / "keep.md").write_text("---\ntype: Note\n---\n# K\n")
+        (tmp_path / "drop-excluded.md").write_text("# untyped\n")
+        report = audit_bundle(tmp_path, exclude_patterns=["*excluded*"])
+        assert report.total_notes == 1
+        assert report.missing_type.count == 0
+
     def test_example_cap(self, tmp_path: Path) -> None:
         from markdown_vault_mcp.okf import audit_bundle
 
