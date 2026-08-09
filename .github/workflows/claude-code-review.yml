@@ -112,9 +112,16 @@ jobs:
           # Grant the built-in GitHub read/search MCP tools, the CI tools, the
           # inline-comment tool (what lets the reviewer post inline — not in the
           # default allow-set), `gh api` for read-only API access, gh pr/run read
-          # commands, and scoped `uv run` for targeted investigation (REVIEW.md
-          # sets norms). contents: read above keeps the reviewer from committing —
-          # it only reads and comments.
+          # commands, scoped `uv run` for targeted investigation (REVIEW.md sets
+          # norms), and Task. contents: read above keeps the reviewer from
+          # committing — it only reads and comments.
+          #
+          # Task is required: the /code-review plugin fans out into review
+          # subagents via the Task tool. Tag mode's fixed allow-set omits it, so
+          # under acceptEdits + headless (no prompt handler) each dispatch is
+          # silently denied and the review stalls with no findings. Subagents
+          # inherit this same set under contents: read — delegation, not new
+          # capability.
           claude_args: |
-            --allowedTools "mcp__github__get_*,mcp__github__list_*,mcp__github__search_*,mcp__github_ci__*,mcp__github_inline_comment__*,Bash(gh api *),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh run view:*),Bash(gh run list:*),Bash(uv run pytest:*),Bash(uv run mypy:*),Bash(uv run ruff:*)"
+            --allowedTools "Task,mcp__github__get_*,mcp__github__list_*,mcp__github__search_*,mcp__github_ci__*,mcp__github_inline_comment__*,Bash(gh api *),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh run view:*),Bash(gh run list:*),Bash(uv run pytest:*),Bash(uv run mypy:*),Bash(uv run ruff:*)"
           # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
