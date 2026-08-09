@@ -319,7 +319,20 @@ Concurrency note: log-append and index-refresh are secondary writes riding an
 existing primary write; they flow through the same single-writer index path
 and git-commit callback as any other write, and failures degrade to a logged
 `WARNING` (the primary write is never rolled back for a convention-file
-failure).
+failure). The `log.md` read-modify-write is held under the shared re-entrant
+write lock so concurrent writes into one folder cannot lost-update the log;
+the `index.md` refresh is a full idempotent regeneration, safe without extra
+locking.
+
+Cost note (accepted trade-offs, not defects): the index refresh drains the
+single-writer (a *global* wait, embeddings included, bounded at 10s) before it
+regenerates so a just-created note is listed — this is the price of reusing
+the FTS-backed `generate_index` rather than a disk scan, and it adds latency to
+every enforced write on a busy vault. And because the secondary writes are
+ordinary `DocumentManager` writes, a git-backed vault commits each separately,
+so one logical note write can produce up to three commits. Both are documented
+in the guide; a scoped (FTS-only) drain and commit coalescing are possible
+future refinements.
 
 ---
 
