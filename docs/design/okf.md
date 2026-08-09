@@ -300,12 +300,16 @@ and none of it is implied by vault declaration.
   refresh the affected folder's `index.md` listing. Both are guaranteed
   versions of what the advisory layer asks the agent to do. Generated
   `index.md` content derives from the same data as `get_toc`.
-  **Status:** deferred to phase 5b (see §9). Phase 5a shipped
-  stamping, verification invalidation, and `okf_verify`; convention
-  maintenance lands in a follow-up PR under the same tracking issue
-  (#964). Until then, an operator running `OKF_WRITE=true` gets provenance
-  and verification enforcement but still relies on the advisory layer (or
-  the one-shot migration tools) to keep `log.md` / `index.md` current.
+  **Status:** shipped in phase 5b (see §9). Maintenance runs only for
+  `write` / `edit` on an OKF-active vault, skips a write whose target is
+  itself a reserved file (`index.md` / `log.md`) so it never recurses, and is
+  skipped for suppressed writes (`okf_verify`, the one-shot migrations) so an
+  attestation or mechanical rewrite does not churn the reserved files. The
+  affected folder is the one directly containing the written note; the
+  `index.md` refresh reuses the migration `generate_index`, draining the
+  single-writer index first so a just-created note is listed. A brand-new
+  subfolder's pointer in its parent `index.md` lands on the next write into
+  the parent (per-write scope, not a full-tree walk).
 - **Optional conformance gate:** rejected for this design. `required_frontmatter=["type"]`
   already exists for operators who want hard exclusion; a softer write-time
   warning can ride the existing write-result `conventions`/advisory channel

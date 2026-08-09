@@ -260,7 +260,8 @@ class ProjectConfig:
                 "OKF (Open Knowledge Format) enforced write layer. When true on "
                 "an OKF-active vault, the server stamps generated provenance on "
                 "each write and clears any verified attestation when a note's "
-                "content changes. It also exposes the okf_verify tool. Requires "
+                "content changes. It also keeps each written folder's log.md and "
+                "index.md current, and exposes the okf_verify tool. Requires "
                 "OKF_MODE to be auto or on (a true value with OKF_MODE=off is a "
                 "config error). Off by default."
             ),

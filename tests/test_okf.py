@@ -813,3 +813,65 @@ class TestBuildLogMarkdown:
         body, commits, dates = build_log_markdown([])
         assert body == "# Log\n"
         assert commits == 0 and dates == 0
+
+
+class TestAppendOkfLogEntry:
+    def test_creates_fresh_log_when_absent(self) -> None:
+        from markdown_vault_mcp.okf import append_okf_log_entry
+
+        out = append_okf_log_entry(None, date="2026-08-09", summary="**Update**: x")
+        assert out == "# Log\n\n## 2026-08-09\n\n- **Update**: x\n"
+
+    def test_blank_text_treated_as_absent(self) -> None:
+        from markdown_vault_mcp.okf import append_okf_log_entry
+
+        out = append_okf_log_entry("   \n", date="2026-08-09", summary="y")
+        assert out == "# Log\n\n## 2026-08-09\n\n- y\n"
+
+    def test_appends_to_existing_same_day_section(self) -> None:
+        from markdown_vault_mcp.okf import append_okf_log_entry
+
+        text = "# Log\n\n## 2026-08-09\n\n- first\n"
+        out = append_okf_log_entry(text, date="2026-08-09", summary="second")
+        assert out == "# Log\n\n## 2026-08-09\n\n- first\n- second\n"
+
+    def test_same_day_append_skips_trailing_blank_before_next_section(self) -> None:
+        from markdown_vault_mcp.okf import append_okf_log_entry
+
+        # The new bullet joins today's section, not the blank gap before the
+        # older section below it.
+        text = "# Log\n\n## 2026-08-09\n\n- first\n\n## 2026-08-01\n\n- old\n"
+        out = append_okf_log_entry(text, date="2026-08-09", summary="second")
+        assert out == (
+            "# Log\n\n## 2026-08-09\n\n- first\n- second\n\n## 2026-08-01\n\n- old\n"
+        )
+
+    def test_inserts_new_day_section_on_top(self) -> None:
+        from markdown_vault_mcp.okf import append_okf_log_entry
+
+        text = "# Log\n\n## 2026-08-01\n\n- old\n"
+        out = append_okf_log_entry(text, date="2026-08-09", summary="new")
+        assert out == ("# Log\n\n## 2026-08-09\n\n- new\n\n## 2026-08-01\n\n- old\n")
+
+    def test_preserves_older_sections_and_prose(self) -> None:
+        from markdown_vault_mcp.okf import append_okf_log_entry
+
+        text = (
+            "# Log\n\n"
+            "## 2026-08-05\n\n"
+            "- hand-written note\n"
+            "Some prose under the date.\n\n"
+            "## 2026-08-01\n\n- older\n"
+        )
+        out = append_okf_log_entry(text, date="2026-08-09", summary="new")
+        # The new section is on top; every prior line survives verbatim.
+        assert out.startswith("# Log\n\n## 2026-08-09\n\n- new\n\n## 2026-08-05")
+        assert "hand-written note" in out
+        assert "Some prose under the date." in out
+        assert out.rstrip().endswith("## 2026-08-01\n\n- older")
+
+    def test_header_only_log_gains_a_section(self) -> None:
+        from markdown_vault_mcp.okf import append_okf_log_entry
+
+        out = append_okf_log_entry("# Log\n", date="2026-08-09", summary="x")
+        assert out == "# Log\n\n## 2026-08-09\n\n- x\n"

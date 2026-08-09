@@ -54,6 +54,11 @@ logger = logging.getLogger(__name__)
 _DEFAULT_STATE_SUBDIR = ".markdown_vault_mcp"
 _DEFAULT_STATE_FILENAME = "state.json"
 
+#: Bound on how long OKF convention maintenance (#964) waits for the
+#: single-writer index to drain before refreshing a folder's ``index.md`` so a
+#: just-written note is listed. On timeout the refresh proceeds best-effort.
+_CONVENTION_DRAIN_TIMEOUT = 10.0
+
 
 def _resolve_chunk_strategy(strategy: str | ChunkStrategy) -> ChunkStrategy:
     """Return a concrete ChunkStrategy from a string name or pass-through.
@@ -513,7 +518,28 @@ class Vault:
             git_query_mgr=self._git_query_mgr,
             require_built=self._require_built,
         )
-        self._writer_facet = WriterFacet(self._doc_mgr, okf_migrate=self._okf_migrate)
+        # OKF enforced-write convention maintenance (#964, phase 5b): built only
+        # under OKF_WRITE (mirroring the enricher gating). On a successful
+        # write/edit it appends to the folder's log.md and refreshes its
+        # index.md as secondary writes; failures degrade to a WARNING.
+        self._okf_convention = None
+        if okf_write:
+            from markdown_vault_mcp._okf_convention import ConventionMaintainer
+
+            self._okf_convention = ConventionMaintainer(
+                doc_mgr=self._doc_mgr,
+                okf_migrate=self._okf_migrate,
+                detector=self._okf,
+                sync_index=lambda: self._coordinator.wait_for_drain(
+                    timeout=_CONVENTION_DRAIN_TIMEOUT
+                ),
+                write_lock=self._file_write_lock,
+            )
+        self._writer_facet = WriterFacet(
+            self._doc_mgr,
+            okf_migrate=self._okf_migrate,
+            convention_maintainer=self._okf_convention,
+        )
         self._graph_facet = GraphFacet(
             link_mgr=self._link_mgr,
             search_mgr=self._search_mgr,

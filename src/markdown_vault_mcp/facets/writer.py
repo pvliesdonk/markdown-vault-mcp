@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from typing import Any
 
+    from markdown_vault_mcp._okf_convention import ConventionMaintainer
     from markdown_vault_mcp.managers.document import DocumentManager
     from markdown_vault_mcp.managers.okf_migrate import OkfMigrationManager
     from markdown_vault_mcp.okf import (
@@ -37,6 +38,7 @@ class WriterFacet:
         doc_mgr: DocumentManager,
         *,
         okf_migrate: OkfMigrationManager | None = None,
+        convention_maintainer: ConventionMaintainer | None = None,
     ) -> None:
         """Hold the managers the write operations delegate to.
 
@@ -44,9 +46,14 @@ class WriterFacet:
             doc_mgr: The shared :class:`DocumentManager` owned by the root.
             okf_migrate: The OKF migration manager (#963); ``None`` leaves
                 the ``okf_*`` migration methods unavailable.
+            convention_maintainer: The OKF enforced-write convention
+                maintainer (#964); ``None`` (the default, and whenever
+                ``OKF_WRITE`` is off) disables ``log.md`` / ``index.md``
+                upkeep on ``write`` / ``edit``.
         """
         self._doc_mgr = doc_mgr
         self._okf_migrate = okf_migrate
+        self._convention_maintainer = convention_maintainer
 
     def _migrate(self) -> OkfMigrationManager:
         """Return the migration manager or raise if it was not wired."""
@@ -119,9 +126,12 @@ class WriterFacet:
                 for a file that does not yet exist.
             ValueError: If *path* escapes the source directory.
         """
-        return self._doc_mgr.write(
+        result = self._doc_mgr.write(
             path, content, frontmatter=frontmatter, if_match=if_match
         )
+        if self._convention_maintainer is not None:
+            self._convention_maintainer.maintain(path, "write")
+        return result
 
     def edit(
         self,
@@ -160,7 +170,7 @@ class WriterFacet:
             DocumentNotFoundError: If the file does not exist.
             ValueError: If *path* escapes the source directory.
         """
-        return self._doc_mgr.edit(
+        result = self._doc_mgr.edit(
             path,
             old_text=old_text,
             new_text=new_text,
@@ -168,6 +178,9 @@ class WriterFacet:
             line_start=line_start,
             line_end=line_end,
         )
+        if self._convention_maintainer is not None:
+            self._convention_maintainer.maintain(path, "edit")
+        return result
 
     def delete(self, path: str, if_match: str | None = None) -> DeleteResult:
         """Delete a document or attachment.

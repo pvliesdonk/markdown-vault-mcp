@@ -97,9 +97,11 @@ The one-shot migration transforms above (`okf_convert_links`, `okf_generate_inde
 
 Enabling the layer also exposes the [`okf_verify`](../tools/index.md#okf_verify) tool. Call it on a note you have reviewed and it appends a `{by: human:<subject>, at}` entry to that note's `verified` list, which promotes the note's trust tier to `human-reviewed`. Because a verification names who did the reviewing, the tool requires an authenticated identity and errors when the server runs with no auth. The verification write is exempt from the invalidation above, so attesting a note does not immediately clear the attestation you just added.
 
-### What the layer does not yet do
+### Keeping `log.md` and `index.md` current
 
-One piece of the design remains unimplemented: automatic convention maintenance. The layer does not yet keep a folder's `log.md` and `index.md` current on every enforced write. For now, use the `okf_generate_index` and `okf_seed_log` migration tools when you want those reserved files refreshed, or let the advisory layer prompt the agent to update them. Automatic maintenance is planned as a follow-up.
+With the layer on, the server also maintains a folder's reserved files as a side effect of writing into it. After a successful `write` or `edit` on a note, it appends a dated `**Update**` bullet to that folder's `log.md` (creating the log, and the day's `## YYYY-MM-DD` section, when needed) and regenerates the folder's `index.md` listing so a new note shows up without a manual step. These are the guaranteed versions of the upkeep the advisory layer otherwise asks the agent to do by hand.
+
+A few boundaries keep this predictable. Maintenance runs only for content writes on an active bundle; a `rename` or `delete` does not trigger it, and neither does a write whose target is itself a reserved file (so editing `index.md` by hand is left alone). The `okf_verify` tool and the one-shot migration transforms are exempt, so an attestation or a mechanical rewrite does not churn the reserved files. Only the folder directly containing the written note is refreshed: if a write creates a brand-new subfolder, its pointer in the parent `index.md` appears on the next write into that parent. A failure to update a reserved file is logged and skipped; it never fails or rolls back the note write that triggered it.
 
 ## Using OKF with PARA or Zettelkasten
 

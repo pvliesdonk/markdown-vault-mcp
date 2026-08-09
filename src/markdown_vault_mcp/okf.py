@@ -711,6 +711,61 @@ def build_log_markdown(entries: Any) -> tuple[str, int, int]:
     return body, sum(len(v) for v in by_date.values()), len(order)
 
 
+def append_okf_log_entry(text: str | None, *, date: str, summary: str) -> str:
+    """Append a dated bullet to an OKF ``log.md``, newest date section on top.
+
+    The enforced-write convention-maintenance transform (design §6, phase 5b).
+    A ``log.md`` is a newest-first change history of ``## YYYY-MM-DD`` sections;
+    this inserts one ``- <summary>`` bullet for *date*:
+
+    - When *text* is empty/``None`` (no ``log.md`` yet), a fresh log with a
+      single dated section is returned.
+    - When the newest section already carries *date*, the bullet is appended to
+      the end of that section (keeping same-day entries together, in order).
+    - Otherwise a new ``## <date>`` section is inserted directly after the
+      ``# Log`` header so the newest day stays on top.
+
+    Existing content — the header, older sections, and any hand-written prose
+    under a date — is preserved verbatim; only the one bullet is inserted.
+
+    Args:
+        text: The current ``log.md`` file text, or ``None`` when absent.
+        date: The ISO date (``YYYY-MM-DD``) of the entry's section.
+        summary: The bullet text (without the leading ``- ``), e.g.
+            ``"**Update**: wrote `guides/note.md`"``.
+
+    Returns:
+        The updated ``log.md`` text (always newline-terminated).
+    """
+    heading = f"## {date}"
+    bullet = f"- {summary}"
+    if not text or not text.strip():
+        return f"# Log\n\n{heading}\n\n{bullet}\n"
+    lines = text.splitlines()
+    first = next((i for i, line in enumerate(lines) if line.startswith("## ")), None)
+    if first is not None and lines[first].strip() == heading:
+        # Append to the existing newest-date section, before the next section.
+        nxt = next(
+            (i for i in range(first + 1, len(lines)) if lines[i].startswith("## ")),
+            len(lines),
+        )
+        insert = nxt
+        while insert - 1 > first and not lines[insert - 1].strip():
+            insert -= 1
+        lines.insert(insert, bullet)
+        return "\n".join(lines) + "\n"
+    # Insert a new newest-date section after the header (before any sections).
+    head = lines[:first] if first is not None else lines
+    rest = lines[first:] if first is not None else []
+    head = list(head)
+    while head and not head[-1].strip():
+        head.pop()
+    parts = [*head, "", heading, "", bullet]
+    if rest:
+        parts += ["", *rest]
+    return "\n".join(parts) + "\n"
+
+
 def apply_okf_write_stamp(text: str, *, actor: str, today: _dt.date) -> str:
     """Stamp ``generated: {by, at}`` and clear ``verified`` on a note's frontmatter.
 

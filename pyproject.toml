@@ -199,6 +199,11 @@ ignore = ["E501"]
 # scan_directory predates the gate at 7 params and parse_note_categorized
 # mirrors that surface. Same gate-only mechanism as query.py above.
 "src/markdown_vault_mcp/scanner.py" = ["PLR0913"]
+# ConventionMaintainer is a DI collaborator: six injected dependencies
+# (doc_mgr + okf_migrate + detector + sync_index + write_lock + today), not
+# logic. Same gate-only mechanism as scanner.py above (PLR0913 isn't in the
+# base select, so an inline `# noqa` would be stripped as unused, RUF100).
+"src/markdown_vault_mcp/_okf_convention.py" = ["PLR0913"]
 # Test fixtures import vault/protocol types only used in annotations.
 "tests/conftest.py" = ["TC002", "TC003"]
 # _install_fake_openai's keyword-only scenario toggles (content/refusal/
