@@ -202,13 +202,37 @@ def make_server(
             make_webhook_handler(config.sync.github_webhook_secret)
         )
 
-    # One-time transfer-link wiring (#622). HTTP/SSE only: stdio has no server to
-    # receive requests. Registers the create_*_link tools and the
-    # /transfer/{token} route, sharing one in-memory TransferStore.
-    if transport != "stdio":
-        from markdown_vault_mcp._server_transfer import register_transfer
+    # One-time capability-link transfer (#622, #979) via pvl-core's shared
+    # framework. HTTP/SSE only and only with base_url set: the /transfer/{token}
+    # route needs an HTTP server, and register_transfer_routes raises without a
+    # public base URL. pvl-core owns the route, the KV-backed token store, and
+    # the two generic create_*_link tools (their names, titles, hints, icons,
+    # and the ``write`` tag on upload that the read-only disable pass below
+    # honours); the domain supplies only the VaultTransferSink (note/attachment
+    # read + write) and its validator. The optional notes add vault-specific
+    # context to the generic tool descriptions without changing their shape.
+    if transport != "stdio" and config.server.base_url:
+        from fastmcp_pvl_core import register_transfer_routes
 
-        register_transfer(mcp, config)
+        from markdown_vault_mcp._transfer_sink import VaultTransferSink
+
+        _transfer_sink = VaultTransferSink(config)
+        register_transfer_routes(
+            mcp,
+            config.server,
+            config.transfer,
+            sink=_transfer_sink,
+            validate=_transfer_sink.validate,
+            download_note=(
+                "For this server, ref is a vault-relative path to an existing "
+                "note (a .md file) or attachment."
+            ),
+            upload_note=(
+                "For this server, ref is the vault-relative destination path: a "
+                "note (.md) or an attachment whose extension is in the "
+                "configured allowlist."
+            ),
+        )
 
     # --- Visibility: hide write-tagged components in read-only mode ---
     if is_read_only:

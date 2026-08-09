@@ -375,19 +375,31 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_TRANSFER_TTL_DEFAULT_S",
-          "description": "Default one-time transfer-link lifetime in seconds when the caller omits ttl_seconds; clamped to TRANSFER_TTL_MAX_S. HTTP transports only.",
+          "description": "Link lifetime in seconds when the caller requests no explicit TTL.",
           "format": "number",
-          "default": "3600"
+          "default": "3600.0"
         },
         {
           "name": "MARKDOWN_VAULT_MCP_TRANSFER_TTL_MAX_S",
-          "description": "Ceiling in seconds a caller-requested transfer-link lifetime is clamped to.",
+          "description": "Ceiling in seconds a caller-requested link TTL is clamped to.",
           "format": "number",
-          "default": "86400"
+          "default": "86400.0"
+        },
+        {
+          "name": "MARKDOWN_VAULT_MCP_TRANSFER_GRACE_TTL_S",
+          "description": "Post-success grace window in seconds: a served token's TTL shrinks to this so a stalled transfer can retry within it.",
+          "format": "number",
+          "default": "60.0"
+        },
+        {
+          "name": "MARKDOWN_VAULT_MCP_TRANSFER_LEASE_S",
+          "description": "Crashed-handler reclaim window in seconds for an in-flight reservation.",
+          "format": "number",
+          "default": "60.0"
         },
         {
           "name": "MARKDOWN_VAULT_MCP_TRANSFER_MAX_UPLOAD_BYTES",
-          "description": "Per-upload size cap in bytes for transfer-link uploads; larger request bodies are rejected with HTTP 413.",
+          "description": "Maximum size in bytes of a single upload.",
           "format": "number",
           "default": "104857600"
         }
@@ -850,19 +862,31 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_TRANSFER_TTL_DEFAULT_S",
-          "description": "Default one-time transfer-link lifetime in seconds when the caller omits ttl_seconds; clamped to TRANSFER_TTL_MAX_S. HTTP transports only.",
+          "description": "Link lifetime in seconds when the caller requests no explicit TTL.",
           "format": "number",
-          "default": "3600"
+          "default": "3600.0"
         },
         {
           "name": "MARKDOWN_VAULT_MCP_TRANSFER_TTL_MAX_S",
-          "description": "Ceiling in seconds a caller-requested transfer-link lifetime is clamped to.",
+          "description": "Ceiling in seconds a caller-requested link TTL is clamped to.",
           "format": "number",
-          "default": "86400"
+          "default": "86400.0"
+        },
+        {
+          "name": "MARKDOWN_VAULT_MCP_TRANSFER_GRACE_TTL_S",
+          "description": "Post-success grace window in seconds: a served token's TTL shrinks to this so a stalled transfer can retry within it.",
+          "format": "number",
+          "default": "60.0"
+        },
+        {
+          "name": "MARKDOWN_VAULT_MCP_TRANSFER_LEASE_S",
+          "description": "Crashed-handler reclaim window in seconds for an in-flight reservation.",
+          "format": "number",
+          "default": "60.0"
         },
         {
           "name": "MARKDOWN_VAULT_MCP_TRANSFER_MAX_UPLOAD_BYTES",
-          "description": "Per-upload size cap in bytes for transfer-link uploads; larger request bodies are rejected with HTTP 413.",
+          "description": "Maximum size in bytes of a single upload.",
           "format": "number",
           "default": "104857600"
         }

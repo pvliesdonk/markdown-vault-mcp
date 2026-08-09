@@ -1275,83 +1275,67 @@ lifespan scaffold constructs and drives; the lifespan's `finally` block calls
 Python library must call `close()` explicitly (or use it as a context manager if
 one is added in future).
 
-### One-Time Transfer Links (`transfer/` subsystem)
+### One-Time Transfer Links (pvl-core `register_transfer_routes`)
 
 The transfer subsystem lets vault files move out-of-band (to a browser or
 another service) without passing bytes through the LLM context. It is an
-HTTP-layer feature: the route is registered only on HTTP/SSE transports and
-requires `MARKDOWN_VAULT_MCP_BASE_URL` to construct capability URLs.
+HTTP-layer feature: the route and tools are registered only on HTTP/SSE
+transports and only when `MARKDOWN_VAULT_MCP_BASE_URL` is set.
+
+The capability-link machinery — the `/transfer/{token}` route, the KV-backed
+token store, the generic `create_download_link` / `create_upload_link` tools
+(with their titles, hints, icons, and the `write` tag on upload), the TTL
+clamp, and the per-upload size cap — is owned by `fastmcp-pvl-core`
+(`register_transfer_routes`, ADR 0001). It was previously a hand-rolled
+in-memory subsystem in this repo (`transfer/`); #979 retired that and adopted
+the shared framework. markdown-vault-mcp now supplies only the domain hook: a
+`VaultTransferSink` (`_transfer_sink.py`) implementing the core `TransferSink`
+protocol (`read` / `write`) plus a validator that maps a caller `ref` to a
+vault-relative path. Wiring lives in `server.py`'s DOMAIN-WIRING block, which
+calls `register_transfer_routes(mcp, config.server, config.transfer, sink=…,
+validate=…)` and passes the two optional `download_note` / `upload_note`
+strings that add vault-specific context to the generic tool descriptions.
 
 #### Trust model
 
-The `/transfer/{token}` route is mounted **outside** the auth middleware.
-The unguessable token (`secrets.token_urlsafe(32)`, 43 URL-safe characters,
-256 bits of entropy) is the authorization. No `Authorization` header is
-required or checked on the route. The security properties that follow from
-this design:
+The `/transfer/{token}` route is mounted outside the auth middleware. The
+unguessable token (32 random bytes, URL-safe) is the authorization; no
+`Authorization` header is checked on the route. The properties that follow:
 
-- A valid token grants exactly one operation (download or upload) on one
-  fixed path.
-- Tokens expire after a configurable TTL (default 3600 s, ceiling 86400 s).
+- A valid token grants exactly one operation (download or upload) on one opaque
+  sink handle (here, a fixed vault path).
+- Tokens expire after a configurable TTL (default 3600 s, ceiling 86400 s),
+  which is the security-relevant bound.
 - Upload size is capped per-upload (`MARKDOWN_VAULT_MCP_TRANSFER_MAX_UPLOAD_BYTES`,
-  default 100 MiB).
-- A successfully completed transfer burns the token; subsequent requests with
-  the same token return HTTP 404.
-- A transient failure (network drop, size limit exceeded) does not burn
-  the token; the transfer can be retried until expiry.
+  default 100 MiB); an oversize body is rejected with HTTP 413.
+- On success the link is grace-settled rather than hard-burned: its TTL shrinks
+  to `MARKDOWN_VAULT_MCP_TRANSFER_GRACE_TTL_S`, so a served-but-stalled transfer
+  can reclaim it instead of being stranded by a spent link.
+- A transient failure releases the reservation with the full remaining TTL, so
+  the transfer can be retried until expiry. A crashed handler's in-flight
+  reservation auto-frees after `MARKDOWN_VAULT_MCP_TRANSFER_LEASE_S`.
 
-#### `TransferStore` state machine
+The token store is KV-backed (`MARKDOWN_VAULT_MCP_KV_STORE_URL`, on-disk state
+by default), so live links survive a server restart. The full state-machine and
+route mechanics are pvl-core's; see its ADR 0001 for the contract.
 
-`TransferStore` is an in-memory registry (a `dict` guarded by `threading.Lock`)
-that holds all live tokens. Each token record progresses through three states:
+#### Domain seam (`VaultTransferSink`)
 
-```
-available → in-flight → consumed
-```
+The sink is byte-oriented: pvl-core hands it the opaque sink handle and, for an
+upload, the fully-read (size-capped) body.
 
-- **`available`**: the token has been minted and has not been claimed by an
-  ongoing request. Attempts to use an expired token in this state return 404.
-- **`in-flight`**: a request has claimed the token (`claim()`) and is actively
-  performing the transfer. Concurrent claims on the same token are rejected
-  (idempotency guard). If the transfer fails, `release()` moves the token back
-  to `available` so a retry is possible.
-- **`consumed`**: `complete()` was called after a successful transfer. The
-  token is marked consumed and `claim()` rejects every further request
-  (returning 404).
-
-Expired and consumed tokens are always rejected by `claim()`. Stale entries are
-purged from memory the next time a token is minted: `create()` sweeps expired
-records before inserting the new one, so no background thread is needed.
-
-#### Download path (`GET /transfer/{token}`)
-
-1. `claim(token)`: verifies the token exists, is `available`, and is not
-   expired; atomically transitions it to `in-flight`.
-2. The path stored on the token is resolved via `vault.reader.read()` or
-   `vault.reader.read_attachment()` (lazy read from disk).
-3. The file bytes are streamed to the client with an appropriate
-   `Content-Type` and `Content-Disposition: attachment` header.
-4. On success: `complete(token)` burns the token.
-5. On failure: `release(token)` returns the token to `available`.
-
-Single full-fetch only; HTTP range requests (`Range:`) are not supported.
-The entire file is read into memory before streaming.
-
-#### Upload path (`POST /transfer/{token}` and `PUT /transfer/{token}`)
-
-`PUT` is accepted as an alias for `POST` to accommodate HTTP clients that
-prefer it for byte-range-like semantics, but both behave identically.
-
-1. `claim(token)`: same as download.
-2. The raw request body bytes are collected up to `TRANSFER_MAX_UPLOAD_BYTES`;
-   a body that exceeds the cap triggers `release(token)` and returns HTTP 413.
-3. The bytes are written to the fixed destination path via the normal write
-   path (`vault.writer.write()` for `.md`, `vault.writer.write_attachment()`
-   for other extensions). Path traversal and extension validation are
-   re-applied at write time (defense-in-depth against a bug in the link-creation
-   validation). The write updates the FTS index and fires the git-commit callback.
-4. On success: `complete(token)` burns the token.
-5. On failure: `release(token)` returns the token to `available`.
+- **Download** (`read(handle)`): the handle is a vault path. A `.md` note is
+  read via `vault.reader.read()` and served as `text/markdown`; any other path
+  is read via `vault.reader.read_attachment()` and served with its MIME type.
+  The whole file is materialised in memory (no HTTP range support).
+- **Upload** (`write(handle, body)`): a `.md` body is decoded as UTF-8 (BOM
+  stripped) and written via `vault.writer.write()`; other extensions are
+  written via `vault.writer.write_attachment()`. The write updates the FTS
+  index and fires the git-commit callback.
+- **Validation** (`validate(ref, kind)`): runs at link creation. Download
+  validates existence stat-only, so minting a link for a large attachment never
+  reads it; upload validates the destination is a note or an allowed attachment
+  extension. Both reject path traversal.
 
 The upload body is raw bytes (not `multipart/form-data`). The destination
 path is decided at link-creation time and cannot be overridden by the uploader.

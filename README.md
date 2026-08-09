@@ -249,9 +249,11 @@ embedding-provider conventions `OLLAMA_HOST`, `OPENAI_API_KEY`,
 | `MARKDOWN_VAULT_MCP_SUMMARIZE_MAX_INPUT_CHARS` | `200000` | No | Aggregate cap on note characters sent to the model in one call; excess is truncated with a flag on the result. |
 | `MARKDOWN_VAULT_MCP_SUMMARIZE_TIMEOUT` | `120.0` | No | Per-request wall-clock budget in seconds for a single summarize backend call; keep it below the MCP client's request timeout so the server-side error wins the race. |
 | `MARKDOWN_VAULT_MCP_SUMMARIZE_INLINE_TIMEOUT` | `30.0` | No | Soft deadline in seconds before a still-running summarize call is promoted to a background job retrievable via get_summary. Must be <= SUMMARIZE_TIMEOUT. |
-| `MARKDOWN_VAULT_MCP_TRANSFER_TTL_DEFAULT_S` | `3600` | No | Default one-time transfer-link lifetime in seconds when the caller omits ttl_seconds; clamped to TRANSFER_TTL_MAX_S. HTTP transports only. |
-| `MARKDOWN_VAULT_MCP_TRANSFER_TTL_MAX_S` | `86400` | No | Ceiling in seconds a caller-requested transfer-link lifetime is clamped to. |
-| `MARKDOWN_VAULT_MCP_TRANSFER_MAX_UPLOAD_BYTES` | `104857600` | No | Per-upload size cap in bytes for transfer-link uploads; larger request bodies are rejected with HTTP 413. |
+| `MARKDOWN_VAULT_MCP_TRANSFER_TTL_DEFAULT_S` | `3600.0` | No | Link lifetime in seconds when the caller requests no explicit TTL. |
+| `MARKDOWN_VAULT_MCP_TRANSFER_TTL_MAX_S` | `86400.0` | No | Ceiling in seconds a caller-requested link TTL is clamped to. |
+| `MARKDOWN_VAULT_MCP_TRANSFER_GRACE_TTL_S` | `60.0` | No | Post-success grace window in seconds: a served token's TTL shrinks to this so a stalled transfer can retry within it. |
+| `MARKDOWN_VAULT_MCP_TRANSFER_LEASE_S` | `60.0` | No | Crashed-handler reclaim window in seconds for an in-flight reservation. |
+| `MARKDOWN_VAULT_MCP_TRANSFER_MAX_UPLOAD_BYTES` | `104857600` | No | Maximum size in bytes of a single upload. |
 <!-- GENERATED-ENV-TABLE-DOMAIN-END -->
 
 Domain-config fields are composed inside `src/markdown_vault_mcp/config.py` between the `CONFIG-FIELDS-START` / `CONFIG-FIELDS-END` sentinels; env reads go through `fastmcp_pvl_core.env(_ENV_PREFIX, "SUFFIX", default)` so naming stays consistent, and field invariants go in `__post_init__` between the `CONFIG-VALIDATE-START` / `CONFIG-VALIDATE-END` sentinels. Each field's `metadata` `help` and `tags` generate the table above directly, so keep them accurate and complete. See the [configuration reference](https://pvliesdonk.github.io/markdown-vault-mcp/latest/configuration/) for the detailed prose documentation of every variable.

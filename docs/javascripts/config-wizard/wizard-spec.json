@@ -858,39 +858,40 @@
       "label": "Transfer Ttl Default S",
       "type": "number",
       "var": "MARKDOWN_VAULT_MCP_TRANSFER_TTL_DEFAULT_S",
-      "help": "Default one-time transfer-link lifetime in seconds when the caller omits ttl_seconds; clamped to TRANSFER_TTL_MAX_S. HTTP transports only.",
-      "advancedGroup": "Transfer links",
-      "showIf": {
-        "deployment": [
-          "server"
-        ]
-      }
+      "help": "Link lifetime in seconds when the caller requests no explicit TTL.",
+      "advancedGroup": "Transfer"
     },
     {
       "id": "transfer_ttl_max_s",
       "label": "Transfer Ttl Max S",
       "type": "number",
       "var": "MARKDOWN_VAULT_MCP_TRANSFER_TTL_MAX_S",
-      "help": "Ceiling in seconds a caller-requested transfer-link lifetime is clamped to.",
-      "advancedGroup": "Transfer links",
-      "showIf": {
-        "deployment": [
-          "server"
-        ]
-      }
+      "help": "Ceiling in seconds a caller-requested link TTL is clamped to.",
+      "advancedGroup": "Transfer"
+    },
+    {
+      "id": "transfer_grace_ttl_s",
+      "label": "Transfer Grace Ttl S",
+      "type": "number",
+      "var": "MARKDOWN_VAULT_MCP_TRANSFER_GRACE_TTL_S",
+      "help": "Post-success grace window in seconds: a served token's TTL shrinks to this so a stalled transfer can retry within it.",
+      "advancedGroup": "Transfer"
+    },
+    {
+      "id": "transfer_lease_s",
+      "label": "Transfer Lease S",
+      "type": "number",
+      "var": "MARKDOWN_VAULT_MCP_TRANSFER_LEASE_S",
+      "help": "Crashed-handler reclaim window in seconds for an in-flight reservation.",
+      "advancedGroup": "Transfer"
     },
     {
       "id": "transfer_max_upload_bytes",
       "label": "Transfer Max Upload Bytes",
       "type": "number",
       "var": "MARKDOWN_VAULT_MCP_TRANSFER_MAX_UPLOAD_BYTES",
-      "help": "Per-upload size cap in bytes for transfer-link uploads; larger request bodies are rejected with HTTP 413.",
-      "advancedGroup": "Transfer links",
-      "showIf": {
-        "deployment": [
-          "server"
-        ]
-      }
+      "help": "Maximum size in bytes of a single upload.",
+      "advancedGroup": "Transfer"
     }
   ],
   "guards": [

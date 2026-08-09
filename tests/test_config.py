@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from fastmcp_pvl_core import TransferConfig
 
 from markdown_vault_mcp.config import (
     ProjectConfig,
@@ -17,7 +18,6 @@ from markdown_vault_mcp.config_sections import (
     GitConfig,
     IndexingConfig,
     SearchConfig,
-    TransferConfig,
 )
 from markdown_vault_mcp.exceptions import ConfigurationError
 
@@ -1962,11 +1962,11 @@ class TestContentConfigFromEnv:
 
 class TestTransferConfigFromEnv:
     def test_defaults(self, monkeypatch):
-        from markdown_vault_mcp.config_sections import TransferConfig
-
         for k in (
             "TRANSFER_TTL_DEFAULT_S",
             "TRANSFER_TTL_MAX_S",
+            "TRANSFER_GRACE_TTL_S",
+            "TRANSFER_LEASE_S",
             "TRANSFER_MAX_UPLOAD_BYTES",
         ):
             monkeypatch.delenv(f"MARKDOWN_VAULT_MCP_{k}", raising=False)
@@ -2004,15 +2004,11 @@ class TestTransferConfigFromEnv:
     )
     def test_direct_construction_validates(self, kwargs, match):
         """__post_init__ rejects out-of-range/ordering violations on direct construction (#638)."""
-        from markdown_vault_mcp.config_sections import TransferConfig
-
         with pytest.raises(ConfigurationError, match=match):
             TransferConfig(**kwargs)
 
     def test_frozen(self):
         import dataclasses
-
-        from markdown_vault_mcp.config_sections import TransferConfig
 
         with pytest.raises(dataclasses.FrozenInstanceError):
             TransferConfig().ttl_default_s = 999  # type: ignore[misc]

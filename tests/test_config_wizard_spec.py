@@ -32,7 +32,7 @@ import json
 import re
 from pathlib import Path
 
-from fastmcp_pvl_core import ServerConfig
+from fastmcp_pvl_core import ServerConfig, TransferConfig
 
 import markdown_vault_mcp
 
@@ -95,6 +95,19 @@ def _server_config_source_file() -> Path:
     """Resolve the installed ``ServerConfig`` source file (server tier)."""
     src = inspect.getsourcefile(ServerConfig)
     assert src is not None, "ServerConfig source file not found"
+    return Path(src)
+
+
+def _transfer_config_source_file() -> Path:
+    """Resolve the installed ``TransferConfig`` source file (server tier).
+
+    ``TransferConfig`` is a pvl-core-owned section composed into
+    :class:`ProjectConfig` (#979); its env reads live in pvl-core's own source,
+    so it is resolved the same way as ``ServerConfig`` rather than scanned by the
+    domain package walk.
+    """
+    src = inspect.getsourcefile(TransferConfig)
+    assert src is not None, "TransferConfig source file not found"
     return Path(src)
 
 
@@ -203,8 +216,19 @@ def server_inventory() -> set[str]:
     return _filter_config_vars(extract_env_vars_from_source(src))
 
 
+def transfer_inventory() -> set[str]:
+    src = _transfer_config_source_file().read_text(encoding="utf-8")
+    return _filter_config_vars(extract_env_vars_from_source(src))
+
+
 def full_inventory() -> set[str]:
-    return domain_inventory() | server_inventory() | FRAMEWORK_VARS | EXTRA_KNOWN_VARS
+    return (
+        domain_inventory()
+        | server_inventory()
+        | transfer_inventory()
+        | FRAMEWORK_VARS
+        | EXTRA_KNOWN_VARS
+    )
 
 
 def load_spec() -> dict:

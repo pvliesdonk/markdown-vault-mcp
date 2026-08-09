@@ -255,12 +255,16 @@ Simple static token auth for HTTP deployments. Set a single env var; clients mus
 
 Short-lived capability URLs for transferring vault files out-of-band (browser download or third-party service upload) without inflating the LLM context window. The `GET /transfer/{token}` route is mounted outside the auth middleware; the unguessable token is the authorization.
 
-`MARKDOWN_VAULT_MCP_BASE_URL` is required for the transfer tools to function; it is used to construct the capability URL returned to the LLM. If `BASE_URL` is not set, calling `create_download_link` or `create_upload_link` raises an error.
+The capability-link machinery (the token store, the `/transfer/{token}` route, and the two tools) is provided by `fastmcp-pvl-core`. The token store is backed by the configured state backend (`MARKDOWN_VAULT_MCP_KV_STORE_URL`, on-disk by default), so live links survive a server restart.
+
+`MARKDOWN_VAULT_MCP_BASE_URL` is required for the transfer tools; it is used to construct the capability URL returned to the LLM. When `BASE_URL` is not set, the transfer tools and the `/transfer/{token}` route are not registered.
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
-| `MARKDOWN_VAULT_MCP_TRANSFER_TTL_DEFAULT_S` | int | `3600` | Default token lifetime in seconds when the caller omits `ttl_seconds`. Clamped to `MARKDOWN_VAULT_MCP_TRANSFER_TTL_MAX_S` |
-| `MARKDOWN_VAULT_MCP_TRANSFER_TTL_MAX_S` | int | `86400` | Maximum permitted TTL. Any `ttl_seconds` above this value is silently clamped to the ceiling |
+| `MARKDOWN_VAULT_MCP_TRANSFER_TTL_DEFAULT_S` | float | `3600` | Default token lifetime in seconds when the caller omits `ttl_seconds`. Clamped to `MARKDOWN_VAULT_MCP_TRANSFER_TTL_MAX_S` |
+| `MARKDOWN_VAULT_MCP_TRANSFER_TTL_MAX_S` | float | `86400` | Maximum permitted TTL. A requested `ttl_seconds` above this value is clamped to the ceiling |
+| `MARKDOWN_VAULT_MCP_TRANSFER_GRACE_TTL_S` | float | `60` | Grace window in seconds after a successful transfer. The token's remaining lifetime shrinks to this, so a stalled or retried transfer can reclaim the link rather than be stranded by a spent one |
+| `MARKDOWN_VAULT_MCP_TRANSFER_LEASE_S` | float | `60` | Reclaim window in seconds for an in-flight reservation. A crashed handler's token becomes claimable again once this lease lapses |
 | `MARKDOWN_VAULT_MCP_TRANSFER_MAX_UPLOAD_BYTES` | int | `104857600` (100 MiB) | Per-upload size cap for the upload route. Requests whose body exceeds this limit are rejected with HTTP 413 |
 
 !!! note "HTTP/SSE transport only"

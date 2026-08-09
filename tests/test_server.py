@@ -472,17 +472,36 @@ class TestToolAnnotations:
         title (``"Server Info"`` on the >=4.1.0 core floor) is asserted
         separately by ``test_get_server_info_has_title``.
         """
+        from dataclasses import replace
+
         from fastmcp import FastMCP
+        from fastmcp_pvl_core import register_transfer_routes
 
         from markdown_vault_mcp._server_apps import register_apps
         from markdown_vault_mcp._server_tools import register_tools
-        from markdown_vault_mcp._server_transfer import register_transfer
+        from markdown_vault_mcp._transfer_sink import VaultTransferSink
         from markdown_vault_mcp.config import ProjectConfig
 
         mcp = FastMCP("title-test")
         register_tools(mcp)
         register_apps(mcp)
-        register_transfer(mcp, ProjectConfig.from_env())
+        # The HTTP-only transfer tools are registered by pvl-core's
+        # register_transfer_routes (core owns their titles/hints/icons); wire
+        # them here so the sweep asserts them too. base_url is required to mint,
+        # so inject one rather than depend on the fixture env.
+        config = ProjectConfig.from_env()
+        config = replace(
+            config,
+            server=replace(
+                config.server,
+                base_url="https://example.test",
+                kv_store_url="memory://",
+            ),
+        )
+        sink = VaultTransferSink(config)
+        register_transfer_routes(
+            mcp, config.server, config.transfer, sink=sink, validate=sink.validate
+        )
 
         tools = await mcp._list_tools()
         missing = sorted(
@@ -4047,8 +4066,15 @@ class TestResourceStaleSignal:
 
 
 @pytest.mark.usefixtures("_mcp_env_writable")
-async def test_transfer_tools_present_on_http() -> None:
-    """The transfer tools register on HTTP transport (writable vault)."""
+async def test_transfer_tools_present_on_http(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The transfer tools register on HTTP transport with base_url set.
+
+    pvl-core's register_transfer_routes needs a public base URL (to build link
+    URLs) and a KV backend for the token store; an in-memory backend keeps the
+    test off the default on-disk state dir.
+    """
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_BASE_URL", "https://example.test")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_KV_STORE_URL", "memory://")
     server = make_server(transport="http")
     async with Client(server) as client:
         names = {t.name for t in await client.list_tools()}
@@ -4067,8 +4093,16 @@ async def test_transfer_tools_absent_on_stdio() -> None:
 
 
 @pytest.mark.usefixtures("_mcp_env")
-async def test_transfer_download_present_upload_hidden_in_readonly():
-    """In read-only mode the download link tool stays visible; upload is hidden."""
+async def test_transfer_download_present_upload_hidden_in_readonly(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """In read-only mode the download link tool stays visible; upload is hidden.
+
+    create_upload_link carries pvl-core's ``write`` tag, so the read-only
+    ``mcp.disable(tags={"write"})`` pass hides it while download remains.
+    """
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_BASE_URL", "https://example.test")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_KV_STORE_URL", "memory://")
     from markdown_vault_mcp.server import make_server
 
     server = make_server(transport="http")

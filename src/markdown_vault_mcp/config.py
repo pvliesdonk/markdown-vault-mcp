@@ -17,7 +17,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from fastmcp_pvl_core import ServerConfig
+from fastmcp_pvl_core import ServerConfig, TransferConfig
 
 from markdown_vault_mcp.config_sections import (
     ContentConfig,
@@ -27,7 +27,6 @@ from markdown_vault_mcp.config_sections import (
     SearchConfig,
     SummarizeConfig,
     SyncConfig,
-    TransferConfig,
 )
 from markdown_vault_mcp.config_sections._assembly import (
     derive_max_chunk_chars as derive_max_chunk_chars,  # re-export: tests / scanner xref
@@ -728,39 +727,15 @@ class ProjectConfig:
             "wizard": {"group": "Summarize"},
         },
     )
-    transfer_ttl_default_s: int = field(
-        default=3600,
-        metadata={
-            "help": (
-                "Default one-time transfer-link lifetime in seconds when the "
-                "caller omits ttl_seconds; clamped to TRANSFER_TTL_MAX_S. "
-                "HTTP transports only."
-            ),
-            "tags": ("transfer",),
-            "wizard": {"group": "Transfer links", "when": "server"},
-        },
-    )
-    transfer_ttl_max_s: int = field(
-        default=86400,
-        metadata={
-            "help": (
-                "Ceiling in seconds a caller-requested transfer-link "
-                "lifetime is clamped to."
-            ),
-            "tags": ("transfer",),
-            "wizard": {"group": "Transfer links", "when": "server"},
-        },
-    )
-    transfer_max_upload_bytes: int = field(
-        default=104857600,
-        metadata={
-            "help": (
-                "Per-upload size cap in bytes for transfer-link uploads; "
-                "larger request bodies are rejected with HTTP 413."
-            ),
-            "tags": ("transfer",),
-            "wizard": {"group": "Transfer links", "when": "server"},
-        },
+    # The transfer subsystem's operator knobs are owned by
+    # ``fastmcp_pvl_core.TransferConfig`` (link TTL default/max, post-success
+    # grace window, crashed-handler lease, per-upload cap). Compose it as a
+    # single field — the config-surface generator discovers its env vars by
+    # AST-walking ``TransferConfig.from_env`` and documents them from core's own
+    # field metadata (help/tags/wizard), so no flat mirror field is needed.
+    transfer: TransferConfig = field(
+        default_factory=TransferConfig,
+        metadata={"tags": ("transfer",)},
     )
 
     @property
@@ -870,15 +845,6 @@ class ProjectConfig:
             okf_mode=self.okf_mode,
         )
 
-    @property
-    def transfer(self) -> TransferConfig:
-        """The transfer section assembled from the flat ``transfer_*`` fields."""
-        return TransferConfig(
-            ttl_default_s=self.transfer_ttl_default_s,
-            ttl_max_s=self.transfer_ttl_max_s,
-            max_upload_bytes=self.transfer_max_upload_bytes,
-        )
-
     # CONFIG-FIELDS-END
 
     def __post_init__(self) -> None:
@@ -933,7 +899,10 @@ class ProjectConfig:
         _ = self.summarize
         _ = self.sync
         _ = self.content
-        _ = self.transfer
+        # ``transfer`` is a composed ``fastmcp_pvl_core.TransferConfig`` field
+        # (not a section-view property); it validates its own bounds in its
+        # ``__post_init__`` at construction time (default_factory and from_env
+        # alike), so it needs no re-construction here.
         # CONFIG-VALIDATE-END
 
     @classmethod
@@ -1058,10 +1027,6 @@ class ProjectConfig:
             summarize_inline_timeout=env_float(
                 _ENV_PREFIX, "SUMMARIZE_INLINE_TIMEOUT", 30.0
             ),
-            transfer_ttl_default_s=env_int(_ENV_PREFIX, "TRANSFER_TTL_DEFAULT_S", 3600),
-            transfer_ttl_max_s=env_int(_ENV_PREFIX, "TRANSFER_TTL_MAX_S", 86400),
-            transfer_max_upload_bytes=env_int(
-                _ENV_PREFIX, "TRANSFER_MAX_UPLOAD_BYTES", 104857600
-            ),
+            transfer=TransferConfig.from_env(_ENV_PREFIX),
             # CONFIG-FROM-ENV-END
         )
