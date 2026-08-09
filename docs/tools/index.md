@@ -47,8 +47,8 @@ markdown-vault-mcp exposes MCP tools across several categories. Write tools are 
 | [`okf_seed_log`](#okf_seed_log) | OKF: Seed log.md | Write | Seed a reserved `log.md` change history from git |
 | [`fetch`](#fetch) | Fetch to Vault | Write | Download from URL and save to vault |
 | [`git_sync`](#git_sync) | Sync with Git | Write (git) | Force an immediate git pull / push / both, bypassing the periodic loops |
-| [`create_download_link`](#create_download_link) | Download Link | Transfer | Mint a one-time capability URL to download a vault file (HTTP/SSE only) |
-| [`create_upload_link`](#create_upload_link) | Upload Link | Transfer | Mint a one-time capability URL to upload bytes to a fixed vault path (HTTP/SSE only) |
+| [`create_download_link`](#create_download_link) | Create Download Link | Transfer | Mint a one-time capability URL to download a vault file or an OKF bundle archive (HTTP/SSE only) |
+| [`create_upload_link`](#create_upload_link) | Create Upload Link | Transfer | Mint a one-time capability URL to upload bytes to a fixed vault path (HTTP/SSE only) |
 | [`browse_vault`](#browse_vault) | Browse Vault | Apps | Open the vault explorer SPA |
 | [`show_context`](#show_context) | Context Card | Apps | Open the Context Card for a note |
 
@@ -946,30 +946,28 @@ Transfer tools mint short-lived capability URLs so large files can move between 
 
 ### `create_download_link`
 
-Mint a one-time capability URL to download a vault note or attachment. The file must exist at link-creation time. The URL can be fetched exactly once; after a successful download the token is consumed. A failed or interrupted download does not consume the token.
+Mint a one-time capability URL to download vault content. The `ref` names what to serve: a vault path (a note or attachment that must exist at link-creation time), or an OKF-bundle reference that serves a generated bundle archive. The URL can be fetched exactly once; after a successful download the token settles. A failed or interrupted download does not settle the token, so it survives a retry until the TTL expires.
 
 **Parameters:**
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `path` | string | required | Relative path to the vault file (note or attachment). The file must exist; a missing path raises an error immediately |
-| `ttl_seconds` | int | server default (`MARKDOWN_VAULT_MCP_TRANSFER_TTL_DEFAULT_S`) | Token lifetime in seconds. Clamped to `MARKDOWN_VAULT_MCP_TRANSFER_TTL_MAX_S`. Omit to use the server default |
+| `ref` | string | required | What to download. A vault-relative path to an existing note or attachment, or an OKF-bundle reference (see below) |
+| `ttl_s` | number | server default (`MARKDOWN_VAULT_MCP_TRANSFER_TTL_DEFAULT_S`) | Token lifetime in seconds. Clamped to `MARKDOWN_VAULT_MCP_TRANSFER_TTL_MAX_S`. Omit to use the server default |
 
 **Returns:**
 
 ```json
 {
   "url": "https://mcp.example.com/transfer/...",
-  "path": "notes/report.md",
-  "expires_at": "2026-06-05T14:00:00+00:00",
-  "expires_in_seconds": 3600
+  "expires_in_s": 3600
 }
 ```
 
 **Example usage:**
 
 ```json
-{"path": "assets/diagram.pdf", "ttl_seconds": 600}
+{"ref": "assets/diagram.pdf", "ttl_s": 600}
 ```
 
 Then in a terminal:
@@ -978,8 +976,17 @@ Then in a terminal:
 curl "https://mcp.example.com/transfer/<token>" -o diagram.pdf
 ```
 
+**OKF bundle export.** Pass an OKF-bundle reference as `ref` to download a conformant bundle archive of the vault (or a folder subtree) instead of a single file:
+
+| `ref` value | Serves |
+|-------------|--------|
+| `okf-bundle` | A zip of the whole vault |
+| `okf-bundle:<folder>` | A zip scoped to that folder subtree |
+
+The export reads from the live vault and never changes it. Wikilinks become OKF's root-absolute markdown links. Convention files (`_conventions.md`) and the template folder are left out, while the reserved `index.md` and `log.md` stay in. Non-conformant notes appear as they are. Run `okf_validate` for the residual conformance gaps; the archive itself carries no gap report. Bundle export is unavailable when `MARKDOWN_VAULT_MCP_OKF_MODE` is `off`.
+
 !!! note "Read-lazy"
-    The file is read from disk at fetch time, not at link-creation time. If the file is modified between link creation and download, the downloader receives the version current at fetch time.
+    A file `ref` is read from disk at fetch time, not at link-creation time, so the downloader receives the version current at fetch time. A bundle `ref` is likewise generated at fetch time from the vault's current state.
 
 ### `create_upload_link`
 
@@ -989,24 +996,22 @@ Mint a one-time capability URL to upload bytes to a fixed, pre-validated destina
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `path` | string | required | Destination path in the vault. Validated for path traversal and allowed extension at link-creation time. May name a new or existing path; an existing file is overwritten on upload |
-| `ttl_seconds` | int | server default (`MARKDOWN_VAULT_MCP_TRANSFER_TTL_DEFAULT_S`) | Token lifetime in seconds. Clamped to `MARKDOWN_VAULT_MCP_TRANSFER_TTL_MAX_S`. Omit to use the server default |
+| `ref` | string | required | Destination path in the vault. Validated for path traversal and allowed extension at link-creation time. May name a new or existing path; an existing file is overwritten on upload |
+| `ttl_s` | number | server default (`MARKDOWN_VAULT_MCP_TRANSFER_TTL_DEFAULT_S`) | Token lifetime in seconds. Clamped to `MARKDOWN_VAULT_MCP_TRANSFER_TTL_MAX_S`. Omit to use the server default |
 
 **Returns:**
 
 ```json
 {
   "url": "https://mcp.example.com/transfer/...",
-  "path": "assets/upload.pdf",
-  "expires_at": "2026-06-05T14:00:00+00:00",
-  "expires_in_seconds": 3600
+  "expires_in_s": 3600
 }
 ```
 
 **Example usage:**
 
 ```json
-{"path": "assets/uploaded-diagram.pdf"}
+{"ref": "assets/uploaded-diagram.pdf"}
 ```
 
 Then in a terminal:

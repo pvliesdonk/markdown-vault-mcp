@@ -1213,10 +1213,14 @@ what is implemented today:
   ``## YYYY-MM-DD`` sections), refusing to overwrite an existing log. The
   tools are tagged ``{"okf", "write"}`` — hidden in read-only mode and
   under ``OKF_MODE=off`` — and gate on read-only only, not a future
-  ``OKF_WRITE`` flag (they are migrations, not enforcement). Export
-  (``okf_export``) is deferred: the local transfer subsystem serves
-  existing vault files by path, not generated bundles, so export needs a
-  different carrier (tracked separately under #963).
+  ``OKF_WRITE`` flag (they are migrations, not enforcement). Bundle export
+  ships as an overloaded download ref rather than a bespoke tool: the domain
+  ``VaultTransferSink`` recognises an ``okf-bundle`` / ``okf-bundle:<folder>``
+  ref on pvl-core's ``create_download_link`` and generates the archive at
+  fetch time via ``okf_bundle.build_okf_bundle`` (wikilinks rewritten,
+  convention/template files excluded, reserved ``index.md`` / ``log.md`` kept,
+  non-conformant notes as-is, reproducible bytes, never mutating the vault;
+  gated out when ``OKF_MODE=off``). Residual gaps stay with ``okf_validate``.
 - **Field vocabulary as data**: the OKF key names, known spec versions,
   and tier/lifecycle constants live as module constants in `okf.py`
   because the spec is pre-1.0 with one breaking rename behind it — a

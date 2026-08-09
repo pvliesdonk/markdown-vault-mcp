@@ -2,9 +2,10 @@
 
 **Status:** phases 1 (#960 — detection, config surface, read annotations,
 stats/config reporting, indexed-field extension), 2 (#961 — filter
-dimensions, graph typing), 3 (#962 — `okf_validate` conformance audit), and the migration-transform
-half of 4 (#963 — `okf_convert_links` / `okf_generate_index` /
-`okf_seed_log`; `okf_export` deferred) implemented; their design has
+dimensions, graph typing), 3 (#962 — `okf_validate` conformance audit), and all
+of 4 (#963 — `okf_convert_links` / `okf_generate_index` /
+`okf_seed_log`, plus bundle export via an `okf-bundle` `create_download_link`
+ref) implemented; their design has
 graduated into `design.md` ("OKF Read Semantics"). Later phases remain
 proposals — tracking issue
 [#959](https://github.com/pvliesdonk/markdown-vault-mcp/issues/959).
@@ -336,22 +337,32 @@ Per-file conformance makes incremental adoption natural. Recommended order —
    - `log.md` seeding from git history via `GitQueryManager`, so a
      git-backed vault starts with real change history.
 
-Mechanical transforms are tools the operator/agent invokes deliberately; they
-are not gated on `OKF_WRITE` (they are one-shot migrations, not ongoing
-enforcement) but are write tools and respect read-only mode. Every tool in
-this section — the migration transforms and `okf_export` — is registered per
-the Tool Registration Checklist, with `destructiveHint`/`idempotentHint`
-reflecting that the in-place transforms mutate the vault while `okf_export`
-is read-only.
+The in-place migration transforms are tools the operator/agent invokes
+deliberately; they are not gated on `OKF_WRITE` (they are one-shot migrations,
+not ongoing enforcement) but are write tools and respect read-only mode. Each is
+registered per the Tool Registration Checklist, with `destructiveHint` /
+`idempotentHint` reflecting that they mutate the vault.
 
 ### Export
 
-`okf_export` emits a conformant bundle *copy* (zip/tarball via the existing
-one-time transfer-link subsystem): wikilinks rewritten to root-absolute
-links, convention files (`_conventions.md`) and templates excluded,
-non-conformant notes included as-is (permissive consumers tolerate them) with
-the export result reporting the residual gap count. In-place conversion is
-migration (§7.1); export never mutates the vault.
+Export ships **not as a bespoke tool but as an overloaded download ref** on
+pvl-core's `create_download_link` (the transfer subsystem adopted in #979). The
+domain `VaultTransferSink` recognises a bundle ref — `okf-bundle` for the whole
+vault, `okf-bundle:<folder>` for a subtree — validates the scope at link
+creation (gated out when `OKF_MODE=off`), and generates the archive at fetch
+time via `okf_bundle.build_okf_bundle`. This is path 2 of pvl-core's transfer
+model (a domain use of the primitives) expressed without a new tool: a
+generated-bytes download the generic `create_download_link` serves unchanged.
+
+The bundle is a conformant *copy*: wikilinks rewritten to root-absolute links
+(reusing `convert_wikilinks_to_markdown` and the resolved outlink graph),
+convention files (`_conventions.md`) and the template folder excluded, the
+reserved `index.md` / `log.md` kept, non-conformant notes included as-is
+(permissive consumers tolerate them), and a fixed zip-entry timestamp so an
+unchanged vault re-exports to identical bytes. Notes are read raw from disk
+(uncapped), so a large note exports in full. Export never mutates the vault.
+Residual conformance gaps are reported separately by `okf_validate`, not embedded
+in the archive.
 
 ---
 

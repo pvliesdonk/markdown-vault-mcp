@@ -198,3 +198,62 @@ async def test_write_vault_unavailable_raises_503(config: ProjectConfig) -> None
     with pytest.raises(TransferUnavailableError) as exc:
         await sink.write("uploaded.md", b"# x\n")
     assert exc.value.status_code == 503
+
+
+# --- OKF bundle download ref (#963) ---------------------------------------
+
+
+async def test_validate_bundle_ref_whole_vault(sink: VaultTransferSink) -> None:
+    assert await sink.validate("okf-bundle", "download") == "okf-bundle"
+
+
+async def test_validate_bundle_ref_folder(
+    sink: VaultTransferSink, source_dir: Path
+) -> None:
+    (source_dir / "guides").mkdir()
+    assert await sink.validate("okf-bundle:guides", "download") == "okf-bundle:guides"
+
+
+async def test_validate_bundle_missing_folder_raises(sink: VaultTransferSink) -> None:
+    with pytest.raises(ValueError, match=r"not found"):
+        await sink.validate("okf-bundle:nope", "download")
+
+
+async def test_validate_bundle_traversal_raises(sink: VaultTransferSink) -> None:
+    with pytest.raises(ValueError, match=r"traversal"):
+        await sink.validate("okf-bundle:../secret", "download")
+
+
+async def test_validate_bundle_rejected_when_okf_off(source_dir: Path) -> None:
+    config = ProjectConfig(
+        source_dir=source_dir,
+        read_only=False,
+        attachment_extensions=("png",),
+        okf_mode="off",
+    )
+    sink = VaultTransferSink(config)
+    with pytest.raises(ValueError, match=r"disabled"):
+        await sink.validate("okf-bundle", "download")
+
+
+async def test_read_bundle_serves_zip(sink: VaultTransferSink) -> None:
+    import io
+    import zipfile
+
+    result = await sink.read("okf-bundle")
+    assert result.media_type == "application/zip"
+    assert result.filename == "okf-bundle.zip"
+    names = zipfile.ZipFile(io.BytesIO(result.body)).namelist()
+    assert "note.md" in names
+
+
+async def test_read_bundle_folder_scope(sink: VaultTransferSink, vault: Vault) -> None:
+    import io
+    import zipfile
+
+    vault.writer.write("guides/g.md", "# G\n")
+    wait_for_writer_drain(vault)
+    result = await sink.read("okf-bundle:guides")
+    assert result.filename == "guides.zip"
+    names = zipfile.ZipFile(io.BytesIO(result.body)).namelist()
+    assert names == ["guides/g.md"]

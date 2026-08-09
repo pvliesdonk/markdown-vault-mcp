@@ -90,6 +90,13 @@ OKF composes with the [PARA](para.md) and [Zettelkasten](zettelkasten.md) method
 - **Untyped inbox notes**: PARA's inbox holds quick captures that are typed later. Give them a placeholder `type: Capture` so they are conformant from the start, and let triage set the real type.
 - **Wikilinks**: write in whichever link style you prefer. The server resolves both, and `okf_convert_links` produces the OKF link style when you are ready to share the bundle.
 
-## What is not covered yet
+## Exporting a bundle
 
-Exporting a conformant bundle copy to a downloadable archive is planned but not yet available. For now, a git-backed vault is already a shareable bundle: the repository is the interchange format.
+When you want a conformant copy to share or hand to other OKF tooling, download one through the standard `create_download_link` tool with a bundle reference rather than a file path:
+
+- `create_download_link` with `ref="okf-bundle"` returns a one-time URL for a zip of the whole vault.
+- `create_download_link` with `ref="okf-bundle:guides"` scopes the zip to a folder subtree.
+
+The export reads from the live vault and never changes it. Wikilinks become OKF's root-absolute markdown links. Convention files (`_conventions.md`) and the template folder are left out, while the reserved `index.md` and `log.md` stay in. Non-conformant notes appear as they are, so the archive is a faithful snapshot. Run `okf_validate` for the residual conformance gaps; the archive itself carries no gap report.
+
+Bundle export needs an HTTP or SSE transport with `MARKDOWN_VAULT_MCP_BASE_URL` set, the same requirement as any transfer link, and it is unavailable when `OKF_MODE` is `off`. A git-backed vault also remains a shareable bundle on its own: the repository is an interchange format.
