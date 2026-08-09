@@ -54,9 +54,15 @@ jobs:
           include_fix_links: false
 
           # Grant the built-in GitHub MCP servers' read/search/CI tools, the
-          # inline-comment tool, and `gh api` for read-only GitHub access. These
-          # ADD to the action's defaults (Edit/Write/git stay available), but
-          # `contents: read` above is what keeps this workflow from committing.
+          # inline-comment tool, `gh api` for read-only GitHub access, and Task.
+          # These ADD to the action's defaults (Edit/Write/git stay available),
+          # but `contents: read` above is what keeps this workflow from committing.
+          #
+          # Task lets @claude fan out into parallel subagents: it dispatches them
+          # via the Task tool, which tag mode's fixed allow-set omits, so under
+          # acceptEdits + headless (no prompt handler) every dispatch is silently
+          # denied and the run stalls. Subagents inherit this same curated set
+          # under `contents: read`, so Task adds delegation, not new capability.
           # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
           claude_args: |
-            --allowedTools "mcp__github__get_*,mcp__github__list_*,mcp__github__search_*,mcp__github_ci__*,mcp__github_inline_comment__*,Bash(gh api *)"
+            --allowedTools "Task,mcp__github__get_*,mcp__github__list_*,mcp__github__search_*,mcp__github_ci__*,mcp__github_inline_comment__*,Bash(gh api *)"
