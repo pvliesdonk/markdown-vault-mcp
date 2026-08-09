@@ -293,8 +293,19 @@ class VaultTransferSink:
 
         Returns:
             A :class:`~fastmcp_pvl_core.TransferReadResult` carrying the zip.
+
+        Raises:
+            TransferUnavailableError: The vault is being torn down (retryable 503).
+            TransferResourceGoneError: A folder scope validated at mint time has
+                since been removed (410 Gone), mirroring the single-file path
+                rather than serving an empty archive.
         """
         vault = self._resolve_vault()
+        if scope and not (self._config.source_dir / scope).resolve().is_dir():
+            logger.warning("transfer_download_bundle_folder_gone scope=%s", scope)
+            raise TransferResourceGoneError(
+                f"bundle folder no longer available: {scope}"
+            )
         result = await asyncio.to_thread(
             build_okf_bundle, vault, self._config, folder=scope
         )

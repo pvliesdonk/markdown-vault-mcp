@@ -247,6 +247,14 @@ async def test_read_bundle_serves_zip(sink: VaultTransferSink) -> None:
     assert "note.md" in names
 
 
+async def test_read_bundle_missing_folder_raises_gone(sink: VaultTransferSink) -> None:
+    # A folder scope valid at mint time but deleted before the one-time download
+    # yields 410 (matching the single-file path), not an empty zip.
+    with pytest.raises(TransferResourceGoneError) as exc:
+        await sink.read("okf-bundle:vanished")
+    assert exc.value.status_code == 410
+
+
 async def test_read_bundle_folder_scope(sink: VaultTransferSink, vault: Vault) -> None:
     import io
     import zipfile
