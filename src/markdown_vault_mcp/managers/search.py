@@ -15,7 +15,7 @@ import logging
 import mimetypes
 import sqlite3
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, TypeVar
 
 from markdown_vault_mcp.exceptions import EmbeddingsNotConfiguredError
 from markdown_vault_mcp.managers._ranking import (
@@ -25,6 +25,9 @@ from markdown_vault_mcp.managers._ranking import (
     GroupableFTS as _GroupableFTS,
 )
 from markdown_vault_mcp.managers._ranking import (
+    PathScorableRow as _PathScorableRow,
+)
+from markdown_vault_mcp.managers._ranking import (
     SemanticRow as _SemanticRow,
 )
 from markdown_vault_mcp.managers._ranking import (
@@ -32,6 +35,9 @@ from markdown_vault_mcp.managers._ranking import (
 )
 from markdown_vault_mcp.managers._ranking import (
     apply_length_downweight as _apply_length_downweight,
+)
+from markdown_vault_mcp.managers._ranking import (
+    apply_okf_downweight as _apply_okf_downweight,
 )
 from markdown_vault_mcp.managers._ranking import (
     compute_snippet_window as _compute_snippet_for_semantic,
@@ -44,6 +50,7 @@ from markdown_vault_mcp.okf import (
     OKF_FILTER_KEYS,
     derive_annotation,
     matches_okf_filters,
+    okf_downweight_factor,
     parse_stale_filter,
 )
 from markdown_vault_mcp.types import (
@@ -90,6 +97,9 @@ _SEMANTIC_CANDIDATE_FLOOR = 1000
 
 # Maximum folder peers returned by get_context().
 _CONTEXT_FOLDER_PEERS_LIMIT = 20
+
+#: Row type for the OKF ranking downweight — any channel row with path + score.
+_RankT = TypeVar("_RankT", bound=_PathScorableRow)
 
 
 def _rrf_accumulate(
@@ -455,6 +465,36 @@ class SearchManager:
                 kept.append(row)
         return kept
 
+    def _rank_okf(self, rows: builtins.list[_RankT]) -> builtins.list[_RankT]:
+        """Apply the OKF ranking downweight (design §5, #965) on active bundles.
+
+        A no-op — the rows are returned unchanged, so ranking stays
+        byte-identical — unless an OKF detector is wired and the vault is
+        active. When active, ``deprecated`` / stale / reserved-file hits are
+        demoted via :func:`~markdown_vault_mcp.managers._ranking.apply_okf_downweight`.
+        The per-path OKF factor is memoised (one ``get_note`` frontmatter
+        lookup per distinct path, mirroring :meth:`_filter_rows_okf`).
+
+        Args:
+            rows: Candidate rows carrying ``path`` and ``score``.
+
+        Returns:
+            The rows, downweighted and re-sorted when active, else unchanged.
+        """
+        if self._okf is None or not self._okf.state().active:
+            return rows
+        factors: dict[str, float] = {}
+
+        def factor_for(path: str) -> float:
+            cached = factors.get(path)
+            if cached is None:
+                annotation = derive_annotation(self._get_frontmatter(path))
+                cached = okf_downweight_factor(annotation, path)
+                factors[path] = cached
+            return cached
+
+        return _apply_okf_downweight(rows, factor_for=factor_for)
+
     @staticmethod
     def _widen_for_okf(candidate_limit: int, okf_filters: dict[str, str]) -> int:
         """Widen a candidate pool when OKF dimensions will post-filter it.
@@ -751,6 +791,7 @@ class SearchManager:
             raw, alpha=self._length_downweight_alpha
         )
         downweighted = _apply_folder_boost(downweighted, weights=self._folder_weights)
+        downweighted = self._rank_okf(downweighted)
         groupable: list[_GroupableFTS] = [
             _GroupableFTS(
                 path=r.path,
@@ -867,6 +908,7 @@ class SearchManager:
             rows, alpha=self._length_downweight_alpha
         )
         downweighted = _apply_folder_boost(downweighted, weights=self._folder_weights)
+        downweighted = self._rank_okf(downweighted)
         groups = _group_by_path(
             downweighted, chunks_per_file=chunks_per_file, file_limit=limit
         )
@@ -970,6 +1012,7 @@ class SearchManager:
         groupable_rows = _apply_folder_boost(
             groupable_rows, weights=self._folder_weights
         )
+        groupable_rows = self._rank_okf(groupable_rows)
         groups = _group_by_path(
             groupable_rows, chunks_per_file=chunks_per_file, file_limit=limit
         )

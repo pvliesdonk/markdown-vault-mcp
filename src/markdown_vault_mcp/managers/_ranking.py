@@ -13,7 +13,10 @@ import math
 import re
 from dataclasses import dataclass
 from dataclasses import replace as _dc_replace
-from typing import Protocol, TypeVar
+from typing import TYPE_CHECKING, Protocol, TypeVar
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 # Regex for extracting query tokens (alphanumeric sequences).
 _QUERY_TOKEN_RE = re.compile(r"[A-Za-z0-9]+")
@@ -121,6 +124,54 @@ def apply_folder_boost(
             # SemanticRow / GroupableFTS all are), enforced at runtime by
             # replace() itself.
             row = _dc_replace(row, score=row.score * weight)  # type: ignore[type-var]
+        out.append(row)
+    out.sort(key=lambda r: r.score, reverse=True)
+    return out
+
+
+class PathScorableRow(Protocol):
+    """Row contract consumed by the OKF downweight helper.
+
+    :class:`~markdown_vault_mcp.types.FTSResult`, :class:`SemanticRow`, and
+    :class:`GroupableFTS` all satisfy it structurally. All callers are
+    dataclasses so :func:`dataclasses.replace` produces adjusted-score copies
+    without mutating the input.
+    """
+
+    path: str
+    score: float
+
+
+_PathScorableT = TypeVar("_PathScorableT", bound=PathScorableRow)
+
+
+def apply_okf_downweight(
+    rows: list[_PathScorableT], *, factor_for: Callable[[str], float]
+) -> list[_PathScorableT]:
+    """Scale each row's positive score by ``factor_for(row.path)``, re-sort desc.
+
+    The conservative, last score mutation of the curated pipeline (design §5,
+    #965): a hit's OKF factor (``1.0`` = no change) demotes ``deprecated`` /
+    stale / reserved-file rows. ``factor_for`` is memoised per path by the
+    caller so the per-note frontmatter lookup runs once per distinct path.
+
+    Mirrors :func:`apply_folder_boost`: only positive scores are scaled (a
+    negative cosine is left untouched so a demoting factor cannot promote it),
+    input rows are not mutated, and the result is re-sorted by descending
+    score. Callers apply this only on an OKF-active vault; on any other vault
+    it is never invoked, so ranking is byte-identical.
+    """
+    if not rows:
+        return list(rows)
+
+    out: list[_PathScorableT] = []
+    for row in rows:
+        factor = factor_for(row.path)
+        if factor != 1.0 and row.score > 0:
+            # Protocols can't promise __dataclass_fields__; the helper's
+            # contract is "callers pass dataclasses" (FTSResult / SemanticRow /
+            # GroupableFTS all are), enforced at runtime by replace() itself.
+            row = _dc_replace(row, score=row.score * factor)  # type: ignore[type-var]
         out.append(row)
     out.sort(key=lambda r: r.score, reverse=True)
     return out

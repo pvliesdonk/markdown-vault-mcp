@@ -61,6 +61,16 @@ _HUMAN_ACTOR_PREFIX = "human:"
 #: exempt from the ``type`` rule) and ranking downweights (#965).
 OKF_RESERVED_FILENAMES: tuple[str, ...] = ("index.md", "log.md")
 
+#: Ranking downweight factors (design §5, #965), applied only under detection.
+#: Multiplicative on a hit's score and composed so the ordering
+#: deprecated < stale < normal holds (a note that is both sinks below either
+#: alone). Reserved navigation files (``index.md`` / ``log.md``) are demoted so
+#: they don't compete with real notes. Trust-tier *boosting* is deliberately
+#: not here — the spec keeps tiers annotation-only.
+OKF_DEPRECATED_WEIGHT = 0.5
+OKF_STALE_WEIGHT = 0.75
+OKF_RESERVED_WEIGHT = 0.5
+
 #: ``filters`` keys that carry OKF semantics on an active bundle (phase 2,
 #: #961). ``type`` is deliberately absent: it is a plain indexed tag lookup
 #: with no special semantics, so the ordinary ``document_tags`` path
@@ -277,6 +287,32 @@ def derive_annotation(
     elif source_list:
         annotation["sources_count"] = len(source_list)
     return annotation
+
+
+def okf_downweight_factor(annotation: dict[str, Any], path: str) -> float:
+    """Return the multiplicative ranking factor for one OKF hit (design §5).
+
+    The curated-pipeline downweight for phase 6 (#965). Composes the
+    deprecated / stale / reserved-file factors so deprecated < stale < normal,
+    and a note that is both deprecated and stale sinks below either alone.
+    ``1.0`` means no change.
+
+    Args:
+        annotation: The note's :func:`derive_annotation` result (reads
+            ``status`` and ``stale``).
+        path: The note's vault-relative path (reserved-file check, no I/O).
+
+    Returns:
+        A factor in ``(0, 1]``.
+    """
+    factor = 1.0
+    if annotation.get("status") == "deprecated":
+        factor *= OKF_DEPRECATED_WEIGHT
+    if annotation.get("stale"):
+        factor *= OKF_STALE_WEIGHT
+    if path.rsplit("/", 1)[-1] in OKF_RESERVED_FILENAMES:
+        factor *= OKF_RESERVED_WEIGHT
+    return factor
 
 
 def parse_stale_filter(value: str) -> bool:

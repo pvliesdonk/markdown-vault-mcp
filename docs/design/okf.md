@@ -272,6 +272,21 @@ the agent applies that judgment visibly. Ranking changes ship in their own
 phase because their risk profile (silent behavior change on existing vaults
 that declare OKF) differs from the additive layers.
 
+**Status:** shipped in phase 6 (#965). The factors (`okf.py`:
+`OKF_DEPRECATED_WEIGHT = 0.5`, `OKF_STALE_WEIGHT = 0.75`,
+`OKF_RESERVED_WEIGHT = 0.5`) compose multiplicatively via
+`okf_downweight_factor`, so `deprecated < stale < normal` holds and a note that
+is both deprecated and stale sinks below either alone. The pure re-ranker
+`apply_okf_downweight` (alongside `apply_folder_boost`) runs as the conservative
+last score mutation — immediately after the folder boost, before grouping — in
+all three channels (keyword, semantic, hybrid), gated on
+`self._okf.state().active`; the per-hit OKF factor comes from the same
+`get_note` → frontmatter → `derive_annotation` path the annotation and filter
+layers use, memoised per path. It mirrors `apply_folder_boost` in scaling only
+positive scores, so a negative cosine is never promoted. On any vault where
+detection is off, `_rank_okf` returns its rows untouched, so ranking is
+byte-identical.
+
 ---
 
 ## 6. Layer 4 — enforced write layer (`OKF_WRITE=true`)
