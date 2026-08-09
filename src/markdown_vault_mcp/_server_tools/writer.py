@@ -14,8 +14,11 @@ from fastmcp import FastMCP
 from fastmcp.dependencies import Depends
 from fastmcp.exceptions import ToolError
 
-from markdown_vault_mcp.exceptions import EditConflictError
-from markdown_vault_mcp.okf import append_okf_verification
+from markdown_vault_mcp.exceptions import (
+    ConcurrentModificationError,
+    EditConflictError,
+)
+from markdown_vault_mcp.okf import _HUMAN_ACTOR_PREFIX, append_okf_verification
 from markdown_vault_mcp.utils.text import decode_utf8
 from markdown_vault_mcp.vault import Vault
 
@@ -678,14 +681,21 @@ def register(mcp: FastMCP) -> None:
                     f"Response body is not valid UTF-8 (content-type: {ct}). "
                     "Only UTF-8 encoded responses can be saved as .md notes."
                 ) from exc
-            result = await asyncio.to_thread(
-                vault.writer.write,
-                path,
-                text,
-                frontmatter=frontmatter,
-                if_match=if_match,
-            )
+            # Bind the OKF provenance actor (#964): fetch writes .md notes
+            # through the same DocumentManager.write path as the write/edit
+            # tools, so the enricher fires on an OKF-active vault. Attribute the
+            # save to the authenticated caller, not the default tool actor.
+            with okf_write_intent(OkfWriteIntent(actor=resolve_write_actor())):
+                result = await asyncio.to_thread(
+                    vault.writer.write,
+                    path,
+                    text,
+                    frontmatter=frontmatter,
+                    if_match=if_match,
+                )
         else:
+            # Attachments never carry OKF frontmatter and go through
+            # write_attachment, which the enricher does not touch — no intent.
             result = await asyncio.to_thread(
                 vault.writer.write_attachment,
                 path,
@@ -855,8 +865,9 @@ def register(mcp: FastMCP) -> None:
               append.
 
         Raises:
-            ToolError: If the server has no authenticated identity, or the note
-                does not exist.
+            ToolError: If the server has no authenticated identity, the note
+                does not exist, or the note changed since it was read (a
+                concurrent write — retry the verification).
         """
         subject = resolve_human_subject()
         if subject is None:
@@ -872,11 +883,23 @@ def register(mcp: FastMCP) -> None:
         new_text = append_okf_verification(
             note.content, subject=subject, today=date.today()
         )
-        # Suppress the enricher so it does not clear the verification just added.
-        with okf_write_suppressed():
-            await asyncio.to_thread(vault.writer.write, path, new_text)
+        # Verification attests to a specific set of bytes, so the read-modify-
+        # write must be atomic: pass the read's etag as if_match so a concurrent
+        # write/edit/delete in the window fails the attestation instead of
+        # silently clobbering it or resurrecting a deleted note (#964). Suppress
+        # the enricher so it does not clear the verification just added.
+        try:
+            with okf_write_suppressed():
+                await asyncio.to_thread(
+                    vault.writer.write, path, new_text, if_match=note.etag
+                )
+        except ConcurrentModificationError as exc:
+            raise ToolError(
+                f"Note {path!r} changed since it was read; verification "
+                "aborted to avoid attesting stale content. Re-read and retry."
+            ) from exc
         return {
             "path": path,
-            "verifier": f"human:{subject}",
+            "verifier": f"{_HUMAN_ACTOR_PREFIX}{subject}",
             "verified_count": verified_count,
         }

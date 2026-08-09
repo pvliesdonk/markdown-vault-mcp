@@ -97,6 +97,10 @@ The one-shot migration transforms above (`okf_convert_links`, `okf_generate_inde
 
 Enabling the layer also exposes the [`okf_verify`](../tools/index.md#okf_verify) tool. Call it on a note you have reviewed and it appends a `{by: human:<subject>, at}` entry to that note's `verified` list, which promotes the note's trust tier to `human-reviewed`. Because a verification names who did the reviewing, the tool requires an authenticated identity and errors when the server runs with no auth. The verification write is exempt from the invalidation above, so attesting a note does not immediately clear the attestation you just added.
 
+### What the layer does not yet do
+
+One piece of the design remains unimplemented: automatic convention maintenance. The layer does not yet keep a folder's `log.md` and `index.md` current on every enforced write. For now, use the `okf_generate_index` and `okf_seed_log` migration tools when you want those reserved files refreshed, or let the advisory layer prompt the agent to update them. Automatic maintenance is planned as a follow-up.
+
 ## Using OKF with PARA or Zettelkasten
 
 OKF composes with the [PARA](para.md) and [Zettelkasten](zettelkasten.md) methods. They organise where notes live and how work flows; OKF describes what each note is. A PARA or Zettelkasten vault can also be an OKF bundle. Three points of overlap matter:

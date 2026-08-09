@@ -32,7 +32,7 @@ from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
 from typing import TYPE_CHECKING
 
-from markdown_vault_mcp.okf import apply_okf_write_stamp
+from markdown_vault_mcp.okf import _HUMAN_ACTOR_PREFIX, apply_okf_write_stamp
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
@@ -42,7 +42,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_HUMAN_PREFIX = "human:"
 _LOCAL_SUBJECT = "local"  # get_subject() sentinel for startup auth mode "none"
 
 
@@ -121,7 +120,7 @@ def resolve_write_actor() -> str:
 
     subject = get_subject()
     if subject and subject != _LOCAL_SUBJECT:
-        return f"{_HUMAN_PREFIX}{subject}"
+        return f"{_HUMAN_ACTOR_PREFIX}{subject}"
     return tool_actor(package_version())
 
 

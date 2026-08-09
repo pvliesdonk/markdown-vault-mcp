@@ -472,6 +472,85 @@ class TestWriteToolThreadsActor:
         assert "generated" not in meta
 
 
+class _FakeResponse:
+    """Minimal stand-in for an httpx streaming response."""
+
+    def __init__(self, body: bytes, content_type: str) -> None:
+        self._body = body
+        self.headers = {"content-type": content_type}
+
+    def raise_for_status(self) -> None:
+        return None
+
+    async def aiter_bytes(self, **_kwargs: object) -> Any:
+        yield self._body
+
+
+class _FakeStream:
+    def __init__(self, response: _FakeResponse) -> None:
+        self._response = response
+
+    async def __aenter__(self) -> _FakeResponse:
+        return self._response
+
+    async def __aexit__(self, *_exc: object) -> bool:
+        return False
+
+
+def _make_fake_client(body: bytes, content_type: str) -> type:
+    """Build a fake ``httpx.AsyncClient`` class serving *body* on any GET."""
+
+    class _FakeClient:
+        def __init__(self, *_a: object, **_k: object) -> None: ...
+
+        async def __aenter__(self) -> _FakeClient:
+            return self
+
+        async def __aexit__(self, *_exc: object) -> bool:
+            return False
+
+        def stream(self, *_a: object, **_k: object) -> _FakeStream:
+            return _FakeStream(_FakeResponse(body, content_type))
+
+    return _FakeClient
+
+
+async def _fake_resolve(_hostname: str, _port: int) -> str:
+    return "127.0.0.1"
+
+
+@pytest.mark.usefixtures("enforced_env")
+class TestFetchThreadsActor:
+    async def test_fetch_stamps_human_actor_when_authed(
+        self, enforced_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import httpx
+
+        # fetch writes .md notes through DocumentManager.write, so the enricher
+        # fires; the provenance actor must be the authenticated caller (#964).
+        monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: "peter")
+        monkeypatch.setattr(
+            "markdown_vault_mcp._server_tools.writer._resolve_pinned_ip",
+            _fake_resolve,
+        )
+        monkeypatch.setattr(
+            httpx,
+            "AsyncClient",
+            _make_fake_client(b"# Fetched\n\nBody.\n", "text/plain"),
+        )
+        async with Client(make_server()) as client:
+            await wait_for_mcp_writer_drain(client)
+            await client.call_tool(
+                "fetch",
+                {"url": "https://example.com/report.md", "path": "notes/report.md"},
+            )
+            await wait_for_mcp_writer_drain(client)
+        meta = fm.loads(
+            (enforced_env / "notes" / "report.md").read_text(encoding="utf-8")
+        ).metadata
+        assert meta["generated"]["by"] == "human:peter"
+
+
 @pytest.mark.usefixtures("enforced_env")
 class TestOkfVerifyTool:
     async def test_refuses_without_auth(self) -> None:
@@ -508,3 +587,27 @@ class TestOkfVerifyTool:
             await wait_for_mcp_writer_drain(client)
             with pytest.raises(ToolError, match="not found"):
                 await client.call_tool("okf_verify", {"path": "nope.md"})
+
+    async def test_aborts_on_concurrent_modification(
+        self, enforced_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # okf_verify reads then writes with if_match=note.etag. Simulate a
+        # concurrent write landing in that window by mutating the file from
+        # inside the transform (which runs after the read); the etag no longer
+        # matches, so the write is refused rather than clobbering the change.
+        monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: "peter")
+        import markdown_vault_mcp._server_tools.writer as writer_mod
+
+        real_append = writer_mod.append_okf_verification
+
+        def racing_append(text: str, *, subject: str, today: Any) -> str:
+            (enforced_env / "guides" / "playbook.md").write_text(
+                "---\ntitle: Raced\n---\n# Raced\n", encoding="utf-8"
+            )
+            return real_append(text, subject=subject, today=today)
+
+        monkeypatch.setattr(writer_mod, "append_okf_verification", racing_append)
+        async with Client(make_server()) as client:
+            await wait_for_mcp_writer_drain(client)
+            with pytest.raises(ToolError, match="changed since it was read"):
+                await client.call_tool("okf_verify", {"path": "guides/playbook.md"})

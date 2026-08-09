@@ -300,6 +300,12 @@ and none of it is implied by vault declaration.
   refresh the affected folder's `index.md` listing. Both are guaranteed
   versions of what the advisory layer asks the agent to do. Generated
   `index.md` content derives from the same data as `get_toc`.
+  **Status:** deferred to phase 5b (see §9). Phase 5a shipped
+  stamping, verification invalidation, and `okf_verify`; convention
+  maintenance lands in a follow-up PR under the same tracking issue
+  (#964). Until then, an operator running `OKF_WRITE=true` gets provenance
+  and verification enforcement but still relies on the advisory layer (or
+  the one-shot migration tools) to keep `log.md` / `index.md` current.
 - **Optional conformance gate:** rejected for this design. `required_frontmatter=["type"]`
   already exists for operators who want hard exclusion; a softer write-time
   warning can ride the existing write-result `conventions`/advisory channel
@@ -396,7 +402,8 @@ so new vaults are conformant from note one.
 | 2 | Query filters (`type`/`status`/`stale`/`trust_tier`), graph `type` field | 1 |
 | 3 | `okf_validate` audit tool | 1 (detection; usable pre-declaration via `OKF_MODE=on`) |
 | 4 | Migration tools (link conversion, `index.md` generation, `log.md` seeding) + `okf_export` | 1, 3 |
-| 5 | Enforced write layer (`OKF_WRITE`): stamping, verification invalidation, `okf_verify`, convention maintenance | 1 |
+| 5a | Enforced write layer (`OKF_WRITE`): stamping, verification invalidation, `okf_verify` | 1 |
+| 5b | Enforced-write convention maintenance: `log.md` append + affected-folder `index.md` refresh on successful writes | 5a |
 | 6 | Ranking downweights | 1 (own phase: different risk profile) |
 | Docs | Guide, interop sections, examples/prompt packs | trails each phase; guide lands with 4 |
 
