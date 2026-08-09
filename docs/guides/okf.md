@@ -97,6 +97,6 @@ When you want a conformant copy to share or hand to other OKF tooling, download 
 - `create_download_link` with `ref="okf-bundle"` returns a one-time URL for a zip of the whole vault.
 - `create_download_link` with `ref="okf-bundle:guides"` scopes the zip to a folder subtree.
 
-The export reads from the live vault and never changes it. Wikilinks become OKF's root-absolute markdown links. Convention files (`_conventions.md`) and the template folder are left out, while the reserved `index.md` and `log.md` stay in. Non-conformant notes appear as they are, so the archive is a faithful snapshot. Run `okf_validate` for the residual conformance gaps; the archive itself carries no gap report.
+The export reads from the live vault and never changes it. Wikilinks become the root-absolute markdown links OKF recommends. Convention files (`_conventions.md`) and the template folder are left out, while the reserved `index.md` and `log.md` stay in. Non-conformant notes appear as they are, so the archive is a faithful snapshot. Run `okf_validate` for the residual conformance gaps; the archive itself carries no gap report.
 
 Bundle export needs an HTTP or SSE transport with `MARKDOWN_VAULT_MCP_BASE_URL` set, the same requirement as any transfer link, and it is unavailable when `OKF_MODE` is `off`. A git-backed vault also remains a shareable bundle on its own: the repository is an interchange format.

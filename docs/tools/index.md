@@ -946,7 +946,7 @@ Transfer tools mint short-lived capability URLs so large files can move between 
 
 ### `create_download_link`
 
-Mint a one-time capability URL to download vault content. The `ref` names what to serve: a vault path (a note or attachment that must exist at link-creation time), or an OKF-bundle reference that serves a generated bundle archive. The URL can be fetched exactly once; after a successful download the token settles. A failed or interrupted download does not settle the token, so it survives a retry until the TTL expires.
+Mint a one-time capability URL to download vault content. The `ref` says what to serve. It is either a vault-relative path to a note or attachment that exists at link-creation time, or an OKF-bundle reference for a generated bundle archive. The URL works exactly once; a successful download settles the token. A failed or interrupted download does not settle it, so a retry stays possible until the TTL expires.
 
 **Parameters:**
 
@@ -983,10 +983,10 @@ curl "https://mcp.example.com/transfer/<token>" -o diagram.pdf
 | `okf-bundle` | A zip of the whole vault |
 | `okf-bundle:<folder>` | A zip scoped to that folder subtree |
 
-The export reads from the live vault and never changes it. Wikilinks become OKF's root-absolute markdown links. Convention files (`_conventions.md`) and the template folder are left out, while the reserved `index.md` and `log.md` stay in. Non-conformant notes appear as they are. Run `okf_validate` for the residual conformance gaps; the archive itself carries no gap report. Bundle export is unavailable when `MARKDOWN_VAULT_MCP_OKF_MODE` is `off`.
+The export reads from the live vault and never changes it. Wikilinks become the root-absolute markdown links OKF recommends. Convention files (`_conventions.md`) and the template folder are left out, while the reserved `index.md` and `log.md` stay in. Non-conformant notes appear as they are. Run `okf_validate` for the residual conformance gaps; the archive itself carries no gap report. Bundle export is unavailable when `MARKDOWN_VAULT_MCP_OKF_MODE` is `off`.
 
 !!! note "Read-lazy"
-    A file `ref` is read from disk at fetch time, not at link-creation time, so the downloader receives the version current at fetch time. A bundle `ref` is likewise generated at fetch time from the vault's current state.
+    A file `ref` is read from disk at fetch time, not at link-creation time, so the downloader receives the version current at fetch time. A bundle `ref` is generated at fetch time from the vault's current state.
 
 ### `create_upload_link`
 
