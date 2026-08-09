@@ -280,6 +280,12 @@ def make_server(
         # OKF semantics vetoed by the operator: hide the OKF tool surface
         # entirely (same pattern as the apps-ui toggle).
         mcp.disable(tags={"okf"})
+    if not config.content.okf_write:
+        # The enforced-write layer (#964) is opt-in: hide its tool surface
+        # (okf_verify) unless OKF_WRITE is enabled. Provenance stamping and
+        # verification invalidation are behaviours gated in the write path,
+        # not tools, so they need no disable pass here.
+        mcp.disable(tags={"okf-enforce"})
     # DOMAIN-WIRING-END
 
     return mcp

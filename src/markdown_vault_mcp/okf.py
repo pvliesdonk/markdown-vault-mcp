@@ -709,3 +709,60 @@ def build_log_markdown(entries: Any) -> tuple[str, int, int]:
         sections.append("\n".join(block))
     body = "# Log\n\n" + "\n\n".join(sections) + "\n" if sections else "# Log\n"
     return body, sum(len(v) for v in by_date.values()), len(order)
+
+
+def apply_okf_write_stamp(text: str, *, actor: str, today: _dt.date) -> str:
+    """Stamp ``generated: {by, at}`` and clear ``verified`` on a note's frontmatter.
+
+    The enforced-write layer's core transform (design §6). Operates on the final
+    file text (frontmatter plus body), so it is uniform across the ``write``
+    (frontmatter-param) and ``edit`` (raw-splice) paths. ``generated`` describes
+    the current bytes and is overwritten; ``verified`` is dropped because a
+    content change invalidates any prior attestation; ``sources`` and every other
+    field are untouched.
+
+    Args:
+        text: The full note file text (frontmatter and body).
+        actor: The provenance actor — ``human:<subject>`` when authenticated,
+            else a tool actor such as ``markdown-vault-mcp/<version>``.
+        today: The stamp date (server-local; ISO-formatted into ``at``).
+
+    Returns:
+        The stamped file text, or *text* unchanged when the resulting frontmatter
+        is identical (a same-day, same-actor re-write of a note with no
+        ``verified``) — so an unchanged note keeps its exact bytes and YAML
+        formatting.
+    """
+    post = fm.loads(text)
+    meta: dict[str, Any] = dict(post.metadata)
+    new_meta: dict[str, Any] = dict(meta)
+    new_meta["generated"] = {"by": actor, "at": today.isoformat()}
+    new_meta.pop("verified", None)
+    if new_meta == meta:
+        return text
+    return fm.dumps(fm.Post(post.content, **new_meta))
+
+
+def append_okf_verification(text: str, *, subject: str, today: _dt.date) -> str:
+    """Append a ``human:<subject>`` entry to a note's ``verified`` list.
+
+    The ``okf_verify`` tool's core transform (design §6): records an attributable
+    human attestation, promoting the note's trust tier to ``human-reviewed``.
+    Preserves all other frontmatter and the body verbatim; the entry keeps the
+    ``{by, at}`` shape :func:`derive_trust_tier` reads.
+
+    Args:
+        text: The full note file text (frontmatter and body).
+        subject: The authenticated subject (without the ``human:`` prefix).
+        today: The verification date (server-local; ISO-formatted into ``at``).
+
+    Returns:
+        The note text with the appended verification.
+    """
+    post = fm.loads(text)
+    meta: dict[str, Any] = dict(post.metadata)
+    existing = meta.get("verified")
+    verified = list(existing) if isinstance(existing, list) else []
+    verified.append({"by": f"{_HUMAN_ACTOR_PREFIX}{subject}", "at": today.isoformat()})
+    meta["verified"] = verified
+    return fm.dumps(fm.Post(post.content, **meta))

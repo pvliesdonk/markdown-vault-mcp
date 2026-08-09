@@ -45,6 +45,7 @@ markdown-vault-mcp exposes MCP tools across several categories. Write tools are 
 | [`okf_convert_links`](#okf_convert_links) | OKF: Convert Wikilinks | Write | Rewrite wikilinks as OKF root-absolute markdown links |
 | [`okf_generate_index`](#okf_generate_index) | OKF: Generate index.md | Write | Generate a reserved `index.md` listing from the TOC |
 | [`okf_seed_log`](#okf_seed_log) | OKF: Seed log.md | Write | Seed a reserved `log.md` change history from git |
+| [`okf_verify`](#okf_verify) | OKF: Verify Note | Write | Attest a note as human-reviewed (requires auth + `OKF_WRITE`) |
 | [`fetch`](#fetch) | Fetch to Vault | Write | Download from URL and save to vault |
 | [`git_sync`](#git_sync) | Sync with Git | Write (git) | Force an immediate git pull / push / both, bypassing the periodic loops |
 | [`create_download_link`](#create_download_link) | Create Download Link | Transfer | Mint a one-time capability URL to download a vault file or an OKF bundle archive (HTTP/SSE only) |
@@ -450,6 +451,16 @@ Seed a folder's reserved `log.md` change history from the vault's git commit his
 | `folder` | string | Folder to write `log.md` into; omit for the bundle root |
 
 **Returns:** `path` (string), `commits` (integer), `dates` (integer, distinct-day count).
+
+#### `okf_verify`
+
+Attest a note as human-reviewed by appending a `{by: human:<subject>, at: <date>}` entry to its `verified` frontmatter list, promoting the note's trust tier to `human-reviewed`. Part of the [enforced write layer](../guides/okf.md#the-enforced-write-layer): registered only when `MARKDOWN_VAULT_MCP_OKF_WRITE` is enabled. Verification is an attributable act, so the tool errors when the server runs with no authentication (there is no subject to record). The append itself does not clear `verified`; only content-changing writes do that.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `path` | string | Vault-relative path of the note to verify |
+
+**Returns:** `path` (string), `verifier` (string, the `human:<subject>` actor recorded), `verified_count` (integer, entries after the append).
 
 ### `fetch`
 

@@ -385,6 +385,7 @@ class TestToolManifest:
             "okf_generate_index",
             "okf_seed_log",
             "okf_validate",
+            "okf_verify",
             "read",
             "reindex",
             "rename",

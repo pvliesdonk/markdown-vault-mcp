@@ -82,6 +82,21 @@ Three tools handle the changes you should not make by hand. They are write tools
 - **`okf_generate_index`** writes a folder's `index.md` as a listing of the notes directly in that folder, plus a pointer into each subfolder's own `index.md`. It draws the description from each note's frontmatter and lists one level at a time, so a nested bundle stays navigable rather than flattening into one long page. It preserves existing frontmatter, so regenerating the root `index.md` keeps your `okf_version` declaration.
 - **`okf_seed_log`** creates a `log.md` change history from the vault's git commits, newest first. It refuses to overwrite an existing `log.md`, so a hand-maintained history is safe.
 
+## The enforced write layer
+
+The steps above keep a bundle conformant by convention. The enforced write layer makes the server keep two of those fields correct on its own. Turn it on by setting `MARKDOWN_VAULT_MCP_OKF_WRITE=true`. It requires `OKF_MODE` to be `auto` or `on`; pairing it with `OKF_MODE=off` is a configuration error, since there is nothing to enforce. When the flag is off the write path is untouched, so an ordinary vault behaves exactly as before.
+
+With the layer on, and only while the vault is an active OKF bundle, every `write` and `edit` does two things to the note that lands:
+
+- **Stamps provenance.** The server writes `generated: {by, at}` describing the bytes it just saved. `at` is the write date. `by` is `human:<subject>` when the caller is authenticated, and a tool actor such as `markdown-vault-mcp/1.4.0` otherwise. Any existing `generated` value is replaced.
+- **Invalidates prior review.** A content change means an earlier human review no longer describes the current note, so the server clears `verified`. This fires on any content-changing write, including an edit that touches only a frontmatter line. A `rename` moves the file without changing its content, so it leaves both fields alone.
+
+The one-shot migration transforms above (`okf_convert_links`, `okf_generate_index`, `okf_seed_log`) are exempt: a mechanical rewrite does not re-stamp provenance or discard a human attestation.
+
+### Recording a human review
+
+Enabling the layer also exposes the [`okf_verify`](../tools/index.md#okf_verify) tool. Call it on a note you have reviewed and it appends a `{by: human:<subject>, at}` entry to that note's `verified` list, which promotes the note's trust tier to `human-reviewed`. Because a verification names who did the reviewing, the tool requires an authenticated identity and errors when the server runs with no auth. The verification write is exempt from the invalidation above, so attesting a note does not immediately clear the attestation you just added.
+
 ## Using OKF with PARA or Zettelkasten
 
 OKF composes with the [PARA](para.md) and [Zettelkasten](zettelkasten.md) methods. They organise where notes live and how work flows; OKF describes what each note is. A PARA or Zettelkasten vault can also be an OKF bundle. Three points of overlap matter:

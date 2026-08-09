@@ -125,6 +125,7 @@ class DocumentManager:
         on_write_callback: Callable[[Path, str, WriteOperation], None] | None = None,
         mark_paths_dirty: Callable[[Iterable[str]], None] | None = None,
         title_field: str = "title",
+        okf_write_enrich: Callable[[str, WriteOperation], str] | None = None,
     ) -> None:
         self._fts = fts
         self._source_dir = source_dir
@@ -137,6 +138,10 @@ class DocumentManager:
         self._on_write_callback = on_write_callback or (lambda *_a: None)
         self._mark_paths_dirty = mark_paths_dirty
         self._title_field = title_field
+        # OKF enforced-write hook (#964): transforms the final note text
+        # (stamp `generated`, clear `verified`) before it lands. None when
+        # OKF_WRITE is off — zero overhead on the write path.
+        self._okf_write_enrich = okf_write_enrich
 
     # ------------------------------------------------------------------
     # Validation helpers
@@ -706,6 +711,9 @@ class DocumentManager:
             else:
                 file_content = content
 
+            if self._okf_write_enrich is not None:
+                file_content = self._okf_write_enrich(file_content, "write")
+
             self._atomic_write(abs_path, file_content)
 
             if self._mark_paths_dirty is not None:
@@ -857,6 +865,9 @@ class DocumentManager:
                 new_content, match_type = self._edit_with_text(
                     file_content, old_text, new_text, path
                 )
+
+            if self._okf_write_enrich is not None:
+                new_content = self._okf_write_enrich(new_content, "edit")
 
             self._atomic_write(abs_path, new_content)
 

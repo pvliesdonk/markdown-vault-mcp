@@ -513,6 +513,14 @@
       "advancedGroup": "Content"
     },
     {
+      "id": "okf_write",
+      "label": "Okf Write",
+      "type": "bool",
+      "var": "MARKDOWN_VAULT_MCP_OKF_WRITE",
+      "help": "OKF (Open Knowledge Format) enforced write layer. When true, the server stamps generated provenance on writes, clears verified when content changes, and enables the okf_verify tool. Requires OKF_MODE to be auto or on (a true value with OKF_MODE=off is a config error). Off by default.",
+      "advancedGroup": "Content"
+    },
+    {
       "id": "attachment_extensions",
       "label": "Attachment Extensions",
       "type": "text",

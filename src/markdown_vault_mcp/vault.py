@@ -252,6 +252,7 @@ class Vault:
         fts_weights: dict[str, float] | None = None,
         conventions_file: str | None = "_conventions.md",
         okf_mode: str = "auto",
+        okf_write: bool = False,
     ) -> None:
         self._source_dir = source_dir
         self._index_path = index_path
@@ -471,6 +472,17 @@ class Vault:
             )
 
         # 4. DocumentManager (mark_paths_dirty routes through the writer)
+        from markdown_vault_mcp._okf_write import (
+            build_okf_write_enrich,
+            package_version,
+        )
+
+        # OKF enforced-write enrichment (#964): None (zero overhead) unless
+        # OKF_WRITE is on; when on, it stamps provenance and clears verification
+        # for write/edit on an OKF-active vault.
+        self._okf_write_enrich = build_okf_write_enrich(
+            okf_write=okf_write, detector=self._okf, version=package_version()
+        )
         self._doc_mgr = DocumentManager(
             fts=self._fts,
             source_dir=self._source_dir,
@@ -483,6 +495,7 @@ class Vault:
             on_write_callback=self._write_callback.fire,
             mark_paths_dirty=self._coordinator.mark_paths_dirty,
             title_field=self._title_field,
+            okf_write_enrich=self._okf_write_enrich,
         )
 
         # Facets (#604): thin views over the shared managers/coordinator, exposed via the reader/writer/graph/index accessors.

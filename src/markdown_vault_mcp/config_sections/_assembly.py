@@ -164,6 +164,7 @@ def to_vault_kwargs(config: ProjectConfig) -> dict[str, Any]:
         "embed_context": config.embeddings.embed_context,
         "conventions_file": config.content.conventions_file,
         "okf_mode": config.content.okf_mode,
+        "okf_write": config.content.okf_write,
         "attachment_extensions": config.content.attachment_extensions,
         "max_attachment_size_mb": config.content.max_attachment_size_mb,
         "max_note_read_bytes": config.content.max_note_read_bytes,

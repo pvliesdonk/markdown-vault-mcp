@@ -31,6 +31,7 @@ class ContentConfig:
     prompts_folder: str | None = None
     conventions_file: str | None = "_conventions.md"
     okf_mode: str = "auto"
+    okf_write: bool = False
 
     def __post_init__(self) -> None:
         """Validate size limits (#638) and freeze attachment_extensions (#639).
@@ -83,4 +84,11 @@ class ContentConfig:
         if self.okf_mode not in ("auto", "off", "on"):
             raise ConfigurationError(
                 f"okf_mode must be one of auto/off/on, got {self.okf_mode!r}"
+            )
+        # The enforced write layer changes bytes / write outcomes; it is
+        # meaningless without read semantics, so it cannot combine with
+        # okf_mode=off (design §2 trust model / §6).
+        if self.okf_write and self.okf_mode == "off":
+            raise ConfigurationError(
+                "okf_write=true requires okf_mode to be auto or on, not off"
             )
