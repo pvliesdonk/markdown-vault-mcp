@@ -118,6 +118,54 @@ class TestApplyOkfDownweight:
 
 
 # ---------------------------------------------------------------------------
+# SearchManager._rank_okf — gating and per-path memoisation
+# ---------------------------------------------------------------------------
+
+
+def _search_manager(tmp_path: Path, *, mode: str | None):
+    from markdown_vault_mcp.fts_index import FTSIndex
+    from markdown_vault_mcp.managers.search import SearchManager
+    from markdown_vault_mcp.okf import OkfDetector
+
+    detector = OkfDetector(tmp_path, mode=mode) if mode is not None else None
+    return SearchManager(FTSIndex(db_path=":memory:"), tmp_path, okf_detector=detector)
+
+
+class TestRankOkfMethod:
+    def test_inert_without_detector(self, tmp_path: Path) -> None:
+        mgr = _search_manager(tmp_path, mode=None)
+        rows = [_Row("a.md", 1.0), _Row("b.md", 2.0)]
+        # No detector → the same list object is returned untouched (no re-sort).
+        assert mgr._rank_okf(rows) is rows
+
+    def test_inert_when_detector_inactive(self, tmp_path: Path) -> None:
+        mgr = _search_manager(tmp_path, mode="off")
+        rows = [_Row("a.md", 1.0)]
+        assert mgr._rank_okf(rows) is rows
+
+    def test_active_downweights_and_memoises_per_path(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        mgr = _search_manager(tmp_path, mode="on")
+        calls: list[str] = []
+
+        def fake_frontmatter(path: str) -> dict[str, object]:
+            calls.append(path)
+            return {"status": "deprecated"} if path == "dep.md" else {}
+
+        monkeypatch.setattr(mgr, "_get_frontmatter", fake_frontmatter)
+        # 'dep.md' repeats: the second occurrence must hit the memo cache.
+        rows = [_Row("dep.md", 1.0), _Row("norm.md", 0.9), _Row("dep.md", 0.8)]
+        out = mgr._rank_okf(rows)
+        # One frontmatter lookup per distinct path (memoised).
+        assert calls.count("dep.md") == 1
+        scored = {(r.path, round(r.score, 4)) for r in out}
+        assert scored == {("dep.md", 0.5), ("norm.md", 0.9), ("dep.md", 0.4)}
+        # Re-sorted descending: norm (0.9) leads, then the two dep rows.
+        assert out[0].path == "norm.md"
+
+
+# ---------------------------------------------------------------------------
 # End to end — ranking corpus across all three modes
 # ---------------------------------------------------------------------------
 
