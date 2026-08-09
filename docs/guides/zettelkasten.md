@@ -522,11 +522,24 @@ Two shape operations that an LLM handles cleanly but manual workflows usually sk
 
 Resist pre-splitting or pre-merging before review. Claude does both in one pass.
 
+## Using Zettelkasten with OKF
+
+Zettelkasten and the [Open Knowledge Format](okf.md) sit at different layers: the method governs how ideas connect and mature, while OKF describes what each note is and how much to trust it. A Zettelkasten vault becomes an OKF bundle the moment you add `okf_version: "0.2"` to the root `index.md`, and the fit is close because both are note-centric.
+
+**Types line up already.** The one hard OKF rule is a non-empty `type`, and every Zettelkasten template sets one (`fleeting`, `literature`, `permanent`, `moc`), so a vault built from the examples passes `okf_validate` from the first note, with no placeholder of the kind PARA's inbox needs. A `fleeting` note already carries its type as the quick capture.
+
+**Status does not collide.** Zettelkasten leans on links and tags rather than a lifecycle field, which leaves the OKF `status` field (`draft`, `stable`, `deprecated`) free to use as intended. Reach for it when a permanent note is provisional (`draft`) or has been superseded (`deprecated`); deprecated and stale notes rank lower in search on a detected bundle, which keeps a growing Zettelkasten navigable.
+
+**Add provenance where it helps.** The OKF `sources` list is a natural home for the citations a literature note already tracks, and `verified` records a human review. Add them to literature and permanent notes to promote their trust tier, and leave quick-capture notes lean. Write `[[wikilinks]]` freely; `okf_convert_links` produces the OKF link style at export time.
+
+The [`examples/okf/`](../../examples/okf/) pack adds the declaration index, typed note templates, and a prompt pack (author, verify, triage-stale, migrate) that drops in alongside the Zettelkasten prompts.
+
 ## Next Steps
 
 - **Read the design document** for details on the linking system and search algorithms: [`docs/design/design.md`](../design/design.md)
 - **Explore the MCP tools** to understand the full API: [`tools/index.md`](../tools/index.md)
 - **Review the examples** for templates and prompts: [`examples/zettelkasten/`](../../examples/zettelkasten/)
+- **Run this vault as an OKF bundle?** See the [OKF guide](okf.md) and the [`examples/okf/`](../../examples/okf/) pack
 - **Prefer an action-oriented workflow?** Try the [PARA guide](para.md): Projects, Areas, Resources, Archive with triage, kickoff, and weekly review prompts
 - **Ambient patterns**: [`docs/prompts.md`](../prompts.md#ambient-patterns-without-prompts): flows the LLM handles from prose alone (URL capture, research, split/merge, ad-hoc link proposal)
 - **Research workflows**: [research-workflows.md](research-workflows.md): literature grounding, fact-checking, and writing papers from notes
