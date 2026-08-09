@@ -12,6 +12,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import pytest
+from fastmcp_pvl_core import TransferResourceGoneError, TransferUnavailableError
 
 from markdown_vault_mcp._transfer_sink import VaultTransferSink
 from markdown_vault_mcp.config import ProjectConfig
@@ -130,11 +131,30 @@ async def test_read_attachment_serves_bytes(sink: VaultTransferSink) -> None:
     assert result.filename == "pic.png"
 
 
-async def test_read_missing_note_raises(sink: VaultTransferSink) -> None:
+async def test_read_missing_note_raises_gone(sink: VaultTransferSink) -> None:
     # validate checks existence at mint time; a note removed before download
-    # (or a handle that was never valid) surfaces as FileNotFoundError → 500.
-    with pytest.raises(FileNotFoundError):
+    # surfaces as TransferResourceGoneError → 410 (not a generic 500).
+    with pytest.raises(TransferResourceGoneError) as exc:
         await sink.read("ghost.md")
+    assert exc.value.status_code == 410
+
+
+async def test_read_missing_attachment_raises_gone(sink: VaultTransferSink) -> None:
+    with pytest.raises(TransferResourceGoneError) as exc:
+        await sink.read("ghost.png")
+    assert exc.value.status_code == 410
+
+
+async def test_read_vault_unavailable_raises_503(config: ProjectConfig) -> None:
+    # The vault is torn down (ref-counted lifespan) while the route stays
+    # mounted: a link followed then gets a retryable 503, not a 500.
+    def _torn_down() -> Vault:
+        raise RuntimeError("Vault not initialised — Service.start was never called.")
+
+    sink = VaultTransferSink(config, vault_provider=_torn_down)
+    with pytest.raises(TransferUnavailableError) as exc:
+        await sink.read("note.md")
+    assert exc.value.status_code == 503
 
 
 # --- write ----------------------------------------------------------------
@@ -168,3 +188,13 @@ async def test_write_note_strips_bom(sink: VaultTransferSink, vault: Vault) -> N
 async def test_write_note_invalid_utf8_raises(sink: VaultTransferSink) -> None:
     with pytest.raises(UnicodeDecodeError):
         await sink.write("bad.md", b"\xff\xfe\x00garbage")
+
+
+async def test_write_vault_unavailable_raises_503(config: ProjectConfig) -> None:
+    def _torn_down() -> Vault:
+        raise RuntimeError("Vault not initialised — Service.start was never called.")
+
+    sink = VaultTransferSink(config, vault_provider=_torn_down)
+    with pytest.raises(TransferUnavailableError) as exc:
+        await sink.write("uploaded.md", b"# x\n")
+    assert exc.value.status_code == 503

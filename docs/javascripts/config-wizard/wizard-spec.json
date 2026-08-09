@@ -859,7 +859,12 @@
       "type": "number",
       "var": "MARKDOWN_VAULT_MCP_TRANSFER_TTL_DEFAULT_S",
       "help": "Link lifetime in seconds when the caller requests no explicit TTL.",
-      "advancedGroup": "Transfer"
+      "advancedGroup": "Transfer",
+      "showIf": {
+        "deployment": [
+          "server"
+        ]
+      }
     },
     {
       "id": "transfer_ttl_max_s",
@@ -867,7 +872,12 @@
       "type": "number",
       "var": "MARKDOWN_VAULT_MCP_TRANSFER_TTL_MAX_S",
       "help": "Ceiling in seconds a caller-requested link TTL is clamped to.",
-      "advancedGroup": "Transfer"
+      "advancedGroup": "Transfer",
+      "showIf": {
+        "deployment": [
+          "server"
+        ]
+      }
     },
     {
       "id": "transfer_grace_ttl_s",
@@ -875,7 +885,12 @@
       "type": "number",
       "var": "MARKDOWN_VAULT_MCP_TRANSFER_GRACE_TTL_S",
       "help": "Post-success grace window in seconds: a served token's TTL shrinks to this so a stalled transfer can retry within it.",
-      "advancedGroup": "Transfer"
+      "advancedGroup": "Transfer",
+      "showIf": {
+        "deployment": [
+          "server"
+        ]
+      }
     },
     {
       "id": "transfer_lease_s",
@@ -883,7 +898,12 @@
       "type": "number",
       "var": "MARKDOWN_VAULT_MCP_TRANSFER_LEASE_S",
       "help": "Crashed-handler reclaim window in seconds for an in-flight reservation.",
-      "advancedGroup": "Transfer"
+      "advancedGroup": "Transfer",
+      "showIf": {
+        "deployment": [
+          "server"
+        ]
+      }
     },
     {
       "id": "transfer_max_upload_bytes",
@@ -891,7 +911,12 @@
       "type": "number",
       "var": "MARKDOWN_VAULT_MCP_TRANSFER_MAX_UPLOAD_BYTES",
       "help": "Maximum size in bytes of a single upload.",
-      "advancedGroup": "Transfer"
+      "advancedGroup": "Transfer",
+      "showIf": {
+        "deployment": [
+          "server"
+        ]
+      }
     }
   ],
   "guards": [

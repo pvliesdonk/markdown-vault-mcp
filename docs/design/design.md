@@ -1337,6 +1337,14 @@ upload, the fully-read (size-capped) body.
   reads it; upload validates the destination is a note or an allowed attachment
   extension. Both reject path traversal.
 
+The sink maps two error states to pvl-core's `TransferSinkError` subclasses so
+the route returns a semantically correct status instead of a generic 500
+(fastmcp-pvl-core#233): a vault that is torn down while the route is still
+mounted (the ref-counted session lifespan cleared the singleton) raises
+`TransferUnavailableError` (retryable **503**), and a note or attachment that was
+validated at mint time but has since been removed raises
+`TransferResourceGoneError` (**410 Gone**). Any other failure still maps to 500.
+
 The upload body is raw bytes (not `multipart/form-data`). The destination
 path is decided at link-creation time and cannot be overridden by the uploader.
 

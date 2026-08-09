@@ -25,6 +25,12 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from fastmcp_pvl_core import (
+    TransferReadResult,
+    TransferResourceGoneError,
+    TransferUnavailableError,
+)
+
 from markdown_vault_mcp.domain import get_vault_singleton
 from markdown_vault_mcp.utils import effective_attachment_extensions, validate_path
 from markdown_vault_mcp.utils.text import decode_utf8
@@ -34,7 +40,7 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
 
-    from fastmcp_pvl_core import TransferKind, TransferReadResult
+    from fastmcp_pvl_core import TransferKind
 
     from markdown_vault_mcp.config import ProjectConfig
     from markdown_vault_mcp.vault import Vault
@@ -162,6 +168,28 @@ class VaultTransferSink:
             _validate_destination(ref, source_dir, exts)
         return ref
 
+    def _resolve_vault(self) -> Vault:
+        """Resolve the live vault, or signal a retryable 503 if it is torn down.
+
+        The vault singleton is owned by a ref-counted session lifespan and is
+        cleared when all MCP sessions close, while the ``/transfer/{token}``
+        route stays mounted for the server's lifetime. A link followed in that
+        window would otherwise raise a bare ``RuntimeError`` and surface as a
+        generic 500; mapping it to :class:`~fastmcp_pvl_core.TransferUnavailableError`
+        gives the caller a clean, retryable **503** instead (the route releases
+        the token, so the link survives the retry). See fastmcp-pvl-core#233.
+
+        Raises:
+            TransferUnavailableError: If the vault is not currently available.
+        """
+        try:
+            return self._vault()
+        except RuntimeError as exc:
+            logger.warning("transfer_vault_unavailable: %s", type(exc).__name__)
+            raise TransferUnavailableError(
+                "vault is not currently available; retry shortly"
+            ) from exc
+
     async def read(self, handle: str) -> TransferReadResult:
         """Serve a vault note or attachment's bytes for a download handle.
 
@@ -173,23 +201,30 @@ class VaultTransferSink:
             and download filename.
 
         Raises:
-            FileNotFoundError: The note was removed between link creation and
-                download (``validate`` checks existence only at mint time).
-            ValueError: The attachment cannot be read (gone or unreadable).
+            TransferUnavailableError: The vault is being torn down (retryable 503).
+            TransferResourceGoneError: The note/attachment existed at mint time
+                but has since been removed (410 Gone).
         """
-        from fastmcp_pvl_core import TransferReadResult
-
-        vault = self._vault()
+        vault = self._resolve_vault()
         filename = Path(handle).name
         if handle.endswith(".md"):
             note = await asyncio.to_thread(vault.reader.read, handle)
             if note is None:
-                logger.warning("transfer_download_note_missing path=%s", handle)
-                raise FileNotFoundError(f"note not found: {handle}")
+                logger.warning("transfer_download_note_gone path=%s", handle)
+                raise TransferResourceGoneError(f"note no longer available: {handle}")
             body = note.content.encode("utf-8")
             logger.info("transfer_download_served path=%s bytes=%d", handle, len(body))
             return TransferReadResult(body, _MARKDOWN_MEDIA_TYPE, filename)
-        att = await asyncio.to_thread(vault.reader.read_attachment, handle)
+        try:
+            att = await asyncio.to_thread(vault.reader.read_attachment, handle)
+        except ValueError as exc:
+            # read_attachment raises ValueError("Attachment not found: ...") once
+            # the file is gone; validate confirmed it at mint time, so this is a
+            # 410 Gone, not a 500.
+            logger.warning("transfer_download_attachment_gone path=%s", handle)
+            raise TransferResourceGoneError(
+                f"attachment no longer available: {handle}"
+            ) from exc
         body = base64.b64decode(att.content_base64)
         media_type = att.mime_type or _OCTET_STREAM
         logger.info("transfer_download_served path=%s bytes=%d", handle, len(body))
@@ -206,9 +241,10 @@ class VaultTransferSink:
             A payload dict with the written ``path`` and ``bytes``.
 
         Raises:
+            TransferUnavailableError: The vault is being torn down (retryable 503).
             UnicodeDecodeError: A note upload whose body is not valid UTF-8.
         """
-        vault = self._vault()
+        vault = self._resolve_vault()
         if handle.endswith(".md"):
             text = decode_utf8(body)  # strips a leading BOM (#681); raises on bad UTF-8
             await asyncio.to_thread(vault.writer.write, handle, text)
