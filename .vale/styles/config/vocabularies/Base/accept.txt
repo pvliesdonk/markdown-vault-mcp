@@ -21,6 +21,9 @@ URIs
 access_token
 id_token
 
+# --- OKF (Open Knowledge Format) tool identifiers ---
+okf_verify
+
 # --- Python / runtime ecosystem ---
 debugpy
 mypy

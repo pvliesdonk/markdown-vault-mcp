@@ -257,11 +257,12 @@ class ProjectConfig:
         default=False,
         metadata={
             "help": (
-                "OKF (Open Knowledge Format) enforced write layer. When true, "
-                "the server stamps generated provenance on writes, clears "
-                "verified when content changes, and enables the okf_verify tool. "
-                "Requires OKF_MODE to be auto or on (a true value with "
-                "OKF_MODE=off is a config error). Off by default."
+                "OKF (Open Knowledge Format) enforced write layer. When true on "
+                "an OKF-active vault, the server stamps generated provenance on "
+                "each write and clears any verified attestation when a note's "
+                "content changes. It also exposes the okf_verify tool. Requires "
+                "OKF_MODE to be auto or on (a true value with OKF_MODE=off is a "
+                "config error). Off by default."
             ),
             "tags": ("content",),
             "wizard": {"group": "Content"},
