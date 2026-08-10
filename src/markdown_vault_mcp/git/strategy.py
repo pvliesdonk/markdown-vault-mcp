@@ -1567,6 +1567,11 @@ class GitWriteStrategy:
                     else:
                         with pause():
                             self._on_pull()
+                # Retry a pending push after the pull reconciled any
+                # non-fast-forward divergence via its rebase step (#957).
+                # _do_push's guard makes this a no-op when nothing is pending.
+                if self._enable_push:
+                    self._do_push_safe()
             except Exception:
                 logger.exception("Git pull loop tick failed")
             # Wait until the next interval, or stop early.

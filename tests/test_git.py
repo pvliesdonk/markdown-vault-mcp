@@ -12,6 +12,8 @@ import pytest
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from tests.fixtures.git import GitRepoPair
+
 from markdown_vault_mcp.config import to_vault_kwargs
 from markdown_vault_mcp.git import (
     GitWriteStrategy,
@@ -2530,6 +2532,100 @@ class TestGitPullLoop:
         assert strategy._pull_thread.is_alive()
 
         strategy.stop()
+
+    def test_pull_loop_retries_pending_push(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The pull loop attempts a pending push after each tick (#957)."""
+        import time
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        strategy = GitWriteStrategy(token=None, push_delay_s=0)
+
+        # Mirror the existing TestGitPullLoop setup so start() launches the
+        # loop: a fake git root and a subprocess.run stub for the tracking-ref
+        # check inside start().
+        monkeypatch.setattr(strategy, "_ensure_git_root", lambda _p: tmp_path)
+        monkeypatch.setattr(
+            "markdown_vault_mcp.git.subprocess.run",
+            lambda *_args, **_kwargs: SimpleNamespace(
+                returncode=0, stdout="", stderr=""
+            ),
+        )
+        monkeypatch.setattr(strategy, "sync_once", lambda _repo: True)
+        strategy._git_root = tmp_path
+        # Simulate a deferred push that failed and left the flag set.
+        strategy._push_pending = True
+
+        push_calls: list[int] = []
+        with patch(
+            "markdown_vault_mcp.git.strategy._push",
+            side_effect=lambda *_a, **_k: push_calls.append(1),
+        ):
+            strategy.start(repo_path=tmp_path, pull_interval_s=3600)
+            time.sleep(0.05)
+            strategy.stop()
+
+        assert push_calls, "pull loop did not retry the pending push"
+
+    def test_pull_loop_retries_after_non_ff_rebase(
+        self,
+        git_repo_pair: GitRepoPair,
+        tmp_path: Path,
+    ) -> None:
+        """A non-ff push failure is retried after the pull tick rebases (#957)."""
+        import time
+
+        from tests.fixtures.git import _run_git
+
+        remote = git_repo_pair.remote_path
+        local = git_repo_pair.local_path
+
+        # A second clone of the same bare remote -- the "other client" that
+        # advances the remote and makes the strategy's local non-fast-forward.
+        other = tmp_path / "other"
+        _run_git(tmp_path, "clone", str(remote), str(other))
+        _run_git(other, "config", "user.email", "other@example.com")
+        _run_git(other, "config", "user.name", "Other")
+        (other / "other.md").write_text("other\n")
+        _run_git(other, "add", "other.md")
+        _run_git(other, "commit", "-m", "other commit")
+        _run_git(other, "push", "origin", "main")
+        # The bare remote now has a commit the strategy's local has not seen.
+
+        # The strategy owns `local`. repo_path=local makes the constructor's
+        # validate_startup() populate self._git_root. Make a local commit so
+        # there is something to push, set the pending flag (simulating a
+        # deferred push that has not fired), then attempt the push -- it must
+        # fail non-ff and leave the flag set (Task 1's invariant).
+        strategy = GitWriteStrategy(token=None, push_delay_s=0, repo_path=local)
+        (local / "local.md").write_text("local\n")
+        _run_git(local, "add", "local.md")
+        _run_git(local, "commit", "-m", "local commit")
+        strategy._push_pending = True
+        strategy._do_push_safe()
+        assert strategy._push_pending is True
+
+        # Start the pull loop with a long interval so exactly one tick fires.
+        # The tick fetches (sees the other client's commit), the ff-only merge
+        # diverges, the rebase replays the local commit on top, then the retry
+        # push succeeds and clears the flag. Poll until the flag clears.
+        strategy.start(repo_path=local, pull_interval_s=3600)
+        try:
+            deadline = time.time() + 5.0
+            while strategy._push_pending and time.time() < deadline:
+                time.sleep(0.05)
+        finally:
+            strategy.stop()
+
+        # The retry push succeeded: the bare remote now carries the local
+        # commit, and the pending flag was cleared.
+        log = _run_git(remote, "log", "--oneline")
+        assert "local commit" in log
+        assert strategy._push_pending is False
 
 
 class TestManagedGitMode:
