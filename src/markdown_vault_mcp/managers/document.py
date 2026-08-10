@@ -10,9 +10,11 @@ from __future__ import annotations
 import base64
 import logging
 import mimetypes
+import os
 import shutil
 import sqlite3
 import tempfile
+import threading
 from collections import defaultdict
 from dataclasses import replace
 from pathlib import Path
@@ -71,13 +73,44 @@ from markdown_vault_mcp.utils.text import (
 )
 
 if TYPE_CHECKING:
-    import threading
     from collections.abc import Callable, Iterable
 
     from markdown_vault_mcp.fts_index import FTSIndex
     from markdown_vault_mcp.scanner import ChunkStrategy
 
 logger = logging.getLogger(__name__)
+
+
+_UMASK_LOCK = threading.Lock()
+_umask: int | None = None
+
+
+def _process_umask() -> int:
+    """Return the process umask, read once and cached.
+
+    ``os.umask`` is set-and-restore with no read-only accessor; we read it
+    once under a lock so concurrent writers serialise the set-and-restore
+    and never observe a transient mask. The umask is set by the parent
+    (shell / systemd) before Python starts and is effectively immutable
+    for the service lifetime, so a one-time read is correct.
+    """
+    global _umask
+    if _umask is not None:
+        return _umask
+    with _UMASK_LOCK:
+        # The lock serialises the set-and-restore so no writer in this
+        # module observes a transient mask. A second writer that lost the
+        # outer cache check re-reads and re-sets the same value (the umask
+        # is process-global), so no inner guard is needed.
+        mask = os.umask(0o077)
+        os.umask(mask)
+        _umask = mask
+    return _umask
+
+
+def _new_file_mode() -> int:
+    """Mode for a freshly-created file, matching a plain ``open(path, "w")``."""
+    return 0o666 & ~_process_umask()
 
 
 class DocumentManager:
@@ -630,13 +663,17 @@ class DocumentManager:
         """Write *data* to *abs_path* atomically via a sibling tempfile.
 
         The temp file lands with :meth:`Path.replace` semantics; permission
-        bits are preserved when the target already exists. On failure the
-        temp file is removed and the original is left untouched.
+        bits are preserved when the target already exists. A freshly-created
+        target is chmod'd to ``0o666 & ~umask`` after the replace so fresh
+        writes honour the process umask (matching a plain ``open``) instead
+        of the ``0o600`` ``tempfile`` hardcodes. On failure the temp file is
+        removed and the original is left untouched.
 
         Args:
             abs_path: Absolute destination path.
             data: Text (written UTF-8) or raw bytes.
         """
+        existed = abs_path.is_file()
         if isinstance(data, str):
             with tempfile.NamedTemporaryFile(
                 dir=abs_path.parent,
@@ -656,13 +693,15 @@ class DocumentManager:
             ) as tmp:
                 tmp.write(data)
                 tmp_name = tmp.name
-        if abs_path.is_file():
+        if existed:
             shutil.copymode(abs_path, tmp_name)
         try:
             Path(tmp_name).replace(abs_path)
         except Exception:
             Path(tmp_name).unlink(missing_ok=True)
             raise
+        if not existed:
+            abs_path.chmod(_new_file_mode())
 
     def write(
         self,
