@@ -2627,6 +2627,47 @@ class TestGitPullLoop:
         assert "local commit" in log
         assert strategy._push_pending is False
 
+    def test_pull_loop_skips_push_retry_when_push_disabled(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The pull-loop push retry is skipped when push is disabled (#957).
+
+        A push-disabled deployment keeps no off-site copy by design, so the
+        pull loop must not attempt a retry push after a tick even when a push
+        is pending. Covers the False branch of the ``_enable_push`` gate.
+        """
+        import time
+        from types import SimpleNamespace
+
+        strategy = GitWriteStrategy(token=None, push_delay_s=0, enable_push=False)
+
+        monkeypatch.setattr(strategy, "_ensure_git_root", lambda _p: tmp_path)
+        monkeypatch.setattr(
+            "markdown_vault_mcp.git.subprocess.run",
+            lambda *_args, **_kwargs: SimpleNamespace(
+                returncode=0, stdout="", stderr=""
+            ),
+        )
+        monkeypatch.setattr(strategy, "sync_once", lambda _p: True)
+
+        # A pending push exists, and the retry hook is observable.
+        strategy._push_pending = True
+        safe_calls: list[str] = []
+        monkeypatch.setattr(
+            strategy, "_do_push_safe", lambda: safe_calls.append("push")
+        )
+
+        strategy.start(repo_path=tmp_path, pull_interval_s=3600)
+        time.sleep(0.05)
+        strategy.stop()
+
+        # The gate skipped the retry: the pending flag is unchanged and the
+        # retry hook was never invoked.
+        assert safe_calls == []
+        assert strategy._push_pending is True
+
 
 class TestManagedGitMode:
     def test_managed_mode_clones_into_empty_source_dir(
