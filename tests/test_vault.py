@@ -2022,19 +2022,18 @@ class TestAtomicWrites:
             f"new attachment mode is {oct(mode)}, expected 0o640 (0o666 & ~0o027)"
         )
 
-    def test_process_umask_reads_once_and_caches(self) -> None:
-        """_process_umask reads the umask once and caches it thereafter."""
+    def test_process_umask_caches_across_calls(self) -> None:
+        """_process_umask caches: repeat calls return the same value."""
         from markdown_vault_mcp.managers import document as doc
 
-        doc._umask = None  # reset cache for the test
+        doc._umask = None
         try:
             first = doc._process_umask()
             second = doc._process_umask()
             assert first == second
-            # The cache is populated.
             assert doc._umask == first
         finally:
-            doc._umask = None  # drop the cache so later tests re-read ambient
+            doc._umask = None  # test isolation: later tests re-read ambient
 
     def test_write_attachment_preserves_original_on_failed_write(
         self, writable: Vault, vault_path: Path
