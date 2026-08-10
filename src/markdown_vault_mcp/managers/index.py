@@ -788,7 +788,8 @@ class IndexManager:
         """Embed one changed note's chunks inline, resiliently (#930).
 
         Mirrors the cold-build / convergence contract: chunks are embedded
-        in bounded batches (:data:`_EMBEDDING_BATCH_SIZE`) — not the whole
+        in bounded batches (``embedding_batch_size``, defaulting to
+        :data:`_EMBEDDING_BATCH_SIZE`) — not the whole
         note in one oversized request — and a provider failure (a request
         timeout being the motivating case, but also token-context rejection
         or a transient outage) is logged and swallowed, leaving the note's
