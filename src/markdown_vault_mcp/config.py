@@ -484,6 +484,30 @@ class ProjectConfig:
             "wizard": {"group": "Embeddings"},
         },
     )
+    embed_timeout_s: float = field(
+        default=30.0,
+        metadata={
+            "help": (
+                "Per-request wall-clock budget in seconds for a single "
+                "embedding backend call. CPU-only or large-model workloads "
+                "may need 60-120 s; raise this if batches time out."
+            ),
+            "tags": ("embeddings",),
+            "wizard": {"group": "Embeddings"},
+        },
+    )
+    embedding_batch_size: int = field(
+        default=4,
+        metadata={
+            "help": (
+                "Number of chunks sent per embedding request. Smaller "
+                "batches shorten each request (useful under a tight "
+                "timeout on slow models) at the cost of more round-trips."
+            ),
+            "tags": ("embeddings",),
+            "wizard": {"group": "Embeddings"},
+        },
+    )
     git_repo_url: str | None = field(
         default=None,
         metadata={
@@ -803,6 +827,8 @@ class ProjectConfig:
             fastembed_model=self.fastembed_model,
             fastembed_cache_dir=self.fastembed_cache_dir,
             embed_context=self.embed_context,
+            embed_timeout_s=self.embed_timeout_s,
+            embedding_batch_size=self.embedding_batch_size,
         )
 
     @property
@@ -1004,6 +1030,8 @@ class ProjectConfig:
             or "BAAI/bge-small-en-v1.5",
             fastembed_cache_dir=env(_ENV_PREFIX, "FASTEMBED_CACHE_DIR") or None,
             embed_context=to_bool(env(_ENV_PREFIX, "EMBED_CONTEXT"), default=False),
+            embed_timeout_s=env_float(_ENV_PREFIX, "EMBED_TIMEOUT_S", 30.0),
+            embedding_batch_size=env_int(_ENV_PREFIX, "EMBEDDING_BATCH_SIZE", 4),
             git_token=(_git_token := env(_ENV_PREFIX, "GIT_TOKEN") or None),
             git_repo_url=resolve_git_repo_url(
                 env(_ENV_PREFIX, "GIT_REPO_URL"), _git_token, _ENV_PREFIX

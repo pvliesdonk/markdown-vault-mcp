@@ -259,6 +259,18 @@
           "default": "false"
         },
         {
+          "name": "MARKDOWN_VAULT_MCP_EMBED_TIMEOUT_S",
+          "description": "Per-request wall-clock budget in seconds for a single embedding backend call. CPU-only or large-model workloads may need 60-120 s; raise this if batches time out.",
+          "format": "number",
+          "default": "30.0"
+        },
+        {
+          "name": "MARKDOWN_VAULT_MCP_EMBEDDING_BATCH_SIZE",
+          "description": "Number of chunks sent per embedding request. Smaller batches shorten each request (useful under a tight timeout on slow models) at the cost of more round-trips.",
+          "format": "number",
+          "default": "4"
+        },
+        {
           "name": "MARKDOWN_VAULT_MCP_GIT_TOKEN",
           "description": "Token/password for HTTPS git auth; remotes must be HTTPS when set.",
           "isSecret": true
@@ -750,6 +762,18 @@
           "description": "Enrich embedding input with the note title, chunk heading, and (first chunk) searchable-field values. Flipping it re-embeds the whole vault once on next startup.",
           "format": "boolean",
           "default": "false"
+        },
+        {
+          "name": "MARKDOWN_VAULT_MCP_EMBED_TIMEOUT_S",
+          "description": "Per-request wall-clock budget in seconds for a single embedding backend call. CPU-only or large-model workloads may need 60-120 s; raise this if batches time out.",
+          "format": "number",
+          "default": "30.0"
+        },
+        {
+          "name": "MARKDOWN_VAULT_MCP_EMBEDDING_BATCH_SIZE",
+          "description": "Number of chunks sent per embedding request. Smaller batches shorten each request (useful under a tight timeout on slow models) at the cost of more round-trips.",
+          "format": "number",
+          "default": "4"
         },
         {
           "name": "MARKDOWN_VAULT_MCP_GIT_TOKEN",
