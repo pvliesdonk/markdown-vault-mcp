@@ -1011,6 +1011,59 @@ class TestBuildEmbeddings:
         assert count >= 1  # build did not abort
         assert any("skip" in r.getMessage().lower() for r in caplog.records)
 
+    def test_build_embeddings_skips_malformed_frontmatter(self, tmp_path, caplog):
+        """A file whose frontmatter broke after indexing is skipped, not fatal (#955)."""
+        import logging
+
+        from tests.conftest import MockEmbeddingProvider
+
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        (vault / "good.md").write_text(
+            "---\ntitle: Good\n---\n# Good\n\nBody that should embed.\n",
+            encoding="utf-8",
+        )
+        (vault / "bad.md").write_text(
+            "---\ntitle: Fine\n---\n# Bad\n\nOriginal valid content.\n",
+            encoding="utf-8",
+        )
+        holder = {"vectors": None}
+        embeddings_path = tmp_path / "embeddings"
+        mgr, _fts, _ = _make_index_mgr(
+            vault,
+            tmp_path,
+            embeddings_path=embeddings_path,
+            embedding_provider=MockEmbeddingProvider(),
+            get_vectors=lambda: holder["vectors"],
+            set_vectors=lambda v: holder.__setitem__("vectors", v),
+        )
+        # Both notes index fine with valid frontmatter → both land in FTS.
+        mgr.build_index()
+        assert len(mgr._fts.list_notes()) == 2
+
+        # Now corrupt bad.md's frontmatter on disk (warm-boot / edit-after-index path):
+        # it is still an FTS row, but re-parsing it raises yaml.YAMLError.
+        (vault / "bad.md").write_text(
+            "---\ntitle: [unclosed\n---\nbody",
+            encoding="utf-8",
+        )
+
+        with caplog.at_level(
+            logging.WARNING, logger="markdown_vault_mcp.managers.index"
+        ):
+            # force=True drives the cold-build parse loop that re-parses FTS rows
+            # from disk. Today this raises yaml.YAMLError and aborts.
+            count = mgr.build_embeddings(force=True)
+
+        # The run did not abort, and the good note's chunks were embedded.
+        assert count >= 1
+        # The malformed file was skipped with a warning naming it.
+        assert any(
+            "build_embeddings: skipping" in r.getMessage()
+            and "bad.md" in r.getMessage()
+            for r in caplog.records
+        )
+
     def test_build_embeddings_all_batches_fail_escalates(self, tmp_path, caplog):
         """Every batch failing returns 0, saves nothing, warns loudly (#649)."""
         import logging

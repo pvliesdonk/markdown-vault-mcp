@@ -949,7 +949,7 @@ class IndexManager:
                     self._chunk_strategy,
                     title_field=self._title_field,
                 )
-            except (UnicodeDecodeError, OSError) as exc:
+            except (UnicodeDecodeError, OSError, yaml.YAMLError) as exc:
                 logger.warning("build_embeddings: skipping %s — %s", path, exc)
                 continue
             note_texts, note_meta = self._embed_inputs(
