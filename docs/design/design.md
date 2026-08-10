@@ -2301,7 +2301,8 @@ contain this, both operator-tunable:
 
 - **Per-request timeout** — ``OpenAISummarizer`` constructs its client with
   ``timeout=SUMMARIZE_TIMEOUT`` (default 120 s, mirroring the embeddings
-  transport's fixed 30 s). An ``openai.APITimeoutError`` is mapped to a
+  transport's configurable timeout (``MARKDOWN_VAULT_MCP_EMBED_TIMEOUT_S``,
+  default 30 s). An ``openai.APITimeoutError`` is mapped to a
   specific, actionable ``RuntimeError`` — naming the budget and the ways to
   fit under it (fewer paths, a smaller ``max_notes``, a tighter ``focus``,
   ``per_note`` mode, or a higher ``SUMMARIZE_TIMEOUT``) — so the caller sees
