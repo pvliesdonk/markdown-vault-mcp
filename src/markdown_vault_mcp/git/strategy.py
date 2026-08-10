@@ -454,12 +454,14 @@ class GitWriteStrategy:
             logger.error("Git push failed", exc_info=True)
 
     def _do_push(self) -> None:
-        """Execute git push and clear pending flag.
+        """Execute git push and clear the pending flag on success.
 
-        Note: ``_push_pending`` is cleared *before* calling ``_push()``.
-        If the push fails, commits are not automatically retried — they
-        will be pushed on the next write (which resets ``_push_pending``)
-        or on the next startup via ``_push_if_unpushed()``.
+        ``_push_pending`` is cleared *after* ``_push()`` returns without
+        raising. On failure the flag stays set so the periodic pull loop
+        retries the push after its rebase step resolves any non-fast-forward
+        divergence (#957); previously the flag was cleared before the push,
+        so a failed deferred push left commits local with no retry until the
+        next write or startup.
         """
         with self._lock:
             if (
@@ -468,10 +470,8 @@ class GitWriteStrategy:
                 or self._git_root is None
             ):
                 return
-            self._push_pending = False
-
-        with self._lock:
             _push(self._git_root, self._token, self._username)
+            self._push_pending = False
             logger.info("Git: pushed to remote")
 
     def _check_identity(self) -> None:

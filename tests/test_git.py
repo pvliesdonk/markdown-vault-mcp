@@ -778,6 +778,39 @@ class TestGitWriteStrategyClass:
         assert "local only" in result.stdout
         assert "write: trigger.md" in result.stdout
 
+    def test_do_push_keeps_pending_on_failure(self, tmp_path: Path) -> None:
+        """A failed push leaves _push_pending set so the pull loop retries (#957)."""
+        from unittest.mock import patch
+
+        strategy = GitWriteStrategy(token=None, push_delay_s=0)
+        strategy._git_root = tmp_path
+        strategy._push_pending = True
+
+        fake_exc = subprocess.CalledProcessError(
+            returncode=128,
+            cmd=["git", "push", "origin"],
+            stderr="non-fast-forward",
+        )
+        with patch("markdown_vault_mcp.git.strategy._push", side_effect=fake_exc):
+            # _do_push_safe swallows the error; the flag must stay set.
+            strategy._do_push_safe()
+
+        assert strategy._push_pending is True
+
+    def test_do_push_clears_pending_on_success(self, tmp_path: Path) -> None:
+        """A successful push clears _push_pending (#957)."""
+        from unittest.mock import patch
+
+        strategy = GitWriteStrategy(token=None, push_delay_s=0)
+        strategy._git_root = tmp_path
+        strategy._push_pending = True
+
+        with patch("markdown_vault_mcp.git.strategy._push") as mock_push:
+            strategy._do_push()
+
+        assert mock_push.called
+        assert strategy._push_pending is False
+
 
 class TestConfigIntegration:
     def test_git_token_wires_up_strategy(self, tmp_path: Path) -> None:
