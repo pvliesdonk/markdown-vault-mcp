@@ -489,8 +489,10 @@ class ProjectConfig:
         metadata={
             "help": (
                 "Per-request wall-clock budget in seconds for a single "
-                "embedding backend call. CPU-only or large-model workloads "
-                "may need 60-120 s; raise this if batches time out."
+                "embedding HTTP call (OpenAI/Ollama). The local FastEmbed "
+                "backend runs in-process with no network call and ignores "
+                "this. CPU-only or large-model workloads may need 60-120 s; "
+                "raise this if batches time out."
             ),
             "tags": ("embeddings",),
             "wizard": {"group": "Embeddings"},

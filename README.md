@@ -227,7 +227,7 @@ embedding-provider conventions `OLLAMA_HOST`, `OPENAI_API_KEY`,
 | `MARKDOWN_VAULT_MCP_FASTEMBED_MODEL` | `BAAI/bge-small-en-v1.5` | No | FastEmbed model name. |
 | `MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR` | (none) | No | FastEmbed model cache directory (in Docker, stored under /data/state/fastembed). |
 | `MARKDOWN_VAULT_MCP_EMBED_CONTEXT` | `false` | No | Enrich embedding input with the note title, chunk heading, and (first chunk) searchable-field values. Flipping it re-embeds the whole vault once on next startup. |
-| `MARKDOWN_VAULT_MCP_EMBED_TIMEOUT_S` | `30.0` | No | Per-request wall-clock budget in seconds for a single embedding backend call. CPU-only or large-model workloads may need 60-120 s; raise this if batches time out. |
+| `MARKDOWN_VAULT_MCP_EMBED_TIMEOUT_S` | `30.0` | No | Per-request wall-clock budget in seconds for a single embedding HTTP call (OpenAI/Ollama). The local FastEmbed backend runs in-process with no network call and ignores this. CPU-only or large-model workloads may need 60-120 s; raise this if batches time out. |
 | `MARKDOWN_VAULT_MCP_EMBEDDING_BATCH_SIZE` | `4` | No | Number of chunks sent per embedding request. Smaller batches shorten each request (useful under a tight timeout on slow models) at the cost of more round-trips. |
 | `MARKDOWN_VAULT_MCP_GIT_TOKEN` | (none) | No | Token/password for HTTPS git auth; remotes must be HTTPS when set. |
 | `MARKDOWN_VAULT_MCP_GIT_REPO_URL` | (none) | No | HTTPS remote URL for managed git mode: the server clones into an empty SOURCE_DIR on startup (or validates an existing origin) and enables the pull loop, auto-commit, and deferred push. |

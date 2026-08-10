@@ -394,6 +394,7 @@ class OpenAIProvider(EmbeddingProvider):
         api_key: OpenAI API key for authentication.
         base_url: Base URL for an OpenAI-compatible API.
         model: Embedding model name.
+        timeout: Per-request timeout in seconds for the underlying SDK client.
     """
 
     _MODEL = "text-embedding-3-small"
