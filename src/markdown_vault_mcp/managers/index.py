@@ -95,6 +95,9 @@ class IndexManager:
             every embedding site so hot, cold, converge, and flush paths all
             produce identical embedding input. ``None`` constructs the
             default (v1 no-op) builder.
+        embedding_batch_size: Maximum number of chunk texts sent to the
+            embedding provider in a single call. Defaults to the module
+            constant ``_EMBEDDING_BATCH_SIZE``.
     """
 
     def __init__(
@@ -115,6 +118,7 @@ class IndexManager:
         max_chunk_chars_override: int | None = None,
         title_field: str = "title",
         embed_text_builder: EmbedTextBuilder | None = None,
+        embedding_batch_size: int = _EMBEDDING_BATCH_SIZE,
     ) -> None:
         self._fts = fts
         self._tracker = tracker
@@ -135,6 +139,7 @@ class IndexManager:
         self._max_chunk_chars_override = max_chunk_chars_override
         self._title_field = title_field
         self._embed_builder = embed_text_builder or EmbedTextBuilder()
+        self._embedding_batch_size = embedding_batch_size
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -828,10 +833,10 @@ class IndexManager:
             return _EMBED_OK
         raw: list[list[float]] = []
         try:
-            for start in range(0, len(texts), _EMBEDDING_BATCH_SIZE):
+            for start in range(0, len(texts), self._embedding_batch_size):
                 raw.extend(
                     self._embedding_provider.embed(
-                        texts[start : start + _EMBEDDING_BATCH_SIZE]
+                        texts[start : start + self._embedding_batch_size]
                     )
                 )
         except Exception as exc:
@@ -983,8 +988,8 @@ class IndexManager:
         # aborting the whole build; ``embedded`` tracks chunks actually
         # vectorised, while decile progress runs over attempted chunks (#649).
         embedded = 0
-        for start in range(0, total, _EMBEDDING_BATCH_SIZE):
-            end = min(start + _EMBEDDING_BATCH_SIZE, total)
+        for start in range(0, total, self._embedding_batch_size):
+            end = min(start + self._embedding_batch_size, total)
             try:
                 vectors.add(texts[start:end], meta[start:end])
                 embedded += end - start
@@ -1168,10 +1173,10 @@ class IndexManager:
             ]
             raw: list[list[float]] = []
             try:
-                for start in range(0, len(texts), _EMBEDDING_BATCH_SIZE):
+                for start in range(0, len(texts), self._embedding_batch_size):
                     raw.extend(
                         self._embedding_provider.embed(
-                            texts[start : start + _EMBEDDING_BATCH_SIZE]
+                            texts[start : start + self._embedding_batch_size]
                         )
                     )
             except Exception as exc:
