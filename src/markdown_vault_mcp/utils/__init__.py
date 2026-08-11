@@ -120,6 +120,38 @@ def validate_history_path(
     return abs_path
 
 
+def validate_history_dir(path: str, source_dir: Path) -> Path:
+    """Resolve a vault-relative *directory* path for read-only git-history queries.
+
+    The directory analogue of :func:`validate_history_path`: applies the same
+    traversal guard but imposes no extension requirement, since a folder scope
+    (e.g. ``"guides"``) is not a file. Like the file variant it does not require
+    the path to exist, so history of a since-removed subtree stays queryable.
+    The empty string (the bundle root) is rejected — callers pass ``None`` for
+    whole-vault history rather than routing the root through here.
+
+    Args:
+        path: Vault-relative directory path (e.g. ``"guides"`` or
+            ``"guides/sub"``). Must be non-empty.
+        source_dir: Absolute vault root.
+
+    Returns:
+        The resolved absolute directory path.
+
+    Raises:
+        ValueError: *path* is empty or escapes *source_dir*.
+    """
+    if not path.strip("/"):
+        raise ValueError(
+            "A directory history scope must name a folder; pass None for "
+            "whole-vault history."
+        )
+    abs_path = (source_dir / path).resolve()
+    if not abs_path.is_relative_to(source_dir.resolve()):
+        raise ValueError(f"Path traversal detected: {path}")
+    return abs_path
+
+
 __all__ = [
     "CHAR_SUBS",
     "apply_link_replacement",
@@ -130,6 +162,7 @@ __all__ = [
     "fts_row_to_note_info",
     "is_path_excluded",
     "normalize_text",
+    "validate_history_dir",
     "validate_history_path",
     "validate_path",
 ]

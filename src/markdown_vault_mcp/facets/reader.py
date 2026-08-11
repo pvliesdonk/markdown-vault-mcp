@@ -353,7 +353,7 @@ class ReaderFacet:
         until: str | None = None,
         limit: int = 20,
     ) -> list[HistoryEntry]:
-        """Return commits that touched a note, attachment, or the whole vault.
+        """Return commits that touched a note, attachment, folder, or the whole vault.
 
         When *path* is ``None``, queries the full vault history.  Returns an
         empty list for vaults whose source directory is not inside a git
@@ -361,7 +361,9 @@ class ReaderFacet:
 
         Args:
             path: A ``.md`` note or a configured attachment (e.g.
-                ``assets/x.png``); ``None`` returns vault-wide history.
+                ``assets/x.png``) scopes to that file; an existing directory
+                (e.g. ``"guides"``) scopes to its subtree; ``None`` returns
+                vault-wide history.
             since: ISO 8601 datetime string or git date expression (e.g.
                 ``"1 week ago"``).  Passed as ``--since`` to ``git log``.
                 ``None`` disables the filter.
@@ -378,10 +380,11 @@ class ReaderFacet:
             newest-first.  Empty list when the vault has no git history or
             the note has no commits in the given range.  The
             ``paths_changed`` field on each entry is populated for vault-wide
-            queries (``path=None``); it is always empty for single-note
-            queries, since the path is already determined by the query
-            arguments — callers know which file the commit touched without
-            needing it echoed back.
+            queries (``path=None``) and directory queries (the subtree files
+            the commit touched); it is always empty for single-note queries,
+            since the path is already determined by the query arguments —
+            callers know which file the commit touched without needing it
+            echoed back.
 
         Raises:
             ValueError: If *path* is provided but fails path validation

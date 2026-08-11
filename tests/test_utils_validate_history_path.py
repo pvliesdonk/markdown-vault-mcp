@@ -1,6 +1,6 @@
 import pytest
 
-from markdown_vault_mcp.utils import validate_history_path
+from markdown_vault_mcp.utils import validate_history_dir, validate_history_path
 
 
 def test_accepts_md(tmp_path):
@@ -51,3 +51,26 @@ def test_rejects_extensionless_path(tmp_path):
     """A path with no extension (suffix '') is rejected without a wildcard."""
     with pytest.raises(ValueError, match="\\.md note or a configured attachment"):
         validate_history_path("README", tmp_path, frozenset({"png"}))
+
+
+class TestValidateHistoryDir:
+    def test_accepts_folder_without_extension_requirement(self, tmp_path):
+        # No extension needed for a directory scope; existence not required.
+        assert (
+            validate_history_dir("guides", tmp_path) == (tmp_path / "guides").resolve()
+        )
+
+    def test_accepts_nested_folder(self, tmp_path):
+        assert (
+            validate_history_dir("guides/sub", tmp_path)
+            == (tmp_path / "guides/sub").resolve()
+        )
+
+    @pytest.mark.parametrize("empty", ["", "/", "///"])
+    def test_rejects_empty_or_root(self, tmp_path, empty):
+        with pytest.raises(ValueError, match="must name a folder"):
+            validate_history_dir(empty, tmp_path)
+
+    def test_rejects_traversal(self, tmp_path):
+        with pytest.raises(ValueError, match="traversal"):
+            validate_history_dir("../escape", tmp_path)

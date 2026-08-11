@@ -33,7 +33,7 @@ markdown-vault-mcp exposes MCP tools across several categories. Write tools are 
 | [`okf_validate`](#okf_validate) | Validate OKF Bundle | Read | Audit the vault's Open Knowledge Format conformance |
 | [`summarize`](#summarize) | Summarize Notes | AI | Summarize a note, a set of notes, or a subtree with an LLM (needs `OPENAI_API_KEY` or an OpenAI-compatible base URL) |
 | [`get_summary`](#get_summary) | Get Summary | AI | Retrieve a summary that `summarize` promoted to a background job |
-| [`get_history`](#get_history) | Note History | Read (git) | List commits that touched a note, attachment, or the whole vault |
+| [`get_history`](#get_history) | Note History | Read (git) | List commits that touched a note, attachment, folder, or the whole vault |
 | [`get_diff`](#get_diff) | Note Diff | Read (git) | Return a diff of a note or attachment between two points in history |
 | [`reindex`](#reindex) | Reindex Vault | Admin | Force a full reindex of the vault |
 | [`build_embeddings`](#build_embeddings) | Build Embeddings | Admin | Build or rebuild vector embeddings |
@@ -444,11 +444,11 @@ Generate (or overwrite) a folder's reserved `index.md` as a progressive-disclosu
 
 #### `okf_seed_log`
 
-Seed a folder's reserved `log.md` change history from the vault's git commit history, newest-first `## YYYY-MM-DD` sections, one bullet per commit. Refuses to overwrite an existing `log.md` (a change history is hand-maintained after seeding).
+Seed a folder's reserved `log.md` change history from the vault's git commit history, newest-first `## YYYY-MM-DD` sections, one bullet per commit. The `folder` argument both places the log and scopes its content: a folder seeds only the commits that touched that subtree, while the bundle root seeds the whole vault's history. Refuses to overwrite an existing `log.md` (a change history is hand-maintained after seeding).
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `folder` | string | Folder to write `log.md` into; omit for the bundle root |
+| `folder` | string | Folder to write `log.md` into and scope history to; omit for the bundle root (whole-vault history) |
 
 **Returns:** `path` (string), `commits` (integer), `dates` (integer, distinct-day count).
 
@@ -839,13 +839,13 @@ Find the shortest path between two notes via BFS on the undirected link graph (m
 
 ### `get_history`
 
-List commits that touched a note or attachment (or the whole vault) within an optional time window, up to a maximum count. Only available for git-backed vaults.
+List commits that touched a note, attachment, or folder (or the whole vault) within an optional time window, up to a maximum count. Only available for git-backed vaults.
 
 **Parameters:**
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `path` | string | `null` | Relative vault path (such as `"notes/alpha.md"` or `"assets/diagram.png"`). May be a `.md` note or a configured attachment extension (png, pdf, svg, …). Omit for vault-wide history. An unsupported extension is rejected. |
+| `path` | string | `null` | Relative vault path. A `.md` note or a configured attachment extension (png, pdf, svg, …) scopes to that single file (such as `"notes/alpha.md"`, `"assets/diagram.png"`); an existing folder scopes to its subtree (such as `"guides"`, returning commits that touched `guides/**`). Omit for vault-wide history. A non-directory path with an unsupported extension is rejected. |
 | `since` | string | `null` | ISO 8601 datetime string (`"2026-04-01T00:00:00"`) or git date expression (`"1 week ago"`). Passed as `--since` to `git log`. Inclusive at the boundary. |
 | `until` | string | `null` | ISO 8601 datetime string or git date expression, passed as `--until` to `git log`. Combined with `since` to bound a window. Inclusive at the boundary. |
 | `limit` | int | `20` | Maximum number of commits to return. Capped at 100. |
@@ -859,7 +859,7 @@ List commits that touched a note or attachment (or the whole vault) within an op
 | `timestamp` | string | ISO 8601 author timestamp |
 | `author` | string | Author name and email |
 | `message` | string | First line of the commit message |
-| `paths_changed` | list[string] | Files touched by the commit. Populated for vault-wide queries (`path=null`); always empty for single-note queries, since the path is already determined by the query arguments (callers know which file the commit touched without needing it echoed back). |
+| `paths_changed` | list[string] | Files touched by the commit. Populated for vault-wide queries (`path=null`) and folder queries (the subtree files the commit touched); always empty for single-note queries, since the path is already determined by the query arguments (callers know which file the commit touched without needing it echoed back). |
 
 **Raises:** `ToolError` if `path` is invalid or uses an unsupported extension.
 

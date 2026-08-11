@@ -2990,6 +2990,57 @@ class TestGetFileHistory:
         # paths_changed is empty for single-note queries
         assert entries[0].paths_changed == []
 
+    def _commit(self, repo: Path, rel: str, body: str, message: str) -> None:
+        target = repo / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(body)
+        subprocess.run(
+            ["git", "-C", str(repo), "add", "."], capture_output=True, check=True
+        )
+        subprocess.run(
+            ["git", "-C", str(repo), "commit", "-m", message],
+            capture_output=True,
+            check=True,
+        )
+
+    def test_directory_history_scopes_to_subtree(self, tmp_path: Path) -> None:
+        """is_dir=True scopes history to the folder's subtree with subtree paths."""
+        repo = self._make_repo_with_commits(tmp_path)  # 2 commits on note.md
+        self._commit(repo, "guides/a.md", "a", "add: guides/a")
+        self._commit(repo, "notes/b.md", "b", "add: notes/b")
+        self._commit(repo, "guides/a.md", "a2", "edit: guides/a")
+        strategy = GitWriteStrategy()
+        entries = strategy.get_file_history(
+            repo, path=repo / "guides", since=None, limit=20, is_dir=True
+        )
+        # Only the two commits touching guides/**, newest-first.
+        assert [e.message for e in entries] == ["edit: guides/a", "add: guides/a"]
+        # paths_changed carries the subtree files (root note.md / notes/ excluded).
+        assert entries[0].paths_changed == ["guides/a.md"]
+
+    def test_directory_history_excludes_sibling_paths(self, tmp_path: Path) -> None:
+        """A commit touching both the folder and a sibling reports only subtree files."""
+        repo = self._make_repo_with_commits(tmp_path)
+        # One commit touches guides/ AND notes/ at once.
+        (repo / "guides").mkdir()
+        (repo / "notes").mkdir()
+        (repo / "guides" / "a.md").write_text("a")
+        (repo / "notes" / "b.md").write_text("b")
+        subprocess.run(
+            ["git", "-C", str(repo), "add", "."], capture_output=True, check=True
+        )
+        subprocess.run(
+            ["git", "-C", str(repo), "commit", "-m", "add: both"],
+            capture_output=True,
+            check=True,
+        )
+        strategy = GitWriteStrategy()
+        entries = strategy.get_file_history(
+            repo, path=repo / "guides", since=None, limit=20, is_dir=True
+        )
+        assert entries[0].message == "add: both"
+        assert entries[0].paths_changed == ["guides/a.md"]  # notes/b.md filtered out
+
     def test_limit_is_respected(self, tmp_path: Path) -> None:
         """get_file_history respects the limit parameter."""
         repo = self._make_repo_with_commits(tmp_path)

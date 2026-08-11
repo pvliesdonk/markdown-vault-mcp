@@ -156,6 +156,7 @@ def get_file_history(
     *,
     token: str | None,
     username: str,
+    is_dir: bool = False,
 ) -> list[HistoryEntry]:
     """Return commits that touched *path* (or the whole vault).
 
@@ -164,8 +165,13 @@ def get_file_history(
             is not inside a git repository (returns ``[]`` immediately).
         repo_path: Absolute path of the vault root.  Used to compute the
             vault-relative prefix when the git root is a parent of the vault.
-        path: Absolute path of the file to filter on, or ``None`` for the
-            entire vault.
+        path: Absolute path of the file (or directory, when *is_dir*) to
+            filter on, or ``None`` for the entire vault.
+        is_dir: When ``True``, *path* is a directory: history is scoped to its
+            subtree (``git log -- <dir>``, without the single-file
+            ``--follow``), and ``paths_changed`` is populated with the
+            subtree files each commit touched. When ``False`` (a single file),
+            ``--follow`` tracks renames and ``paths_changed`` stays empty.
         since: Passed as ``--since`` to ``git log`` (ISO 8601 or git date
             expression such as ``"1 week ago"``).  ``None`` disables the
             filter.
@@ -223,6 +229,13 @@ def get_file_history(
         # vault-wide: scope to the resolved real path so symlinked SOURCE_DIR
         # values work correctly (git compares against the real toplevel).
         cmd += ["--name-only", "--", str(repo_path.resolve())]
+    elif is_dir:
+        # directory scope: no --follow (git rejects it for anything but a
+        # single file); --name-only so paths_changed carries the subtree files
+        # each commit touched. git already filters the name-only output to the
+        # <dir> pathspec, so no sibling paths leak in and no extra filtering is
+        # needed here.
+        cmd += ["--name-only", "--", str(path)]
     else:
         cmd += ["--follow", "--", str(path)]
 
@@ -261,8 +274,10 @@ def get_file_history(
             continue
         sha, short_sha, timestamp, author, message = parts[:5]
         paths_changed: list[str] = []
-        if path is None and len(lines) > 1:
-            # vault-wide query: strip vault prefix to get vault-relative paths
+        if (path is None or is_dir) and len(lines) > 1:
+            # vault-wide or directory query: strip the vault prefix to get
+            # vault-relative paths. git already scoped a directory query's
+            # --name-only output to the folder pathspec.
             for ln in lines[1:]:
                 ln = ln.strip()
                 if not ln:

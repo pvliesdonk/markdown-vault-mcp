@@ -1210,8 +1210,12 @@ what is implemented today:
   progressive-disclosure intent rather than flattening the subtree — and
   preserves existing frontmatter (the root ``okf_version`` declaration
   survives regeneration). ``okf_seed_log``
-  writes a reserved ``log.md`` from vault-wide git history (newest-first
+  writes a reserved ``log.md`` from git history (newest-first
   ``## YYYY-MM-DD`` sections), refusing to overwrite an existing log. The
+  ``folder`` argument both places the log and scopes its content: a folder
+  seeds only the commits that touched that subtree (via the read-only
+  git-history layer's directory support — ``git log -- <dir>``), while the
+  bundle root seeds whole-vault history (#974). The
   tools are tagged ``{"okf", "write"}`` — hidden in read-only mode and
   under ``OKF_MODE=off`` — and gate on read-only only, not a future
   ``OKF_WRITE`` flag (they are migrations, not enforcement). Bundle export

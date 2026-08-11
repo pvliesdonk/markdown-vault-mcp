@@ -1623,13 +1623,17 @@ class GitWriteStrategy:
         since: str | None,
         limit: int,
         until: str | None = None,
+        *,
+        is_dir: bool = False,
     ) -> list[HistoryEntry]:
         """Return commits that touched *path* (or the whole vault).
 
         Args:
             repo_path: Path inside the git repository (used to locate the root).
-            path: Absolute path of the file to filter on, or ``None`` for the
-                entire vault.
+            path: Absolute path of the file (or directory, when *is_dir*) to
+                filter on, or ``None`` for the entire vault.
+            is_dir: When ``True``, scope history to *path*'s subtree instead of
+                treating it as a single file (see :func:`query.get_file_history`).
             since: Passed as ``--since`` to ``git log`` (ISO 8601 or git date
                 expression such as ``"1 week ago"``).  ``None`` disables the
                 filter.
@@ -1657,6 +1661,7 @@ class GitWriteStrategy:
             until,
             token=self._token,
             username=self._username,
+            is_dir=is_dir,
         )
 
     @staticmethod

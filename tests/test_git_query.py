@@ -23,6 +23,7 @@ class _RecordingStrategy:
 
     def __init__(self) -> None:
         self.history_calls: list[tuple[Any, ...]] = []
+        self.history_is_dir: list[bool] = []
         self.diff_calls: list[tuple[Any, ...]] = []
         self.diff_kwargs: list[dict[str, Any]] = []
 
@@ -33,8 +34,11 @@ class _RecordingStrategy:
         since: str | None,
         limit: int,
         until: str | None = None,
+        *,
+        is_dir: bool = False,
     ) -> list[str]:
         self.history_calls.append((source_dir, abs_path, since, limit, until))
+        self.history_is_dir.append(is_dir)
         return ["HIST"]
 
     def get_file_diff(
@@ -100,6 +104,33 @@ class TestForwarding:
         mgr = GitQueryManager(strat, tmp_path)  # type: ignore[arg-type]
         mgr.get_history()
         assert strat.history_calls[0][1] is None  # abs_path
+        assert strat.history_is_dir[0] is False
+
+    def test_get_history_file_passes_is_dir_false(self, tmp_path: Path) -> None:
+        strat = _RecordingStrategy()
+        mgr = GitQueryManager(strat, tmp_path)  # type: ignore[arg-type]
+        mgr.get_history("note.md")
+        assert strat.history_calls[0][1] == tmp_path / "note.md"
+        assert strat.history_is_dir[0] is False
+
+    def test_get_history_existing_dir_detected_as_dir(self, tmp_path: Path) -> None:
+        # A path resolving to a real directory is scoped to its subtree.
+        (tmp_path / "guides").mkdir()
+        strat = _RecordingStrategy()
+        mgr = GitQueryManager(strat, tmp_path)  # type: ignore[arg-type]
+        mgr.get_history("guides")
+        assert strat.history_calls[0][1] == tmp_path / "guides"
+        assert strat.history_is_dir[0] is True
+
+    def test_get_history_nonexistent_bare_name_rejected_as_file(
+        self, tmp_path: Path
+    ) -> None:
+        # A non-directory path with no note/attachment extension still fails
+        # file validation (the directory branch requires an on-disk folder).
+        strat = _RecordingStrategy()
+        mgr = GitQueryManager(strat, tmp_path)  # type: ignore[arg-type]
+        with pytest.raises(ValueError, match=r"must be a \.md note or a configured"):
+            mgr.get_history("guides")
 
     def test_get_diff_limit_gated_on_per_commit(self, tmp_path: Path) -> None:
         strat = _RecordingStrategy()
