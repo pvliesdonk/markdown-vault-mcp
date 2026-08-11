@@ -681,6 +681,22 @@
       "advancedGroup": "Embeddings"
     },
     {
+      "id": "embed_timeout_s",
+      "label": "Embed Timeout S",
+      "type": "number",
+      "var": "MARKDOWN_VAULT_MCP_EMBED_TIMEOUT_S",
+      "help": "Per-request wall-clock budget in seconds for a single embedding HTTP call (OpenAI/Ollama). The local FastEmbed backend runs in-process with no network call and ignores this. CPU-only or large-model workloads may need 60-120 s; raise this if batches time out.",
+      "advancedGroup": "Embeddings"
+    },
+    {
+      "id": "embedding_batch_size",
+      "label": "Embedding Batch Size",
+      "type": "number",
+      "var": "MARKDOWN_VAULT_MCP_EMBEDDING_BATCH_SIZE",
+      "help": "Number of chunks sent per embedding request. Smaller batches shorten each request (useful under a tight timeout on slow models) at the cost of more round-trips.",
+      "advancedGroup": "Embeddings"
+    },
+    {
       "id": "git_token",
       "label": "Git Token",
       "type": "text",

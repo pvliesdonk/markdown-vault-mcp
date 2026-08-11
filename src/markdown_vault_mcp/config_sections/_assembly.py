@@ -162,6 +162,7 @@ def to_vault_kwargs(config: ProjectConfig) -> dict[str, Any]:
         "title_field": config.indexing.title_field,
         "searchable_frontmatter_fields": config.indexing.searchable_frontmatter,
         "embed_context": config.embeddings.embed_context,
+        "embedding_batch_size": config.embeddings.embedding_batch_size,
         "conventions_file": config.content.conventions_file,
         "okf_mode": config.content.okf_mode,
         "okf_write": config.content.okf_write,

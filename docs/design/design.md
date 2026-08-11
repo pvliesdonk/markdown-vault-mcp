@@ -755,11 +755,12 @@ Two-layer model:
 | `None` return | `read()` | Path escapes `source_dir` (traversal attempt) or file does not exist on disk |
 | `ValueError` | `edit()` | `old_text` is empty string |
 
-`build_embeddings()` processes chunks in bounded batches (default 64) to avoid
-pathological memory allocation from embedding providers (see issue #159).
-FastEmbed's ONNX inference uses a further inner batch size of 4 to keep
-per-call memory bounded; without this, the ONNX attention matrix for 64 long
-chunks can require >192 GB of allocation. The save happens once at the end so a
+`build_embeddings()` processes chunks in bounded batches (configurable via
+`MARKDOWN_VAULT_MCP_EMBEDDING_BATCH_SIZE`, default 4) to avoid pathological
+memory allocation from embedding providers (see issue #159). FastEmbed's ONNX
+inference uses a further inner batch size of 32 to keep per-call memory bounded;
+without this, the ONNX attention matrix for a large batch (e.g. 64 long
+chunks) can require >192 GB of allocation. The save happens once at the end so a
 mid-run crash does not leave a partial index on disk; if one exists anyway,
 the next startup's convergence pass (see Embedding Convergence, #665) embeds
 exactly the missing chunks rather than treating the index as complete.
@@ -2301,7 +2302,8 @@ contain this, both operator-tunable:
 
 - **Per-request timeout** — ``OpenAISummarizer`` constructs its client with
   ``timeout=SUMMARIZE_TIMEOUT`` (default 120 s, mirroring the embeddings
-  transport's fixed 30 s). An ``openai.APITimeoutError`` is mapped to a
+  transport's configurable timeout (``MARKDOWN_VAULT_MCP_EMBED_TIMEOUT_S``,
+  default 30 s). An ``openai.APITimeoutError`` is mapped to a
   specific, actionable ``RuntimeError`` — naming the budget and the ways to
   fit under it (fewer paths, a smaller ``max_notes``, a tighter ``focus``,
   ``per_note`` mode, or a higher ``SUMMARIZE_TIMEOUT``) — so the caller sees

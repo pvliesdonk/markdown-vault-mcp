@@ -16,6 +16,7 @@ from markdown_vault_mcp.managers.index import IndexManager
 from markdown_vault_mcp.scanner import HeadingChunker
 from markdown_vault_mcp.tracker import ChangeTracker
 from markdown_vault_mcp.types import IndexStats, ReindexResult
+from tests.conftest import MockEmbeddingProvider
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -2047,3 +2048,59 @@ class TestEmbedTextEnrichment:
         mgr.build_index()
         mgr.build_embeddings()
         assert provider.texts == ["# Enriched Doc\n\nplain chunk body"]
+
+
+class _RecordingProvider(MockEmbeddingProvider):
+    """MockEmbeddingProvider that records the text-batch size of each embed call."""
+
+    def __init__(self, dim: int = 32) -> None:
+        super().__init__(dim=dim)
+        self.calls: list[int] = []
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        self.calls.append(len(texts))
+        return super().embed(texts)
+
+
+class TestEmbeddingBatchSize:
+    """The configured batch size slices chunk lists at the embed call sites."""
+
+    def test_embed_note_inline_respects_configured_batch_size(
+        self, index_vault: Path, tmp_path: Path
+    ) -> None:
+        """A 5-chunk note is sliced into [2, 2, 1] with embedding_batch_size=2."""
+        from markdown_vault_mcp.types import Chunk, ParsedNote
+
+        holder: dict = {"vectors": None}
+        provider = _RecordingProvider()
+        mgr, _fts, _ = _make_index_mgr(
+            index_vault,
+            tmp_path,
+            embeddings_path=tmp_path / "embeddings",
+            embedding_provider=provider,
+            embedding_batch_size=2,
+            get_vectors=lambda: holder["vectors"],
+            set_vectors=lambda v: holder.__setitem__("vectors", v),
+        )
+        mgr.build_index()
+        mgr.build_embeddings()
+        vectors = holder["vectors"]
+        assert vectors is not None
+        # build_embeddings recorded calls on the provider; clear before the
+        # act-under-test so only _embed_note_inline's slicing is observed.
+        provider.calls.clear()
+        note = ParsedNote(
+            path="note.md",
+            frontmatter={},
+            title="Note",
+            chunks=[
+                Chunk(heading=None, heading_level=0, content=f"chunk {i}", start_line=1)
+                for i in range(5)
+            ],
+            content_hash="deadbeef",
+            modified_at=0.0,
+        )
+        failed = mgr._embed_note_inline(vectors, note)
+
+        assert failed == 0
+        assert provider.calls == [2, 2, 1]

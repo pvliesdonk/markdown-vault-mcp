@@ -318,6 +318,51 @@ class TestOpenAIProvider:
             OpenAIProvider(api_key="sk-test")
 
 
+class TestEmbedTimeout:
+    """The configurable timeout threads through every provider HTTP call."""
+
+    def test_openai_provider_threads_timeout_to_sdk_client(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        captured = _install_fake_openai(monkeypatch, vectors=[[0.1, 0.2, 0.3]])
+        OpenAIProvider(api_key="sk-test", timeout=120.0)
+        assert captured["timeout"] == 120.0
+
+    def test_openai_provider_default_timeout_is_30(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        captured = _install_fake_openai(monkeypatch, vectors=[[0.1, 0.2, 0.3]])
+        OpenAIProvider(api_key="sk-test")
+        assert captured["timeout"] == 30.0
+
+    def test_ollama_compat_threads_timeout_to_sdk_client(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        captured = _install_fake_openai(monkeypatch, vectors=[[0.1, 0.2, 0.3]])
+        OllamaProvider(host="http://localhost:11434", model="nomic", timeout=90.0)
+        assert captured["timeout"] == 90.0
+
+    def test_ollama_cpu_only_native_post_uses_timeout(self) -> None:
+        mock_client, _ = _make_httpx_mock(json_body={"embeddings": [[1.0, 2.0]]})
+        with patch("httpx.Client", return_value=mock_client):
+            provider = OllamaProvider(
+                host="http://localhost:11434",
+                model="nomic-embed-text",
+                cpu_only=True,
+                timeout=45.0,
+            )
+            provider.embed(["test"])
+        assert mock_client.post.call_args[1]["timeout"] == 45.0
+
+    def test_get_embedding_provider_threads_config_timeout(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        captured = _install_fake_openai(monkeypatch, vectors=[[0.1, 0.2, 0.3]])
+        cfg = _config(provider="ollama", embed_timeout_s=77.0)
+        get_embedding_provider(cfg)
+        assert captured["timeout"] == 77.0
+
+
 class TestFastEmbedProvider:
     def test_embed_uses_fastembed_model_and_cache(self) -> None:
         vec = MagicMock()

@@ -76,10 +76,17 @@ class _OpenAICompatEmbeddings:
         base_url: OpenAI-compatible endpoint base URL.
         model: Embedding model name.
         label: Provider label used in error messages.
+        timeout: Per-request timeout in seconds for the underlying SDK client.
     """
 
     def __init__(
-        self, api_key: str | None, *, base_url: str, model: str, label: str
+        self,
+        api_key: str | None,
+        *,
+        base_url: str,
+        model: str,
+        label: str,
+        timeout: float = 30.0,
     ) -> None:
         try:
             import openai
@@ -90,7 +97,9 @@ class _OpenAICompatEmbeddings:
             ) from exc
         self._openai = openai
         self._client = openai.OpenAI(
-            api_key=api_key or _PLACEHOLDER_API_KEY, base_url=base_url, timeout=30.0
+            api_key=api_key or _PLACEHOLDER_API_KEY,
+            base_url=base_url,
+            timeout=timeout,
         )
         self._model = model
         self._label = label
@@ -183,15 +192,19 @@ class OllamaProvider(EmbeddingProvider):
         model: Model name to use for embeddings.
         cpu_only: When ``True``, request CPU-only inference (sets
             ``num_gpu=0`` in the Ollama options payload; native API).
+        timeout: Per-request timeout in seconds for HTTP calls to Ollama.
     """
 
-    def __init__(self, host: str, model: str, *, cpu_only: bool = False) -> None:
+    def __init__(
+        self, host: str, model: str, *, cpu_only: bool = False, timeout: float = 30.0
+    ) -> None:
         """Initialise OllamaProvider with explicit parameters.
 
         Args:
             host: Base URL of the Ollama server.
             model: Model name to use for embeddings.
             cpu_only: When ``True``, request CPU-only inference.
+            timeout: Per-request timeout in seconds for HTTP calls to Ollama.
 
         Raises:
             ImportError: If ``httpx`` is not installed, or the ``openai``
@@ -210,6 +223,7 @@ class OllamaProvider(EmbeddingProvider):
         self._host = host.rstrip("/")
         self._model = model
         self._cpu_only = cpu_only
+        self._timeout = timeout
         # CPU-only requests need options.num_gpu, which the OpenAI-compat
         # endpoint cannot express — that path stays native and needs no SDK.
         self._compat = (
@@ -220,6 +234,7 @@ class OllamaProvider(EmbeddingProvider):
                 base_url=f"{self._host}/v1",
                 model=model,
                 label="OllamaProvider",
+                timeout=timeout,
             )
         )
         self._dimension: int | None = None
@@ -254,7 +269,7 @@ class OllamaProvider(EmbeddingProvider):
         logger.debug("POST %s model=%s texts=%d", url, self._model, len(texts))
 
         with self._httpx.Client() as client:
-            response = client.post(url, json=payload, timeout=30.0)
+            response = client.post(url, json=payload, timeout=self._timeout)
 
         if response.status_code != 200:
             raise RuntimeError(
@@ -379,6 +394,7 @@ class OpenAIProvider(EmbeddingProvider):
         api_key: OpenAI API key for authentication.
         base_url: Base URL for an OpenAI-compatible API.
         model: Embedding model name.
+        timeout: Per-request timeout in seconds for the underlying SDK client.
     """
 
     _MODEL = "text-embedding-3-small"
@@ -390,6 +406,7 @@ class OpenAIProvider(EmbeddingProvider):
         *,
         base_url: str = _BASE_URL,
         model: str = _MODEL,
+        timeout: float = 30.0,
     ) -> None:
         """Initialise OpenAIProvider with an explicit API key.
 
@@ -397,6 +414,7 @@ class OpenAIProvider(EmbeddingProvider):
             api_key: OpenAI API key for authentication.
             base_url: Base URL for an OpenAI-compatible API.
             model: Embedding model name.
+            timeout: Per-request timeout in seconds for the underlying SDK client.
 
         Raises:
             ImportError: If the ``openai`` SDK is not installed.
@@ -411,6 +429,7 @@ class OpenAIProvider(EmbeddingProvider):
             base_url=self._base_url,
             model=self._model,
             label="OpenAIProvider",
+            timeout=timeout,
         )
         self._dimension: int | None = None
 
@@ -607,6 +626,7 @@ def get_embedding_provider(config: ProjectConfig) -> EmbeddingProvider:
             api_key=config.embeddings.openai_api_key or "",
             base_url=config.embeddings.openai_base_url,
             model=config.embeddings.openai_embedding_model,
+            timeout=config.embeddings.embed_timeout_s,
         )
 
     if explicit == "ollama":
@@ -615,6 +635,7 @@ def get_embedding_provider(config: ProjectConfig) -> EmbeddingProvider:
             host=config.embeddings.ollama_host,
             model=config.embeddings.ollama_model,
             cpu_only=config.embeddings.ollama_cpu_only,
+            timeout=config.embeddings.embed_timeout_s,
         )
 
     if explicit == "fastembed":
@@ -640,6 +661,7 @@ def get_embedding_provider(config: ProjectConfig) -> EmbeddingProvider:
             api_key=config.embeddings.openai_api_key,
             base_url=config.embeddings.openai_base_url,
             model=config.embeddings.openai_embedding_model,
+            timeout=config.embeddings.embed_timeout_s,
         )
 
     # Auto-detect: Ollama reachable? (EmbeddingsConfig.__post_init__ already
@@ -656,6 +678,7 @@ def get_embedding_provider(config: ProjectConfig) -> EmbeddingProvider:
                 host=host,
                 model=config.embeddings.ollama_model,
                 cpu_only=config.embeddings.ollama_cpu_only,
+                timeout=config.embeddings.embed_timeout_s,
             )
     except Exception:
         logger.debug("Ollama not reachable at %s, skipping", host)

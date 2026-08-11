@@ -202,6 +202,9 @@ class Vault:
             chunk heading enrichment) even with no
             ``searchable_frontmatter_fields``; any searchable field also
             activates v2 (default ``False`` — raw chunk content).
+        embedding_batch_size: Maximum number of chunk texts sent to the
+            embedding provider per call in the cold-build, convergence, and
+            inline-reindex paths (default ``4``).
         folder_weights: Folder-prefix score multipliers applied to search
             results just before file grouping (``None`` disables).
         fts_weights: Per-column BM25 weights persisted into the FTS5 rank
@@ -253,6 +256,7 @@ class Vault:
         title_field: str = "title",
         searchable_frontmatter_fields: list[str] | None = None,
         embed_context: bool = False,
+        embedding_batch_size: int = 4,
         folder_weights: dict[str, float] | None = None,
         fts_weights: dict[str, float] | None = None,
         conventions_file: str | None = "_conventions.md",
@@ -263,6 +267,7 @@ class Vault:
         self._index_path = index_path
         self._embeddings_path = embeddings_path
         self._embedding_provider = embedding_provider
+        self._embedding_batch_size = embedding_batch_size
         self._read_only = read_only
         self._indexed_frontmatter_fields: list[str] = indexed_frontmatter_fields or []
         # OKF detection (disk probe, index-independent). When read semantics
@@ -423,6 +428,7 @@ class Vault:
             max_chunk_chars_override=self._max_chunk_chars_override,
             title_field=self._title_field,
             embed_text_builder=self._embed_builder,
+            embedding_batch_size=self._embedding_batch_size,
         )
         # Index-write orchestration: owns the single-owner IndexWriter
         # thread + the build-readiness state machine (#576).  Constructed

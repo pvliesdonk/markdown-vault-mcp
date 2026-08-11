@@ -107,6 +107,8 @@ The first three knobs adjust *ranking and rendering* and take effect immediately
 |----------|------|---------|-------------|
 | `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` | string | auto-detect | Embedding provider: `openai`, `ollama`, or `fastembed`. **Breaking change** from `EMBEDDING_PROVIDER` in older versions |
 | `MARKDOWN_VAULT_MCP_EMBED_CONTEXT` | bool | `false` | Enrich each chunk's embedding input with the note title, the chunk heading, and (on the first chunk) the `SEARCHABLE_FIELDS` values, improving semantic recall for short or context-poor chunks. The raw note content on disk and in search snippets is unchanged. The active format is recorded in the vector sidecar, so flipping this (or changing `SEARCHABLE_FIELDS`) re-embeds the whole vault once on next startup |
+| `MARKDOWN_VAULT_MCP_EMBED_TIMEOUT_S` | float | `30.0` | Per-request wall-clock budget in seconds for a single embedding HTTP call (OpenAI/Ollama). The local FastEmbed backend runs in-process with no network call and ignores this. CPU-only or large-model workloads may need 60-120 s; raise this if batches time out. |
+| `MARKDOWN_VAULT_MCP_EMBEDDING_BATCH_SIZE` | int | `4` | Number of chunks sent per embedding request. Smaller batches shorten each request (useful under a tight timeout on slow models) at the cost of more round-trips. |
 | `OLLAMA_HOST` | url | `http://localhost:11434` | Ollama server URL. **Not** `MARKDOWN_VAULT_MCP_`-prefixed |
 | `OPENAI_API_KEY` | string | (none) | OpenAI API key for the OpenAI embedding provider. **Not** `MARKDOWN_VAULT_MCP_`-prefixed |
 | `MARKDOWN_VAULT_MCP_OPENAI_BASE_URL` / `OPENAI_BASE_URL` | url | `https://api.openai.com/v1` | OpenAI-compatible API base URL for embeddings |
