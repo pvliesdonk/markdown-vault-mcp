@@ -521,6 +521,14 @@
       "advancedGroup": "Content"
     },
     {
+      "id": "okf_verify",
+      "label": "Okf Verify",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_OKF_VERIFY",
+      "help": "How the okf_verify tool attributes a human review (only meaningful when OKF_WRITE is on, which gates the tool). With elicit (the default), okf_verify asks the human to confirm the review through an MCP elicitation and writes the attestation only on an affirmative reply, failing closed when the client cannot elicit or the human declines — so a model wielding the human's token cannot self-attest. Use trust-auth to attribute to the authenticated caller with no confirmation (only safe when the sole caller is a human-driven UI), or off to hide the tool so attestation happens solely via external tooling. A non-default value with OKF_WRITE off is a config error.",
+      "advancedGroup": "Content"
+    },
+    {
       "id": "attachment_extensions",
       "label": "Attachment Extensions",
       "type": "text",

@@ -269,6 +269,26 @@ class ProjectConfig:
             "wizard": {"group": "Content"},
         },
     )
+    okf_verify: str = field(
+        default="elicit",
+        metadata={
+            "help": (
+                "How the okf_verify tool attributes a human review (only "
+                "meaningful when OKF_WRITE is on, which gates the tool). With "
+                "elicit (the default), okf_verify asks the human to confirm the "
+                "review through an MCP elicitation and writes the attestation "
+                "only on an affirmative reply, failing closed when the client "
+                "cannot elicit or the human declines — so a model wielding the "
+                "human's token cannot self-attest. Use trust-auth to attribute "
+                "to the authenticated caller with no confirmation (only safe "
+                "when the sole caller is a human-driven UI), or off to hide the "
+                "tool so attestation happens solely via external tooling. A "
+                "non-default value with OKF_WRITE off is a config error."
+            ),
+            "tags": ("content",),
+            "wizard": {"group": "Content"},
+        },
+    )
     attachment_extensions: Sequence[str] | None = field(
         default=None,
         metadata={
@@ -860,6 +880,7 @@ class ProjectConfig:
             conventions_file=self.conventions_file,
             okf_mode=self.okf_mode,
             okf_write=self.okf_write,
+            okf_verify=self.okf_verify,
         )
 
     # CONFIG-FIELDS-END
@@ -960,6 +981,9 @@ class ProjectConfig:
             ),
             okf_mode=(env(_ENV_PREFIX, "OKF_MODE", "auto") or "auto").strip().lower(),
             okf_write=to_bool(env(_ENV_PREFIX, "OKF_WRITE"), default=False),
+            okf_verify=(env(_ENV_PREFIX, "OKF_VERIFY", "elicit") or "elicit")
+            .strip()
+            .lower(),
             attachment_extensions=resolve_attachment_extensions(
                 env(_ENV_PREFIX, "ATTACHMENT_EXTENSIONS")
             ),

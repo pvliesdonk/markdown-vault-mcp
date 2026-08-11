@@ -307,9 +307,38 @@ and none of it is implied by vault declaration.
   body alone); rename does not. This is the highest-value enforcement:
   it is exactly the invariant an advisory-only setup eventually misses.
 - **`okf_verify` tool:** appends `{by: human:<subject>, at}` to `verified`,
-  promoting the note's tier. Requires an authenticated identity; refuses
-  (ToolError) when auth mode is `none`, so verification remains an
-  attributable act. `destructiveHint=False`, `idempotentHint=False`.
+  promoting the note's tier. `destructiveHint=False`, `idempotentHint=False`.
+
+  The authenticated subject is *whose token* is in play, not evidence that a
+  human reviewed the note. In an agentic session the model wields the human's
+  token, so attributing to the auth subject alone lets the model self-promote a
+  note to `human-reviewed` — which would make the tier meaningless. `okf_verify`
+  is the only vector for this: `derive_trust_tier` reads `verified` exclusively,
+  and the write-time `generated` stamp is provenance that does not affect the
+  tier. So the attestation path is operator-configurable via
+  `MARKDOWN_VAULT_MCP_OKF_VERIFY` (meaningful only when `OKF_WRITE` is on):
+
+  - **`elicit`** (default): the tool issues an MCP **elicitation** asking the
+    human to confirm they personally reviewed the note, and writes the
+    `verified` entry only on an affirmative reply. **Fails closed** — if the
+    client cannot elicit, or the human declines, it raises `ToolError` and
+    writes nothing. A model cannot answer an elicitation, so the attestation
+    leaves its control by construction; a headless agent (no human) can never
+    produce a `human-reviewed` entry. The subject stamped is the authenticated
+    subject when present, else the `local` sentinel — the elicitation, not the
+    token, is the human-presence proof.
+  - **`off`**: hides the tool entirely (via the `okf-enforce` tag disable), so
+    `verified` is set only by external tooling (CLI / git-hook / CI) beyond the
+    model's reach.
+  - **`trust-auth`**: today's behaviour — attribute to the authenticated
+    subject with no elicitation; refuses (`ToolError`) when auth mode is `none`.
+    An explicit opt-in, only safe when the sole `okf_verify` caller is a
+    genuinely human-driven UI, not an agent.
+
+  Trust caveat: even `elicit` makes `human-reviewed` mean *"a human deliberately
+  confirmed the review,"* not *"provably correct"* — a human can rubber-stamp.
+  It guarantees a deliberate human act gates the tier, not diligence; downstream
+  OKF consumers should calibrate to that.
 - **Convention maintenance:** on successful writes, append a `log.md` entry
   (newest-first, `## YYYY-MM-DD` section, `**Update**:`-style bullet) and
   refresh the affected folder's `index.md` listing. Both are guaranteed

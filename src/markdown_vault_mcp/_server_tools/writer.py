@@ -10,10 +10,13 @@ from datetime import date
 from typing import Any
 from urllib.parse import urlparse, urlunparse
 
-from fastmcp import FastMCP
-from fastmcp.dependencies import Depends
+from fastmcp import Context, FastMCP
+from fastmcp.dependencies import CurrentContext, Depends
 from fastmcp.exceptions import ToolError
+from fastmcp.server.elicitation import AcceptedElicitation
+from mcp.shared.exceptions import McpError
 
+from markdown_vault_mcp.config import ProjectConfig
 from markdown_vault_mcp.exceptions import (
     ConcurrentModificationError,
     EditConflictError,
@@ -28,9 +31,10 @@ from .._okf_write import (
     okf_write_intent,
     okf_write_suppressed,
     resolve_human_subject,
+    resolve_verify_subject,
     resolve_write_actor,
 )
-from ..domain import get_vault
+from ..domain import get_config, get_vault
 from ._common import attach_conventions
 
 logger = logging.getLogger(__name__)
@@ -128,6 +132,71 @@ async def _resolve_pinned_ip(hostname: str, port: int) -> str:
                 "refusing to fetch."
             )
     return resolved[0]
+
+
+async def _require_review_elicitation(ctx: Context, path: str) -> None:
+    """Gate okf_verify's ``elicit`` mode on an affirmative human elicitation.
+
+    Fails **closed**: raises :class:`ToolError` (writing nothing) when the client
+    cannot elicit, or the human declines, cancels, or answers negatively. A model
+    cannot answer an elicitation, so the attestation leaves its control by
+    construction — a headless agent (no human) can never confirm.
+
+    Args:
+        ctx: The FastMCP request context used to issue the elicitation.
+        path: The note being attested (surfaced in the prompt).
+
+    Raises:
+        ToolError: If elicitation is unsupported or the review is not confirmed.
+    """
+    message = (
+        f"Confirm you have personally reviewed {path!r} and want to attest it "
+        "as human-reviewed. This records a verification in the note's OKF "
+        "frontmatter and promotes its trust tier."
+    )
+    try:
+        # A scalar bool wraps into a single-field object schema; an affirmative
+        # reply deconstructs back to True. mypy resolves only elicit's first
+        # (``response_type: None``) overload — its PEP 695/696 ``T = Any``-default
+        # typed overloads are opaque to it — so it mistypes the arg and
+        # ``result.data`` (a bool at runtime). Narrow ignore for that upstream
+        # typing gap; the truthiness gate below is correct at runtime.
+        result = await ctx.elicit(message, response_type=bool)  # type: ignore[arg-type]
+    except McpError as exc:
+        raise ToolError(
+            "okf_verify is in 'elicit' mode but this client does not support "
+            "elicitation, so a human review cannot be confirmed and nothing was "
+            "written. Use an elicitation-capable client, or set "
+            "MARKDOWN_VAULT_MCP_OKF_VERIFY=trust-auth (attribute to the "
+            "authenticated caller) or off (hide the tool)."
+        ) from exc
+    if isinstance(result, AcceptedElicitation) and result.data:
+        return
+    raise ToolError("Human review was not confirmed, so no verification was written.")
+
+
+async def _resolve_verify_mode_subject(*, mode: str, ctx: Context, path: str) -> str:
+    """Resolve the ``human:`` subject to stamp, enforcing *mode*'s gate.
+
+    ``trust-auth`` requires an authenticated subject (refuses under auth mode
+    ``none``); any other mode is treated as ``elicit`` and requires an
+    affirmative elicitation before attributing to the authenticated subject (or
+    the local sentinel). ``off`` never reaches here — the server hides the tool.
+
+    Raises:
+        ToolError: If the mode's gate is not satisfied.
+    """
+    if mode == "trust-auth":
+        subject = resolve_human_subject()
+        if subject is None:
+            raise ToolError(
+                "okf_verify (trust-auth mode) requires an authenticated "
+                "identity; the server is running with no auth, so a "
+                "verification cannot be attributed."
+            )
+        return subject
+    await _require_review_elicitation(ctx, path)
+    return resolve_verify_subject()
 
 
 def register(mcp: FastMCP) -> None:
@@ -843,6 +912,8 @@ def register(mcp: FastMCP) -> None:
     )
     async def okf_verify(
         path: str,
+        ctx: Context = CurrentContext(),
+        config: ProjectConfig = Depends(get_config),
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
         """Attest a note as human-reviewed by appending an OKF verification.
@@ -850,9 +921,21 @@ def register(mcp: FastMCP) -> None:
         Part of the OKF (Open Knowledge Format) enforced-write layer, available
         only when `MARKDOWN_VAULT_MCP_OKF_WRITE` is enabled. Appends a
         `{by: human:<subject>, at: <date>}` entry to the note's `verified`
-        frontmatter list from the authenticated identity, promoting the note's
-        trust tier to `human-reviewed`. Verification is an attributable act, so
-        it refuses (a tool error) when the server runs with no authentication.
+        frontmatter list, promoting the note's trust tier to `human-reviewed`.
+
+        How the review is confirmed depends on `MARKDOWN_VAULT_MCP_OKF_VERIFY`:
+
+        - **elicit** (default): issues an MCP elicitation asking you to confirm
+          you personally reviewed the note; the entry is written only on an
+          affirmative reply. Fails closed — if the client cannot elicit or the
+          review is declined, nothing is written. A model cannot answer an
+          elicitation, so it cannot self-attest.
+        - **trust-auth**: attributes to the authenticated caller with no
+          confirmation; refuses (a tool error) when the server runs with no
+          auth. Only safe when the sole caller is a human-driven UI.
+
+        Note: `human-reviewed` means a human deliberately confirmed the review,
+        not that the content is provably correct.
 
         Args:
             path: Vault-relative path of the note to verify.
@@ -865,16 +948,15 @@ def register(mcp: FastMCP) -> None:
               append.
 
         Raises:
-            ToolError: If the server has no authenticated identity, the note
-                does not exist, or the note changed since it was read (a
-                concurrent write — retry the verification).
+            ToolError: If the mode's confirmation gate is not satisfied (no
+                elicitation support / declined under `elicit`, or no
+                authenticated identity under `trust-auth`), the note does not
+                exist, or the note changed since it was read (a concurrent
+                write — retry the verification).
         """
-        subject = resolve_human_subject()
-        if subject is None:
-            raise ToolError(
-                "okf_verify requires an authenticated identity; the server is "
-                "running with no auth, so a verification cannot be attributed."
-            )
+        subject = await _resolve_verify_mode_subject(
+            mode=config.okf_verify, ctx=ctx, path=path
+        )
         note = await asyncio.to_thread(vault.reader.read, path)
         if note is None:
             raise ToolError(f"Note not found: {path}")

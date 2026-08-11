@@ -98,7 +98,15 @@ The one-shot migration transforms above (`okf_convert_links`, `okf_generate_inde
 
 ### Recording a human review
 
-Enabling the layer also exposes the [`okf_verify`](../tools/index.md#okf_verify) tool. Call it on a note you have reviewed and it appends a `{by: human:<subject>, at}` entry to that note's `verified` list, which promotes the note's trust tier to `human-reviewed`. Because a verification names who did the reviewing, the tool requires an authenticated identity and errors when the server runs with no auth. The verification write is exempt from the invalidation above, so attesting a note does not immediately clear the attestation you just added.
+Enabling the layer also exposes the [`okf_verify`](../tools/index.md#okf_verify) tool. Call it on a note you have reviewed and it appends a `{by: human:<subject>, at}` entry to that note's `verified` list, which promotes the note's trust tier to `human-reviewed`. The verification write is exempt from the invalidation above, so attesting a note does not immediately clear the attestation you just added.
+
+There is a subtlety worth understanding before you rely on the `human-reviewed` tier. The authenticated subject is *whose token* made the call, not proof that a person read the note. In an agentic session the model holds your token, so if attribution rested on the token alone, the model could promote a note to `human-reviewed` on its own — and the tier would mean nothing. `MARKDOWN_VAULT_MCP_OKF_VERIFY` controls how the tool guards against this. It is meaningful only when `OKF_WRITE` is on; setting it to a non-default value with the layer off is a configuration error, because the tool is hidden and the setting would do nothing.
+
+- **`elicit`** (the default) makes `okf_verify` ask you to confirm the review through an MCP [elicitation](https://modelcontextprotocol.io/specification/2025-06-18/client/elicitation) — a prompt your client shows you — and it writes the `verified` entry only when you answer yes. It fails closed: if your client cannot show elicitations, or you decline, the call raises an error and writes nothing. A model cannot answer an elicitation on your behalf, so a headless agent with no human present can never produce a `human-reviewed` entry. The recorded subject is your authenticated identity when the server has auth, or `local` when it does not.
+- **`off`** hides the tool entirely. Use this when reviews are recorded only by tooling outside the server — a CLI step, a git hook, or CI writing `verified` directly — and you want no in-session path to the tier at all.
+- **`trust-auth`** is the original behaviour: attribute to the authenticated caller with no confirmation, and refuse when the server runs with no auth. Choose it only when the sole caller of `okf_verify` is a genuinely human-driven interface rather than an agent.
+
+Whichever mode you pick, `human-reviewed` means a person deliberately confirmed the review, not that the note is provably correct — someone can still rubber-stamp it. The tier guarantees a deliberate human act, not diligence, so calibrate how much you lean on it accordingly.
 
 ### Keeping `log.md` and `index.md` current
 
