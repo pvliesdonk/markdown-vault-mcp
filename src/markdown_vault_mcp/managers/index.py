@@ -96,8 +96,9 @@ class IndexManager:
             produce identical embedding input. ``None`` constructs the
             default (v1 no-op) builder.
         embedding_batch_size: Maximum number of chunk texts sent to the
-            embedding provider in a single call. Defaults to the module
-            constant ``_EMBEDDING_BATCH_SIZE``.
+            embedding provider per call in the cold-build, convergence, and
+            inline-reindex paths. Defaults to the module constant
+            ``_EMBEDDING_BATCH_SIZE``.
     """
 
     def __init__(

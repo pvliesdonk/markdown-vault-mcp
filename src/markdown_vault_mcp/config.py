@@ -817,7 +817,7 @@ class ProjectConfig:
 
     @property
     def embeddings(self) -> EmbeddingsConfig:
-        """The embeddings section assembled from the flat provider fields."""
+        """The embeddings section assembled from the flat embedding fields."""
         return EmbeddingsConfig(
             provider=self.embedding_provider,
             ollama_host=self.ollama_host,

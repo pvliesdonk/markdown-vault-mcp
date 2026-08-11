@@ -203,7 +203,8 @@ class Vault:
             ``searchable_frontmatter_fields``; any searchable field also
             activates v2 (default ``False`` — raw chunk content).
         embedding_batch_size: Maximum number of chunk texts sent to the
-            embedding provider in a single call (default ``4``).
+            embedding provider per call in the cold-build, convergence, and
+            inline-reindex paths (default ``4``).
         folder_weights: Folder-prefix score multipliers applied to search
             results just before file grouping (``None`` disables).
         fts_weights: Per-column BM25 weights persisted into the FTS5 rank

@@ -9,7 +9,7 @@ from markdown_vault_mcp.exceptions import ConfigurationError
 
 @dataclass(frozen=True)
 class EmbeddingsConfig:
-    """Embedding provider selection + per-provider settings."""
+    """Embedding provider selection, per-provider settings, and shared embedding execution knobs (context enrichment, request timeout, batch size)."""
 
     provider: str | None = None
     ollama_host: str = "http://localhost:11434"
