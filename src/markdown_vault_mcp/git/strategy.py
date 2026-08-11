@@ -13,12 +13,12 @@ import re
 import subprocess
 import threading
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
 
-    from markdown_vault_mcp.types import CommitDiff, HistoryEntry
+    from markdown_vault_mcp.types import CommitDiff, HistoryEntry, WriteOperation
 
 from fastmcp.server.dependencies import get_access_token as _get_access_token
 
@@ -359,7 +359,7 @@ class GitWriteStrategy:
         self,
         path: Path,
         content: str,  # noqa: ARG002
-        operation: Literal["write", "edit", "delete", "rename"],
+        operation: WriteOperation,
     ) -> None:
         """WriteCallback interface: stage + commit, then schedule push."""
         if self._closed:
@@ -1789,7 +1789,7 @@ def _sanitize_git_identity(value: str) -> str:
 def _stage_and_commit(
     git_root: Path,
     path: Path,
-    operation: Literal["write", "edit", "delete", "rename"],
+    operation: WriteOperation,
     commit_name: str = GitWriteStrategy.DEFAULT_COMMIT_NAME,
     commit_email: str = GitWriteStrategy.DEFAULT_COMMIT_EMAIL,
     author_name: str | None = None,
