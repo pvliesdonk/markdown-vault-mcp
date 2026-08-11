@@ -458,7 +458,7 @@ Attest a note as human-reviewed by appending a `{by: human:<subject>, at: <date>
 
 How the review is confirmed depends on [`MARKDOWN_VAULT_MCP_OKF_VERIFY`](../configuration.md):
 
-- **`elicit`** (default): the tool issues an MCP elicitation asking you to confirm you reviewed the note, and writes the entry only on an affirmative reply. It fails closed — if the client cannot elicit or you decline, it errors and writes nothing — so a model cannot self-attest on your behalf. The subject recorded is your authenticated identity when present, else `local`.
+- **`elicit`** (default): the tool issues an MCP elicitation asking you to confirm you reviewed the note, and writes the entry only on an affirmative reply. It fails closed (if the client cannot elicit or you decline, it errors and writes nothing), so a model cannot self-attest on your behalf. The subject recorded is your authenticated identity when present, else `local`.
 - **`trust-auth`**: attributes to the authenticated caller with no confirmation, and errors when the server runs with no auth. Only safe when the sole caller is a human-driven UI.
 - **`off`**: the tool is hidden entirely.
 

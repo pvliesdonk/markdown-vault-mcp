@@ -273,16 +273,16 @@ class ProjectConfig:
         default="elicit",
         metadata={
             "help": (
-                "How the okf_verify tool attributes a human review (only "
-                "meaningful when OKF_WRITE is on, which gates the tool). With "
+                "How the okf_verify tool attributes a human review. This "
+                "applies only when OKF_WRITE is on, which gates the tool. With "
                 "elicit (the default), okf_verify asks the human to confirm the "
-                "review through an MCP elicitation and writes the attestation "
-                "only on an affirmative reply, failing closed when the client "
-                "cannot elicit or the human declines — so a model wielding the "
+                "review through an MCP elicitation and records the attestation "
+                "only on an affirmative reply. It fails closed when the client "
+                "cannot elicit or the human declines, so a model that holds the "
                 "human's token cannot self-attest. Use trust-auth to attribute "
-                "to the authenticated caller with no confirmation (only safe "
+                "to the authenticated caller with no confirmation (safe only "
                 "when the sole caller is a human-driven UI), or off to hide the "
-                "tool so attestation happens solely via external tooling. A "
+                "tool so attestation happens through external tooling. A "
                 "non-default value with OKF_WRITE off is a config error."
             ),
             "tags": ("content",),
