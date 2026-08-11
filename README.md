@@ -432,7 +432,7 @@ markdown-vault-mcp reindex [--source-dir PATH] [--index-path PATH]
 | `get_connection_path` | Find the shortest path between two notes via BFS on the undirected link graph (max 10 hops) |
 | `summarize` | Summarize a note, a set of notes, or a folder subtree with an LLM; the synthesis references the individual source notes by path. A slow summary is promoted to a background job (retrieved via `get_summary`) so the tool never hangs. Hidden unless an OpenAI-compatible backend is configured (`OPENAI_API_KEY` or a base URL). Sends note content to the model provider. |
 | `get_summary` | Retrieve a summary that `summarize` promoted to a background job, by its `job_id`. Registered alongside `summarize`. |
-| `get_history` | List commits that touched a note, attachment, or the whole vault (git-backed vaults only) |
+| `get_history` | List commits that touched a note, attachment, folder, or the whole vault (git-backed vaults only) |
 | `get_diff` | Return a diff of a note or attachment between a reference commit/timestamp and HEAD; binary attachments return a `--stat` size summary instead of a unified patch (git-backed vaults only) |
 | `git_sync` | Force an immediate git pull / push / both, bypassing the periodic loops. Returns structured state (SHAs, commit counts, Syncthing-style conflict file paths if any). Hidden when `MARKDOWN_VAULT_MCP_GIT_REPO_URL` isn't set or `READ_ONLY=true`. |
 | `fetch` | Download a file from a URL and save it to the vault as a note or attachment (MCP-to-MCP transfer) |

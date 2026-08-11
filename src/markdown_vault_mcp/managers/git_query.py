@@ -61,7 +61,7 @@ class GitQueryManager:
         until: str | None = None,
         limit: int = 20,
     ) -> list[HistoryEntry]:
-        """Return commits that touched a note, attachment, or the whole vault.
+        """Return commits that touched a note, attachment, folder, or the whole vault.
 
         When *path* is ``None``, queries the full vault history.  Returns an
         empty list for vaults whose source directory is not inside a git
