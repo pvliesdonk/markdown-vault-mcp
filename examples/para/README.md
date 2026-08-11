@@ -94,9 +94,17 @@ vault/
 
 The server does not enforce this layout. The prompts suggest these paths when they need to move notes (triage target, weekly-review location); they fall back to asking if your vault uses a different structure.
 
+## Using with OKF
+
+These templates work as-is inside an [OKF](../okf/README.md) bundle. Two things to know:
+
+- The inbox template now carries `type: Capture`, so quick captures are OKF-conformant from the start; triage assigns the real type. The other templates already set a `type` (`project` / `area` / `resource`).
+- PARA uses `status` for workflow state (`active`, `archived`); OKF uses `status` for lifecycle (`draft`, `stable`, `deprecated`). If you declare the vault an OKF bundle — add `okf_version: "0.2"` to the root `index.md` — move PARA's workflow state to its own key so the two meanings don't collide. See [Using PARA with OKF](../../docs/guides/para.md#using-para-with-okf).
+
 ## See Also
 
 - **PARA Guide**: [`docs/guides/para.md`](../../docs/guides/para.md) — comprehensive walkthrough
+- **OKF pack**: [`examples/okf/`](../okf/README.md) — declare and enforce the Open Knowledge Format on this vault
 - **MCP Tools Reference**: [`docs/tools/index.md`](../../docs/tools/index.md) — all available tools
 - **Design Document**: [`docs/design/design.md`](../../docs/design/design.md) — linking system and search algorithms
 - **Zettelkasten alternative**: [`docs/guides/zettelkasten.md`](../../docs/guides/zettelkasten.md) — for idea-centric knowledge management
