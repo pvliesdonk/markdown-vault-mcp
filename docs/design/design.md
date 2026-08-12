@@ -2371,8 +2371,19 @@ overrides it.
 - `delete(path)` removes file from disk and index, then fires `on_write`
 - `fetch(url, path, frontmatter?, if_match?, timeout_s?)` downloads content
   from an HTTP/HTTPS URL and dispatches to `write()` (for `.md` paths) or
-  `write_attachment()` (for other extensions). Requires `httpx` (included in
-  `[all]` extra). Only `http` and `https` schemes are allowed (SSRF guard).
+  `write_attachment()` (for other extensions). The download delegates to
+  `fastmcp_pvl_core.fetch_url`, the hardened shared primitive the tool's
+  original SSRF guard was lifted into (#862; pvl-core #219): scheme
+  allowlist (`http`/`https` only), rejection of any host resolving to a
+  non-public address (permit-list model — private, loopback, link-local,
+  CGNAT/shared 100.64/10, and reserved ranges are all blocked, with NAT64
+  embedded-IPv4 validation), DNS-rebind pinning of the validated IP,
+  `trust_env=False` (ambient `HTTP(S)_PROXY`/`.netrc` cannot divert the
+  pinned connection), redirect refusal, a streaming size cap, and
+  userinfo/query redaction in logs and errors. The tool keeps only the
+  vault-side policy: which cap applies (attachment limit vs. uncapped
+  markdown) and the operator-facing size-limit message naming
+  `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB`.
 
 These semantics are intentionally close to Claude Code's file tools for
 familiarity. LLMs that know how to read/write/edit files can use these tools
@@ -2748,7 +2759,7 @@ dependencies = [
 
 [project.optional-dependencies]
 mcp = ["fastmcp>=3.0,<4"]
-embeddings-api = ["httpx>=0.25", "numpy>=1.20"]  # httpx also used by fetch tool
+embeddings-api = ["httpx>=0.25", "numpy>=1.20"]
 embeddings = ["fastembed>=0.3", "numpy>=1.20"]
 all = ["fastmcp>=3.0,<4", "httpx>=0.25", "fastembed>=0.3", "numpy>=1.20"]
 dev = ["pytest>=7.0", "pytest-cov>=4.0", "ruff>=0.1", "mypy>=1.0"]

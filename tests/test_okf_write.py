@@ -549,6 +549,8 @@ class TestWriteToolThreadsActor:
 class _FakeResponse:
     """Minimal stand-in for an httpx streaming response."""
 
+    status_code = 200
+
     def __init__(self, body: bytes, content_type: str) -> None:
         self._body = body
         self.headers = {"content-type": content_type}
@@ -589,8 +591,8 @@ def _make_fake_client(body: bytes, content_type: str) -> type:
     return _FakeClient
 
 
-async def _fake_resolve(_hostname: str, _port: int) -> str:
-    return "127.0.0.1"
+async def _fake_resolve(_hostname: str, _port: int) -> list[str]:
+    return ["93.184.216.34"]
 
 
 @pytest.mark.usefixtures("enforced_env")
@@ -603,8 +605,10 @@ class TestFetchThreadsActor:
         # fetch writes .md notes through DocumentManager.write, so the enricher
         # fires; the provenance actor must be the authenticated caller (#964).
         monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: "peter")
+        # The fetch tool delegates to pvl-core's fetch_url (#862); stub its
+        # documented DNS seam to a public IP so the SSRF guard passes.
         monkeypatch.setattr(
-            "markdown_vault_mcp._server_tools.writer._resolve_pinned_ip",
+            "fastmcp_pvl_core._transfer.fetch._resolve_addresses",
             _fake_resolve,
         )
         monkeypatch.setattr(

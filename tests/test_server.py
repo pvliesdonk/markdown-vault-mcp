@@ -1388,6 +1388,9 @@ class TestFetchTool:
             yield raw
 
         mock_response = MagicMock()
+        # pvl-core's fetch_url range-checks the status before raise_for_status,
+        # so the mock must carry a real integer status code.
+        mock_response.status_code = 200
         mock_response.raise_for_status = MagicMock()
         mock_response.headers = headers
         mock_response.aiter_bytes = mock_aiter_bytes
@@ -1587,7 +1590,8 @@ class TestFetchTool:
         with patch.object(httpx, "AsyncClient", return_value=mock_client):
             server = make_server()
             async with Client(server) as client:
-                with pytest.raises(ToolError, match="exceeded"):
+                # The refusal keeps naming the env var that raises the limit.
+                with pytest.raises(ToolError, match="MAX_ATTACHMENT_SIZE_MB"):
                     await client.call_tool(
                         "fetch",
                         {
@@ -1595,29 +1599,6 @@ class TestFetchTool:
                             "path": "assets/big.pdf",
                         },
                     )
-
-    async def test_fetch_httpx_not_installed(
-        self, _mcp_env_writable_with_attachments: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """Graceful error when httpx is not available."""
-        import builtins
-
-        real_import = builtins.__import__
-
-        def mock_import(name: str, *args: Any, **kwargs: Any) -> Any:
-            if name == "httpx":
-                raise ImportError("No module named 'httpx'")
-            return real_import(name, *args, **kwargs)
-
-        monkeypatch.setattr(builtins, "__import__", mock_import)
-
-        server = make_server()
-        async with Client(server) as client:
-            with pytest.raises(ToolError, match="httpx"):
-                await client.call_tool(
-                    "fetch",
-                    {"url": "https://example.com/note.md", "path": "note.md"},
-                )
 
     async def test_fetch_frontmatter_applied(
         self, _mcp_env_writable_with_attachments: Path
@@ -1656,12 +1637,17 @@ class TestFetchTool:
     async def test_fetch_http_error_status(
         self, _mcp_env_writable_with_attachments: Path
     ) -> None:
-        """Non-2xx HTTP response surfaces as ToolError."""
+        """Non-2xx HTTP response surfaces as ToolError.
+
+        fetch_url re-raises the status error with a redacted ``HTTP <code>
+        response from <url>`` message, so that is the asserted surface.
+        """
         from unittest.mock import AsyncMock, MagicMock, patch
 
         import httpx
 
         mock_response = MagicMock()
+        mock_response.status_code = 404
         mock_response.raise_for_status = MagicMock(
             side_effect=httpx.HTTPStatusError(
                 "Not Found",
@@ -1683,7 +1669,7 @@ class TestFetchTool:
         with patch.object(httpx, "AsyncClient", return_value=mock_client_instance):
             server = make_server()
             async with Client(server) as client:
-                with pytest.raises(ToolError, match="Not Found"):
+                with pytest.raises(ToolError, match="HTTP 404"):
                     await client.call_tool(
                         "fetch",
                         {
@@ -1730,6 +1716,61 @@ class TestFetchTool:
                     "fetch",
                     {"url": "http://0.0.0.0/admin", "path": "stolen.md"},
                 )
+
+    async def test_fetch_rejects_cgnat_ip(
+        self, _mcp_env_writable_with_attachments: Path
+    ) -> None:
+        """CGNAT / shared address space (100.64.0.0/10, RFC 6598) is rejected (#862).
+
+        The old enumerated deny-list missed this range; pvl-core's permit-list
+        guard (block anything not globally routable) covers it structurally.
+        """
+        server = make_server()
+        async with Client(server) as client:
+            with pytest.raises(ToolError, match="private"):
+                await client.call_tool(
+                    "fetch",
+                    {"url": "http://100.64.0.1/internal", "path": "stolen.md"},
+                )
+
+    async def test_fetch_rejects_resolve_to_cgnat(
+        self,
+        _mcp_env_writable_with_attachments: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A hostname resolving into CGNAT space is blocked (#862)."""
+        self._patch_resolves_to(monkeypatch, "100.127.255.254")
+        server = make_server()
+        async with Client(server) as client:
+            with pytest.raises(ToolError, match="non-public"):
+                await client.call_tool(
+                    "fetch",
+                    {"url": "https://evil.example.com/x", "path": "x.md"},
+                )
+
+    async def test_fetch_client_ignores_ambient_proxy_env(
+        self, _mcp_env_writable_with_attachments: Path
+    ) -> None:
+        """The outbound client is built with trust_env=False (#862).
+
+        An ambient HTTP(S)_PROXY env var must never divert the request past
+        the resolve-validate-pin chain, and .netrc must never attach ambient
+        credentials — asserted on the client constructor call.
+        """
+        import httpx
+
+        mock_client = self._mock_httpx_stream(
+            b"# Ok\n", {"content-type": "text/markdown"}
+        )
+        with patch.object(httpx, "AsyncClient", return_value=mock_client) as ctor:
+            server = make_server()
+            async with Client(server) as client:
+                await client.call_tool(
+                    "fetch",
+                    {"url": "https://example.com/note.md", "path": "noproxy.md"},
+                )
+        ctor.assert_called_once()
+        assert ctor.call_args.kwargs["trust_env"] is False
 
     async def test_fetch_rejects_resolve_to_private(
         self,

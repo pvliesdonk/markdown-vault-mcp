@@ -2,18 +2,16 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import ipaddress
 import logging
-import socket
 from dataclasses import asdict
 from datetime import date
 from typing import Any
-from urllib.parse import urlparse, urlunparse
 
 from fastmcp import Context, FastMCP
 from fastmcp.dependencies import CurrentContext, Depends
 from fastmcp.exceptions import ToolError
 from fastmcp.server.elicitation import AcceptedElicitation
+from fastmcp_pvl_core import fetch_url
 from mcp.shared.exceptions import McpError
 
 from markdown_vault_mcp.config import ProjectConfig
@@ -40,98 +38,10 @@ from ._common import attach_conventions
 logger = logging.getLogger(__name__)
 
 
-_ALLOWED_FETCH_SCHEMES = frozenset({"http", "https"})
-
-# SSRF protection: block private/reserved IP ranges.
-_FETCH_BLOCKED_HOSTNAMES = frozenset(
-    {"localhost", "localhost.localdomain", "metadata.google.internal"}
-)
-
-
-_BLOCKED_ADDR_MSG = (
-    "URLs targeting private, loopback, link-local, or reserved addresses "
-    "are not allowed."
-)
-
-# Default ports per scheme — omitted from the Host header (RFC 7230 §5.4:
-# a client SHOULD NOT send a port that equals the scheme default).
-_SCHEME_DEFAULT_PORTS = {"http": 80, "https": 443}
-
-
-def _ip_is_blocked(ip: str) -> bool:
-    """Return True if *ip* (an IP literal) is in a non-public range.
-
-    Covers private, loopback, link-local, unspecified (``0.0.0.0`` — which
-    ``is_private`` misses on older Pythons), reserved, and multicast space,
-    for both IPv4 and IPv6.
-    """
-    addr = ipaddress.ip_address(ip)
-    return (
-        addr.is_private
-        or addr.is_loopback
-        or addr.is_link_local
-        or addr.is_unspecified
-        or addr.is_reserved
-        or addr.is_multicast
-    )
-
-
-async def _resolve_pinned_ip(hostname: str, port: int) -> str:
-    """Resolve *hostname* and return one validated public IP to pin to.
-
-    SSRF guard that also closes the DNS-rebinding (TOCTOU) window: the caller
-    connects to the returned IP literal rather than the hostname, so the
-    address validated here is the address actually connected to — there is no
-    second resolution at connect time for an attacker's DNS to swap.
-
-    Fails **closed**: raises :class:`ValueError` if resolution errors, returns
-    no records, or **any** resolved address is non-public. An IP-literal
-    *hostname* is validated directly without a DNS lookup.
-
-    Args:
-        hostname: The URL host (an IP literal or a domain name).
-        port: The target port, used for the ``getaddrinfo`` service hint.
-
-    Returns:
-        A validated, public IP literal to connect to.
-
-    Raises:
-        ValueError: If the host is blocklisted, resolves to a non-public
-            address, or cannot be resolved.
-    """
-    if hostname in _FETCH_BLOCKED_HOSTNAMES:
-        raise ValueError(_BLOCKED_ADDR_MSG)
-
-    # IP-literal fast path: validate directly, no DNS lookup.
-    try:
-        ipaddress.ip_address(hostname)
-    except ValueError:
-        pass
-    else:
-        if _ip_is_blocked(hostname):
-            raise ValueError(_BLOCKED_ADDR_MSG)
-        return hostname
-
-    # Domain name: resolve and validate every returned address. Fail closed on
-    # any resolution error so a DNS hiccup can never become an SSRF bypass.
-    loop = asyncio.get_running_loop()
-    try:
-        infos = await loop.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)
-    except OSError as exc:  # socket.gaierror is an OSError subclass
-        raise ValueError(
-            f"Could not resolve host {hostname!r} for the fetch URL: {exc}"
-        ) from exc
-
-    resolved = [str(info[4][0]) for info in infos]
-    if not resolved:
-        raise ValueError(f"Host {hostname!r} did not resolve to any address.")
-    for ip in resolved:
-        if _ip_is_blocked(ip):
-            raise ValueError(
-                f"Host {hostname!r} resolves to a non-public address ({ip}); "
-                "refusing to fetch."
-            )
-    return resolved[0]
+# ``fetch_url`` requires a positive size cap. Markdown fetches and
+# cap-disabled attachment fetches are intentionally unbounded, so they get a
+# bound no real download can reach.
+_FETCH_UNCAPPED_BYTES = 2**63 - 1
 
 
 async def _require_review_elicitation(ctx: Context, path: str) -> None:
@@ -673,10 +583,13 @@ def register(mcp: FastMCP) -> None:
 
         Args:
             url: Source URL to download from. Only http:// and https://
-                schemes are allowed. SSRF protection: the host is resolved and
-                rejected if any address is private, loopback, link-local, or
-                reserved, and the validated IP is pinned for the connection
-                (closing DNS rebinding). Redirects are NOT followed.
+                schemes are allowed. SSRF protection (via pvl-core's hardened
+                ``fetch_url``, #862): the host is resolved and rejected unless
+                every address is publicly routable (private, loopback,
+                link-local, CGNAT/shared, and reserved ranges are all
+                blocked), the validated IP is pinned for the connection
+                (closing DNS rebinding), ambient HTTP(S)_PROXY / .netrc
+                settings are ignored, and redirects are NOT followed.
             path: Destination path in the vault (e.g. "notes/report.md"
                 or "assets/diagram.png"). Extension determines handling:
                 .md for notes, anything else for attachments.
@@ -704,112 +617,50 @@ def register(mcp: FastMCP) -> None:
         as a new note.
 
         Raises:
-            ValueError: If the URL scheme is not http/https, the download
-                exceeds the size limit, or the response cannot be decoded.
-            ImportError: If httpx is not installed.
+            ValueError: If the URL scheme is not http/https, the host is
+                blocked or cannot be resolved, a redirect is returned, the
+                download exceeds the size limit, or the response cannot be
+                decoded.
         """
-        # Validate URL scheme (SSRF protection).
-        parsed = urlparse(url)
-        if parsed.scheme not in _ALLOWED_FETCH_SCHEMES:
-            raise ValueError(
-                f"Only http and https URLs are allowed, got {parsed.scheme!r}"
-            )
-        hostname = parsed.hostname
-        if not hostname:
-            raise ValueError("The fetch URL has no host.")
-        port = parsed.port or (443 if parsed.scheme == "https" else 80)
-        # Resolve + validate the host now, and pin the resulting IP into the
-        # connection below: the address validated here is the one actually
-        # dialled, which closes the DNS-rebinding TOCTOU window. Fails closed.
-        pinned_ip = await _resolve_pinned_ip(hostname, port)
-
-        # Conditional import — httpx is an optional dependency.
-        try:
-            import httpx
-        except ImportError:
-            raise ImportError(
-                "The 'fetch' tool requires 'httpx'. Install it with:\n"
-                "  pip install 'markdown-vault-mcp[all]'\n"
-                "  # or: pip install httpx"
-            ) from None
-
-        # Determine size limit (attachments only). This pre-check enforces
-        # the limit during streaming so we abort early without buffering the
-        # entire payload.
+        # Attachment size cap only: markdown notes are not size-limited, and
+        # a non-positive configured cap disables the limit.
         is_markdown = path.endswith(".md")
+        capped = not is_markdown and vault.max_attachment_size_mb > 0
         max_bytes = (
-            0
-            if is_markdown or vault.max_attachment_size_mb <= 0
-            else int(vault.max_attachment_size_mb * 1024 * 1024)
+            int(vault.max_attachment_size_mb * 1024 * 1024)
+            if capped
+            else _FETCH_UNCAPPED_BYTES
         )
 
-        # Connect to the validated IP, but keep the original Host header and TLS
-        # SNI so vhost routing and certificate verification still use the real
-        # hostname. httpx then dials the pinned IP without re-resolving.
-        ip_host = f"[{pinned_ip}]" if ":" in pinned_ip else pinned_ip
-        # Rebuild netloc from the pinned IP + port only. Any userinfo
-        # (``user:pass@``) in the original URL is intentionally dropped — the
-        # fetch tool must not relay embedded credentials to the server.
-        pinned_netloc = f"{ip_host}:{parsed.port}" if parsed.port else ip_host
-        pinned_url = urlunparse(parsed._replace(netloc=pinned_netloc))
-        # Host header carries the real hostname, omitting an explicit default
-        # port (RFC 7230 §5.4) so origin matching on strict servers still works.
-        if parsed.port is None or parsed.port == _SCHEME_DEFAULT_PORTS.get(
-            parsed.scheme
-        ):
-            host_header = hostname
-        else:
-            host_header = f"{hostname}:{parsed.port}"
+        # All SSRF hardening (scheme allowlist, non-public-address rejection
+        # incl. CGNAT, DNS-rebind pinning, trust_env=False, redirect refusal,
+        # streaming size cap, userinfo/query redaction) lives in pvl-core's
+        # fetch_url — the shared primitive this tool's guard was lifted into
+        # (#862; pvl-core #219).
+        try:
+            fetched = await fetch_url(url, max_bytes=max_bytes, timeout_s=timeout_s)
+        except ValueError as exc:
+            # Translate the size-cap refusal into the vault's operator-facing
+            # terms (which env var raises the limit). Couples to fetch_url's
+            # message text, but fails safe: on a reword the original error
+            # still propagates.
+            if capped and "exceeded the size cap" in str(exc):
+                raise ValueError(
+                    f"Download exceeded the attachment size limit "
+                    f"of {vault.max_attachment_size_mb} MB "
+                    f"({max_bytes} bytes). Raise "
+                    "MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB or "
+                    "set it to 0 to disable the limit."
+                ) from exc
+            raise
 
-        # Stream download — enforce size limit as chunks arrive.
-        chunks: list[bytes] = []
-        downloaded = 0
-        async with (
-            httpx.AsyncClient(timeout=timeout_s, follow_redirects=False) as client,
-            client.stream(
-                "GET",
-                pinned_url,
-                headers={"Host": host_header},
-                extensions={"sni_hostname": hostname},
-            ) as response,
-        ):
-            response.raise_for_status()
-            content_type = response.headers.get("content-type")
-            async for chunk in response.aiter_bytes(chunk_size=65536):
-                downloaded += len(chunk)
-                if max_bytes > 0 and downloaded > max_bytes:
-                    raise ValueError(
-                        f"Download exceeded the attachment size limit "
-                        f"of {vault.max_attachment_size_mb} MB "
-                        f"({max_bytes} bytes). Raise "
-                        "MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB or "
-                        "set it to 0 to disable the limit."
-                    )
-                chunks.append(chunk)
+        raw_bytes = fetched.body
+        content_type = fetched.content_type
+        content_length = fetched.size
 
-        raw_bytes = b"".join(chunks)
-        content_length = downloaded
-
-        # Redact userinfo and query string to avoid logging credentials
-        # (pre-signed URLs, API tokens, embedded passwords).
-        _parsed_log = urlparse(url)
-        _safe_url = urlunparse(
-            _parsed_log._replace(
-                netloc=(
-                    f"{_parsed_log.hostname}:{_parsed_log.port}"
-                    if _parsed_log.port
-                    else (_parsed_log.hostname or "")
-                ),
-                query="",
-                fragment="",
-            )
-        )
-        logger.info(
-            "fetch: downloaded %d bytes from %s → %s",
-            content_length,
-            _safe_url,
-            path,
-        )
+        # fetch_url already logs the (redacted) source URL; add the vault
+        # destination the transfer landed on.
+        logger.info("fetch: saved %d bytes to %s", content_length, path)
 
         # Dispatch to the appropriate write method.
         if is_markdown:

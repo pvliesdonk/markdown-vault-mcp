@@ -499,7 +499,7 @@ Download a file from a URL and save it to the vault as a note or attachment. Des
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `url` | string | required | Source URL to download. Only `http`/`https` schemes allowed; the host is resolved and private or internal addresses are blocked; the validated IP is pinned for the connection; redirects are not followed (SSRF protection) |
+| `url` | string | required | Source URL to download. Only `http`/`https` schemes allowed; the host is resolved and blocked unless every address is publicly routable (private, loopback, link-local, CGNAT/shared, and reserved ranges are all refused); the validated IP is pinned for the connection; ambient `HTTP(S)_PROXY`/`.netrc` settings are ignored; redirects are not followed (SSRF protection) |
 | `path` | string | required | Destination path in vault. Extension determines handling: `.md` for notes, anything else for attachments |
 | `frontmatter` | object | `null` | Optional YAML frontmatter dict for `.md` files. Ignored for attachments |
 | `if_match` | string | `null` | Optional etag from a previous `read` call for optimistic concurrency |
@@ -513,8 +513,9 @@ back into context.
 
 For `.md` destinations, the response may also include a `conventions` list; see [`write`](#write).
 
-!!! note "Dependency"
-    Requires `httpx`. Install with `pip install 'markdown-vault-mcp[all]'`.
+The download itself runs through `fastmcp-pvl-core`'s hardened `fetch_url`
+primitive, so the SSRF protections above are shared, audited code rather
+than a local copy.
 
 ### `git_sync`
 
