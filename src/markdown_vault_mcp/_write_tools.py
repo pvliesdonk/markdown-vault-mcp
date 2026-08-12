@@ -46,6 +46,31 @@ WRITE_TOOL_NAMES: tuple[str, ...] = (
 _OKF_PREFIX = "okf_"
 
 
+def gated_tool(name: str) -> str:
+    """Return *name*, asserting it is a write-tagged tool.
+
+    For prose that singles out one gated tool (e.g. the ``read_only`` help's
+    caveat naming ``git_sync``): referencing the name through this accessor
+    makes a rename that updates :data:`WRITE_TOOL_NAMES` fail loudly at
+    import time instead of leaving a stale name in derived text.
+
+    Args:
+        name: A tool name expected to be in :data:`WRITE_TOOL_NAMES`.
+
+    Returns:
+        *name*, unchanged.
+
+    Raises:
+        ValueError: If *name* is not in :data:`WRITE_TOOL_NAMES`.
+    """
+    if name not in WRITE_TOOL_NAMES:
+        raise ValueError(
+            f"{name!r} is not a write-tagged tool; update the reference "
+            "alongside WRITE_TOOL_NAMES"
+        )
+    return name
+
+
 def write_tools_phrase(*, markdown: bool = False) -> str:
     """Render the write-tool enumeration for user-facing prose.
 

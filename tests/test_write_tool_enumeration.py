@@ -114,6 +114,15 @@ class TestDerivedTextLockstep:
             f"update it to include: {phrase}"
         )
 
+    def test_gated_tool_accessor(self) -> None:
+        """``gated_tool`` returns members verbatim and rejects non-members,
+        so prose singling out one gated tool fails loudly on a rename."""
+        from markdown_vault_mcp._write_tools import gated_tool
+
+        assert gated_tool("git_sync") == "git_sync"
+        with pytest.raises(ValueError, match="not a write-tagged tool"):
+            gated_tool("reindex")
+
     def test_phrase_renderings(self) -> None:
         """Pin both renderings: okf family collapsed, others verbatim."""
         plain = write_tools_phrase()
