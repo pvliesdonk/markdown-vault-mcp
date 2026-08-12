@@ -372,14 +372,14 @@ Append text to the end of an existing `.md` note without reading it first.
 | `path` | string | Yes | Relative path to the document |
 | `content` | string | Yes | Text to append (must be non-empty) |
 | `if_match` | string | No | Etag from `read` for optimistic concurrency |
-| `create_if_missing` | boolean | No | When `true`, a missing note is created with `content` as its body. Default `false` — a typo in `path` fails loudly rather than silently creating a new note |
+| `create_if_missing` | bool | No | When `true`, a missing note is created with `content` as its body. Default `false`, so a typo in `path` fails loudly rather than silently creating a new note |
 
 **Returns:** `{"path": "Journal/2026.md", "created": false}`
 
 `created` is `true` only when `create_if_missing` created a new note. The response may also include a `conventions` list; see [`write`](#write).
 
 !!! tip "Cheaper than `edit` for additive changes"
-    Unlike `edit`, no prior `read` is needed, so the existing note content never enters the LLM context — ideal for log entries, journal additions, and checklist items. A newline is inserted between the existing content and the appended text when the file does not already end with one; include leading blank lines or heading markers in `content` yourself for a separating paragraph or section.
+    Unlike `edit`, no prior `read` is needed, so the existing note content never enters the LLM context. This makes it ideal for log entries, journal additions, and checklist items. A newline is inserted between the existing content and the appended text when the file does not already end with one; include leading blank lines or heading markers in `content` yourself for a separating paragraph or section.
 
 ### `delete`
 
