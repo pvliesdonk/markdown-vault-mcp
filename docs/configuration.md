@@ -15,6 +15,21 @@ variables (`MARKDOWN_VAULT_MCP_TRANSPORT`, `MARKDOWN_VAULT_MCP_HOST`,
 !!! note "Configuration is validated at startup"
     Numeric variables are validated against the **Type** column below (such as `int ≥ 1`). A non-numeric or out-of-range value makes the server **fail fast** at startup with a `ConfigurationError` naming the offending setting, rather than silently falling back to a default. A typo in an env var surfaces immediately instead of producing surprising behavior later.
 
+## Tool visibility
+
+Operators can trim which tools this instance exposes. Each variable takes a
+comma-separated list of explicit tool names:
+
+- `MARKDOWN_VAULT_MCP_TOOLS_ALLOW`: expose *only* the listed tools.
+- `MARKDOWN_VAULT_MCP_TOOLS_DENY`: hide the listed tools.
+
+Hidden tools disappear from `tools/list` and are rejected on `tools/call`;
+resources and prompts are unaffected. Setting both variables, or setting one
+to a value with no names in it, is a startup error. A name matching no
+registered tool is ignored, but an allowlist that matches nothing logs a
+startup `WARNING` since the instance then exposes zero tools. See
+`fastmcp-pvl-core`'s README for the full semantics.
+
 <!-- DOMAIN-CONFIG-VARS-START -->
 ## Core
 

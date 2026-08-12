@@ -784,15 +784,15 @@ wheels = [
 
 [[package]]
 name = "fastmcp-pvl-core"
-version = "4.9.0"
+version = "4.10.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "fastmcp" },
     { name = "httpx" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/cc/61/eb3f3e322181d8d66c91a9bca4bc37d151371439193916e0680005946faf/fastmcp_pvl_core-4.9.0.tar.gz", hash = "sha256:f9c1fcc865de9e8e2f1bdc8c36faac365aa904755fa16437e637d00d2abcb7cc", size = 459405, upload-time = "2026-08-09T10:58:45.097Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ee/e4/cf5604204ad4efbaee89804a84b280bcb1a9f32290c3ceae2888eb447da3/fastmcp_pvl_core-4.10.1.tar.gz", hash = "sha256:d9cab503335c70bcd2117f4ec892dba850dd25d9e3a8c3572e2ffee94308a05d", size = 466278, upload-time = "2026-08-11T14:35:35.026Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/de/88/1cbe8f4d817eac3622de93e381396bb6bee6da88f8d346f8a6ad5970e595/fastmcp_pvl_core-4.9.0-py3-none-any.whl", hash = "sha256:11b549d13926d7f55ff36c40feb5f0915eb2f20d07275062df0bc27145374a41", size = 92131, upload-time = "2026-08-09T10:58:43.62Z" },
+    { url = "https://files.pythonhosted.org/packages/f8/31/978b98d97c5a80188ca390b6619d5dd74044461b84519b4b2f0d1920f7d6/fastmcp_pvl_core-4.10.1-py3-none-any.whl", hash = "sha256:765b7f8e4e7b17e28f42784a3dbad977a2153ee3c3a04232381ec19de5d9bdd6", size = 95573, upload-time = "2026-08-11T14:35:33.636Z" },
 ]
 
 [package.optional-dependencies]
@@ -1105,7 +1105,7 @@ name = "importlib-metadata"
 version = "9.0.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "zipp" },
+    { name = "zipp", marker = "python_full_version < '3.12'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/a9/01/15bb152d77b21318514a96f43af312635eb2500c96b55398d020c93d86ea/importlib_metadata-9.0.0.tar.gz", hash = "sha256:a4f57ab599e6a2e3016d7595cfd72eb4661a5106e787a95bcc90c7105b831efc", size = 56405, upload-time = "2026-03-20T06:42:56.999Z" }
 wheels = [
@@ -1550,7 +1550,7 @@ requires-dist = [
     { name = "fastembed", marker = "extra == 'embeddings'", specifier = ">=0.3" },
     { name = "fastmcp", marker = "extra == 'all'", specifier = ">=3.0,<4" },
     { name = "fastmcp", marker = "extra == 'mcp'", specifier = ">=3.0,<4" },
-    { name = "fastmcp-pvl-core", specifier = ">=4.9.0,<5" },
+    { name = "fastmcp-pvl-core", specifier = ">=4.10.1,<5" },
     { name = "fastmcp-pvl-core", extras = ["debug"], marker = "extra == 'debug'" },
     { name = "httpx", marker = "extra == 'all'", specifier = ">=0.25" },
     { name = "httpx", marker = "extra == 'embeddings-api'", specifier = ">=0.25" },

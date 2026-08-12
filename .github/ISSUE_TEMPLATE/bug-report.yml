@@ -1,0 +1,59 @@
+name: Bug report
+description: >
+  Something isn't working as expected. See CONTRIBUTING.md for what makes a
+  useful bug report. Do not claim a cause you did not verify.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: One sentence, expected vs actual.
+      placeholder: "A one-liner: 'expected X, got Y.'"
+    validations:
+      required: true
+  - type: textarea
+    id: observed
+    attributes:
+      label: Observed
+      description: >
+        Describe what you actually saw. Paste the real error text or trace,
+        not a summary of it. Include where it occurred.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected
+      description: What should have happened.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: >
+        Only include steps you actually ran and the version/commit you
+        actually checked.
+    validations:
+      required: true
+  - type: textarea
+    id: suspected-cause
+    attributes:
+      label: Suspected cause
+      description: >
+        Do **not** claim a cause you did not verify. If you haven't checked,
+        say so, mark the line `[unverified]`, and add the sentence "I have
+        not verified the cause." If you did check, write `[verified: how]`.
+    validations:
+      required: false
+  - type: textarea
+    id: open-questions
+    attributes:
+      label: Open questions / scope
+      description: >
+        Unknowns the implementer should verify (mark each `[unverified]`).
+        What this issue is *not* about.
+    validations:
+      required: false

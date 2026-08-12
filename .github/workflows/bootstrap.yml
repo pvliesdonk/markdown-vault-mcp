@@ -2,8 +2,9 @@ name: Bootstrap repo
 
 # Seeds repository state that checked-in config references but GitHub does not
 # create on its own:
-#   1. The `dependencies` label Renovate applies to its PRs (GitHub silently
-#      drops labels that don't exist).
+#   1. The `dependencies` label Renovate applies to its PRs, plus the
+#      `bug`/`feature`/`decay`/`question` labels the issue forms reference
+#      (GitHub silently drops labels that don't exist).
 #   2. Repository settings that make Renovate auto-merge SAFE — "Allow
 #      auto-merge" plus branch protection requiring the `CI Success` check.
 #      Without a required check, enabling auto-merge on a PR merges it
@@ -32,7 +33,7 @@ jobs:
     name: Ensure repository labels
     runs-on: ubuntu-latest
     steps:
-      - name: Create dependencies label
+      - name: Create repository labels
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -40,6 +41,22 @@ jobs:
           gh label create dependencies \
             --color 0366d6 \
             --description "Pull requests that update a dependency" \
+            --force
+          gh label create bug \
+            --color d73a4a \
+            --description "Something isn't working" \
+            --force
+          gh label create feature \
+            --color a2eeef \
+            --description "New feature or request" \
+            --force
+          gh label create decay \
+            --color fbca04 \
+            --description "Structural debt worth refactoring later" \
+            --force
+          gh label create question \
+            --color d876e3 \
+            --description "Further information is requested" \
             --force
 
   settings:

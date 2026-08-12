@@ -31,7 +31,11 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
-    "fastmcp-pvl-core>=4.9.0,<5",
+    # >=4.10.1 for apply_tool_visibility (operator TOOLS_ALLOW / TOOLS_DENY);
+    # 4.10.0 was tagged but never reached PyPI (its publish failed), and the
+    # config-surface generator pins the floor exactly, so the floor must name
+    # a version that exists on PyPI.
+    "fastmcp-pvl-core>=4.10.1,<5",
     "typer>=0.12",
 
     # PROJECT-DEPS-START — add domain dependencies below; kept across copier update

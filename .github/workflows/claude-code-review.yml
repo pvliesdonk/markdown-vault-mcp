@@ -91,11 +91,12 @@ jobs:
 
       # The /code-review plugin fans out into parallel review agents. On Claude
       # Code >= 2.1.198 those dispatch as background tasks that claude-code-action
-      # drops before they finish (runClaudeWithSdk breaks query() on the first
-      # result — claude-code-action#1499), so the review completes green and posts
-      # nothing. Pin the last synchronous-subagent release (2.1.197, verified with
-      # action@v1 in claude-code#73453) so the fan-out completes in-turn. Remove
-      # this step + path_to_claude_code_executable once #1499 is fixed upstream.
+      # drops before they finish — runClaudeWithSdk breaks the query() loop on the
+      # first result (claude-code-action#1499), so the review completes green and
+      # posts nothing (also #1087 / #1523, claude-code#85275 — all silent). Pin
+      # the last synchronous-subagent release (2.1.197, verified with action@v1 in
+      # claude-code#73453) so the fan-out completes in-turn. Remove this step and
+      # the path_to_claude_code_executable input once #1499 is fixed upstream.
       - name: Install pinned Claude Code (2.1.197, pre-background-subagents)
         run: |
           set -euo pipefail
@@ -122,10 +123,13 @@ jobs:
           # Read CI results through the built-in GitHub CI MCP server.
           additional_permissions: |
             actions: read
-          # Grant the plugin what it needs: Skill (launch the /code-review
-          # skill) and Task (dispatch its review subagents — synchronous under
-          # the pinned 2.1.197), plus the gh/inline/uv tools. contents: read
-          # keeps the reviewer from committing — it only reads and comments.
+          # Grant the built-in GitHub read/search MCP tools, the CI tools, the
+          # inline-comment tool (what lets the reviewer post inline — not in the
+          # default allow-set), `gh api`, gh pr/run read commands, scoped `uv run`
+          # for targeted investigation (REVIEW.md sets norms), plus Skill (launch
+          # the /code-review skill) and Task (dispatch its review subagents —
+          # synchronous under the pinned 2.1.197). contents: read above keeps the
+          # reviewer from committing — it only reads and comments.
           claude_args: |
             --allowedTools "Skill,Task,mcp__github__get_*,mcp__github__list_*,mcp__github__search_*,mcp__github_ci__*,mcp__github_inline_comment__*,Bash(gh api *),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh run view:*),Bash(gh run list:*),Bash(uv run pytest:*),Bash(uv run mypy:*),Bash(uv run ruff:*)"
           # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md

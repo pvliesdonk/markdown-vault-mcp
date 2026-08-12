@@ -1,0 +1,36 @@
+name: Decay / structural debt
+description: >
+  An observation of structural decay worth refactoring later, not a bug or
+  feature. Constrain this to decay that will compound, not anything
+  imperfect. See CONTRIBUTING.md.
+title: "[Decay]: "
+labels: ["decay"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What
+      description: The structural problem in one sentence.
+    validations:
+      required: true
+  - type: textarea
+    id: where
+    attributes:
+      label: Where
+      description: File/symbol and the metric or observation that flagged it.
+    validations:
+      required: true
+  - type: textarea
+    id: why-it-compounds
+    attributes:
+      label: Why it compounds
+      description: What gets harder or riskier if it's left.
+    validations:
+      required: true
+  - type: textarea
+    id: suggested-direction
+    attributes:
+      label: Suggested direction
+      description: A starting point, not a prescribed refactor.
+    validations:
+      required: false

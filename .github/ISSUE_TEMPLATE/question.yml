@@ -1,0 +1,19 @@
+name: Question / support
+description: >
+  Ask a question or request support. Keeps these out of the bug and
+  feature queues.
+title: "[Question]: "
+labels: ["question"]
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+    validations:
+      required: true
+  - type: textarea
+    id: tried
+    attributes:
+      label: What I've already tried
+    validations:
+      required: false
