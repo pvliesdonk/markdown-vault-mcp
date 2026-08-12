@@ -8,43 +8,50 @@ Every read tool that queries the FTS index (`search`, `list_documents`, `list_fo
 
 ## Quick Reference
 
-| Tool                                            | Title              | Category    | Description                                                                                                          |
-| ----------------------------------------------- | ------------------ | ----------- | -------------------------------------------------------------------------------------------------------------------- |
-| [`search`](#search)                             | Search Vault       | Read        | Hybrid full-text + semantic search with optional frontmatter filters                                                 |
-| [`read`](#read)                                 | Read Note          | Read        | Read a document or attachment by relative path                                                                       |
-| [`list_documents`](#list_documents)             | List Documents     | Read        | List indexed documents and optionally attachments                                                                    |
-| [`list_folders`](#list_folders)                 | List Folders       | Read        | List all folder paths in the vault                                                                                   |
-| [`list_tags`](#list_tags)                       | List Tags          | Read        | List all unique frontmatter tag values                                                                               |
-| [`stats`](#stats)                               | Vault Stats        | Read        | Get vault statistics and capabilities                                                                                |
-| [`embeddings_status`](#embeddings_status)       | Embeddings Status  | Read        | Check embedding provider and vector index status                                                                     |
-| [`get_index_status`](#get_index_status)         | Index Status       | Read        | Check background FTS build state (queryable / building / failed)                                                     |
-| [`get_backlinks`](#get_backlinks)               | Backlinks          | Read        | Find all documents that link to a given document                                                                     |
-| [`get_outlinks`](#get_outlinks)                 | Outlinks           | Read        | Find all links from a document, with existence check                                                                 |
-| [`get_broken_links`](#get_broken_links)         | Broken Links       | Read        | Find all links pointing to non-existent documents                                                                    |
-| [`get_similar`](#get_similar)                   | Similar Notes      | Read        | Find semantically similar notes by document path                                                                     |
-| [`get_toc`](#get_toc)                           | Table of Contents  | Read        | Heading outline for a note or a folder subtree                                                                       |
-| [`get_recent`](#get_recent)                     | Recent Notes       | Read        | Get the most recently modified notes                                                                                 |
-| [`get_context`](#get_context)                   | Note Context       | Read        | Get a consolidated context dossier for a note                                                                        |
-| [`get_conventions`](#get_conventions)           | Folder Conventions | Read        | Get the authoring conventions that apply to a note or folder                                                         |
-| [`get_orphan_notes`](#get_orphan_notes)         | Orphan Notes       | Read        | Find notes with no inbound or outbound links                                                                         |
-| [`get_most_linked`](#get_most_linked)           | Most-Linked Notes  | Read        | Find the most-linked-to notes ranked by backlink count                                                               |
-| [`get_connection_path`](#get_connection_path)   | Connection Path    | Read        | Find the shortest path between two notes via link graph                                                              |
-| [`summarize`](#summarize)                       | Summarize Notes    | AI          | Summarize a note, a set of notes, or a subtree with an LLM (needs `OPENAI_API_KEY` or an OpenAI-compatible base URL) |
-| [`get_history`](#get_history)                   | Note History       | Read (git)  | List commits that touched a note, attachment, or the whole vault                                                     |
-| [`get_diff`](#get_diff)                         | Note Diff          | Read (git)  | Return a diff of a note or attachment between two points in history                                                  |
-| [`reindex`](#reindex)                           | Reindex Vault      | Admin       | Force a full reindex of the vault                                                                                    |
-| [`build_embeddings`](#build_embeddings)         | Build Embeddings   | Admin       | Build or rebuild vector embeddings                                                                                   |
-| [`write`](#write)                               | Write Note         | Write       | Create or overwrite a document or attachment                                                                         |
-| [`edit`](#edit)                                 | Edit Note          | Write       | Replace a unique text span in a document                                                                             |
-| [`delete`](#delete)                             | Delete Note        | Write       | Delete a document or attachment                                                                                      |
-| [`rename`](#rename)                             | Rename Note        | Write       | Rename/move a document or attachment                                                                                 |
-| [`move_folder`](#move_folder)                   | Move Folder        | Write       | Move an entire folder subtree and rewrite vault links                                                                |
-| [`fetch`](#fetch)                               | Fetch to Vault     | Write       | Download from URL and save to vault                                                                                  |
-| [`git_sync`](#git_sync)                         | Sync with Git      | Write (git) | Force an immediate git pull / push / both, bypassing the periodic loops                                              |
-| [`create_download_link`](#create_download_link) | Download Link      | Transfer    | Mint a one-time capability URL to download a vault file (HTTP/SSE only)                                              |
-| [`create_upload_link`](#create_upload_link)     | Upload Link        | Transfer    | Mint a one-time capability URL to upload bytes to a fixed vault path (HTTP/SSE only)                                 |
-| [`browse_vault`](#browse_vault)                 | Browse Vault       | Apps        | Open the vault explorer SPA                                                                                          |
-| [`show_context`](#show_context)                 | Context Card       | Apps        | Open the Context Card for a note                                                                                     |
+| Tool                                            | Title                  | Category    | Description                                                                                                          |
+| ----------------------------------------------- | ---------------------- | ----------- | -------------------------------------------------------------------------------------------------------------------- |
+| [`search`](#search)                             | Search Vault           | Read        | Hybrid full-text + semantic search with optional frontmatter filters                                                 |
+| [`read`](#read)                                 | Read Note              | Read        | Read a document or attachment by relative path                                                                       |
+| [`list_documents`](#list_documents)             | List Documents         | Read        | List indexed documents and optionally attachments                                                                    |
+| [`list_folders`](#list_folders)                 | List Folders           | Read        | List all folder paths in the vault                                                                                   |
+| [`list_tags`](#list_tags)                       | List Tags              | Read        | List all unique frontmatter tag values                                                                               |
+| [`stats`](#stats)                               | Vault Stats            | Read        | Get vault statistics and capabilities                                                                                |
+| [`embeddings_status`](#embeddings_status)       | Embeddings Status      | Read        | Check embedding provider and vector index status                                                                     |
+| [`get_index_status`](#get_index_status)         | Index Status           | Read        | Check background FTS build state (queryable / building / failed)                                                     |
+| [`get_backlinks`](#get_backlinks)               | Backlinks              | Read        | Find all documents that link to a given document                                                                     |
+| [`get_outlinks`](#get_outlinks)                 | Outlinks               | Read        | Find all links from a document, with existence check                                                                 |
+| [`get_broken_links`](#get_broken_links)         | Broken Links           | Read        | Find all links pointing to non-existent documents                                                                    |
+| [`get_similar`](#get_similar)                   | Similar Notes          | Read        | Find semantically similar notes by document path                                                                     |
+| [`get_toc`](#get_toc)                           | Table of Contents      | Read        | Heading outline for a note or a folder subtree                                                                       |
+| [`get_recent`](#get_recent)                     | Recent Notes           | Read        | Get the most recently modified notes                                                                                 |
+| [`get_context`](#get_context)                   | Note Context           | Read        | Get a consolidated context dossier for a note                                                                        |
+| [`get_conventions`](#get_conventions)           | Folder Conventions     | Read        | Get the authoring conventions that apply to a note or folder                                                         |
+| [`get_orphan_notes`](#get_orphan_notes)         | Orphan Notes           | Read        | Find notes with no inbound or outbound links                                                                         |
+| [`get_most_linked`](#get_most_linked)           | Most-Linked Notes      | Read        | Find the most-linked-to notes ranked by backlink count                                                               |
+| [`get_connection_path`](#get_connection_path)   | Connection Path        | Read        | Find the shortest path between two notes via link graph                                                              |
+| [`okf_validate`](#okf_validate)                 | Validate OKF Bundle    | Read        | Audit the vault's Open Knowledge Format conformance                                                                  |
+| [`summarize`](#summarize)                       | Summarize Notes        | AI          | Summarize a note, a set of notes, or a subtree with an LLM (needs `OPENAI_API_KEY` or an OpenAI-compatible base URL) |
+| [`get_summary`](#get_summary)                   | Get Summary            | AI          | Retrieve a summary that `summarize` promoted to a background job                                                     |
+| [`get_history`](#get_history)                   | Note History           | Read (git)  | List commits that touched a note, attachment, folder, or the whole vault                                             |
+| [`get_diff`](#get_diff)                         | Note Diff              | Read (git)  | Return a diff of a note or attachment between two points in history                                                  |
+| [`reindex`](#reindex)                           | Reindex Vault          | Admin       | Force a full reindex of the vault                                                                                    |
+| [`build_embeddings`](#build_embeddings)         | Build Embeddings       | Admin       | Build or rebuild vector embeddings                                                                                   |
+| [`write`](#write)                               | Write Note             | Write       | Create or overwrite a document or attachment                                                                         |
+| [`edit`](#edit)                                 | Edit Note              | Write       | Replace a unique text span in a document                                                                             |
+| [`append`](#append)                             | Append to Note         | Write       | Append text to the end of a note without reading it first                                                            |
+| [`delete`](#delete)                             | Delete Note            | Write       | Delete a document or attachment                                                                                      |
+| [`rename`](#rename)                             | Rename Note            | Write       | Rename/move a document or attachment                                                                                 |
+| [`move_folder`](#move_folder)                   | Move Folder            | Write       | Move an entire folder subtree and rewrite vault links                                                                |
+| [`okf_convert_links`](#okf_convert_links)       | OKF: Convert Wikilinks | Write       | Rewrite wikilinks as OKF root-absolute markdown links                                                                |
+| [`okf_generate_index`](#okf_generate_index)     | OKF: Generate index.md | Write       | Generate a reserved `index.md` listing from the TOC                                                                  |
+| [`okf_seed_log`](#okf_seed_log)                 | OKF: Seed log.md       | Write       | Seed a reserved `log.md` change history from git                                                                     |
+| [`okf_verify`](#okf_verify)                     | OKF: Verify Note       | Write       | Attest a note as human-reviewed (elicitation-gated; requires `OKF_WRITE`)                                            |
+| [`fetch`](#fetch)                               | Fetch to Vault         | Write       | Download from URL and save to vault                                                                                  |
+| [`git_sync`](#git_sync)                         | Sync with Git          | Write (git) | Force an immediate git pull / push / both, bypassing the periodic loops                                              |
+| [`create_download_link`](#create_download_link) | Create Download Link   | Transfer    | Mint a one-time capability URL to download a vault file or an OKF bundle archive (HTTP/SSE only)                     |
+| [`create_upload_link`](#create_upload_link)     | Create Upload Link     | Transfer    | Mint a one-time capability URL to upload bytes to a fixed vault path (HTTP/SSE only)                                 |
+| [`browse_vault`](#browse_vault)                 | Browse Vault           | Apps        | Open the vault explorer SPA                                                                                          |
+| [`show_context`](#show_context)                 | Context Card           | Apps        | Open the Context Card for a note                                                                                     |
 
 ______________________________________________________________________
 
@@ -56,17 +63,17 @@ Find documents matching a query using full-text or semantic search.
 
 **Parameters:**
 
-| Parameter         | Type   | Default                | Description                                                                                                                                         |
-| ----------------- | ------ | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `query`           | string | required               | Natural language or keyword query string                                                                                                            |
-| `limit`           | int    | `10`                   | Maximum results to return                                                                                                                           |
-| `mode`            | string | `"keyword"`            | `"keyword"` (FTS5/BM25), `"semantic"` (vector similarity), or `"hybrid"` (reciprocal rank fusion)                                                   |
-| `folder`          | string | `null`                 | Restrict to documents under this folder path                                                                                                        |
-| `filters`         | object | `null`                 | Filter by indexed frontmatter field values (such as `{"tags": "pacing"}`)                                                                           |
-| `chunks_per_file` | int    | server default (`2`)   | Maximum number of matching sections returned per file. Overrides `MARKDOWN_VAULT_MCP_CHUNKS_PER_FILE` for this call. `0` is rejected.               |
-| `snippet_words`   | int    | server default (`200`) | Approximate word budget for each section's `content` field. `0` returns the full chunk. Overrides `MARKDOWN_VAULT_MCP_SNIPPET_WORDS` for this call. |
+| Parameter         | Type   | Default                | Description                                                                                                                                                                                                                                     |
+| ----------------- | ------ | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `query`           | string | required               | Natural language or keyword query string                                                                                                                                                                                                        |
+| `limit`           | int    | `10`                   | Maximum results to return                                                                                                                                                                                                                       |
+| `mode`            | string | `"keyword"`            | `"keyword"` (FTS5/BM25), `"semantic"` (vector similarity), or `"hybrid"` (reciprocal rank fusion)                                                                                                                                               |
+| `folder`          | string | `null`                 | Restrict to documents under this folder path                                                                                                                                                                                                    |
+| `filters`         | object | `null`                 | Filter by indexed frontmatter field values (such as `{"tags": "pacing"}`), ANDed. On an OKF bundle, `status` (`stable` also matches notes without one), `stale` (`true`/`false`), and `trust_tier` carry OKF semantics; `type` filters normally |
+| `chunks_per_file` | int    | server default (`2`)   | Maximum number of matching sections returned per file. Overrides `MARKDOWN_VAULT_MCP_CHUNKS_PER_FILE` for this call. `0` is rejected.                                                                                                           |
+| `snippet_words`   | int    | server default (`200`) | Approximate word budget for each section's `content` field. `0` returns the full chunk. Overrides `MARKDOWN_VAULT_MCP_SNIPPET_WORDS` for this call.                                                                                             |
 
-**Returns:** List of grouped result dicts ranked by relevance, one entry per file with up to `chunks_per_file` best-matching sections. Each entry contains: `path`, `title`, `folder`, `score` (max section score), `search_type`, `frontmatter`, and `sections` (a list of `{heading, content, score}` dicts sorted by score then document order).
+**Returns:** List of grouped result dicts ranked by relevance, one entry per file with up to `chunks_per_file` best-matching sections. Each entry contains: `path`, `title`, `folder`, `score` (max section score), `search_type`, `frontmatter`, and `sections` (a list of `{heading, content, score}` dicts sorted by score then document order). On an OKF (Open Knowledge Format) bundle (see `MARKDOWN_VAULT_MCP_OKF_MODE` in [Configuration](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/configuration/index.md)), each entry also carries an `okf` dict with the note's `type`, lifecycle `status`, `stale` flag, `trust_tier`, and `sources_count`. On such a bundle, ranking also downweights `deprecated` notes (more) and stale notes (less) so current content surfaces first, and demotes the reserved navigation files `index.md` / `log.md` below real notes. This ranking adjustment applies only when a bundle is detected; on any other vault the result order is unchanged.
 
 Grouped result shape
 
@@ -130,6 +137,8 @@ The `section` lookup compares heading strings after collapsing all whitespace ru
 }
 ```
 
+On an OKF bundle, whole-document reads also carry an `okf` dict (`type`, `status`, `stale`, `trust_tier`, and the note's full `sources` list). Section reads omit it — they carry no frontmatter to derive it from.
+
 ```
 {
   "path": "assets/diagram.pdf",
@@ -146,11 +155,12 @@ List documents (and optionally attachments) in the vault.
 
 **Parameters:**
 
-| Parameter             | Type   | Default | Description                                                                 |
-| --------------------- | ------ | ------- | --------------------------------------------------------------------------- |
-| `folder`              | string | `null`  | Return only documents in this folder                                        |
-| `pattern`             | string | `null`  | Unix glob matched against relative paths (such as `"Journal/*.md"`)         |
-| `include_attachments` | bool   | `false` | When true, also returns non-`.md` files that match the configured allowlist |
+| Parameter             | Type   | Default | Description                                                                                                                                                                                                                                                         |
+| --------------------- | ------ | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `folder`              | string | `null`  | Return only documents in this folder                                                                                                                                                                                                                                |
+| `pattern`             | string | `null`  | Unix glob matched against relative paths (such as `"Journal/*.md"`)                                                                                                                                                                                                 |
+| `include_attachments` | bool   | `false` | When true, also returns non-`.md` files that match the configured allowlist                                                                                                                                                                                         |
+| `filters`             | object | `null`  | Frontmatter equality filters, ANDed (any key; list fields match by membership). On an OKF bundle, `status` / `stale` / `trust_tier` carry OKF semantics: `{"stale": "true"}` or `{"status": "deprecated"}` builds a triage listing. Any filter excludes attachments |
 
 **Returns:** List of info dicts. Every entry has a `kind` field (`"note"` or `"attachment"`). Body content is not included; call `read` for full text.
 
@@ -189,6 +199,8 @@ Get an overview of the vault's size, capabilities, and configuration. Call this 
 }
 ```
 
+On an OKF bundle (see `MARKDOWN_VAULT_MCP_OKF_MODE` in [Configuration](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/configuration/index.md)), the response also carries an `okf` section: the configured mode, the declared spec version, a per-`type` histogram plus an untyped count, `status` and trust-tier breakdowns, and the stale-note count.
+
 ### `embeddings_status`
 
 Check the embedding provider configuration and vector index status. Use this to diagnose why semantic search is unavailable.
@@ -219,6 +231,14 @@ Returns background-build state of the FTS index. Use this when `initialize` retu
 **Tags:** read-only.
 
 ______________________________________________________________________
+
+### `okf_validate`
+
+Audit the vault's [OKF (Open Knowledge Format)](https://github.com/GoogleCloudPlatform/knowledge-catalog) conformance. Reports degrees, not a verdict: during a migration to OKF this is the progress meter. The audit reads the vault from disk, so it works before the index is built and before the vault declares `okf_version` (run it first to decide whether to declare). Paths matching the vault's effective exclude patterns are skipped, which doubles as the whitelist for known-nonconforming zones. The tool is hidden when `MARKDOWN_VAULT_MCP_OKF_MODE` is `off`.
+
+No parameters.
+
+**Returns:** Report object with the detection state (`mode`, `declared_version`, `active`), the progress ratio (`total_notes`, `conformant_notes`), `root_index_missing` (bool), and per-rule findings that each carry `count` and up to 20 `examples` paths. Conformance findings: `missing_type`, `unparseable_frontmatter`, `misplaced_okf_version`. Advisory: `unknown_status`, `log_heading_shape`. Informational: `wikilink_files`, `missing_recommended`. Reserved files (`index.md`, `log.md`) are exempt from the `type` rule.
 
 ## Index Management
 
@@ -322,6 +342,27 @@ Diagnostic errors
 
 When no match is found, the error message reports the closest matching line number and the character position of the first difference, along with short snippets showing what was expected vs. what was found. This helps identify the exact mismatch.
 
+### `append`
+
+Append text to the end of an existing `.md` note without reading it first.
+
+**Parameters:**
+
+| Parameter           | Type   | Required | Description                                                                                                                                                   |
+| ------------------- | ------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `path`              | string | Yes      | Relative path to the document                                                                                                                                 |
+| `content`           | string | Yes      | Text to append (must be non-empty)                                                                                                                            |
+| `if_match`          | string | No       | Etag from `read` for optimistic concurrency                                                                                                                   |
+| `create_if_missing` | bool   | No       | When `true`, a missing note is created with `content` as its body. Default `false`, so a typo in `path` fails loudly rather than silently creating a new note |
+
+**Returns:** `{"path": "Journal/2026.md", "created": false}`
+
+`created` is `true` only when `create_if_missing` created a new note. The response may also include a `conventions` list; see [`write`](#write).
+
+Cheaper than `edit` for additive changes
+
+Unlike `edit`, no prior `read` is needed, so the existing note content never enters the LLM context. This makes it ideal for log entries, journal additions, and checklist items. A newline is inserted between the existing content and the appended text when the file does not already end with one; include leading blank lines or heading markers in `content` yourself for a separating paragraph or section.
+
 ### `delete`
 
 Permanently delete a document or attachment. For `.md` documents, also removes from all search indices.
@@ -381,6 +422,58 @@ Move an entire folder subtree to a new prefix and rewrite all vault links that p
 Warning
 
 Link rewrites are not rolled back if the process is interrupted after the move phase begins. The move phase itself is not OS-failure-atomic: an OS error during file moves (permission error, full disk, concurrent removal) can leave the subtree partially moved with the index unchanged; run `reindex` to recover. Use `rename` for single-file moves where full atomicity is required.
+
+### OKF migration transforms
+
+Three one-shot [OKF (Open Knowledge Format)](https://github.com/GoogleCloudPlatform/knowledge-catalog) migration tools for moving a vault toward the bundle conventions. They are write tools (hidden in read-only mode and when `MARKDOWN_VAULT_MCP_OKF_MODE` is `off`), and they run through the normal write path, so a git-backed vault commits each change. Run each one once when moving a vault into the format.
+
+#### `okf_convert_links`
+
+Rewrite `[[wikilinks]]` as the bundle-root-absolute markdown links OKF recommends (`[text](/path/note.md)`) across the vault or one folder. Only links whose target is indexed are converted, so the link graph is preserved edge-for-edge; unresolvable wikilinks are left untouched and counted as skipped. Re-running is safe (already-converted markdown links are not touched).
+
+| Parameter | Type   | Description                                                      |
+| --------- | ------ | ---------------------------------------------------------------- |
+| `folder`  | string | Restrict to this folder subtree; omit to convert the whole vault |
+
+**Returns:** `files_changed`, `links_converted`, `links_skipped`, `notes_scanned` (all integers).
+
+#### `okf_generate_index`
+
+Generate (or overwrite) a folder's reserved `index.md` as a progressive-disclosure listing: `- [title](/path.md) - description` for each note directly in the folder, plus a pointer into each immediate subfolder's own `index.md`. Descriptions are drawn from frontmatter. The listing is one level deep (it does not flatten the subtree). Existing frontmatter is preserved, so regenerating the bundle-root `index.md` keeps its `okf_version` declaration. Reserved files are omitted.
+
+| Parameter | Type   | Description                               |
+| --------- | ------ | ----------------------------------------- |
+| `folder`  | string | Folder to index; omit for the bundle root |
+
+**Returns:** `path` (string), `entries` (integer), `frontmatter_preserved` (bool).
+
+#### `okf_seed_log`
+
+Seed a folder's reserved `log.md` change history from the vault's git commit history, newest-first `## YYYY-MM-DD` sections, one bullet per commit. The `folder` argument both places the log and scopes its content: a folder seeds only the commits that touched that subtree, while the bundle root seeds the whole vault's history. Refuses to overwrite an existing `log.md` (a change history is hand-maintained after seeding).
+
+| Parameter | Type   | Description                                                                                        |
+| --------- | ------ | -------------------------------------------------------------------------------------------------- |
+| `folder`  | string | Folder to write `log.md` into and scope history to; omit for the bundle root (whole-vault history) |
+
+**Returns:** `path` (string), `commits` (integer), `dates` (integer, distinct-day count).
+
+#### `okf_verify`
+
+Attest a note as human-reviewed by appending a `{by: human:<subject>, at: <date>}` entry to its `verified` frontmatter list, promoting the note's trust tier to `human-reviewed`. Part of the [enforced write layer](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/okf/#the-enforced-write-layer): registered only when `MARKDOWN_VAULT_MCP_OKF_WRITE` is enabled. The append itself does not clear `verified`; only content-changing writes do that.
+
+How the review is confirmed depends on [`MARKDOWN_VAULT_MCP_OKF_VERIFY`](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/configuration/index.md):
+
+- **`elicit`** (default): the tool issues an MCP elicitation asking you to confirm you reviewed the note, and writes the entry only on an affirmative reply. It fails closed (if the client cannot elicit or you decline, it errors and writes nothing), so a model cannot self-attest on your behalf. The subject recorded is your authenticated identity when present, else `local`.
+- **`trust-auth`**: attributes to the authenticated caller with no confirmation, and errors when the server runs with no auth. Only safe when the sole caller is a human-driven UI.
+- **`off`**: the tool is hidden entirely.
+
+Whichever mode, `human-reviewed` means a human deliberately confirmed the review, not that the note is provably correct.
+
+| Parameter | Type   | Description                               |
+| --------- | ------ | ----------------------------------------- |
+| `path`    | string | Vault-relative path of the note to verify |
+
+**Returns:** `path` (string), `verifier` (string, the `human:<subject>` actor recorded), `verified_count` (integer, entries after the append).
 
 ### `fetch`
 
@@ -577,14 +670,14 @@ Find semantically similar notes by document path. Requires embeddings to be buil
 
 **Parameters:**
 
-| Parameter                 | Type   | Default              | Description                                                                                                                                                                |
-| ------------------------- | ------ | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `path`                    | string | required             | Relative path to the document                                                                                                                                              |
-| `limit`                   | int    | `10`                 | Maximum files to return                                                                                                                                                    |
-| `chunks_per_file`         | int    | server default (`2`) | Maximum number of matching sections returned per file. Overrides `MARKDOWN_VAULT_MCP_CHUNKS_PER_FILE` for this call. `0` is rejected.                                      |
-| `folder`                  | string | `null`               | Restrict results to this folder (exact match or sub-folder prefix), such as `3-Resources`                                                                                  |
-| `filters`                 | object | `null`               | Frontmatter equality filters, ANDed, such as `{"type": "resource"}`. List-valued fields match by membership                                                                |
-| `wait_for_pending_writes` | bool   | `false`              | Block until the IndexWriter drains before answering, then report freshness via `_meta.index_stale` (see the *Index freshness on read tools* note at the top of this page). |
+| Parameter                 | Type   | Default              | Description                                                                                                                                                                          |
+| ------------------------- | ------ | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `path`                    | string | required             | Relative path to the document                                                                                                                                                        |
+| `limit`                   | int    | `10`                 | Maximum files to return                                                                                                                                                              |
+| `chunks_per_file`         | int    | server default (`2`) | Maximum number of matching sections returned per file. Overrides `MARKDOWN_VAULT_MCP_CHUNKS_PER_FILE` for this call. `0` is rejected.                                                |
+| `folder`                  | string | `null`               | Restrict results to this folder (exact match or sub-folder prefix), such as `3-Resources`                                                                                            |
+| `filters`                 | object | `null`               | Frontmatter equality filters, ANDed, such as `{"type": "resource"}`. List-valued fields match by membership. On an OKF bundle, `status` / `stale` / `trust_tier` carry OKF semantics |
+| `wait_for_pending_writes` | bool   | `false`              | Block until the IndexWriter drains before answering, then report freshness via `_meta.index_stale` (see the *Index freshness on read tools* note at the top of this page).           |
 
 **Returns:** List of grouped similar-document dicts ranked by cosine similarity, one entry per file with up to `chunks_per_file` best-matching sections. Each entry contains: `path`, `title`, `folder`, `score` (max section score), `search_type` (`"semantic"`), `frontmatter`, and `sections` (a list of `{heading, content, score}` dicts sorted by score then document order). Index freshness is reported in `_meta.index_stale` (see the freshness note at the top of this page).
 
@@ -642,7 +735,7 @@ Get a consolidated context dossier for a note. Combines backlinks, outlinks, sim
 | `link_limit`              | int    | `10`     | Max backlinks and outlinks to include each                                                                                                                                 |
 | `wait_for_pending_writes` | bool   | `false`  | Block until the IndexWriter drains before answering, then report freshness via `_meta.index_stale` (see the *Index freshness on read tools* note at the top of this page). |
 
-**Returns:** Object with `path`, `title`, `folder`, `frontmatter`, `modified_at`, `backlinks`, `outlinks`, `similar`, `folder_notes`, and `tags` fields. The `similar` list contains grouped result dicts, one entry per file with up to `chunks_per_file` best-matching sections (default 1 for `get_context` to keep dossiers compact). May also include a `conventions` list: the [folder conventions](#get_conventions) that apply to the note's folder. Index freshness is reported in `_meta.index_stale` (see the freshness note at the top of this page).
+**Returns:** Object with `path`, `title`, `folder`, `frontmatter`, `modified_at`, `backlinks`, `outlinks`, `similar`, `folder_notes`, and `tags` fields. The `similar` list contains grouped result dicts, one entry per file with up to `chunks_per_file` best-matching sections (default 1 for `get_context` to keep dossiers compact). May also include a `conventions` list: the [folder conventions](#get_conventions) that apply to the note's folder. On an OKF bundle it also carries the note's `okf` annotation (`type`, `status`, `stale`, `trust_tier`, `sources_count`). Index freshness is reported in `_meta.index_stale` (see the freshness note at the top of this page).
 
 Grouped similar shape
 
@@ -707,27 +800,27 @@ Find the shortest path between two notes via BFS on the undirected link graph (m
 
 ### `get_history`
 
-List commits that touched a note or attachment (or the whole vault) within an optional time window, up to a maximum count. Only available for git-backed vaults.
+List commits that touched a note, attachment, or folder (or the whole vault) within an optional time window, up to a maximum count. Only available for git-backed vaults.
 
 **Parameters:**
 
-| Parameter | Type   | Default | Description                                                                                                                                                                                                                 |
-| --------- | ------ | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `path`    | string | `null`  | Relative vault path (such as `"notes/alpha.md"` or `"assets/diagram.png"`). May be a `.md` note or a configured attachment extension (png, pdf, svg, …). Omit for vault-wide history. An unsupported extension is rejected. |
-| `since`   | string | `null`  | ISO 8601 datetime string (`"2026-04-01T00:00:00"`) or git date expression (`"1 week ago"`). Passed as `--since` to `git log`. Inclusive at the boundary.                                                                    |
-| `until`   | string | `null`  | ISO 8601 datetime string or git date expression, passed as `--until` to `git log`. Combined with `since` to bound a window. Inclusive at the boundary.                                                                      |
-| `limit`   | int    | `20`    | Maximum number of commits to return. Capped at 100.                                                                                                                                                                         |
+| Parameter | Type   | Default | Description                                                                                                                                                                                                                                                                                                                                                                        |
+| --------- | ------ | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `path`    | string | `null`  | Relative vault path. A `.md` note or a configured attachment extension (png, pdf, svg, …) scopes to that single file (such as `"notes/alpha.md"`, `"assets/diagram.png"`); an existing folder scopes to its subtree (such as `"guides"`, returning commits that touched `guides/**`). Omit for vault-wide history. A non-directory path with an unsupported extension is rejected. |
+| `since`   | string | `null`  | ISO 8601 datetime string (`"2026-04-01T00:00:00"`) or git date expression (`"1 week ago"`). Passed as `--since` to `git log`. Inclusive at the boundary.                                                                                                                                                                                                                           |
+| `until`   | string | `null`  | ISO 8601 datetime string or git date expression, passed as `--until` to `git log`. Combined with `since` to bound a window. Inclusive at the boundary.                                                                                                                                                                                                                             |
+| `limit`   | int    | `20`    | Maximum number of commits to return. Capped at 100.                                                                                                                                                                                                                                                                                                                                |
 
 **Returns:** Object with `commits` (list of commit entries, newest-first) and `total` (count; always equals `len(commits)` and does NOT indicate how many commits exist beyond the `limit` cap). The envelope keeps the structured payload self-describing on the wire instead of relying on FastMCP's auto-wrapping `result` key. Each entry in `commits` contains:
 
-| Field           | Type         | Description                                                                                                                                                                                                                                                 |
-| --------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `sha`           | string       | Full 40-character commit SHA                                                                                                                                                                                                                                |
-| `short_sha`     | string       | 7-character abbreviated SHA                                                                                                                                                                                                                                 |
-| `timestamp`     | string       | ISO 8601 author timestamp                                                                                                                                                                                                                                   |
-| `author`        | string       | Author name and email                                                                                                                                                                                                                                       |
-| `message`       | string       | First line of the commit message                                                                                                                                                                                                                            |
-| `paths_changed` | list[string] | Files touched by the commit. Populated for vault-wide queries (`path=null`); always empty for single-note queries, since the path is already determined by the query arguments (callers know which file the commit touched without needing it echoed back). |
+| Field           | Type         | Description                                                                                                                                                                                                                                                                                                           |
+| --------------- | ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sha`           | string       | Full 40-character commit SHA                                                                                                                                                                                                                                                                                          |
+| `short_sha`     | string       | 7-character abbreviated SHA                                                                                                                                                                                                                                                                                           |
+| `timestamp`     | string       | ISO 8601 author timestamp                                                                                                                                                                                                                                                                                             |
+| `author`        | string       | Author name and email                                                                                                                                                                                                                                                                                                 |
+| `message`       | string       | First line of the commit message                                                                                                                                                                                                                                                                                      |
+| `paths_changed` | list[string] | Files touched by the commit. Populated for vault-wide queries (`path=null`) and folder queries (the subtree files the commit touched); always empty for single-note queries, since the path is already determined by the query arguments (callers know which file the commit touched without needing it echoed back). |
 
 **Raises:** `ToolError` if `path` is invalid or uses an unsupported extension.
 
@@ -766,6 +859,8 @@ The tool is only registered when a summarization backend is configured: an `OPEN
 
 Inputs larger than one model request are handled map-reduce style. Notes are packed into batches of at most `SUMMARIZE_MAX_INPUT_CHARS` characters and each batch is summarized on its own; a final pass combines the partial summaries into one result. Large folders issue several model calls and take proportionally longer. Coverage per call is capped at the note limit (`SUMMARIZE_MAX_NOTES`, also the ceiling for the per-call `max_notes` parameter); the response reports exactly how many notes made it in (`notes_included`) and how many were dropped (`notes_omitted`). When notes were dropped, the response carries a `hint` telling the caller that full coverage needs separate calls on subfolders or smaller path sets. The live configured limit is substituted into the tool description and into the server instructions at startup, so a calling model can plan those splits before its first call.
 
+**Slow summaries do not block.** A summary that finishes within the inline deadline (`SUMMARIZE_INLINE_TIMEOUT`, default 30 s) returns inline with `"status": "completed"` and the fields below. If it is still running when the deadline elapses, the tool returns `{"status": "in_progress", "job_id": ...}` immediately and keeps generating in the background; fetch the result with [`get_summary`](#get_summary) using that `job_id`. Each individual backend call is itself bounded by `SUMMARIZE_TIMEOUT` (default 120 s); on timeout the summary fails with a clear message that says how to retry rather than a vague client-side hang.
+
 **Parameters:**
 
 | Parameter   | Type            | Default      | Description                                                                                                                                                                                      |
@@ -775,7 +870,7 @@ Inputs larger than one model request are handled map-reduce style. Notes are pac
 | `mode`      | `"synthesis"`   | `"per_note"` | `"synthesis"`                                                                                                                                                                                    |
 | `max_notes` | int             | server limit | Per-call note limit. Values above the server's configured cap are clamped to it; values below it narrow the work.                                                                                |
 
-**Returns:** Dict with:
+**Returns:** When the summary completes within the inline deadline, a dict with `"status": "completed"` plus:
 
 - `summary` (string): the generated summary text.
 - `sources` (list of `{path, title}`): the notes that were summarised, always populated so individual notes are attributable even when the prose does not name every one.
@@ -786,7 +881,9 @@ Inputs larger than one model request are handled map-reduce style. Notes are pac
 - `notes_limit` (int): the note limit in effect for this call.
 - `hint` (string or null): recovery guidance when notes were omitted; `null` when the selection was fully covered.
 
-**Errors:** raises if `paths` is empty, `mode` is invalid, no readable notes were found, or the backend call fails.
+When the work is promoted to the background, a dict with `"status": "in_progress"`, a `job_id` string, and a `message`. Call [`get_summary`](#get_summary) with the `job_id` to fetch the result.
+
+**Errors:** raises if `paths` is empty, `mode` is invalid, no readable notes were found, or the backend call fails within the inline deadline. A backend failure after promotion is reported through `get_summary` instead.
 
 Note content leaves your environment
 
@@ -795,6 +892,27 @@ The referenced notes are sent to the external model provider to generate the sum
 Dependency
 
 Requires the `openai` SDK and an OpenAI-compatible backend (an `OPENAI_API_KEY`, or a base URL such as a local Ollama). Install with `pip install 'markdown-vault-mcp[summarize]'` (or `[all]`). Configure the endpoint, model, and limits via the `MARKDOWN_VAULT_MCP_SUMMARIZE_*` env vars. See [Configuration](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/configuration/index.md).
+
+______________________________________________________________________
+
+### `get_summary`
+
+Retrieve a summary that [`summarize`](#summarize) promoted to a background job. When a `summarize` call runs past its inline deadline it returns `{"status": "in_progress", "job_id": ...}`; pass that `job_id` here to fetch the result, polling every few seconds while it is still running.
+
+Registered under the same conditions as `summarize` (a summarization backend must be configured). Job records are held in memory and are lost on server restart; a finished job is retained for a while and then evicted, so fetch it soon after it completes.
+
+**Parameters:**
+
+| Parameter | Type   | Default  | Description                                           |
+| --------- | ------ | -------- | ----------------------------------------------------- |
+| `job_id`  | string | required | The `job_id` returned by a promoted `summarize` call. |
+
+**Returns:** Dict whose `status` is one of:
+
+- `"completed"`: the summary is ready; the dict also carries the same fields as a completed `summarize` result (`summary`, `sources`, `mode`, `truncated`, `notes_included`, `notes_omitted`, `notes_limit`, `hint`).
+- `"in_progress"`: still generating; poll again shortly.
+- `"failed"`: generation failed; see `error` for the reason (often a backend timeout; narrow the request and retry).
+- `"not_found"`: no such job. The id is unknown, or the job has already expired.
 
 ______________________________________________________________________
 
@@ -812,30 +930,28 @@ Write tool visibility
 
 ### `create_download_link`
 
-Mint a one-time capability URL to download a vault note or attachment. The file must exist at link-creation time. The URL can be fetched exactly once; after a successful download the token is consumed. A failed or interrupted download does not consume the token.
+Mint a one-time capability URL to download vault content. The `ref` says what to serve. It is either a vault-relative path to a note or attachment that exists at link-creation time, or an OKF-bundle reference for a generated bundle archive. The URL works exactly once; a successful download settles the token. A failed or interrupted download does not settle it, so a retry stays possible until the TTL expires.
 
 **Parameters:**
 
-| Parameter     | Type   | Default                                                      | Description                                                                                                           |
-| ------------- | ------ | ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
-| `path`        | string | required                                                     | Relative path to the vault file (note or attachment). The file must exist; a missing path raises an error immediately |
-| `ttl_seconds` | int    | server default (`MARKDOWN_VAULT_MCP_TRANSFER_TTL_DEFAULT_S`) | Token lifetime in seconds. Clamped to `MARKDOWN_VAULT_MCP_TRANSFER_TTL_MAX_S`. Omit to use the server default         |
+| Parameter | Type   | Default                                                      | Description                                                                                                       |
+| --------- | ------ | ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
+| `ref`     | string | required                                                     | What to download. A vault-relative path to an existing note or attachment, or an OKF-bundle reference (see below) |
+| `ttl_s`   | number | server default (`MARKDOWN_VAULT_MCP_TRANSFER_TTL_DEFAULT_S`) | Token lifetime in seconds. Clamped to `MARKDOWN_VAULT_MCP_TRANSFER_TTL_MAX_S`. Omit to use the server default     |
 
 **Returns:**
 
 ```
 {
   "url": "https://mcp.example.com/transfer/...",
-  "path": "notes/report.md",
-  "expires_at": "2026-06-05T14:00:00+00:00",
-  "expires_in_seconds": 3600
+  "expires_in_s": 3600
 }
 ```
 
 **Example usage:**
 
 ```
-{"path": "assets/diagram.pdf", "ttl_seconds": 600}
+{"ref": "assets/diagram.pdf", "ttl_s": 600}
 ```
 
 Then in a terminal:
@@ -844,9 +960,18 @@ Then in a terminal:
 curl "https://mcp.example.com/transfer/<token>" -o diagram.pdf
 ```
 
+**OKF bundle export.** Pass an OKF-bundle reference as `ref` to download a conformant bundle archive of the vault (or a folder subtree) instead of a single file:
+
+| `ref` value           | Serves                              |
+| --------------------- | ----------------------------------- |
+| `okf-bundle`          | A zip of the whole vault            |
+| `okf-bundle:<folder>` | A zip scoped to that folder subtree |
+
+The export reads from the live vault and never changes it. Wikilinks become the root-absolute markdown links OKF recommends. Convention files (`_conventions.md`) and the template folder are left out, while the reserved `index.md` and `log.md` stay in. Non-conformant notes appear as they are. Run `okf_validate` for the residual conformance gaps; the archive itself carries no gap report. Bundle export is unavailable when `MARKDOWN_VAULT_MCP_OKF_MODE` is `off`.
+
 Read-lazy
 
-The file is read from disk at fetch time, not at link-creation time. If the file is modified between link creation and download, the downloader receives the version current at fetch time.
+A file `ref` is read from disk at fetch time, not at link-creation time, so the downloader receives the version current at fetch time. A bundle `ref` is generated at fetch time from the vault's current state.
 
 ### `create_upload_link`
 
@@ -854,26 +979,24 @@ Mint a one-time capability URL to upload bytes to a fixed, pre-validated destina
 
 **Parameters:**
 
-| Parameter     | Type   | Default                                                      | Description                                                                                                                                                                         |
-| ------------- | ------ | ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `path`        | string | required                                                     | Destination path in the vault. Validated for path traversal and allowed extension at link-creation time. May name a new or existing path; an existing file is overwritten on upload |
-| `ttl_seconds` | int    | server default (`MARKDOWN_VAULT_MCP_TRANSFER_TTL_DEFAULT_S`) | Token lifetime in seconds. Clamped to `MARKDOWN_VAULT_MCP_TRANSFER_TTL_MAX_S`. Omit to use the server default                                                                       |
+| Parameter | Type   | Default                                                      | Description                                                                                                                                                                         |
+| --------- | ------ | ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ref`     | string | required                                                     | Destination path in the vault. Validated for path traversal and allowed extension at link-creation time. May name a new or existing path; an existing file is overwritten on upload |
+| `ttl_s`   | number | server default (`MARKDOWN_VAULT_MCP_TRANSFER_TTL_DEFAULT_S`) | Token lifetime in seconds. Clamped to `MARKDOWN_VAULT_MCP_TRANSFER_TTL_MAX_S`. Omit to use the server default                                                                       |
 
 **Returns:**
 
 ```
 {
   "url": "https://mcp.example.com/transfer/...",
-  "path": "assets/upload.pdf",
-  "expires_at": "2026-06-05T14:00:00+00:00",
-  "expires_in_seconds": 3600
+  "expires_in_s": 3600
 }
 ```
 
 **Example usage:**
 
 ```
-{"path": "assets/uploaded-diagram.pdf"}
+{"ref": "assets/uploaded-diagram.pdf"}
 ```
 
 Then in a terminal:

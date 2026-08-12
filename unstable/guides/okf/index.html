@@ -10,13 +10,13 @@
       
       
       
-        <link rel="canonical" href="https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/mcp-apps/">
+        <link rel="canonical" href="https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/okf/">
       
       
-        <link rel="prev" href="../okf/">
+        <link rel="prev" href="../para/">
       
       
-        <link rel="next" href="../transfer-links/">
+        <link rel="next" href="../mcp-apps/">
       
       
         
@@ -27,7 +27,7 @@
     
     
       
-        <title>MCP Apps - markdown-vault-mcp</title>
+        <title>Open Knowledge Format - markdown-vault-mcp</title>
       
     
     
@@ -82,7 +82,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#mcp-apps" class="md-skip">
+        <a href="#open-knowledge-format-okf-with-markdown-vault-mcp" class="md-skip">
           Skip to content
         </a>
       
@@ -120,7 +120,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              MCP Apps
+              Open Knowledge Format
             
           </span>
         </div>
@@ -934,34 +934,6 @@
                 
   
   
-  
-  
-    <li class="md-nav__item">
-      <a href="../okf/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Open Knowledge Format
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
     
   
   
@@ -981,7 +953,7 @@
   <span class="md-ellipsis">
     
   
-    MCP Apps
+    Open Knowledge Format
   
 
     
@@ -999,7 +971,7 @@
   <span class="md-ellipsis">
     
   
-    MCP Apps
+    Open Knowledge Format
   
 
     
@@ -1025,22 +997,55 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#views" class="md-nav__link">
+  <a href="#how-the-server-recognises-a-bundle" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Views
+        How the server recognises a bundle
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Views">
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-the-metadata-means" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What the metadata means
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#frontmatter-fields" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Frontmatter fields
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#migrating-an-existing-vault" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Migrating an existing vault
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Migrating an existing vault">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#context-card" class="md-nav__link">
+  <a href="#1-audit" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Context Card
+        1. Audit
       
     </span>
   </a>
@@ -1048,10 +1053,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#graph-explorer" class="md-nav__link">
+  <a href="#2-declare" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Graph Explorer
+        2. Declare
       
     </span>
   </a>
@@ -1059,10 +1064,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#vault-browser" class="md-nav__link">
+  <a href="#3-enrich" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Vault Browser
+        3. Enrich
       
     </span>
   </a>
@@ -1070,10 +1075,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#note-preview" class="md-nav__link">
+  <a href="#4-mechanical-transforms" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Note Preview
+        4. Mechanical transforms
       
     </span>
   </a>
@@ -1086,33 +1091,33 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#tools" class="md-nav__link">
+  <a href="#the-enforced-write-layer" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Tools
+        The enforced write layer
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The enforced write layer">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#recording-a-human-review" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recording a human review
       
     </span>
   </a>
   
 </li>
-      
-        <li class="md-nav__item">
-  <a href="#configuration" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Configuration
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Configuration">
-      <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#domain-auto-computation" class="md-nav__link">
+  <a href="#keeping-logmd-and-indexmd-current" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Domain auto-computation
+        Keeping log.md and index.md current
       
     </span>
   </a>
@@ -1125,69 +1130,24 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#architecture" class="md-nav__link">
+  <a href="#using-okf-with-para-or-zettelkasten" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Architecture
+        Using OKF with PARA or Zettelkasten
       
     </span>
   </a>
-  
-    <nav class="md-nav" aria-label="Architecture">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#visual-identity-paper" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Visual identity ("Paper")
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#source-layout-and-build" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Source layout and build
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#client-support" class="md-nav__link">
+  <a href="#exporting-a-bundle" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Client support
+        Exporting a bundle
       
     </span>
   </a>
-  
-    <nav class="md-nav" aria-label="Client support">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#firing-prompts-from-claudeais-menu" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Firing prompts from Claude.ai's + menu
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
@@ -1195,6 +1155,34 @@
   
 </nav>
       
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../mcp-apps/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Apps
+  
+
+    
+  </span>
+  
+  
+
+      </a>
     </li>
   
 
@@ -1893,22 +1881,55 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#views" class="md-nav__link">
+  <a href="#how-the-server-recognises-a-bundle" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Views
+        How the server recognises a bundle
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Views">
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-the-metadata-means" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What the metadata means
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#frontmatter-fields" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Frontmatter fields
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#migrating-an-existing-vault" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Migrating an existing vault
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Migrating an existing vault">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#context-card" class="md-nav__link">
+  <a href="#1-audit" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Context Card
+        1. Audit
       
     </span>
   </a>
@@ -1916,10 +1937,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#graph-explorer" class="md-nav__link">
+  <a href="#2-declare" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Graph Explorer
+        2. Declare
       
     </span>
   </a>
@@ -1927,10 +1948,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#vault-browser" class="md-nav__link">
+  <a href="#3-enrich" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Vault Browser
+        3. Enrich
       
     </span>
   </a>
@@ -1938,10 +1959,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#note-preview" class="md-nav__link">
+  <a href="#4-mechanical-transforms" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Note Preview
+        4. Mechanical transforms
       
     </span>
   </a>
@@ -1954,33 +1975,33 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#tools" class="md-nav__link">
+  <a href="#the-enforced-write-layer" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Tools
+        The enforced write layer
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The enforced write layer">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#recording-a-human-review" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recording a human review
       
     </span>
   </a>
   
 </li>
-      
-        <li class="md-nav__item">
-  <a href="#configuration" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Configuration
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Configuration">
-      <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#domain-auto-computation" class="md-nav__link">
+  <a href="#keeping-logmd-and-indexmd-current" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Domain auto-computation
+        Keeping log.md and index.md current
       
     </span>
   </a>
@@ -1993,69 +2014,24 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#architecture" class="md-nav__link">
+  <a href="#using-okf-with-para-or-zettelkasten" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Architecture
+        Using OKF with PARA or Zettelkasten
       
     </span>
   </a>
-  
-    <nav class="md-nav" aria-label="Architecture">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#visual-identity-paper" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Visual identity ("Paper")
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#source-layout-and-build" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Source layout and build
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#client-support" class="md-nav__link">
+  <a href="#exporting-a-bundle" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Client support
+        Exporting a bundle
       
     </span>
   </a>
-  
-    <nav class="md-nav" aria-label="Client support">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#firing-prompts-from-claudeais-menu" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Firing prompts from Claude.ai's + menu
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
@@ -2079,195 +2055,124 @@
   
 
 
-<h1 id="mcp-apps">MCP Apps<a class="headerlink" href="#mcp-apps" title="Permanent link">&para;</a></h1>
-<p>The server ships four browser-based views that MCP clients supporting the <a href="https://modelcontextprotocol.io/specification/2025-06-18/server/apps">MCP Apps protocol</a> can render inline or in fullscreen. They are delivered as a single HTML resource at <code>ui://markdown_vault_mcp/app.html</code> and use <code>visibility="app"</code> so they appear only in supporting clients.</p>
-<h2 id="views">Views<a class="headerlink" href="#views" title="Permanent link">&para;</a></h2>
-<h3 id="context-card">Context Card<a class="headerlink" href="#context-card" title="Permanent link">&para;</a></h3>
-<p>Displays a note dossier for the note currently in focus. Includes:</p>
-<ul>
-<li><strong>Backlinks</strong>: other notes that link to this note</li>
-<li><strong>Outlinks</strong>: notes this document links to, with existence check</li>
-<li><strong>Similar notes</strong>: semantically similar documents (requires embeddings)</li>
-<li><strong>Tags</strong>: frontmatter tag values</li>
-<li><strong>Folder peers</strong>: other notes in the same folder</li>
-<li><strong>Modification time</strong>: last modified timestamp</li>
-</ul>
-<p>Click any linked note to open its context card.</p>
-<h3 id="graph-explorer">Graph Explorer<a class="headerlink" href="#graph-explorer" title="Permanent link">&para;</a></h3>
-<p>Interactive force-directed link graph of the vault, powered by vis-network. Two modes:</p>
-<ul>
-<li><strong>Neighborhood</strong>: shows a note and its direct connections (configurable depth, soft-capped at <code>max_nodes=200</code> by default; the response carries <code>truncated=true</code> when the BFS hit the cap so the SPA can warn the user)</li>
-<li><strong>Hubs</strong>: shows the most-linked notes in the vault and their connections</li>
-</ul>
-<p>Click a node to view that note's context card. Toggle semantic similarity edges when embeddings are available (semantic edges render as dashed accent-colored lines, distinct from the solid wikilink edges).</p>
-<p>Node labels follow a level-of-detail rule. The focus note, its direct neighbors, and hub notes keep their labels; other farther-out notes render as unlabelled dots (their names appear on hover, or once you zoom in past a threshold). A separate hover text with the note's title and backlink count is always available, regardless of zoom level. A count chip in the top-right corner of the canvas reports how many notes are currently visible, next to zoom-in and zoom-out buttons. A legend below the canvas explains the edge and node styles; on a narrow panel it collapses behind an "ⓘ legend" chip to save space.</p>
-<h3 id="vault-browser">Vault Browser<a class="headerlink" href="#vault-browser" title="Permanent link">&para;</a></h3>
-<p>Searchable, filterable file tree for browsing the vault without issuing tool calls. Features:</p>
-<ul>
-<li>Expandable folder tree</li>
-<li>Real-time search filtering</li>
-<li>Click a note to preview it in the Note tab</li>
-</ul>
-<h3 id="note-preview">Note Preview<a class="headerlink" href="#note-preview" title="Permanent link">&para;</a></h3>
-<p>Full-width markdown preview with:</p>
-<ul>
-<li>Rendered markdown (via marked.js, sanitized with DOMPurify), with the leading frontmatter block stripped so it renders only once</li>
-<li>A <strong>Contents</strong> popover: an on-this-page table of contents built from the note's headings</li>
-<li>Collapsible frontmatter properties (first few shown, the rest behind a toggle) and collapsible tags</li>
-<li><strong>Copy markdown</strong> (the full note, frontmatter included) and <strong>Copy vault link</strong> (the note's path) buttons</li>
-<li><strong>Send to Claude</strong> button: sends the note content to the LLM conversation</li>
-<li>Navigation to Context Card or Graph Explorer for the same note</li>
-</ul>
-<h2 id="tools">Tools<a class="headerlink" href="#tools" title="Permanent link">&para;</a></h2>
-<p>Two primary tools are exposed to MCP clients:</p>
-<table>
-<thead>
-<tr>
-<th>Tool</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>browse_vault</code></td>
-<td>Opens the vault explorer SPA; optionally focuses a specific note and view. Returns a text summary for non-Apps clients.</td>
-</tr>
-<tr>
-<td><code>show_context</code></td>
-<td>Opens the Context Card for a given note path.</td>
-</tr>
-</tbody>
-</table>
-<p><code>browse_vault</code> accepts an optional <code>path</code> parameter to focus on a specific note, and a <code>view</code> parameter (<code>context</code>, <code>graph</code>, <code>browse</code>, or <code>note</code>). <code>show_context</code> requires a <code>path</code> parameter.</p>
-<p>Six additional app-only tools (prefixed with <code>_vault_</code>) handle data fetching for the SPA views. These are hidden from the LLM and only callable from within the app itself.</p>
-<h2 id="configuration">Configuration<a class="headerlink" href="#configuration" title="Permanent link">&para;</a></h2>
-<table>
-<thead>
-<tr>
-<th>Variable</th>
-<th>Default</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>MARKDOWN_VAULT_MCP_BASE_URL</code></td>
-<td>(none)</td>
-<td>Public base URL of the server. Required for auto-computing the app domain.</td>
-</tr>
-<tr>
-<td><code>MARKDOWN_VAULT_MCP_APP_DOMAIN</code></td>
-<td>(auto)</td>
-<td>Override the Claude app domain used for iframe sandboxing. Auto-computed from <code>BASE_URL</code> when not set.</td>
-</tr>
-</tbody>
-</table>
-<h3 id="domain-auto-computation">Domain auto-computation<a class="headerlink" href="#domain-auto-computation" title="Permanent link">&para;</a></h3>
-<p>When <code>APP_DOMAIN</code> is not set, the server computes it from <code>BASE_URL</code> and <code>HTTP_PATH</code>:</p>
-<ol>
-<li>Concatenate: <code>mcp_url = f"{BASE_URL}{HTTP_PATH}"</code></li>
-<li>SHA-256 hash the URL and take the first 32 hex characters</li>
-<li>Result: <code>{hash_prefix}.claudemcpcontent.com</code></li>
-</ol>
-<p>Override <code>APP_DOMAIN</code> if your deployment is behind a proxy that changes the apparent hostname.</p>
-<h2 id="architecture">Architecture<a class="headerlink" href="#architecture" title="Permanent link">&para;</a></h2>
-<p>The SPA is a self-contained HTML file with its JavaScript dependencies vendored at build time (no runtime CDN requests for libraries; web fonts are the one exception, see <a href="#visual-identity-paper">Visual identity</a>):</p>
-<table>
-<thead>
-<tr>
-<th>Library</th>
-<th>Purpose</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>vis-network</td>
-<td>Force-directed graph rendering</td>
-</tr>
-<tr>
-<td>marked.js</td>
-<td>Markdown to HTML rendering</td>
-</tr>
-<tr>
-<td>DOMPurify</td>
-<td>XSS sanitization</td>
-</tr>
-<tr>
-<td>@modelcontextprotocol/ext-apps</td>
-<td>MCP Apps lifecycle, messaging, and theming</td>
-</tr>
-</tbody>
-</table>
-<p>The app integrates with the host client via the ext-apps SDK:</p>
-<ul>
-<li><strong><code>app.callServerTool()</code></strong>: calls app-only tools to fetch data</li>
-<li><strong><code>app.sendMessage()</code></strong>: sends note content to the LLM conversation</li>
-<li><strong><code>app.updateModelContext()</code></strong>: keeps the LLM aware of which note the user is viewing</li>
-<li><strong><code>app.requestDisplayMode()</code></strong>: requests fullscreen or inline display (auto-expands to fullscreen on first load on desktop and web, but stays inline on mobile)</li>
-<li><strong>Adaptive sizing</strong>: honors the host's reported container dimensions and safe-area insets. It fills a fixed-height frame with internal scrolling, or, when the host reports a flexible or unbounded frame (as mobile inline hosts and sidebars typically do), grows to its content and reports its height so the host can size the view</li>
-<li><strong>Theme sync</strong>: automatically adapts to the host's light/dark theme and CSS variables</li>
-</ul>
-<h3 id="visual-identity-paper">Visual identity ("Paper")<a class="headerlink" href="#visual-identity-paper" title="Permanent link">&para;</a></h3>
-<p>The views use a warm, editorial "Paper" theme (serif headings, a single warm
-accent, light and dark). The Paper palette is expressed as CSS custom properties
-that map onto the host's <code>--color-*</code> variables: a host that pushes its own theme
-overrides Paper, otherwise the Paper values show. Three font families load from
-Google Fonts and are exposed as <code>--font-head</code> / <code>--font-body</code> / <code>--font-mono</code>:
-Newsreader styles headings, Public Sans the body and UI, and IBM Plex Mono the
-code, property keys, and tags. (As each view is restyled, these families also
-reach the remaining mono metadata such as paths and scores.) The fonts are the
-one runtime network dependency the app keeps (the vendored libraries are embedded);
-if they fail to load, the app falls back to system fonts with no loss of
-function.</p>
-<h3 id="source-layout-and-build">Source layout and build<a class="headerlink" href="#source-layout-and-build" title="Permanent link">&para;</a></h3>
-<p>The SPA source is authored as small partials under
-<code>src/markdown_vault_mcp/static/spa/</code>:</p>
-<table>
-<thead>
-<tr>
-<th>File</th>
-<th>Contents</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>shell.html</code></td>
-<td>The HTML document: head, tab bar, view panels, toast</td>
-</tr>
-<tr>
-<td><code>styles.css</code></td>
-<td>All styles</td>
-</tr>
-<tr>
-<td><code>core.js</code></td>
-<td>App setup, theming, tab navigation, cross-view routing, shared helpers</td>
-</tr>
-<tr>
-<td><code>views/context.js</code>, <code>views/graph.js</code>, <code>views/browser.js</code>, <code>views/note.js</code></td>
-<td>One file per view</td>
-</tr>
-</tbody>
-</table>
-<p>Two build steps turn the partials into the served resource:</p>
-<div class="highlight"><pre><span></span><code>spa/*  -&gt;  build_spa.py  -&gt;  app.src.html  -&gt;  vendor_spa.py  -&gt;  app.html
+<h1 id="open-knowledge-format-okf-with-markdown-vault-mcp">Open Knowledge Format (OKF) with markdown-vault-mcp<a class="headerlink" href="#open-knowledge-format-okf-with-markdown-vault-mcp" title="Permanent link">&para;</a></h1>
+<p><a href="https://github.com/GoogleCloudPlatform/knowledge-catalog">Open Knowledge Format</a> (OKF) is a vendor-neutral convention for a folder of markdown files that serves as curated context for AI agents. A bundle is a directory of notes with YAML frontmatter: one concept per file, the file path as the concept identity, and a small set of frontmatter fields that describe each note's type, lifecycle, provenance, and trust. This guide shows how markdown-vault-mcp recognises OKF bundles, what it does with the metadata, and how to move an existing vault into the format.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>OKF support is read-only by default. Recognising a bundle only ever adds annotations and advice; it never changes your files. The migration tools that do change files are explicit, and this guide covers them near the end.</p>
+</div>
+<div class="admonition tip">
+<p class="admonition-title">Example pack</p>
+<p>The <a href="../../examples/okf/"><code>examples/okf/</code></a> directory ships a declaration index, typed note templates (<code>Concept</code>, <code>Capture</code>), and a prompt pack (author a concept, verify a note, triage stale content, migrate a vault) that you can copy into your vault and prompt folders.</p>
+</div>
+<h2 id="how-the-server-recognises-a-bundle">How the server recognises a bundle<a class="headerlink" href="#how-the-server-recognises-a-bundle" title="Permanent link">&para;</a></h2>
+<p>The server treats a vault as an OKF bundle when the root <code>index.md</code> declares a version in its frontmatter:</p>
+<div class="highlight"><pre><span></span><code><span class="nn">---</span>
+<span class="nt">okf_version</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;0.2&quot;</span>
+<span class="nn">---</span>
+<span class="c1"># My bundle</span>
 </code></pre></div>
-<ol>
-<li><code>python scripts/build_spa.py</code> assembles the partials into
-   <code>static/app.src.html</code>. Assembly is a recursive <code>/*@@FILE:path@@*/</code> include,
-   a valid comment in both CSS and JavaScript, so each partial stays
-   independently readable.</li>
-<li><code>python scripts/vendor_spa.py</code> embeds the vendored libraries into the
-   self-contained <code>static/app.html</code> that the server serves.</li>
-</ol>
-<p><code>app.src.html</code> and <code>app.html</code> are both generated, committed artifacts: edit the
-files under <code>static/spa/</code>, then run both scripts. Never hand-edit the generated
-files. <code>build_spa.py --check</code> and <code>vendor_spa.py --check</code> fail the build if
-either artifact is stale; both run in CI and as pre-commit hooks.</p>
-<h2 id="client-support">Client support<a class="headerlink" href="#client-support" title="Permanent link">&para;</a></h2>
-<p>MCP Apps views require a client that supports the MCP Apps protocol. Currently supported by Claude on claude.ai. Clients without Apps support receive a text-only fallback from <code>browse_vault</code> and <code>show_context</code>.</p>
-<p>To hide <code>browse_vault</code> and <code>show_context</code> from the tool listing entirely (for clients that never render Apps panels), set <code>MARKDOWN_VAULT_MCP_DISABLE_APPS_UI=true</code>. See <a href="../../configuration/">Configuration</a>.</p>
-<h3 id="firing-prompts-from-claudeais-menu">Firing prompts from Claude.ai's <code>+</code> menu<a class="headerlink" href="#firing-prompts-from-claudeais-menu" title="Permanent link">&para;</a></h3>
-<p>MCP Apps surface interactive views, but this server also ships MCP <em>prompts</em> (<code>summarize</code>, <code>research</code>, <code>propose-links</code>, and the workflow prompts from the PARA and Zettelkasten packs). On Claude.ai, every prompt appears in the compose area's <code>+</code> menu once the server is added as a connector. Click <code>+</code>, select <strong>connectors</strong>, pick the server, pick a prompt, and Claude opens with the invocation scaffolded. See <a href="../../prompts/#how-to-invoke-prompts">How to invoke prompts</a>.</p>
+<p>This declaration travels with the vault, so the same bundle behaves the same way here and in other OKF tools. The <code>MARKDOWN_VAULT_MCP_OKF_MODE</code> environment variable controls how the server responds to it:</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Behaviour</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>auto</code> (default)</td>
+<td>Apply OKF read semantics when the root <code>index.md</code> declares <code>okf_version</code>.</td>
+</tr>
+<tr>
+<td><code>off</code></td>
+<td>Never apply OKF semantics, and hide the OKF tools. Use this if your frontmatter happens to use keys such as <code>status</code> for an unrelated purpose.</td>
+</tr>
+<tr>
+<td><code>on</code></td>
+<td>Force OKF semantics even without a declaration. Use this for a bundle you consume but do not own.</td>
+</tr>
+</tbody>
+</table>
+<p>Check the current state at any time through the <code>okf</code> section of the <code>stats</code> tool, or the <code>config://vault</code> resource.</p>
+<h2 id="what-the-metadata-means">What the metadata means<a class="headerlink" href="#what-the-metadata-means" title="Permanent link">&para;</a></h2>
+<p>On a recognised bundle, the server reads a few OKF frontmatter families and surfaces them in <code>search</code>, <code>read</code>, and <code>get_context</code> results under an <code>okf</code> key:</p>
+<ul>
+<li><strong>Type</strong>: the free-text <code>type</code> field, such as <code>Playbook</code>, <code>Metric</code>, or <code>Reference</code>.</li>
+<li><strong>Lifecycle</strong>: <code>status</code> is one of <code>draft</code>, <code>stable</code>, or <code>deprecated</code>. A note with no <code>status</code> is treated as <code>stable</code>. <code>stale_after: YYYY-MM-DD</code> marks a note stale once that date passes.</li>
+<li><strong>Trust tier</strong>: derived from the <code>verified</code> list. A note verified by a person (<code>by: human:...</code>) is <code>human-reviewed</code>; a note verified only by a process is <code>machine-confirmed</code>; an unverified note is <code>unverified</code>.</li>
+<li><strong>Sources</strong>: the <code>sources</code> provenance list, surfaced in full on <code>read</code> and as a count on search hits.</li>
+</ul>
+<p>You can filter on these dimensions. <code>search</code> and <code>list_documents</code> accept <code>status</code>, <code>stale</code>, <code>trust_tier</code>, and <code>type</code> filters, so <code>{"stale": "true"}</code> or <code>{"status": "deprecated"}</code> builds a triage listing. See the <a href="../../tools/">tools reference</a> for the full filter set.</p>
+<h2 id="frontmatter-fields">Frontmatter fields<a class="headerlink" href="#frontmatter-fields" title="Permanent link">&para;</a></h2>
+<p>A conformant note needs only a non-empty <code>type</code>. Everything else is optional but recommended:</p>
+<div class="highlight"><pre><span></span><code><span class="nn">---</span>
+<span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Playbook</span>
+<span class="nt">title</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Onboarding a new teammate</span>
+<span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Step-by-step setup for the first week.</span>
+<span class="nt">tags</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">process</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">people</span><span class="p p-Indicator">]</span>
+<span class="nt">status</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">stable</span>
+<span class="nt">stale_after</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2027-01-01</span>
+<span class="nt">sources</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">resource</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://example.com/handbook</span>
+<span class="w">    </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">handbook</span>
+<span class="nt">verified</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">by</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">human:alex</span>
+<span class="w">    </span><span class="nt">at</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2026-08-01</span>
+<span class="nn">---</span>
+</code></pre></div>
+<h2 id="migrating-an-existing-vault">Migrating an existing vault<a class="headerlink" href="#migrating-an-existing-vault" title="Permanent link">&para;</a></h2>
+<p>Adoption is incremental. A note is either conformant or not, and the server tolerates a mix, so you can convert a vault gradually rather than in one step. The recommended order is a ratchet: declare early so new notes are written correctly, then converge the backlog.</p>
+<h3 id="1-audit">1. Audit<a class="headerlink" href="#1-audit" title="Permanent link">&para;</a></h3>
+<p>Run the <code>okf_validate</code> tool to see where the vault stands. It reports conformance as a degree rather than a pass or fail. The report gives the conformant count out of the total, alongside a per-rule breakdown with example paths (notes missing a <code>type</code>, unknown <code>status</code> values, and the like). The audit reads from disk, so it works before you declare anything. Use it to decide whether to start.</p>
+<h3 id="2-declare">2. Declare<a class="headerlink" href="#2-declare" title="Permanent link">&para;</a></h3>
+<p>Add <code>okf_version: "0.2"</code> to the root <code>index.md</code> frontmatter. From this point the server annotates results, the filters work, and the agent receives guidance to keep OKF conventions when it edits. Declaring early means every new note is authored conformantly while you work through the backlog.</p>
+<h3 id="3-enrich">3. Enrich<a class="headerlink" href="#3-enrich" title="Permanent link">&para;</a></h3>
+<p>Backfill the missing metadata. This is where most of the work is, and an agent can do it note by note. For each note it proposes a <code>type</code> from the content and fills in the <code>title</code> and <code>description</code>. Approve the changes in batches, then re-run <code>okf_validate</code> to watch the conformant count climb.</p>
+<h3 id="4-mechanical-transforms">4. Mechanical transforms<a class="headerlink" href="#4-mechanical-transforms" title="Permanent link">&para;</a></h3>
+<p>Three tools handle the changes you should not make by hand. They are write tools, so they are hidden in read-only mode and when <code>OKF_MODE</code> is <code>off</code>, and on a git-backed vault each change is committed.</p>
+<ul>
+<li><strong><code>okf_convert_links</code></strong> rewrites <code>[[wikilinks]]</code> as the root-absolute markdown links OKF recommends, such as <code>[text](/guides/note.md)</code>. Only links whose target exists are converted, so your link graph is preserved exactly. Unresolvable wikilinks are left alone and reported. You can write in either link style day to day; run this before sharing the bundle.</li>
+<li><strong><code>okf_generate_index</code></strong> writes a folder's <code>index.md</code> as a listing of the notes directly in that folder, plus a pointer into each subfolder's own <code>index.md</code>. It draws the description from each note's frontmatter and lists one level at a time, so a nested bundle stays navigable rather than flattening into one long page. It preserves existing frontmatter, so regenerating the root <code>index.md</code> keeps your <code>okf_version</code> declaration.</li>
+<li><strong><code>okf_seed_log</code></strong> creates a <code>log.md</code> change history from the vault's git commits, newest first. The <code>folder</code> argument both places the log and scopes its content: seeding a folder includes only the commits that touched that subtree, while seeding the bundle root includes the whole vault's history. It refuses to overwrite an existing <code>log.md</code>, so a hand-maintained history is safe.</li>
+</ul>
+<h2 id="the-enforced-write-layer">The enforced write layer<a class="headerlink" href="#the-enforced-write-layer" title="Permanent link">&para;</a></h2>
+<p>The steps above keep a bundle conformant by convention. The enforced write layer makes the server keep two of those fields correct on its own. Turn it on by setting <code>MARKDOWN_VAULT_MCP_OKF_WRITE=true</code>. It requires <code>OKF_MODE</code> to be <code>auto</code> or <code>on</code>; pairing it with <code>OKF_MODE=off</code> is a configuration error, since there is nothing to enforce. When the flag is off the write path is untouched, so an ordinary vault behaves exactly as before.</p>
+<p>With the layer on, and only while the vault is an active OKF bundle, every <code>write</code> and <code>edit</code> does two things to the note that lands:</p>
+<ul>
+<li><strong>Stamps provenance.</strong> The server writes <code>generated: {by, at}</code> describing the bytes it just saved. <code>at</code> is the write date. <code>by</code> is <code>human:&lt;subject&gt;</code> when the caller is authenticated, and a tool actor such as <code>markdown-vault-mcp/1.4.0</code> otherwise. Any existing <code>generated</code> value is replaced.</li>
+<li><strong>Invalidates prior review.</strong> A content change means an earlier human review no longer describes the current note, so the server clears <code>verified</code>. This fires on any content-changing write, including an edit that touches only a frontmatter line. A <code>rename</code> moves the file without changing its content, so it leaves both fields alone.</li>
+</ul>
+<p>The one-shot migration transforms above (<code>okf_convert_links</code>, <code>okf_generate_index</code>, <code>okf_seed_log</code>) are exempt: a mechanical rewrite does not re-stamp provenance or discard a human attestation.</p>
+<h3 id="recording-a-human-review">Recording a human review<a class="headerlink" href="#recording-a-human-review" title="Permanent link">&para;</a></h3>
+<p>Enabling the layer also exposes the <a href="../../tools/#okf_verify"><code>okf_verify</code></a> tool. Call it on a note you have reviewed and it appends a <code>{by: human:&lt;subject&gt;, at}</code> entry to that note's <code>verified</code> list, which promotes the note's trust tier to <code>human-reviewed</code>. The verification write is exempt from the invalidation above, so attesting a note does not immediately clear the attestation you just added.</p>
+<p>One subtlety is worth understanding before you rely on the <code>human-reviewed</code> tier. The authenticated subject is <em>whose token</em> made the call, not proof that a person read the note. When an agent holds your token and attribution rests on the token alone, the model could promote a note to <code>human-reviewed</code> on its own, and the tier would mean nothing. <code>MARKDOWN_VAULT_MCP_OKF_VERIFY</code> controls how the tool guards against that. It applies only when <code>OKF_WRITE</code> is on. Setting it to a non-default value with the layer off is a configuration error, because the tool is hidden and the setting would have no effect.</p>
+<ul>
+<li><strong><code>elicit</code></strong> (the default) makes <code>okf_verify</code> ask you to confirm the review through an MCP <a href="https://modelcontextprotocol.io/specification/2025-06-18/client/elicitation">elicitation</a>, a prompt your client shows you, and it writes the <code>verified</code> entry only when you answer yes. It fails closed. When your client cannot show the prompt or you decline it, the call returns a tool error and writes nothing. A model cannot answer the prompt on your behalf, so a headless agent with no human present can never produce a <code>human-reviewed</code> entry. The recorded subject is your authenticated identity when the server has auth, or <code>local</code> when it does not.</li>
+<li><strong><code>off</code></strong> hides the tool entirely. Use this when reviews are recorded only by tooling outside the server (a CLI step, a git hook, or a CI job that writes <code>verified</code> directly) and you want no in-session path to the tier at all.</li>
+<li><strong><code>trust-auth</code></strong> is the original behaviour: attribute to the authenticated caller with no confirmation, and refuse when the server runs with no auth. Choose it only when the sole caller of <code>okf_verify</code> is a human-driven interface rather than an agent.</li>
+</ul>
+<p>Whichever mode you pick, <code>human-reviewed</code> means a person deliberately confirmed the review, not that the note is provably correct. Someone can still rubber-stamp a note. The tier promises a deliberate human act rather than diligence, so treat it as one signal instead of a guarantee.</p>
+<h3 id="keeping-logmd-and-indexmd-current">Keeping <code>log.md</code> and <code>index.md</code> current<a class="headerlink" href="#keeping-logmd-and-indexmd-current" title="Permanent link">&para;</a></h3>
+<p>With the layer on, the server also maintains a folder's reserved files as a side effect of writing into it. After a successful <code>write</code> or <code>edit</code> on a note, it appends a dated <code>**Update**</code> bullet to that folder's <code>log.md</code> (creating the log, and the day's <code>## YYYY-MM-DD</code> section, when needed) and regenerates the folder's <code>index.md</code> listing so a new note shows up without a manual step. These are the guaranteed versions of the upkeep the advisory layer otherwise asks the agent to do by hand.</p>
+<p>A few boundaries keep this predictable. Maintenance runs only for content writes on an active bundle; a <code>rename</code> or <code>delete</code> does not trigger it, and neither does a write whose target is itself a reserved file (so editing <code>index.md</code> by hand is left alone). The <code>okf_verify</code> tool and the one-shot migration transforms are exempt, so an attestation or a mechanical rewrite does not churn the reserved files. Only the folder directly containing the written note is refreshed: if a write creates a brand-new subfolder, its pointer in the parent <code>index.md</code> appears on the next write into that parent. A failure to update a reserved file is logged and skipped; it never fails or rolls back the note write that triggered it.</p>
+<p>Two costs come with this upkeep, and they are the price of the guarantee rather than bugs. Each <code>write</code> or <code>edit</code> now waits for the search index to catch up before it regenerates <code>index.md</code>, so that a just-created note is listed; on a busy vault or with a slow embedding backend this adds latency to the write, bounded at ten seconds before it proceeds with a best-effort listing. And because the <code>log.md</code> and <code>index.md</code> updates are ordinary writes, a git-backed vault records them as their own commits, so one logical "save a note" call can produce up to three commits: one for the note and one for each reserved file it refreshes. Turn <code>OKF_WRITE</code> off if you want the plain single-write behaviour and prefer to maintain the reserved files yourself.</p>
+<h2 id="using-okf-with-para-or-zettelkasten">Using OKF with PARA or Zettelkasten<a class="headerlink" href="#using-okf-with-para-or-zettelkasten" title="Permanent link">&para;</a></h2>
+<p>OKF composes with the <a href="../para/">PARA</a> and <a href="../zettelkasten/">Zettelkasten</a> methods. They organise where notes live and how work flows; OKF describes what each note is. A PARA or Zettelkasten vault can also be an OKF bundle. Three points of overlap matter (each method's guide has a matching section from its own angle: <a href="../para/#using-para-with-okf">Using PARA with OKF</a>, <a href="../zettelkasten/#using-zettelkasten-with-okf">Using Zettelkasten with OKF</a>):</p>
+<ul>
+<li><strong>Status vocabulary</strong>: PARA uses <code>status</code> for workflow state (<code>active</code>, <code>archived</code>), while OKF uses it for lifecycle (<code>draft</code>, <code>stable</code>, <code>deprecated</code>). These mean different things, so keep PARA's workflow state in its own frontmatter key and reserve <code>status</code> for OKF lifecycle. OKF preserves any extra keys you add.</li>
+<li><strong>Untyped inbox notes</strong>: PARA's inbox holds quick captures that are typed later. Give them a placeholder <code>type: Capture</code> so they are conformant from the start, and let triage set the real type.</li>
+<li><strong>Wikilinks</strong>: write in whichever link style you prefer. The server resolves both, and <code>okf_convert_links</code> produces the OKF link style when you are ready to share the bundle.</li>
+</ul>
+<h2 id="exporting-a-bundle">Exporting a bundle<a class="headerlink" href="#exporting-a-bundle" title="Permanent link">&para;</a></h2>
+<p>When you want a conformant copy to share or hand to other OKF tooling, download one through the standard <code>create_download_link</code> tool with a bundle reference rather than a file path:</p>
+<ul>
+<li><code>create_download_link</code> with <code>ref="okf-bundle"</code> returns a one-time URL for a zip of the whole vault.</li>
+<li><code>create_download_link</code> with <code>ref="okf-bundle:guides"</code> scopes the zip to a folder subtree.</li>
+</ul>
+<p>The export reads from the live vault and never changes it. Wikilinks become the root-absolute markdown links OKF recommends. Convention files (<code>_conventions.md</code>) and the template folder are left out, while the reserved <code>index.md</code> and <code>log.md</code> stay in. Non-conformant notes appear as they are, so the archive is a faithful snapshot. Run <code>okf_validate</code> for the residual conformance gaps; the archive itself carries no gap report.</p>
+<p>Bundle export needs an HTTP or SSE transport with <code>MARKDOWN_VAULT_MCP_BASE_URL</code> set, the same requirement as any transfer link, and it is unavailable when <code>OKF_MODE</code> is <code>off</code>. A git-backed vault also remains a shareable bundle on its own: the repository is an interchange format.</p>
 
 
 

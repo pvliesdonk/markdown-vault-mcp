@@ -25,6 +25,7 @@ markdown-vault-mcp is a generic markdown vault MCP server with FTS5 full-text se
 - [Research Workflows](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/research-workflows/index.md): Research workflows (seed → ground → absorb → interconnect → produce, with optional scholar-mcp integration)
 - [Zettelkasten](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/zettelkasten/index.md): Zettelkasten workflow (fleeting → literature → permanent notes, MOCs, graph navigation)
 - [PARA](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/para/index.md): PARA workflow (Projects/Areas/Resources/Archive with triage, kickoff, and weekly review prompts)
+- [Open Knowledge Format](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/okf/index.md): Open Knowledge Format (OKF) support and migrating a vault into the format
 - [MCP Apps](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/mcp-apps/index.md): MCP Apps — Context Card, Graph Explorer, Vault Browser, and Note Preview views
 - [Transfer Links](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/transfer-links/index.md): One-time transfer links — capability-URL download and upload without inflating LLM context
 - [Claude Code Plugin](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/claude-code-plugin/index.md): Claude Code plugin — install via /plugin marketplace

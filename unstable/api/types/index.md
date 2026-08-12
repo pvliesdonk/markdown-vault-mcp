@@ -397,18 +397,26 @@ Attributes:
 
 ## Callbacks
 
-**`WriteCallback`**
+**`WriteOperation`**
 
-Type alias for the `on_write` callback passed to `Vault`. Called after each successful write operation (write, edit, delete, rename).
+Type alias for the kind of write operation reported to callbacks. `WriteCallback` and the `op` argument below both reference it.
 
 ```
-WriteCallback = Callable[[Path, str, Literal["write", "edit", "delete", "rename"]], None]
+WriteOperation = Literal["write", "edit", "delete", "rename"]
+```
+
+**`WriteCallback`**
+
+Type alias for the `on_write` callback passed to `Vault`. Called after each successful write operation.
+
+```
+WriteCallback = Callable[[Path, str, WriteOperation], None]
 ```
 
 Arguments received by the callback:
 
-| Argument  | Type           | Description                                                        |
-| --------- | -------------- | ------------------------------------------------------------------ |
-| `path`    | `Path`         | Absolute path of the modified file                                 |
-| `content` | `str`          | New file content (empty string for binary attachments and deletes) |
-| `op`      | `Literal[...]` | Operation type: `"write"`, `"edit"`, `"delete"`, or `"rename"`     |
+| Argument  | Type             | Description                                                        |
+| --------- | ---------------- | ------------------------------------------------------------------ |
+| `path`    | `Path`           | Absolute path of the modified file                                 |
+| `content` | `str`            | New file content (empty string for binary attachments and deletes) |
+| `op`      | `WriteOperation` | Which write operation fired (see `WriteOperation` above)           |

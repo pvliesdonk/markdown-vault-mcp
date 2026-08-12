@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
     
     
       
@@ -31,7 +31,7 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
       
         
         <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
@@ -914,6 +914,34 @@
     
   
     PARA
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/okf/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Open Knowledge Format
   
 
     
@@ -2525,7 +2553,7 @@ token-dense batch that still exceeds it is skipped at embed time).</p>
 
 
 <h2 id="markdown_vault_mcp.providers.OllamaProvider" class="doc doc-heading">
-              <code class="highlight language-python"><span class="n">OllamaProvider</span><span class="p">(</span><span class="n">host</span><span class="p">,</span> <span class="n">model</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">cpu_only</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span></code>
+              <code class="highlight language-python"><span class="n">OllamaProvider</span><span class="p">(</span><span class="n">host</span><span class="p">,</span> <span class="n">model</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">cpu_only</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="mf">30.0</span><span class="p">)</span></code>
 
 <a href="#markdown_vault_mcp.providers.OllamaProvider" class="headerlink" title="Permanent link">&para;</a></h2>
 
@@ -2605,6 +2633,22 @@ and the <code>/api/show</code> context-length probe.</p>
                   <code>False</code>
             </td>
           </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>timeout</code>
+            </td>
+            <td>
+                  <code><span title="float">float</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Per-request timeout in seconds for HTTP calls to Ollama.</p>
+              </div>
+            </td>
+            <td>
+                  <code>30.0</code>
+            </td>
+          </tr>
       </tbody>
     </table>
 
@@ -2668,6 +2712,22 @@ and the <code>/api/show</code> context-length probe.</p>
             </td>
             <td>
                   <code>False</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>timeout</code>
+            </td>
+            <td>
+                  <code><span title="float">float</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Per-request timeout in seconds for HTTP calls to Ollama.</p>
+              </div>
+            </td>
+            <td>
+                  <code>30.0</code>
             </td>
           </tr>
       </tbody>
@@ -2901,7 +2961,7 @@ only when <em>cpu_only</em> was requested.</p>
 
 
 <h2 id="markdown_vault_mcp.providers.OpenAIProvider" class="doc doc-heading">
-              <code class="highlight language-python"><span class="n">OpenAIProvider</span><span class="p">(</span><span class="n">api_key</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">base_url</span><span class="o">=</span><span class="n">_BASE_URL</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="n">_MODEL</span><span class="p">)</span></code>
+              <code class="highlight language-python"><span class="n">OpenAIProvider</span><span class="p">(</span><span class="n">api_key</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">base_url</span><span class="o">=</span><span class="n">_BASE_URL</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="n">_MODEL</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="mf">30.0</span><span class="p">)</span></code>
 
 <a href="#markdown_vault_mcp.providers.OpenAIProvider" class="headerlink" title="Permanent link">&para;</a></h2>
 
@@ -2974,6 +3034,22 @@ only when <em>cpu_only</em> was requested.</p>
                   <code><span title="markdown_vault_mcp.providers.OpenAIProvider._MODEL">_MODEL</span></code>
             </td>
           </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>timeout</code>
+            </td>
+            <td>
+                  <code><span title="float">float</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Per-request timeout in seconds for the underlying SDK client.</p>
+              </div>
+            </td>
+            <td>
+                  <code>30.0</code>
+            </td>
+          </tr>
       </tbody>
     </table>
 
@@ -3037,6 +3113,22 @@ only when <em>cpu_only</em> was requested.</p>
             </td>
             <td>
                   <code><span title="markdown_vault_mcp.providers.OpenAIProvider._MODEL">_MODEL</span></code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>timeout</code>
+            </td>
+            <td>
+                  <code><span title="float">float</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Per-request timeout in seconds for the underlying SDK client.</p>
+              </div>
+            </td>
+            <td>
+                  <code>30.0</code>
             </td>
           </tr>
       </tbody>
@@ -3571,7 +3663,7 @@ that field is <code>None</code>, probes for available providers in this order:</
                 <code>config</code>
             </td>
             <td>
-                  <code><a class="autorefs autorefs-internal" title="ProjectConfig(server=ServerConfig(), source_dir=Path('/data/vault'), read_only=True, server_name='markdown-vault-mcp', instructions=None, git=GitConfig(), indexing=IndexingConfig(), embeddings=EmbeddingsConfig(), search=SearchConfig(), summarize=SummarizeConfig(), sync=SyncConfig(), content=ContentConfig(), transfer=TransferConfig(), disable_apps_ui=False)
+                  <code><a class="autorefs autorefs-internal" title="ProjectConfig(server=ServerConfig(), source_dir=Path('/data/vault'), read_only=True, server_name='markdown-vault-mcp', instructions=None, disable_apps_ui=False, index_path=None, state_path=None, embeddings_path=None, indexed_fields=None, required_fields=None, exclude=None, title_field='title', searchable_fields=None, templates_folder='_templates', prompts_folder=None, conventions_file='_conventions.md', okf_mode='auto', okf_write=False, okf_verify='elicit', attachment_extensions=None, max_attachment_size_mb=1.0, max_note_read_bytes=262144, chunks_per_file=2, snippet_words=200, length_downweight_alpha=0.25, max_chunk_words=400, max_chunk_chars=None, chunk_overlap_words=40, folder_weights=None, fts_weights=None, embedding_provider=None, ollama_host='http://localhost:11434', openai_api_key=None, ollama_model='nomic-embed-text', ollama_cpu_only=False, openai_base_url='https://api.openai.com/v1', openai_embedding_model='text-embedding-3-small', fastembed_model='BAAI/bge-small-en-v1.5', fastembed_cache_dir=None, embed_context=False, embed_timeout_s=30.0, embedding_batch_size=4, git_repo_url=None, git_token=None, git_username='x-access-token', git_pull_interval_s=600, git_push_delay_s=30.0, git_commit_name='markdown-vault-mcp', git_commit_email='noreply@markdown-vault-mcp', git_commit_name_claim=None, git_commit_email_claim=None, git_lfs=True, file_watcher=True, file_watcher_debounce_s=2.0, file_watcher_root_floor=True, github_webhook_secret=None, summarize_provider=None, summarize_openai_api_key=None, summarize_openai_base_url=None, summarize_openai_model='gpt-5-mini', summarize_max_tokens=8192, summarize_max_notes=50, summarize_max_input_chars=200000, summarize_timeout=120.0, summarize_inline_timeout=30.0, transfer=TransferConfig())
 
   
       dataclass
@@ -3712,7 +3804,7 @@ unrecognised value.</p>
       <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.suggest", "search.highlight", "content.code.copy", "content.tabs.link"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
     
     
-      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
       
         <script src="../../javascripts/config-wizard/wizard.js" type="module"></script>
       

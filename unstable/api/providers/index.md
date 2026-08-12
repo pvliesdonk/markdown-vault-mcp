@@ -73,7 +73,7 @@ Returns:
 | ------------------- | ---------------------------------------------- |
 | `list[list[float]]` | List of embedding vectors, one per input text. |
 
-## `OllamaProvider(host, model, *, cpu_only=False)`
+## `OllamaProvider(host, model, *, cpu_only=False, timeout=30.0)`
 
 Bases: `EmbeddingProvider`
 
@@ -83,21 +83,23 @@ Embeds via Ollama's OpenAI-compatible endpoint (`{host}/v1`) through the shared 
 
 Parameters:
 
-| Name       | Type   | Description                                                                                       | Default    |
-| ---------- | ------ | ------------------------------------------------------------------------------------------------- | ---------- |
-| `host`     | `str`  | Base URL of the Ollama server.                                                                    | *required* |
-| `model`    | `str`  | Model name to use for embeddings.                                                                 | *required* |
-| `cpu_only` | `bool` | When True, request CPU-only inference (sets num_gpu=0 in the Ollama options payload; native API). | `False`    |
+| Name       | Type    | Description                                                                                       | Default    |
+| ---------- | ------- | ------------------------------------------------------------------------------------------------- | ---------- |
+| `host`     | `str`   | Base URL of the Ollama server.                                                                    | *required* |
+| `model`    | `str`   | Model name to use for embeddings.                                                                 | *required* |
+| `cpu_only` | `bool`  | When True, request CPU-only inference (sets num_gpu=0 in the Ollama options payload; native API). | `False`    |
+| `timeout`  | `float` | Per-request timeout in seconds for HTTP calls to Ollama.                                          | `30.0`     |
 
 Initialise OllamaProvider with explicit parameters.
 
 Parameters:
 
-| Name       | Type   | Description                            | Default    |
-| ---------- | ------ | -------------------------------------- | ---------- |
-| `host`     | `str`  | Base URL of the Ollama server.         | *required* |
-| `model`    | `str`  | Model name to use for embeddings.      | *required* |
-| `cpu_only` | `bool` | When True, request CPU-only inference. | `False`    |
+| Name       | Type    | Description                                              | Default    |
+| ---------- | ------- | -------------------------------------------------------- | ---------- |
+| `host`     | `str`   | Base URL of the Ollama server.                           | *required* |
+| `model`    | `str`   | Model name to use for embeddings.                        | *required* |
+| `cpu_only` | `bool`  | When True, request CPU-only inference.                   | `False`    |
+| `timeout`  | `float` | Per-request timeout in seconds for HTTP calls to Ollama. | `30.0`     |
 
 Raises:
 
@@ -147,7 +149,7 @@ Raises:
 | -------------- | -------------------------------- |
 | `RuntimeError` | If the embeddings request fails. |
 
-## `OpenAIProvider(api_key, *, base_url=_BASE_URL, model=_MODEL)`
+## `OpenAIProvider(api_key, *, base_url=_BASE_URL, model=_MODEL, timeout=30.0)`
 
 Bases: `EmbeddingProvider`
 
@@ -155,21 +157,23 @@ Embedding provider backed by the OpenAI-compatible Embeddings API.
 
 Parameters:
 
-| Name       | Type  | Description                            | Default     |
-| ---------- | ----- | -------------------------------------- | ----------- |
-| `api_key`  | `str` | OpenAI API key for authentication.     | *required*  |
-| `base_url` | `str` | Base URL for an OpenAI-compatible API. | `_BASE_URL` |
-| `model`    | `str` | Embedding model name.                  | `_MODEL`    |
+| Name       | Type    | Description                                                   | Default     |
+| ---------- | ------- | ------------------------------------------------------------- | ----------- |
+| `api_key`  | `str`   | OpenAI API key for authentication.                            | *required*  |
+| `base_url` | `str`   | Base URL for an OpenAI-compatible API.                        | `_BASE_URL` |
+| `model`    | `str`   | Embedding model name.                                         | `_MODEL`    |
+| `timeout`  | `float` | Per-request timeout in seconds for the underlying SDK client. | `30.0`      |
 
 Initialise OpenAIProvider with an explicit API key.
 
 Parameters:
 
-| Name       | Type  | Description                            | Default     |
-| ---------- | ----- | -------------------------------------- | ----------- |
-| `api_key`  | `str` | OpenAI API key for authentication.     | *required*  |
-| `base_url` | `str` | Base URL for an OpenAI-compatible API. | `_BASE_URL` |
-| `model`    | `str` | Embedding model name.                  | `_MODEL`    |
+| Name       | Type    | Description                                                   | Default     |
+| ---------- | ------- | ------------------------------------------------------------- | ----------- |
+| `api_key`  | `str`   | OpenAI API key for authentication.                            | *required*  |
+| `base_url` | `str`   | Base URL for an OpenAI-compatible API.                        | `_BASE_URL` |
+| `model`    | `str`   | Embedding model name.                                         | `_MODEL`    |
+| `timeout`  | `float` | Per-request timeout in seconds for the underlying SDK client. | `30.0`      |
 
 Raises:
 

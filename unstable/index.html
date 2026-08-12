@@ -21,7 +21,7 @@
       
       
       <link rel="icon" href="assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
     
     
       
@@ -29,7 +29,7 @@
       
     
     
-      <link rel="stylesheet" href="assets/stylesheets/main.484c7ddc.min.css">
+      <link rel="stylesheet" href="assets/stylesheets/main.ec1eaa64.min.css">
       
         
         <link rel="stylesheet" href="assets/stylesheets/palette.ab4e12ef.min.css">
@@ -1084,6 +1084,34 @@
   
   
     <li class="md-nav__item">
+      <a href="guides/okf/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Open Knowledge Format
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="guides/mcp-apps/" class="md-nav__link">
         
   
@@ -1933,13 +1961,14 @@
 <li><strong>Hybrid search</strong>: Reciprocal Rank Fusion combining FTS5 and vector results</li>
 <li><strong>Frontmatter-aware</strong>: indexes YAML frontmatter fields, supports required field enforcement</li>
 <li><strong>Incremental reindexing</strong>: hash-based change detection, only re-processes modified files</li>
-<li><strong>Write operations</strong>: create, edit, delete, rename documents with automatic index updates</li>
+<li><strong>Write operations</strong>: create, edit, append to, delete, rename documents with automatic index updates</li>
 <li><strong>Folder conventions</strong>: per-folder <code>_conventions.md</code> files carry your authoring rules, surfaced to LLM clients at write time via <a href="tools/#get_conventions"><code>get_conventions</code></a> and in <code>write</code>/<code>edit</code> results</li>
+<li><strong><a href="guides/okf/">Open Knowledge Format</a></strong>: recognizes OKF bundles (an <code>okf_version</code> declaration in the root <code>index.md</code>) and annotates search/read results with each note's type, lifecycle status, staleness, and trust tier; those dimensions are filterable and nudge ranking, and the server ships an <code>okf_validate</code> audit, one-shot migration transforms, an optional enforced write layer (provenance + verification + <code>log.md</code>/<code>index.md</code> upkeep), and a downloadable bundle export</li>
 <li><strong>Attachment support</strong>: read, write, delete, and list non-markdown files (PDFs, images, and so on)</li>
 <li><strong>LLM summarization</strong>: optional <code>summarize</code> tool condenses a note, a set of notes, or a subtree with a language model via any OpenAI-compatible endpoint (OpenAI, Ollama, Anthropic, vLLM, and others); the synthesis references the individual source notes by path. Gated on <code>OPENAI_API_KEY</code> or a configured base URL.</li>
 <li><strong>Git integration</strong>: optional auto-commit and push on every write via <code>GIT_ASKPASS</code></li>
 <li><strong>OIDC authentication</strong>: optional token-based auth for HTTP deployments</li>
-<li><strong>MCP tools</strong>: search, read, write, edit, delete, rename, link graph analysis, and admin operations</li>
+<li><strong>MCP tools</strong>: search, read, write, edit, append, delete, rename, link graph analysis, and admin operations</li>
 <li><strong>MCP resources</strong>: vault configuration, statistics, tags, folders, document outlines, similar notes, and recent notes</li>
 <li><strong>MCP prompts</strong>: summarize, research, discuss, create from template, compare, and find related notes</li>
 <li><strong>MCP Apps</strong>: browser-based views (Context Card, Graph Explorer, Vault Browser, and Note Preview) for clients supporting the MCP Apps protocol</li>
@@ -2061,7 +2090,7 @@ docker<span class="w"> </span>compose<span class="w"> </span>up<span class="w"> 
       <script id="__config" type="application/json">{"annotate": null, "base": ".", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.suggest", "search.highlight", "content.code.copy", "content.tabs.link"], "search": "assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
     
     
-      <script src="assets/javascripts/bundle.79ae519e.min.js"></script>
+      <script src="assets/javascripts/bundle.d7400e89.min.js"></script>
       
         <script src="javascripts/config-wizard/wizard.js" type="module"></script>
       

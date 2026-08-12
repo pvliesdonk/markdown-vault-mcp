@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
     
     
       
@@ -31,7 +31,7 @@
       
     
     
-      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
       
         
         <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
@@ -570,6 +570,17 @@
       Table of contents
     </label>
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#tool-visibility" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tool visibility
+      
+    </span>
+  </a>
+  
+</li>
       
         <li class="md-nav__item">
   <a href="#core" class="md-nav__link">
@@ -1163,6 +1174,34 @@
     
   
     PARA
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/okf/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Open Knowledge Format
   
 
     
@@ -1897,6 +1936,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#tool-visibility" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tool visibility
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#core" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2131,6 +2181,19 @@ questions and copy a ready-made <code>.env</code>, Docker, or Claude config.</p>
 <p class="admonition-title">Configuration is validated at startup</p>
 <p>Numeric variables are validated against the <strong>Type</strong> column below (such as <code>int ≥ 1</code>). A non-numeric or out-of-range value makes the server <strong>fail fast</strong> at startup with a <code>ConfigurationError</code> naming the offending setting, rather than silently falling back to a default. A typo in an env var surfaces immediately instead of producing surprising behavior later.</p>
 </div>
+<h2 id="tool-visibility">Tool visibility<a class="headerlink" href="#tool-visibility" title="Permanent link">&para;</a></h2>
+<p>Operators can trim which tools this instance exposes. Each variable takes a
+comma-separated list of explicit tool names:</p>
+<ul>
+<li><code>MARKDOWN_VAULT_MCP_TOOLS_ALLOW</code>: expose <em>only</em> the listed tools.</li>
+<li><code>MARKDOWN_VAULT_MCP_TOOLS_DENY</code>: hide the listed tools.</li>
+</ul>
+<p>Hidden tools disappear from <code>tools/list</code> and are rejected on <code>tools/call</code>;
+resources and prompts are unaffected. Setting both variables, or setting one
+to a value with no names in it, is a startup error. A name matching no
+registered tool is ignored, but an allowlist that matches nothing logs a
+startup <code>WARNING</code> since the instance then exposes zero tools. See
+<code>fastmcp-pvl-core</code>'s README for the full semantics.</p>
 <!-- DOMAIN-CONFIG-VARS-START -->
 <h2 id="core">Core<a class="headerlink" href="#core" title="Permanent link">&para;</a></h2>
 <table>
@@ -2234,6 +2297,27 @@ questions and copy a ready-made <code>.env</code>, Docker, or Claude config.</p>
 <td><code>_conventions.md</code></td>
 <td>No</td>
 <td>Filename of the per-folder <a href="../tools/#get_conventions">conventions files</a> surfaced to clients at write time. Must be a bare <code>.md</code> filename without glob characters (<code>*?[]</code>). Set to <code>none</code> to disable folder conventions. Convention files are excluded from the search index but stay readable; existing notes matching the name are removed from the index on the next boot reconcile. Note: setting <code>MARKDOWN_VAULT_MCP_INSTRUCTIONS</code> replaces the default server instructions entirely, including the sentence that points clients at <code>get_conventions</code>; mention conventions in your custom instructions if you rely on them.</td>
+</tr>
+<tr>
+<td><code>MARKDOWN_VAULT_MCP_OKF_MODE</code></td>
+<td>string</td>
+<td><code>auto</code></td>
+<td>No</td>
+<td><a href="https://github.com/GoogleCloudPlatform/knowledge-catalog">OKF (Open Knowledge Format)</a> read semantics. With <code>auto</code> (the default), read-side annotations (note type, lifecycle status, staleness, trust tier) switch on in <code>search</code>, <code>read</code>, <code>get_context</code>, and <code>stats</code> when the vault declares an <code>okf_version</code> field in its root <code>index.md</code> frontmatter. Use <code>off</code> to disable OKF semantics entirely, or <code>on</code> to force them for an undeclared vault. Annotations are read-only either way: this setting never changes write behavior. Note: setting <code>MARKDOWN_VAULT_MCP_INSTRUCTIONS</code> replaces the default server instructions entirely, including the OKF guidance sentence.</td>
+</tr>
+<tr>
+<td><code>MARKDOWN_VAULT_MCP_OKF_WRITE</code></td>
+<td>bool</td>
+<td><code>false</code></td>
+<td>No</td>
+<td>OKF enforced write layer. When <code>true</code> on an OKF-active vault, every <code>write</code> and <code>edit</code> stamps <code>generated: {by, at}</code> provenance and clears any <code>verified</code> attestation (a content change invalidates prior review); <code>rename</code> does not. The actor is <code>human:&lt;subject&gt;</code> when the caller is authenticated, otherwise a tool actor. On a content write it also keeps the affected folder's <code>log.md</code> and <code>index.md</code> current as secondary writes (failures are logged and skipped, never rolling back the note write). Enabling it also exposes the <a href="../tools/#okf_verify"><code>okf_verify</code></a> tool. Requires <code>OKF_MODE</code> to be <code>auto</code> or <code>on</code>; a <code>true</code> value with <code>OKF_MODE=off</code> is a configuration error. See the <a href="../guides/okf/#the-enforced-write-layer">OKF guide</a>.</td>
+</tr>
+<tr>
+<td><code>MARKDOWN_VAULT_MCP_OKF_VERIFY</code></td>
+<td>string</td>
+<td><code>elicit</code></td>
+<td>No</td>
+<td>How the <a href="../tools/#okf_verify"><code>okf_verify</code></a> tool confirms a human review. This applies only when <code>OKF_WRITE</code> is on, which gates the tool. With <code>elicit</code> (the default), the tool issues an MCP elicitation asking the human to confirm the review, and writes the <code>verified</code> entry only on an affirmative reply. It fails closed (a tool error, nothing written) when the client cannot elicit or the human declines, so a model that holds the human's token cannot self-attest a note as <code>human-reviewed</code>. Use <code>trust-auth</code> to attribute to the authenticated caller with no confirmation (refuses under auth mode <code>none</code>; safe only when the sole caller is a human-driven UI, not an agent), or <code>off</code> to hide the tool so <code>verified</code> is set only by external tooling. A non-default value with <code>OKF_WRITE</code> off is a configuration error. See the <a href="../guides/okf/#recording-a-human-review">OKF guide</a>.</td>
 </tr>
 </tbody>
 </table>
@@ -2422,6 +2506,18 @@ chronic backlog.</p>
 <td>Enrich each chunk's embedding input with the note title, the chunk heading, and (on the first chunk) the <code>SEARCHABLE_FIELDS</code> values, improving semantic recall for short or context-poor chunks. The raw note content on disk and in search snippets is unchanged. The active format is recorded in the vector sidecar, so flipping this (or changing <code>SEARCHABLE_FIELDS</code>) re-embeds the whole vault once on next startup</td>
 </tr>
 <tr>
+<td><code>MARKDOWN_VAULT_MCP_EMBED_TIMEOUT_S</code></td>
+<td>float</td>
+<td><code>30.0</code></td>
+<td>Per-request wall-clock budget in seconds for a single embedding HTTP call (OpenAI/Ollama). The local FastEmbed backend runs in-process with no network call and ignores this. CPU-only or large-model workloads may need 60-120 s; raise this if batches time out.</td>
+</tr>
+<tr>
+<td><code>MARKDOWN_VAULT_MCP_EMBEDDING_BATCH_SIZE</code></td>
+<td>int</td>
+<td><code>4</code></td>
+<td>Number of chunks sent per embedding request. Smaller batches shorten each request (useful under a tight timeout on slow models) at the cost of more round-trips.</td>
+</tr>
+<tr>
 <td><code>OLLAMA_HOST</code></td>
 <td>url</td>
 <td><code>http://localhost:11434</code></td>
@@ -2541,6 +2637,18 @@ chronic backlog.</p>
 <td>int</td>
 <td><code>200000</code></td>
 <td>Character budget of a single model request. A larger input is split into batches, each batch summarized, and the partial summaries combined (map-reduce), so this bounds request size, not coverage. Smaller values mean more model calls</td>
+</tr>
+<tr>
+<td><code>MARKDOWN_VAULT_MCP_SUMMARIZE_TIMEOUT</code></td>
+<td>float (s)</td>
+<td><code>120</code></td>
+<td>Per-request wall-clock budget for a single backend call. On timeout the tool fails with a clear message that says how to fit under the limit (narrow the request, or raise this) instead of running to the ~600 s default of the OpenAI SDK while the client abandons the request. Set it <strong>below</strong> your MCP client's request timeout</td>
+</tr>
+<tr>
+<td><code>MARKDOWN_VAULT_MCP_SUMMARIZE_INLINE_TIMEOUT</code></td>
+<td>float (s)</td>
+<td><code>30</code></td>
+<td>Inline deadline: a <code>summarize</code> call that runs longer is promoted to a background job (<code>{"status": "in_progress", "job_id": …}</code>) and retrieved later via <code>get_summary</code>, so the tool always responds promptly. Keep it comfortably below the client's request timeout; must be <code>&lt;=</code> <code>SUMMARIZE_TIMEOUT</code></td>
 </tr>
 </tbody>
 </table>
@@ -2786,7 +2894,8 @@ chronic backlog.</p>
 </div>
 <h2 id="one-time-transfer-links">One-Time Transfer Links<a class="headerlink" href="#one-time-transfer-links" title="Permanent link">&para;</a></h2>
 <p>Short-lived capability URLs for transferring vault files out-of-band (browser download or third-party service upload) without inflating the LLM context window. The <code>GET /transfer/{token}</code> route is mounted outside the auth middleware; the unguessable token is the authorization.</p>
-<p><code>MARKDOWN_VAULT_MCP_BASE_URL</code> is required for the transfer tools to function; it is used to construct the capability URL returned to the LLM. If <code>BASE_URL</code> is not set, calling <code>create_download_link</code> or <code>create_upload_link</code> raises an error.</p>
+<p>The capability-link machinery (the token store, the <code>/transfer/{token}</code> route, and the two tools) is provided by <code>fastmcp-pvl-core</code>. The token store is backed by the configured state backend (<code>MARKDOWN_VAULT_MCP_KV_STORE_URL</code>, on-disk by default), so live links survive a server restart.</p>
+<p><code>MARKDOWN_VAULT_MCP_BASE_URL</code> is required for the transfer tools; it is used to construct the capability URL returned to the LLM. When <code>BASE_URL</code> is not set, the transfer tools and the <code>/transfer/{token}</code> route are not registered.</p>
 <table>
 <thead>
 <tr>
@@ -2799,15 +2908,27 @@ chronic backlog.</p>
 <tbody>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_TRANSFER_TTL_DEFAULT_S</code></td>
-<td>int</td>
+<td>float</td>
 <td><code>3600</code></td>
 <td>Default token lifetime in seconds when the caller omits <code>ttl_seconds</code>. Clamped to <code>MARKDOWN_VAULT_MCP_TRANSFER_TTL_MAX_S</code></td>
 </tr>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_TRANSFER_TTL_MAX_S</code></td>
-<td>int</td>
+<td>float</td>
 <td><code>86400</code></td>
-<td>Maximum permitted TTL. Any <code>ttl_seconds</code> above this value is silently clamped to the ceiling</td>
+<td>Maximum permitted TTL. A requested <code>ttl_seconds</code> above this value is clamped to the ceiling</td>
+</tr>
+<tr>
+<td><code>MARKDOWN_VAULT_MCP_TRANSFER_GRACE_TTL_S</code></td>
+<td>float</td>
+<td><code>60</code></td>
+<td>Grace window in seconds after a successful transfer. The token's remaining lifetime shrinks to this, so a stalled or retried transfer can reclaim the link rather than be stranded by a spent one</td>
+</tr>
+<tr>
+<td><code>MARKDOWN_VAULT_MCP_TRANSFER_LEASE_S</code></td>
+<td>float</td>
+<td><code>60</code></td>
+<td>Reclaim window in seconds for an in-flight reservation. A crashed handler's token becomes claimable again once this lease lapses</td>
 </tr>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_TRANSFER_MAX_UPLOAD_BYTES</code></td>
@@ -2973,7 +3094,7 @@ chronic backlog.</p>
       <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.suggest", "search.highlight", "content.code.copy", "content.tabs.link"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
     
     
-      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
       
         <script src="../javascripts/config-wizard/wizard.js" type="module"></script>
       

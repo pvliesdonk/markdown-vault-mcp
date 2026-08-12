@@ -50,17 +50,17 @@ Restart Claude Code after setting the env var so the plugin picks it up.
 
 The plugin wires up the following env vars. Vars with a default are filled in when the shell variable is unset; vars marked *(empty)* stay blank when unset, which usually means "feature disabled" or "use the server's built-in default":
 
-| Env var                                 | Default                          | Description                                                                                                      |
-| --------------------------------------- | -------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `MARKDOWN_VAULT_MCP_SOURCE_DIR`         | *(required)*                     | Path to your vault directory                                                                                     |
-| `MARKDOWN_VAULT_MCP_READ_ONLY`          | `true`                           | Set to `false` to enable write/edit/delete/rename tools                                                          |
-| `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` | *(empty)*                        | Embedding backend (`fastembed`, `ollama`, `openai`); leave empty for keyword-only search                         |
-| `MARKDOWN_VAULT_MCP_EXCLUDE`            | `.obsidian/**,.trash/**,.git/**` | Comma-separated glob patterns to exclude from indexing                                                           |
-| `MARKDOWN_VAULT_MCP_GIT_REPO_URL`       | *(empty)*                        | Remote repository URL for git-backed vault sync; leave empty to disable git integration                          |
-| `MARKDOWN_VAULT_MCP_GIT_TOKEN`          | *(empty)*                        | Personal access token for the git remote; leave empty to disable git integration                                 |
-| `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH`    | *(empty)*                        | Base path for the embeddings `.npy` sidecar (runtime appends the suffix); leave empty to disable semantic search |
-| `MARKDOWN_VAULT_MCP_INDEX_PATH`         | *(empty)*                        | Override the FTS5 SQLite index file path; leave empty to use an in-memory index (rebuilt on every startup)       |
-| `OLLAMA_HOST`                           | `http://localhost:11434`         | Base URL for the Ollama API; only used when `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER=ollama`                       |
+| Env var                                 | Default                          | Description                                                                                                                                                           |
+| --------------------------------------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MARKDOWN_VAULT_MCP_SOURCE_DIR`         | *(required)*                     | Path to your vault directory                                                                                                                                          |
+| `MARKDOWN_VAULT_MCP_READ_ONLY`          | `true`                           | Set to `false` to enable the write tools (`write`, `edit`, `append`, `delete`, `rename`, `move_folder`, `fetch`, `git_sync`, the `okf_*` tools, `create_upload_link`) |
+| `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` | *(empty)*                        | Embedding backend (`fastembed`, `ollama`, `openai`); leave empty for keyword-only search                                                                              |
+| `MARKDOWN_VAULT_MCP_EXCLUDE`            | `.obsidian/**,.trash/**,.git/**` | Comma-separated glob patterns to exclude from indexing                                                                                                                |
+| `MARKDOWN_VAULT_MCP_GIT_REPO_URL`       | *(empty)*                        | Remote repository URL for git-backed vault sync; leave empty to disable git integration                                                                               |
+| `MARKDOWN_VAULT_MCP_GIT_TOKEN`          | *(empty)*                        | Personal access token for the git remote; leave empty to disable git integration                                                                                      |
+| `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH`    | *(empty)*                        | Base path for the embeddings `.npy` sidecar (runtime appends the suffix); leave empty to disable semantic search                                                      |
+| `MARKDOWN_VAULT_MCP_INDEX_PATH`         | *(empty)*                        | Override the FTS5 SQLite index file path; leave empty to use an in-memory index (rebuilt on every startup)                                                            |
+| `OLLAMA_HOST`                           | `http://localhost:11434`         | Base URL for the Ollama API; only used when `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER=ollama`                                                                            |
 
 The plugin also installs the **`vault-workflow` skill**, which gives Claude guidance on:
 

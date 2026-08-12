@@ -27,7 +27,7 @@ vault.index.reindex()
 
 Search, read, listing, table-of-contents, similarity, context, history/diff, and attachment reads.
 
-## `ReaderFacet(*, search_mgr, doc_mgr, git_query_mgr, require_built)`
+## `ReaderFacet(*, search_mgr, doc_mgr, git_query_mgr, require_built, okf_audit=None)`
 
 Read-only queries over the shared managers.
 
@@ -35,12 +35,31 @@ Hold the managers the read methods delegate to.
 
 Parameters:
 
-| Name            | Type                 | Description                                                    | Default    |
-| --------------- | -------------------- | -------------------------------------------------------------- | ---------- |
-| `search_mgr`    | `SearchManager`      | Search / list / similarity / context / recent / stats queries. | *required* |
-| `doc_mgr`       | `DocumentManager`    | Document and attachment reads, table-of-contents.              | *required* |
-| `git_query_mgr` | `GitQueryManager`    | Git history / diff reads.                                      | *required* |
-| `require_built` | `Callable[[], None]` | Index-readiness gate for the bucket-3 methods.                 | *required* |
+| Name            | Type                             | Description                                                    | Default                                                                                     |
+| --------------- | -------------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `search_mgr`    | `SearchManager`                  | Search / list / similarity / context / recent / stats queries. | *required*                                                                                  |
+| `doc_mgr`       | `DocumentManager`                | Document and attachment reads, table-of-contents.              | *required*                                                                                  |
+| `git_query_mgr` | `GitQueryManager`                | Git history / diff reads.                                      | *required*                                                                                  |
+| `require_built` | `Callable[[], None]`             | Index-readiness gate for the bucket-3 methods.                 | *required*                                                                                  |
+| `okf_audit`     | \`Callable\[[], OkfAuditReport\] | None\`                                                         | Bound OKF conformance audit (#962), or None when the composition root does not provide one. |
+
+### `okf_validate()`
+
+Run the OKF bundle-conformance audit (design §4; #962).
+
+Disk-based and index-independent: usable before the index is built and before the vault declares itself a bundle (the audit is the "should I declare?" tool of the migration ratchet).
+
+Returns:
+
+| Type             | Description       |
+| ---------------- | ----------------- |
+| `OkfAuditReport` | The audit report. |
+
+Raises:
+
+| Type           | Description                                                                              |
+| -------------- | ---------------------------------------------------------------------------------------- |
+| `RuntimeError` | If no audit callable was wired (direct facet construction without the composition root). |
 
 ### `search(query, *, limit=10, mode='keyword', filters=None, folder=None, chunks_per_file=None, snippet_words=None)`
 
@@ -109,17 +128,20 @@ Returns:
 | `A`  | \`DocumentMeta | None\`      |
 |      | \`DocumentMeta | None\`      |
 
-### `list_documents(*, folder=None, pattern=None, include_attachments=False)`
+### `list_documents(*, folder=None, pattern=None, include_attachments=False, filters=None)`
 
 List documents (and optionally attachments) in the vault.
 
+Delegates to :meth:`SearchManager.list`.
+
 Parameters:
 
-| Name                  | Type   | Description                                                                                                                                                                    | Default                                                                                            |
-| --------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
-| `folder`              | \`str  | None\`                                                                                                                                                                         | If provided, only return documents in this folder (and sub-folders).                               |
-| `pattern`             | \`str  | None\`                                                                                                                                                                         | Unix glob matched against the relative path using :func:fnmatch.fnmatch. Example: "Journal/\*.md". |
-| `include_attachments` | `bool` | When True, also return non-.md files that match the attachment allowlist. Each :class:~markdown_vault_mcp.types.AttachmentInfo entry includes kind="attachment" and mime_type. | `False`                                                                                            |
+| Name                  | Type             | Description                                                                                                                                                                    | Default                                                                                                                                                                                                    |
+| --------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `folder`              | \`str            | None\`                                                                                                                                                                         | If provided, only return documents in this folder (and sub-folders).                                                                                                                                       |
+| `pattern`             | \`str            | None\`                                                                                                                                                                         | Unix glob matched against the relative path using :func:fnmatch.fnmatch. Example: "Journal/\*.md".                                                                                                         |
+| `include_attachments` | `bool`           | When True, also return non-.md files that match the attachment allowlist. Each :class:~markdown_vault_mcp.types.AttachmentInfo entry includes kind="attachment" and mime_type. | `False`                                                                                                                                                                                                    |
+| `filters`             | \`dict[str, str] | None\`                                                                                                                                                                         | Optional {frontmatter_key: value} equality filters (AND semantics). On an active OKF bundle, status / stale / trust_tier carry OKF semantics. Any filter excludes attachments (they carry no frontmatter). |
 
 Returns:
 
@@ -264,7 +286,7 @@ Raises:
 
 ### `get_history(path=None, since=None, until=None, limit=20)`
 
-Return commits that touched a note, attachment, or the whole vault.
+Return commits that touched a note, attachment, folder, or the whole vault.
 
 When *path* is `None`, queries the full vault history. Returns an empty list for vaults whose source directory is not inside a git repository.
 
@@ -272,23 +294,24 @@ Parameters:
 
 | Name    | Type  | Description                                                               | Default                                                                                                                                                                                                                                 |
 | ------- | ----- | ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `path`  | \`str | None\`                                                                    | A .md note or a configured attachment (e.g. assets/x.png); None returns vault-wide history.                                                                                                                                             |
+| `path`  | \`str | None\`                                                                    | A .md note or a configured attachment (e.g. assets/x.png) scopes to that file; an existing directory (e.g. "guides") scopes to its subtree; None returns vault-wide history.                                                            |
 | `since` | \`str | None\`                                                                    | ISO 8601 datetime string or git date expression (e.g. "1 week ago"). Passed as --since to git log. None disables the filter.                                                                                                            |
 | `until` | \`str | None\`                                                                    | ISO 8601 datetime string or git date expression, passed as --until to git log. None disables the filter. Both since and until boundaries are inclusive: a commit whose committer date equals either endpoint is included in the result. |
 | `limit` | `int` | Maximum number of commits to return. Clamped to [1, 100]. Defaults to 20. | `20`                                                                                                                                                                                                                                    |
 
 Returns:
 
-| Type                 | Description                                                    |
-| -------------------- | -------------------------------------------------------------- |
-| `list[HistoryEntry]` | List of :class:~markdown_vault_mcp.types.HistoryEntry ordered  |
-| `list[HistoryEntry]` | newest-first. Empty list when the vault has no git history or  |
-| `list[HistoryEntry]` | the note has no commits in the given range. The                |
-| `list[HistoryEntry]` | paths_changed field on each entry is populated for vault-wide  |
-| `list[HistoryEntry]` | queries (path=None); it is always empty for single-note        |
-| `list[HistoryEntry]` | queries, since the path is already determined by the query     |
-| `list[HistoryEntry]` | arguments — callers know which file the commit touched without |
-| `list[HistoryEntry]` | needing it echoed back.                                        |
+| Type                 | Description                                                      |
+| -------------------- | ---------------------------------------------------------------- |
+| `list[HistoryEntry]` | List of :class:~markdown_vault_mcp.types.HistoryEntry ordered    |
+| `list[HistoryEntry]` | newest-first. Empty list when the vault has no git history or    |
+| `list[HistoryEntry]` | the note has no commits in the given range. The                  |
+| `list[HistoryEntry]` | paths_changed field on each entry is populated for vault-wide    |
+| `list[HistoryEntry]` | queries (path=None) and directory queries (the subtree files     |
+| `list[HistoryEntry]` | the commit touched); it is always empty for single-note queries, |
+| `list[HistoryEntry]` | since the path is already determined by the query arguments —    |
+| `list[HistoryEntry]` | callers know which file the commit touched without needing it    |
+| `list[HistoryEntry]` | echoed back.                                                     |
 
 Raises:
 
@@ -345,6 +368,20 @@ Returns:
 | ------------ | ---------------------------------------------------- |
 | `VaultStats` | class:~markdown_vault_mcp.types.VaultStats snapshot. |
 
+### `okf_stats()`
+
+Return the OKF statistics section, or `None` when inactive.
+
+Delegates to :meth:`SearchManager.okf_stats`.
+
+Returns:
+
+| Type             | Description |
+| ---------------- | ----------- |
+| \`dict[str, Any] | None\`      |
+| \`dict[str, Any] | None\`      |
+| \`dict[str, Any] | None\`      |
+
 ### `attachment_size(path)`
 
 Return an attachment's on-disk byte size without reading it.
@@ -359,19 +396,69 @@ Delegates to :meth:`DocumentManager.read_attachment`.
 
 ## WriterFacet
 
-Create, edit, delete, rename, and attachment writes.
+Create, edit, append, delete, rename, and attachment writes.
 
-## `WriterFacet(doc_mgr)`
+## `WriterFacet(doc_mgr, *, okf_migrate=None, convention_maintainer=None)`
 
 Document-mutation operations, backed by :class:`DocumentManager`.
 
-Hold the document manager the write operations delegate to.
+Hold the managers the write operations delegate to.
 
 Parameters:
 
-| Name      | Type              | Description                                          | Default    |
-| --------- | ----------------- | ---------------------------------------------------- | ---------- |
-| `doc_mgr` | `DocumentManager` | The shared :class:DocumentManager owned by the root. | *required* |
+| Name                    | Type                   | Description                                          | Default                                                                                                                                                   |
+| ----------------------- | ---------------------- | ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `doc_mgr`               | `DocumentManager`      | The shared :class:DocumentManager owned by the root. | *required*                                                                                                                                                |
+| `okf_migrate`           | \`OkfMigrationManager  | None\`                                               | The OKF migration manager (#963); None leaves the okf\_\* migration methods unavailable.                                                                  |
+| `convention_maintainer` | \`ConventionMaintainer | None\`                                               | The OKF enforced-write convention maintainer (#964); None (the default, and whenever OKF_WRITE is off) disables log.md / index.md upkeep on write / edit. |
+
+### `okf_convert_links(*, folder=None)`
+
+Rewrite resolvable wikilinks as root-absolute markdown links (#963).
+
+Parameters:
+
+| Name     | Type  | Description | Default                                                       |
+| -------- | ----- | ----------- | ------------------------------------------------------------- |
+| `folder` | \`str | None\`      | Restrict to this folder subtree; None covers the whole vault. |
+
+Returns:
+
+| Name | Type               | Description                                     |
+| ---- | ------------------ | ----------------------------------------------- |
+| `An` | `OkfConvertResult` | class:~markdown_vault_mcp.okf.OkfConvertResult. |
+
+### `okf_generate_index(*, folder='')`
+
+Generate a reserved `index.md` listing from the TOC (#963).
+
+Parameters:
+
+| Name     | Type  | Description                                     | Default |
+| -------- | ----- | ----------------------------------------------- | ------- |
+| `folder` | `str` | Vault-relative folder ("" for the bundle root). | `''`    |
+
+Returns:
+
+| Name | Type             | Description                                   |
+| ---- | ---------------- | --------------------------------------------- |
+| `An` | `OkfIndexResult` | class:~markdown_vault_mcp.okf.OkfIndexResult. |
+
+### `okf_seed_log(*, folder='')`
+
+Seed a reserved `log.md` from git history (#963).
+
+Parameters:
+
+| Name     | Type  | Description                                     | Default |
+| -------- | ----- | ----------------------------------------------- | ------- |
+| `folder` | `str` | Vault-relative folder ("" for the bundle root). | `''`    |
+
+Returns:
+
+| Name | Type           | Description                                 |
+| ---- | -------------- | ------------------------------------------- |
+| `An` | `OkfLogResult` | class:~markdown_vault_mcp.okf.OkfLogResult. |
 
 ### `write(path, content, frontmatter=None, if_match=None)`
 
@@ -434,6 +521,36 @@ Raises:
 | `ConcurrentModificationError` | If if_match is provided and does not match.         |
 | `DocumentNotFoundError`       | If the file does not exist.                         |
 | `ValueError`                  | If path escapes the source directory.               |
+
+### `append(path, content, if_match=None, *, create_if_missing=False)`
+
+Append text to the end of a document without reading it first (#980).
+
+A newline is inserted between the existing content and *content* when the file does not already end with one.
+
+Parameters:
+
+| Name                | Type   | Description                                                                       | Default                                                                |
+| ------------------- | ------ | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `path`              | `str`  | Relative document path.                                                           | *required*                                                             |
+| `content`           | `str`  | Text to append (must be non-empty).                                               | *required*                                                             |
+| `if_match`          | \`str  | None\`                                                                            | Optional etag for optimistic concurrency; see :meth:WriterFacet.write. |
+| `create_if_missing` | `bool` | When True, create a missing document with content as its body instead of raising. | `False`                                                                |
+
+Returns:
+
+| Type          | Description                                  |
+| ------------- | -------------------------------------------- |
+| `WriteResult` | class:~markdown_vault_mcp.types.WriteResult. |
+
+Raises:
+
+| Type                          | Description                                                |
+| ----------------------------- | ---------------------------------------------------------- |
+| `ReadOnlyError`               | If the vault is read-only.                                 |
+| `DocumentNotFoundError`       | If the file does not exist and create_if_missing is False. |
+| `ConcurrentModificationError` | If if_match is provided and does not match.                |
+| `ValueError`                  | If content is empty or path escapes the source directory.  |
 
 ### `delete(path, if_match=None)`
 
@@ -548,7 +665,7 @@ Raises:
 
 Backlinks, outlinks, broken links, orphans, most-linked notes, and connection paths.
 
-## `GraphFacet(*, link_mgr, search_mgr, require_built)`
+## `GraphFacet(*, link_mgr, search_mgr, require_built, okf_detector=None)`
 
 Link-graph queries, backed by :class:`LinkManager`.
 
@@ -556,11 +673,12 @@ Hold the managers and the index-readiness gate.
 
 Parameters:
 
-| Name            | Type                 | Description                                                                                                                                                                             | Default    |
-| --------------- | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
-| `link_mgr`      | `LinkManager`        | The shared :class:LinkManager owned by the root.                                                                                                                                        | *required* |
-| `search_mgr`    | `SearchManager`      | The shared :class:SearchManager; the graph-view assembly methods (#880) use it for node labels (:meth:SearchManager.get_metadata) and semantic edges (:meth:SearchManager.get_similar). | *required* |
-| `require_built` | `Callable[[], None]` | Raises :exc:IndexUnavailableError if the index has not been built; called by the bucket-3 query methods.                                                                                | *required* |
+| Name            | Type                 | Description                                                                                                                                                                             | Default                                                                                                                                                  |
+| --------------- | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `link_mgr`      | `LinkManager`        | The shared :class:LinkManager owned by the root.                                                                                                                                        | *required*                                                                                                                                               |
+| `search_mgr`    | `SearchManager`      | The shared :class:SearchManager; the graph-view assembly methods (#880) use it for node labels (:meth:SearchManager.get_metadata) and semantic edges (:meth:SearchManager.get_similar). | *required*                                                                                                                                               |
+| `require_built` | `Callable[[], None]` | Raises :exc:IndexUnavailableError if the index has not been built; called by the bucket-3 query methods.                                                                                | *required*                                                                                                                                               |
+| `okf_detector`  | \`OkfDetector        | None\`                                                                                                                                                                                  | Optional OKF detection probe; when read semantics are active, graph-view nodes carry the note's OKF type (#961). None leaves note_type unset everywhere. |
 
 ### `get_backlinks(path, *, limit=None)`
 

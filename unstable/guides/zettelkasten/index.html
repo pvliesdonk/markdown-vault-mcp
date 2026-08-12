@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
     
     
       
@@ -31,7 +31,7 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
       
         
         <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
@@ -1201,6 +1201,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#using-zettelkasten-with-okf" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Using Zettelkasten with OKF
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#next-steps" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1235,6 +1246,34 @@
     
   
     PARA
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../okf/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Open Knowledge Format
   
 
     
@@ -2229,6 +2268,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#using-zettelkasten-with-okf" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Using Zettelkasten with OKF
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#next-steps" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2637,11 +2687,18 @@ markdown-vault-mcp<span class="w"> </span>serve
 <li><strong>Merge.</strong> When a quick-capture note restates or extends an existing permanent note, ask Claude to merge it (add as a new paragraph or <code>## Extension</code> section) rather than letting near-duplicates accumulate. The <a href="../../tools/#search"><code>search</code></a> + <code>read</code> + <code>write</code> + <code>delete</code> composition handles this in a single prompt turn.</li>
 </ul>
 <p>Resist pre-splitting or pre-merging before review. Claude does both in one pass.</p>
+<h2 id="using-zettelkasten-with-okf">Using Zettelkasten with OKF<a class="headerlink" href="#using-zettelkasten-with-okf" title="Permanent link">&para;</a></h2>
+<p>Zettelkasten and the <a href="../okf/">Open Knowledge Format</a> sit at different layers: the method governs how ideas connect and mature, while OKF describes what each note is and how much to trust it. A Zettelkasten vault becomes an OKF bundle the moment you add <code>okf_version: "0.2"</code> to the root <code>index.md</code>, and the fit is close because both are note-centric.</p>
+<p><strong>Types line up already.</strong> The one hard OKF rule is a non-empty <code>type</code>, and every Zettelkasten template sets one (<code>fleeting</code>, <code>literature</code>, <code>permanent</code>, <code>moc</code>), so a vault built from the examples passes <code>okf_validate</code> from the first note, with no placeholder of the kind PARA's inbox needs. A <code>fleeting</code> note already carries its type as the quick capture.</p>
+<p><strong>Status does not collide.</strong> Zettelkasten leans on links and tags rather than a lifecycle field, which leaves the OKF <code>status</code> field (<code>draft</code>, <code>stable</code>, <code>deprecated</code>) free to use as intended. Reach for it when a permanent note is provisional (<code>draft</code>) or has been superseded (<code>deprecated</code>); deprecated and stale notes rank lower in search on a detected bundle, which keeps a growing Zettelkasten navigable.</p>
+<p><strong>Add provenance where it helps.</strong> The OKF <code>sources</code> list is a natural home for the citations a literature note already tracks, and <code>verified</code> records a human review. Add them to literature and permanent notes to promote their trust tier, and leave quick-capture notes lean. Write <code>[[wikilinks]]</code> freely; <code>okf_convert_links</code> produces the OKF link style at export time.</p>
+<p>The <a href="../../examples/okf/"><code>examples/okf/</code></a> pack adds the declaration index, typed note templates, and a prompt pack (author, verify, triage-stale, migrate) that drops in alongside the Zettelkasten prompts.</p>
 <h2 id="next-steps">Next Steps<a class="headerlink" href="#next-steps" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>Read the design document</strong> for details on the linking system and search algorithms: <a href="../../design/design/"><code>docs/design/design.md</code></a></li>
 <li><strong>Explore the MCP tools</strong> to understand the full API: <a href="../../tools/"><code>tools/index.md</code></a></li>
 <li><strong>Review the examples</strong> for templates and prompts: <a href="../../examples/zettelkasten/"><code>examples/zettelkasten/</code></a></li>
+<li><strong>Run this vault as an OKF bundle?</strong> See the <a href="../okf/">OKF guide</a> and the <a href="../../examples/okf/"><code>examples/okf/</code></a> pack</li>
 <li><strong>Prefer an action-oriented workflow?</strong> Try the <a href="../para/">PARA guide</a>: Projects, Areas, Resources, Archive with triage, kickoff, and weekly review prompts</li>
 <li><strong>Ambient patterns</strong>: <a href="../../prompts/#ambient-patterns-without-prompts"><code>docs/prompts.md</code></a>: flows the LLM handles from prose alone (URL capture, research, split/merge, ad-hoc link proposal)</li>
 <li><strong>Research workflows</strong>: <a href="../research-workflows/">research-workflows.md</a>: literature grounding, fact-checking, and writing papers from notes</li>
@@ -2706,7 +2763,7 @@ markdown-vault-mcp<span class="w"> </span>serve
       <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.suggest", "search.highlight", "content.code.copy", "content.tabs.link"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
     
     
-      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
       
         <script src="../../javascripts/config-wizard/wizard.js" type="module"></script>
       
