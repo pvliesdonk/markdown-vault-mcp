@@ -31,6 +31,7 @@ from __future__ import annotations
 WRITE_TOOL_NAMES: tuple[str, ...] = (
     "write",
     "edit",
+    "append",
     "delete",
     "rename",
     "move_folder",

@@ -384,6 +384,17 @@ class TestInvalidationMatrix:
         assert "verified" not in meta
         assert meta["generated"]["by"].startswith("markdown-vault-mcp/")
 
+    def test_body_append_clears_verified(self, enforced_vault: Vault) -> None:
+        (enforced_vault._source_dir / "note.md").write_text(
+            _VERIFIED_NOTE, encoding="utf-8"
+        )
+        enforced_vault.index.build_index()
+        enforced_vault.writer.append("note.md", "Appended line.\n")
+        wait_for_writer_drain(enforced_vault)
+        meta = _meta(enforced_vault, "note.md")
+        assert "verified" not in meta
+        assert meta["generated"]["by"].startswith("markdown-vault-mcp/")
+
     def test_frontmatter_only_edit_clears_verified(self, enforced_vault: Vault) -> None:
         (enforced_vault._source_dir / "note.md").write_text(
             _VERIFIED_NOTE, encoding="utf-8"

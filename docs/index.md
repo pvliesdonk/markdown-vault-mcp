@@ -12,14 +12,14 @@ Point it at a directory of Markdown files (an Obsidian vault, a docs folder, a Z
 - **Hybrid search**: Reciprocal Rank Fusion combining FTS5 and vector results
 - **Frontmatter-aware**: indexes YAML frontmatter fields, supports required field enforcement
 - **Incremental reindexing**: hash-based change detection, only re-processes modified files
-- **Write operations**: create, edit, delete, rename documents with automatic index updates
+- **Write operations**: create, edit, append to, delete, rename documents with automatic index updates
 - **Folder conventions**: per-folder `_conventions.md` files carry your authoring rules, surfaced to LLM clients at write time via [`get_conventions`](tools/index.md#get_conventions) and in `write`/`edit` results
 - **[Open Knowledge Format](guides/okf.md)**: recognizes OKF bundles (an `okf_version` declaration in the root `index.md`) and annotates search/read results with each note's type, lifecycle status, staleness, and trust tier; those dimensions are filterable and nudge ranking, and the server ships an `okf_validate` audit, one-shot migration transforms, an optional enforced write layer (provenance + verification + `log.md`/`index.md` upkeep), and a downloadable bundle export
 - **Attachment support**: read, write, delete, and list non-markdown files (PDFs, images, and so on)
 - **LLM summarization**: optional `summarize` tool condenses a note, a set of notes, or a subtree with a language model via any OpenAI-compatible endpoint (OpenAI, Ollama, Anthropic, vLLM, and others); the synthesis references the individual source notes by path. Gated on `OPENAI_API_KEY` or a configured base URL.
 - **Git integration**: optional auto-commit and push on every write via `GIT_ASKPASS`
 - **OIDC authentication**: optional token-based auth for HTTP deployments
-- **MCP tools**: search, read, write, edit, delete, rename, link graph analysis, and admin operations
+- **MCP tools**: search, read, write, edit, append, delete, rename, link graph analysis, and admin operations
 - **MCP resources**: vault configuration, statistics, tags, folders, document outlines, similar notes, and recent notes
 - **MCP prompts**: summarize, research, discuss, create from template, compare, and find related notes
 - **MCP Apps**: browser-based views (Context Card, Graph Explorer, Vault Browser, and Note Preview) for clients supporting the MCP Apps protocol

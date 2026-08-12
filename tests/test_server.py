@@ -168,6 +168,7 @@ class TestToolListing:
         # Write tools absent when read_only=true (default)
         assert "write" not in names
         assert "edit" not in names
+        assert "append" not in names
         assert "delete" not in names
         assert "rename" not in names
 
@@ -181,6 +182,7 @@ class TestToolListing:
         # Write tools present when read_only=false
         assert "write" in names
         assert "edit" in names
+        assert "append" in names
         assert "delete" in names
         assert "rename" in names
 
@@ -356,6 +358,7 @@ class TestToolManifest:
         names = sorted(t.name for t in tools)
 
         assert names == [
+            "append",
             "build_embeddings",
             "delete",
             "edit",
@@ -434,7 +437,7 @@ class TestToolAnnotations:
             assert ann.readOnlyHint is False, f"{name} readOnlyHint"
 
         # Write tools — not readOnly
-        for name in ("write", "edit", "rename", "okf_seed_log"):
+        for name in ("write", "edit", "append", "rename", "okf_seed_log"):
             ann = by_name[name].annotations
             assert ann is not None
             assert ann.readOnlyHint is False, f"{name} readOnlyHint"
@@ -806,6 +809,45 @@ class TestWriteTool:
         assert isinstance(data, dict)
         assert data["created"] is True
         assert data["path"] == "fm_note.md"
+
+
+class TestAppendTool:
+    """Test the append MCP tool (#980)."""
+
+    @pytest.mark.usefixtures("_mcp_env_writable")
+    async def test_append_extends_document(self) -> None:
+        server = make_server()
+        async with Client(server) as client:
+            result = await client.call_tool(
+                "append", {"path": "simple.md", "content": "Appended tail.\n"}
+            )
+        data = result.data
+        assert data["path"] == "simple.md"
+        assert data["created"] is False
+
+    @pytest.mark.usefixtures("_mcp_env_writable")
+    async def test_append_nonexistent_returns_error(self) -> None:
+        server = make_server()
+        async with Client(server) as client:
+            result = await client.call_tool_mcp(
+                "append", {"path": "nonexistent.md", "content": "x\n"}
+            )
+        assert result.isError is True
+
+    @pytest.mark.usefixtures("_mcp_env_writable")
+    async def test_append_create_if_missing(self) -> None:
+        server = make_server()
+        async with Client(server) as client:
+            result = await client.call_tool(
+                "append",
+                {
+                    "path": "appended_new.md",
+                    "content": "# Fresh\n",
+                    "create_if_missing": True,
+                },
+            )
+        data = result.data
+        assert data["created"] is True
 
 
 class TestEditTool:

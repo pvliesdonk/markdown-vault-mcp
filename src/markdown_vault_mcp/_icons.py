@@ -70,6 +70,9 @@ _TOOL_ICONS: dict[str, list[Icon]] = {
     ]
 }
 
+# append reuses the edit icon (#980).
+_TOOL_ICONS["append"] = _TOOL_ICONS["edit"]
+
 # Status tools reuse existing icons rather than introducing new SVG files.
 _TOOL_ICONS["get_index_status"] = _TOOL_ICONS["embeddings_status"]
 

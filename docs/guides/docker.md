@@ -110,7 +110,7 @@ MARKDOWN_VAULT_MCP_EXCLUDE=.obsidian/**,.trash/**
 
 **What these do:**
 
-- `READ_ONLY=false`: enables the write tools (`write`, `edit`, `delete`, `rename`, `move_folder`, `fetch`, `git_sync`, the `okf_*` tools, `create_upload_link`)
+- `READ_ONLY=false`: enables the write tools (`write`, `edit`, `append`, `delete`, `rename`, `move_folder`, `fetch`, `git_sync`, the `okf_*` tools, `create_upload_link`)
 - `GIT_REPO_URL`: enables managed mode (clone/remote validation)
 - `GIT_USERNAME` / `GIT_TOKEN`: HTTPS auth for pull/push
 - `GIT_PUSH_DELAY_S=30`: push after 30 seconds of write-idle time

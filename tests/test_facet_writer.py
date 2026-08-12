@@ -48,6 +48,19 @@ class TestWriterFacetBehaviour:
         writable.writer.edit("facet_edit.md", old_text="alpha", new_text="gamma")
         assert "gamma" in (vault_path / "facet_edit.md").read_text()
 
+    def test_append_extends_document(self, writable: Vault, vault_path: Path) -> None:
+        writable.writer.write("facet_append.md", "# Log\n")
+        result = writable.writer.append("facet_append.md", "- entry\n")
+        assert result.created is False
+        assert (vault_path / "facet_append.md").read_text() == "# Log\n- entry\n"
+
+    def test_append_create_if_missing(self, writable: Vault) -> None:
+        result = writable.writer.append(
+            "facet_append_new.md", "# New\n", create_if_missing=True
+        )
+        assert result.created is True
+        assert writable.reader.read("facet_append_new.md") is not None
+
     def test_delete_removes_document(self, writable: Vault) -> None:
         writable.writer.write("facet_del.md", "x\n")
         writable.writer.delete("facet_del.md")

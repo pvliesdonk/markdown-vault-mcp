@@ -182,6 +182,49 @@ class WriterFacet:
             self._convention_maintainer.maintain(path, "edit")
         return result
 
+    def append(
+        self,
+        path: str,
+        content: str,
+        if_match: str | None = None,
+        *,
+        create_if_missing: bool = False,
+    ) -> WriteResult:
+        """Append text to the end of a document without reading it first (#980).
+
+        A newline is inserted between the existing content and *content*
+        when the file does not already end with one.
+
+        Args:
+            path: Relative document path.
+            content: Text to append (must be non-empty).
+            if_match: Optional etag for optimistic concurrency; see
+                :meth:`WriterFacet.write`.
+            create_if_missing: When ``True``, create a missing document with
+                *content* as its body instead of raising.
+
+        Returns:
+            :class:`~markdown_vault_mcp.types.WriteResult`.
+
+        Raises:
+            ReadOnlyError: If the vault is read-only.
+            DocumentNotFoundError: If the file does not exist and
+                *create_if_missing* is ``False``.
+            ConcurrentModificationError: If *if_match* is provided and does
+                not match.
+            ValueError: If *content* is empty or *path* escapes the source
+                directory.
+        """
+        result = self._doc_mgr.append(
+            path,
+            content,
+            if_match=if_match,
+            create_if_missing=create_if_missing,
+        )
+        if self._convention_maintainer is not None:
+            self._convention_maintainer.maintain(path, "edit")
+        return result
+
     def delete(self, path: str, if_match: str | None = None) -> DeleteResult:
         """Delete a document or attachment.
 

@@ -403,6 +403,78 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool(
         tags={"write"},
+        icons=_TOOL_ICONS["append"],
+        annotations={
+            "title": "Append to Note",
+            "readOnlyHint": False,
+            "destructiveHint": False,
+            "idempotentHint": False,
+        },
+    )
+    async def append(
+        path: str,
+        content: str,
+        if_match: str | None = None,
+        create_if_missing: bool = False,
+        vault: Vault = Depends(get_vault),
+    ) -> dict[str, Any]:
+        """Append text to the end of an existing .md note without reading it.
+
+        The cheapest way to add content at the end of a note (log entries,
+        journal additions, checklist items): unlike 'edit', no prior 'read'
+        is needed, so the existing note content never enters the context.
+        Prefer this over 'edit' whenever the change is purely additive at
+        the end of the note.
+
+        A newline is inserted between the existing content and the appended
+        text when the file does not already end with one, so the appended
+        text starts on its own line. Include leading blank lines or heading
+        markers in 'content' yourself if you want a separating paragraph or
+        section. The search index is updated immediately; do not call
+        'reindex' afterward.
+
+        Args:
+            path: Relative path to the document (e.g. "Journal/2026.md").
+            content: Text to append (must be non-empty). Appended verbatim
+                at the end of the file, after frontmatter and all existing
+                content.
+            if_match: Optional etag obtained from a previous 'read' call.
+                When provided, the append only proceeds if the file has not
+                been modified since that read (optimistic concurrency).
+                Omit to append unconditionally.
+            create_if_missing: When true, a missing note is created with
+                'content' as its body instead of failing. Default false —
+                a typo in 'path' fails loudly rather than silently creating
+                a new note.
+
+        Returns:
+            - **path** (str): path of the document.
+            - **created** (bool): true only when create_if_missing created
+              a new note.
+            - **conventions** (list, optional): the user's authoring
+              conventions for the note's folder (root-first list of
+              {folder, path, content}). When present, verify the appended
+              content complies and issue a follow-up 'edit' if it does not.
+
+        Raises:
+            ValueError: If content is empty.
+            DocumentNotFoundError: If no file exists at the given path and
+                create_if_missing is false.
+            McpError: If if_match is provided and the file has been modified
+                (ConcurrentModificationError).
+        """
+        with okf_write_intent(OkfWriteIntent(actor=resolve_write_actor())):
+            result = await asyncio.to_thread(
+                vault.writer.append,
+                path,
+                content,
+                if_match=if_match,
+                create_if_missing=create_if_missing,
+            )
+        return await attach_conventions(vault, asdict(result), path)
+
+    @mcp.tool(
+        tags={"write"},
         icons=_TOOL_ICONS["delete"],
         annotations={
             "title": "Delete Note",

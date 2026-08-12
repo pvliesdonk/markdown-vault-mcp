@@ -126,7 +126,7 @@ class TestDerivedTextLockstep:
     def test_phrase_renderings(self) -> None:
         """Pin both renderings: okf family collapsed, others verbatim."""
         plain = write_tools_phrase()
-        assert plain.startswith("write, edit, delete, rename, ")
+        assert plain.startswith("write, edit, append, delete, rename, ")
         assert "the okf_* tools" in plain
         assert "okf_convert_links" not in plain
         assert write_tools_phrase(markdown=True).count("`") == 2 * (

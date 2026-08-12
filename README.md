@@ -24,12 +24,12 @@ Point it at a directory of Markdown files (an Obsidian vault, a docs folder, a Z
 - **Frontmatter-aware**: indexes YAML frontmatter fields, supports required field enforcement
 - **OKF-aware**: recognizes [Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog) bundles (an `okf_version` declaration in the root `index.md`) and annotates search/read results with each note's type, lifecycle status, staleness, and trust tier. Those dimensions are filterable and also nudge ranking on a detected bundle (deprecated and stale notes rank lower, and the reserved `index.md` / `log.md` navigation files are demoted below real notes), and the server adds an `okf_validate` conformance audit plus one-shot migration transforms (`okf_convert_links`, `okf_generate_index`, `okf_seed_log`) for moving a vault into the format, plus a downloadable bundle export served through `create_download_link` with an `okf-bundle` reference. Read semantics are controlled by `MARKDOWN_VAULT_MCP_OKF_MODE`
 - **Incremental reindexing**: hash-based change detection, only re-processes modified files; an automatic boot-time reconciliation pass picks up changes made while no server was running, and the vector index converges to the reconciled chunk set (embedding exactly the delta)
-- **Write operations**: create, edit, delete, rename documents, and move entire folder subtrees with automatic index updates
+- **Write operations**: create, edit, append to, delete, rename documents, and move entire folder subtrees with automatic index updates
 - **Folder conventions**: per-folder `_conventions.md` files carry your authoring rules, such as "reference notes stay self-contained"; the server surfaces them to LLM clients at write time via the `get_conventions` tool and in `write`/`edit` results, without interpreting them
 - **Attachment support**: read, write, delete, and list non-markdown files (PDFs, images, etc.)
 - **Git integration**: optional auto-commit and push on every write via `GIT_ASKPASS`
 - **OIDC authentication**: optional token-based auth for HTTP deployments (Authelia, Keycloak, etc.)
-- **MCP tools**: 33 LLM-visible tools including search, read, write, edit, delete, rename, `move_folder`, git history, manual git sync, one-time transfer links, and admin operations; plus 6 app-only tools for MCP Apps clients
+- **MCP tools**: 34 LLM-visible tools including search, read, write, edit, append, delete, rename, `move_folder`, git history, manual git sync, one-time transfer links, and admin operations; plus 6 app-only tools for MCP Apps clients
 - **MCP resources**: 9 resources exposing vault configuration, statistics, tags, folders, document outlines, similar notes, recent notes, and an interactive SPA
 - **MCP prompts**: 7 prompt templates including template-driven note creation
 <!-- DOMAIN-END -->
@@ -193,7 +193,7 @@ embedding-provider conventions `OLLAMA_HOST`, `OPENAI_API_KEY`,
 | `MARKDOWN_VAULT_MCP_BUILD_TIMEOUT_S` | `60` | No | Maximum seconds an index-backed tool or resource waits for the FTS index to become queryable during a cold-start background build before raising IndexUnavailableError(reason="timeout"). Increase for large vaults. |
 | `MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S` | `60` | No | Maximum seconds an index-querying read tool waits for the IndexWriter to drain when called with wait_for_pending_writes=true. On timeout the tool answers from the current index and reports index_stale=true in the response _meta. |
 | `MARKDOWN_VAULT_MCP_SOURCE_DIR` | `/data/vault` | No | Path to the markdown vault directory. Required; the server refuses to start without it. Symbolic links inside the vault are followed on Python 3.13+. |
-| `MARKDOWN_VAULT_MCP_READ_ONLY` | `true` | No | Set to false to enable the write tools (write, edit, delete, rename, move_folder, fetch, git_sync, the okf_* tools, create_upload_link). git_sync also needs managed git mode; create_upload_link needs an HTTP transport. |
+| `MARKDOWN_VAULT_MCP_READ_ONLY` | `true` | No | Set to false to enable the write tools (write, edit, append, delete, rename, move_folder, fetch, git_sync, the okf_* tools, create_upload_link). git_sync also needs managed git mode; create_upload_link needs an HTTP transport. |
 | `MARKDOWN_VAULT_MCP_DISABLE_APPS_UI` | `false` | No | Hide the MCP Apps UI tools (browse_vault, show_context) from the tool listing for clients that do not render MCP Apps panels. |
 | `MARKDOWN_VAULT_MCP_INDEX_PATH` | (none) | No | Path to the SQLite FTS5 index file; unset keeps the index in memory. Set it for persistence across restarts. |
 | `MARKDOWN_VAULT_MCP_STATE_PATH` | (none) | No | Path to the change-tracking state file. Defaults to {SOURCE_DIR}/.markdown_vault_mcp/state.json. |
@@ -409,6 +409,7 @@ markdown-vault-mcp reindex [--source-dir PATH] [--index-path PATH]
 | `read` | Read a document or attachment by relative path |
 | `write` | Create or overwrite a document or attachment |
 | `edit` | Replace text in a document: exact match, line-range, or scoped match with normalized fallback |
+| `append` | Append text to the end of a note without reading it first (optional `create_if_missing`) |
 | `delete` | Delete a document or attachment and its index entries |
 | `rename` | Rename/move a document or attachment, updating all index entries; pass `update_links=true` to also rewrite backlinks in other notes |
 | `move_folder` | Move an entire folder subtree to a new prefix, rewriting all vault links that point into the moved subtree in one call |
@@ -441,7 +442,7 @@ markdown-vault-mcp reindex [--source-dir PATH] [--index-path PATH]
 | `browse_vault` | Open the vault explorer SPA in a supporting MCP Apps client |
 | `show_context` | Open the Context Card for a specific note in a supporting MCP Apps client |
 
-Write tools (`write`, `edit`, `delete`, `rename`, `move_folder`, `fetch`, `git_sync`, the `okf_*` tools, `create_upload_link`) are only available when `MARKDOWN_VAULT_MCP_READ_ONLY=false`. `git_sync` also requires managed git mode (`MARKDOWN_VAULT_MCP_GIT_REPO_URL` set), and `create_upload_link` an HTTP transport with `BASE_URL` configured.
+Write tools (`write`, `edit`, `append`, `delete`, `rename`, `move_folder`, `fetch`, `git_sync`, the `okf_*` tools, `create_upload_link`) are only available when `MARKDOWN_VAULT_MCP_READ_ONLY=false`. `git_sync` also requires managed git mode (`MARKDOWN_VAULT_MCP_GIT_REPO_URL` set), and `create_upload_link` an HTTP transport with `BASE_URL` configured.
 
 `summarize` is registered only when a summarization backend is configured: an `OPENAI_API_KEY`, or an OpenAI-compatible base URL for local endpoints that need no key. It needs the `openai` SDK (`pip install 'markdown-vault-mcp[summarize]'`) and sends note content to the model provider. Any OpenAI-compatible endpoint works: OpenAI itself, a local Ollama (`http://localhost:11434/v1`, no key needed), the Anthropic compatibility endpoint (`https://api.anthropic.com/v1`), vLLM, and others. See [Configuration](https://pvliesdonk.github.io/markdown-vault-mcp/latest/configuration/) for provider recipes.
 

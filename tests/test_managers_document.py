@@ -317,6 +317,86 @@ class TestEdit:
 
 
 # ---------------------------------------------------------------------------
+# Append tests (#980)
+# ---------------------------------------------------------------------------
+
+
+class TestAppend:
+    """Tests for DocumentManager.append()."""
+
+    def test_append_to_existing(self, doc_mgr: DocumentManager) -> None:
+        result = doc_mgr.append("alpha.md", "Appended line.\n")
+        assert result.path == "alpha.md"
+        assert result.created is False
+
+        note = doc_mgr.read("alpha.md")
+        assert note is not None
+        assert note.content.endswith("Hello world.\nAppended line.\n")
+
+    def test_append_inserts_newline_when_missing(
+        self, doc_mgr: DocumentManager, doc_vault: Path
+    ) -> None:
+        (doc_vault / "no_newline.md").write_text("# Note\n\nTail", encoding="utf-8")
+        doc_mgr.append("no_newline.md", "Appended.")
+        text = (doc_vault / "no_newline.md").read_text(encoding="utf-8")
+        assert text == "# Note\n\nTail\nAppended."
+
+    def test_append_verbatim_after_trailing_newline(
+        self, doc_mgr: DocumentManager, doc_vault: Path
+    ) -> None:
+        (doc_vault / "newline.md").write_text("# Note\n", encoding="utf-8")
+        doc_mgr.append("newline.md", "- item\n")
+        text = (doc_vault / "newline.md").read_text(encoding="utf-8")
+        assert text == "# Note\n- item\n"
+
+    def test_append_updates_fts(self, doc_mgr: DocumentManager) -> None:
+        doc_mgr.append("alpha.md", "\nZanzibar content marker.\n")
+        results = doc_mgr._fts.search("Zanzibar")
+        assert any(r.path == "alpha.md" for r in results)
+
+    def test_append_nonexistent_raises(self, doc_mgr: DocumentManager) -> None:
+        with pytest.raises(DocumentNotFoundError):
+            doc_mgr.append("missing.md", "content\n")
+
+    def test_append_create_if_missing(
+        self, doc_mgr: DocumentManager, doc_vault: Path
+    ) -> None:
+        result = doc_mgr.append(
+            "new/journal.md", "# Journal\n\nFirst entry.\n", create_if_missing=True
+        )
+        assert result.created is True
+        text = (doc_vault / "new" / "journal.md").read_text(encoding="utf-8")
+        assert text == "# Journal\n\nFirst entry.\n"
+
+    def test_append_empty_content_raises(self, doc_mgr: DocumentManager) -> None:
+        with pytest.raises(ValueError, match="content must not be empty"):
+            doc_mgr.append("alpha.md", "")
+
+    def test_append_read_only_raises(self, ro_doc_mgr: DocumentManager) -> None:
+        with pytest.raises(ReadOnlyError):
+            ro_doc_mgr.append("alpha.md", "x\n")
+
+    def test_append_etag_validation(self, doc_mgr: DocumentManager) -> None:
+        note = doc_mgr.read("alpha.md")
+        assert note is not None
+        doc_mgr.append("alpha.md", "First append.\n", if_match=note.etag)
+        with pytest.raises(ConcurrentModificationError):
+            doc_mgr.append("alpha.md", "Second append.\n", if_match=note.etag)
+
+    def test_append_if_match_on_missing_file_raises(
+        self, doc_mgr: DocumentManager
+    ) -> None:
+        with pytest.raises(ConcurrentModificationError):
+            doc_mgr.append(
+                "missing.md", "x\n", if_match="deadbeef", create_if_missing=True
+            )
+
+    def test_append_path_traversal_raises(self, doc_mgr: DocumentManager) -> None:
+        with pytest.raises(ValueError):
+            doc_mgr.append("../outside.md", "x\n")
+
+
+# ---------------------------------------------------------------------------
 # Delete tests
 # ---------------------------------------------------------------------------
 

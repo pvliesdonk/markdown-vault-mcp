@@ -1839,7 +1839,7 @@ operations to them. No manager holds a back-reference to Vault.
 | ``LinkManager`` | Backlinks, outlinks, broken links, orphans, hubs, connection paths | ``FTSIndex``, ``source_dir`` |
 | ``SearchManager`` | Keyword/semantic/hybrid search, list, folders, tags, recent, similar, context, stats, get_metadata | ``FTSIndex``, ``source_dir``, embedding config, ``LinkManager`` |
 | ``IndexManager`` | build_index, reindex, build_embeddings, process_dirty_paths, flush_dirty_embeddings | ``FTSIndex``, ``ChangeTracker``, ``source_dir``, chunk strategy (no lock; driven by the single-owner :class:`~markdown_vault_mcp.indexing.IndexWriter`, #559) |
-| ``DocumentManager`` | read, write, edit, delete, rename, attachments, TOC | ``FTSIndex``, ``source_dir``, ``_file_write_lock`` (file-mutation atomicity only; see #559), ``mark_paths_dirty`` hook, callbacks |
+| ``DocumentManager`` | read, write, edit, append, delete, rename, attachments, TOC | ``FTSIndex``, ``source_dir``, ``_file_write_lock`` (file-mutation atomicity only; see #559), ``mark_paths_dirty`` hook, callbacks |
 | ``GitQueryManager`` | Git history / diff reads (read-only, #610) | ``GitWriteStrategy`` (or ``None`` when not a git repo), ``source_dir`` |
 
 Each manager receives its dependencies as constructor arguments. This enables
@@ -1856,7 +1856,7 @@ root already owns:
 | Facet | Surface | Collaborators |
 |-|-|-|
 | ``ReaderFacet`` | search, read, get_metadata, list, folders, tags, toc, recent, similar, context, stats, history, diff, read_attachment | ``SearchManager``, ``DocumentManager``, ``GitQueryManager``, ``require_built`` |
-| ``WriterFacet`` | write, edit, delete, rename, write_attachment | ``DocumentManager`` |
+| ``WriterFacet`` | write, edit, append, delete, rename, write_attachment | ``DocumentManager`` |
 | ``GraphFacet`` | backlinks, outlinks, broken_links, orphans, most_linked, connection_path, neighborhood/hub graph views (#880) | ``LinkManager``, ``SearchManager``, ``require_built`` |
 | ``IndexFacet`` | build/reindex/embeddings (sync + async), readiness, writer status, embeddings_status | ``IndexWriteCoordinator`` (public subset only), ``IndexManager`` (embeddings_status) |
 
@@ -2208,6 +2208,7 @@ pattern). Each tool is annotated with MCP `ToolAnnotations`:
 | `list_documents` | List documents, optionally filtered | `True` | `False` | `True` |
 | `write` | Create or overwrite a document | `False` | `False` | `True` |
 | `edit` | Patch a section (read-before-edit) | `False` | `False` | `False` |
+| `append` | Append text to the end of a note (no read needed, #980) | `False` | `False` | `False` |
 | `rename` | Rename/move a document (Phase 2-3) | `False` | `False` | `False` |
 | `delete` | Delete a document | `False` | **`True`** | `True` |
 | `list_folders` | List all folders | `True` | `False` | `True` |
@@ -2230,14 +2231,27 @@ pattern). Each tool is annotated with MCP `ToolAnnotations`:
 | `get_summary` | Retrieve a promoted `summarize` job by `job_id` (#937) | `True` | `False` | **`False`** |
 | `fetch` | Download from URL and save to vault (MCP-to-MCP transfer) | `False` | `False` | `True` |
 
+**Append semantics (#980)**: `append` adds `content` at the end of an
+existing note without requiring a prior `read` — the cheap path for purely
+additive changes (log entries, journal additions) that with `edit` would
+force the whole note through the model context first. A newline is inserted
+between the existing content and the appended text when the file does not
+already end with one. `create_if_missing` (default `false`) opts into
+creating a missing note instead of raising `DocumentNotFoundError`, so a
+mistyped path fails loudly by default. The operation flows through
+`DocumentManager.append` and is treated as an `edit` `WriteOperation` for
+the OKF enforced-write enricher, folder-convention maintenance, and the git
+commit callback; it returns a `WriteResult` (`created` is `true` only when
+`create_if_missing` created the file).
+
 **Tool name note**: the MCP tool is registered as `list_documents` (not `list`)
 to avoid shadowing Python's built-in `list`. The underlying
 `ReaderFacet.list_documents()` method matches the MCP name; both deliberately
 avoid the bare name `list` so type annotations like `list[NoteInfo]` are not
 mis-resolved against the method in class scope.
 
-**Tag-based visibility**: the write tools (`write`, `edit`, `delete`,
-`rename`, `move_folder`, `fetch`, `git_sync`, the `okf_*` tools,
+**Tag-based visibility**: the write tools (`write`, `edit`, `append`,
+`delete`, `rename`, `move_folder`, `fetch`, `git_sync`, the `okf_*` tools,
 `create_upload_link`) are registered with ``tags={"write"}``. When
 ``read_only=True``, the server calls ``mcp.disable(tags={"write"})`` to hide
 them from clients. This also hides any prompts sharing the ``write`` tag

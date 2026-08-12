@@ -36,7 +36,7 @@ and attachment reads.
 
 ## WriterFacet
 
-Create, edit, delete, rename, and attachment writes.
+Create, edit, append, delete, rename, and attachment writes.
 
 <!-- vale off -->
 ::: markdown_vault_mcp.facets.writer.WriterFacet
