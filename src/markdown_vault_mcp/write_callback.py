@@ -56,7 +56,7 @@ class WriteCallbackDispatcher:
         """
         self._on_write = on_write
         self._queue: queue.Queue[
-            tuple[Path, str, WriteOperation] | None | _DrainMarker
+            tuple[Path, str, WriteOperation] | _DrainMarker | None
         ] = queue.Queue()
         self._worker: threading.Thread | None = None
         # Guards every read/write of ``_worker`` and ``_closed`` AND the
