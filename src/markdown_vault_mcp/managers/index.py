@@ -547,7 +547,7 @@ class IndexManager:
         Thread-safety: this method runs on the single-owner
         :class:`~markdown_vault_mcp.indexing.IndexWriter` thread (#559), so
         no internal lock is required.  Concurrent
-        write/edit/delete/rename operations route through the writer's
+        document mutations route through the writer's
         FIFO queue and serialise against this job.
 
         Returns:
@@ -1323,7 +1323,7 @@ class IndexManager:
         once over the whole vault so newly-added, edited, deleted, and
         renamed documents all leave the link graph consistent — this
         mirrors the behavior that the pre-#559 inline DocumentManager
-        callsites delivered (write/edit/delete/rename each ended with
+        callsites delivered (every document mutation ended with
         ``resolve_vault_wikilinks()``).
 
         Per-path file-read failures (``OSError``, ``UnicodeDecodeError``),

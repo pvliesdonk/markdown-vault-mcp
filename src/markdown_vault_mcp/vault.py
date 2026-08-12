@@ -169,7 +169,7 @@ class Vault:
             :class:`~markdown_vault_mcp.scanner.ChunkStrategy` instance.
         on_write: Optional callback invoked after every successful write
             operation.  Signature:
-            ``Callable[[Path, str, Literal["write","edit","delete","rename"]], None]``.
+            :obj:`~markdown_vault_mcp.types.WriteCallback`.
         git_strategy: Optional git strategy used for background git tasks (e.g.
             periodic fetch + ff-only updates). Started via :meth:`start`.
         git_pull_interval_s: Interval in seconds for periodic pulls. ``0``
@@ -699,7 +699,7 @@ class Vault:
         """Block file-mutation write operations until the context exits.
 
         Holds the :attr:`_file_write_lock` so concurrent
-        :class:`DocumentManager` write/edit/delete/rename calls block on
+        :class:`DocumentManager` document-mutation calls block on
         the lock until the context exits. Index mutations on the
         :class:`IndexWriter` thread continue unaffected — the writer
         thread does not contend on this lock.  Reads and search remain

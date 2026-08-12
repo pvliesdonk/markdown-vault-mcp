@@ -1934,7 +1934,7 @@ class Vault:
 `IndexFacet.build_index`; the server builds at startup, and a cold on-disk
 start builds in the background (#513). No lazy build on first query.
 
-**Write operations** (`write`, `edit`, `delete`, `rename`) raise
+**Write operations** raise
 `ReadOnlyError` when `read_only=True`.
 
 **`write()` behavior**: creates or overwrites the document at `path`. Creates
@@ -2033,7 +2033,8 @@ matched against the relative path using `fnmatch.fnmatch()`. Example:
 **`on_write` callback**:
 
 ```python
-WriteCallback = Callable[[Path, str, Literal["write", "edit", "delete", "rename"]], None]
+WriteOperation = Literal["write", "edit", "delete", "rename"]
+WriteCallback = Callable[[Path, str, WriteOperation], None]
 ```
 
 - `path`: absolute path on disk.
