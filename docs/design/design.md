@@ -2236,12 +2236,23 @@ to avoid shadowing Python's built-in `list`. The underlying
 avoid the bare name `list` so type annotations like `list[NoteInfo]` are not
 mis-resolved against the method in class scope.
 
-**Tag-based visibility**: `write`, `edit`, `delete`, `rename`, `fetch` are always
-registered but tagged with ``tags={"write"}``. When ``read_only=True``, the
-server calls ``mcp.disable(tags={"write"})`` to hide them from clients.
-This also hides any prompts sharing the ``write`` tag (such as ``research``,
-``discuss``, ``create_from_template``). The Vault still raises ``ReadOnlyError`` as a defence-in-depth
-guard if a write method is somehow called on a read-only instance.
+**Tag-based visibility**: the write tools (`write`, `edit`, `delete`,
+`rename`, `move_folder`, `fetch`, `git_sync`, the `okf_*` tools,
+`create_upload_link`) are registered with ``tags={"write"}``. When
+``read_only=True``, the server calls ``mcp.disable(tags={"write"})`` to hide
+them from clients. This also hides any prompts sharing the ``write`` tag
+(such as ``research``, ``discuss``, ``create_from_template``). The ``write``
+tag is deliberately a strict subset of ``readOnlyHint=False``: ``reindex``
+and ``build_embeddings`` mutate index state, not the vault, and stay
+available on a read-only server. The user-facing enumeration of the
+write-tagged set is single-sourced from ``_write_tools.WRITE_TOOL_NAMES``
+(#1009): the ``read_only`` config help derives its wording from
+``write_tools_phrase()`` (propagated into the generated config artifacts by
+``scripts/gen_config_surface.py``), and ``tests/test_write_tool_enumeration.py``
+pins the hand-written doc sites to the same phrase while asserting the
+constant matches the registry's actual write-tagged tools. The Vault still
+raises ``ReadOnlyError`` as a defence-in-depth guard if a write method is
+somehow called on a read-only instance.
 
 The MCP-Apps UI tools ``browse_vault`` and ``show_context`` are tagged with
 ``tags={"apps-ui"}``. When ``MARKDOWN_VAULT_MCP_DISABLE_APPS_UI=true``, the

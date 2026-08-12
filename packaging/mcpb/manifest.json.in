@@ -65,7 +65,7 @@
     "read_only": {
       "type": "boolean",
       "title": "Read-only mode",
-      "description": "When true, write/edit/delete/rename tools are hidden.",
+      "description": "When true, the write tools (write, edit, delete, rename, move_folder, fetch, git_sync, the okf_* tools, create_upload_link) are hidden.",
       "required": false,
       "default": true
     },

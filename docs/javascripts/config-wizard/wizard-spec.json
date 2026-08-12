@@ -422,7 +422,7 @@
       "label": "Read Only",
       "type": "bool",
       "var": "MARKDOWN_VAULT_MCP_READ_ONLY",
-      "help": "Set to false to enable write tools (write, edit, delete, rename)."
+      "help": "Set to false to enable the write tools (write, edit, delete, rename, move_folder, fetch, git_sync, the okf_* tools, create_upload_link). git_sync also needs managed git mode; create_upload_link needs an HTTP transport."
     },
     {
       "id": "disable_apps_ui",

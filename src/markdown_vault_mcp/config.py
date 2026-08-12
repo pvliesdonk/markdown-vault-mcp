@@ -19,6 +19,7 @@ from pathlib import Path
 
 from fastmcp_pvl_core import ServerConfig, TransferConfig
 
+from markdown_vault_mcp._write_tools import write_tools_phrase
 from markdown_vault_mcp.config_sections import (
     ContentConfig,
     EmbeddingsConfig,
@@ -88,7 +89,11 @@ class ProjectConfig:
     read_only: bool = field(
         default=True,
         metadata={
-            "help": "Set to false to enable write tools (write, edit, delete, rename).",
+            "help": (
+                "Set to false to enable the write tools "
+                f"({write_tools_phrase()}). git_sync also needs managed git "
+                "mode; create_upload_link needs an HTTP transport."
+            ),
             "tags": ("vault",),
         },
     )
