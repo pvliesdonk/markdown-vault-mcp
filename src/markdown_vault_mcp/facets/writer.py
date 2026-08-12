@@ -1,7 +1,8 @@
 """Writer facet: the document-mutation surface (#604).
 
 A thin view over :class:`~markdown_vault_mcp.managers.document.DocumentManager`
-exposing the vault's write / edit / delete / rename / attachment operations.
+exposing the vault's write / edit / append / delete / rename / attachment
+operations.
 Part of the ``vault.py`` facade decomposition (#576); reached via the
 ``Vault.writer`` accessor.
 """

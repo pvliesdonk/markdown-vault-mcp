@@ -588,7 +588,7 @@ class Vault:
 
     @property
     def writer(self) -> WriterFacet:
-        """Document-mutation facet: write, edit, delete, rename, attachments."""
+        """Document-mutation facet: write/edit/append/delete/rename/attachments."""
         return self._writer_facet
 
     @property

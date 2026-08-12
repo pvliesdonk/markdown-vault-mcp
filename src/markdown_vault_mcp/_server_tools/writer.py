@@ -435,9 +435,8 @@ def register(mcp: FastMCP) -> None:
 
         Args:
             path: Relative path to the document (e.g. "Journal/2026.md").
-            content: Text to append (must be non-empty). Appended verbatim
-                at the end of the file, after frontmatter and all existing
-                content.
+            content: Text to append (must be non-empty). Added at the end
+                of the file, after frontmatter and all existing content.
             if_match: Optional etag obtained from a previous 'read' call.
                 When provided, the append only proceeds if the file has not
                 been modified since that read (optimistic concurrency).

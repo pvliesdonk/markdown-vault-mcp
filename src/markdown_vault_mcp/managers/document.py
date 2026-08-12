@@ -1,6 +1,6 @@
 """Document CRUD, attachment, and path-validation manager.
 
-Handles all read/write/edit/delete/rename operations, attachment I/O,
+Handles all read/write/edit/append/delete/rename operations, attachment I/O,
 path validation, and backlink updates — all with dependency injection
 and no back-reference to :class:`Vault`.
 """
@@ -750,18 +750,38 @@ class DocumentManager:
             else:
                 file_content = content
 
-            if self._okf_write_enrich is not None:
-                file_content = self._okf_write_enrich(file_content, "write")
-
-            self._atomic_write(abs_path, file_content)
-
-            if self._mark_paths_dirty is not None:
-                self._mark_paths_dirty([path])
-
+            self._finalize_content_write(abs_path, path, file_content, "write")
             result = WriteResult(path=path, created=created)
-            self._on_write_callback(abs_path, file_content, "write")
 
         return result
+
+    def _finalize_content_write(
+        self,
+        abs_path: Path,
+        path: str,
+        content: str,
+        operation: WriteOperation,
+    ) -> None:
+        """Run the shared tail of every content write.
+
+        Enriches *content* through the OKF enforced-write hook (when wired),
+        writes it atomically, marks the path dirty for the index writer, and
+        fires the write callback.  Must be called with ``_file_write_lock``
+        held.
+
+        Args:
+            abs_path: Absolute path of the target file.
+            path: Vault-relative path of the target file.
+            content: Full file content to persist.
+            operation: The write operation reported to the enricher and the
+                write callback.
+        """
+        if self._okf_write_enrich is not None:
+            content = self._okf_write_enrich(content, operation)
+        self._atomic_write(abs_path, content)
+        if self._mark_paths_dirty is not None:
+            self._mark_paths_dirty([path])
+        self._on_write_callback(abs_path, content, operation)
 
     def append(
         self,
@@ -777,7 +797,10 @@ class DocumentManager:
         content is never part of the request.  When the file does not end
         with a newline, one is inserted before *content* so the appended
         text starts on its own line; otherwise *content* is written
-        verbatim after the existing content.
+        directly after the existing content.  Like every content write,
+        the file is persisted in the vault's normalized form (UTF-8, no
+        BOM, ``\\n`` line endings), so a CRLF file is normalized on its
+        first append.
 
         Args:
             path: Relative document path.
@@ -824,16 +847,8 @@ class DocumentManager:
 
             # An append is a content edit for the enforced-write layer and
             # the git commit callback alike.
-            if self._okf_write_enrich is not None:
-                new_content = self._okf_write_enrich(new_content, "edit")
-
-            self._atomic_write(abs_path, new_content)
-
-            if self._mark_paths_dirty is not None:
-                self._mark_paths_dirty([path])
-
+            self._finalize_content_write(abs_path, path, new_content, "edit")
             result = WriteResult(path=path, created=not existed)
-            self._on_write_callback(abs_path, new_content, "edit")
 
         return result
 
@@ -979,15 +994,7 @@ class DocumentManager:
                     file_content, old_text, new_text, path
                 )
 
-            if self._okf_write_enrich is not None:
-                new_content = self._okf_write_enrich(new_content, "edit")
-
-            self._atomic_write(abs_path, new_content)
-
-            if self._mark_paths_dirty is not None:
-                self._mark_paths_dirty([path])
-
-            self._on_write_callback(abs_path, new_content, "edit")
+            self._finalize_content_write(abs_path, path, new_content, "edit")
 
         return EditResult(path=path, replacements=1, match_type=match_type)
 

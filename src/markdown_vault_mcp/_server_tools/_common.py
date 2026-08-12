@@ -47,7 +47,7 @@ async def attach_conventions(
 
     The ``conventions`` key is omitted entirely when no conventions apply,
     keeping the enrichment additive and non-breaking. Shared by the
-    ``write`` / ``edit`` / ``fetch`` / ``get_context`` tools so the result
+    ``write`` / ``edit`` / ``append`` / ``fetch`` / ``get_context`` tools so the result
     shape stays consistent across all of them.
 
     Args:
