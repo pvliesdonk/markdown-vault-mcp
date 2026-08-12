@@ -25,6 +25,14 @@
           "default": "file:///data/state"
         },
         {
+          "name": "MARKDOWN_VAULT_MCP_TOOLS_ALLOW",
+          "description": "Comma-separated explicit tool names this instance exposes; every other tool is hidden from listings and cannot be invoked. Names matching no registered tool are inert. Mutually exclusive with `tools_deny`. Takes effect through `apply_tool_visibility`."
+        },
+        {
+          "name": "MARKDOWN_VAULT_MCP_TOOLS_DENY",
+          "description": "Comma-separated explicit tool names hidden from this instance (absent from listings, cannot be invoked). Names matching no registered tool are inert. Mutually exclusive with `tools_allow`. Takes effect through `apply_tool_visibility`."
+        },
+        {
           "name": "MARKDOWN_VAULT_MCP_SERVER_NAME",
           "description": "Rename this server instance; defaults to the project name."
         },
@@ -501,6 +509,14 @@
         {
           "name": "MARKDOWN_VAULT_MCP_APP_DOMAIN",
           "description": "MCP Apps iframe domain, used for CSP sandboxing. Overrides the host derived from `base_url`."
+        },
+        {
+          "name": "MARKDOWN_VAULT_MCP_TOOLS_ALLOW",
+          "description": "Comma-separated explicit tool names this instance exposes; every other tool is hidden from listings and cannot be invoked. Names matching no registered tool are inert. Mutually exclusive with `tools_deny`. Takes effect through `apply_tool_visibility`."
+        },
+        {
+          "name": "MARKDOWN_VAULT_MCP_TOOLS_DENY",
+          "description": "Comma-separated explicit tool names hidden from this instance (absent from listings, cannot be invoked). Names matching no registered tool are inert. Mutually exclusive with `tools_allow`. Takes effect through `apply_tool_visibility`."
         },
         {
           "name": "MARKDOWN_VAULT_MCP_AUTH_MODE",

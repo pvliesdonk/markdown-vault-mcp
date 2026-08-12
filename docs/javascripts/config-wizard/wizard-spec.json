@@ -274,6 +274,22 @@
       }
     },
     {
+      "id": "tools_allow",
+      "label": "Tool allowlist (CSV)",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_TOOLS_ALLOW",
+      "help": "Comma-separated tool names this instance exposes; every other tool is hidden. Leave empty to expose all tools. Mutually exclusive with the denylist.",
+      "advancedGroup": "Tools"
+    },
+    {
+      "id": "tools_deny",
+      "label": "Tool denylist (CSV)",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_TOOLS_DENY",
+      "help": "Comma-separated tool names to hide from this instance. Mutually exclusive with the allowlist.",
+      "advancedGroup": "Tools"
+    },
+    {
       "id": "bearer_tokens_file",
       "label": "Bearer tokens file (TOML)",
       "type": "text",

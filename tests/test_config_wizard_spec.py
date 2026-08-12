@@ -258,11 +258,6 @@ NOT_IN_WIZARD = {
     # from credential presence (BEARER_TOKEN / OIDC_*), not an explicit selector,
     # and AUTH_MODE is undocumented in this project's configuration surface.
     f"{PREFIX}_AUTH_MODE": "upstream explicit auth-mode override; wizard derives from credentials",
-    # Operator tool-visibility trimming (template v3.2.0) — per-instance
-    # hardening knobs, not deployment-setup questions; documented in
-    # docs/configuration.md and emitted into the env examples instead.
-    f"{PREFIX}_TOOLS_ALLOW": "operator tool allowlist; not a setup question",
-    f"{PREFIX}_TOOLS_DENY": "operator tool denylist; not a setup question",
     # Bare OPENAI_* fallbacks -- the wizard emits the prefixed forms instead.
     "OPENAI_BASE_URL": "bare fallback; wizard emits MARKDOWN_VAULT_MCP_OPENAI_BASE_URL",
     "OPENAI_EMBEDDING_MODEL": "bare fallback; wizard emits MARKDOWN_VAULT_MCP_OPENAI_EMBEDDING_MODEL",
