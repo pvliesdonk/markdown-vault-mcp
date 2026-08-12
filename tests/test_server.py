@@ -1600,6 +1600,29 @@ class TestFetchTool:
                         },
                     )
 
+    async def test_fetch_sub_byte_size_limit_means_uncapped(
+        self, _mcp_env_writable_with_attachments: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A positive cap that floors to 0 bytes disables the limit (pre-#862
+        behavior), rather than failing every attachment fetch on fetch_url's
+        positive-max_bytes validation."""
+        import httpx
+
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB", "0.0000005")
+
+        raw = b"x" * 2048
+        mock_client = self._mock_httpx_stream(
+            raw, {"content-type": "application/octet-stream"}
+        )
+        with patch.object(httpx, "AsyncClient", return_value=mock_client):
+            server = make_server()
+            async with Client(server) as client:
+                result = await client.call_tool(
+                    "fetch",
+                    {"url": "https://example.com/tiny.pdf", "path": "assets/tiny.pdf"},
+                )
+        assert result.data["content_length"] == len(raw)
+
     async def test_fetch_frontmatter_applied(
         self, _mcp_env_writable_with_attachments: Path
     ) -> None:

@@ -623,14 +623,19 @@ def register(mcp: FastMCP) -> None:
                 decoded.
         """
         # Attachment size cap only: markdown notes are not size-limited, and
-        # a non-positive configured cap disables the limit.
+        # a non-positive configured cap disables the limit. `capped` derives
+        # from the computed byte count, not the MB value, so a sub-byte
+        # positive setting (which floors to 0 bytes) counts as "no cap" —
+        # matching the pre-#862 guard — rather than tripping fetch_url's
+        # positive-max_bytes validation on every attachment fetch.
         is_markdown = path.endswith(".md")
-        capped = not is_markdown and vault.max_attachment_size_mb > 0
-        max_bytes = (
-            int(vault.max_attachment_size_mb * 1024 * 1024)
-            if capped
-            else _FETCH_UNCAPPED_BYTES
+        cap_bytes = (
+            0
+            if is_markdown or vault.max_attachment_size_mb <= 0
+            else int(vault.max_attachment_size_mb * 1024 * 1024)
         )
+        capped = cap_bytes > 0
+        max_bytes = cap_bytes if capped else _FETCH_UNCAPPED_BYTES
 
         # All SSRF hardening (scheme allowlist, non-public-address rejection
         # incl. CGNAT, DNS-rebind pinning, trust_env=False, redirect refusal,
@@ -641,10 +646,14 @@ def register(mcp: FastMCP) -> None:
             fetched = await fetch_url(url, max_bytes=max_bytes, timeout_s=timeout_s)
         except ValueError as exc:
             # Translate the size-cap refusal into the vault's operator-facing
-            # terms (which env var raises the limit). Couples to fetch_url's
-            # message text, but fails safe: on a reword the original error
-            # still propagates.
-            if capped and "exceeded the size cap" in str(exc):
+            # terms (which env var raises the limit). Matches fetch_url's full
+            # terminal suffix — not a substring, which URL content could spoof
+            # (e.g. a redirect refusal whose redacted URL contains the words).
+            # Couples to fetch_url's message text, but fails safe: on a reword
+            # the original error still propagates.
+            if capped and str(exc).endswith(
+                f"exceeded the size cap of {max_bytes} bytes."
+            ):
                 raise ValueError(
                     f"Download exceeded the attachment size limit "
                     f"of {vault.max_attachment_size_mb} MB "
@@ -657,10 +666,6 @@ def register(mcp: FastMCP) -> None:
         raw_bytes = fetched.body
         content_type = fetched.content_type
         content_length = fetched.size
-
-        # fetch_url already logs the (redacted) source URL; add the vault
-        # destination the transfer landed on.
-        logger.info("fetch: saved %d bytes to %s", content_length, path)
 
         # Dispatch to the appropriate write method.
         if is_markdown:
@@ -693,6 +698,10 @@ def register(mcp: FastMCP) -> None:
                 raw_bytes,
                 if_match=if_match,
             )
+
+        # fetch_url already logged the (redacted) source URL; record the vault
+        # destination only after the write actually landed.
+        logger.info("fetch_saved bytes=%d path=%s", content_length, path)
 
         data = {
             **asdict(result),
