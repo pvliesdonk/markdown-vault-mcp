@@ -51,10 +51,10 @@ def register(mcp: FastMCP) -> None:
             limit: Maximum number of backlinks to return. Omitted (the
                 default) returns all.
             wait_for_pending_writes: When True, wait until your recent
-                write/edit/delete/rename operations have been applied to the
+                document mutations have been applied to the
                 index before answering, so the results reflect those changes.
                 Use it right after modifying notes when this read must see
-                them (e.g. right after a write/edit/delete/rename whose
+                them (e.g. right after a document mutation whose
                 effect this read should reflect). Default
                 False answers immediately from the current index — almost
                 always already up to date; inspect the response's
@@ -131,10 +131,10 @@ def register(mcp: FastMCP) -> None:
             limit: Maximum number of outlinks to return. Omitted (the
                 default) returns all.
             wait_for_pending_writes: When True, wait until your recent
-                write/edit/delete/rename operations have been applied to the
+                document mutations have been applied to the
                 index before answering, so the results reflect those changes.
                 Use it right after modifying notes when this read must see
-                them (e.g. right after a write/edit/delete/rename whose
+                them (e.g. right after a document mutation whose
                 effect this read should reflect). Default
                 False answers immediately from the current index — almost
                 always already up to date; inspect the response's
@@ -208,10 +208,10 @@ def register(mcp: FastMCP) -> None:
                 links from documents in this folder (e.g. "Journal").
                 Without this, checks all documents.
             wait_for_pending_writes: When True, wait until your recent
-                write/edit/delete/rename operations have been applied to the
+                document mutations have been applied to the
                 index before answering, so the results reflect those changes.
                 Use it right after modifying notes when this read must see
-                them (e.g. right after a write/edit/delete/rename whose
+                them (e.g. right after a document mutation whose
                 effect this read should reflect). Default
                 False answers immediately from the current index — almost
                 always already up to date; inspect the response's
@@ -273,10 +273,10 @@ def register(mcp: FastMCP) -> None:
 
         Args:
             wait_for_pending_writes: When True, wait until your recent
-                write/edit/delete/rename operations have been applied to the
+                document mutations have been applied to the
                 index before answering, so the results reflect those changes.
                 Use it right after modifying notes when this read must see
-                them (e.g. right after a write/edit/delete/rename whose
+                them (e.g. right after a document mutation whose
                 effect this read should reflect). Default
                 False answers immediately from the current index — almost
                 always already up to date; inspect the response's
@@ -335,10 +335,10 @@ def register(mcp: FastMCP) -> None:
         Args:
             limit: Maximum number of results to return. Default 10.
             wait_for_pending_writes: When True, wait until your recent
-                write/edit/delete/rename operations have been applied to the
+                document mutations have been applied to the
                 index before answering, so the results reflect those changes.
                 Use it right after modifying notes when this read must see
-                them (e.g. right after a write/edit/delete/rename whose
+                them (e.g. right after a document mutation whose
                 effect this read should reflect). Default
                 False answers immediately from the current index — almost
                 always already up to date; inspect the response's
@@ -400,10 +400,10 @@ def register(mcp: FastMCP) -> None:
             target: Vault-relative path of the destination note.
             max_depth: Maximum number of hops to search. Default 10, max 10.
             wait_for_pending_writes: When True, wait until your recent
-                write/edit/delete/rename operations have been applied to the
+                document mutations have been applied to the
                 index before answering, so the results reflect those changes.
                 Use it right after modifying notes when this read must see
-                them (e.g. right after a write/edit/delete/rename whose
+                them (e.g. right after a document mutation whose
                 effect this read should reflect). Default
                 False answers immediately from the current index — almost
                 always already up to date; inspect the response's

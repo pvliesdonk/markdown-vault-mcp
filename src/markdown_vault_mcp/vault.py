@@ -169,7 +169,7 @@ class Vault:
             :class:`~markdown_vault_mcp.scanner.ChunkStrategy` instance.
         on_write: Optional callback invoked after every successful write
             operation.  Signature:
-            ``Callable[[Path, str, Literal["write","edit","delete","rename"]], None]``.
+            :obj:`~markdown_vault_mcp.types.WriteCallback`.
         git_strategy: Optional git strategy used for background git tasks (e.g.
             periodic fetch + ff-only updates). Started via :meth:`start`.
         git_pull_interval_s: Interval in seconds for periodic pulls. ``0``
@@ -202,6 +202,9 @@ class Vault:
             chunk heading enrichment) even with no
             ``searchable_frontmatter_fields``; any searchable field also
             activates v2 (default ``False`` — raw chunk content).
+        embedding_batch_size: Maximum number of chunk texts sent to the
+            embedding provider per call in the cold-build, convergence, and
+            inline-reindex paths (default ``4``).
         folder_weights: Folder-prefix score multipliers applied to search
             results just before file grouping (``None`` disables).
         fts_weights: Per-column BM25 weights persisted into the FTS5 rank
@@ -253,6 +256,7 @@ class Vault:
         title_field: str = "title",
         searchable_frontmatter_fields: list[str] | None = None,
         embed_context: bool = False,
+        embedding_batch_size: int = 4,
         folder_weights: dict[str, float] | None = None,
         fts_weights: dict[str, float] | None = None,
         conventions_file: str | None = "_conventions.md",
@@ -263,6 +267,7 @@ class Vault:
         self._index_path = index_path
         self._embeddings_path = embeddings_path
         self._embedding_provider = embedding_provider
+        self._embedding_batch_size = embedding_batch_size
         self._read_only = read_only
         self._indexed_frontmatter_fields: list[str] = indexed_frontmatter_fields or []
         # OKF detection (disk probe, index-independent). When read semantics
@@ -423,6 +428,7 @@ class Vault:
             max_chunk_chars_override=self._max_chunk_chars_override,
             title_field=self._title_field,
             embed_text_builder=self._embed_builder,
+            embedding_batch_size=self._embedding_batch_size,
         )
         # Index-write orchestration: owns the single-owner IndexWriter
         # thread + the build-readiness state machine (#576).  Constructed
@@ -693,7 +699,7 @@ class Vault:
         """Block file-mutation write operations until the context exits.
 
         Holds the :attr:`_file_write_lock` so concurrent
-        :class:`DocumentManager` write/edit/delete/rename calls block on
+        :class:`DocumentManager` document-mutation calls block on
         the lock until the context exits. Index mutations on the
         :class:`IndexWriter` thread continue unaffected — the writer
         thread does not contend on this lock.  Reads and search remain

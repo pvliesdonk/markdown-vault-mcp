@@ -13,12 +13,12 @@ import re
 import subprocess
 import threading
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
 
-    from markdown_vault_mcp.types import CommitDiff, HistoryEntry
+    from markdown_vault_mcp.types import CommitDiff, HistoryEntry, WriteOperation
 
 from fastmcp.server.dependencies import get_access_token as _get_access_token
 
@@ -359,7 +359,7 @@ class GitWriteStrategy:
         self,
         path: Path,
         content: str,  # noqa: ARG002
-        operation: Literal["write", "edit", "delete", "rename"],
+        operation: WriteOperation,
     ) -> None:
         """WriteCallback interface: stage + commit, then schedule push."""
         if self._closed:
@@ -454,12 +454,14 @@ class GitWriteStrategy:
             logger.error("Git push failed", exc_info=True)
 
     def _do_push(self) -> None:
-        """Execute git push and clear pending flag.
+        """Execute git push and clear the pending flag on success.
 
-        Note: ``_push_pending`` is cleared *before* calling ``_push()``.
-        If the push fails, commits are not automatically retried — they
-        will be pushed on the next write (which resets ``_push_pending``)
-        or on the next startup via ``_push_if_unpushed()``.
+        ``_push_pending`` is cleared *after* ``_push()`` returns without
+        raising. On failure the flag stays set so the periodic pull loop
+        retries the push after its rebase step resolves any non-fast-forward
+        divergence (#957); previously the flag was cleared before the push,
+        so a failed deferred push left commits local with no retry until the
+        next write or startup.
         """
         with self._lock:
             if (
@@ -468,10 +470,8 @@ class GitWriteStrategy:
                 or self._git_root is None
             ):
                 return
-            self._push_pending = False
-
-        with self._lock:
             _push(self._git_root, self._token, self._username)
+            self._push_pending = False
             logger.info("Git: pushed to remote")
 
     def _check_identity(self) -> None:
@@ -1567,6 +1567,11 @@ class GitWriteStrategy:
                     else:
                         with pause():
                             self._on_pull()
+                # Retry a pending push after the pull reconciled any
+                # non-fast-forward divergence via its rebase step (#957).
+                # _do_push's guard makes this a no-op when nothing is pending.
+                if self._enable_push:
+                    self._do_push_safe()
             except Exception:
                 logger.exception("Git pull loop tick failed")
             # Wait until the next interval, or stop early.
@@ -1618,13 +1623,17 @@ class GitWriteStrategy:
         since: str | None,
         limit: int,
         until: str | None = None,
+        *,
+        is_dir: bool = False,
     ) -> list[HistoryEntry]:
         """Return commits that touched *path* (or the whole vault).
 
         Args:
             repo_path: Path inside the git repository (used to locate the root).
-            path: Absolute path of the file to filter on, or ``None`` for the
-                entire vault.
+            path: Absolute path of the file (or directory, when *is_dir*) to
+                filter on, or ``None`` for the entire vault.
+            is_dir: When ``True``, scope history to *path*'s subtree instead of
+                treating it as a single file (see :func:`query.get_file_history`).
             since: Passed as ``--since`` to ``git log`` (ISO 8601 or git date
                 expression such as ``"1 week ago"``).  ``None`` disables the
                 filter.
@@ -1652,6 +1661,7 @@ class GitWriteStrategy:
             until,
             token=self._token,
             username=self._username,
+            is_dir=is_dir,
         )
 
     @staticmethod
@@ -1779,7 +1789,7 @@ def _sanitize_git_identity(value: str) -> str:
 def _stage_and_commit(
     git_root: Path,
     path: Path,
-    operation: Literal["write", "edit", "delete", "rename"],
+    operation: WriteOperation,
     commit_name: str = GitWriteStrategy.DEFAULT_COMMIT_NAME,
     commit_email: str = GitWriteStrategy.DEFAULT_COMMIT_EMAIL,
     author_name: str | None = None,

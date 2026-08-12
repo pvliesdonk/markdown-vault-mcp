@@ -1,0 +1,32 @@
+name: Feature request
+description: >
+  Suggest a new feature or enhancement. Describe the problem, not a
+  solution. See CONTRIBUTING.md for what makes a useful request.
+title: "[Feature]: "
+labels: ["feature"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: >
+        Describe the problem or unmet need, not a solution. Who hits it,
+        and when?
+    validations:
+      required: true
+  - type: textarea
+    id: desired-outcome
+    attributes:
+      label: Desired outcome
+      description: Describe the outcome, not how to implement it.
+    validations:
+      required: true
+  - type: textarea
+    id: implementation-ideas
+    attributes:
+      label: Implementation ideas
+      description: >
+        Non-binding starting points only. This issue does not prescribe an
+        implementation.
+    validations:
+      required: false

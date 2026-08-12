@@ -15,6 +15,7 @@ from importlib.metadata import version as _pkg_version
 from fastmcp import FastMCP
 from fastmcp_pvl_core import (
     ServerConfig,  # noqa: F401  — re-exported for downstream projects' convenience
+    apply_tool_visibility,
     build_auth,
     build_event_store,  # noqa: F401  — re-exported for downstream projects' convenience
     build_instructions,
@@ -280,12 +281,21 @@ def make_server(
         # OKF semantics vetoed by the operator: hide the OKF tool surface
         # entirely (same pattern as the apps-ui toggle).
         mcp.disable(tags={"okf"})
-    if not config.content.okf_write:
+    if not config.content.okf_write or config.content.okf_verify == "off":
         # The enforced-write layer (#964) is opt-in: hide its tool surface
         # (okf_verify) unless OKF_WRITE is enabled. Provenance stamping and
         # verification invalidation are behaviours gated in the write path,
-        # not tools, so they need no disable pass here.
+        # not tools, so they need no disable pass here. OKF_VERIFY=off (#990)
+        # hides okf_verify even with the layer on, so attestation happens
+        # solely via external tooling beyond the model's reach.
         mcp.disable(tags={"okf-enforce"})
     # DOMAIN-WIRING-END
+
+    # Operator tool visibility (MARKDOWN_VAULT_MCP_TOOLS_ALLOW /
+    # MARKDOWN_VAULT_MCP_TOOLS_DENY) applies last: fastmcp resolves visibility
+    # transforms in call order, so the operator's lists win over any
+    # visibility calls in the wiring above, and pvl-core's zero-tools-exposed
+    # diagnostic judges the full registered tool set.
+    apply_tool_visibility(mcp, config.server)
 
     return mcp

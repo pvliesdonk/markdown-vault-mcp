@@ -187,11 +187,10 @@ class OkfMigrationManager:
         hand-maintained after seeding, so clobbering it would destroy real
         content.
 
-        *folder* chooses where ``log.md`` is written; the content is always
-        the **whole bundle's** history. Scoping the history to a subtree is
-        not offered here because the read-only git-history API validates its
-        path as a note or attachment file and rejects a bare directory;
-        per-folder history is tracked as a follow-up (#974).
+        *folder* both chooses where ``log.md`` is written and scopes its
+        content: a folder seeds only the commits that touched that subtree,
+        while the bundle root (``folder=""``) seeds the whole bundle's history
+        (#974).
 
         Args:
             folder: Vault-relative folder (``""`` for the bundle root).
@@ -211,7 +210,9 @@ class OkfMigrationManager:
                 f"{log_path} already exists; seeding would overwrite the "
                 "change history. Remove or rename it first."
             )
-        history = self._git_query_mgr.get_history(path=None, limit=limit)
+        # A folder scopes history to its subtree; the bundle root (folder="")
+        # falls back to whole-vault history via path=None.
+        history = self._git_query_mgr.get_history(path=folder or None, limit=limit)
         body, commits, dates = build_log_markdown(history)
         self._doc_mgr.write(log_path, body)
         return OkfLogResult(path=log_path, commits=commits, dates=dates)

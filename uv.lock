@@ -784,15 +784,15 @@ wheels = [
 
 [[package]]
 name = "fastmcp-pvl-core"
-version = "4.9.0"
+version = "4.10.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "fastmcp" },
     { name = "httpx" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/cc/61/eb3f3e322181d8d66c91a9bca4bc37d151371439193916e0680005946faf/fastmcp_pvl_core-4.9.0.tar.gz", hash = "sha256:f9c1fcc865de9e8e2f1bdc8c36faac365aa904755fa16437e637d00d2abcb7cc", size = 459405, upload-time = "2026-08-09T10:58:45.097Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ee/e4/cf5604204ad4efbaee89804a84b280bcb1a9f32290c3ceae2888eb447da3/fastmcp_pvl_core-4.10.1.tar.gz", hash = "sha256:d9cab503335c70bcd2117f4ec892dba850dd25d9e3a8c3572e2ffee94308a05d", size = 466278, upload-time = "2026-08-11T14:35:35.026Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/de/88/1cbe8f4d817eac3622de93e381396bb6bee6da88f8d346f8a6ad5970e595/fastmcp_pvl_core-4.9.0-py3-none-any.whl", hash = "sha256:11b549d13926d7f55ff36c40feb5f0915eb2f20d07275062df0bc27145374a41", size = 92131, upload-time = "2026-08-09T10:58:43.62Z" },
+    { url = "https://files.pythonhosted.org/packages/f8/31/978b98d97c5a80188ca390b6619d5dd74044461b84519b4b2f0d1920f7d6/fastmcp_pvl_core-4.10.1-py3-none-any.whl", hash = "sha256:765b7f8e4e7b17e28f42784a3dbad977a2153ee3c3a04232381ec19de5d9bdd6", size = 95573, upload-time = "2026-08-11T14:35:33.636Z" },
 ]
 
 [package.optional-dependencies]
@@ -1105,7 +1105,7 @@ name = "importlib-metadata"
 version = "9.0.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "zipp" },
+    { name = "zipp", marker = "python_full_version < '3.12'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/a9/01/15bb152d77b21318514a96f43af312635eb2500c96b55398d020c93d86ea/importlib_metadata-9.0.0.tar.gz", hash = "sha256:a4f57ab599e6a2e3016d7595cfd72eb4661a5106e787a95bcc90c7105b831efc", size = 56405, upload-time = "2026-03-20T06:42:56.999Z" }
 wheels = [
@@ -1550,7 +1550,7 @@ requires-dist = [
     { name = "fastembed", marker = "extra == 'embeddings'", specifier = ">=0.3" },
     { name = "fastmcp", marker = "extra == 'all'", specifier = ">=3.0,<4" },
     { name = "fastmcp", marker = "extra == 'mcp'", specifier = ">=3.0,<4" },
-    { name = "fastmcp-pvl-core", specifier = ">=4.9.0,<5" },
+    { name = "fastmcp-pvl-core", specifier = ">=4.10.1,<5" },
     { name = "fastmcp-pvl-core", extras = ["debug"], marker = "extra == 'debug'" },
     { name = "httpx", marker = "extra == 'all'", specifier = ">=0.25" },
     { name = "httpx", marker = "extra == 'embeddings-api'", specifier = ">=0.25" },
@@ -1864,7 +1864,7 @@ wheels = [
 
 [[package]]
 name = "mkdocstrings"
-version = "1.0.4"
+version = "1.0.6"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "jinja2" },
@@ -1874,9 +1874,9 @@ dependencies = [
     { name = "mkdocs-autorefs" },
     { name = "pymdown-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/1d/5d/f888d4d3eb31359b327bc9b17a212d6ef03fe0b0682fbb3fc2cb849fb12b/mkdocstrings-1.0.4.tar.gz", hash = "sha256:3969a6515b77db65fd097b53c1b7aa4ae840bd71a2ee62a6a3e89503446d7172", size = 100088, upload-time = "2026-04-15T09:16:53.376Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/53/71/f85bdf13355073ae15a7375f09879375a830553552e58c1c4b7e0bbc5c8b/mkdocstrings-1.0.6.tar.gz", hash = "sha256:a0b8c2bdd29a6416c80d717aa369bbf7831946bd9f23c2a66db1b1dbe7693dbd", size = 100649, upload-time = "2026-07-11T19:38:05.732Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/6e/94/be70f8ee9c45f2f62b39a1f0e9303bc20e138a8f3b8e50ffd89498e177e1/mkdocstrings-1.0.4-py3-none-any.whl", hash = "sha256:63464b4b29053514f32a1dbbf604e52876d5e638111b0c295ab7ed3cac73ca9b", size = 35560, upload-time = "2026-04-15T09:16:51.436Z" },
+    { url = "https://files.pythonhosted.org/packages/5d/5b/4c1902e8bdd5c4db63284e9d101dece4038d4025d6d88850ffe0a1578980/mkdocstrings-1.0.6-py3-none-any.whl", hash = "sha256:2703708697487d1b6d6d7b412e176fa436edf120c1bf81dc9e126b12d00893c7", size = 35787, upload-time = "2026-07-11T19:38:04.417Z" },
 ]
 
 [package.optional-dependencies]

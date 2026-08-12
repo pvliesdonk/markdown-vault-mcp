@@ -138,6 +138,17 @@ def resolve_human_subject() -> str | None:
     return None
 
 
+def resolve_verify_subject() -> str:
+    """Return the subject to stamp once an elicit-mode review is confirmed.
+
+    The authenticated subject when present, else the ``local`` sentinel. Under
+    ``OKF_VERIFY=elicit`` the elicitation — not the token — is the
+    human-presence proof, so a no-auth local human still records an attributable
+    ``human:local`` entry after confirming through the client UI.
+    """
+    return resolve_human_subject() or _LOCAL_SUBJECT
+
+
 def build_okf_write_enrich(
     *, okf_write: bool, detector: OkfDetector, version: str
 ) -> Callable[[str, WriteOperation], str] | None:

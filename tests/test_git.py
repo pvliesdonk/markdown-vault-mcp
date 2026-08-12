@@ -12,6 +12,8 @@ import pytest
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from tests.fixtures.git import GitRepoPair
+
 from markdown_vault_mcp.config import to_vault_kwargs
 from markdown_vault_mcp.git import (
     GitWriteStrategy,
@@ -777,6 +779,39 @@ class TestGitWriteStrategyClass:
         )
         assert "local only" in result.stdout
         assert "write: trigger.md" in result.stdout
+
+    def test_do_push_keeps_pending_on_failure(self, tmp_path: Path) -> None:
+        """A failed push leaves _push_pending set so the pull loop retries (#957)."""
+        from unittest.mock import patch
+
+        strategy = GitWriteStrategy(token=None, push_delay_s=0)
+        strategy._git_root = tmp_path
+        strategy._push_pending = True
+
+        fake_exc = subprocess.CalledProcessError(
+            returncode=128,
+            cmd=["git", "push", "origin"],
+            stderr="non-fast-forward",
+        )
+        with patch("markdown_vault_mcp.git.strategy._push", side_effect=fake_exc):
+            # _do_push_safe swallows the error; the flag must stay set.
+            strategy._do_push_safe()
+
+        assert strategy._push_pending is True
+
+    def test_do_push_clears_pending_on_success(self, tmp_path: Path) -> None:
+        """A successful push clears _push_pending (#957)."""
+        from unittest.mock import patch
+
+        strategy = GitWriteStrategy(token=None, push_delay_s=0)
+        strategy._git_root = tmp_path
+        strategy._push_pending = True
+
+        with patch("markdown_vault_mcp.git.strategy._push") as mock_push:
+            strategy._do_push()
+
+        assert mock_push.called
+        assert strategy._push_pending is False
 
 
 class TestConfigIntegration:
@@ -2498,6 +2533,141 @@ class TestGitPullLoop:
 
         strategy.stop()
 
+    def test_pull_loop_retries_pending_push(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The pull loop attempts a pending push after each tick (#957)."""
+        import time
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        strategy = GitWriteStrategy(token=None, push_delay_s=0)
+
+        # Mirror the existing TestGitPullLoop setup so start() launches the
+        # loop: a fake git root and a subprocess.run stub for the tracking-ref
+        # check inside start().
+        monkeypatch.setattr(strategy, "_ensure_git_root", lambda _p: tmp_path)
+        monkeypatch.setattr(
+            "markdown_vault_mcp.git.subprocess.run",
+            lambda *_args, **_kwargs: SimpleNamespace(
+                returncode=0, stdout="", stderr=""
+            ),
+        )
+        monkeypatch.setattr(strategy, "sync_once", lambda _repo: True)
+        strategy._git_root = tmp_path
+        # Simulate a deferred push that failed and left the flag set.
+        strategy._push_pending = True
+
+        push_calls: list[int] = []
+        with patch(
+            "markdown_vault_mcp.git.strategy._push",
+            side_effect=lambda *_a, **_k: push_calls.append(1),
+        ):
+            strategy.start(repo_path=tmp_path, pull_interval_s=3600)
+            time.sleep(0.05)
+            strategy.stop()
+
+        assert push_calls, "pull loop did not retry the pending push"
+
+    def test_pull_loop_retries_after_non_ff_rebase(
+        self,
+        git_repo_pair: GitRepoPair,
+        tmp_path: Path,
+    ) -> None:
+        """A non-ff push failure is retried after the pull tick rebases (#957)."""
+        import time
+
+        from tests.fixtures.git import _run_git
+
+        remote = git_repo_pair.remote_path
+        local = git_repo_pair.local_path
+
+        # A second clone of the same bare remote -- the "other client" that
+        # advances the remote and makes the strategy's local non-fast-forward.
+        other = tmp_path / "other"
+        _run_git(tmp_path, "clone", str(remote), str(other))
+        _run_git(other, "config", "user.email", "other@example.com")
+        _run_git(other, "config", "user.name", "Other")
+        (other / "other.md").write_text("other\n")
+        _run_git(other, "add", "other.md")
+        _run_git(other, "commit", "-m", "other commit")
+        _run_git(other, "push", "origin", "main")
+        # The bare remote now has a commit the strategy's local has not seen.
+
+        # The strategy owns `local`. repo_path=local makes the constructor's
+        # validate_startup() populate self._git_root. Make a local commit so
+        # there is something to push, set the pending flag (simulating a
+        # deferred push that has not fired), then attempt the push -- it must
+        # fail non-ff and leave the flag set (Task 1's invariant).
+        strategy = GitWriteStrategy(token=None, push_delay_s=0, repo_path=local)
+        (local / "local.md").write_text("local\n")
+        _run_git(local, "add", "local.md")
+        _run_git(local, "commit", "-m", "local commit")
+        strategy._push_pending = True
+        strategy._do_push_safe()
+        assert strategy._push_pending is True
+
+        # Start the pull loop with a long interval so exactly one tick fires.
+        # The tick fetches (sees the other client's commit), the ff-only merge
+        # diverges, the rebase replays the local commit on top, then the retry
+        # push succeeds and clears the flag. Poll until the flag clears.
+        strategy.start(repo_path=local, pull_interval_s=3600)
+        try:
+            deadline = time.time() + 5.0
+            while strategy._push_pending and time.time() < deadline:
+                time.sleep(0.05)
+        finally:
+            strategy.stop()
+
+        # The retry push succeeded: the bare remote now carries the local
+        # commit, and the pending flag was cleared.
+        log = _run_git(remote, "log", "--oneline")
+        assert "local commit" in log
+        assert strategy._push_pending is False
+
+    def test_pull_loop_skips_push_retry_when_push_disabled(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The pull-loop push retry is skipped when push is disabled (#957).
+
+        A push-disabled deployment keeps no off-site copy by design, so the
+        pull loop must not attempt a retry push after a tick even when a push
+        is pending. Covers the False branch of the ``_enable_push`` gate.
+        """
+        import time
+        from types import SimpleNamespace
+
+        strategy = GitWriteStrategy(token=None, push_delay_s=0, enable_push=False)
+
+        monkeypatch.setattr(strategy, "_ensure_git_root", lambda _p: tmp_path)
+        monkeypatch.setattr(
+            "markdown_vault_mcp.git.subprocess.run",
+            lambda *_args, **_kwargs: SimpleNamespace(
+                returncode=0, stdout="", stderr=""
+            ),
+        )
+        monkeypatch.setattr(strategy, "sync_once", lambda _p: True)
+
+        # A pending push exists, and the retry hook is observable.
+        strategy._push_pending = True
+        safe_calls: list[str] = []
+        monkeypatch.setattr(
+            strategy, "_do_push_safe", lambda: safe_calls.append("push")
+        )
+
+        strategy.start(repo_path=tmp_path, pull_interval_s=3600)
+        time.sleep(0.05)
+        strategy.stop()
+
+        # The gate skipped the retry: the pending flag is unchanged and the
+        # retry hook was never invoked.
+        assert safe_calls == []
+        assert strategy._push_pending is True
+
 
 class TestManagedGitMode:
     def test_managed_mode_clones_into_empty_source_dir(
@@ -2819,6 +2989,57 @@ class TestGetFileHistory:
         assert all(e.message in {"write: note.md", "edit: note.md"} for e in entries)
         # paths_changed is empty for single-note queries
         assert entries[0].paths_changed == []
+
+    def _commit(self, repo: Path, rel: str, body: str, message: str) -> None:
+        target = repo / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(body)
+        subprocess.run(
+            ["git", "-C", str(repo), "add", "."], capture_output=True, check=True
+        )
+        subprocess.run(
+            ["git", "-C", str(repo), "commit", "-m", message],
+            capture_output=True,
+            check=True,
+        )
+
+    def test_directory_history_scopes_to_subtree(self, tmp_path: Path) -> None:
+        """is_dir=True scopes history to the folder's subtree with subtree paths."""
+        repo = self._make_repo_with_commits(tmp_path)  # 2 commits on note.md
+        self._commit(repo, "guides/a.md", "a", "add: guides/a")
+        self._commit(repo, "notes/b.md", "b", "add: notes/b")
+        self._commit(repo, "guides/a.md", "a2", "edit: guides/a")
+        strategy = GitWriteStrategy()
+        entries = strategy.get_file_history(
+            repo, path=repo / "guides", since=None, limit=20, is_dir=True
+        )
+        # Only the two commits touching guides/**, newest-first.
+        assert [e.message for e in entries] == ["edit: guides/a", "add: guides/a"]
+        # paths_changed carries the subtree files (root note.md / notes/ excluded).
+        assert entries[0].paths_changed == ["guides/a.md"]
+
+    def test_directory_history_excludes_sibling_paths(self, tmp_path: Path) -> None:
+        """A commit touching both the folder and a sibling reports only subtree files."""
+        repo = self._make_repo_with_commits(tmp_path)
+        # One commit touches guides/ AND notes/ at once.
+        (repo / "guides").mkdir()
+        (repo / "notes").mkdir()
+        (repo / "guides" / "a.md").write_text("a")
+        (repo / "notes" / "b.md").write_text("b")
+        subprocess.run(
+            ["git", "-C", str(repo), "add", "."], capture_output=True, check=True
+        )
+        subprocess.run(
+            ["git", "-C", str(repo), "commit", "-m", "add: both"],
+            capture_output=True,
+            check=True,
+        )
+        strategy = GitWriteStrategy()
+        entries = strategy.get_file_history(
+            repo, path=repo / "guides", since=None, limit=20, is_dir=True
+        )
+        assert entries[0].message == "add: both"
+        assert entries[0].paths_changed == ["guides/a.md"]  # notes/b.md filtered out
 
     def test_limit_is_respected(self, tmp_path: Path) -> None:
         """get_file_history respects the limit parameter."""

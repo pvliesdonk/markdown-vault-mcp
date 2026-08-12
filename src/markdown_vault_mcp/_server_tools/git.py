@@ -213,16 +213,18 @@ def register(mcp: FastMCP) -> None:
         limit: int = 20,
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
-        """List commits that touched a note or the whole vault.
+        """List commits that touched a note, folder, or the whole vault.
 
         Only available for git-backed vaults. Use 'stats' to check
         whether git is configured, or call this and handle the error.
 
         Args:
-            path: Vault-relative path of the note or attachment to filter on
-                (e.g. "notes/alpha.md" or "assets/diagram.png"). May be a
-                `.md` note or a configured attachment extension (png, pdf,
-                svg, …). Omit (or pass null) for vault-wide commit history.
+            path: Vault-relative path to filter on. A `.md` note or a
+                configured attachment extension (png, pdf, svg, …) scopes to
+                that single file (e.g. "notes/alpha.md",
+                "assets/diagram.png"); an existing folder scopes to its
+                subtree (e.g. "guides" returns commits touching guides/**).
+                Omit (or pass null) for vault-wide commit history.
             since: ISO 8601 datetime string ("2026-04-01T00:00:00") or a git
                 date expression ("1 week ago"). Passed as --since to git log.
                 Omit for full history.
@@ -244,7 +246,8 @@ def register(mcp: FastMCP) -> None:
                 - author (str): Author name and email, e.g. "Name <email>".
                 - message (str): First line of the commit message.
                 - paths_changed (list[str]): Files touched by the commit.
-                  Populated for vault-wide queries (path=None). Always empty
+                  Populated for vault-wide queries (path=None) and folder
+                  queries (the subtree files the commit touched). Always empty
                   for single-note queries, since the path is already
                   determined by the query arguments — callers know which
                   file the commit touched without needing it echoed back.

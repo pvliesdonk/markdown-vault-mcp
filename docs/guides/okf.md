@@ -5,6 +5,9 @@
 !!! note
     OKF support is read-only by default. Recognising a bundle only ever adds annotations and advice; it never changes your files. The migration tools that do change files are explicit, and this guide covers them near the end.
 
+!!! tip "Example pack"
+    The [`examples/okf/`](../../examples/okf/) directory ships a declaration index, typed note templates (`Concept`, `Capture`), and a prompt pack (author a concept, verify a note, triage stale content, migrate a vault) that you can copy into your vault and prompt folders.
+
 ## How the server recognises a bundle
 
 The server treats a vault as an OKF bundle when the root `index.md` declares a version in its frontmatter:
@@ -80,7 +83,7 @@ Three tools handle the changes you should not make by hand. They are write tools
 
 - **`okf_convert_links`** rewrites `[[wikilinks]]` as the root-absolute markdown links OKF recommends, such as `[text](/guides/note.md)`. Only links whose target exists are converted, so your link graph is preserved exactly. Unresolvable wikilinks are left alone and reported. You can write in either link style day to day; run this before sharing the bundle.
 - **`okf_generate_index`** writes a folder's `index.md` as a listing of the notes directly in that folder, plus a pointer into each subfolder's own `index.md`. It draws the description from each note's frontmatter and lists one level at a time, so a nested bundle stays navigable rather than flattening into one long page. It preserves existing frontmatter, so regenerating the root `index.md` keeps your `okf_version` declaration.
-- **`okf_seed_log`** creates a `log.md` change history from the vault's git commits, newest first. It refuses to overwrite an existing `log.md`, so a hand-maintained history is safe.
+- **`okf_seed_log`** creates a `log.md` change history from the vault's git commits, newest first. The `folder` argument both places the log and scopes its content: seeding a folder includes only the commits that touched that subtree, while seeding the bundle root includes the whole vault's history. It refuses to overwrite an existing `log.md`, so a hand-maintained history is safe.
 
 ## The enforced write layer
 
@@ -95,7 +98,15 @@ The one-shot migration transforms above (`okf_convert_links`, `okf_generate_inde
 
 ### Recording a human review
 
-Enabling the layer also exposes the [`okf_verify`](../tools/index.md#okf_verify) tool. Call it on a note you have reviewed and it appends a `{by: human:<subject>, at}` entry to that note's `verified` list, which promotes the note's trust tier to `human-reviewed`. Because a verification names who did the reviewing, the tool requires an authenticated identity and errors when the server runs with no auth. The verification write is exempt from the invalidation above, so attesting a note does not immediately clear the attestation you just added.
+Enabling the layer also exposes the [`okf_verify`](../tools/index.md#okf_verify) tool. Call it on a note you have reviewed and it appends a `{by: human:<subject>, at}` entry to that note's `verified` list, which promotes the note's trust tier to `human-reviewed`. The verification write is exempt from the invalidation above, so attesting a note does not immediately clear the attestation you just added.
+
+One subtlety is worth understanding before you rely on the `human-reviewed` tier. The authenticated subject is *whose token* made the call, not proof that a person read the note. When an agent holds your token and attribution rests on the token alone, the model could promote a note to `human-reviewed` on its own, and the tier would mean nothing. `MARKDOWN_VAULT_MCP_OKF_VERIFY` controls how the tool guards against that. It applies only when `OKF_WRITE` is on. Setting it to a non-default value with the layer off is a configuration error, because the tool is hidden and the setting would have no effect.
+
+- **`elicit`** (the default) makes `okf_verify` ask you to confirm the review through an MCP [elicitation](https://modelcontextprotocol.io/specification/2025-06-18/client/elicitation), a prompt your client shows you, and it writes the `verified` entry only when you answer yes. It fails closed. When your client cannot show the prompt or you decline it, the call returns a tool error and writes nothing. A model cannot answer the prompt on your behalf, so a headless agent with no human present can never produce a `human-reviewed` entry. The recorded subject is your authenticated identity when the server has auth, or `local` when it does not.
+- **`off`** hides the tool entirely. Use this when reviews are recorded only by tooling outside the server (a CLI step, a git hook, or a CI job that writes `verified` directly) and you want no in-session path to the tier at all.
+- **`trust-auth`** is the original behaviour: attribute to the authenticated caller with no confirmation, and refuse when the server runs with no auth. Choose it only when the sole caller of `okf_verify` is a human-driven interface rather than an agent.
+
+Whichever mode you pick, `human-reviewed` means a person deliberately confirmed the review, not that the note is provably correct. Someone can still rubber-stamp a note. The tier promises a deliberate human act rather than diligence, so treat it as one signal instead of a guarantee.
 
 ### Keeping `log.md` and `index.md` current
 
@@ -107,7 +118,7 @@ Two costs come with this upkeep, and they are the price of the guarantee rather 
 
 ## Using OKF with PARA or Zettelkasten
 
-OKF composes with the [PARA](para.md) and [Zettelkasten](zettelkasten.md) methods. They organise where notes live and how work flows; OKF describes what each note is. A PARA or Zettelkasten vault can also be an OKF bundle. Three points of overlap matter:
+OKF composes with the [PARA](para.md) and [Zettelkasten](zettelkasten.md) methods. They organise where notes live and how work flows; OKF describes what each note is. A PARA or Zettelkasten vault can also be an OKF bundle. Three points of overlap matter (each method's guide has a matching section from its own angle: [Using PARA with OKF](para.md#using-para-with-okf), [Using Zettelkasten with OKF](zettelkasten.md#using-zettelkasten-with-okf)):
 
 - **Status vocabulary**: PARA uses `status` for workflow state (`active`, `archived`), while OKF uses it for lifecycle (`draft`, `stable`, `deprecated`). These mean different things, so keep PARA's workflow state in its own frontmatter key and reserve `status` for OKF lifecycle. OKF preserves any extra keys you add.
 - **Untyped inbox notes**: PARA's inbox holds quick captures that are typed later. Give them a placeholder `type: Capture` so they are conformant from the start, and let triage set the real type.

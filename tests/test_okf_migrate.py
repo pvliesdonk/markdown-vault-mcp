@@ -187,14 +187,53 @@ class TestSeedLog:
         assert result.commits == 0
         assert vault.reader.read("log.md").content == "# Log\n"
 
-    def test_folder_scopes_write_path_only(self, vault: Vault) -> None:
-        # folder chooses where log.md is written; its content is always the
-        # whole bundle's history (a directory is not a valid git-history path).
+    def test_folder_writes_to_folder_path(self, vault: Vault) -> None:
+        # This vault has no git strategy, so history is empty regardless of
+        # scope; the folder still chooses the write path (guides/log.md).
         _write(vault, "guides/note.md", "# Note\n")
         result = vault.writer.okf_seed_log(folder="guides")
         wait_for_writer_drain(vault)
         assert result.path == "guides/log.md"
         assert vault.reader.read("guides/log.md") is not None
+
+    def test_folder_scopes_content_to_subtree(self, tmp_path: Path) -> None:
+        # A git-backed vault: seeding guides/log.md includes only the commits
+        # that touched guides/**, not the whole vault's history (#974).
+        import subprocess
+
+        from markdown_vault_mcp.git.strategy import GitWriteStrategy
+
+        repo = tmp_path / "gitvault"
+        repo.mkdir()
+
+        def _git(*args: str) -> None:
+            subprocess.run(
+                ["git", "-C", str(repo), *args], capture_output=True, check=True
+            )
+
+        _git("init")
+        _git("config", "user.email", "t@t.test")
+        _git("config", "user.name", "T")
+        (repo / "guides").mkdir()
+        (repo / "notes").mkdir()
+        (repo / "guides" / "a.md").write_text("# A\n")
+        _git("add", ".")
+        _git("commit", "-m", "guides work")
+        (repo / "notes" / "b.md").write_text("# B\n")
+        _git("add", ".")
+        _git("commit", "-m", "notes work")
+
+        col = Vault(source_dir=repo, read_only=False, git_strategy=GitWriteStrategy())
+        try:
+            col.index.build_index()
+            result = col.writer.okf_seed_log(folder="guides")
+            wait_for_writer_drain(col)
+            content = col.reader.read("guides/log.md").content
+            assert "guides work" in content
+            assert "notes work" not in content
+            assert result.commits == 1
+        finally:
+            col.close()
 
     def test_refuses_to_overwrite_existing_log(self, vault: Vault) -> None:
         _write(vault, "log.md", "# Log\n\n## 2026-01-01\n\n- **hand-written**\n")

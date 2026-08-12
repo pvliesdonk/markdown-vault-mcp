@@ -533,6 +533,40 @@ def _presentation_root(project_root: Path) -> Path:
     return _project_root()
 
 
+def _apply_wizard_hint_overrides(
+    collected: list[Var], presentation: Mapping[str, Any]
+) -> list[Var]:
+    """Apply the presentation's `wizard_hints` override map to *collected*.
+
+    Keyed by full var name like `examples` — the correction lever for a var
+    whose provenance owns its hint but got it wrong (core 4.10.1 ships
+    TOOLS_ALLOW/TOOLS_DENY as ``"wizard": "inferred"``, though nothing
+    derives their values — see #321/#322). An entry replaces the var's wizard
+    mapping wholesale and clears the `inferred` shorthand; content is
+    validated later by `_validate_wizard_hint`, exactly like a hint from any
+    other source. An entry naming a var no provenance collected fails loudly
+    rather than silently doing nothing: the map exists to paper over upstream
+    metadata until it is fixed there, and a stale entry outliving that fix
+    (or a typo never matching anything) is a bug in config-presentation.yml.
+    """
+    hints_map: dict[str, Any] = presentation.get("wizard_hints", {}) or {}
+    if not hints_map:
+        return collected
+    unknown_hints = sorted(set(hints_map) - {v.name for v in collected})
+    if unknown_hints:
+        raise SystemExit(
+            "ERROR: config-presentation.yml wizard_hints names var(s) no "
+            f"provenance collected: {', '.join(unknown_hints)}. Remove "
+            "the stale entry, or fix the name."
+        )
+    return [
+        dataclasses.replace(v, wizard=dict(hints_map[v.name]), inferred=False)
+        if v.name in hints_map
+        else v
+        for v in collected
+    ]
+
+
 def collect_vars(
     project_root: Path | str, answers: Mapping[str, object]
 ) -> tuple[Var, ...]:
@@ -636,6 +670,8 @@ def collect_vars(
             else v
             for v in collected
         ]
+
+    collected = _apply_wizard_hint_overrides(collected, presentation)
 
     seen_names: dict[str, str] = {}
     for var in collected:

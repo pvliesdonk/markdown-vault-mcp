@@ -89,15 +89,32 @@ jobs:
         # tells it not to re-run the full gate.
         run: uv sync --all-extras --all-groups
 
+      # The /code-review plugin fans out into parallel review agents. On Claude
+      # Code >= 2.1.198 those dispatch as background tasks that claude-code-action
+      # drops before they finish — runClaudeWithSdk breaks the query() loop on the
+      # first result (claude-code-action#1499), so the review completes green and
+      # posts nothing (also #1087 / #1523, claude-code#85275 — all silent). Pin
+      # the last synchronous-subagent release (2.1.197, verified with action@v1 in
+      # claude-code#73453) so the fan-out completes in-turn. Remove this step and
+      # the path_to_claude_code_executable input once #1499 is fixed upstream.
+      - name: Install pinned Claude Code (2.1.197, pre-background-subagents)
+        run: |
+          set -euo pipefail
+          curl -fsSL https://claude.ai/install.sh | bash -s -- 2.1.197
+          BIN="$HOME/.local/bin/claude"
+          test -x "$BIN"
+          "$BIN" --version
+          echo "CLAUDE_BIN=$BIN" >> "$GITHUB_ENV"
+
       - name: Run Claude Code Review
         id: claude-review
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Use the pinned 2.1.197 CLI installed above (skips the action's own).
+          path_to_claude_code_executable: ${{ env.CLAUDE_BIN }}
           plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
           plugins: 'code-review@claude-code-plugins'
-          # `--comment` tells the plugin to actually post (without it, the plugin
-          # runs the full review and stops silently — burning ~$3/PR for no output).
           prompt: '/code-review:code-review --comment ${{ github.repository }}/pull/${{ github.event.pull_request.number }}'
           # Surface progress so a silent failure is visible.
           track_progress: true
@@ -108,17 +125,11 @@ jobs:
             actions: read
           # Grant the built-in GitHub read/search MCP tools, the CI tools, the
           # inline-comment tool (what lets the reviewer post inline — not in the
-          # default allow-set), `gh api` for read-only API access, gh pr/run read
-          # commands, scoped `uv run` for targeted investigation (REVIEW.md sets
-          # norms), and Task. contents: read above keeps the reviewer from
-          # committing — it only reads and comments.
-          #
-          # Task is required: the /code-review plugin fans out into review
-          # subagents via the Task tool. Tag mode's fixed allow-set omits it, so
-          # under acceptEdits + headless (no prompt handler) each dispatch is
-          # silently denied and the review stalls with no findings. Subagents
-          # inherit this same set under contents: read — delegation, not new
-          # capability.
+          # default allow-set), `gh api`, gh pr/run read commands, scoped `uv run`
+          # for targeted investigation (REVIEW.md sets norms), plus Skill (launch
+          # the /code-review skill) and Task (dispatch its review subagents —
+          # synchronous under the pinned 2.1.197). contents: read above keeps the
+          # reviewer from committing — it only reads and comments.
           claude_args: |
-            --allowedTools "Task,mcp__github__get_*,mcp__github__list_*,mcp__github__search_*,mcp__github_ci__*,mcp__github_inline_comment__*,Bash(gh api *),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh run view:*),Bash(gh run list:*),Bash(uv run pytest:*),Bash(uv run mypy:*),Bash(uv run ruff:*)"
+            --allowedTools "Skill,Task,mcp__github__get_*,mcp__github__list_*,mcp__github__search_*,mcp__github_ci__*,mcp__github_inline_comment__*,Bash(gh api *),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh run view:*),Bash(gh run list:*),Bash(uv run pytest:*),Bash(uv run mypy:*),Bash(uv run ruff:*)"
           # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md

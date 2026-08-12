@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 
 from markdown_vault_mcp.utils import (
     effective_attachment_extensions,
+    validate_history_dir,
     validate_history_path,
 )
 
@@ -60,17 +61,23 @@ class GitQueryManager:
         until: str | None = None,
         limit: int = 20,
     ) -> list[HistoryEntry]:
-        """Return commits that touched a note, attachment, or the whole vault.
+        """Return commits that touched a note, attachment, folder, or the whole vault.
 
         When *path* is ``None``, queries the full vault history.  Returns an
         empty list for vaults whose source directory is not inside a git
         repository.
 
+        A *path* that resolves to an existing directory scopes history to that
+        subtree (``git log -- <dir>``); a ``.md`` note or a configured
+        attachment scopes to that single file (rename-following); ``None``
+        returns vault-wide history.
+
         Args:
-            path: Vault-relative path of the note or attachment to filter on
-                (e.g. ``"notes/alpha.md"`` or ``"assets/x.png"``).  A ``.md``
-                note or a configured attachment (e.g. ``assets/x.png``).
-                ``None`` returns vault-wide history.
+            path: Vault-relative path to filter on. An existing directory
+                (e.g. ``"guides"``) scopes to its subtree; a ``.md`` note or a
+                configured attachment (e.g. ``"notes/alpha.md"``,
+                ``"assets/x.png"``) scopes to that file. ``None`` returns
+                vault-wide history.
             since: ISO 8601 datetime string or git date expression (e.g.
                 ``"1 week ago"``).  Passed as ``--since`` to ``git log``.
                 ``None`` disables the filter.
@@ -87,24 +94,32 @@ class GitQueryManager:
             newest-first.  Empty list when the vault has no git history or
             the note has no commits in the given range.  The
             ``paths_changed`` field on each entry is populated for vault-wide
-            queries (``path=None``); it is always empty for single-note
-            queries, since the path is already determined by the query
-            arguments — callers know which file the commit touched without
-            needing it echoed back.
+            queries (``path=None``) and directory queries (the subtree files
+            the commit touched); it is always empty for single-note queries,
+            since the path is already determined by the query arguments —
+            callers know which file the commit touched without needing it
+            echoed back.
 
         Raises:
             ValueError: If *path* is provided but fails path validation
-                (unknown extension or path traversal).
+                (a file with an unknown extension, or path traversal).
         """
         if self._git_strategy is None:
             return []
         abs_path: Path | None = None
+        is_dir = False
         if path is not None:
-            abs_path = validate_history_path(
-                path, self._source_dir, self._attachment_extensions
-            )
+            # A path pointing at a real directory scopes to that subtree; only
+            # non-directories are held to the note/attachment extension rule.
+            if (self._source_dir / path).is_dir():
+                abs_path = validate_history_dir(path, self._source_dir)
+                is_dir = True
+            else:
+                abs_path = validate_history_path(
+                    path, self._source_dir, self._attachment_extensions
+                )
         return self._git_strategy.get_file_history(
-            self._source_dir, abs_path, since, limit, until=until
+            self._source_dir, abs_path, since, limit, until=until, is_dir=is_dir
         )
 
     def get_diff(

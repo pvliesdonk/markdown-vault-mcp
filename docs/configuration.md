@@ -15,6 +15,21 @@ variables (`MARKDOWN_VAULT_MCP_TRANSPORT`, `MARKDOWN_VAULT_MCP_HOST`,
 !!! note "Configuration is validated at startup"
     Numeric variables are validated against the **Type** column below (such as `int ≥ 1`). A non-numeric or out-of-range value makes the server **fail fast** at startup with a `ConfigurationError` naming the offending setting, rather than silently falling back to a default. A typo in an env var surfaces immediately instead of producing surprising behavior later.
 
+## Tool visibility
+
+Operators can trim which tools this instance exposes. Each variable takes a
+comma-separated list of explicit tool names:
+
+- `MARKDOWN_VAULT_MCP_TOOLS_ALLOW`: expose *only* the listed tools.
+- `MARKDOWN_VAULT_MCP_TOOLS_DENY`: hide the listed tools.
+
+Hidden tools disappear from `tools/list` and are rejected on `tools/call`;
+resources and prompts are unaffected. Setting both variables, or setting one
+to a value with no names in it, is a startup error. A name matching no
+registered tool is ignored, but an allowlist that matches nothing logs a
+startup `WARNING` since the instance then exposes zero tools. See
+`fastmcp-pvl-core`'s README for the full semantics.
+
 <!-- DOMAIN-CONFIG-VARS-START -->
 ## Core
 
@@ -35,6 +50,7 @@ variables (`MARKDOWN_VAULT_MCP_TRANSPORT`, `MARKDOWN_VAULT_MCP_HOST`,
 | `MARKDOWN_VAULT_MCP_CONVENTIONS_FILE` | string | `_conventions.md` | No | Filename of the per-folder [conventions files](tools/index.md#get_conventions) surfaced to clients at write time. Must be a bare `.md` filename without glob characters (`*?[]`). Set to `none` to disable folder conventions. Convention files are excluded from the search index but stay readable; existing notes matching the name are removed from the index on the next boot reconcile. Note: setting `MARKDOWN_VAULT_MCP_INSTRUCTIONS` replaces the default server instructions entirely, including the sentence that points clients at `get_conventions`; mention conventions in your custom instructions if you rely on them. |
 | `MARKDOWN_VAULT_MCP_OKF_MODE` | string | `auto` | No | [OKF (Open Knowledge Format)](https://github.com/GoogleCloudPlatform/knowledge-catalog) read semantics. With `auto` (the default), read-side annotations (note type, lifecycle status, staleness, trust tier) switch on in `search`, `read`, `get_context`, and `stats` when the vault declares an `okf_version` field in its root `index.md` frontmatter. Use `off` to disable OKF semantics entirely, or `on` to force them for an undeclared vault. Annotations are read-only either way: this setting never changes write behavior. Note: setting `MARKDOWN_VAULT_MCP_INSTRUCTIONS` replaces the default server instructions entirely, including the OKF guidance sentence. |
 | `MARKDOWN_VAULT_MCP_OKF_WRITE` | bool | `false` | No | OKF enforced write layer. When `true` on an OKF-active vault, every `write` and `edit` stamps `generated: {by, at}` provenance and clears any `verified` attestation (a content change invalidates prior review); `rename` does not. The actor is `human:<subject>` when the caller is authenticated, otherwise a tool actor. On a content write it also keeps the affected folder's `log.md` and `index.md` current as secondary writes (failures are logged and skipped, never rolling back the note write). Enabling it also exposes the [`okf_verify`](tools/index.md#okf_verify) tool. Requires `OKF_MODE` to be `auto` or `on`; a `true` value with `OKF_MODE=off` is a configuration error. See the [OKF guide](guides/okf.md#the-enforced-write-layer). |
+| `MARKDOWN_VAULT_MCP_OKF_VERIFY` | string | `elicit` | No | How the [`okf_verify`](tools/index.md#okf_verify) tool confirms a human review. This applies only when `OKF_WRITE` is on, which gates the tool. With `elicit` (the default), the tool issues an MCP elicitation asking the human to confirm the review, and writes the `verified` entry only on an affirmative reply. It fails closed (a tool error, nothing written) when the client cannot elicit or the human declines, so a model that holds the human's token cannot self-attest a note as `human-reviewed`. Use `trust-auth` to attribute to the authenticated caller with no confirmation (refuses under auth mode `none`; safe only when the sole caller is a human-driven UI, not an agent), or `off` to hide the tool so `verified` is set only by external tooling. A non-default value with `OKF_WRITE` off is a configuration error. See the [OKF guide](guides/okf.md#recording-a-human-review). |
 
 The file watcher never watches the directories that hold `INDEX_PATH`,
 `EMBEDDINGS_PATH`, and `STATE_PATH` (or `.git`), so the writes the server makes
@@ -106,6 +122,8 @@ The first three knobs adjust *ranking and rendering* and take effect immediately
 |----------|------|---------|-------------|
 | `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` | string | auto-detect | Embedding provider: `openai`, `ollama`, or `fastembed`. **Breaking change** from `EMBEDDING_PROVIDER` in older versions |
 | `MARKDOWN_VAULT_MCP_EMBED_CONTEXT` | bool | `false` | Enrich each chunk's embedding input with the note title, the chunk heading, and (on the first chunk) the `SEARCHABLE_FIELDS` values, improving semantic recall for short or context-poor chunks. The raw note content on disk and in search snippets is unchanged. The active format is recorded in the vector sidecar, so flipping this (or changing `SEARCHABLE_FIELDS`) re-embeds the whole vault once on next startup |
+| `MARKDOWN_VAULT_MCP_EMBED_TIMEOUT_S` | float | `30.0` | Per-request wall-clock budget in seconds for a single embedding HTTP call (OpenAI/Ollama). The local FastEmbed backend runs in-process with no network call and ignores this. CPU-only or large-model workloads may need 60-120 s; raise this if batches time out. |
+| `MARKDOWN_VAULT_MCP_EMBEDDING_BATCH_SIZE` | int | `4` | Number of chunks sent per embedding request. Smaller batches shorten each request (useful under a tight timeout on slow models) at the cost of more round-trips. |
 | `OLLAMA_HOST` | url | `http://localhost:11434` | Ollama server URL. **Not** `MARKDOWN_VAULT_MCP_`-prefixed |
 | `OPENAI_API_KEY` | string | (none) | OpenAI API key for the OpenAI embedding provider. **Not** `MARKDOWN_VAULT_MCP_`-prefixed |
 | `MARKDOWN_VAULT_MCP_OPENAI_BASE_URL` / `OPENAI_BASE_URL` | url | `https://api.openai.com/v1` | OpenAI-compatible API base URL for embeddings |

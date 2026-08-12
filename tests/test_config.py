@@ -71,6 +71,68 @@ def test_search_ranking_config_rejects_zero_chunks_per_file(
         ProjectConfig.from_env()
 
 
+def test_embed_timeout_s_defaults_to_30(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """embed_timeout_s defaults to 30.0 when the env var is unset."""
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    monkeypatch.delenv("MARKDOWN_VAULT_MCP_EMBED_TIMEOUT_S", raising=False)
+    cfg = ProjectConfig.from_env()
+    assert cfg.embed_timeout_s == 30.0
+    assert cfg.embeddings.embed_timeout_s == 30.0
+
+
+def test_embedding_batch_size_defaults_to_4(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """embedding_batch_size defaults to 4 when the env var is unset."""
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    monkeypatch.delenv("MARKDOWN_VAULT_MCP_EMBEDDING_BATCH_SIZE", raising=False)
+    cfg = ProjectConfig.from_env()
+    assert cfg.embedding_batch_size == 4
+    assert cfg.embeddings.embedding_batch_size == 4
+
+
+def test_embed_timeout_s_env_override(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """MARKDOWN_VAULT_MCP_EMBED_TIMEOUT_S overrides the default."""
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_EMBED_TIMEOUT_S", "120")
+    cfg = ProjectConfig.from_env()
+    assert cfg.embed_timeout_s == 120.0
+
+
+def test_embedding_batch_size_env_override(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """MARKDOWN_VAULT_MCP_EMBEDDING_BATCH_SIZE overrides the default."""
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_EMBEDDING_BATCH_SIZE", "1")
+    cfg = ProjectConfig.from_env()
+    assert cfg.embedding_batch_size == 1
+
+
+def test_embed_timeout_s_rejects_nonpositive(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """embed_timeout_s <= 0 is rejected at from_env time as ConfigurationError."""
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_EMBED_TIMEOUT_S", "0")
+    with pytest.raises(ConfigurationError, match="embed_timeout_s"):
+        ProjectConfig.from_env()
+
+
+def test_embedding_batch_size_rejects_zero(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """embedding_batch_size < 1 is rejected at from_env time as ConfigurationError."""
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_EMBEDDING_BATCH_SIZE", "0")
+    with pytest.raises(ConfigurationError, match="embedding_batch_size"):
+        ProjectConfig.from_env()
+
+
 @pytest.mark.parametrize(
     "ctx,override,expected",
     [

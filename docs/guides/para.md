@@ -478,11 +478,24 @@ After a triage session produces 5-10 new projects, ask Claude to propose an `are
 
 **Consolidated triage-and-create prompt.** Today, triage classifies an existing Inbox note and moves it; `create_from_template` creates a new note from a template. A combined "triage a thought and create a typed note directly" prompt (with auto-suggested target folder based on classification) is possible as a `create_from_template` extension. It's a usability improvement, not a capability gap.
 
+## Using PARA with OKF
+
+PARA and the [Open Knowledge Format](okf.md) answer different questions. PARA decides where a note lives and how work flows through it; OKF describes what each note is and how much to trust it. A PARA vault can also be an OKF bundle (declare it by adding `okf_version: "0.2"` to the root `index.md`), and the two layers coexist once you resolve three points of friction.
+
+**Status means two different things.** PARA overloads `status` for workflow state (`active`, `archived`), while OKF reads `status` as a lifecycle (`draft`, `stable`, `deprecated`). An archived project is not a deprecated concept, and the two vocabularies have no sensible mapping. On an OKF bundle, then, keep PARA's workflow state in its own frontmatter key (`workflow` or `para_status`) and leave `status` to OKF. The server preserves any extra keys you add, and its ranking reads only the OKF meaning, so an archived-but-current note is not quietly demoted. The shipped [`examples/para/`](../../examples/para/) templates keep `status` for PARA workflow by default (they are PARA-native, not OKF-first), so an OKF-declared vault built straight from them reports an `unknown_status` advisory on each typed note until you re-key as above. That is advisory only; it is never counted against conformance.
+
+**Inbox captures need a type from note one.** The single hard OKF rule is a non-empty `type`, but PARA's inbox holds quick captures that are classified later. The inbox template ships with a placeholder `type: Capture` so a capture is conformant the moment it lands and `okf_validate` never flags it as untyped; triage replaces it with the real type. The typed templates (`project`, `area`, `resource`) already satisfy the rule.
+
+**Wikilinks are fine while you work.** Write in whichever link style you prefer: the server resolves both `[[wikilinks]]` and root-absolute markdown links. Run `okf_convert_links` to produce the OKF link style when you are ready to share the bundle; day to day it makes no difference.
+
+The [`examples/para/`](../../examples/para/) templates already carry the `type: Capture` inbox placeholder, and [`examples/okf/`](../../examples/okf/) adds the declaration index, typed note templates, and a prompt pack (author, verify, triage-stale, migrate) you can drop alongside the PARA prompts.
+
 ## Next Steps
 
 - **Read the design document** for details on the linking system and search algorithms: [`docs/design/design.md`](../design/design.md)
 - **Explore the MCP tools** to understand the full API: [`tools/index.md`](../tools/index.md)
 - **Review the examples** for templates and prompts: [`examples/para/`](../../examples/para/)
+- **Run this vault as an OKF bundle?** See the [OKF guide](okf.md) and the [`examples/okf/`](../../examples/okf/) pack
 - **Prefer idea-centric knowledge management?** See the alternative workflow: [`docs/guides/zettelkasten.md`](zettelkasten.md)
 - **Ambient patterns**: [`docs/prompts.md`](../prompts.md#ambient-patterns-without-prompts) (flows the LLM handles from prose alone: URL capture, research, ad-hoc link proposal)
 - **Research workflows**: [research-workflows.md](research-workflows.md) (literature grounding, fact-checking, and writing papers from notes)

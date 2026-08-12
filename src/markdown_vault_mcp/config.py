@@ -269,6 +269,26 @@ class ProjectConfig:
             "wizard": {"group": "Content"},
         },
     )
+    okf_verify: str = field(
+        default="elicit",
+        metadata={
+            "help": (
+                "How the okf_verify tool attributes a human review. This "
+                "applies only when OKF_WRITE is on, which gates the tool. With "
+                "elicit (the default), okf_verify asks the human to confirm the "
+                "review through an MCP elicitation and records the attestation "
+                "only on an affirmative reply. It fails closed when the client "
+                "cannot elicit or the human declines, so a model that holds the "
+                "human's token cannot self-attest. Use trust-auth to attribute "
+                "to the authenticated caller with no confirmation (safe only "
+                "when the sole caller is a human-driven UI), or off to hide the "
+                "tool so attestation happens through external tooling. A "
+                "non-default value with OKF_WRITE off is a config error."
+            ),
+            "tags": ("content",),
+            "wizard": {"group": "Content"},
+        },
+    )
     attachment_extensions: Sequence[str] | None = field(
         default=None,
         metadata={
@@ -479,6 +499,32 @@ class ProjectConfig:
                 "Enrich embedding input with the note title, chunk heading, "
                 "and (first chunk) searchable-field values. Flipping it "
                 "re-embeds the whole vault once on next startup."
+            ),
+            "tags": ("embeddings",),
+            "wizard": {"group": "Embeddings"},
+        },
+    )
+    embed_timeout_s: float = field(
+        default=30.0,
+        metadata={
+            "help": (
+                "Per-request wall-clock budget in seconds for a single "
+                "embedding HTTP call (OpenAI/Ollama). The local FastEmbed "
+                "backend runs in-process with no network call and ignores "
+                "this. CPU-only or large-model workloads may need 60-120 s; "
+                "raise this if batches time out."
+            ),
+            "tags": ("embeddings",),
+            "wizard": {"group": "Embeddings"},
+        },
+    )
+    embedding_batch_size: int = field(
+        default=4,
+        metadata={
+            "help": (
+                "Number of chunks sent per embedding request. Smaller "
+                "batches shorten each request (useful under a tight "
+                "timeout on slow models) at the cost of more round-trips."
             ),
             "tags": ("embeddings",),
             "wizard": {"group": "Embeddings"},
@@ -791,7 +837,7 @@ class ProjectConfig:
 
     @property
     def embeddings(self) -> EmbeddingsConfig:
-        """The embeddings section assembled from the flat provider fields."""
+        """The embeddings section assembled from the flat embedding fields."""
         return EmbeddingsConfig(
             provider=self.embedding_provider,
             ollama_host=self.ollama_host,
@@ -803,6 +849,8 @@ class ProjectConfig:
             fastembed_model=self.fastembed_model,
             fastembed_cache_dir=self.fastembed_cache_dir,
             embed_context=self.embed_context,
+            embed_timeout_s=self.embed_timeout_s,
+            embedding_batch_size=self.embedding_batch_size,
         )
 
     @property
@@ -860,6 +908,7 @@ class ProjectConfig:
             conventions_file=self.conventions_file,
             okf_mode=self.okf_mode,
             okf_write=self.okf_write,
+            okf_verify=self.okf_verify,
         )
 
     # CONFIG-FIELDS-END
@@ -960,6 +1009,9 @@ class ProjectConfig:
             ),
             okf_mode=(env(_ENV_PREFIX, "OKF_MODE", "auto") or "auto").strip().lower(),
             okf_write=to_bool(env(_ENV_PREFIX, "OKF_WRITE"), default=False),
+            okf_verify=(env(_ENV_PREFIX, "OKF_VERIFY", "elicit") or "elicit")
+            .strip()
+            .lower(),
             attachment_extensions=resolve_attachment_extensions(
                 env(_ENV_PREFIX, "ATTACHMENT_EXTENSIONS")
             ),
@@ -1004,6 +1056,8 @@ class ProjectConfig:
             or "BAAI/bge-small-en-v1.5",
             fastembed_cache_dir=env(_ENV_PREFIX, "FASTEMBED_CACHE_DIR") or None,
             embed_context=to_bool(env(_ENV_PREFIX, "EMBED_CONTEXT"), default=False),
+            embed_timeout_s=env_float(_ENV_PREFIX, "EMBED_TIMEOUT_S", 30.0),
+            embedding_batch_size=env_int(_ENV_PREFIX, "EMBEDDING_BATCH_SIZE", 4),
             git_token=(_git_token := env(_ENV_PREFIX, "GIT_TOKEN") or None),
             git_repo_url=resolve_git_repo_url(
                 env(_ENV_PREFIX, "GIT_REPO_URL"), _git_token, _ENV_PREFIX

@@ -274,6 +274,22 @@
       }
     },
     {
+      "id": "tools_allow",
+      "label": "Tool allowlist (CSV)",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_TOOLS_ALLOW",
+      "help": "Comma-separated tool names this instance exposes; every other tool is hidden. Leave empty to expose all tools. Mutually exclusive with the denylist.",
+      "advancedGroup": "Tools"
+    },
+    {
+      "id": "tools_deny",
+      "label": "Tool denylist (CSV)",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_TOOLS_DENY",
+      "help": "Comma-separated tool names to hide from this instance. Mutually exclusive with the allowlist.",
+      "advancedGroup": "Tools"
+    },
+    {
       "id": "bearer_tokens_file",
       "label": "Bearer tokens file (TOML)",
       "type": "text",
@@ -521,6 +537,14 @@
       "advancedGroup": "Content"
     },
     {
+      "id": "okf_verify",
+      "label": "Okf Verify",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_OKF_VERIFY",
+      "help": "How the okf_verify tool attributes a human review. This applies only when OKF_WRITE is on, which gates the tool. With elicit (the default), okf_verify asks the human to confirm the review through an MCP elicitation and records the attestation only on an affirmative reply. It fails closed when the client cannot elicit or the human declines, so a model that holds the human's token cannot self-attest. Use trust-auth to attribute to the authenticated caller with no confirmation (safe only when the sole caller is a human-driven UI), or off to hide the tool so attestation happens through external tooling. A non-default value with OKF_WRITE off is a config error.",
+      "advancedGroup": "Content"
+    },
+    {
       "id": "attachment_extensions",
       "label": "Attachment Extensions",
       "type": "text",
@@ -670,6 +694,22 @@
       "type": "bool",
       "var": "MARKDOWN_VAULT_MCP_EMBED_CONTEXT",
       "help": "Enrich embedding input with the note title, chunk heading, and (first chunk) searchable-field values. Flipping it re-embeds the whole vault once on next startup.",
+      "advancedGroup": "Embeddings"
+    },
+    {
+      "id": "embed_timeout_s",
+      "label": "Embed Timeout S",
+      "type": "number",
+      "var": "MARKDOWN_VAULT_MCP_EMBED_TIMEOUT_S",
+      "help": "Per-request wall-clock budget in seconds for a single embedding HTTP call (OpenAI/Ollama). The local FastEmbed backend runs in-process with no network call and ignores this. CPU-only or large-model workloads may need 60-120 s; raise this if batches time out.",
+      "advancedGroup": "Embeddings"
+    },
+    {
+      "id": "embedding_batch_size",
+      "label": "Embedding Batch Size",
+      "type": "number",
+      "var": "MARKDOWN_VAULT_MCP_EMBEDDING_BATCH_SIZE",
+      "help": "Number of chunks sent per embedding request. Smaller batches shorten each request (useful under a tight timeout on slow models) at the cost of more round-trips.",
       "advancedGroup": "Embeddings"
     },
     {

@@ -755,11 +755,12 @@ Two-layer model:
 | `None` return | `read()` | Path escapes `source_dir` (traversal attempt) or file does not exist on disk |
 | `ValueError` | `edit()` | `old_text` is empty string |
 
-`build_embeddings()` processes chunks in bounded batches (default 64) to avoid
-pathological memory allocation from embedding providers (see issue #159).
-FastEmbed's ONNX inference uses a further inner batch size of 4 to keep
-per-call memory bounded; without this, the ONNX attention matrix for 64 long
-chunks can require >192 GB of allocation. The save happens once at the end so a
+`build_embeddings()` processes chunks in bounded batches (configurable via
+`MARKDOWN_VAULT_MCP_EMBEDDING_BATCH_SIZE`, default 4) to avoid pathological
+memory allocation from embedding providers (see issue #159). FastEmbed's ONNX
+inference uses a further inner batch size of 32 to keep per-call memory bounded;
+without this, the ONNX attention matrix for a large batch (e.g. 64 long
+chunks) can require >192 GB of allocation. The save happens once at the end so a
 mid-run crash does not leave a partial index on disk; if one exists anyway,
 the next startup's convergence pass (see Embedding Convergence, #665) embeds
 exactly the missing chunks rather than treating the index as complete.
@@ -1209,8 +1210,12 @@ what is implemented today:
   progressive-disclosure intent rather than flattening the subtree — and
   preserves existing frontmatter (the root ``okf_version`` declaration
   survives regeneration). ``okf_seed_log``
-  writes a reserved ``log.md`` from vault-wide git history (newest-first
+  writes a reserved ``log.md`` from git history (newest-first
   ``## YYYY-MM-DD`` sections), refusing to overwrite an existing log. The
+  ``folder`` argument both places the log and scopes its content: a folder
+  seeds only the commits that touched that subtree (via the read-only
+  git-history layer's directory support — ``git log -- <dir>``), while the
+  bundle root seeds whole-vault history (#974). The
   tools are tagged ``{"okf", "write"}`` — hidden in read-only mode and
   under ``OKF_MODE=off`` — and gate on read-only only, not a future
   ``OKF_WRITE`` flag (they are migrations, not enforcement). Bundle export
@@ -1929,7 +1934,7 @@ class Vault:
 `IndexFacet.build_index`; the server builds at startup, and a cold on-disk
 start builds in the background (#513). No lazy build on first query.
 
-**Write operations** (`write`, `edit`, `delete`, `rename`) raise
+**Write operations** raise
 `ReadOnlyError` when `read_only=True`.
 
 **`write()` behavior**: creates or overwrites the document at `path`. Creates
@@ -2028,7 +2033,8 @@ matched against the relative path using `fnmatch.fnmatch()`. Example:
 **`on_write` callback**:
 
 ```python
-WriteCallback = Callable[[Path, str, Literal["write", "edit", "delete", "rename"]], None]
+WriteOperation = Literal["write", "edit", "delete", "rename"]
+WriteCallback = Callable[[Path, str, WriteOperation], None]
 ```
 
 - `path`: absolute path on disk.
@@ -2301,7 +2307,8 @@ contain this, both operator-tunable:
 
 - **Per-request timeout** — ``OpenAISummarizer`` constructs its client with
   ``timeout=SUMMARIZE_TIMEOUT`` (default 120 s, mirroring the embeddings
-  transport's fixed 30 s). An ``openai.APITimeoutError`` is mapped to a
+  transport's configurable timeout (``MARKDOWN_VAULT_MCP_EMBED_TIMEOUT_S``,
+  default 30 s). An ``openai.APITimeoutError`` is mapped to a
   specific, actionable ``RuntimeError`` — naming the budget and the ways to
   fit under it (fewer paths, a smaller ``max_notes``, a tighter ``focus``,
   ``per_note`` mode, or a higher ``SUMMARIZE_TIMEOUT``) — so the caller sees
@@ -2859,7 +2866,7 @@ Safety branch mode for push failures is tracked separately (see #119).
 
 **Git history queries**: `GitWriteStrategy` exposes two read-only methods for querying the git commit log without modifying any state:
 
-- `get_file_history(repo_path, path, since, limit, until=None)`: runs `git log` with a sentinel-delimited format string to enumerate commits touching a note or the entire vault. Uses ASCII Record Separator (`\x1e`) as a block delimiter so commit records can be parsed reliably regardless of commit message content. Vault-wide queries append `--name-only` to include changed file paths per commit. Both `since` and `until` are passed through verbatim to `git log` and are inclusive at the boundary.
+- `get_file_history(repo_path, path, since, limit, until=None, *, is_dir=False)`: runs `git log` with a sentinel-delimited format string to enumerate commits touching a note, a folder subtree, or the entire vault. Uses ASCII Record Separator (`\x1e`) as a block delimiter so commit records can be parsed reliably regardless of commit message content. A single-file query uses `--follow` (rename-tracking) and returns no per-commit paths; a directory query (`is_dir=True`, dispatched by `GitQueryManager.get_history` when `path` resolves to a real directory) drops `--follow` and scopes to `git log --name-only -- <dir>`, and vault-wide queries append `--name-only` — both populate each commit's changed file paths (git scopes the `--name-only` output to the directory pathspec, so no sibling files leak in). Both `since` and `until` are passed through verbatim to `git log` and are inclusive at the boundary.
 - `get_file_diff(repo_path, path, ref, per_commit, since_timestamp=None, limit=None)`: runs `git diff` or `git show` to produce unified diffs. When `since_sha` is provided (validated as `[0-9a-f]{4,40}`), it is used directly as the ref. When `since_timestamp` is provided, `git rev-list --before=<ts> -1 HEAD` resolves it to a SHA (boundary **inclusive**: `--before` returns the most recent commit at or before that instant, meaning a commit whose committer date equals the timestamp is the resolved ref). When `per_commit=True` and `limit` is set, the inner `git log` adds `-n{clamped_limit}` (clamped to `[1, 100]`) to cap the number of commits walked, useful for keeping per-commit responses within LLM context budgets. Output exceeding 50 KB is truncated with a `[diff truncated: N bytes omitted]` note. `CalledProcessError` from an unknown ref is re-raised as `ValueError`.
 
 Both methods use the existing `_git_env()` / `_cleanup_git_env()` pattern for credential forwarding and cleanup. Path arguments are always validated via `Vault._validate_path()` before being passed to the git layer. No shell injection is possible because all subprocess calls use list arguments with `shell=False`.

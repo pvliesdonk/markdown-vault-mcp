@@ -166,6 +166,10 @@ packaging:
   "{PREFIX}_SERVER_NAME": [pypi, oci]
   "{PREFIX}_INSTRUCTIONS": [pypi, oci]
   "{PREFIX}_HTTP_PATH": [oci]
+  # Not HTTP-specific: apply_tool_visibility runs in make_server regardless
+  # of transport, so a stdio (pypi/uvx) install can trim its tool set too.
+  "{PREFIX}_TOOLS_ALLOW": [pypi, oci]
+  "{PREFIX}_TOOLS_DENY": [pypi, oci]
   "{PREFIX}_BASE_URL": [oci]
   "{PREFIX}_AUTH_MODE": [oci]
   "{PREFIX}_BEARER_TOKEN": [oci]
@@ -289,6 +293,8 @@ wizard_labels:
   "{PREFIX}_ACL_PATH": "ACL path"
   "{PREFIX}_AUTHZ_CLAIM": "Authorization claim"
   "{PREFIX}_AUTHZ_GRANTS": "Authorization grants (JSON)"
+  "{PREFIX}_TOOLS_ALLOW": "Tool allowlist (CSV)"
+  "{PREFIX}_TOOLS_DENY": "Tool denylist (CSV)"
   "FASTMCP_LOG_LEVEL": "Log level"
   "FASTMCP_ENABLE_RICH_LOGGING": "Rich logging"
 
@@ -300,6 +306,26 @@ wizard_labels:
 wizard_help:
   "{PREFIX}_KV_STORE_URL": "Persistent-state backend URL: memory://, file:///path, redis://, dynamodb://, or mongodb://. Defaults to file:///data/state when unset."
   "{PREFIX}_OIDC_JWT_SIGNING_KEY": "Optional signing key for issued JWTs. When unset it is derived from the client secret; set explicitly to keep tokens valid across a secret rotation. Generate: openssl rand -hex 32."
+  "{PREFIX}_TOOLS_ALLOW": "Comma-separated tool names this instance exposes; every other tool is hidden. Leave empty to expose all tools. Mutually exclusive with the denylist."
+  "{PREFIX}_TOOLS_DENY": "Comma-separated tool names to hide from this instance. Mutually exclusive with the allowlist."
+
+# Wizard-hint overrides, keyed by full var name — same lookup shape as
+# `examples` and `wizard_labels`, and the only lever that can change a core
+# var's wizard *placement* (group/when/control), which core's own field
+# metadata owns. An entry replaces the var's hint wholesale and clears the
+# `inferred` shorthand; an entry naming a var no provenance collected fails
+# generation loudly, so a stale override cannot outlive the upstream fix it
+# papers over.
+#
+# TOOLS_ALLOW / TOOLS_DENY: core 4.10.1 tags both `"wizard": "inferred"`,
+# but `inferred` means "value derived from another setting" (true of
+# AUTH_MODE, which auto-detects) — nothing derives these two; they are
+# ordinary operator inputs (#321/#322). No `when`: apply_tool_visibility
+# runs regardless of transport, so a stdio deployment can trim tools too.
+# Drop both entries once core stops shipping them as inferred.
+wizard_hints:
+  "{PREFIX}_TOOLS_ALLOW": {group: Tools}
+  "{PREFIX}_TOOLS_DENY": {group: Tools}
 
 # Wizard routing questions that emit a var rather than mapping 1:1 to one.
 wizard_routing:

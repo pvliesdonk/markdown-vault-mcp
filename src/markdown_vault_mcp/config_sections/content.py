@@ -22,6 +22,12 @@ class ContentConfig:
     ``"auto"`` follows the vault's ``okf_version`` declaration in the root
     ``index.md``, ``"off"`` never applies OKF semantics, ``"on"`` forces
     them without a declaration.
+
+    ``okf_verify`` governs how the ``okf_verify`` tool attests a human review
+    (only meaningful when ``okf_write`` is on, which gates the tool):
+    ``"elicit"`` (default) requires an affirmative MCP elicitation and fails
+    closed otherwise, ``"trust-auth"`` attributes to the authenticated caller
+    with no confirmation, ``"off"`` hides the tool.
     """
 
     attachment_extensions: Sequence[str] | None = None
@@ -32,6 +38,7 @@ class ContentConfig:
     conventions_file: str | None = "_conventions.md"
     okf_mode: str = "auto"
     okf_write: bool = False
+    okf_verify: str = "elicit"
 
     def __post_init__(self) -> None:
         """Validate size limits (#638) and freeze attachment_extensions (#639).
@@ -91,4 +98,17 @@ class ContentConfig:
         if self.okf_write and self.okf_mode == "off":
             raise ConfigurationError(
                 "okf_write=true requires okf_mode to be auto or on, not off"
+            )
+        if self.okf_verify not in ("elicit", "off", "trust-auth"):
+            raise ConfigurationError(
+                "okf_verify must be one of elicit/off/trust-auth, got "
+                f"{self.okf_verify!r}"
+            )
+        # okf_verify only governs the okf_verify tool, which OKF_WRITE gates; a
+        # non-default value with the enforced layer off is an operator mistake
+        # (the tool is hidden, so the setting would silently do nothing).
+        if not self.okf_write and self.okf_verify != "elicit":
+            raise ConfigurationError(
+                "okf_verify is only meaningful when okf_write is enabled; set "
+                "okf_write=true or leave okf_verify at its default 'elicit'"
             )

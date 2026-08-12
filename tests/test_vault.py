@@ -5,6 +5,7 @@ from __future__ import annotations
 import concurrent.futures
 import json
 import logging
+import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 from unittest.mock import patch
@@ -1984,6 +1985,55 @@ class TestAtomicWrites:
         assert mode == 0o644, (
             f"write_attachment() changed file permissions from 0o644 to {oct(mode)}"
         )
+
+    def test_write_new_file_honours_umask(
+        self, writable: Vault, vault_path: Path
+    ) -> None:
+        """A freshly written document lands at 0o666 & ~umask, not tempfile's 0o600."""
+        from markdown_vault_mcp.managers import document as doc
+
+        old = os.umask(0o027)
+        doc._umask = None  # force a re-read of the umask we just set
+        try:
+            writable.writer.write("umask_new.md", "content")
+        finally:
+            os.umask(old)
+            doc._umask = None  # drop the cache so later tests re-read ambient
+        mode = (vault_path / "umask_new.md").stat().st_mode & 0o777
+        assert mode == 0o640, (
+            f"new file mode is {oct(mode)}, expected 0o640 (0o666 & ~0o027)"
+        )
+
+    def test_write_attachment_new_file_honours_umask(
+        self, writable: Vault, vault_path: Path
+    ) -> None:
+        """A freshly written attachment lands at 0o666 & ~umask, not 0o600."""
+        from markdown_vault_mcp.managers import document as doc
+
+        old = os.umask(0o027)
+        doc._umask = None
+        try:
+            writable.writer.write_attachment("attach_new.png", b"\x89PNG\r\n\x1a\n")
+        finally:
+            os.umask(old)
+            doc._umask = None
+        mode = (vault_path / "attach_new.png").stat().st_mode & 0o777
+        assert mode == 0o640, (
+            f"new attachment mode is {oct(mode)}, expected 0o640 (0o666 & ~0o027)"
+        )
+
+    def test_process_umask_caches_across_calls(self) -> None:
+        """_process_umask caches: repeat calls return the same value."""
+        from markdown_vault_mcp.managers import document as doc
+
+        doc._umask = None
+        try:
+            first = doc._process_umask()
+            second = doc._process_umask()
+            assert first == second
+            assert doc._umask == first
+        finally:
+            doc._umask = None  # test isolation: later tests re-read ambient
 
     def test_write_attachment_preserves_original_on_failed_write(
         self, writable: Vault, vault_path: Path

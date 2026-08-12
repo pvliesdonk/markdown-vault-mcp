@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any
 import frontmatter as fm
 import pytest
 from fastmcp import Client
+from fastmcp.client.elicitation import ElicitResult
 from fastmcp.exceptions import ToolError
 
 from markdown_vault_mcp import _okf_write
@@ -292,6 +293,35 @@ class TestConfigCrossValidation:
         cfg = ContentConfig(okf_write=True, okf_mode=mode)
         assert cfg.okf_write is True
 
+    @pytest.mark.parametrize("bad", ["nope", "ELICIT", "auth", ""])
+    def test_okf_verify_rejects_unknown_value(self, bad: str) -> None:
+        from markdown_vault_mcp.config_sections.content import ContentConfig
+        from markdown_vault_mcp.exceptions import ConfigurationError
+
+        with pytest.raises(ConfigurationError, match="okf_verify must be one of"):
+            ContentConfig(okf_write=True, okf_verify=bad)
+
+    @pytest.mark.parametrize("mode", ["off", "trust-auth"])
+    def test_okf_verify_non_default_requires_okf_write(self, mode: str) -> None:
+        from markdown_vault_mcp.config_sections.content import ContentConfig
+        from markdown_vault_mcp.exceptions import ConfigurationError
+
+        with pytest.raises(ConfigurationError, match="only meaningful when okf_write"):
+            ContentConfig(okf_write=False, okf_verify=mode)
+
+    def test_okf_verify_default_allowed_without_okf_write(self) -> None:
+        from markdown_vault_mcp.config_sections.content import ContentConfig
+
+        # The default value must not trip the OKF_WRITE-off interaction guard.
+        assert ContentConfig(okf_write=False).okf_verify == "elicit"
+
+    @pytest.mark.parametrize("mode", ["elicit", "off", "trust-auth"])
+    def test_okf_verify_allowed_with_okf_write(self, mode: str) -> None:
+        from markdown_vault_mcp.config_sections.content import ContentConfig
+
+        cfg = ContentConfig(okf_write=True, okf_verify=mode)
+        assert cfg.okf_verify == mode
+
 
 # ---------------------------------------------------------------------------
 # Invalidation matrix — end to end through a writable, OKF-active vault
@@ -420,6 +450,39 @@ def enforced_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_WRITE", "true")
     return vault
+
+
+@pytest.fixture
+def trust_auth_env(enforced_env: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Enforced-write vault with okf_verify pinned to the no-confirmation mode."""
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_VERIFY", "trust-auth")
+    return enforced_env
+
+
+async def _accept_review(
+    _message: str, _response_type: Any, _params: Any, _context: Any
+) -> bool:
+    """Elicitation handler that affirmatively confirms the review."""
+    return True
+
+
+async def _accept_negative(
+    _message: str, _response_type: Any, _params: Any, _context: Any
+) -> bool:
+    """Elicitation handler that accepts the form but answers 'no'."""
+    return False
+
+
+async def _decline_review(
+    _message: str, _response_type: Any, _params: Any, _context: Any
+) -> ElicitResult:
+    """Elicitation handler that declines the elicitation outright."""
+    return ElicitResult(action="decline")
+
+
+def _verified_meta(path: Path) -> Any:
+    """Return the ``verified`` frontmatter list for *path* (or None)."""
+    return fm.loads(path.read_text(encoding="utf-8")).metadata.get("verified")
 
 
 @pytest.mark.usefixtures("enforced_env")
@@ -551,8 +614,10 @@ class TestFetchThreadsActor:
         assert meta["generated"]["by"] == "human:peter"
 
 
-@pytest.mark.usefixtures("enforced_env")
-class TestOkfVerifyTool:
+@pytest.mark.usefixtures("trust_auth_env")
+class TestOkfVerifyTrustAuth:
+    """okf_verify under ``OKF_VERIFY=trust-auth`` — attribute to the auth subject."""
+
     async def test_refuses_without_auth(self) -> None:
         async with Client(make_server()) as client:
             await wait_for_mcp_writer_drain(client)
@@ -560,7 +625,7 @@ class TestOkfVerifyTool:
                 await client.call_tool("okf_verify", {"path": "guides/playbook.md"})
 
     async def test_appends_verification_when_authed(
-        self, enforced_env: Path, monkeypatch: pytest.MonkeyPatch
+        self, trust_auth_env: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: "peter")
         async with Client(make_server()) as client:
@@ -575,7 +640,7 @@ class TestOkfVerifyTool:
         # The append survives — okf_verify suppresses the enricher so its own
         # write does not clear the verification it just added.
         meta = fm.loads(
-            (enforced_env / "guides" / "playbook.md").read_text(encoding="utf-8")
+            (trust_auth_env / "guides" / "playbook.md").read_text(encoding="utf-8")
         ).metadata
         assert meta["verified"] == [
             {"by": "human:peter", "at": _dt.date.today().isoformat()}
@@ -589,7 +654,7 @@ class TestOkfVerifyTool:
                 await client.call_tool("okf_verify", {"path": "nope.md"})
 
     async def test_aborts_on_concurrent_modification(
-        self, enforced_env: Path, monkeypatch: pytest.MonkeyPatch
+        self, trust_auth_env: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         # okf_verify reads then writes with if_match=note.etag. Simulate a
         # concurrent write landing in that window by mutating the file from
@@ -601,7 +666,7 @@ class TestOkfVerifyTool:
         real_append = writer_mod.append_okf_verification
 
         def racing_append(text: str, *, subject: str, today: Any) -> str:
-            (enforced_env / "guides" / "playbook.md").write_text(
+            (trust_auth_env / "guides" / "playbook.md").write_text(
                 "---\ntitle: Raced\n---\n# Raced\n", encoding="utf-8"
             )
             return real_append(text, subject=subject, today=today)
@@ -611,3 +676,94 @@ class TestOkfVerifyTool:
             await wait_for_mcp_writer_drain(client)
             with pytest.raises(ToolError, match="changed since it was read"):
                 await client.call_tool("okf_verify", {"path": "guides/playbook.md"})
+
+
+@pytest.mark.usefixtures("enforced_env")
+class TestOkfVerifyElicit:
+    """okf_verify under the default ``OKF_VERIFY=elicit`` — human elicitation gate."""
+
+    async def test_writes_on_affirmative_elicitation(
+        self, enforced_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # An affirmative elicitation reply attributes to the authenticated
+        # subject and records the verification.
+        monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: "peter")
+        async with Client(make_server(), elicitation_handler=_accept_review) as client:
+            await wait_for_mcp_writer_drain(client)
+            result = await client.call_tool(
+                "okf_verify", {"path": "guides/playbook.md"}
+            )
+            await wait_for_mcp_writer_drain(client)
+        payload = _parse_tool_data(result)
+        assert payload["verifier"] == "human:peter"
+        assert payload["verified_count"] == 1
+        assert _verified_meta(enforced_env / "guides" / "playbook.md") == [
+            {"by": "human:peter", "at": _dt.date.today().isoformat()}
+        ]
+
+    async def test_no_auth_stamps_local_after_confirmation(self) -> None:
+        # With no auth the elicitation — not the token — proves a human is
+        # present, so the entry is attributed to the local sentinel.
+        async with Client(make_server(), elicitation_handler=_accept_review) as client:
+            await wait_for_mcp_writer_drain(client)
+            result = await client.call_tool(
+                "okf_verify", {"path": "guides/playbook.md"}
+            )
+            await wait_for_mcp_writer_drain(client)
+        assert _parse_tool_data(result)["verifier"] == "human:local"
+
+    async def test_declined_elicitation_writes_nothing(
+        self, enforced_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: "peter")
+        async with Client(make_server(), elicitation_handler=_decline_review) as client:
+            await wait_for_mcp_writer_drain(client)
+            with pytest.raises(ToolError, match="not confirmed"):
+                await client.call_tool("okf_verify", {"path": "guides/playbook.md"})
+            await wait_for_mcp_writer_drain(client)
+        assert _verified_meta(enforced_env / "guides" / "playbook.md") is None
+
+    async def test_negative_reply_writes_nothing(
+        self, enforced_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Accepting the form but answering 'no' is not an affirmation.
+        monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: "peter")
+        async with Client(
+            make_server(), elicitation_handler=_accept_negative
+        ) as client:
+            await wait_for_mcp_writer_drain(client)
+            with pytest.raises(ToolError, match="not confirmed"):
+                await client.call_tool("okf_verify", {"path": "guides/playbook.md"})
+            await wait_for_mcp_writer_drain(client)
+        assert _verified_meta(enforced_env / "guides" / "playbook.md") is None
+
+    async def test_unsupported_client_fails_closed(
+        self, enforced_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # No elicitation_handler → the client cannot elicit → fail closed.
+        monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: "peter")
+        async with Client(make_server()) as client:
+            await wait_for_mcp_writer_drain(client)
+            with pytest.raises(ToolError, match="does not support elicitation"):
+                await client.call_tool("okf_verify", {"path": "guides/playbook.md"})
+            await wait_for_mcp_writer_drain(client)
+        assert _verified_meta(enforced_env / "guides" / "playbook.md") is None
+
+
+@pytest.mark.usefixtures("enforced_env")
+class TestOkfVerifyOff:
+    """okf_verify under ``OKF_VERIFY=off`` — the tool is hidden entirely."""
+
+    async def test_tool_absent_from_listing(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_VERIFY", "off")
+        async with Client(make_server()) as client:
+            tools = await client.list_tools()
+        assert "okf_verify" not in [t.name for t in tools]
+
+    async def test_present_by_default(self) -> None:
+        # Sanity check the complement: with the default mode the tool is listed.
+        async with Client(make_server()) as client:
+            tools = await client.list_tools()
+        assert "okf_verify" in [t.name for t in tools]
