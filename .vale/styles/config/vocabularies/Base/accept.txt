@@ -24,6 +24,11 @@ id_token
 # --- OKF (Open Knowledge Format) tool identifiers ---
 okf_verify
 
+# --- Write-tool identifiers (READ_ONLY-gated set, #1009) ---
+create_upload_link
+git_sync
+move_folder
+
 # --- Python / runtime ecosystem ---
 debugpy
 mypy
