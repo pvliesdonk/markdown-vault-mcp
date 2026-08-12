@@ -119,6 +119,10 @@ exclude = ["src/markdown_vault_mcp/static/app.src.html"]
 target-version = "py311"
 line-length = 88
 src = ["src", "tests"]
+# tests/fixtures markdown is byte-exact test data (including a deliberately
+# invalid-UTF-8 file that ruff >=0.16's markdown formatter cannot even read);
+# never lint or format it.
+extend-exclude = ["tests/fixtures/**/*.md"]
 
 [tool.ruff.lint]
 select = [
