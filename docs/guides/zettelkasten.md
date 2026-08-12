@@ -120,7 +120,7 @@ vault = Vault(source_dir="/path/to/vault")
 vault.writer.write(
     "Inbox/quick-idea.md",
     content="Distributed systems are hard.",
-    frontmatter={"type": "fleeting", "tags": ["systems"]},
+    frontmatter={"type": "fleeting", "tags": ["systems"]}
 )
 ```
 
@@ -167,7 +167,7 @@ results = vault.reader.search("consensus", mode="hybrid", limit=20)
 vault.writer.edit(
     "Inbox/consensus-algorithms.md",
     old_text="type: fleeting",
-    new_text="type: permanent",
+    new_text="type: permanent"
 )
 ```
 
@@ -205,7 +205,7 @@ for note in similar:
 path = vault.graph.get_connection_path(
     source="Notes/distributed-systems.md",
     target="Notes/fault-tolerance.md",
-    max_depth=5,
+    max_depth=5
 )
 if path:
     print(f"Connection: {' -> '.join(path)}")
@@ -221,7 +221,7 @@ Edit the note and add `[[wikilink]]` or `[text](path.md)` references:
 vault.writer.edit(
     "Notes/consensus.md",
     old_text="## Evidence",
-    new_text="## Evidence\n\nSee [[Byzantine Fault Tolerance]] for formal proofs.",
+    new_text="## Evidence\n\nSee [[Byzantine Fault Tolerance]] for formal proofs."
 )
 ```
 
@@ -238,7 +238,7 @@ When a note title changes, rename it and update all backlinks automatically:
 vault.writer.rename(
     "Notes/old-title.md",
     "Notes/new-title.md",
-    update_links=True,  # Rewrites [[old-title]] to [[new-title]] in all notes
+    update_links=True  # Rewrites [[old-title]] to [[new-title]] in all notes
 )
 ```
 
@@ -307,7 +307,11 @@ A **MOC** (Map of Content) is a curated hub note that aggregates links to relate
    vault.writer.write(
        "Notes/Distributed-Systems-MOC.md",
        content="# Distributed Systems\n\n## Core concepts\n...",
-       frontmatter={"type": "moc", "tags": ["moc"], "title": "Distributed Systems (MOC)"},
+       frontmatter={
+           "type": "moc",
+           "tags": ["moc"],
+           "title": "Distributed Systems (MOC)"
+       }
    )
    ```
 5. Add `[[wikilinks]]` to permanent notes grouped by depth or topic
@@ -316,7 +320,7 @@ A **MOC** (Map of Content) is a curated hub note that aggregates links to relate
    vault.writer.edit(
        "Notes/consensus.md",
        old_text="## Related",
-       new_text="## Related\n\nSee [[Distributed-Systems-MOC]] for the full map.",
+       new_text="## Related\n\nSee [[Distributed-Systems-MOC]] for the full map."
    )
    ```
 
@@ -480,7 +484,9 @@ When you want to see how two seemingly distant topics relate, use `get_connectio
 
 ```python
 path = vault.graph.get_connection_path(
-    source="Notes/machine-learning.md", target="Notes/philosophy.md", max_depth=6
+    source="Notes/machine-learning.md",
+    target="Notes/philosophy.md",
+    max_depth=6
 )
 # Might return: ["machine-learning", "artificial-intelligence", "consciousness", "philosophy"]
 ```
@@ -502,7 +508,7 @@ Tags are not a rigid classification system. Use them for grouping and quick filt
 tags: [systems, distributed, algorithms]
 
 # Avoid (over-specific)
-tags: [system - type - 1, category - a - variant - b]
+tags: [system-type-1, category-a-variant-b]
 ```
 
 Use search and links for discovery. Tags are just shortcuts.

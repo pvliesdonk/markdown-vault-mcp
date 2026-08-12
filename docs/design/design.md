@@ -1440,41 +1440,33 @@ from typing import Any, Literal
 
 # --- Scanner types ---
 
-
 @dataclass
 class ParsedNote:
     """A parsed markdown document."""
-
-    path: str  # relative to source_dir, includes .md
-    frontmatter: dict[str, Any]  # parsed YAML frontmatter (empty dict if none)
-    title: str  # from frontmatter, first H1, or filename
-    chunks: list[Chunk]  # content chunks
-    content_hash: str  # SHA256 of raw file content
-    modified_at: float  # file mtime
-
+    path: str                         # relative to source_dir, includes .md
+    frontmatter: dict[str, Any]       # parsed YAML frontmatter (empty dict if none)
+    title: str                        # from frontmatter, first H1, or filename
+    chunks: list[Chunk]               # content chunks
+    content_hash: str                 # SHA256 of raw file content
+    modified_at: float                # file mtime
 
 @dataclass
 class Chunk:
     """A chunk of a document, typically a section under a heading."""
-
-    heading: str | None  # heading text, None for preamble
-    heading_level: int  # 0 for preamble, 1-6 for headings
-    content: str  # markdown body (frontmatter stripped)
-    start_line: int  # line number in source file
-
+    heading: str | None               # heading text, None for preamble
+    heading_level: int                # 0 for preamble, 1-6 for headings
+    content: str                      # markdown body (frontmatter stripped)
+    start_line: int                   # line number in source file
 
 # --- Search types ---
-
 
 @dataclass
 class SectionHit:
     """One section's contribution to a GroupedResult."""
-
-    heading: str | None  # section heading (None for the intro)
-    content: str  # matched snippet (query-relevant window
-    # by default, full chunk if snippet_words=0)
-    score: float  # chunk-level score after length-downweight
-
+    heading: str | None               # section heading (None for the intro)
+    content: str                      # matched snippet (query-relevant window
+                                      # by default, full chunk if snippet_words=0)
+    score: float                      # chunk-level score after length-downweight
 
 @dataclass
 class GroupedResult:
@@ -1482,17 +1474,15 @@ class GroupedResult:
     and get_context.similar (since v2.0.0 / issue #469).
 
     One entry per file with up to chunks_per_file best-matching sections."""
-
-    path: str  # document relative path
-    title: str  # document title
-    folder: str  # derived folder
-    score: float  # file-level score = max(section.score)
+    path: str                         # document relative path
+    title: str                        # document title
+    folder: str                       # derived folder
+    score: float                      # file-level score = max(section.score)
     search_type: Literal["keyword", "semantic", "hybrid"]
-    frontmatter: dict[str, Any]  # document frontmatter
-    sections: list[SectionHit]  # up to chunks_per_file sections, sorted
-    # by (score DESC, start_line ASC,
-    # section_id ASC)
-
+    frontmatter: dict[str, Any]       # document frontmatter
+    sections: list[SectionHit]        # up to chunks_per_file sections, sorted
+                                      # by (score DESC, start_line ASC,
+                                      # section_id ASC)
 
 @dataclass
 class SearchResult:
@@ -1500,189 +1490,154 @@ class SearchResult:
     (importable from ``markdown_vault_mcp.types``); new code returns GroupedResult.  Not
     directly returned by search()/get_similar()/get_context after v2.0.0.
     See GroupedResult."""
-
-    path: str  # document relative path
-    title: str  # document title
-    folder: str  # derived folder
-    heading: str | None  # matched section heading (None for summary)
-    content: str  # matched text content
-    score: float  # relevance score (RRF in hybrid mode)
+    path: str                         # document relative path
+    title: str                        # document title
+    folder: str                       # derived folder
+    heading: str | None               # matched section heading (None for summary)
+    content: str                      # matched text content
+    score: float                      # relevance score (RRF in hybrid mode)
     search_type: Literal["keyword", "semantic"]
-    frontmatter: dict[str, Any]  # document frontmatter
-
+    frontmatter: dict[str, Any]       # document frontmatter
 
 @dataclass
 class FTSResult:
     """A raw search result from the FTS5 index layer."""
-
     path: str
     title: str
     folder: str
     heading: str | None
     content: str
-    score: float  # BM25 score (abs value)
-
+    score: float                      # BM25 score (abs value)
 
 # --- CRUD types ---
-
 
 @dataclass
 class NoteContent:
     """Full content of a document, returned by read()."""
-
     path: str
     title: str
     folder: str
-    content: str  # raw markdown (including frontmatter)
+    content: str                      # raw markdown (including frontmatter)
     frontmatter: dict[str, Any]
     modified_at: float
-    etag: str  # SHA256 hex of raw file bytes; use as if_match
-
+    etag: str                         # SHA256 hex of raw file bytes; use as if_match
 
 @dataclass
 class NoteInfo:
     """Summary info for a document, returned by list_documents()."""
-
     path: str
     title: str
     folder: str
     frontmatter: dict[str, Any]
     modified_at: float
-    kind: str = "note"  # always "note" for markdown documents
-
+    kind: str = "note"                # always "note" for markdown documents
 
 @dataclass
 class WriteResult:
     """Result of a write operation."""
-
     path: str
-    created: bool  # True if new file, False if overwrite
-
+    created: bool                     # True if new file, False if overwrite
 
 @dataclass
 class EditResult:
     """Result of an edit operation."""
-
     path: str
-    replacements: int  # always 1 (enforced by edit semantics)
-    match_type: str = "exact"  # "exact" or "normalized"
-
+    replacements: int                 # always 1 (enforced by edit semantics)
+    match_type: str = "exact"         # "exact" or "normalized"
 
 @dataclass
 class DeleteResult:
     """Result of a delete operation."""
-
     path: str
-
 
 @dataclass
 class RenameResult:
     """Result of a rename operation."""
-
     old_path: str
     new_path: str
     updated_links: int = 0  # number of source docs updated (update_links=True)
 
-
 # --- Index types ---
-
 
 @dataclass
 class IndexStats:
     """Statistics from build_index()."""
-
     documents_indexed: int
     chunks_indexed: int
-    skipped: int  # documents skipped (required_frontmatter)
-
+    skipped: int                      # documents skipped (required_frontmatter)
 
 @dataclass
 class ReindexResult:
     """Result of an incremental reindex."""
-
     added: int
     modified: int
     deleted: int
     unchanged: int
-    skipped: int = 0  # deliberately not indexed (#665)
-
+    skipped: int = 0                  # deliberately not indexed (#665)
 
 @dataclass
 class VaultStats:
     """Vault-wide statistics."""
-
     document_count: int
     chunk_count: int
     folder_count: int
     semantic_search_available: bool
     indexed_frontmatter_fields: list[str]
     attachment_extensions: list[str]
-    link_count: int = 0  # total rows in the links table
-    broken_link_count: int = 0  # links where target_path not in documents
-    orphan_count: int = 0  # documents with no inbound or outbound links
-
+    link_count: int = 0               # total rows in the links table
+    broken_link_count: int = 0        # links where target_path not in documents
+    orphan_count: int = 0             # documents with no inbound or outbound links
 
 # --- Change tracking ---
-
 
 @dataclass
 class ChangeSet:
     """Documents that changed since last index."""
-
     added: list[str]
     modified: list[str]
     deleted: list[str]
     unchanged: int
-    skipped_unchanged: int = 0  # recorded skips, content unchanged (#665)
-
+    skipped_unchanged: int = 0        # recorded skips, content unchanged (#665)
 
 # --- Graph types ---
-
 
 @dataclass
 class BacklinkInfo:
     """A document that links to a given path."""
-
     source_path: str
     source_title: str
     link_text: str
     link_type: Literal["markdown", "wikilink", "reference"]
     fragment: str | None = None
-    raw_target: str = ""  # literal link string as written in the source file
-
+    raw_target: str = ""              # literal link string as written in the source file
 
 @dataclass
 class OutlinkInfo:
     """A link from a document to another path."""
-
     target_path: str
     link_text: str
     link_type: Literal["markdown", "wikilink", "reference"]
     fragment: str | None = None
-    raw_target: str = ""  # literal link string as written in the source file
-    exists: bool = False  # True if target_path is indexed in the vault
-
+    raw_target: str = ""              # literal link string as written in the source file
+    exists: bool = False              # True if target_path is indexed in the vault
 
 @dataclass
 class BrokenLinkInfo:
     """A link whose target does not exist in the vault."""
-
     source_path: str
     source_title: str
     target_path: str
     link_text: str
     link_type: Literal["markdown", "wikilink", "reference"]
     fragment: str | None = None
-    raw_target: str = ""  # literal link string as written in the source file
-
+    raw_target: str = ""              # literal link string as written in the source file
 
 @dataclass
 class MostLinkedNote:
     """A document with its inbound backlink count, returned by get_most_linked()."""
-
     path: str
     title: str
-    backlink_count: int  # number of distinct source documents linking here
+    backlink_count: int               # number of distinct source documents linking here
 ```
 
 ## Database Schema
@@ -1934,12 +1889,11 @@ class Vault:
         self,
         *,
         source_dir: Path,
-        index_path: Path | None = None,  # None = in-memory SQLite
+        index_path: Path | None = None,       # None = in-memory SQLite
         embeddings_path: Path | None = None,  # None = semantic search disabled
         embedding_provider: EmbeddingProvider | None = None,
         read_only: bool = True,
-        state_path: Path
-        | None = None,  # None = {source_dir}/.markdown_vault_mcp/state.json
+        state_path: Path | None = None,       # None = {source_dir}/.markdown_vault_mcp/state.json
         indexed_frontmatter_fields: list[str] | None = None,
         required_frontmatter: list[str] | None = None,
         chunk_strategy: str | ChunkStrategy = "heading",
@@ -1965,7 +1919,7 @@ class Vault:
     def start(self) -> None: ...
     def stop(self) -> None: ...
     def close(self) -> None: ...
-    def pause_writes(self) -> Iterator[None]: ...  # context manager
+    def pause_writes(self) -> Iterator[None]: ...        # context manager
     def force_pull(self) -> PullResult | None: ...
     def sync_from_remote_before_index(self) -> None: ...
 ```
@@ -2116,7 +2070,6 @@ def scan_directory(
     required_frontmatter: list[str] | None = None,
 ) -> Iterator[ParsedNote]: ...
 
-
 def parse_note(path: Path, source_dir: Path) -> ParsedNote: ...
 ```
 
@@ -2150,14 +2103,9 @@ class FTSIndex:
     def build_from_notes(self, notes: Iterable[ParsedNote]) -> int: ...
     def upsert_note(self, note: ParsedNote) -> int: ...
     def delete_by_path(self, path: str) -> int: ...
-    def search(
-        self,
-        query: str,
-        *,
-        limit: int = 10,
-        folder: str | None = None,
-        filters: dict[str, str] | None = None,
-    ) -> list[FTSResult]: ...
+    def search(self, query: str, *, limit: int = 10,
+               folder: str | None = None,
+               filters: dict[str, str] | None = None) -> list[FTSResult]: ...
     def get_note(self, path: str) -> dict | None: ...
     def list_notes(self, *, folder: str | None = None) -> list[dict]: ...
     def list_folders(self) -> list[str]: ...
@@ -2227,15 +2175,11 @@ is unaffected.
 ```python
 class ChangeTracker:
     def __init__(self, state_path: Path): ...
-    def detect_changes(
-        self, source_dir: Path, glob_pattern: str = "**/*.md"
-    ) -> ChangeSet: ...
-    def update_state(
-        self,
-        notes: list[ParsedNote],
-        skipped: dict[str, str] | None = None,
-        skip_reasons: dict[str, dict[str, str]] | None = None,
-    ) -> None: ...
+    def detect_changes(self, source_dir: Path,
+                       glob_pattern: str = "**/*.md") -> ChangeSet: ...
+    def update_state(self, notes: list[ParsedNote],
+                     skipped: dict[str, str] | None = None,
+                     skip_reasons: dict[str, dict[str, str]] | None = None) -> None: ...
     def skip_reasons(self) -> dict[str, dict[str, str]]: ...
     def reset(self) -> None: ...
 ```
