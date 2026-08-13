@@ -31,15 +31,17 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
-    # >=4.11.0 for configure_task_backend + ServerConfig.tasks_url (the
-    # background-task backend surface, ADR 0002 §4), which server.py wires
-    # unconditionally.  4.11.0 also moves fastmcp[tasks] into pvl-core's BASE
-    # dependencies, so pydocket arrives transitively — no extra to declare
-    # here, and no packaging plumbing.  (4.10.1 was the previous floor, for
-    # apply_tool_visibility; 4.10.0 was tagged but never reached PyPI, and
-    # the config-surface generator pins the floor exactly, so the floor must
+    # >=4.11.1 for the usable-/data probe in build_kv_store's unset-URL
+    # default: server.py wires build_jobs unconditionally, and on 4.11.0
+    # that crashed make_server with PermissionError on hosts without a
+    # writable /data (bare-metal/uvx installs, CI).  4.11.0 brought
+    # configure_task_backend + ServerConfig.tasks_url (the background-task
+    # backend surface, ADR 0002 §4) and moved fastmcp[tasks] into
+    # pvl-core's BASE dependencies, so pydocket arrives transitively — no
+    # extra to declare here, and no packaging plumbing.  (The
+    # config-surface generator pins the floor exactly, so the floor must
     # name a version that exists on PyPI.)
-    "fastmcp-pvl-core>=4.11.0,<5",
+    "fastmcp-pvl-core>=4.11.1,<5",
     "typer>=0.12",
 
     # PROJECT-DEPS-START — add domain dependencies below; kept across copier update

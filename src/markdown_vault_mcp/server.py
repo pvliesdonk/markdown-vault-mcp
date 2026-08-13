@@ -277,24 +277,15 @@ def make_server(
     # #609). A client that speaks MCP tasks gets native task execution; any
     # other client past the JOBS_SOFT_DEADLINE_S soft deadline gets a job
     # handle to poll via the generic get_job_result tool.
-    from dataclasses import replace as _dc_replace
-
     from fastmcp_pvl_core import build_jobs, register_job_tools
 
     from markdown_vault_mcp._server_tools import summarize as summarize_tools
 
-    # Job records are ephemeral by design (the same posture as the former
-    # SummaryJobStore), so when no KV backend is configured the jobs store
-    # defaults to in-process memory rather than pvl-core's file:///data/state
-    # fallback — that path only exists in the Docker image, and building it
-    # eagerly here would crash make_server on bare-metal/uvx installs (the
-    # Claude plugin channel) and CI runners without a writable /data.
-    # Operators who set KV_STORE_URL (or the legacy EVENT_STORE_URL) share
-    # that backend, namespace "jobs", unchanged.
-    jobs_server_config = config.server
-    if not (config.server.kv_store_url or config.server.event_store_url):
-        jobs_server_config = _dc_replace(config.server, kv_store_url="memory://")
-    jobs = build_jobs(jobs_server_config, config.jobs)
+    # With no KV backend configured, core's default (>=4.11.1) is
+    # file:///data/state where that directory is usable (the Docker image)
+    # and memory:// everywhere else (bare-metal/uvx installs, CI) — so this
+    # needs no domain-side backend selection.
+    jobs = build_jobs(config.server, config.jobs)
     summarize_tools.register(mcp, jobs)
     register_job_tools(
         mcp,

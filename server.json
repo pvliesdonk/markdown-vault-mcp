@@ -21,7 +21,7 @@
       "environmentVariables": [
         {
           "name": "MARKDOWN_VAULT_MCP_KV_STORE_URL",
-          "description": "Persistent-state backend URL shared by every pvl-core subsystem that needs state. `memory://` is in-process and lost on restart; `file:///path` persists on one server; `redis://`, `dynamodb://` and `mongodb://` each need their matching extra. Defaults to `file:///data/state` when unset.",
+          "description": "Persistent-state backend URL shared by every pvl-core subsystem that needs state. `memory://` is in-process and lost on restart; `file:///path` persists on one server; `redis://`, `dynamodb://` and `mongodb://` each need their matching extra. When unset, defaults to `file:///data/state` (the volume family Docker images mount), or to `memory://` — with a warning — on a host where that directory is not usable.",
           "default": "file:///data/state"
         },
         {
@@ -515,7 +515,7 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_KV_STORE_URL",
-          "description": "Persistent-state backend URL shared by every pvl-core subsystem that needs state. `memory://` is in-process and lost on restart; `file:///path` persists on one server; `redis://`, `dynamodb://` and `mongodb://` each need their matching extra. Defaults to `file:///data/state` when unset.",
+          "description": "Persistent-state backend URL shared by every pvl-core subsystem that needs state. `memory://` is in-process and lost on restart; `file:///path` persists on one server; `redis://`, `dynamodb://` and `mongodb://` each need their matching extra. When unset, defaults to `file:///data/state` (the volume family Docker images mount), or to `memory://` — with a warning — on a host where that directory is not usable.",
           "default": "file:///data/state"
         },
         {
