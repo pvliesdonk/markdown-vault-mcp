@@ -546,75 +546,28 @@ class TestWriteToolThreadsActor:
         assert "generated" not in meta
 
 
-class _FakeResponse:
-    """Minimal stand-in for an httpx streaming response."""
-
-    status_code = 200
-
-    def __init__(self, body: bytes, content_type: str) -> None:
-        self._body = body
-        self.headers = {"content-type": content_type}
-
-    def raise_for_status(self) -> None:
-        return None
-
-    async def aiter_bytes(self, **_kwargs: object) -> Any:
-        yield self._body
-
-
-class _FakeStream:
-    def __init__(self, response: _FakeResponse) -> None:
-        self._response = response
-
-    async def __aenter__(self) -> _FakeResponse:
-        return self._response
-
-    async def __aexit__(self, *_exc: object) -> bool:
-        return False
-
-
-def _make_fake_client(body: bytes, content_type: str) -> type:
-    """Build a fake ``httpx.AsyncClient`` class serving *body* on any GET."""
-
-    class _FakeClient:
-        def __init__(self, *_a: object, **_k: object) -> None: ...
-
-        async def __aenter__(self) -> _FakeClient:
-            return self
-
-        async def __aexit__(self, *_exc: object) -> bool:
-            return False
-
-        def stream(self, *_a: object, **_k: object) -> _FakeStream:
-            return _FakeStream(_FakeResponse(body, content_type))
-
-    return _FakeClient
-
-
-async def _fake_resolve(_hostname: str, _port: int) -> list[str]:
-    return ["93.184.216.34"]
-
-
 @pytest.mark.usefixtures("enforced_env")
 class TestFetchThreadsActor:
     async def test_fetch_stamps_human_actor_when_authed(
         self, enforced_env: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        import httpx
+        from unittest.mock import AsyncMock
+
+        from fastmcp_pvl_core import FetchResult
 
         # fetch writes .md notes through DocumentManager.write, so the enricher
         # fires; the provenance actor must be the authenticated caller (#964).
         monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: "peter")
-        # The fetch tool delegates to pvl-core's fetch_url (#862); stub its
-        # documented DNS seam to a public IP so the SSRF guard passes.
+        # The download is incidental here — only the actor threading on the
+        # write path is under test — so fetch_url (a black-box library
+        # boundary, #1028) is stubbed with a canned result.
         monkeypatch.setattr(
-            "fastmcp_pvl_core._transfer.fetch._resolve_addresses",
-            _fake_resolve,
-        )
-        monkeypatch.setattr(
-            httpx,
-            "AsyncClient",
-            _make_fake_client(b"# Fetched\n\nBody.\n", "text/plain"),
+            "markdown_vault_mcp._server_tools.writer.fetch_url",
+            AsyncMock(
+                return_value=FetchResult(
+                    body=b"# Fetched\n\nBody.\n", content_type="text/plain"
+                )
+            ),
         )
         async with Client(make_server()) as client:
             await wait_for_mcp_writer_drain(client)

@@ -6,14 +6,11 @@ verifying end-to-end behaviour through the full Vault stack.
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
-import socket
-from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastmcp import Client, FastMCP
@@ -1377,99 +1374,43 @@ class TestAttachmentSizeCap:
 
 
 class TestFetchTool:
-    """Test the fetch MCP tool — downloads from URL and writes to vault."""
+    """Tests for the fetch MCP tool — MVM's use of pvl-core's ``fetch_url``.
+
+    ``fetch_url`` is treated as a black-box library: tests stub the tool's
+    own imported binding at its public interface (returning a real
+    ``FetchResult`` or raising its documented errors) and assert what the
+    tool passes in and how it handles what comes back — dispatch, size-cap
+    selection and translation, error surfacing, and the write paths. The
+    primitive's own behaviour (SSRF blocked-range matrix, DNS pinning,
+    ``trust_env=False``, redirects, streaming caps) is pvl-core contract,
+    covered upstream in fastmcp-pvl-core's ``test_transfer_fetch.py`` and
+    not re-tested here (#1028) — except one zero-mock sentinel
+    (:meth:`test_fetch_rejects_cgnat_ip`) proving the tool is wired to the
+    hardened primitive.
+    """
+
+    _FETCH_URL_SEAM = "markdown_vault_mcp._server_tools.writer.fetch_url"
+
+    # Mirrors writer._FETCH_UNCAPPED_BYTES — the sentinel the tool passes for
+    # "uncapped" (markdown, or a configured cap that floors to 0 bytes).
+    _UNCAPPED = 2**63 - 1
 
     @staticmethod
-    def _mock_httpx_stream(raw: bytes, headers: dict[str, str]) -> Any:
-        """Build a mock httpx.AsyncClient that streams *raw* bytes."""
-        from unittest.mock import AsyncMock, MagicMock
+    def _fetch_url_returning(body: bytes, content_type: str | None) -> AsyncMock:
+        """Stub ``fetch_url`` returning a real ``FetchResult``."""
+        from fastmcp_pvl_core import FetchResult
 
-        async def mock_aiter_bytes(chunk_size: int = 65536):  # noqa: ARG001
-            yield raw
-
-        mock_response = MagicMock()
-        # pvl-core's fetch_url range-checks the status before raise_for_status,
-        # so the mock must carry a real integer status code.
-        mock_response.status_code = 200
-        mock_response.raise_for_status = MagicMock()
-        mock_response.headers = headers
-        mock_response.aiter_bytes = mock_aiter_bytes
-
-        mock_stream_ctx = AsyncMock()
-        mock_stream_ctx.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_stream_ctx.__aexit__ = AsyncMock(return_value=False)
-
-        mock_client = AsyncMock()
-        mock_client.stream = MagicMock(return_value=mock_stream_ctx)
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-        return mock_client
-
-    # getaddrinfo sockaddr is a 2-tuple (host, port) for AF_INET and a 4-tuple
-    # (host, port, flowinfo, scope_id) for AF_INET6; the resolver only reads
-    # ``info[4][0]`` but the fake emits the real shapes so the annotation holds.
-    _Sockaddr = tuple[str, int] | tuple[str, int, int, int]
-
-    @staticmethod
-    def _getaddrinfo_returning(
-        *ips: str,
-    ) -> Callable[..., list[tuple[int, int, int, str, TestFetchTool._Sockaddr]]]:
-        """Build a fake ``getaddrinfo`` that resolves to *ips*."""
-
-        def fake(
-            _host: str, port: int, *_args: object, **_kwargs: object
-        ) -> list[tuple[int, int, int, str, TestFetchTool._Sockaddr]]:
-            out: list[tuple[int, int, int, str, TestFetchTool._Sockaddr]] = []
-            for ip in ips:
-                sockaddr: TestFetchTool._Sockaddr
-                if ":" in ip:
-                    family = socket.AF_INET6
-                    sockaddr = (ip, port or 0, 0, 0)
-                else:
-                    family = socket.AF_INET
-                    sockaddr = (ip, port or 0)
-                out.append((family, socket.SOCK_STREAM, 6, "", sockaddr))
-            return out
-
-        return fake
-
-    def _patch_resolves_to(self, monkeypatch: pytest.MonkeyPatch, *ips: str) -> None:
-        """Patch the running loop's ``getaddrinfo`` to resolve to *ips*.
-
-        Targets ``loop.getaddrinfo`` — what the resolver actually calls — rather
-        than ``socket.getaddrinfo``, so the stub holds under any event-loop
-        implementation (e.g. uvloop), not only CPython's selector loop where
-        ``loop.getaddrinfo`` happens to delegate to ``socket.getaddrinfo``.
-        """
-        fake = self._getaddrinfo_returning(*ips)
-
-        async def _aio_getaddrinfo(
-            host: str, port: int, *_args: object, **_kwargs: object
-        ) -> list[tuple[int, int, int, str, TestFetchTool._Sockaddr]]:
-            return fake(host, port)
-
-        monkeypatch.setattr(asyncio.get_running_loop(), "getaddrinfo", _aio_getaddrinfo)
-
-    @pytest.fixture(autouse=True)
-    async def _stub_public_dns(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Resolve any hostname to a fixed public IP so success-path fetch tests
-        never hit real DNS. SSRF tests override this with a private resolution."""
-        self._patch_resolves_to(monkeypatch, "93.184.216.34")
+        return AsyncMock(return_value=FetchResult(body=body, content_type=content_type))
 
     async def test_fetch_markdown_note(
         self, _mcp_env_writable_with_attachments: Path
     ) -> None:
-        """fetch with .md path decodes UTF-8 and writes a note."""
-        from unittest.mock import patch
-
-        import httpx
-
+        """fetch with .md path decodes UTF-8, writes a note, and passes the
+        URL, the uncapped sentinel, and the timeout through to fetch_url."""
         body = b"# Fetched\n\nContent from remote.\n"
-        mock_client = self._mock_httpx_stream(
-            body, {"content-type": "text/markdown; charset=utf-8"}
-        )
+        mock_fetch = self._fetch_url_returning(body, "text/markdown; charset=utf-8")
 
-        with patch.object(httpx, "AsyncClient", return_value=mock_client):
+        with patch(self._FETCH_URL_SEAM, mock_fetch):
             server = make_server()
             async with Client(server) as client:
                 result = await client.call_tool(
@@ -1481,11 +1422,15 @@ class TestFetchTool:
         assert data["created"] is True
         assert data["content_length"] == len(body)
         assert "text/markdown" in data["content_type"]
-        # Verify file written to disk.
         written = (_mcp_env_writable_with_attachments / "fetched.md").read_text(
             encoding="utf-8"
         )
         assert "# Fetched" in written
+        # Usage wiring: URL verbatim; markdown fetches are uncapped.
+        mock_fetch.assert_awaited_once()
+        assert mock_fetch.await_args.args == ("https://example.com/note.md",)
+        assert mock_fetch.await_args.kwargs["max_bytes"] == self._UNCAPPED
+        assert mock_fetch.await_args.kwargs["timeout_s"] == 30.0
 
     async def test_fetch_markdown_note_strips_bom(
         self, _mcp_env_writable_with_attachments: Path
@@ -1495,16 +1440,10 @@ class TestFetchTool:
         Asserts the on-disk bytes: the #673 read path already strips a BOM, so
         only inspecting disk proves the *ingress* write dropped it.
         """
-        from unittest.mock import patch
-
-        import httpx
-
         body = b"\xef\xbb\xbf# Fetched\n\nContent from remote.\n"
-        mock_client = self._mock_httpx_stream(
-            body, {"content-type": "text/markdown; charset=utf-8"}
-        )
+        mock_fetch = self._fetch_url_returning(body, "text/markdown; charset=utf-8")
 
-        with patch.object(httpx, "AsyncClient", return_value=mock_client):
+        with patch(self._FETCH_URL_SEAM, mock_fetch):
             server = make_server()
             async with Client(server) as client:
                 result = await client.call_tool(
@@ -1519,15 +1458,12 @@ class TestFetchTool:
     async def test_fetch_attachment(
         self, _mcp_env_writable_with_attachments: Path
     ) -> None:
-        """fetch with non-.md path writes binary attachment."""
-        from unittest.mock import patch
-
-        import httpx
-
+        """fetch with non-.md path writes a binary attachment and passes the
+        configured attachment cap (default 1 MB) through to fetch_url."""
         raw = b"\x89PNG\r\n\x1a\nfake-image-data"
-        mock_client = self._mock_httpx_stream(raw, {"content-type": "image/png"})
+        mock_fetch = self._fetch_url_returning(raw, "image/png")
 
-        with patch.object(httpx, "AsyncClient", return_value=mock_client):
+        with patch(self._FETCH_URL_SEAM, mock_fetch):
             server = make_server()
             async with Client(server) as client:
                 result = await client.call_tool(
@@ -1542,55 +1478,30 @@ class TestFetchTool:
         assert data["created"] is True
         assert data["content_length"] == len(raw)
         assert data["content_type"] == "image/png"
-        # Verify binary written to disk.
         written = (
             _mcp_env_writable_with_attachments / "assets" / "fetched.png"
         ).read_bytes()
         assert written == raw
-
-    async def test_fetch_rejects_file_scheme(
-        self, _mcp_env_writable_with_attachments: Path
-    ) -> None:
-        """file:// URLs are rejected (SSRF protection)."""
-        server = make_server()
-        async with Client(server) as client:
-            with pytest.raises(ToolError, match="http and https"):
-                await client.call_tool(
-                    "fetch",
-                    {"url": "file:///etc/passwd", "path": "stolen.md"},
-                )
-
-    async def test_fetch_rejects_ftp_scheme(
-        self, _mcp_env_writable_with_attachments: Path
-    ) -> None:
-        """ftp:// URLs are rejected."""
-        server = make_server()
-        async with Client(server) as client:
-            with pytest.raises(ToolError, match="http and https"):
-                await client.call_tool(
-                    "fetch",
-                    {"url": "ftp://example.com/file.txt", "path": "file.md"},
-                )
+        # Usage wiring: the default 1.0 MB attachment cap, in bytes.
+        assert mock_fetch.await_args.kwargs["max_bytes"] == 1024 * 1024
 
     async def test_fetch_size_limit(
         self, _mcp_env_writable_with_attachments: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Downloads exceeding MAX_ATTACHMENT_SIZE_MB are rejected during streaming."""
-        from unittest.mock import patch
-
-        import httpx
-
+        """fetch_url's documented size-cap refusal is translated into the
+        operator-facing message naming MAX_ATTACHMENT_SIZE_MB."""
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB", "0.001")
 
-        # ~2 KB payload > 0.001 MB (~1 KB)
-        mock_client = self._mock_httpx_stream(
-            b"x" * 2048, {"content-type": "application/octet-stream"}
-        )
+        async def _over_cap(url: str, *, max_bytes: int, **_kwargs: object) -> None:
+            # fetch_url's documented terminal message shape, with the cap the
+            # tool actually passed — the suffix writer.py matches on.
+            raise ValueError(
+                f"Download from {url} exceeded the size cap of {max_bytes} bytes."
+            )
 
-        with patch.object(httpx, "AsyncClient", return_value=mock_client):
+        with patch(self._FETCH_URL_SEAM, _over_cap):
             server = make_server()
             async with Client(server) as client:
-                # The refusal keeps naming the env var that raises the limit.
                 with pytest.raises(ToolError, match="MAX_ATTACHMENT_SIZE_MB"):
                     await client.call_tool(
                         "fetch",
@@ -1604,17 +1515,13 @@ class TestFetchTool:
         self, _mcp_env_writable_with_attachments: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """A positive cap that floors to 0 bytes disables the limit (pre-#862
-        behavior), rather than failing every attachment fetch on fetch_url's
-        positive-max_bytes validation."""
-        import httpx
-
+        behavior): the tool passes the uncapped sentinel instead of tripping
+        fetch_url's positive-max_bytes validation."""
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB", "0.0000005")
 
         raw = b"x" * 2048
-        mock_client = self._mock_httpx_stream(
-            raw, {"content-type": "application/octet-stream"}
-        )
-        with patch.object(httpx, "AsyncClient", return_value=mock_client):
+        mock_fetch = self._fetch_url_returning(raw, "application/octet-stream")
+        with patch(self._FETCH_URL_SEAM, mock_fetch):
             server = make_server()
             async with Client(server) as client:
                 result = await client.call_tool(
@@ -1622,19 +1529,16 @@ class TestFetchTool:
                     {"url": "https://example.com/tiny.pdf", "path": "assets/tiny.pdf"},
                 )
         assert result.data["content_length"] == len(raw)
+        assert mock_fetch.await_args.kwargs["max_bytes"] == self._UNCAPPED
 
     async def test_fetch_frontmatter_applied(
         self, _mcp_env_writable_with_attachments: Path
     ) -> None:
         """frontmatter dict is applied when writing .md files."""
-        from unittest.mock import patch
-
-        import httpx
-
         body = b"# Report\n\nGenerated content.\n"
-        mock_client = self._mock_httpx_stream(body, {"content-type": "text/markdown"})
+        mock_fetch = self._fetch_url_returning(body, "text/markdown")
 
-        with patch.object(httpx, "AsyncClient", return_value=mock_client):
+        with patch(self._FETCH_URL_SEAM, mock_fetch):
             server = make_server()
             async with Client(server) as client:
                 result = await client.call_tool(
@@ -1648,9 +1552,7 @@ class TestFetchTool:
                         },
                     },
                 )
-        data = result.data
-        assert data["created"] is True
-        # Verify frontmatter was written.
+        assert result.data["created"] is True
         written = (_mcp_env_writable_with_attachments / "report.md").read_text(
             encoding="utf-8"
         )
@@ -1660,36 +1562,18 @@ class TestFetchTool:
     async def test_fetch_http_error_status(
         self, _mcp_env_writable_with_attachments: Path
     ) -> None:
-        """Non-2xx HTTP response surfaces as ToolError.
-
-        fetch_url re-raises the status error with a redacted ``HTTP <code>
-        response from <url>`` message, so that is the asserted surface.
-        """
-        from unittest.mock import AsyncMock, MagicMock, patch
-
+        """fetch_url's documented redacted HTTPStatusError surfaces as a
+        ToolError naming the status."""
         import httpx
 
-        mock_response = MagicMock()
-        mock_response.status_code = 404
-        mock_response.raise_for_status = MagicMock(
-            side_effect=httpx.HTTPStatusError(
-                "Not Found",
-                request=httpx.Request("GET", "https://example.com/missing.md"),
+        async def _http_error(url: str, **_kwargs: object) -> None:
+            raise httpx.HTTPStatusError(
+                f"HTTP 404 response from {url}",
+                request=httpx.Request("GET", url),
                 response=httpx.Response(404),
             )
-        )
-        mock_response.headers = {"content-type": "text/html"}
 
-        mock_stream_ctx = AsyncMock()
-        mock_stream_ctx.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_stream_ctx.__aexit__ = AsyncMock(return_value=False)
-
-        mock_client_instance = AsyncMock()
-        mock_client_instance.stream = MagicMock(return_value=mock_stream_ctx)
-        mock_client_instance.__aenter__ = AsyncMock(return_value=mock_client_instance)
-        mock_client_instance.__aexit__ = AsyncMock(return_value=False)
-
-        with patch.object(httpx, "AsyncClient", return_value=mock_client_instance):
+        with patch(self._FETCH_URL_SEAM, _http_error):
             server = make_server()
             async with Client(server) as client:
                 with pytest.raises(ToolError, match="HTTP 404"):
@@ -1701,284 +1585,17 @@ class TestFetchTool:
                         },
                     )
 
-    async def test_fetch_rejects_private_ip(
-        self, _mcp_env_writable_with_attachments: Path
-    ) -> None:
-        """Private/loopback IPs are rejected (SSRF protection)."""
-        server = make_server()
-        async with Client(server) as client:
-            with pytest.raises(ToolError, match="private"):
-                await client.call_tool(
-                    "fetch",
-                    {"url": "http://127.0.0.1/secret", "path": "stolen.md"},
-                )
-
-    async def test_fetch_rejects_metadata_endpoint(
-        self, _mcp_env_writable_with_attachments: Path
-    ) -> None:
-        """Cloud metadata endpoint IPs are rejected."""
-        server = make_server()
-        async with Client(server) as client:
-            with pytest.raises(ToolError, match="private"):
-                await client.call_tool(
-                    "fetch",
-                    {
-                        "url": "http://169.254.169.254/latest/meta-data/",
-                        "path": "meta.md",
-                    },
-                )
-
-    async def test_fetch_rejects_unspecified_ip(
-        self, _mcp_env_writable_with_attachments: Path
-    ) -> None:
-        """0.0.0.0 is rejected (routes to localhost on most systems)."""
-        server = make_server()
-        async with Client(server) as client:
-            with pytest.raises(ToolError, match="private"):
-                await client.call_tool(
-                    "fetch",
-                    {"url": "http://0.0.0.0/admin", "path": "stolen.md"},
-                )
-
-    async def test_fetch_rejects_cgnat_ip(
-        self, _mcp_env_writable_with_attachments: Path
-    ) -> None:
-        """CGNAT / shared address space (100.64.0.0/10, RFC 6598) is rejected (#862).
-
-        The old enumerated deny-list missed this range; pvl-core's permit-list
-        guard (block anything not globally routable) covers it structurally.
-        """
-        server = make_server()
-        async with Client(server) as client:
-            with pytest.raises(ToolError, match="private"):
-                await client.call_tool(
-                    "fetch",
-                    {"url": "http://100.64.0.1/internal", "path": "stolen.md"},
-                )
-
-    async def test_fetch_rejects_resolve_to_cgnat(
-        self,
-        _mcp_env_writable_with_attachments: Path,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """A hostname resolving into CGNAT space is blocked (#862)."""
-        self._patch_resolves_to(monkeypatch, "100.127.255.254")
-        server = make_server()
-        async with Client(server) as client:
-            with pytest.raises(ToolError, match="non-public"):
-                await client.call_tool(
-                    "fetch",
-                    {"url": "https://evil.example.com/x", "path": "x.md"},
-                )
-
-    async def test_fetch_client_ignores_ambient_proxy_env(
-        self, _mcp_env_writable_with_attachments: Path
-    ) -> None:
-        """The outbound client is built with trust_env=False (#862).
-
-        An ambient HTTP(S)_PROXY env var must never divert the request past
-        the resolve-validate-pin chain, and .netrc must never attach ambient
-        credentials — asserted on the client constructor call.
-        """
-        import httpx
-
-        mock_client = self._mock_httpx_stream(
-            b"# Ok\n", {"content-type": "text/markdown"}
-        )
-        with patch.object(httpx, "AsyncClient", return_value=mock_client) as ctor:
-            server = make_server()
-            async with Client(server) as client:
-                await client.call_tool(
-                    "fetch",
-                    {"url": "https://example.com/note.md", "path": "noproxy.md"},
-                )
-        ctor.assert_called_once()
-        assert ctor.call_args.kwargs["trust_env"] is False
-
-    async def test_fetch_rejects_resolve_to_private(
-        self,
-        _mcp_env_writable_with_attachments: Path,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """A public hostname resolving to a private IP is blocked (DNS rebinding)."""
-        import httpx
-
-        self._patch_resolves_to(monkeypatch, "10.0.0.5")
-        mock_client = self._mock_httpx_stream(b"x", {})
-        with patch.object(httpx, "AsyncClient", return_value=mock_client):
-            server = make_server()
-            async with Client(server) as client:
-                with pytest.raises(ToolError, match="non-public"):
-                    await client.call_tool(
-                        "fetch",
-                        {"url": "https://evil.example.com/x", "path": "x.md"},
-                    )
-        mock_client.stream.assert_not_called()
-
-    async def test_fetch_rejects_mixed_public_and_private(
-        self,
-        _mcp_env_writable_with_attachments: Path,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """If ANY resolved address is private, the fetch is blocked."""
-        import httpx
-
-        self._patch_resolves_to(monkeypatch, "93.184.216.34", "192.168.1.10")
-        mock_client = self._mock_httpx_stream(b"x", {})
-        with patch.object(httpx, "AsyncClient", return_value=mock_client):
-            server = make_server()
-            async with Client(server) as client:
-                with pytest.raises(ToolError, match="non-public"):
-                    await client.call_tool(
-                        "fetch",
-                        {"url": "https://evil.example.com/x", "path": "x.md"},
-                    )
-        mock_client.stream.assert_not_called()
-
-    async def test_fetch_rejects_resolve_to_ipv6_loopback(
-        self,
-        _mcp_env_writable_with_attachments: Path,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """An IPv6 loopback resolution is blocked."""
-        self._patch_resolves_to(monkeypatch, "::1")
-        server = make_server()
-        async with Client(server) as client:
-            with pytest.raises(ToolError, match="non-public"):
-                await client.call_tool(
-                    "fetch",
-                    {"url": "https://evil.example.com/x", "path": "x.md"},
-                )
-
-    async def test_fetch_fails_closed_on_resolution_error(
-        self,
-        _mcp_env_writable_with_attachments: Path,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """A DNS resolution error blocks the fetch (fail-closed, not fail-open)."""
-
-        async def boom(
-            _host: str, _port: int, *_args: object, **_kwargs: object
-        ) -> object:
-            raise socket.gaierror("name resolution failed")
-
-        monkeypatch.setattr(asyncio.get_running_loop(), "getaddrinfo", boom)
-        server = make_server()
-        async with Client(server) as client:
-            with pytest.raises(ToolError, match="resolve"):
-                await client.call_tool(
-                    "fetch",
-                    {"url": "https://unresolvable.example/x", "path": "x.md"},
-                )
-
-    async def test_fetch_fails_closed_on_empty_resolution(
-        self,
-        _mcp_env_writable_with_attachments: Path,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """A host that resolves to zero addresses blocks the fetch (fail-closed)."""
-        self._patch_resolves_to(monkeypatch)  # resolves to nothing
-        server = make_server()
-        async with Client(server) as client:
-            with pytest.raises(ToolError, match="did not resolve"):
-                await client.call_tool(
-                    "fetch",
-                    {"url": "https://empty.example/x", "path": "x.md"},
-                )
-
-    async def test_fetch_pins_validated_ip_with_host_and_sni(
-        self,
-        _mcp_env_writable_with_attachments: Path,
-    ) -> None:
-        """A public host is dialled by IP, with the original Host header + SNI."""
-        import httpx
-
-        # _stub_public_dns resolves any host to 93.184.216.34.
-        mock_client = self._mock_httpx_stream(
-            b"# Ok\n", {"content-type": "text/markdown"}
-        )
-        with patch.object(httpx, "AsyncClient", return_value=mock_client):
-            server = make_server()
-            async with Client(server) as client:
-                await client.call_tool(
-                    "fetch",
-                    {"url": "https://example.com/note.md", "path": "pinned.md"},
-                )
-        mock_client.stream.assert_called_once()
-        call = mock_client.stream.call_args
-        assert call.args[0] == "GET"
-        assert call.args[1] == "https://93.184.216.34/note.md"
-        assert call.kwargs["headers"]["Host"] == "example.com"
-        assert call.kwargs["extensions"]["sni_hostname"] == "example.com"
-
-    async def test_fetch_host_header_port_handling(
-        self, _mcp_env_writable_with_attachments: Path
-    ) -> None:
-        """The Host header omits an explicit default port (RFC 7230 §5.4) but
-        keeps a non-default one."""
-        import httpx
-
-        for url, expected_host in (
-            ("https://example.com:443/n.md", "example.com"),  # default → omitted
-            ("https://example.com:8443/n.md", "example.com:8443"),  # kept
-        ):
-            mock_client = self._mock_httpx_stream(
-                b"# Ok\n", {"content-type": "text/markdown"}
-            )
-            with patch.object(httpx, "AsyncClient", return_value=mock_client):
-                server = make_server()
-                async with Client(server) as client:
-                    await client.call_tool("fetch", {"url": url, "path": "p.md"})
-            assert (
-                mock_client.stream.call_args.kwargs["headers"]["Host"] == expected_host
-            )
-
-    async def test_fetch_unicode_decode_error(
-        self, _mcp_env_writable_with_attachments: Path
-    ) -> None:
-        """Binary content with .md path gives clear UTF-8 error."""
-        from unittest.mock import patch
-
-        import httpx
-
-        raw = b"\x89PNG\r\n\x1a\n\xff\xfe"
-        mock_client = self._mock_httpx_stream(raw, {"content-type": "image/png"})
-
-        with patch.object(httpx, "AsyncClient", return_value=mock_client):
-            server = make_server()
-            async with Client(server) as client:
-                with pytest.raises(ToolError, match="not valid UTF-8"):
-                    await client.call_tool(
-                        "fetch",
-                        {
-                            "url": "https://example.com/binary.md",
-                            "path": "binary.md",
-                        },
-                    )
-
-    @pytest.mark.usefixtures("_mcp_env")
-    async def test_fetch_hidden_in_read_only_mode(self) -> None:
-        """fetch tool should not appear when server is read-only."""
-        server = make_server()
-        async with Client(server) as client:
-            tools = await client.list_tools()
-        tool_names = [t.name for t in tools]
-        assert "fetch" not in tool_names
-
     async def test_fetch_timeout(
         self, _mcp_env_writable_with_attachments: Path
     ) -> None:
-        """httpx timeout surfaces as a ToolError."""
-        from unittest.mock import AsyncMock, MagicMock, patch
-
+        """A fetch_url timeout (documented to propagate) surfaces as a
+        ToolError."""
         import httpx
 
-        mock_client = AsyncMock()
-        mock_client.stream = MagicMock(side_effect=httpx.TimeoutException("timed out"))
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
+        async def _timeout(*_args: object, **_kwargs: object) -> None:
+            raise httpx.TimeoutException("timed out")
 
-        with patch.object(httpx, "AsyncClient", return_value=mock_client):
+        with patch(self._FETCH_URL_SEAM, _timeout):
             server = make_server()
             async with Client(server) as client:
                 with pytest.raises(ToolError, match="timed out"):
@@ -1990,17 +1607,53 @@ class TestFetchTool:
                         },
                     )
 
-    async def test_fetch_rejects_localhost_hostname(
+    async def test_fetch_unicode_decode_error(
         self, _mcp_env_writable_with_attachments: Path
     ) -> None:
-        """Hostname blocklist rejects 'localhost'."""
+        """Binary content with .md path gives clear UTF-8 error."""
+        raw = b"\x89PNG\r\n\x1a\n\xff\xfe"
+        mock_fetch = self._fetch_url_returning(raw, "image/png")
+
+        with patch(self._FETCH_URL_SEAM, mock_fetch):
+            server = make_server()
+            async with Client(server) as client:
+                with pytest.raises(ToolError, match="not valid UTF-8"):
+                    await client.call_tool(
+                        "fetch",
+                        {
+                            "url": "https://example.com/binary.md",
+                            "path": "binary.md",
+                        },
+                    )
+
+    async def test_fetch_rejects_cgnat_ip(
+        self, _mcp_env_writable_with_attachments: Path
+    ) -> None:
+        """End-to-end SSRF sentinel (#862): CGNAT space is rejected.
+
+        Deliberately unmocked — the IP-literal fast path needs no DNS or
+        network, so this proves the tool is wired to pvl-core's hardened
+        primitive (whose permit-list guard blocks 100.64.0.0/10). The full
+        blocked-range matrix lives upstream in fastmcp-pvl-core's suite
+        (#1028); this also exercises the tool's non-size-cap ValueError
+        passthrough (no bogus size-limit translation).
+        """
         server = make_server()
         async with Client(server) as client:
             with pytest.raises(ToolError, match="private"):
                 await client.call_tool(
                     "fetch",
-                    {"url": "http://localhost/secret", "path": "stolen.md"},
+                    {"url": "http://100.64.0.1/internal", "path": "stolen.md"},
                 )
+
+    @pytest.mark.usefixtures("_mcp_env")
+    async def test_fetch_hidden_in_read_only_mode(self) -> None:
+        """fetch tool should not appear when server is read-only."""
+        server = make_server()
+        async with Client(server) as client:
+            tools = await client.list_tools()
+        tool_names = [t.name for t in tools]
+        assert "fetch" not in tool_names
 
 
 class TestMCPListDocumentsAttachments:
