@@ -219,10 +219,13 @@ tool:
 | `MARKDOWN_VAULT_MCP_JOBS_MAX_PER_SUBJECT` | int | `256` | Cap on live job records per calling subject; promotion past it fails the call |
 
 Job records live in the unified key-value backend
-(`MARKDOWN_VAULT_MCP_KV_STORE_URL`, namespace `jobs`). A promoted job runs on
-the serving process and does not survive a restart; durable cross-restart
-execution is what the native task path with a `redis://` tasks backend is
-for.
+(`MARKDOWN_VAULT_MCP_KV_STORE_URL`, namespace `jobs`). When that variable is
+unset, job records use an in-process memory store rather than the file-tree
+default of other subsystems: records are ephemeral by design, and the file
+default's `/data/state` path only exists in the Docker image. A promoted job
+runs on the serving process and does not survive a restart either way;
+durable cross-restart execution is what the native task path with a
+`redis://` tasks backend is for.
 
 ## Git Integration
 

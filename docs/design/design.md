@@ -2351,7 +2351,10 @@ contain this, both operator-tunable:
   The generic ``get_job_result`` tool (``register_job_tools``, one polling
   contract per server) resolves the job to ``working`` / ``completed``
   (with the full summary payload under ``result``) / ``failed``. Job
-  records live in the unified KV backend (namespace ``jobs``), are scoped
+  records live in the unified KV backend (namespace ``jobs``; when
+  ``KV_STORE_URL`` is unset the jobs store falls back to in-process
+  memory, not the file default — ``/data/state`` only exists in the
+  Docker image, and records are ephemeral by design), are scoped
   to the calling subject, and expire ``JOBS_RESULT_TTL_S`` after creation
   — the same non-durable posture as index status and transfer tokens (a
   promoted job dies with the process; durable execution is the native task
