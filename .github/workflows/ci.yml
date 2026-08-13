@@ -30,7 +30,15 @@ jobs:
         run: uv python install 3.12
 
       - name: Install dependencies
-        run: uv sync --all-extras --all-groups
+        # `--locked` rather than a bare sync: an unfrozen `uv sync` re-locks
+        # when `uv.lock` is stale relative to `pyproject.toml`, which both
+        # hides the drift (the workspace silently self-heals while the branch
+        # stays broken) and mutates a tracked file mid-job. Fail loudly
+        # instead — this is the check that would have caught the release-commit
+        # lockfile drift in #325 on the release that introduced it, rather
+        # than in an unrelated workflow weeks later (#326). Fix a red install
+        # step with `uv lock`, and commit the result.
+        run: uv sync --all-extras --all-groups --locked
 
 
       - name: Verify assembled SPA source is up-to-date
@@ -70,7 +78,8 @@ jobs:
         run: uv python install 3.12
 
       - name: Install dependencies
-        run: uv sync --all-extras --all-groups
+        # `--locked` — see the lint job's install step for why.
+        run: uv sync --all-extras --all-groups --locked
 
       - name: Run mypy
         run: uv run mypy src/ tests/
@@ -120,7 +129,8 @@ jobs:
         run: uv python install ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: uv sync --all-extras --all-groups
+        # `--locked` — see the lint job's install step for why.
+        run: uv sync --all-extras --all-groups --locked
 
       - name: Run tests with coverage
         run: uv run pytest --cov --cov-report=xml
@@ -404,7 +414,8 @@ jobs:
         run: uv python install 3.12
 
       - name: Install dependencies
-        run: uv sync --all-extras --all-groups
+        # `--locked` — see the lint job's install step for why.
+        run: uv sync --all-extras --all-groups --locked
 
       - name: Fetch base branch
         run: git fetch origin ${{ github.base_ref }} --depth=50

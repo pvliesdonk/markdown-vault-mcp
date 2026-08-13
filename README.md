@@ -648,7 +648,16 @@ uv sync --all-extras --all-groups
 
 ### `uv.lock` refresh after `copier update`
 
-When `copier update` introduces new dependencies, CI runs `uv sync --frozen` which fails against a stale lockfile. Run `uv lock` locally and commit the refreshed `uv.lock` alongside accepting the copier-update PR.
+When `copier update` introduces new dependencies (such as a new extra added to `pyproject.toml.jinja`), the CI install step runs `uv sync --locked`, which fails against a stale lockfile. Run `uv lock` locally and commit the refreshed `uv.lock` alongside accepting the copier-update PR.
+
+CI installs with `--locked` (and the review workflow with `--frozen`) so no job ever rewrites `uv.lock` in its own workspace: a job that re-locks hides the drift it just repaired, and a dirty workspace breaks any later `git checkout` in the same job. Lockfile drift then shows up as a red install step with a clear message, not as a silent mutation.
+
+## Links
+
+- [Documentation](https://pvliesdonk.github.io/markdown-vault-mcp/)
+- [llms.txt](https://pvliesdonk.github.io/markdown-vault-mcp/llms.txt)
+- [FastMCP](https://gofastmcp.com)
+- [fastmcp-pvl-core](https://pypi.org/project/fastmcp-pvl-core/)
 
 <!-- ===== TEMPLATE-OWNED SECTIONS END ===== -->
 

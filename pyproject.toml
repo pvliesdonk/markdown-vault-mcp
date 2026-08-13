@@ -307,8 +307,14 @@ extraPaths = ["src"]
 version_toml = ["pyproject.toml:project.version"]
 commit_parser = "angular"
 tag_format = "v{version}"
-# Bump the versioned manifests inside the release commit rather than in a
-# follow-up commit + force-retag. See issue #392.
+# Bump versioned manifests (server.json) inside the release commit rather
+# than in a follow-up commit + force-retag.  If your project adds more
+# lockstep manifests (plugin.json, .mcp.json, ...), add the bump inside
+# scripts/bump_manifests.py's DOMAIN-MANIFESTS markers and the path to
+# `assets` below — the script is template-owned, so code outside those
+# markers is overwritten on the next copier update.  `assets` and the script
+# must move together: tests/test_release_contract.py fails the build if one
+# names a manifest the other does not.
 build_command = "python scripts/bump_manifests.py"
 # PSR stages and commits files listed in `assets` together with pyproject.toml
 # and CHANGELOG.md, so the release tag points at a single commit containing
