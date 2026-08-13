@@ -31,11 +31,15 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
-    # >=4.10.1 for apply_tool_visibility (operator TOOLS_ALLOW / TOOLS_DENY);
-    # 4.10.0 was tagged but never reached PyPI (its publish failed), and the
-    # config-surface generator pins the floor exactly, so the floor must name
-    # a version that exists on PyPI.
-    "fastmcp-pvl-core>=4.10.1,<5",
+    # >=4.11.0 for configure_task_backend + ServerConfig.tasks_url (the
+    # background-task backend surface, ADR 0002 §4), which server.py wires
+    # unconditionally.  4.11.0 also moves fastmcp[tasks] into pvl-core's BASE
+    # dependencies, so pydocket arrives transitively — no extra to declare
+    # here, and no packaging plumbing.  (4.10.1 was the previous floor, for
+    # apply_tool_visibility; 4.10.0 was tagged but never reached PyPI, and
+    # the config-surface generator pins the floor exactly, so the floor must
+    # name a version that exists on PyPI.)
+    "fastmcp-pvl-core>=4.11.0,<5",
     "typer>=0.12",
 
     # PROJECT-DEPS-START — add domain dependencies below; kept across copier update
@@ -307,8 +311,14 @@ extraPaths = ["src"]
 version_toml = ["pyproject.toml:project.version"]
 commit_parser = "angular"
 tag_format = "v{version}"
-# Bump the versioned manifests inside the release commit rather than in a
-# follow-up commit + force-retag. See issue #392.
+# Bump versioned manifests (server.json) inside the release commit rather
+# than in a follow-up commit + force-retag.  If your project adds more
+# lockstep manifests (plugin.json, .mcp.json, ...), add the bump inside
+# scripts/bump_manifests.py's DOMAIN-MANIFESTS markers and the path to
+# `assets` below — the script is template-owned, so code outside those
+# markers is overwritten on the next copier update.  `assets` and the script
+# must move together: tests/test_release_contract.py fails the build if one
+# names a manifest the other does not.
 build_command = "python scripts/bump_manifests.py"
 # PSR stages and commits files listed in `assets` together with pyproject.toml
 # and CHANGELOG.md, so the release tag points at a single commit containing

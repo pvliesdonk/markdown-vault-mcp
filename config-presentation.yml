@@ -88,6 +88,58 @@ vars:
     tags: [observability, readme]
     wizard: {group: Logging}
 
+  # Native fastmcp background-task (Docket) worker tunables.  Deliberately
+  # NOT wrapped in `{PREFIX}_*` vars (pvl-core ADR 0002 §4.3): they are worker
+  # tuning with sensible upstream defaults, not backend selection, so they
+  # stay on the acknowledged native `FASTMCP_*` axis alongside
+  # FASTMCP_LOG_LEVEL above.  Backend *selection* is `{PREFIX}_TASKS_URL`,
+  # which core's own surface documents (tagged persistence + tasks) — the two
+  # native vars that would configure it a second time, FASTMCP_DOCKET_URL and
+  # FASTMCP_DOCKET_NAME, are deliberately absent here: pvl-core's
+  # configure_task_backend outranks the former and derives the latter, and
+  # listing them as peers would recreate the configured-twice confusion the
+  # unified surface exists to remove.  `control: none` throughout — worker
+  # tuning is not a guided-setup decision.
+  - name: "FASTMCP_DOCKET_CONCURRENCY"
+    provenance: external
+    type_name: "int"
+    default: 10
+    help: "Maximum background tasks this worker runs at once."
+    tags: [tasks]
+    wizard: {control: none}
+
+  - name: "FASTMCP_DOCKET_WORKER_NAME"
+    provenance: external
+    type_name: "str"
+    default: null
+    help: "Identifies this worker in the queue; defaults to a generated name."
+    tags: [tasks]
+    wizard: {control: none}
+
+  - name: "FASTMCP_DOCKET_REDELIVERY_TIMEOUT"
+    provenance: external
+    type_name: "str"
+    default: "300"
+    help: "Seconds before a task claimed by a worker that never finished is redelivered to another."
+    tags: [tasks]
+    wizard: {control: none}
+
+  - name: "FASTMCP_DOCKET_RECONNECTION_DELAY"
+    provenance: external
+    type_name: "str"
+    default: "5"
+    help: "Seconds to wait before reconnecting after the queue connection drops."
+    tags: [tasks]
+    wizard: {control: none}
+
+  - name: "FASTMCP_DOCKET_MINIMUM_CHECK_INTERVAL"
+    provenance: external
+    type_name: "str"
+    default: "0.05"
+    help: "Seconds between queue polls; lower cuts latency and raises idle load."
+    tags: [tasks]
+    wizard: {control: none}
+
   - name: "{PREFIX}_ACL_PATH"
     provenance: template
     when_answer: enable_authorization
@@ -361,6 +413,11 @@ files:
       - {title: Server, tags: [server]}
       - {title: Authentication, tags: [auth]}
       - {title: Persistence, tags: [persistence]}
+      # Declared AFTER Persistence deliberately: sections claim vars
+      # first-come, and `{PREFIX}_TASKS_URL` carries both tags, so it stays
+      # under Persistence (matching its wizard group) while the native
+      # worker tunables land here.
+      - {title: "Background tasks", tags: [tasks], note: "Backend selection is {PREFIX}_TASKS_URL under Persistence above; these are native fastmcp worker tunables."}
       - {title: "MCP Apps", tags: [apps]}
       - {title: Authorization, tags: [authz], when_answer: enable_authorization}
       - {title: Logging, tags: [observability]}

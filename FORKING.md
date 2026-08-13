@@ -68,7 +68,9 @@ strips the copier-update wording that no longer describes a detached fork: the
 `TEMPLATE-OWNED SECTIONS` banner fences (a fork owns every section, so the
 template/domain split is moot), the "Kept across copier update" notes on the
 DOMAIN blocks, the remaining "preserved/survive across copier update" notes
-(the pre-commit defaults, the `Dockerfile` sentinels, and the upstream sentinel),
+(the pre-commit defaults, the `Dockerfile` sentinels, the
+`scripts/bump_manifests.py` release-manifest sentinels, and the upstream
+sentinel),
 and the copier-specific trigger on the config-wizard spec generation note (the
 generator still runs in a fork, just not on a copier lifecycle event).
 The fork-neutral contributor guidance

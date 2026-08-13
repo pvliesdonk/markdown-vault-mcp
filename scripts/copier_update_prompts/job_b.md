@@ -43,6 +43,19 @@ To decide between `ships-automatically` and `needs-opt-in`, read
 `_exclude`. Files listed in `_skip_if_exists` are downstream-owned starter
 files — changes in those files do NOT flow to downstream automatically.
 
+**Split-ownership entries are the dangerous case.** If one CHANGELOG entry
+touches BOTH a template-owned file and a `_skip_if_exists` file, only half of
+it arrives, and the half that does arrive can assert something the missing
+half was supposed to make true. Classify these `needs-opt-in` even when the
+template-owned half looks self-sufficient, and make the summary name the
+skip-listed file plus the exact edit downstream has to make by hand. The
+shape to look for: a re-rendered config file declaring behaviour a
+skip-listed script implements — template v3.1.0 (#298) added `uv.lock` to
+`pyproject.toml`'s `[tool.semantic_release] assets` and the matching
+`_bump_lockfile()` to the then-skip-listed `scripts/bump_manifests.py`, so
+instances with an extended copy of that script started committing lockfiles
+whose version lagged the tag (#325).
+
 ## Output
 
 Write the following JSON to `/tmp/agent-job-b.json`:
