@@ -2,10 +2,10 @@
 """Bump versioned manifests to match the semantic-release version.
 
 Invoked by python-semantic-release via ``[tool.semantic_release] build_command``.
-PSR sets ``NEW_VERSION`` in the environment and, because the three manifest
-paths are listed in ``[tool.semantic_release] assets``, PSR stages and commits
-them together with ``pyproject.toml`` + ``CHANGELOG.md`` as the single release
-commit — which is the commit it then tags.
+PSR sets ``NEW_VERSION`` in the environment and, because ``server.json`` and
+``uv.lock`` are listed in ``[tool.semantic_release] assets``, PSR stages and
+commits them together with ``pyproject.toml`` + ``CHANGELOG.md`` as the single
+release commit — which is the commit it then tags.
 
 The script runs inside PSR's Docker action container (python:3.14-slim), which
 has Python but no ``jq`` — hence Python rather than a shell+jq wrapper.
@@ -189,23 +189,6 @@ def main() -> int:
                 )
             pkg["identifier"] = new_id
     _dump(server_path, server)
-
-    # Claude Code plugin.json: plugin version, lockstep with the package.
-    plugin_path = Path(".claude-plugin/plugin/.claude-plugin/plugin.json")
-    plugin = _load(plugin_path)
-    plugin["version"] = version
-    _dump(plugin_path, plugin)
-
-    # Claude Code .mcp.json: pin uvx --from spec to the released version.
-    mcp_path = Path(".claude-plugin/plugin/.mcp.json")
-    mcp = _load(mcp_path)
-    mcp["markdown-vault-mcp"]["args"] = [
-        "--from",
-        f"markdown-vault-mcp[all]=={version}",
-        "markdown-vault-mcp",
-        "serve",
-    ]
-    _dump(mcp_path, mcp)
 
     print(f"bump_manifests: server.json → {version}")
     _bump_lockfile(version)
