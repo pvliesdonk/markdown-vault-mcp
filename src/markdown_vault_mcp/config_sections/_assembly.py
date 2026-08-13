@@ -245,7 +245,6 @@ def to_vault_kwargs(config: ProjectConfig) -> dict[str, Any]:
             kwargs["summarizer"] = _summarizer.get_summarizer(config)
             kwargs["summarize_max_notes"] = config.summarize.max_notes
             kwargs["summarize_max_input_chars"] = config.summarize.max_input_chars
-            kwargs["summarize_inline_timeout"] = config.summarize.inline_timeout
         except (ImportError, RuntimeError) as exc:
             if explicit_summarizer:
                 raise ConfigurationError(

@@ -17,7 +17,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from fastmcp_pvl_core import ServerConfig, TransferConfig
+from fastmcp_pvl_core import JobsConfig, ServerConfig, TransferConfig
 
 from markdown_vault_mcp._write_tools import gated_tool, write_tools_phrase
 from markdown_vault_mcp.config_sections import (
@@ -783,18 +783,9 @@ class ProjectConfig:
             "wizard": {"group": "Summarize"},
         },
     )
-    summarize_inline_timeout: float = field(
-        default=30.0,
-        metadata={
-            "help": (
-                "Soft deadline in seconds before a still-running summarize "
-                "call is promoted to a background job retrievable via "
-                "get_summary. Must be <= SUMMARIZE_TIMEOUT."
-            ),
-            "tags": ("summarize",),
-            "wizard": {"group": "Summarize"},
-        },
-    )
+    # The soft deadline before a still-running summarize call is promoted to
+    # a background job is no longer a summarize-specific knob: it is owned by
+    # the pvl-core jobs subsystem (JOBS_SOFT_DEADLINE_S and friends, #1033).
     # The transfer subsystem's operator knobs are owned by
     # ``fastmcp_pvl_core.TransferConfig`` (link TTL default/max, post-success
     # grace window, crashed-handler lease, per-upload cap). Compose it as a
@@ -804,6 +795,16 @@ class ProjectConfig:
     transfer: TransferConfig = field(
         default_factory=TransferConfig,
         metadata={"tags": ("transfer",)},
+    )
+
+    # The jobs subsystem's operator knobs (soft deadline before a slow tool
+    # call is promoted to a pollable background job, job-record TTL,
+    # per-subject cap) are owned by ``fastmcp_pvl_core.JobsConfig`` (#1033).
+    # Composed the same way as ``transfer`` above so the config-surface
+    # generator discovers the ``JOBS_*`` env vars from core's field metadata.
+    jobs: JobsConfig = field(
+        default_factory=JobsConfig,
+        metadata={"tags": ("jobs",)},
     )
 
     @property
@@ -885,7 +886,6 @@ class ProjectConfig:
             max_notes=self.summarize_max_notes,
             max_input_chars=self.summarize_max_input_chars,
             timeout=self.summarize_timeout,
-            inline_timeout=self.summarize_inline_timeout,
         )
 
     @property
@@ -971,10 +971,10 @@ class ProjectConfig:
         _ = self.summarize
         _ = self.sync
         _ = self.content
-        # ``transfer`` is a composed ``fastmcp_pvl_core.TransferConfig`` field
-        # (not a section-view property); it validates its own bounds in its
+        # ``transfer`` and ``jobs`` are composed pvl-core section fields
+        # (not section-view properties); each validates its own bounds in its
         # ``__post_init__`` at construction time (default_factory and from_env
-        # alike), so it needs no re-construction here.
+        # alike), so neither needs re-construction here.
         # CONFIG-VALIDATE-END
 
     @classmethod
@@ -1102,9 +1102,7 @@ class ProjectConfig:
                 _ENV_PREFIX, "SUMMARIZE_MAX_INPUT_CHARS", 200_000
             ),
             summarize_timeout=env_float(_ENV_PREFIX, "SUMMARIZE_TIMEOUT", 120.0),
-            summarize_inline_timeout=env_float(
-                _ENV_PREFIX, "SUMMARIZE_INLINE_TIMEOUT", 30.0
-            ),
             transfer=TransferConfig.from_env(_ENV_PREFIX),
+            jobs=JobsConfig.from_env(_ENV_PREFIX),
             # CONFIG-FROM-ENV-END
         )

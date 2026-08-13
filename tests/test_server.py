@@ -374,7 +374,6 @@ class TestToolManifest:
             "get_outlinks",
             "get_recent",
             "get_similar",
-            "get_summary",
             "get_toc",
             "git_sync",
             "list_documents",
@@ -391,7 +390,6 @@ class TestToolManifest:
             "rename",
             "search",
             "stats",
-            "summarize",
             "write",
         ]
 

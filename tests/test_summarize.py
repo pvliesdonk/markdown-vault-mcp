@@ -191,29 +191,20 @@ class TestSummarizeConfig:
             {"max_input_chars": 0},
             {"timeout": 0},
             {"timeout": -1.0},
-            {"inline_timeout": 0},
-            {"inline_timeout": -5.0},
         ],
     )
     def test_validation_rejects_non_positive(self, kwargs: dict[str, int]) -> None:
         with pytest.raises(ValueError):
             SummarizeConfig(**kwargs)
 
-    def test_inline_timeout_above_timeout_rejected(self) -> None:
-        with pytest.raises(ValueError, match="inline_timeout"):
-            SummarizeConfig(timeout=30.0, inline_timeout=60.0)
-
     def test_timeout_defaults(self) -> None:
         cfg = SummarizeConfig()
         assert cfg.timeout == 120.0
-        assert cfg.inline_timeout == 30.0
 
-    def test_from_env_reads_timeouts(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_from_env_reads_timeout(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SUMMARIZE_TIMEOUT", "200")
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SUMMARIZE_INLINE_TIMEOUT", "45")
         cfg = ProjectConfig.from_env().summarize
         assert cfg.timeout == 200.0
-        assert cfg.inline_timeout == 45.0
 
 
 # ---------------------------------------------------------------------------
@@ -233,7 +224,6 @@ def _config_with(summarize: SummarizeConfig, tmp_path: Path) -> ProjectConfig:
         summarize_max_notes=summarize.max_notes,
         summarize_max_input_chars=summarize.max_input_chars,
         summarize_timeout=summarize.timeout,
-        summarize_inline_timeout=summarize.inline_timeout,
     )
 
 
@@ -721,19 +711,6 @@ class TestSummarizeFacet:
         vault = make_vault(summarizer=None)
         with pytest.raises(RuntimeError, match="Summarization is not configured"):
             _ = vault.summarizer
-
-    def test_unconfigured_summary_jobs_raises(self, make_vault: VaultFactory) -> None:
-        vault = make_vault(summarizer=None)
-        with pytest.raises(RuntimeError, match="Summarization is not configured"):
-            _ = vault.summary_jobs
-
-    def test_configured_vault_exposes_summary_jobs(
-        self, make_vault: VaultFactory
-    ) -> None:
-        vault = make_vault(summarizer=FakeSummarizer(), summarize_inline_timeout=12.0)
-        assert vault.summarize_inline_timeout == 12.0
-        # A fresh store with no jobs.
-        assert vault.summary_jobs.get("nope") is None
 
 
 # ---------------------------------------------------------------------------

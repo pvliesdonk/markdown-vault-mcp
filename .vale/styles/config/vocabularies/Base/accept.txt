@@ -118,7 +118,7 @@ freelist
 frontmatter
 FSEvents
 fullscreen
-get_summary
+get_job_result
 git
 globals
 gosu

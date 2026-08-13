@@ -32,7 +32,7 @@ import json
 import re
 from pathlib import Path
 
-from fastmcp_pvl_core import ServerConfig, TransferConfig
+from fastmcp_pvl_core import JobsConfig, ServerConfig, TransferConfig
 
 import markdown_vault_mcp
 
@@ -108,6 +108,18 @@ def _transfer_config_source_file() -> Path:
     """
     src = inspect.getsourcefile(TransferConfig)
     assert src is not None, "TransferConfig source file not found"
+    return Path(src)
+
+
+def _jobs_config_source_file() -> Path:
+    """Resolve the installed ``JobsConfig`` source file (server tier).
+
+    ``JobsConfig`` is a pvl-core-owned section composed into
+    :class:`ProjectConfig` (#1033), resolved the same way as
+    ``TransferConfig`` above.
+    """
+    src = inspect.getsourcefile(JobsConfig)
+    assert src is not None, "JobsConfig source file not found"
     return Path(src)
 
 
@@ -221,11 +233,17 @@ def transfer_inventory() -> set[str]:
     return _filter_config_vars(extract_env_vars_from_source(src))
 
 
+def jobs_inventory() -> set[str]:
+    src = _jobs_config_source_file().read_text(encoding="utf-8")
+    return _filter_config_vars(extract_env_vars_from_source(src))
+
+
 def full_inventory() -> set[str]:
     return (
         domain_inventory()
         | server_inventory()
         | transfer_inventory()
+        | jobs_inventory()
         | FRAMEWORK_VARS
         | EXTRA_KNOWN_VARS
     )

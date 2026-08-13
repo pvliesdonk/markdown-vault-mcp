@@ -32,7 +32,7 @@ markdown-vault-mcp exposes MCP tools across several categories. Write tools are 
 | [`get_connection_path`](#get_connection_path) | Connection Path | Read | Find the shortest path between two notes via link graph |
 | [`okf_validate`](#okf_validate) | Validate OKF Bundle | Read | Audit the vault's Open Knowledge Format conformance |
 | [`summarize`](#summarize) | Summarize Notes | AI | Summarize a note, a set of notes, or a subtree with an LLM (needs `OPENAI_API_KEY` or an OpenAI-compatible base URL) |
-| [`get_summary`](#get_summary) | Get Summary | AI | Retrieve a summary that `summarize` promoted to a background job |
+| [`get_job_result`](#get_job_result) | Get Job Result | AI | Retrieve the outcome of a background job started by a long-running tool |
 | [`get_history`](#get_history) | Note History | Read (git) | List commits that touched a note, attachment, folder, or the whole vault |
 | [`get_diff`](#get_diff) | Note Diff | Read (git) | Return a diff of a note or attachment between two points in history |
 | [`reindex`](#reindex) | Reindex Vault | Admin | Force a full reindex of the vault |
@@ -920,7 +920,7 @@ The tool is only registered when a summarization backend is configured: an `OPEN
 
 Inputs larger than one model request are handled map-reduce style. Notes are packed into batches of at most `SUMMARIZE_MAX_INPUT_CHARS` characters and each batch is summarized on its own; a final pass combines the partial summaries into one result. Large folders issue several model calls and take proportionally longer. Coverage per call is capped at the note limit (`SUMMARIZE_MAX_NOTES`, also the ceiling for the per-call `max_notes` parameter); the response reports exactly how many notes made it in (`notes_included`) and how many were dropped (`notes_omitted`). When notes were dropped, the response carries a `hint` telling the caller that full coverage needs separate calls on subfolders or smaller path sets. The live configured limit is substituted into the tool description and into the server instructions at startup, so a calling model can plan those splits before its first call.
 
-**Slow summaries do not block.** A summary that finishes within the inline deadline (`SUMMARIZE_INLINE_TIMEOUT`, default 30 s) returns inline with `"status": "completed"` and the fields below. If it is still running when the deadline elapses, the tool returns `{"status": "in_progress", "job_id": ...}` immediately and keeps generating in the background; fetch the result with [`get_summary`](#get_summary) using that `job_id`. Each individual backend call is itself bounded by `SUMMARIZE_TIMEOUT` (default 120 s); on timeout the summary fails with a clear message that says how to retry rather than a vague client-side hang.
+**Slow summaries do not block.** The tool is dual-mode: an MCP client that speaks background tasks runs it as a protocol-native task, and for any other client the call runs in the foreground up to the jobs soft deadline (`JOBS_SOFT_DEADLINE_S`, default 25 s). A summary that finishes within the deadline returns inline with `"status": "completed"` and the fields below. If it is still running when the deadline elapses, the tool returns `{"status": "working", "job_id": ...}` immediately and keeps generating in the background; fetch the result with [`get_job_result`](#get_job_result) using that `job_id`. Each individual backend call is itself bounded by `SUMMARIZE_TIMEOUT` (default 120 s); on timeout the summary fails with a clear message that says how to retry rather than a vague client-side hang.
 
 **Parameters:**
 
@@ -931,7 +931,7 @@ Inputs larger than one model request are handled map-reduce style. Notes are pac
 | `mode` | `"synthesis"` \| `"per_note"` | `"synthesis"` | `synthesis` for one cross-note summary that references sources; `per_note` for one summary per note. |
 | `max_notes` | int | server limit | Per-call note limit. Values above the server's configured cap are clamped to it; values below it narrow the work. |
 
-**Returns:** When the summary completes within the inline deadline, a dict with `"status": "completed"` plus:
+**Returns:** When the summary completes within the soft deadline, a dict with `"status": "completed"` plus:
 
 - `summary` (string): the generated summary text.
 - `sources` (list of `{path, title}`): the notes that were summarised, always populated so individual notes are attributable even when the prose does not name every one.
@@ -942,9 +942,9 @@ Inputs larger than one model request are handled map-reduce style. Notes are pac
 - `notes_limit` (int): the note limit in effect for this call.
 - `hint` (string or null): recovery guidance when notes were omitted; `null` when the selection was fully covered.
 
-When the work is promoted to the background, a dict with `"status": "in_progress"`, a `job_id` string, and a `message`. Call [`get_summary`](#get_summary) with the `job_id` to fetch the result.
+When the work is promoted to a background job, a dict with `"status": "working"`, a `job_id` string, a `poll_with` field naming the polling tool, a `retry_after_s` hint, and a `message`. Call [`get_job_result`](#get_job_result) with the `job_id` to fetch the result.
 
-**Errors:** raises if `paths` is empty, `mode` is invalid, no readable notes were found, or the backend call fails within the inline deadline. A backend failure after promotion is reported through `get_summary` instead.
+**Errors:** raises if `paths` is empty, `mode` is invalid, no readable notes were found, or the backend call fails within the soft deadline. A backend failure after promotion is reported through `get_job_result` instead.
 
 !!! warning "Note content leaves your environment"
     The referenced notes are sent to the external model provider to generate the summary. Do not summarize notes whose content must not leave your environment.
@@ -954,24 +954,25 @@ When the work is promoted to the background, a dict with `"status": "in_progress
 
 ---
 
-### `get_summary`
+### `get_job_result`
 
-Retrieve a summary that [`summarize`](#summarize) promoted to a background job. When a `summarize` call runs past its inline deadline it returns `{"status": "in_progress", "job_id": ...}`; pass that `job_id` here to fetch the result, polling every few seconds while it is still running.
+Retrieve the outcome of a background job started by a long-running tool on this server (today, a [`summarize`](#summarize) call promoted past the jobs soft deadline). When such a call returns `{"status": "working", "job_id": ...}`, pass that `job_id` here to fetch the result, polling every few seconds while it is still running.
 
-Registered under the same conditions as `summarize` (a summarization backend must be configured). Job records are held in memory and are lost on server restart; a finished job is retained for a while and then evicted, so fetch it soon after it completes.
+The tool is provided by the shared jobs subsystem (`fastmcp-pvl-core`), so its name, payload, and lifecycle vocabulary are uniform across the `*-mcp` server family. It is shown under the same conditions as `summarize` (a summarization backend must be configured), since promoted summaries are currently the only job producers. Retrieval is scoped to the calling subject: another caller's `job_id` answers exactly like an unknown one. Job records expire `JOBS_RESULT_TTL_S` seconds after creation (default one hour) and a promoted job does not survive a server restart, so fetch results soon after completion.
 
 **Parameters:**
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `job_id` | string | required | The `job_id` returned by a promoted `summarize` call. |
+| `job_id` | string | required | The `job_id` from a `{"status": "working"}` answer of a long-running tool. |
 
-**Returns:** Dict whose `status` is one of:
+**Returns:** Dict with `job_id`, `status`, `result`, and `error`, where `status` is one of:
 
-- `"completed"`: the summary is ready; the dict also carries the same fields as a completed `summarize` result (`summary`, `sources`, `mode`, `truncated`, `notes_included`, `notes_omitted`, `notes_limit`, `hint`).
-- `"in_progress"`: still generating; poll again shortly.
-- `"failed"`: generation failed; see `error` for the reason (often a backend timeout; narrow the request and retry).
-- `"not_found"`: no such job. The id is unknown, or the job has already expired.
+- `"working"`: still running; the dict adds `running_for_s` and a `retry_after_s` polling hint. Poll again shortly.
+- `"completed"`: the work is done; `result` carries the tool's full result object (for `summarize`: `summary`, `sources`, `mode`, `truncated`, `notes_included`, `notes_omitted`, `notes_limit`, `hint`).
+- `"failed"`: the work failed; see `error` for the reason (often a backend timeout; narrow the request and retry).
+
+**Errors:** raises for an unknown, expired, or foreign `job_id`.
 
 ---
 

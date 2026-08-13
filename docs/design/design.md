@@ -66,7 +66,6 @@ markdown-vault-mcp (new package)
 +-- tracker.py        -- hash-based change detection
 +-- vault.py          -- thin composition root: lifecycle, wiring, facet accessors (index-write → indexing/coordinator.py)
 +-- write_callback.py -- WriteCallbackDispatcher: deferred git-commit callback worker (#599)
-+-- summary_jobs.py   -- SummaryJobStore: in-memory background-summarize job store for the get_summary poll tool (#937)
 +-- config.py         -- template-owned skeleton: flat metadata-carrying ProjectConfig fields + section-view properties + from_env, in CONFIG-* sentinels (#900, #952)
 +-- config_sections/  -- domain-grouped sub-config VIEWS (git/indexing/embeddings/search/sync/content), assembled by ProjectConfig properties; no from_env of their own (#952)
 |   +-- _assembly.py   -- domain config-assembly kept out of template-owned config.py: to_vault_kwargs, derive_max_chunk_chars, git-strategy builder, from_env value resolvers (#900, #952)
@@ -2227,8 +2226,8 @@ pattern). Each tool is annotated with MCP `ToolAnnotations`:
 | `get_orphan_notes` | Find notes with no inbound or outbound links | `True` | `False` | `True` |
 | `get_most_linked` | Find notes ranked by number of inbound links | `True` | `False` | `True` |
 | `get_connection_path` | Shortest undirected path between two notes (BFS, max 10 hops) | `True` | `False` | `True` |
-| `summarize` | LLM summary of a note/set/subtree (references sources by path); slow calls promote to a background job (#937) | `True` | `False` | **`False`** |
-| `get_summary` | Retrieve a promoted `summarize` job by `job_id` (#937) | `True` | `False` | **`False`** |
+| `summarize` | LLM summary of a note/set/subtree (references sources by path); dual-mode: native background task, or promotion to a pollable job (#1033) | `True` | `False` | **`False`** |
+| `get_job_result` | Retrieve a background job (today: a promoted `summarize`) by `job_id`; pvl-core-owned generic poller (#1033) | `True` | `False` | **`False`** |
 | `fetch` | Download from URL and save to vault (MCP-to-MCP transfer) | `False` | `False` | `True` |
 
 **Append semantics (#980)**: `append` adds `content` at the end of an
@@ -2338,21 +2337,31 @@ contain this, both operator-tunable:
   fit under it (fewer paths, a smaller ``max_notes``, a tighter ``focus``,
   ``per_note`` mode, or a higher ``SUMMARIZE_TIMEOUT``) — so the caller sees
   guidance rather than a bare timeout.
-- **Inline soft-deadline with background promotion** — the ``summarize``
-  tool runs the work as an asyncio task and waits ``SUMMARIZE_INLINE_TIMEOUT``
-  (default 30 s, ``<= SUMMARIZE_TIMEOUT``) for it. A summary that finishes in
-  time returns inline with ``"status": "completed"``. A slower one is
-  *promoted*: the tool registers a job in the process-local
-  ``SummaryJobStore``, returns ``{"status": "in_progress", "job_id": …}``
-  immediately, and lets the task keep running (held alive in a module-level
-  set; a done-callback records its result or failure into the store). The
-  ``get_summary`` tool polls the store by ``job_id`` and returns
-  ``in_progress`` / ``completed`` (with the full summary payload) / ``failed``
-  (with the error) / ``not_found``. The store is ephemeral — finished jobs
-  carry a TTL and the store is capped, both swept lazily on access — matching
-  the non-durable posture of index status and transfer tokens. ``get_summary``
-  is tagged ``tags={"summarize"}`` so the same backend gate that hides
-  ``summarize`` hides it too.
+- **Dual-mode execution with background promotion (#1033)** — ``summarize``
+  is registered through ``fastmcp_pvl_core.register_long_running_tool``
+  rather than a bare ``@mcp.tool``, replacing the earlier hand-rolled
+  ``SummaryJobStore`` + ``get_summary`` pair (#937). An MCP client that
+  speaks background tasks (SEP-1686) runs the call as a protocol-native
+  task; any other client runs it in the foreground up to the jobs
+  subsystem's soft deadline (``JOBS_SOFT_DEADLINE_S``, default 25 s). A
+  summary that finishes in time returns inline with
+  ``"status": "completed"``; a slower one is *promoted* to a background job
+  and the caller immediately receives
+  ``{"status": "working", "job_id": …, "poll_with": "get_job_result"}``.
+  The generic ``get_job_result`` tool (``register_job_tools``, one polling
+  contract per server) resolves the job to ``working`` / ``completed``
+  (with the full summary payload under ``result``) / ``failed``. Job
+  records live in the unified KV backend (namespace ``jobs``), are scoped
+  to the calling subject, and expire ``JOBS_RESULT_TTL_S`` after creation
+  — the same non-durable posture as index status and transfer tokens (a
+  promoted job dies with the process; durable execution is the native task
+  path's job, with a ``redis://`` tasks backend). Because the ``Jobs``
+  mechanics are built from the loaded config, the summarize group is
+  registered from the DOMAIN-WIRING block (the ``register_domain_prompts``
+  pattern) rather than the config-free ``register_tools()`` layer. Both
+  ``summarize`` and ``get_job_result`` (tags ``summarize`` / ``jobs``) are
+  hidden by the same backend gate while summarize is the only job
+  producer.
 
 **Dynamic instructions**: the server's MCP `instructions` string varies with
 `read_only` mode. When `read_only=True`, the instructions state this is a
@@ -3080,3 +3089,10 @@ Decisions made during design review (2026-03-07):
 | 14 | Python library use | Document as use case; `Vault` is primary API | MCP is one consumer; LangChain wrapper is downstream |
 | 15 | Rename | Include in design, defer to Phase 2-3 | Touches every layer; not critical for initial release |
 | 16 | Tool semantics | Mirror Claude Code Read/Write/Edit; MCP `ToolAnnotations` | Familiar to LLMs; `delete` marked destructive |
+
+Later decisions (2026-08-13, #1033):
+
+| # | Topic | Decision | Rationale |
+|-|-|-|-|
+| 17 | Long-running tools | Dual-mode via `fastmcp_pvl_core.jobs` (`register_long_running_tool` + generic `get_job_result`); the hand-rolled `SummaryJobStore` + `get_summary` pair is retired | Framework-owned machinery over per-tool queue-and-poll reimplementations; native MCP-tasks execution for capable clients, uniform polling fallback for the rest (no Anthropic client speaks tasks yet) |
+| 18 | Client-model summarization (MCP sampling) | Rejected | Sampling is deprecated by the MCP spec (2026-07-28, SEP-2577) and was never supported by Anthropic clients; client-side fan-out, if ever, arrives via prompts/skills, not sampling |

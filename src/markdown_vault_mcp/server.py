@@ -21,6 +21,7 @@ from fastmcp_pvl_core import (
     build_instructions,
     build_kv_store,  # noqa: F401  — re-exported for downstream projects' convenience
     configure_logging_from_env,
+    configure_task_backend,
     env,
     register_server_info_tool,
     resolve_auth_mode,
@@ -58,6 +59,21 @@ def make_server(
     """
     config = config or ProjectConfig.from_env()
     configure_logging_from_env()
+
+    # Background-task backend (SEP-1686 / Docket).  Unconditional and
+    # template-owned: pydocket ships in fastmcp-pvl-core's base dependencies,
+    # so the backend is always configurable, and whether this server actually
+    # uses tasks is decided by registering ``task=True`` tools — not by
+    # packaging or by an opt-in switch here.  It mutates fastmcp's
+    # process-global settings, which fastmcp reads lazily at root-lifespan
+    # entry, so doing it inside ``make_server`` covers both CLI paths (
+    # ``server.run(...)`` and the uvicorn ``http_app()`` one).
+    # ``MARKDOWN_VAULT_MCP_TASKS_URL`` selects the backend; unset, a
+    # ``redis://`` ``MARKDOWN_VAULT_MCP_KV_STORE_URL`` is reused so one URL
+    # configures every stateful subsystem, and otherwise fastmcp's
+    # ``memory://`` default applies.  The queue name is derived from the env
+    # prefix, so two servers sharing one Redis do not share a queue.
+    configure_task_backend(_ENV_PREFIX, config.server)
 
     # Operator overrides: SERVER_NAME renames this instance; INSTRUCTIONS
     # replaces the default instructions text (the latter is the override that
@@ -254,22 +270,44 @@ def make_server(
     if config.git.repo_url is None:
         mcp.disable(tags={"git-managed"})
 
+    # The LLM-backed summarize tool is registered here rather than in the
+    # config-free register_tools() layer: it is a dual-mode long-running tool
+    # (#1033), and the Jobs mechanics it promotes slow calls onto are built
+    # from this already-loaded config (the register_domain_prompts pattern,
+    # #609). A client that speaks MCP tasks gets native task execution; any
+    # other client past the JOBS_SOFT_DEADLINE_S soft deadline gets a job
+    # handle to poll via the generic get_job_result tool.
+    from fastmcp_pvl_core import build_jobs, register_job_tools
+
+    from markdown_vault_mcp._server_tools import summarize as summarize_tools
+
+    jobs = build_jobs(config.server, config.jobs)
+    summarize_tools.register(mcp, jobs)
+    register_job_tools(
+        mcp,
+        jobs,
+        note=("On this server, background jobs come from slow summarize calls."),
+    )
+
     # Hide the LLM-backed summarize tool unless a summarization backend is
     # configured (an OpenAI-compatible API key or base URL). Provider-neutral:
     # the check lives on config.summarize, never referencing a specific
     # provider. Checked directly
     # (not via to_vault_kwargs(), which builds an embedding provider and may
     # clone a git repo as a side effect — see the git-managed gate above).
+    # The generic jobs poller is hidden alongside it: summarize is currently
+    # the only producer of job handles, so without a backend the poller has
+    # nothing to resolve. Un-gate the "jobs" tag when another long-running
+    # tool joins.
     if not config.summarize.has_provider():
         mcp.disable(tags={"summarize"})
+        mcp.disable(tags={"jobs"})
     else:
         # Substitute the live note limit into the tool description so calling
         # models can plan folder splits before their first call (#925).
-        from markdown_vault_mcp._server_tools.summarize import (
-            apply_summarize_limits,
+        summarize_tools.apply_summarize_limits(
+            mcp, max_notes=config.summarize.max_notes
         )
-
-        apply_summarize_limits(mcp, max_notes=config.summarize.max_notes)
 
     # Hide MCP-Apps UI tools (browse_vault, show_context) when the client
     # does not render the MCP Apps panels. Set

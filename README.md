@@ -252,12 +252,14 @@ embedding-provider conventions `OLLAMA_HOST`, `OPENAI_API_KEY`,
 | `MARKDOWN_VAULT_MCP_SUMMARIZE_MAX_NOTES` | `50` | No | Cap on the number of notes summarised in one call (subtree expansion truncates to this many). |
 | `MARKDOWN_VAULT_MCP_SUMMARIZE_MAX_INPUT_CHARS` | `200000` | No | Aggregate cap on note characters sent to the model in one call; excess is truncated with a flag on the result. |
 | `MARKDOWN_VAULT_MCP_SUMMARIZE_TIMEOUT` | `120.0` | No | Per-request wall-clock budget in seconds for a single summarize backend call; keep it below the MCP client's request timeout so the server-side error wins the race. |
-| `MARKDOWN_VAULT_MCP_SUMMARIZE_INLINE_TIMEOUT` | `30.0` | No | Soft deadline in seconds before a still-running summarize call is promoted to a background job retrievable via get_summary. Must be <= SUMMARIZE_TIMEOUT. |
 | `MARKDOWN_VAULT_MCP_TRANSFER_TTL_DEFAULT_S` | `3600.0` | No | Link lifetime in seconds when the caller requests no explicit TTL. |
 | `MARKDOWN_VAULT_MCP_TRANSFER_TTL_MAX_S` | `86400.0` | No | Ceiling in seconds a caller-requested link TTL is clamped to. |
 | `MARKDOWN_VAULT_MCP_TRANSFER_GRACE_TTL_S` | `60.0` | No | Post-success grace window in seconds: a served token's TTL shrinks to this so a stalled transfer can retry within it. |
 | `MARKDOWN_VAULT_MCP_TRANSFER_LEASE_S` | `60.0` | No | Crashed-handler reclaim window in seconds for an in-flight reservation. |
 | `MARKDOWN_VAULT_MCP_TRANSFER_MAX_UPLOAD_BYTES` | `104857600` | No | Maximum size in bytes of a single upload. |
+| `MARKDOWN_VAULT_MCP_JOBS_SOFT_DEADLINE_S` | `25.0` | No | Seconds a long-running tool call may run in the foreground before it is promoted to a background job and a job handle is returned instead. |
+| `MARKDOWN_VAULT_MCP_JOBS_RESULT_TTL_S` | `3600.0` | No | Seconds a background-job record (working or finished) is retained for polling before it expires from the store. |
+| `MARKDOWN_VAULT_MCP_JOBS_MAX_PER_SUBJECT` | `256` | No | Maximum live background jobs per calling subject; further promotions are rejected until older records expire. |
 <!-- GENERATED-ENV-TABLE-DOMAIN-END -->
 
 Domain-config fields are composed inside `src/markdown_vault_mcp/config.py` between the `CONFIG-FIELDS-START` / `CONFIG-FIELDS-END` sentinels; env reads go through `fastmcp_pvl_core.env(_ENV_PREFIX, "SUFFIX", default)` so naming stays consistent, and field invariants go in `__post_init__` between the `CONFIG-VALIDATE-START` / `CONFIG-VALIDATE-END` sentinels. Each field's `metadata` `help` and `tags` generate the table above directly, so keep them accurate and complete. See the [configuration reference](https://pvliesdonk.github.io/markdown-vault-mcp/latest/configuration/) for the detailed prose documentation of every variable.
@@ -431,8 +433,8 @@ markdown-vault-mcp reindex [--source-dir PATH] [--index-path PATH]
 | `get_orphan_notes` | Find all notes with no inbound or outbound links |
 | `get_most_linked` | Find the most-linked-to notes ranked by backlink count |
 | `get_connection_path` | Find the shortest path between two notes via BFS on the undirected link graph (max 10 hops) |
-| `summarize` | Summarize a note, a set of notes, or a folder subtree with an LLM; the synthesis references the individual source notes by path. A slow summary is promoted to a background job (retrieved via `get_summary`) so the tool never hangs. Hidden unless an OpenAI-compatible backend is configured (`OPENAI_API_KEY` or a base URL). Sends note content to the model provider. |
-| `get_summary` | Retrieve a summary that `summarize` promoted to a background job, by its `job_id`. Registered alongside `summarize`. |
+| `summarize` | Summarize a note, a set of notes, or a folder subtree with an LLM; the synthesis references the individual source notes by path. Dual-mode: a task-capable MCP client runs it as a native background task, and for any other client a slow summary is promoted to a background job (retrieved via `get_job_result`) so the tool never hangs. Hidden unless an OpenAI-compatible backend is configured (`OPENAI_API_KEY` or a base URL). Sends note content to the model provider. |
+| `get_job_result` | Retrieve the outcome of a background job started by a long-running tool (today: a promoted `summarize` call), by its `job_id`. Registered alongside `summarize`. |
 | `get_history` | List commits that touched a note, attachment, folder, or the whole vault (git-backed vaults only) |
 | `get_diff` | Return a diff of a note or attachment between a reference commit/timestamp and HEAD; binary attachments return a `--stat` size summary instead of a unified patch (git-backed vaults only) |
 | `git_sync` | Force an immediate git pull / push / both, bypassing the periodic loops. Returns structured state (SHAs, commit counts, Syncthing-style conflict file paths if any). Hidden when `MARKDOWN_VAULT_MCP_GIT_REPO_URL` isn't set or `READ_ONLY=true`. |
@@ -648,7 +650,16 @@ uv sync --all-extras --all-groups
 
 ### `uv.lock` refresh after `copier update`
 
-When `copier update` introduces new dependencies, CI runs `uv sync --frozen` which fails against a stale lockfile. Run `uv lock` locally and commit the refreshed `uv.lock` alongside accepting the copier-update PR.
+When `copier update` introduces new dependencies (such as a new extra added to `pyproject.toml.jinja`), the CI install step runs `uv sync --locked`, which fails against a stale lockfile. Run `uv lock` locally and commit the refreshed `uv.lock` alongside accepting the copier-update PR.
+
+CI installs with `--locked` (and the review workflow with `--frozen`) so no job ever rewrites `uv.lock` in its own workspace: a job that re-locks hides the drift it just repaired, and a dirty workspace breaks any later `git checkout` in the same job. Lockfile drift then shows up as a red install step with a clear message, not as a silent mutation.
+
+## Links
+
+- [Documentation](https://pvliesdonk.github.io/markdown-vault-mcp/)
+- [llms.txt](https://pvliesdonk.github.io/markdown-vault-mcp/llms.txt)
+- [FastMCP](https://gofastmcp.com)
+- [fastmcp-pvl-core](https://pypi.org/project/fastmcp-pvl-core/)
 
 <!-- ===== TEMPLATE-OWNED SECTIONS END ===== -->
 

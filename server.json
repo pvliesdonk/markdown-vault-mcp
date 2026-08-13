@@ -399,12 +399,6 @@
           "default": "120.0"
         },
         {
-          "name": "MARKDOWN_VAULT_MCP_SUMMARIZE_INLINE_TIMEOUT",
-          "description": "Soft deadline in seconds before a still-running summarize call is promoted to a background job retrievable via get_summary. Must be <= SUMMARIZE_TIMEOUT.",
-          "format": "number",
-          "default": "30.0"
-        },
-        {
           "name": "MARKDOWN_VAULT_MCP_TRANSFER_TTL_DEFAULT_S",
           "description": "Link lifetime in seconds when the caller requests no explicit TTL.",
           "format": "number",
@@ -433,6 +427,24 @@
           "description": "Maximum size in bytes of a single upload.",
           "format": "number",
           "default": "104857600"
+        },
+        {
+          "name": "MARKDOWN_VAULT_MCP_JOBS_SOFT_DEADLINE_S",
+          "description": "Seconds a long-running tool call may run in the foreground before it is promoted to a background job and a job handle is returned instead.",
+          "format": "number",
+          "default": "25.0"
+        },
+        {
+          "name": "MARKDOWN_VAULT_MCP_JOBS_RESULT_TTL_S",
+          "description": "Seconds a background-job record (working or finished) is retained for polling before it expires from the store.",
+          "format": "number",
+          "default": "3600.0"
+        },
+        {
+          "name": "MARKDOWN_VAULT_MCP_JOBS_MAX_PER_SUBJECT",
+          "description": "Maximum live background jobs per calling subject; further promotions are rejected until older records expire.",
+          "format": "number",
+          "default": "256"
         }
       ]
     },
@@ -917,12 +929,6 @@
           "default": "120.0"
         },
         {
-          "name": "MARKDOWN_VAULT_MCP_SUMMARIZE_INLINE_TIMEOUT",
-          "description": "Soft deadline in seconds before a still-running summarize call is promoted to a background job retrievable via get_summary. Must be <= SUMMARIZE_TIMEOUT.",
-          "format": "number",
-          "default": "30.0"
-        },
-        {
           "name": "MARKDOWN_VAULT_MCP_TRANSFER_TTL_DEFAULT_S",
           "description": "Link lifetime in seconds when the caller requests no explicit TTL.",
           "format": "number",
@@ -951,6 +957,24 @@
           "description": "Maximum size in bytes of a single upload.",
           "format": "number",
           "default": "104857600"
+        },
+        {
+          "name": "MARKDOWN_VAULT_MCP_JOBS_SOFT_DEADLINE_S",
+          "description": "Seconds a long-running tool call may run in the foreground before it is promoted to a background job and a job handle is returned instead.",
+          "format": "number",
+          "default": "25.0"
+        },
+        {
+          "name": "MARKDOWN_VAULT_MCP_JOBS_RESULT_TTL_S",
+          "description": "Seconds a background-job record (working or finished) is retained for polling before it expires from the store.",
+          "format": "number",
+          "default": "3600.0"
+        },
+        {
+          "name": "MARKDOWN_VAULT_MCP_JOBS_MAX_PER_SUBJECT",
+          "description": "Maximum live background jobs per calling subject; further promotions are rejected until older records expire.",
+          "format": "number",
+          "default": "256"
         }
       ]
     }

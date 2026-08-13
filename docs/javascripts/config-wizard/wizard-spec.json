@@ -261,6 +261,19 @@
       }
     },
     {
+      "id": "tasks_url",
+      "label": "Tasks Url",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_TASKS_URL",
+      "help": "Background-task (Docket) backend URL: `memory://` is in-process and lost on restart; `redis://` is durable and multi-process. When unset, a `redis://` `kv_store_url` is reused for tasks too; otherwise fastmcp's `memory://` default applies. Only meaningful when task-enabled tools exist. Applied via `configure_task_backend`.",
+      "advancedGroup": "Persistence",
+      "showIf": {
+        "deployment": [
+          "server"
+        ]
+      }
+    },
+    {
       "id": "app_domain",
       "label": "MCP Apps domain",
       "type": "text",
@@ -894,14 +907,6 @@
       "advancedGroup": "Summarize"
     },
     {
-      "id": "summarize_inline_timeout",
-      "label": "Summarize Inline Timeout",
-      "type": "number",
-      "var": "MARKDOWN_VAULT_MCP_SUMMARIZE_INLINE_TIMEOUT",
-      "help": "Soft deadline in seconds before a still-running summarize call is promoted to a background job retrievable via get_summary. Must be <= SUMMARIZE_TIMEOUT.",
-      "advancedGroup": "Summarize"
-    },
-    {
       "id": "transfer_ttl_default_s",
       "label": "Transfer Ttl Default S",
       "type": "number",
@@ -960,6 +965,45 @@
       "var": "MARKDOWN_VAULT_MCP_TRANSFER_MAX_UPLOAD_BYTES",
       "help": "Maximum size in bytes of a single upload.",
       "advancedGroup": "Transfer",
+      "showIf": {
+        "deployment": [
+          "server"
+        ]
+      }
+    },
+    {
+      "id": "jobs_soft_deadline_s",
+      "label": "Jobs Soft Deadline S",
+      "type": "number",
+      "var": "MARKDOWN_VAULT_MCP_JOBS_SOFT_DEADLINE_S",
+      "help": "Seconds a long-running tool call may run in the foreground before it is promoted to a background job and a job handle is returned instead.",
+      "advancedGroup": "Jobs",
+      "showIf": {
+        "deployment": [
+          "server"
+        ]
+      }
+    },
+    {
+      "id": "jobs_result_ttl_s",
+      "label": "Jobs Result Ttl S",
+      "type": "number",
+      "var": "MARKDOWN_VAULT_MCP_JOBS_RESULT_TTL_S",
+      "help": "Seconds a background-job record (working or finished) is retained for polling before it expires from the store.",
+      "advancedGroup": "Jobs",
+      "showIf": {
+        "deployment": [
+          "server"
+        ]
+      }
+    },
+    {
+      "id": "jobs_max_per_subject",
+      "label": "Jobs Max Per Subject",
+      "type": "number",
+      "var": "MARKDOWN_VAULT_MCP_JOBS_MAX_PER_SUBJECT",
+      "help": "Maximum live background jobs per calling subject; further promotions are rejected until older records expire.",
+      "advancedGroup": "Jobs",
       "showIf": {
         "deployment": [
           "server"

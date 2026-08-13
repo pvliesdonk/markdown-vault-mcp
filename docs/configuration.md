@@ -30,6 +30,27 @@ registered tool is ignored, but an allowlist that matches nothing logs a
 startup `WARNING` since the instance then exposes zero tools. See
 `fastmcp-pvl-core`'s README for the full semantics.
 
+## Background tasks
+
+Every Markdown Vault MCP instance wires a background-task backend at startup, so
+a tool registered with `task=True` works with no extra setup. One variable
+picks the backend:
+
+- `MARKDOWN_VAULT_MCP_TASKS_URL`: `memory://` runs tasks in-process and loses
+  them on restart; `redis://...` is durable and shared across processes.
+
+Unset, a `redis://` `MARKDOWN_VAULT_MCP_KV_STORE_URL` is reused for tasks as
+well, so a single URL configures every stateful subsystem. With neither set,
+the backend falls back to `memory://`, which the server logs at startup when
+running over HTTP. The queue name comes from the `MARKDOWN_VAULT_MCP` prefix, so
+two servers sharing one Redis do not share a queue.
+
+Worker tuning stays on the native `FASTMCP_DOCKET_*` variables
+(`FASTMCP_DOCKET_CONCURRENCY` and friends, listed in `.env.example`). Set the
+backend through `MARKDOWN_VAULT_MCP_TASKS_URL` rather than
+`FASTMCP_DOCKET_URL`: the former wins when both are set, and the server warns
+about the disagreement.
+
 <!-- DOMAIN-CONFIG-VARS-START -->
 ## Core
 
@@ -136,9 +157,9 @@ The first three knobs adjust *ranking and rendering* and take effect immediately
 !!! note "Embedding provider auto-detection"
     When `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` is not set, the server tries providers in this order:
 
-    1. **OpenAI** — if `OPENAI_API_KEY` is set
-    2. **Ollama** — if `OLLAMA_HOST` is reachable
-    3. **FastEmbed** — if the `fastembed` package is installed
+    1. **OpenAI**, if `OPENAI_API_KEY` is set
+    2. **Ollama**, if `OLLAMA_HOST` is reachable
+    3. **FastEmbed**, if the `fastembed` package is installed
 
     Both API providers speak the OpenAI-compatible embeddings protocol through the official `openai` SDK: the `ollama` provider is a preset that targets `{OLLAMA_HOST}/v1` with no key required. The `OLLAMA_*` settings and their behavior are unchanged; `OLLAMA_CPU_ONLY` uses Ollama's native API, which is the only way to request CPU-only inference.
 
@@ -159,7 +180,12 @@ Powers the optional [`summarize`](tools/index.md#summarize) tool. The backend sp
 | `MARKDOWN_VAULT_MCP_SUMMARIZE_MAX_NOTES` | int | `50` | Cap on notes summarised per tool call; this is the coverage and cost lever. It is also the ceiling for the tool's per-call `max_notes` parameter. Notes beyond it are omitted and counted in the response's `notes_omitted` |
 | `MARKDOWN_VAULT_MCP_SUMMARIZE_MAX_INPUT_CHARS` | int | `200000` | Character budget of a single model request. A larger input is split into batches, each batch summarized, and the partial summaries combined (map-reduce), so this bounds request size, not coverage. Smaller values mean more model calls |
 | `MARKDOWN_VAULT_MCP_SUMMARIZE_TIMEOUT` | float (s) | `120` | Per-request wall-clock budget for a single backend call. On timeout the tool fails with a clear message that says how to fit under the limit (narrow the request, or raise this) instead of running to the ~600 s default of the OpenAI SDK while the client abandons the request. Set it **below** your MCP client's request timeout |
-| `MARKDOWN_VAULT_MCP_SUMMARIZE_INLINE_TIMEOUT` | float (s) | `30` | Inline deadline: a `summarize` call that runs longer is promoted to a background job (`{"status": "in_progress", "job_id": …}`) and retrieved later via `get_summary`, so the tool always responds promptly. Keep it comfortably below the client's request timeout; must be `<=` `SUMMARIZE_TIMEOUT` |
+
+The former `MARKDOWN_VAULT_MCP_SUMMARIZE_INLINE_TIMEOUT` variable is gone: the
+soft deadline before a slow `summarize` call is promoted to a background job
+is no longer summarize-specific. It now belongs to the
+[background jobs](#background-jobs) subsystem as
+`MARKDOWN_VAULT_MCP_JOBS_SOFT_DEADLINE_S`.
 
 The bare `OPENAI_BASE_URL` is honored as a *value* fallback when a key is set (such as an organization-wide proxy), but it never enables the tool by itself: setting it purely for embeddings does not switch summarization on.
 
@@ -173,6 +199,30 @@ The bare `OPENAI_BASE_URL` is honored as a *value* fallback when a key is set (s
 
 !!! note "Explicit vs. auto-detect failure handling"
     Same posture as embeddings: if you set `MARKDOWN_VAULT_MCP_SUMMARIZE_PROVIDER` explicitly and the backend cannot be loaded (missing SDK, empty key, unrecognised value), startup **fails fast** with a `ConfigurationError`. When the provider is *unset* (auto-detect) and the backend cannot be loaded, the server logs a warning and the `summarize` tool stays hidden.
+
+## Background Jobs
+
+Long-running tools (today, `summarize`) are dual-mode: an MCP client that
+speaks background tasks runs them as protocol-native tasks (see
+[Background tasks](#background-tasks) for the backend), while any other
+client runs them in the foreground up to a soft deadline. A call that beats
+the deadline returns its result inline; a slower call keeps running in the
+background and immediately returns `{"status": "working", "job_id": …}`.
+Fetch the outcome with the [`get_job_result`](tools/index.md#get_job_result)
+tool. These knobs are owned by the shared jobs subsystem, not by any single
+tool:
+
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `MARKDOWN_VAULT_MCP_JOBS_SOFT_DEADLINE_S` | float (s) | `25` | Foreground window before a still-running call is promoted to a background job. Keep it below the strictest MCP-client request timeout in play |
+| `MARKDOWN_VAULT_MCP_JOBS_RESULT_TTL_S` | float (s) | `3600` | Job-record retention, measured from creation. After expiry the `job_id` is unknown, so fetch results promptly |
+| `MARKDOWN_VAULT_MCP_JOBS_MAX_PER_SUBJECT` | int | `256` | Cap on live job records per calling subject; promotion past it fails the call |
+
+Job records live in the unified key-value backend
+(`MARKDOWN_VAULT_MCP_KV_STORE_URL`, namespace `jobs`). A promoted job runs on
+the serving process and does not survive a restart; durable cross-restart
+execution is what the native task path with a `redis://` tasks backend is
+for.
 
 ## Git Integration
 

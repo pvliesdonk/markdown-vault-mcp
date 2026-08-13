@@ -45,14 +45,10 @@ class SummarizeConfig:
             while the MCP client abandons the request at its own (shorter,
             opaque) timeout (#937). Set it *below* your MCP client's request
             timeout so the server-side error wins the race and reaches the
-            model/user.
-        inline_timeout: Soft deadline, in seconds, before a still-running
-            ``summarize`` call is promoted to a background job (#937). A
-            summary that finishes within it returns inline; a slower one
-            returns ``{status: "in_progress", job_id}`` immediately and keeps
-            running in the background, retrievable via ``get_summary``. Keep
-            it comfortably below the MCP client's request timeout so the tool
-            always responds promptly. Must be ``<= timeout``.
+            model/user. The soft deadline before a still-running call is
+            promoted to a pollable background job is not a summarize knob:
+            it belongs to the pvl-core jobs subsystem
+            (``JOBS_SOFT_DEADLINE_S``, #1033).
     """
 
     provider: str | None = None
@@ -63,7 +59,6 @@ class SummarizeConfig:
     max_notes: int = 50
     max_input_chars: int = 200_000
     timeout: float = 120.0
-    inline_timeout: float = 30.0
 
     def __post_init__(self) -> None:
         """Validate numeric ranges (#638) and normalize the base URL."""
@@ -77,16 +72,6 @@ class SummarizeConfig:
             )
         if self.timeout <= 0:
             raise ValueError(f"timeout must be > 0, got {self.timeout!r}")
-        if self.inline_timeout <= 0:
-            raise ValueError(f"inline_timeout must be > 0, got {self.inline_timeout!r}")
-        # The inline promotion deadline cannot exceed the hard per-request
-        # budget: past `timeout` the backend call has already failed, so
-        # there is nothing left to promote.
-        if self.inline_timeout > self.timeout:
-            raise ValueError(
-                f"inline_timeout ({self.inline_timeout!r}) must be <= timeout "
-                f"({self.timeout!r})"
-            )
         base = (self.openai_base_url or "").strip().rstrip("/") or None
         object.__setattr__(self, "openai_base_url", base)
 
