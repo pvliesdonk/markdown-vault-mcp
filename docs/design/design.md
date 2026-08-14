@@ -2356,8 +2356,16 @@ link-following) is operator-facing and lives in docs/prompts.md only, never
 on model-facing surfaces. MCP sampling as the "use the client's model"
 mechanism was rejected (decision 18). A prompt is the delivery vehicle
 (not a plugin skill) because prompts travel with the server over plain
-HTTP-hosted MCP; a Claude Code plugin skill wrapping the same recipe is
-follow-up work (#1036).
+HTTP-hosted MCP; the Claude Code plugin channel additionally ships a
+`vault-summarize` skill wrapping the same recipe (#1036) — a thin
+host-specific layer that triggers on summarization intent, prefers the
+server-side `summarize` tool where configured, and otherwise defers to
+this prompt as the single canonical recipe while adding what a generic
+prompt cannot express: parallel map-phase fan-out through the plugin's
+`vault-mapper` agent (a subagent restricted to the vault read tools),
+with the plan and reduce steps kept in the main conversation under the
+same retained-context rule (partial summaries survive; note bodies
+never do).
 
 **Latency containment (#937).** An LLM summary is a long, unbounded
 operation; left unguarded it outruns the MCP client's request timeout and
@@ -3162,4 +3170,4 @@ Later decisions (2026-08-14, #1035):
 
 | # | Topic | Decision | Rationale |
 |-|-|-|-|
-| 20 | Client-side summarization | `summarize-subtree` MCP prompt carrying the plan → map → reduce recipe, registered config-dependently with a registration-time `${route_note}` slot (prefer-the-tool note when a backend is configured, standalone recipe when not); mapper/reducer prose derived from `_SYSTEM_MAP` / `_SYSTEM_REDUCE` | Prompts are served with the server over plain HTTP-hosted MCP (unlike plugin skills); covers keyless installs after sampling's rejection (decision 18). The recipe runs with or without subagents; trade-off prose is operator-facing and lives in docs/prompts.md only. A plugin-channel skill wrapping the same recipe is #1036 |
+| 20 | Client-side summarization | `summarize-subtree` MCP prompt carrying the plan → map → reduce recipe, registered config-dependently with a registration-time `${route_note}` slot (prefer-the-tool note when a backend is configured, standalone recipe when not); mapper/reducer prose derived from `_SYSTEM_MAP` / `_SYSTEM_REDUCE` | Prompts are served with the server over plain HTTP-hosted MCP (unlike plugin skills); covers keyless installs after sampling's rejection (decision 18). The recipe runs with or without subagents; trade-off prose is operator-facing and lives in docs/prompts.md only. The plugin channel's `vault-summarize` skill + `vault-mapper` read-only agent wrap this same recipe rather than duplicating it (#1036, resolved) |
