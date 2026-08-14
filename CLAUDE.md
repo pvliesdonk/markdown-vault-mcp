@@ -266,6 +266,10 @@ To change what the wizard asks:
 - **A var the scan cannot see** (a deprecated alias no longer read inside `ProjectConfig.from_env`, or something read outside it entirely) — declare it in `config-presentation.domain.yml` instead.
 - **Coverage is enforced, not automatic** — the generator fails loudly (`SystemExit`, naming the var and its tags) if a collected `Var`'s tags match no env-file section, rather than silently dropping it from every generated file. Giving a domain field a tag no section lists is a config-presentation bug, and this catches it at generation time instead of shipping an undocumented var. There is, however, **no orphan check**: a stale or mistaken entry in `config-presentation.domain.yml` that nothing actually reads will generate into the wizard and env files anyway. Keep that file's contents matched to real reads yourself.
 
+### mcpb install screen
+
+`packaging/mcpb/manifest.json.in`'s `user_config` and `server.mcp_config.env` objects are **generated** the same way (`kind: mcpb-user-config`): both derive from one curated `fields:` map, so a screen field and its env wiring cannot drift apart, and hand edits to those two objects are overwritten on the next generation — the rest of the manifest stays yours. The template baseline shows a deliberately minimal screen (server name, log level). Curate this project's screen in `config-presentation.domain.yml` under `files:` → `packaging/mcpb/manifest.json.in` → `fields:`: map an env var name to `{id: ..., title: ..., type: string|boolean|number|directory|file, required: ..., default: ..., sensitive: ...}` (everything but `id` falls back to the var's own metadata), or to `null` to drop a baseline field. A `files:` entry for a path the template does not declare is taken wholesale — that is how a project drives its own additional install-channel manifest from the same source of truth.
+
 ### Tool icons
 
 Drop SVG / PNG / ICO / JPEG files into `src/markdown_vault_mcp/static/icons/` and bulk-attach them to registered tools via `fastmcp_pvl_core.register_tool_icons(mcp, {"tool_name": "filename.svg"}, static_dir=...)` at the end of `register_tools()` — or attach at decoration time with `@mcp.tool(icons=[make_icon(STATIC / "x.svg")])` (where `STATIC = Path(__file__).parent / "static" / "icons"` is a shorthand you define at module level). The scaffold ships an empty `static/icons/` directory; commented-out wiring lives in `tools.py`.
@@ -287,6 +291,10 @@ These sentinel blocks in `Dockerfile` are preserved across `copier update`. Add 
 - `# DOMAIN-MANIFESTS-START` / `-END` — the calls, inside `main()`, where `version` is in scope
 
 Every path bumped there must also appear in `pyproject.toml`'s `[tool.semantic_release] assets`, or PSR leaves it out of the release commit. The two are checked against each other by `tests/test_release_contract.py`, so a manifest named in one and not the other fails the gate rather than shipping a release commit with a stale file in it.
+
+## Pre-release artifact smoke test
+
+The `Pre-release check` workflow (Actions tab, `workflow_dispatch`) builds and validates the mcpb bundle from any branch at a caller-supplied version (default `0.0.0-dev`), uploads it as a workflow artifact for manual install testing, and can optionally attach it to a deletable `v<version>-rc` pre-release. It runs the exact same steps a real release runs — both call the shared `.github/actions/build-mcpb` composite — so a green pre-release check means the release path's bundle build is green too. Project-specific artifact assertions (extra bundles, plugin manifests) belong in `packaging/pre-release-checks.sh` — an executable script the workflow runs when present, with `VERSION` and `BUNDLE` exported; the file is project-owned, and template updates never touch it.
 
 ## Tool Registration Checklist
 

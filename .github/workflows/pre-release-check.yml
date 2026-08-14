@@ -1,0 +1,75 @@
+# Pre-release smoke test for the release artifacts (#331): everything the
+# release pipeline builds only becomes testable AFTER the tag is cut and
+# public — this workflow runs the same bundle build (via the shared
+# .github/actions/build-mcpb composite, so it cannot drift from release.yml)
+# against any branch, on demand, before a release exists.
+name: Pre-release check
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version string rendered into the artifacts (no v prefix).'
+        type: string
+        default: '0.0.0-dev'
+      publish_prerelease:
+        description: 'Attach the bundle to a deletable v<version>-rc GitHub pre-release for manual install testing.'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  mcpb-bundle:
+    runs-on: ubuntu-latest
+    permissions:
+      # Only exercised by the publish_prerelease path; harmless otherwise.
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build and smoke-test mcpb bundle
+        id: build
+        uses: ./.github/actions/build-mcpb
+        with:
+          version: ${{ inputs.version }}
+
+      - name: Project-specific artifact checks
+        env:
+          VERSION: ${{ inputs.version }}
+          BUNDLE: ${{ steps.build.outputs.bundle }}
+        run: |
+          # Domain seam: a project that ships more release artifacts (a
+          # Claude Code plugin, extra bundles) asserts them in this script.
+          # The file is project-owned and never rendered by the template,
+          # so template updates leave it untouched; VERSION and BUNDLE are
+          # exported for it. Absence just skips the step.
+          if [ -x packaging/pre-release-checks.sh ]; then
+            ./packaging/pre-release-checks.sh
+          else
+            echo "no packaging/pre-release-checks.sh — skipping project-specific checks"
+          fi
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: mcpb-bundle
+          path: dist/markdown-vault-mcp-*.mcpb
+          if-no-files-found: error
+
+      - name: Attach to a deletable pre-release
+        if: inputs.publish_prerelease
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          tag="v${VERSION}-rc"
+          gh release view "$tag" --repo "${{ github.repository }}" >/dev/null 2>&1 \
+            || gh release create "$tag" \
+                 --prerelease \
+                 --title "$tag (pre-release smoke test)" \
+                 --notes "Disposable pre-release for manual install testing — safe to delete along with its tag." \
+                 --target "${{ github.sha }}" \
+                 --repo "${{ github.repository }}"
+          gh release upload "$tag" dist/markdown-vault-mcp-*.mcpb --clobber \
+            --repo "${{ github.repository }}"

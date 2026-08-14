@@ -525,3 +525,24 @@ files:
         packaging: pypi
       - path: [packages, 1, environmentVariables]
         packaging: oci
+
+  # Claude Desktop mcpb install screen. Replaces exactly two objects in the
+  # manifest — top-level `user_config` and `server.mcp_config.env` — both
+  # derived from the `fields:` map below, so a screen field and its env
+  # wiring cannot drift apart. Everything else (including the ${VERSION}
+  # placeholders the release flow envsubsts) survives untouched, and the
+  # file stays `_skip_if_exists` like the other generated-and-seeded
+  # artifacts. The baseline below is deliberately minimal; a project
+  # curates its own screen by overlaying `fields:` on this entry in
+  # config-presentation.domain.yml — adding domain fields (an `id:` plus
+  # any of title/description/type/required/default/sensitive), overriding
+  # these two, or removing them with `null`.
+  packaging/mcpb/manifest.json.in:
+    kind: mcpb-user-config
+    fields:
+      "{PREFIX}_SERVER_NAME":
+        id: server_name
+        title: "Server name"
+      FASTMCP_LOG_LEVEL:
+        id: log_level
+        title: "Log level"

@@ -17,223 +17,146 @@
   "documentation": "https://pvliesdonk.github.io/markdown-vault-mcp/",
   "support": "https://github.com/pvliesdonk/markdown-vault-mcp/issues",
   "license": "MIT",
-  "keywords": ["markdown", "vault", "obsidian", "search", "fts5", "embeddings", "zettelkasten", "para"],
+  "keywords": [
+    "markdown",
+    "vault",
+    "obsidian",
+    "search",
+    "fts5",
+    "embeddings",
+    "zettelkasten",
+    "para"
+  ],
   "server": {
     "type": "uv",
     "entry_point": "src/server.py",
     "mcp_config": {
       "command": "uvx",
-      "args": ["--from", "markdown-vault-mcp[all]==${VERSION}", "markdown-vault-mcp", "serve"],
+      "args": [
+        "--from",
+        "markdown-vault-mcp[all]==${VERSION}",
+        "markdown-vault-mcp",
+        "serve"
+      ],
       "env": {
-        "MARKDOWN_VAULT_MCP_SOURCE_DIR":       "${user_config.source_dir}",
-        "MARKDOWN_VAULT_MCP_READ_ONLY":        "${user_config.read_only}",
-        "MARKDOWN_VAULT_MCP_SERVER_NAME":      "${user_config.server_name}",
-        "MARKDOWN_VAULT_MCP_EXCLUDE":          "${user_config.exclude_patterns}",
-        "MARKDOWN_VAULT_MCP_STATE_PATH":       "${user_config.state_path}",
+        "MARKDOWN_VAULT_MCP_SERVER_NAME": "${user_config.server_name}",
+        "FASTMCP_LOG_LEVEL": "${user_config.log_level}",
+        "MARKDOWN_VAULT_MCP_SOURCE_DIR": "${user_config.source_dir}",
+        "MARKDOWN_VAULT_MCP_READ_ONLY": "${user_config.read_only}",
+        "MARKDOWN_VAULT_MCP_EXCLUDE": "${user_config.exclude_patterns}",
         "MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER": "${user_config.embedding_provider}",
-        "OLLAMA_HOST":                         "${user_config.ollama_host}",
-        "MARKDOWN_VAULT_MCP_OLLAMA_MODEL":     "${user_config.ollama_model}",
-        "MARKDOWN_VAULT_MCP_FASTEMBED_MODEL":  "${user_config.fastembed_model}",
-        "OPENAI_API_KEY":                      "${user_config.openai_api_key}",
-        "OPENAI_BASE_URL":                     "${user_config.openai_base_url}",
-        "OPENAI_EMBEDDING_MODEL":              "${user_config.openai_embedding_model}",
-        "MARKDOWN_VAULT_MCP_GIT_REPO_URL":     "${user_config.git_repo_url}",
-        "MARKDOWN_VAULT_MCP_GIT_TOKEN":        "${user_config.git_token}",
-        "MARKDOWN_VAULT_MCP_GIT_PUSH_DELAY_S": "${user_config.git_push_delay_s}",
-        "MARKDOWN_VAULT_MCP_BEARER_TOKEN":           "${user_config.bearer_token}",
-        "MARKDOWN_VAULT_MCP_OIDC_AUDIENCE":          "${user_config.oidc_audience}",
-        "MARKDOWN_VAULT_MCP_OIDC_CLIENT_ID":         "${user_config.oidc_client_id}",
-        "MARKDOWN_VAULT_MCP_OIDC_CLIENT_SECRET":     "${user_config.oidc_client_secret}",
-        "MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL":        "${user_config.oidc_config_url}",
-        "MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY":   "${user_config.oidc_jwt_signing_key}",
-        "MARKDOWN_VAULT_MCP_OIDC_REQUIRED_SCOPES":   "${user_config.oidc_required_scopes}",
-        "MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH":        "${user_config.embeddings_path}",
-        "MARKDOWN_VAULT_MCP_INDEX_PATH":             "${user_config.index_path}",
-        "MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR":    "${user_config.fastembed_cache_dir}",
-        "FASTMCP_LOG_LEVEL":                   "${user_config.log_level}"
+        "OLLAMA_HOST": "${user_config.ollama_host}",
+        "MARKDOWN_VAULT_MCP_OLLAMA_MODEL": "${user_config.ollama_model}",
+        "MARKDOWN_VAULT_MCP_FASTEMBED_MODEL": "${user_config.fastembed_model}",
+        "OPENAI_API_KEY": "${user_config.openai_api_key}",
+        "OPENAI_BASE_URL": "${user_config.openai_base_url}",
+        "OPENAI_EMBEDDING_MODEL": "${user_config.openai_embedding_model}",
+        "MARKDOWN_VAULT_MCP_GIT_REPO_URL": "${user_config.git_repo_url}",
+        "MARKDOWN_VAULT_MCP_GIT_TOKEN": "${user_config.git_token}"
       }
     }
   },
   "user_config": {
+    "server_name": {
+      "type": "string",
+      "title": "Server name",
+      "description": "Rename this server instance; defaults to the project name.",
+      "required": false
+    },
+    "log_level": {
+      "type": "string",
+      "title": "Log level",
+      "description": "Log level for FastMCP internals and app loggers (DEBUG / INFO / WARNING / ERROR / CRITICAL). The -v CLI flag overrides to DEBUG.",
+      "required": false,
+      "default": "INFO"
+    },
     "source_dir": {
       "type": "directory",
       "title": "Vault directory",
-      "description": "Absolute path to your markdown vault.",
+      "description": "Path to the markdown vault directory. Required — the server refuses to start without it. Symbolic links inside the vault are followed on Python 3.13+.",
       "required": true,
       "default": "${DOCUMENTS}/Vault"
     },
     "read_only": {
       "type": "boolean",
       "title": "Read-only mode",
-      "description": "When true, the write tools (write, edit, append, delete, rename, move_folder, fetch, git_sync, the okf_* tools, create_upload_link) are hidden.",
+      "description": "Set to false to enable the write tools (write, edit, append, delete, rename, move_folder, fetch, git_sync, the okf_* tools, create_upload_link). git_sync also needs managed git mode; create_upload_link needs an HTTP transport.",
       "required": false,
       "default": true
-    },
-    "server_name": {
-      "type": "string",
-      "title": "Server name",
-      "description": "Name shown in the Claude tool list.",
-      "required": false,
-      "default": "markdown-vault-mcp"
     },
     "exclude_patterns": {
       "type": "string",
       "title": "Exclude patterns",
-      "description": "Comma-separated glob patterns to exclude from indexing.",
-      "required": false,
-      "default": ".obsidian/**,.trash/**,.git/**"
-    },
-    "state_path": {
-      "type": "file",
-      "title": "State file path",
-      "description": "Path to the change-tracking state JSON file. Blank uses {source_dir}/.markdown_vault_mcp/state.json.",
-      "required": false
-    },
-    "index_path": {
-      "type": "file",
-      "title": "FTS5 index path",
-      "description": "Path to the SQLite FTS5 index file. Blank uses an in-memory index (rebuilt on every startup).",
-      "required": false
-    },
-    "embeddings_path": {
-      "type": "file",
-      "title": "Embeddings sidecar base path",
-      "description": "Base path for the embeddings .npy sidecar (suffix is appended by the runtime). Blank disables embeddings.",
-      "required": false
-    },
-    "fastembed_cache_dir": {
-      "type": "directory",
-      "title": "FastEmbed cache directory",
-      "description": "Where FastEmbed caches downloaded model files. Blank uses the default user cache.",
+      "description": "Comma-separated glob patterns excluded from scanning, e.g. .obsidian/**,.trash/**.",
       "required": false
     },
     "embedding_provider": {
       "type": "string",
       "title": "Embedding provider",
-      "description": "One of: fastembed, ollama, openai. Leave blank to disable semantic search.",
+      "description": "Semantic-search backend: fastembed, ollama, or openai. Leave empty to disable embeddings.",
       "required": false
-    },
-    "fastembed_model": {
-      "type": "string",
-      "title": "FastEmbed model",
-      "description": "Only used when embedding_provider=fastembed.",
-      "required": false,
-      "default": "BAAI/bge-small-en-v1.5"
     },
     "ollama_host": {
       "type": "string",
       "title": "Ollama host",
-      "description": "Only used when embedding_provider=ollama.",
+      "description": "Ollama server URL for the ollama embedding provider. Bare (not MARKDOWN_VAULT_MCP_-prefixed), matching the Ollama ecosystem convention.",
       "required": false,
       "default": "http://localhost:11434"
     },
     "ollama_model": {
       "type": "string",
-      "title": "Ollama model",
-      "description": "Only used when embedding_provider=ollama.",
+      "title": "Ollama embedding model",
+      "description": "Ollama embedding model name.",
       "required": false,
       "default": "nomic-embed-text"
+    },
+    "fastembed_model": {
+      "type": "string",
+      "title": "FastEmbed model",
+      "description": "FastEmbed model name.",
+      "required": false,
+      "default": "BAAI/bge-small-en-v1.5"
     },
     "openai_api_key": {
       "type": "string",
       "title": "OpenAI API key",
-      "description": "Only used when embedding_provider=openai. Stored in the OS keychain.",
+      "description": "OpenAI API key for the openai embedding provider, and the fallback key for the summarize tool when MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_API_KEY is unset. Bare (not MARKDOWN_VAULT_MCP_-prefixed), matching the OpenAI ecosystem convention.",
       "required": false,
       "sensitive": true
     },
     "openai_base_url": {
       "type": "string",
-      "title": "OpenAI-compatible API base URL",
-      "description": "Override to point at SiliconFlow, Together, OpenRouter, or an internal gateway. Only used when embedding_provider=openai.",
-      "required": false,
-      "default": "https://api.openai.com/v1"
+      "title": "OpenAI base URL",
+      "description": "Bare fallback for MARKDOWN_VAULT_MCP_OPENAI_BASE_URL (embeddings). For the summarize tool it only routes traffic when an API key already enables the feature; it never enables summarize by itself.",
+      "required": false
     },
     "openai_embedding_model": {
       "type": "string",
-      "title": "OpenAI-compatible embedding model",
-      "description": "Embedding model name. Must be valid for the configured OpenAI base URL. Only used when embedding_provider=openai.",
-      "required": false,
-      "default": "text-embedding-3-small"
+      "title": "OpenAI embedding model",
+      "description": "Bare fallback for MARKDOWN_VAULT_MCP_OPENAI_EMBEDDING_MODEL.",
+      "required": false
     },
     "git_repo_url": {
       "type": "string",
-      "title": "Git repository URL",
-      "description": "Set to enable managed git mode (auto-commit and push on write).",
+      "title": "Git sync repository URL",
+      "description": "HTTPS remote URL for managed git mode: the server clones into an empty SOURCE_DIR on startup (or validates an existing origin) and enables the pull loop, auto-commit, and deferred push.",
       "required": false
     },
     "git_token": {
       "type": "string",
-      "title": "Git personal access token",
-      "description": "HTTPS auth for the configured git repository.",
+      "title": "Git access token",
+      "description": "Token/password for HTTPS git auth; remotes must be HTTPS when set.",
       "required": false,
       "sensitive": true
-    },
-    "git_push_delay_s": {
-      "type": "number",
-      "title": "Git push delay (seconds)",
-      "description": "Batches rapid writes. 0 disables delayed push.",
-      "required": false,
-      "default": 30,
-      "min": 0,
-      "max": 3600
-    },
-    "bearer_token": {
-      "type": "string",
-      "title": "Bearer token",
-      "description": "Static bearer token for HTTP transports. Leave blank to disable bearer auth.",
-      "required": false,
-      "sensitive": true
-    },
-    "oidc_config_url": {
-      "type": "string",
-      "title": "OIDC discovery URL",
-      "description": "Issuer's .well-known/openid-configuration URL. Set this to enable OIDC; leave blank to disable.",
-      "required": false
-    },
-    "oidc_audience": {
-      "type": "string",
-      "title": "OIDC audience",
-      "description": "Expected audience claim for OIDC token validation.",
-      "required": false
-    },
-    "oidc_required_scopes": {
-      "type": "string",
-      "title": "OIDC required scopes",
-      "description": "Space-separated scopes required on validated OIDC tokens. Leave blank for no scope requirement (recommended for multi-auth setups).",
-      "required": false,
-      "default": ""
-    },
-    "oidc_client_id": {
-      "type": "string",
-      "title": "OIDC client ID",
-      "description": "Client ID for OIDC proxy mode (Authelia and other non-DCR providers).",
-      "required": false
-    },
-    "oidc_client_secret": {
-      "type": "string",
-      "title": "OIDC client secret",
-      "description": "Client secret for OIDC proxy mode. Stored in the OS keychain.",
-      "required": false,
-      "sensitive": true
-    },
-    "oidc_jwt_signing_key": {
-      "type": "string",
-      "title": "OIDC JWT signing key",
-      "description": "PEM-encoded signing key issued for proxied OIDC tokens. Stored in the OS keychain.",
-      "required": false,
-      "sensitive": true
-    },
-    "log_level": {
-      "type": "string",
-      "title": "Log level",
-      "description": "One of: DEBUG, INFO, WARNING, ERROR.",
-      "required": false,
-      "default": "INFO"
     }
   },
   "compatibility": {
     "claude_desktop": ">=0.10.0",
-    "platforms": ["darwin", "win32", "linux"],
+    "platforms": [
+      "darwin",
+      "win32",
+      "linux"
+    ],
     "runtimes": {
       "python": ">=3.10,<4.0"
     }

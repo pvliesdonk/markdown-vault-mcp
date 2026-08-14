@@ -84,3 +84,58 @@ wizard_routing: []
 
 # Extra wizard guards specific to this project.
 wizard_guards: []
+
+# Claude Desktop mcpb install screen — this project's curation of the
+# template-declared `packaging/mcpb/manifest.json.in` channel (#1041).
+# Field ids match the pre-generation hand-maintained screen so values
+# Claude Desktop already stored for existing installs stay attached.
+# Deliberately reduced from the old 26-field screen: HTTP-auth fields
+# (bearer/OIDC) cannot apply to a stdio bundle, and operator tuning
+# (state/index/embeddings paths, cache dirs, push-delay) stays reachable
+# via env vars per docs/configuration.md. One line per field to adjust.
+files:
+  packaging/mcpb/manifest.json.in:
+    fields:
+      "{PREFIX}_SOURCE_DIR":
+        id: source_dir
+        title: "Vault directory"
+        type: directory
+        required: true
+        default: "${DOCUMENTS}/Vault"
+      "{PREFIX}_READ_ONLY":
+        id: read_only
+        title: "Read-only mode"
+        default: true
+      "{PREFIX}_EXCLUDE":
+        id: exclude_patterns
+        title: "Exclude patterns"
+      "{PREFIX}_EMBEDDING_PROVIDER":
+        id: embedding_provider
+        title: "Embedding provider"
+        description: "Semantic-search backend: fastembed, ollama, or openai. Leave empty to disable embeddings."
+      OLLAMA_HOST:
+        id: ollama_host
+        title: "Ollama host"
+      "{PREFIX}_OLLAMA_MODEL":
+        id: ollama_model
+        title: "Ollama embedding model"
+      "{PREFIX}_FASTEMBED_MODEL":
+        id: fastembed_model
+        title: "FastEmbed model"
+      OPENAI_API_KEY:
+        id: openai_api_key
+        title: "OpenAI API key"
+        sensitive: true
+      OPENAI_BASE_URL:
+        id: openai_base_url
+        title: "OpenAI base URL"
+      OPENAI_EMBEDDING_MODEL:
+        id: openai_embedding_model
+        title: "OpenAI embedding model"
+      "{PREFIX}_GIT_REPO_URL":
+        id: git_repo_url
+        title: "Git sync repository URL"
+      "{PREFIX}_GIT_TOKEN":
+        id: git_token
+        title: "Git access token"
+        sensitive: true

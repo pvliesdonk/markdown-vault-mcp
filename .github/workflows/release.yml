@@ -324,55 +324,17 @@ jobs:
     needs: release
     if: needs.release.outputs.released == 'true'
     runs-on: ubuntu-latest
-    env:
-      MCPB_VERSION: "2.1.2"
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ needs.release.outputs.tag }}
-      - name: Install mcpb CLI
-        run: npm install -g @anthropic-ai/mcpb@$MCPB_VERSION
-      - name: Render templates
-        env:
-          VERSION: ${{ needs.release.outputs.version }}
-        run: |
-          mkdir -p build/mcpb/src
-          # Restrict substitution to ${VERSION} only — other ${...} tokens
-          # (e.g. ${DOCUMENTS}, ${user_config.*}) are runtime placeholders
-          # for the mcpb host and must survive intact.
-          envsubst '${VERSION}' < packaging/mcpb/manifest.json.in  > build/mcpb/manifest.json
-          envsubst '${VERSION}' < packaging/mcpb/pyproject.toml.in > build/mcpb/pyproject.toml
-          cp packaging/mcpb/src/server.py build/mcpb/src/server.py
-      - name: Validate and pack
-        env:
-          VERSION: ${{ needs.release.outputs.version }}
-        run: |
-          mcpb validate build/mcpb/manifest.json
-          mkdir -p dist
-          mcpb pack build/mcpb "dist/markdown-vault-mcp-${VERSION}.mcpb"
-      - name: Smoke-test bundle artifact
-        env:
-          VERSION: ${{ needs.release.outputs.version }}
-        run: |
-          bundle="dist/markdown-vault-mcp-${VERSION}.mcpb"
-          test -f "$bundle" || { echo "::error::bundle missing: $bundle"; exit 1; }
-
-          work=$(mktemp -d)
-          trap 'rm -rf "$work"' EXIT
-          unzip -q "$bundle" -d "$work"
-
-          test -f "$work/manifest.json"  || { echo "::error::manifest.json missing from bundle"; exit 1; }
-          test -f "$work/pyproject.toml" || { echo "::error::pyproject.toml missing from bundle"; exit 1; }
-          test -f "$work/src/server.py"  || { echo "::error::src/server.py missing from bundle"; exit 1; }
-
-          bundled_version=$(jq -r .version "$work/manifest.json")
-          test "$bundled_version" = "$VERSION" \
-            || { echo "::error::manifest version $bundled_version != release $VERSION"; exit 1; }
-
-          jq -e '.server.mcp_config.env' "$work/manifest.json" > /dev/null \
-            || { echo "::error::manifest missing server.mcp_config.env"; exit 1; }
-          jq -e '.user_config' "$work/manifest.json" > /dev/null \
-            || { echo "::error::manifest missing user_config"; exit 1; }
+      # Render/validate/pack/smoke live in the shared composite action so
+      # the pre-release-check workflow exercises the exact same steps a
+      # real release runs (#331).
+      - name: Build and smoke-test mcpb bundle
+        uses: ./.github/actions/build-mcpb
+        with:
+          version: ${{ needs.release.outputs.version }}
       - uses: actions/upload-artifact@v7
         with:
           name: mcpb-bundle
@@ -400,18 +362,41 @@ jobs:
             --clobber \
             --repo "${{ github.repository }}"
 
-  publish-claude-plugin-pr:
+  # Publishes the marketplace catalog entry by committing straight to the
+  # catalog's default branch — a release must not end at an open PR awaiting
+  # a human merge (fastmcp-server-template#333; 15 such PRs once went stale).
+  # The plugin-artifact check guards against publishing a git-subdir entry
+  # whose path does not exist at the tag, which is uninstallable; projects
+  # without a .claude-plugin/plugin directory skip with a warning rather
+  # than failing the release.
+  publish-claude-plugin:
     needs: release
     if: needs.release.outputs.released == 'true' && !inputs.prerelease
     runs-on: ubuntu-latest
     steps:
+      - name: Check plugin artifact exists at tag
+        id: plugin_check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.release.outputs.tag }}
+        run: |
+          if gh api --silent \
+            "repos/${{ github.repository }}/contents/.claude-plugin/plugin/.claude-plugin/plugin.json?ref=${TAG}"
+          then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::.claude-plugin/plugin missing at ${TAG} — skipping marketplace publish; a git-subdir entry pointing at a missing path would be uninstallable"
+          fi
       - name: Checkout catalog repo
+        if: steps.plugin_check.outputs.present == 'true'
         uses: actions/checkout@v7
         with:
           repository: pvliesdonk/claude-plugins
           token: ${{ secrets.RELEASE_TOKEN }}
           path: catalog
       - name: Bump marketplace.json entry
+        if: steps.plugin_check.outputs.present == 'true'
         env:
           VERSION: ${{ needs.release.outputs.version }}
         run: |
@@ -443,18 +428,45 @@ jobs:
             )
           ' marketplace.json > marketplace.json.tmp
           mv marketplace.json.tmp marketplace.json
-      - name: Create pull request
-        uses: peter-evans/create-pull-request@v8
-        with:
-          path: catalog
-          token: ${{ secrets.RELEASE_TOKEN }}
-          branch: bump/markdown-vault-mcp-${{ needs.release.outputs.version }}
-          title: "chore: bump markdown-vault-mcp to v${{ needs.release.outputs.version }}"
-          body: |
-            Auto-generated bump from [markdown-vault-mcp ${{ needs.release.outputs.tag }}](https://github.com/pvliesdonk/markdown-vault-mcp/releases/tag/${{ needs.release.outputs.tag }}).
-          commit-message: "chore: bump markdown-vault-mcp to v${{ needs.release.outputs.version }}"
-          committer: "github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>"
-          author: "github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>"
+          # The catalog must never be pushed malformed or with a mismatched
+          # entry: validate before anything is committed.
+          jq empty marketplace.json
+          jq -e --arg name "markdown-vault-mcp" --arg v "$VERSION" '
+            .plugins[] | select(.name == $name)
+            | select(.version == $v and .source.ref == ("v" + $v))
+          ' marketplace.json > /dev/null
+      - name: Commit and push to catalog
+        if: steps.plugin_check.outputs.present == 'true'
+        env:
+          VERSION: ${{ needs.release.outputs.version }}
+        run: |
+          cd catalog
+          if git diff --quiet -- marketplace.json; then
+            echo "marketplace.json already at v${VERSION}; nothing to publish"
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          BRANCH=$(git rev-parse --abbrev-ref HEAD)
+          git add marketplace.json
+          git commit -m "chore: bump markdown-vault-mcp to v${VERSION}"
+          # Concurrent sibling releases race on the same file; rebase-retry
+          # instead of failing. Bumping existing entries touches distinct
+          # lines and rebases cleanly; only two simultaneous *first*
+          # releases (both appending at the array tail) can conflict, and
+          # that fails loudly below for a manual job re-run.
+          for attempt in 1 2 3 4 5; do
+            if git push origin "HEAD:${BRANCH}"; then
+              exit 0
+            fi
+            if ! git pull --rebase origin "${BRANCH}"; then
+              git rebase --abort || true
+              echo "::error::concurrent catalog change conflicts with this bump; re-run this job"
+              exit 1
+            fi
+          done
+          echo "::error::could not push marketplace bump after 5 attempts"
+          exit 1
 
   publish-registry:
     needs: [release, publish-pypi, publish-docker]

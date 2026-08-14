@@ -1,0 +1,80 @@
+name: Build mcpb bundle
+description: >
+  Render the packaging/mcpb templates at a given version, validate the
+  manifest with the mcpb CLI, pack the bundle into dist/, and smoke-test
+  the packed artifact. Shared by release.yml's build-mcpb job and the
+  pre-release-check workflow so the pre-release path can never drift from
+  what a real release executes (#331).
+
+inputs:
+  version:
+    description: Version string rendered into the ${VERSION} placeholders (no v prefix).
+    required: true
+  mcpb-version:
+    description: npm version of @anthropic-ai/mcpb to install.
+    required: false
+    default: "2.1.2"
+
+outputs:
+  bundle:
+    description: Path of the packed .mcpb bundle.
+    value: ${{ steps.pack.outputs.bundle }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install mcpb CLI
+      shell: bash
+      run: npm install -g "@anthropic-ai/mcpb@${{ inputs.mcpb-version }}"
+
+    - name: Render templates
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+      run: |
+        mkdir -p build/mcpb/src
+        # Restrict substitution to ${VERSION} only — other ${...} tokens
+        # (e.g. ${DOCUMENTS}, ${user_config.*}) are runtime placeholders
+        # for the mcpb host and must survive intact.
+        envsubst '${VERSION}' < packaging/mcpb/manifest.json.in  > build/mcpb/manifest.json
+        envsubst '${VERSION}' < packaging/mcpb/pyproject.toml.in > build/mcpb/pyproject.toml
+        cp packaging/mcpb/src/server.py build/mcpb/src/server.py
+
+    - name: Validate and pack
+      id: pack
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+      run: |
+        mcpb validate build/mcpb/manifest.json
+        mkdir -p dist
+        mcpb pack build/mcpb "dist/markdown-vault-mcp-${VERSION}.mcpb"
+        echo "bundle=dist/markdown-vault-mcp-${VERSION}.mcpb" >> "$GITHUB_OUTPUT"
+
+    - name: Smoke-test bundle artifact
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+      run: |
+        bundle="dist/markdown-vault-mcp-${VERSION}.mcpb"
+        test -f "$bundle" || { echo "::error::bundle missing: $bundle"; exit 1; }
+
+        work=$(mktemp -d)
+        trap 'rm -rf "$work"' EXIT
+        unzip -q "$bundle" -d "$work"
+
+        test -f "$work/manifest.json"  || { echo "::error::manifest.json missing from bundle"; exit 1; }
+        test -f "$work/pyproject.toml" || { echo "::error::pyproject.toml missing from bundle"; exit 1; }
+        test -f "$work/src/server.py"  || { echo "::error::src/server.py missing from bundle"; exit 1; }
+
+        bundled_version=$(jq -r .version "$work/manifest.json")
+        test "$bundled_version" = "$VERSION" \
+          || { echo "::error::manifest version $bundled_version != release $VERSION"; exit 1; }
+
+        jq -e '.server.mcp_config.env' "$work/manifest.json" > /dev/null \
+          || { echo "::error::manifest missing server.mcp_config.env"; exit 1; }
+        jq -e '.user_config' "$work/manifest.json" > /dev/null \
+          || { echo "::error::manifest missing user_config"; exit 1; }
+        # The envsubst render must not have eaten the host-side placeholders.
+        grep -qF '${user_config.' "$work/manifest.json" \
+          || { echo "::error::\${user_config.*} references were expanded away by the render"; exit 1; }
