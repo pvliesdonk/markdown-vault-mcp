@@ -960,8 +960,14 @@ def test_instructions_carry_live_note_limit() -> None:
 
     with_limit = build_default_instructions(read_only=True, summarize_note_limit=7)
     assert "at most 7 notes per call" in with_limit
+    # Both routes are advertised: the client-side prompt is named alongside
+    # the tool (#1035).
+    assert "summarize-subtree" in with_limit
     without = build_default_instructions(read_only=True)
     assert "notes per call" not in without
+    # No backend does not mean no summarization: the instructions point
+    # agentic clients at the client-side prompt route (#1035).
+    assert "summarize-subtree" in without
 
 
 async def test_summarize_visible_with_base_url_only(

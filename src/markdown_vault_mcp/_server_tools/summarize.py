@@ -99,7 +99,11 @@ def register(mcp: FastMCP, jobs: Jobs) -> None:
         Only available when a summarization backend is configured (an
         OPENAI_API_KEY or an OpenAI-compatible base URL). Note content is
         sent to the external model provider; do not summarize notes whose
-        content must not leave your environment.
+        content must not leave your environment. When content must stay
+        with your own model — or you can run subagents and want them to
+        follow links between notes mid-summary — use the server's
+        `summarize-subtree` prompt instead: the client-side alternative to
+        this tool.
 
         Args:
             paths: One or more note paths (e.g. "notes/topic.md") and/or folder

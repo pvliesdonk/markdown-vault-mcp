@@ -12,6 +12,11 @@ OAuth
 OIDC
 Traefik
 
+# --- Agentic-client terminology (#1035) ---
+agentic
+subagent
+subagents
+
 # --- HTTP / URL terminology ---
 hostname
 loopback

@@ -31,6 +31,7 @@ _BUILTIN_PROMPTS_DIR = importlib.resources.files("markdown_vault_mcp").joinpath(
 
 _BUILTIN_PROMPT_NAMES = (
     "summarize",
+    "summarize-subtree",
     "research",
     "discuss",
     "related",

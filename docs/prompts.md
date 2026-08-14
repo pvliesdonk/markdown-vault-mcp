@@ -8,6 +8,7 @@ Prompt templates guide the LLM through multi-step workflows using the vault tool
 | Prompt | Parameters | Category | Description |
 |--------|------------|----------|-------------|
 | [`summarize`](#summarize) | `path` | Read | Structured summary of a document |
+| [`summarize-subtree`](#summarize-subtree) | `paths`, `focus` (optional) | Read | Multi-note or folder summary using the client's own model: plan, parallel map, and reduce delegated to subagents |
 | [`research`](#research) | `topic` | Write | Search, synthesize, and create a research note |
 | [`discuss`](#discuss) | `path` | Write | Analyze and suggest improvements using `edit` |
 | [`create_from_template`](#create_from_template) | `template_name` (optional) | Write | Create a new note from a template in your templates folder |
@@ -28,6 +29,31 @@ Read a document and produce a structured summary with key themes and takeaways.
 | `path` | string | Relative path to the document being summarized |
 
 **Workflow:** Calls `read` on the given path, then produces a concise overview covering the document's main topics and key points.
+
+For a folder or several notes, use [`summarize-subtree`](#summarize-subtree) (or the [`summarize` tool](tools/index.md#summarize) where a backend is configured) instead of repeating this prompt per note.
+
+## `summarize-subtree`
+
+Summarize a folder subtree or a set of notes with the *client's* own model. The prompt ships the same map-reduce recipe the server-side [`summarize` tool](tools/index.md#summarize) runs internally, but delegates each phase to client subagents so note bodies never enter the main conversation context. It needs no summarization backend and no API key on the server, and note content never leaves the client's existing model relationship.
+
+**Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `paths` | string | One or more note paths and/or folder prefixes, separated by commas (such as `projects/alpha` or `notes/a.md, notes/b.md`) |
+| `focus` | string \| null | Optional free-text steer, such as `"extract action items"`. Empty produces a general summary. |
+
+**Workflow:**
+
+1. **Plan** (one subagent): expand folder prefixes via `get_toc`, de-duplicate, and pack the note paths into batches, returning only the path lists, never note bodies.
+2. **Map** (one subagent per batch, in parallel): each mapper `read`s its own batch and returns a detailed partial summary that preserves concrete specifics and references every note by path.
+3. **Reduce**: partial summaries are combined into one cohesive summary, by a reducer subagent or inline when the partials are small.
+4. **Deliver**: the final summary plus a coverage note (notes summarized, notes skipped).
+
+Hosts without parallel subagents run the mappers sequentially; a host with no subagents at all does the planning inline (the toc is compact) but loses the context isolation for the map phase.
+
+!!! note "Agentic clients only"
+    The recipe assumes the connected client can run subagents (Claude Code and comparable agentic hosts). Where the operator has configured a summarization backend, the [`summarize` tool](tools/index.md#summarize) is the single-call alternative; it sends note content to that external provider, which this prompt avoids.
 
 ## `research`
 

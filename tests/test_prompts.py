@@ -812,6 +812,50 @@ class TestProposeLinks:
         assert "conventions" in text.lower()
 
 
+class TestSummarizeSubtree:
+    """The summarize-subtree builtin: client-side map-reduce recipe (#1035)."""
+
+    @pytest.mark.usefixtures("_clear_vars")
+    async def test_registered_read_only_with_arguments(self) -> None:
+        """Untagged (read) prompt: visible in read-only mode; paths required,
+        focus optional."""
+        server = make_server()
+        async with Client(server) as client:
+            prompts = await client.list_prompts()
+        prompt = next(p for p in prompts if p.name == "summarize-subtree")
+        args = {a.name: a.required for a in (prompt.arguments or [])}
+        assert args == {"paths": True, "focus": False}
+
+    @pytest.mark.usefixtures("_clear_vars")
+    async def test_substitutes_arguments(self) -> None:
+        server = make_server()
+        async with Client(server) as client:
+            result = await client.get_prompt(
+                "summarize-subtree",
+                {"paths": "projects/alpha, notes/b.md", "focus": "action items"},
+            )
+        text = result.messages[0].content.text
+        assert "projects/alpha, notes/b.md" in text
+        assert "action items" in text
+        assert "$paths" not in text
+        assert "$focus" not in text
+
+    @pytest.mark.usefixtures("_clear_vars")
+    async def test_recipe_confines_note_bodies_to_subagents(self) -> None:
+        """The body carries the delegation recipe: toc-based planning, mapper
+        subagents with path attribution, a reduce step, the core context
+        constraint, and the server-side tool named as the alternative route."""
+        server = make_server()
+        async with Client(server) as client:
+            result = await client.get_prompt("summarize-subtree", {"paths": "x"})
+        text = result.messages[0].content.text
+        assert "get_toc" in text
+        assert "subagent" in text
+        assert "attribution" in text
+        assert "never enter your main context" in text
+        assert "`summarize` tool" in text  # the two routes advertise each other
+
+
 class TestRegisterPromptsPerPromptGuard:
     """A malformed prompt is skipped and its siblings still register.
 

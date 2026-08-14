@@ -76,6 +76,8 @@ _SYSTEM_PER_NOTE = (
 
 # Map phase over one batch of a larger set: keep enough specifics (and the
 # path references) for the reduce phase to combine partial summaries.
+# SYNC: the map/reduce prose here is mirrored — adapted for client subagents —
+# in static/prompts/summarize-subtree.md (#1035); tune the two together.
 _SYSTEM_MAP = (
     "You summarize notes from a markdown vault. The notes provided are one "
     "part of a larger collection; other parts are summarized separately. "

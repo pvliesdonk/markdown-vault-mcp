@@ -31,7 +31,7 @@ Point it at a directory of Markdown files (an Obsidian vault, a docs folder, a Z
 - **OIDC authentication**: optional token-based auth for HTTP deployments (Authelia, Keycloak, etc.)
 - **MCP tools**: 34 LLM-visible tools including search, read, write, edit, append, delete, rename, `move_folder`, git history, manual git sync, one-time transfer links, and admin operations; plus 6 app-only tools for MCP Apps clients
 - **MCP resources**: 9 resources exposing vault configuration, statistics, tags, folders, document outlines, similar notes, recent notes, and an interactive SPA
-- **MCP prompts**: 7 prompt templates including template-driven note creation
+- **MCP prompts**: 8 prompt templates including template-driven note creation and client-side multi-note summarization
 <!-- DOMAIN-END -->
 
 ## What you can do with it
@@ -433,7 +433,7 @@ markdown-vault-mcp reindex [--source-dir PATH] [--index-path PATH]
 | `get_orphan_notes` | Find all notes with no inbound or outbound links |
 | `get_most_linked` | Find the most-linked-to notes ranked by backlink count |
 | `get_connection_path` | Find the shortest path between two notes via BFS on the undirected link graph (max 10 hops) |
-| `summarize` | Summarize a note, a set of notes, or a folder subtree with an LLM; the synthesis references the individual source notes by path. Dual-mode: a task-capable MCP client runs it as a native background task, and for any other client a slow summary is promoted to a background job (retrieved via `get_job_result`) so the tool never hangs. Hidden unless an OpenAI-compatible backend is configured (`OPENAI_API_KEY` or a base URL). Sends note content to the model provider. |
+| `summarize` | Summarize a note, a set of notes, or a folder subtree with an LLM; the synthesis references the individual source notes by path. Dual-mode: a task-capable MCP client runs it as a native background task, and for any other client a slow summary is promoted to a background job (retrieved via `get_job_result`) so the tool never hangs. Hidden unless an OpenAI-compatible backend is configured (`OPENAI_API_KEY` or a base URL). Sends note content to the model provider; the `summarize-subtree` prompt is the client-side alternative that keeps content with the client's own model. |
 | `get_job_result` | Retrieve the outcome of a background job started by a long-running tool (a promoted `summarize`, `reindex`, or `build_embeddings` call), by its `job_id`. Always registered. |
 | `get_history` | List commits that touched a note, attachment, folder, or the whole vault (git-backed vaults only) |
 | `get_diff` | Return a diff of a note or attachment between a reference commit/timestamp and HEAD; binary attachments return a `--stat` size summary instead of a unified patch (git-backed vaults only) |
@@ -473,6 +473,7 @@ Prompt templates guide the LLM through multi-step workflows using the vault tool
 | Prompt | Parameters | Description |
 |--------|------------|-------------|
 | `summarize` | `path` | Read a document and produce a structured summary with key themes and takeaways |
+| `summarize-subtree` | `paths`, `focus` (optional) | Summarize a folder subtree or set of notes with the client's own model: planning, parallel mapping, and reduction are delegated to client subagents so note bodies stay out of the main context. Needs no server-side backend; the client-side alternative to the `summarize` tool |
 | `research` | `topic` | Search for a topic, synthesize findings, and create a new note at `research/{topic}.md` |
 | `discuss` | `path` | Analyze a document and suggest improvements using `edit` (not `write`) |
 | `create_from_template` | `template_name` (optional) | Discover templates (if needed), read a template, gather user values, and write a new note |

@@ -53,8 +53,8 @@ For the full list of env vars, see the
 - **Skill:** `vault-workflow` tells Claude Code when to use hybrid vs.
   keyword search, when to call `get_context` before `read`, and how to use
   `rename(update_links=True)` correctly.
-- **Prompts:** `summarize`, `research`, `discuss`, `related`, `compare`
-  (available as slash commands via MCP prompt surfacing).
+- **Prompts:** `summarize`, `summarize-subtree`, `research`, `discuss`,
+  `related`, `compare` (available as slash commands via MCP prompt surfacing).
 
 ## Updating
 

@@ -40,7 +40,9 @@ def build_default_instructions(
             ``None`` when conventions are not configured.
         summarize_note_limit: The configured summarize note limit, surfaced so
             calling models can plan folder splits before their first call
-            (#925), or ``None`` when the summarize tool is not configured.
+            (#925), or ``None`` when the summarize tool is not configured —
+            in which case the guidance points agentic clients at the
+            client-side ``summarize-subtree`` prompt instead (#1035).
         okf_mode: The configured OKF mode (``"auto"`` / ``"off"`` / ``"on"``).
             Any mode other than ``"off"`` emits the OKF guidance sentence.
             Like the conventions sentence, it is emitted when the mode
@@ -88,12 +90,19 @@ def build_default_instructions(
         )
     )
     summarize_guidance = (
-        ""
+        (
+            " No summarization backend is configured, so there is no "
+            "'summarize' tool; for multi-note or folder summaries use the "
+            "'summarize-subtree' prompt, which delegates note reading to "
+            "subagents instead of pulling every note into your own context."
+        )
         if summarize_note_limit is None
         else (
             f" The 'summarize' tool reads at most {summarize_note_limit} "
             "notes per call; for a folder larger than that (check with "
-            "'get_toc'), call it once per subfolder and combine the results."
+            "'get_toc'), call it once per subfolder and combine the results. "
+            "The 'summarize-subtree' prompt is the client-side alternative "
+            "when note content must stay with your own model."
         )
     )
     okf_guidance = (
