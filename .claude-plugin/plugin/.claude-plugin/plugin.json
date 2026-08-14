@@ -14,5 +14,25 @@
     "obsidian",
     "search",
     "mcp"
-  ]
+  ],
+  "userConfig": {
+    "source_dir": {
+      "type": "directory",
+      "title": "Vault directory",
+      "description": "Path to your markdown (or Obsidian) vault.",
+      "required": true
+    },
+    "read_only": {
+      "type": "boolean",
+      "title": "Read-only mode",
+      "description": "Keep the write tools disabled. Turn off to enable write, edit, rename, delete, and git sync.",
+      "default": true
+    },
+    "embedding_provider": {
+      "type": "string",
+      "title": "Embedding provider",
+      "description": "Semantic-search backend: fastembed, ollama, or openai. Leave empty for keyword-only search.",
+      "default": ""
+    }
+  }
 }

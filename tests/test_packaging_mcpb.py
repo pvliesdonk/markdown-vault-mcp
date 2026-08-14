@@ -150,3 +150,80 @@ def test_plugin_mcp_json_pinned_and_matches_plugin_version() -> None:
 
     env = entry["env"]
     assert "MARKDOWN_VAULT_MCP_SOURCE_DIR" in env
+
+
+def test_plugin_userconfig_screen_shape() -> None:
+    """plugin.json userConfig must carry the curated minimal field set (#1040).
+
+    The set is deliberately small: the vault path plus the two choices a
+    first-run user actually faces. Everything else stays configurable via
+    shell env vars — growing this screen needs a conscious decision, so the
+    expected set is asserted exactly.
+    """
+    user_config = _load_plugin_json()["userConfig"]
+    assert set(user_config) == {"source_dir", "read_only", "embedding_provider"}
+
+    assert user_config["source_dir"]["type"] == "directory"
+    assert user_config["source_dir"]["required"] is True
+    assert user_config["read_only"]["type"] == "boolean"
+    assert user_config["read_only"]["default"] is True
+    assert user_config["embedding_provider"]["type"] == "string"
+
+    for name, field in user_config.items():
+        assert field.get("title"), f"userConfig.{name} must have a title"
+        assert field.get("description"), f"userConfig.{name} must have a description"
+
+
+def test_plugin_userconfig_wiring_lockstep() -> None:
+    """Every userConfig field feeds .mcp.json env, and every reference resolves.
+
+    A field nobody consumes is dead UI; a ``${user_config.*}`` reference with
+    no backing field expands to nothing at launch. Both directions must match.
+    """
+    user_config_keys = set(_load_plugin_json()["userConfig"])
+    env = _load_plugin_mcp_json()["markdown-vault-mcp"]["env"]
+    referenced = {
+        match.group(1)
+        for value in env.values()
+        for match in re.finditer(r"\$\{user_config\.([A-Za-z0-9_]+)\}", value)
+    }
+    assert referenced == user_config_keys
+
+
+def _wizard_spec_var_names() -> set[str]:
+    """Collect every env var name known to the generated config-surface spec."""
+    spec_path = (
+        REPO_ROOT / "docs" / "javascripts" / "config-wizard" / "wizard-spec.json"
+    )
+    spec = json.loads(spec_path.read_text(encoding="utf-8"))
+
+    names: set[str] = set()
+
+    def _walk(node: object) -> None:
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if key == "var" and isinstance(value, str) and value.isupper():
+                    names.add(value)
+                _walk(value)
+        elif isinstance(node, list):
+            for item in node:
+                _walk(item)
+
+    _walk(spec)
+    return names
+
+
+def test_plugin_env_vars_exist_in_config_surface() -> None:
+    """Every env var the plugin wires must exist in the config-surface spec.
+
+    ``wizard-spec.json`` is generated from the config surface and coverage-
+    gated, so a plugin env var missing from it is either a typo or a var the
+    server no longer reads — the drift #1041 documents for the mcpb channel.
+    """
+    env = _load_plugin_mcp_json()["markdown-vault-mcp"]["env"]
+    known = _wizard_spec_var_names()
+    unknown = set(env) - known
+    assert not unknown, (
+        f"plugin .mcp.json wires env vars unknown to the config surface: "
+        f"{sorted(unknown)}"
+    )

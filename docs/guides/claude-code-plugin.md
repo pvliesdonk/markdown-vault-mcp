@@ -31,33 +31,36 @@ The first command adds the `pvliesdonk/claude-plugins` marketplace to your Claud
 
 ## Configure
 
-The only required env var is `MARKDOWN_VAULT_MCP_SOURCE_DIR`. Set it to the path of your vault:
+When you enable the plugin, Claude Code shows a configuration screen for the
+essentials:
 
-=== "Shell (current session)"
+| Setting | Default | Description |
+|---------|---------|-------------|
+| Vault directory | _(required)_ | Path to your markdown (or Obsidian) vault |
+| Read-only mode | on | Turn off to enable the write tools (`write`, `edit`, `append`, `delete`, `rename`, `move_folder`, `fetch`, `git_sync`, the `okf_*` tools, `create_upload_link`) |
+| Embedding provider | _(empty)_ | Semantic-search backend (`fastembed`, `ollama`, `openai`); leave empty for keyword-only search |
 
-    ```bash
-    export MARKDOWN_VAULT_MCP_SOURCE_DIR=/path/to/your/vault
-    ```
+To change these later, open `/plugin`, select the plugin, and edit its
+configuration. Restart Claude Code afterwards so the server relaunches with
+the new values.
 
-=== "Shell profile (persistent)"
-
-    Add to your `~/.bashrc`, `~/.zshrc`, or equivalent:
-
-    ```bash
-    export MARKDOWN_VAULT_MCP_SOURCE_DIR=/path/to/your/vault
-    ```
-
-Restart Claude Code after setting the env var so the plugin picks it up.
+!!! warning "Upgrading from an earlier plugin version"
+    Earlier versions read the vault path, read-only flag, and embedding
+    provider from shell env vars (`MARKDOWN_VAULT_MCP_SOURCE_DIR` and
+    friends). Those three now come from the configuration screen instead —
+    shell exports for them no longer reach the plugin's server. Enter the
+    values in the configuration screen when Claude Code prompts for them.
 
 ## What you get
 
-The plugin wires up the following env vars. Vars with a default are filled in when the shell variable is unset; vars marked _(empty)_ stay blank when unset, which usually means "feature disabled" or "use the server's built-in default":
+Beyond the configuration screen, the plugin wires up the following optional
+env vars from your shell environment. Vars with a default are filled in when
+the shell variable is unset; vars marked _(empty)_ stay blank when unset,
+which usually means "feature disabled" or "use the server's built-in
+default". Restart Claude Code after changing them:
 
 | Env var | Default | Description |
 |---------|---------|-------------|
-| `MARKDOWN_VAULT_MCP_SOURCE_DIR` | _(required)_ | Path to your vault directory |
-| `MARKDOWN_VAULT_MCP_READ_ONLY` | `true` | Set to `false` to enable the write tools (`write`, `edit`, `append`, `delete`, `rename`, `move_folder`, `fetch`, `git_sync`, the `okf_*` tools, `create_upload_link`) |
-| `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` | _(empty)_ | Embedding backend (`fastembed`, `ollama`, `openai`); leave empty for keyword-only search |
 | `MARKDOWN_VAULT_MCP_EXCLUDE` | `.obsidian/**,.trash/**,.git/**` | Comma-separated glob patterns to exclude from indexing |
 | `MARKDOWN_VAULT_MCP_GIT_REPO_URL` | _(empty)_ | Remote repository URL for git-backed vault sync; leave empty to disable git integration |
 | `MARKDOWN_VAULT_MCP_GIT_TOKEN` | _(empty)_ | Personal access token for the git remote; leave empty to disable git integration |
