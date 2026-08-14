@@ -239,6 +239,9 @@ def register_index_jobs(mcp: FastMCP, jobs: Jobs) -> None:
             and a ``poll_with`` field naming ``get_job_result``.
 
         Raises:
+            IndexUnavailableError: If the index is not queryable (cold-start
+                build pending/failed, or a SQLite failure remapped by the
+                ``needs_queryable`` layer).
             EmbeddingsNotConfiguredError: If no embedding provider is
                 configured — this now surfaces immediately instead of
                 landing only in ``get_index_status``. Any other failure
