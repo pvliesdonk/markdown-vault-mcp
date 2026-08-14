@@ -87,6 +87,31 @@ def _bump_lockfile(version: str) -> None:
     print(f"bump_manifests: uv.lock ({normalized}) → {version}")
 
 
+def _bump_claude_plugin_manifests(version: str) -> None:
+    """Bump the Claude Code plugin channel's two version-coupled manifests.
+
+    ``plugin.json``'s ``version`` and ``.mcp.json``'s ``--from`` pin move in
+    lockstep with the release, so the marketplace entry the release workflow
+    publishes always installs the version it points at. Only the version
+    part after ``==`` is rewritten; the package spec (name and extras) stays
+    whatever the project configured.
+    """
+    plugin_path = Path(".claude-plugin/plugin/.claude-plugin/plugin.json")
+    manifest = _load(plugin_path)
+    manifest["version"] = version
+    _dump(plugin_path, manifest)
+
+    mcp_path = Path(".claude-plugin/plugin/.mcp.json")
+    mcp = _load(mcp_path)
+    for server in mcp.values():
+        args = server.get("args", [])
+        for i, arg in enumerate(args):
+            if arg == "--from" and i + 1 < len(args):
+                spec = args[i + 1].split("==", 1)[0]
+                args[i + 1] = f"{spec}=={version}"
+    _dump(mcp_path, mcp)
+
+
 # DOMAIN-MANIFESTS-HELPERS-START — module-level helpers for this project's own
 # versioned manifests (a `_bump_plugin_json(version)`, a TOML rewriter, ...).
 # `_load` / `_dump` above read and write JSON in the byte format the rest of
@@ -94,38 +119,6 @@ def _bump_lockfile(version: str) -> None:
 # scripts/gen_config_surface.py asserts that format, so prefer them over a
 # bare `json.dump`.  Call what you define from the DOMAIN-MANIFESTS block in
 # `main()` below.  Kept across copier update.
-def _bump_plugin_manifests(version: str) -> None:
-    """Bump the two Claude Code plugin manifests to ``version``.
-
-    Both move in lockstep with the released package version (gate #7):
-
-    - ``.claude-plugin/plugin/.claude-plugin/plugin.json`` — plugin ``version``
-    - ``.claude-plugin/plugin/.mcp.json`` — the
-      ``uvx --from markdown-vault-mcp[all]==<ver>`` pin in the server's
-      launch args.
-
-    Args:
-        version: The new release version string from PSR's ``NEW_VERSION``.
-    """
-    plugin_path = Path(".claude-plugin/plugin/.claude-plugin/plugin.json")
-    plugin = _load(plugin_path)
-    plugin["version"] = version
-    _dump(plugin_path, plugin)
-
-    mcp_path = Path(".claude-plugin/plugin/.mcp.json")
-    mcp = _load(mcp_path)
-    mcp["markdown-vault-mcp"]["args"] = [
-        "--from",
-        f"markdown-vault-mcp[all]=={version}",
-        "markdown-vault-mcp",
-        "serve",
-    ]
-    _dump(mcp_path, mcp)
-
-    print(f"bump_manifests: {plugin_path} → {version}")
-    print(f"bump_manifests: {mcp_path} → markdown-vault-mcp[all]=={version}")
-
-
 # DOMAIN-MANIFESTS-HELPERS-END
 
 
@@ -192,6 +185,7 @@ def main() -> int:
 
     print(f"bump_manifests: server.json → {version}")
     _bump_lockfile(version)
+    _bump_claude_plugin_manifests(version)
     # DOMAIN-MANIFESTS-START — bump this project's extra versioned manifests
     # here; `version` is the new version string, and the repo root is the cwd.
     # Every path touched here must also be listed in `pyproject.toml`
@@ -199,7 +193,9 @@ def main() -> int:
     # commit.  Kept across copier update; everything outside these markers is
     # template-owned and re-rendered, which is what keeps the bumpers above in
     # lockstep with the `assets` list they are declared against.
-    _bump_plugin_manifests(version)
+    # (The Claude Code plugin manifests are template-owned since v3.5.0's
+    # include_claude_plugin scaffold — see _bump_claude_plugin_manifests
+    # above — so nothing project-specific remains here.)
     # DOMAIN-MANIFESTS-END
     return 0
 

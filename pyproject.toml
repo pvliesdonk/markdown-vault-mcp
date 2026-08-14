@@ -327,12 +327,16 @@ build_command = "python scripts/bump_manifests.py"
 # all version-coupled files.
 assets = [
     "server.json",
-    ".claude-plugin/plugin/.claude-plugin/plugin.json",
-    ".claude-plugin/plugin/.mcp.json",
     # bump_manifests.py also refreshes uv.lock's self-version entry, so the
     # release commit carries a consistent lockfile instead of leaving drift
     # for the next `uv run` to re-sync as a side effect.
     "uv.lock",
+
+    # The Claude Code plugin channel's manifests, bumped by
+    # scripts/bump_manifests.py in the same release commit.
+    ".claude-plugin/plugin/.claude-plugin/plugin.json",
+    ".claude-plugin/plugin/.mcp.json",
+
 ]
 
 [tool.semantic_release.changelog]

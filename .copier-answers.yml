@@ -1,5 +1,5 @@
 # Changes here will be overwritten by `copier update`.
-_commit: v3.4.0
+_commit: v3.5.0
 _src_path: https://github.com/pvliesdonk/fastmcp-server-template
 docker_registry: ghcr.io/pvliesdonk
 domain_description: Generic markdown vault MCP server with FTS5 + semantic search
@@ -8,6 +8,7 @@ enable_structural_gate: true
 env_prefix: MARKDOWN_VAULT_MCP
 github_org: pvliesdonk
 human_name: Markdown Vault MCP
+include_claude_plugin: true
 include_mcp_apps_scaffold: true
 project_name: markdown-vault-mcp
 pypi_name: markdown-vault-mcp
