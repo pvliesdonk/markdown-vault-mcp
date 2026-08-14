@@ -72,6 +72,8 @@ The plugin also installs the **`vault-workflow` skill**, which gives Claude guid
 - **Link tools**: `get_backlinks`, `get_outlinks`, `get_connection_path`, and the graph tools
 - **Write semantics**: creating, editing, renaming, and deleting notes safely
 
+A second skill, **`vault-summarize`**, triggers when you ask for a summary or overview spanning more than one note. It checks scope with `get_toc`, prefers the server-side `summarize` tool when your deployment configured one, and otherwise runs the server's `summarize-subtree` recipe with parallel **`vault-mapper`** subagents (a restricted read-only agent the plugin ships), so note bodies stay confined to the subagents instead of filling the main conversation.
+
 ## Update
 
 To update the plugin to the latest version:

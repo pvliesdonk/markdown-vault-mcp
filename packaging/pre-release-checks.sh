@@ -19,6 +19,10 @@ test -f "$PLUGIN_JSON" || fail "$PLUGIN_JSON missing"
 test -f "$MCP_JSON" || fail "$MCP_JSON missing"
 test -f ".claude-plugin/plugin/skills/vault-workflow/SKILL.md" \
   || fail "vault-workflow skill missing from plugin"
+test -f ".claude-plugin/plugin/skills/vault-summarize/SKILL.md" \
+  || fail "vault-summarize skill missing from plugin"
+test -f ".claude-plugin/plugin/agents/vault-mapper.md" \
+  || fail "vault-mapper agent missing from plugin"
 
 jq -e '.name == "markdown-vault-mcp" and (.version | length > 0)' "$PLUGIN_JSON" > /dev/null \
   || fail "$PLUGIN_JSON missing name/version"

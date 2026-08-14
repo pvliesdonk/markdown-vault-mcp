@@ -50,9 +50,14 @@ For the full list of env vars, see the
 - **Tools:** `search`, `read`, `get_context`, `get_backlinks`, `get_outlinks`,
   `get_similar`, `get_connection_path`, `get_recent`, `list_documents`, and
   (in write mode) `write`, `edit`, `rename`, `delete`.
-- **Skill:** `vault-workflow` tells Claude Code when to use hybrid vs.
+- **Skills:** `vault-workflow` tells Claude Code when to use hybrid vs.
   keyword search, when to call `get_context` before `read`, and how to use
-  `rename(update_links=True)` correctly.
+  `rename(update_links=True)` correctly; `vault-summarize` triggers on
+  folder/multi-note summarization requests and runs the server's batched
+  map-reduce recipe with parallel `vault-mapper` subagents, keeping note
+  bodies out of the retained conversation context.
+- **Agent:** `vault-mapper` — the summarize skill's map-phase worker,
+  restricted to the vault read tools.
 - **Prompts:** `summarize`, `summarize-subtree`, `research`, `discuss`,
   `related`, `compare` (available as slash commands via MCP prompt surfacing).
 
