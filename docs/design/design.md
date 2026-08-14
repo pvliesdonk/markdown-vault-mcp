@@ -2997,10 +2997,16 @@ distinct channels via a single `workflow_dispatch` trigger:
 - **Stable** (`prerelease: false`): full pipeline. semantic-release
   cuts a `vX.Y.Z` tag, PyPI receives the wheel + sdist, the Docker
   image publishes `:latest`, `:vX.Y.Z`, `:vX.Y`, `:vX`, `.deb`/`.rpm`
-  packages attach to the GitHub Release, the Claude Code catalog PR
-  opens in `pvliesdonk/claude-plugins`, and the MCP Registry receives
-  the new `server.json`. Intended for promoting a verified build to
-  every distribution surface.
+  packages attach to the GitHub Release, the Claude Code catalog entry
+  in `pvliesdonk/claude-plugins` is updated by a direct commit to that
+  repo's default branch (template v3.4.0: the job first verifies
+  `.claude-plugin/plugin` exists at the tag — a `git-subdir` entry
+  pointing at a missing path is uninstallable — validates the bumped
+  `marketplace.json`, then pushes with a five-attempt rebase-retry
+  loop for concurrent sibling releases; no human-merged PR remains in
+  the loop), and the MCP Registry receives the new `server.json`.
+  Intended for promoting a verified build to every distribution
+  surface.
 
 - **Pre-release** (`prerelease: true`, the dispatch default):
   exercises the full pipeline without touching public catalogs.
@@ -3009,7 +3015,7 @@ distinct channels via a single `workflow_dispatch` trigger:
   and `:vX.Y.Z-rc.N` only; `:latest`, `:vX.Y`, `:vX` never move on
   a pre-release. The mcpb bundle is built and attached to the
   pre-release for manual smoke-test in Claude Desktop. PyPI, linux
-  packages, the Claude Code catalog PR, and the MCP Registry publish
+  packages, the Claude Code catalog publish, and the MCP Registry publish
   are all skipped. This is the default dispatch mode so real releases
   require an explicit opt-out.
 
