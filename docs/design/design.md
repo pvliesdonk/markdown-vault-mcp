@@ -2326,30 +2326,35 @@ model can plan folder splits before its first call rather than reacting
 to a truncated result.
 
 **Client-side summarization route (#1035).** The server-side tool is one of
-two routes. The ``summarize-subtree`` built-in prompt ships the same
-partition/map/reduce recipe as prose for *agentic* MCP clients, delegating
-each phase to client subagents: a planner subagent expands folders via
-``get_toc`` and returns only batched path lists (batching by note count with
-heading counts as a size proxy — the toc carries no sizes), the primary
-conversation fans out one mapper subagent per batch in parallel (subagents
-cannot spawn subagents, so the fan-out happens in the primary), and a
-reducer subagent combines the partials. The mapper/reducer instructions in
-the prompt are derived from ``_SYSTEM_MAP`` / ``_SYSTEM_REDUCE`` in
+two routes. The ``summarize-subtree`` prompt ships the same
+partition/map/reduce recipe as prose for MCP clients: plan batches from the
+``get_toc`` listing (batching by note count with heading counts as a size
+proxy — the toc carries no sizes), produce one detailed partial summary per
+batch with per-note path attribution, and reduce the partials into one
+summary. The recipe is subagent-optional: with parallel subagents the
+mappers fan out from the primary conversation (subagents cannot spawn
+subagents, so the fan-out happens in the primary), with sequential
+subagents they run one at a time, and with none the client processes
+batches itself, carrying only partial summaries forward — note bodies never
+accumulate in the retained context either way. The mapper/reducer
+instructions are derived from ``_SYSTEM_MAP`` / ``_SYSTEM_REDUCE`` in
 ``managers/summarize.py`` — the two texts must stay editorially in sync.
-Note bodies are confined to subagent contexts throughout; the primary holds
-only the plan, the partial summaries, and the final summary. This route
-needs no operator-configured backend (covering keyless installs) and routes
-note content through the client's own model instead of a second,
-separately configured backend. That is a data-flow difference, not a
-privacy ranking: the operator's backend can itself be a local model that
-discloses less than a cloud-hosted client model, so the docs frame the two
-routes by where the model calls run and which party receives the notes,
-never as one being privacy-preserving. MCP sampling as the "use the
-client's model" mechanism was rejected (decision 18). The two routes
-advertise each other:
-the tool docstring and docs name the prompt as the client-side alternative,
-and ``build_default_instructions`` points at the prompt in both the
-backend-configured and no-backend cases. A prompt is the delivery vehicle
+
+The prompt adapts to the server's configuration rather than describing both
+routes unconditionally. It is registered config-dependently by
+``register_domain_prompts`` (the ``create_from_template`` pattern, honoring
+user-prompt overrides), which resolves the body's ``${route_note}`` slot at
+registration time from ``config.summarize.has_provider()``: with a backend
+configured the slot becomes a note preferring the single-call ``summarize``
+tool, and without one the slot is removed so the prompt never names a tool
+the server does not have. The complementary surfaces are likewise
+asymmetric: ``build_default_instructions`` points at the prompt only in the
+no-backend case, and the tool docstring does not mention the prompt at all.
+Route choice is an operator decision (configure a backend or not), so
+trade-off prose (context overhead, cost accounting, data recipients,
+link-following) is operator-facing and lives in docs/prompts.md only, never
+on model-facing surfaces. MCP sampling as the "use the client's model"
+mechanism was rejected (decision 18). A prompt is the delivery vehicle
 (not a plugin skill) because prompts travel with the server over plain
 HTTP-hosted MCP; a Claude Code plugin skill wrapping the same recipe is
 follow-up work (#1036).
@@ -2474,7 +2479,7 @@ The library layer returns typed structs (``TocEntry``, ``SubtreeNote``, ``Subtre
 | Prompt | Parameters | Tags | Description |
 |-|-|-|-|
 | ``summarize`` | ``path`` | | Summarize a document |
-| ``summarize-subtree`` | ``paths``, ``focus`` (optional) | | Client-side multi-note/folder summary: plan → parallel map → reduce delegated to client subagents (#1035) |
+| ``summarize-subtree`` | ``paths``, ``focus`` (optional) | | Client-side multi-note/folder summary in batches; body adapts to the summarize backend at registration (#1035) |
 | ``research`` | ``topic`` | ``write`` | Search and consolidate as new note |
 | ``discuss`` | ``path`` | ``write`` | Analyze and suggest improvements |
 | ``related`` | ``path`` | | Find related notes, suggest cross-references |
@@ -2487,13 +2492,14 @@ Write-tagged prompts are hidden in read-only mode by the same
 
 Prompt registration is split by config-dependency (#901), both entry points
 living in ``_server_prompts.py``. The template-owned ``make_server`` body calls
-``register_prompts(mcp)``, which registers the seven config-independent built-ins
-above (every one except ``create_from_template``).
+``register_prompts(mcp)``, which registers the six config-independent built-ins
+above (every one except ``create_from_template`` and ``summarize-subtree``).
 The config-dependent prompts — ``create_from_template`` (needs the templates
-folder) and user-defined prompts (need the prompts folder) — are registered by
-``register_domain_prompts(mcp, templates_folder, prompts_folder)``, called from
-``make_server``'s
-``DOMAIN-WIRING`` block with the already-resolved ``config.content`` folders (no
+folder), ``summarize-subtree`` (adapts to the summarize backend, #1035), and
+user-defined prompts (need the prompts folder) — are registered by
+``register_domain_prompts(mcp, templates_folder, prompts_folder,
+summarize_tool_available=...)``, called from ``make_server``'s
+``DOMAIN-WIRING`` block with the already-resolved config values (no
 second environment read; a caller-supplied config is honored — #609).
 
 **User-defined prompts**: when ``MARKDOWN_VAULT_MCP_PROMPTS_FOLDER`` is set,
@@ -3143,4 +3149,4 @@ Later decisions (2026-08-14, #1035):
 
 | # | Topic | Decision | Rationale |
 |-|-|-|-|
-| 20 | Client-side summarization | `summarize-subtree` MCP prompt carrying the plan → parallel-map → reduce recipe for client subagents; mapper/reducer prose derived from `_SYSTEM_MAP` / `_SYSTEM_REDUCE` | Prompts are served with the server over plain HTTP-hosted MCP (unlike plugin skills); covers keyless installs after sampling's rejection (decision 18) and routes content through the client's model instead of a second backend — a data-flow difference, not a privacy claim (the backend can be a local model that discloses less); a plugin-channel skill wrapping the same recipe is #1036 |
+| 20 | Client-side summarization | `summarize-subtree` MCP prompt carrying the plan → map → reduce recipe, registered config-dependently with a registration-time `${route_note}` slot (prefer-the-tool note when a backend is configured, standalone recipe when not); mapper/reducer prose derived from `_SYSTEM_MAP` / `_SYSTEM_REDUCE` | Prompts are served with the server over plain HTTP-hosted MCP (unlike plugin skills); covers keyless installs after sampling's rejection (decision 18). The recipe runs with or without subagents; trade-off prose is operator-facing and lives in docs/prompts.md only. A plugin-channel skill wrapping the same recipe is #1036 |

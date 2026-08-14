@@ -473,7 +473,7 @@ Prompt templates guide the LLM through multi-step workflows using the vault tool
 | Prompt | Parameters | Description |
 |--------|------------|-------------|
 | `summarize` | `path` | Read a document and produce a structured summary with key themes and takeaways |
-| `summarize-subtree` | `paths`, `focus` (optional) | Summarize a folder subtree or set of notes with the client's own model: planning, parallel mapping, and reduction are delegated to client subagents so note bodies stay out of the main context. Needs no server-side backend; the client-side alternative to the `summarize` tool |
+| `summarize-subtree` | `paths`, `focus` (optional) | Summarize a folder subtree or set of notes with the client's own model, processing notes in batches so bodies stay out of the retained context (phases delegated to subagents when the client has them). Adapts to the server: when the `summarize` tool is registered the prompt opens by preferring it; when no backend is configured the prompt is the summarization route |
 | `research` | `topic` | Search for a topic, synthesize findings, and create a new note at `research/{topic}.md` |
 | `discuss` | `path` | Analyze a document and suggest improvements using `edit` (not `write`) |
 | `create_from_template` | `template_name` (optional) | Discover templates (if needed), read a template, gather user values, and write a new note |

@@ -947,7 +947,7 @@ When the work is promoted to a background job, a dict with `"status": "working"`
 **Errors:** raises if `paths` is empty, `mode` is invalid, no readable notes were found, or the backend call fails within the soft deadline. A backend failure after promotion is reported through `get_job_result` instead.
 
 !!! warning "Note content goes to the configured backend"
-    The referenced notes are sent to the summarization backend the operator configured, which may be a remote provider or a local endpoint. Do not summarize notes whose content must not be shared with that backend. Agentic clients can use the [`summarize-subtree` prompt](../prompts.md#summarize-subtree) instead: the same map-reduce recipe run by client subagents, routing content through the client's own model rather than the backend.
+    The referenced notes are sent to the summarization backend the operator configured, which may be a remote provider or a local endpoint. Do not summarize notes whose content must not be shared with that backend. The [`summarize-subtree` prompt](../prompts.md#summarize-subtree) is the client-side alternative that summarizes with the client's own model; see its docs for how the two routes relate.
 
 !!! note "Dependency"
     Requires the `openai` SDK and an OpenAI-compatible backend (an `OPENAI_API_KEY`, or a base URL such as a local Ollama). Install with `pip install 'markdown-vault-mcp[summarize]'` (or `[all]`). Configure the endpoint, model, and limits via the `MARKDOWN_VAULT_MCP_SUMMARIZE_*` env vars. See [Configuration](../configuration.md).

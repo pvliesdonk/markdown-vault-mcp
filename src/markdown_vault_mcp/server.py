@@ -159,6 +159,7 @@ def make_server(
         mcp,
         config.content.templates_folder,
         config.content.prompts_folder,
+        summarize_tool_available=config.summarize.has_provider(),
     )
 
     # Hand the already-loaded config to the no-arg server_lifespan's Service so it

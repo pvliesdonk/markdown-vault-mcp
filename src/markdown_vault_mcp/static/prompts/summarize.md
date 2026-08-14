@@ -6,4 +6,4 @@ arguments:
     required: true
 icons: read
 ---
-Call the `read` tool with path='$path'. The result contains a `content` field (the full note including frontmatter) and a `frontmatter` field (the parsed metadata). Write a concise summary covering the document's main topics and key points. If `read` returns an error, report it and stop. This prompt covers a single document; for a folder or several notes, use the `summarize-subtree` prompt (or the server's `summarize` tool where available) instead of repeating this per note.
+Call the `read` tool with path='$path'. The result contains a `content` field (the full note including frontmatter) and a `frontmatter` field (the parsed metadata). Write a concise summary covering the document's main topics and key points. If `read` returns an error, report it and stop. This prompt covers a single document; for a folder or several notes, use the `summarize-subtree` prompt instead of repeating this per note.

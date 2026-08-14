@@ -98,13 +98,8 @@ def register(mcp: FastMCP, jobs: Jobs) -> None:
 
         Only available when a summarization backend is configured (an
         OPENAI_API_KEY or an OpenAI-compatible base URL). Note content is
-        sent to the operator-configured backend, which may be a remote
-        provider; do not summarize notes whose content must not be shared
-        with it. The server's `summarize-subtree` prompt is the
-        client-side alternative: the same map-reduce recipe run by your
-        own subagents, routing content through your own model instead of
-        the backend and letting mappers follow links between notes
-        mid-summary.
+        sent to the operator-configured backend; do not summarize notes
+        whose content must not be shared with it.
 
         Args:
             paths: One or more note paths (e.g. "notes/topic.md") and/or folder
