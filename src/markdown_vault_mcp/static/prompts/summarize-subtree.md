@@ -10,7 +10,7 @@ arguments:
 icons: summarize
 ---
 
-You are producing a faithful summary of multiple notes from a markdown vault. Only the vault's read tools (`get_toc`, `list_documents`, `list_folders`, `read`) are needed; never write.
+You are producing a faithful summary of multiple notes from a markdown vault. Only the vault's read tools (`get_toc`, `list_documents`, `read`) are needed; never write.
 
 Target: $paths
 Focus: "$focus" (empty means a general summary; otherwise steer every step toward it)
@@ -26,7 +26,7 @@ Do not accumulate note bodies in the context you retain. Work batch by batch: wh
 Enumerate and partition the target set before reading any note:
 
 1. Split the target list ($paths) on commas into individual entries.
-2. Keep each entry ending in `.md` as a single note path. Treat any other entry as a folder prefix and call `get_toc(path=<entry>)`; folder mode returns `{path, notes, truncated}` where each note carries `path`, `title`, and `headings`. When `truncated` is true, enumerate subfolders (`list_folders`, then per-subfolder `get_toc`) until the full set is known.
+2. Keep each entry ending in `.md` as a single note path. Treat any other entry as a folder prefix and call `get_toc(path=<entry>)`; folder mode returns `{path, notes, truncated}` where each note carries `path`, `title`, and `headings`. When `truncated` is true the listing is incomplete — retry with a higher cap (`get_toc(path=<entry>, max_notes=<comfortably above the expected count>)`) or call `list_documents(folder=<entry>)`, which lists the entire subtree without a cap; never plan from a truncated listing, since notes sorted past the cutoff would be silently omitted.
 3. De-duplicate, keep the enumeration order, and pack the note paths into batches of about 8 notes each. The toc carries no note sizes; use heading counts as a rough proxy (many headings usually means a long note — put fewer of those in one batch).
 
 The plan is path lists plus a total note count, nothing more. Delegate this step to a subagent when you can; the toc is compact (paths, titles, and headings, never bodies), so doing it yourself is also fine. If the plan spans hundreds of notes, report the count and confirm scope with the user before continuing.
@@ -59,6 +59,6 @@ Present the final summary, then a short coverage note: how many notes were summa
 
 ## Constraints
 
-- Read-only: `get_toc`, `list_documents`, `list_folders`, and `read` are the only vault tools this recipe needs. Never write.
+- Read-only: `get_toc`, `list_documents`, and `read` are the only vault tools this recipe needs. Never write.
 - Path attribution must survive every stage: plan → partial summaries → final summary.
 - Never paste note bodies into the final answer or retain them past their batch.

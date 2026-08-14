@@ -882,6 +882,11 @@ class TestSummarizeSubtree:
         assert "attribution" in text
         assert "Do not accumulate note bodies" in text
         assert "No subagents: process the batches yourself" in text
+        # Truncation recovery must re-enumerate completely (higher max_notes
+        # or the uncapped list_documents), never plan from a truncated toc —
+        # notes sorted past the cutoff would be silently omitted.
+        assert "never plan from a truncated listing" in text
+        assert "list_documents" in text
 
     @pytest.mark.usefixtures("_clear_vars")
     async def test_no_backend_omits_tool_mention(
