@@ -102,7 +102,8 @@ def build_default_instructions(
             "notes per call; for a folder larger than that (check with "
             "'get_toc'), call it once per subfolder and combine the results. "
             "The 'summarize-subtree' prompt is the client-side alternative "
-            "when note content must stay with your own model."
+            "that runs the same recipe through your own model instead of "
+            "the server's configured backend."
         )
     )
     okf_guidance = (

@@ -21,7 +21,7 @@ Note bodies must never enter your main context. Hold only the partition plan (li
 
 ## Step 0: Consider the single-call alternative
 
-If this vault server exposes a `summarize` tool (it is only registered when the operator configured a summarization backend), that tool is the single-call alternative: `summarize(paths=[...], focus=...)` partitions and combines server-side. Prefer it when it is available and sending note content to the operator's configured external provider is acceptable. Use this recipe instead when the tool is absent, when note content must stay with your own model, or when a faithful summary requires following links between notes mid-summary — the server backend receives frozen text and cannot do that; your subagents can.
+If this vault server exposes a `summarize` tool (it is only registered when the operator configured a summarization backend), that tool is the single-call alternative: `summarize(paths=[...], focus=...)` partitions and combines server-side. Prefer it when it is available and sending note content to the operator's configured backend is acceptable. Use this recipe instead when the tool is absent, when the notes should go through your own model rather than that backend, or when a faithful summary requires following links between notes mid-summary — the server backend receives frozen text and cannot do that; your subagents can.
 
 ## Step 1: Plan (one subagent)
 

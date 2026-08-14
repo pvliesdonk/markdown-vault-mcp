@@ -34,7 +34,7 @@ For a folder or several notes, use [`summarize-subtree`](#summarize-subtree) (or
 
 ## `summarize-subtree`
 
-Summarize a folder subtree or a set of notes with the *client's* own model. The prompt ships the same map-reduce recipe the server-side [`summarize` tool](tools/index.md#summarize) runs internally, but delegates each phase to client subagents so note bodies never enter the main conversation context. It needs no summarization backend and no API key on the server, and note content never leaves the client's existing model relationship.
+Summarize a folder subtree or a set of notes with the *client's* own model. The prompt ships the same map-reduce recipe the server-side [`summarize` tool](tools/index.md#summarize) runs internally, but delegates each phase to client subagents so note bodies never enter the main conversation context. It needs no summarization backend and no API key on the server; note content flows through the client's own model calls instead of a separately configured backend. Neither route is inherently more private (the server backend can itself be a local endpoint that discloses less than a cloud-hosted client model); the routes differ in where the model calls run and which party receives the notes.
 
 **Parameters:**
 
@@ -53,7 +53,7 @@ Summarize a folder subtree or a set of notes with the *client's* own model. The 
 Hosts without parallel subagents run the mappers sequentially; a host with no subagents at all does the planning inline (the toc is compact) but loses the context isolation for the map phase.
 
 !!! note "Agentic clients only"
-    The recipe assumes the connected client can run subagents (Claude Code and comparable agentic hosts). Where the operator has configured a summarization backend, the [`summarize` tool](tools/index.md#summarize) is the single-call alternative; it sends note content to that external provider, which this prompt avoids.
+    The recipe assumes the connected client can run subagents (Claude Code and comparable agentic hosts). Where the operator has configured a summarization backend, the [`summarize` tool](tools/index.md#summarize) is the single-call alternative; it routes note content to that backend, where this prompt routes it through the client's own model.
 
 ## `research`
 

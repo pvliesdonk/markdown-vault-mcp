@@ -2338,10 +2338,15 @@ the prompt are derived from ``_SYSTEM_MAP`` / ``_SYSTEM_REDUCE`` in
 ``managers/summarize.py`` — the two texts must stay editorially in sync.
 Note bodies are confined to subagent contexts throughout; the primary holds
 only the plan, the partial summaries, and the final summary. This route
-needs no operator-configured backend and keeps note content within the
-client's own model relationship, covering keyless installs and
-privacy-sensitive vaults; MCP sampling as the "use the client's model"
-mechanism was rejected (decision 18). The two routes advertise each other:
+needs no operator-configured backend (covering keyless installs) and routes
+note content through the client's own model instead of a second,
+separately configured backend. That is a data-flow difference, not a
+privacy ranking: the operator's backend can itself be a local model that
+discloses less than a cloud-hosted client model, so the docs frame the two
+routes by where the model calls run and which party receives the notes,
+never as one being privacy-preserving. MCP sampling as the "use the
+client's model" mechanism was rejected (decision 18). The two routes
+advertise each other:
 the tool docstring and docs name the prompt as the client-side alternative,
 and ``build_default_instructions`` points at the prompt in both the
 backend-configured and no-backend cases. A prompt is the delivery vehicle
@@ -3138,4 +3143,4 @@ Later decisions (2026-08-14, #1035):
 
 | # | Topic | Decision | Rationale |
 |-|-|-|-|
-| 20 | Client-side summarization | `summarize-subtree` MCP prompt carrying the plan → parallel-map → reduce recipe for client subagents; mapper/reducer prose derived from `_SYSTEM_MAP` / `_SYSTEM_REDUCE` | Prompts are served with the server over plain HTTP-hosted MCP (unlike plugin skills); covers keyless installs and privacy-sensitive vaults after sampling's rejection (decision 18); a plugin-channel skill wrapping the same recipe is #1036 |
+| 20 | Client-side summarization | `summarize-subtree` MCP prompt carrying the plan → parallel-map → reduce recipe for client subagents; mapper/reducer prose derived from `_SYSTEM_MAP` / `_SYSTEM_REDUCE` | Prompts are served with the server over plain HTTP-hosted MCP (unlike plugin skills); covers keyless installs after sampling's rejection (decision 18) and routes content through the client's model instead of a second backend — a data-flow difference, not a privacy claim (the backend can be a local model that discloses less); a plugin-channel skill wrapping the same recipe is #1036 |
