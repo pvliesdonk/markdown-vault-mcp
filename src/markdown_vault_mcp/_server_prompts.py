@@ -508,8 +508,8 @@ def register_domain_prompts(
     built-in registered earlier by :func:`register_prompts` shadows it — the
     shadowed built-in is removed before the user prompt is registered, so the
     built-in text never appears and no "component already exists" warning is
-    logged. ``create_from_template`` is guarded the same way (skipped when a
-    user prompt of that name exists).
+    logged. ``create_from_template`` and ``summarize-subtree`` are guarded the
+    same way (skipped when a user prompt of that name exists).
 
     Args:
         mcp: The :class:`~fastmcp.FastMCP` instance to register prompts on.
@@ -517,6 +517,10 @@ def register_domain_prompts(
             when templates are not configured.
         prompts_folder: Path to a directory of user-defined ``.md`` prompt
             files.  ``None`` disables user-defined prompt loading.
+        summarize_tool_available: Whether the server-side ``summarize`` tool
+            is registered (``config.summarize.has_provider()``); controls
+            whether ``summarize-subtree`` recommends it via its
+            ``${route_note}`` slot (#1035).
     """
     user_prompt_defs = _load_user_prompt_defs(prompts_folder)
     if user_prompt_defs:
