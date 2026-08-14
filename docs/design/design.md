@@ -3021,10 +3021,17 @@ distinct channels via a single `workflow_dispatch` trigger:
 
 The `build-mcpb` and `publish-mcpb` jobs run unchanged in both modes:
 `build-mcpb` reads `needs.release.outputs.version` (which already
-carries the rc suffix on pre-release) and threads it through
-`envsubst '${VERSION}'` into `packaging/mcpb/manifest.json.in` and
-`pyproject.toml.in`, then `publish-mcpb` uploads the resulting
-`.mcpb` to the GitHub Release. No committed manifest bump is needed
+carries the rc suffix on pre-release) and delegates to the shared
+`.github/actions/build-mcpb` composite action (template v3.4.0), which
+threads the version through `envsubst '${VERSION}'` into
+`packaging/mcpb/manifest.json.in` and `pyproject.toml.in`, runs
+`mcpb validate`, packs the bundle, and smoke-tests the packed artifact;
+`publish-mcpb` then uploads the resulting `.mcpb` to the GitHub
+Release. The same composite action backs the manually dispatched
+`Pre-release check` workflow, which additionally runs
+`packaging/pre-release-checks.sh` for the plugin-manifest and
+vault-screen assertions — so a pre-release smoke test exercises exactly
+the steps a real release runs. No committed manifest bump is needed
 for the bundle.
 
 ### Future Work
