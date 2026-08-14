@@ -789,10 +789,12 @@ The writer accepts five job kinds, each a frozen dataclass:
 
 Submission returns a `concurrent.futures.Future`; callers wait via
 `.result()` for synchronous semantics (library-level `build_index()`,
-`reindex()`, `build_embeddings()`) or fire-and-forget via the `*_async`
-counterparts (MCP-tool-level `reindex` and `build_embeddings`, both of
-which return `{"status": "queued"}` immediately and let the writer thread
-do the work).
+`reindex()`, `build_embeddings()`) or take the `*_async` counterparts'
+Future. The MCP-tool-level `reindex` and `build_embeddings` are dual-mode
+long-running tools (#1033): they await their submission's Future, so a
+fast run returns its real result inline, and a run outliving the jobs
+soft deadline is promoted to a background job polled via
+``get_job_result`` while the writer thread keeps working.
 
 **Boot reconciliation (#665).** The server lifespan submits
 `reindex_async()` immediately after `build_index_async()`. On a warm
@@ -2227,7 +2229,7 @@ pattern). Each tool is annotated with MCP `ToolAnnotations`:
 | `get_most_linked` | Find notes ranked by number of inbound links | `True` | `False` | `True` |
 | `get_connection_path` | Shortest undirected path between two notes (BFS, max 10 hops) | `True` | `False` | `True` |
 | `summarize` | LLM summary of a note/set/subtree (references sources by path); dual-mode: native background task, or promotion to a pollable job (#1033) | `True` | `False` | **`False`** |
-| `get_job_result` | Retrieve a background job (today: a promoted `summarize`) by `job_id`; pvl-core-owned generic poller (#1033) | `True` | `False` | **`False`** |
+| `get_job_result` | Retrieve a background job (a promoted `summarize`, `reindex`, or `build_embeddings`) by `job_id`; pvl-core-owned generic poller (#1033) | `True` | `False` | **`False`** |
 | `fetch` | Download from URL and save to vault (MCP-to-MCP transfer) | `False` | `False` | `True` |
 
 **Append semantics (#980)**: `append` adds `content` at the end of an
@@ -2350,21 +2352,27 @@ contain this, both operator-tunable:
   ``{"status": "working", "job_id": …, "poll_with": "get_job_result"}``.
   The generic ``get_job_result`` tool (``register_job_tools``, one polling
   contract per server) resolves the job to ``working`` / ``completed``
-  (with the full summary payload under ``result``) / ``failed``. Job
-  records live in the unified KV backend (namespace ``jobs``; when
-  ``KV_STORE_URL`` is unset the jobs store falls back to in-process
-  memory, not the file default — ``/data/state`` only exists in the
-  Docker image, and records are ephemeral by design), are scoped
-  to the calling subject, and expire ``JOBS_RESULT_TTL_S`` after creation
-  — the same non-durable posture as index status and transfer tokens (a
-  promoted job dies with the process; durable execution is the native task
-  path's job, with a ``redis://`` tasks backend). Because the ``Jobs``
-  mechanics are built from the loaded config, the summarize group is
-  registered from the DOMAIN-WIRING block (the ``register_domain_prompts``
-  pattern) rather than the config-free ``register_tools()`` layer. Both
-  ``summarize`` and ``get_job_result`` (tags ``summarize`` / ``jobs``) are
-  hidden by the same backend gate while summarize is the only job
-  producer.
+  (with the full result payload under ``result``) / ``failed``. Job
+  records live in the unified KV backend (namespace ``jobs``; with
+  ``KV_STORE_URL`` unset, core >=4.11.1 defaults to ``file:///data/state``
+  where that directory is usable — the Docker image — and in-process
+  memory everywhere else), are scoped to the calling subject, and expire
+  ``JOBS_RESULT_TTL_S`` after creation — the same non-durable posture as
+  index status and transfer tokens (a promoted job dies with the process;
+  durable execution is the native task path's job, with a ``redis://``
+  tasks backend). Because the ``Jobs`` mechanics are built from the loaded
+  config, the summarize group and the index-maintenance jobs
+  (``register_index_jobs``) are registered from the DOMAIN-WIRING block
+  (the ``register_domain_prompts`` pattern) rather than the config-free
+  ``register_tools()`` layer. The backend gate hides only ``summarize``;
+  ``get_job_result`` is always registered, because ``reindex`` and
+  ``build_embeddings`` produce job handles regardless of the summarize
+  backend. Those two tools await their writer-submission Future
+  dual-mode: a fast run answers inline with its real result (reindex
+  counts / ``chunks_embedded``) and a slow run promotes, while
+  ``get_index_status`` / ``embeddings_status`` stay as independent
+  observability tools — they also report boot-time builds and
+  file-watcher reindexes that no client call initiated.
 
 **Dynamic instructions**: the server's MCP `instructions` string varies with
 `read_only` mode. When `read_only=True`, the instructions state this is a
@@ -3099,3 +3107,4 @@ Later decisions (2026-08-13, #1033):
 |-|-|-|-|
 | 17 | Long-running tools | Dual-mode via `fastmcp_pvl_core.jobs` (`register_long_running_tool` + generic `get_job_result`); the hand-rolled `SummaryJobStore` + `get_summary` pair is retired | Framework-owned machinery over per-tool queue-and-poll reimplementations; native MCP-tasks execution for capable clients, uniform polling fallback for the rest (no Anthropic client speaks tasks yet) |
 | 18 | Client-model summarization (MCP sampling) | Rejected | Sampling is deprecated by the MCP spec (2026-07-28, SEP-2577) and was never supported by Anthropic clients; client-side fan-out, if ever, arrives via prompts/skills, not sampling |
+| 19 | Index-maintenance tools | `reindex` / `build_embeddings` become dual-mode jobs awaiting their writer-submission `Future`; `get_index_status` / `embeddings_status` stay as observability tools | A fast run returns real results inline instead of `{"status": "queued"}`; slow runs promote to `get_job_result`; the status tools also cover boot/watcher work no call initiated, so they are not job pollers |

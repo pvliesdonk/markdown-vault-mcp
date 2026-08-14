@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any
+from dataclasses import asdict
+from typing import TYPE_CHECKING, Any
 
 from fastmcp import FastMCP
 from fastmcp.dependencies import Depends
+from fastmcp_pvl_core import register_long_running_tool
 
 from markdown_vault_mcp.vault import Vault
 
@@ -12,9 +14,21 @@ from .._icons import _TOOL_ICONS
 from .._server_queryable import needs_queryable
 from ..domain import get_vault
 
+if TYPE_CHECKING:
+    from fastmcp_pvl_core import Jobs
+
 
 def register(mcp: FastMCP) -> None:
-    """Register index-management tools on *mcp*."""
+    """Register the config-free index-observability tools on *mcp*.
+
+    The call-initiated maintenance tools (``reindex``, ``build_embeddings``)
+    are registered separately by :func:`register_index_jobs` from
+    ``make_server``'s DOMAIN-WIRING block: they are dual-mode long-running
+    tools (#1033) and need the config-built ``Jobs`` mechanics. The status
+    tools below stay here on purpose — they also report work no client call
+    initiated (boot-time builds, file-watcher reindexes), so they remain
+    independent observability surfaces rather than job pollers.
+    """
 
     @mcp.tool(
         icons=_TOOL_ICONS["embeddings_status"],
@@ -100,7 +114,26 @@ def register(mcp: FastMCP) -> None:
         """
         return await asyncio.to_thread(vault.index.get_index_status)
 
-    @mcp.tool(
+
+def register_index_jobs(mcp: FastMCP, jobs: Jobs) -> None:
+    """Register the dual-mode index-maintenance tools on *mcp* (#1033).
+
+    ``reindex`` and ``build_embeddings`` submit work to the single-owner
+    writer thread and await the submission's own ``Future``, so a fast run
+    returns its real result inline; a run still going at the jobs soft
+    deadline is promoted to a background job polled via ``get_job_result``.
+    Registered from ``make_server``'s DOMAIN-WIRING block (the same pattern
+    as the summarize group) because the ``Jobs`` mechanics are built from
+    the loaded config.
+
+    Args:
+        mcp: The server to register on.
+        jobs: The server's shared jobs mechanics (``build_jobs`` result).
+    """
+
+    @register_long_running_tool(
+        mcp,
+        jobs,
         icons=_TOOL_ICONS["reindex"],
         annotations={
             "title": "Reindex Vault",
@@ -113,7 +146,7 @@ def register(mcp: FastMCP) -> None:
     async def reindex(
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
-        """Submit an incremental reindex job to the writer.
+        """Run an incremental reindex on the writer thread.
 
         Only needed when files are modified outside this server — for example,
         by a text editor, a sync tool, or another process writing directly to
@@ -124,21 +157,46 @@ def register(mcp: FastMCP) -> None:
         To rebuild all embeddings from scratch (e.g. after changing the
         embedding model), use 'build_embeddings' with force=True.
 
+        A fast reindex (the common case — work scales with the drift, not
+        the vault) returns its result inline. A reindex still running at the
+        server's soft deadline continues in the background and returns
+        ``{"status": "working", "job_id": ...}`` immediately — fetch the
+        outcome with ``get_job_result``. ``get_index_status`` remains the
+        observability view of the index (it also covers boot-time builds and
+        file-watcher reindexes no client call initiated).
+
         Returns:
-            Dict with ``status: "queued"``. The reindex runs asynchronously on
-            the writer thread. Poll ``get_index_status`` for completion:
+            On inline completion, a dict with ``"status": "completed"`` plus
+            the reindex counts:
 
-            - ``status == "queryable"`` AND ``queue_depth == 0`` AND
-              ``in_flight is None`` → reindex completed.
-            - ``last_reindex_error`` not ``None`` → the most recent async
-              reindex failed on the writer thread; the value is the
-              stringified exception.  Operators can re-run ``reindex`` to
-              retry; a subsequent successful run clears the field.
+            - added (int): Documents added since the last index.
+            - modified (int): Documents that changed since the last index.
+            - deleted (int): Documents removed since the last index.
+            - unchanged (int): Documents with no changes.
+            - skipped (int): Files deliberately not indexed (missing required
+              frontmatter, exclude patterns, unparseable).
+
+            When promoted, a dict with ``"status": "working"``, a ``job_id``,
+            and a ``poll_with`` field naming ``get_job_result``.
+
+        Raises:
+            IndexUnavailableError: If the index is not queryable (cold-start
+                build pending/failed, or a SQLite failure remapped by the
+                ``needs_queryable`` layer). Any other failure within the
+                soft deadline re-raises the writer job's own exception; a
+                failure after promotion is reported through
+                ``get_job_result`` instead (and mirrored in
+                ``get_index_status``'s ``last_reindex_error``). If the
+                per-subject job cap is hit at promotion time, the call
+                fails with a job-limit error and the queued reindex is
+                cancelled — retry after fetching pending job results.
         """
-        vault.index.reindex_async()
-        return {"status": "queued"}
+        result = await asyncio.wrap_future(vault.index.reindex_async())
+        return {**asdict(result), "status": "completed"}
 
-    @mcp.tool(
+    @register_long_running_tool(
+        mcp,
+        jobs,
         icons=_TOOL_ICONS["build_embeddings"],
         annotations={
             "title": "Build Embeddings",
@@ -160,6 +218,13 @@ def register(mcp: FastMCP) -> None:
         the FTS chunk set: missing or changed documents are embedded,
         orphaned vectors are removed, unchanged chunks are untouched.
 
+        A fast convergence (small drift) returns its result inline. A build
+        still running at the server's soft deadline — typical for a
+        force=True rebuild of a large vault — continues in the background
+        and returns ``{"status": "working", "job_id": ...}`` immediately;
+        fetch the outcome with ``get_job_result``. ``embeddings_status``
+        remains the observability view of the vector index.
+
         Args:
             force: When True, discards existing embeddings and rebuilds from
                 scratch. Use only if the embedding model has changed.
@@ -168,16 +233,24 @@ def register(mcp: FastMCP) -> None:
                 not the size of the vault (#665).
 
         Returns:
-            Dict with ``status: "queued"``. The build runs asynchronously on
-            the writer thread. Poll ``get_index_status`` for completion:
+            On inline completion, a dict with ``"status": "completed"`` and
+            ``chunks_embedded`` (int): the total number of chunks embedded.
+            When promoted, a dict with ``"status": "working"``, a ``job_id``,
+            and a ``poll_with`` field naming ``get_job_result``.
 
-            - ``status == "queryable"`` AND ``queue_depth == 0`` AND
-              ``in_flight is None`` → build completed.
-            - ``last_build_embeddings_error`` not ``None`` → the most
-              recent async build failed on the writer thread; the value is
-              the stringified exception.  Operators can re-run
-              ``build_embeddings`` to retry; a subsequent successful run
-              clears the field.
+        Raises:
+            EmbeddingsNotConfiguredError: If no embedding provider is
+                configured — this now surfaces immediately instead of
+                landing only in ``get_index_status``. Any other failure
+                within the soft deadline re-raises the writer job's own
+                exception; a failure after promotion is reported through
+                ``get_job_result`` instead (and mirrored in
+                ``last_build_embeddings_error``). If the per-subject job
+                cap is hit at promotion time, the call fails with a
+                job-limit error and the queued build is cancelled — retry
+                after fetching pending job results.
         """
-        vault.index.build_embeddings_async(force=force)
-        return {"status": "queued"}
+        embedded = await asyncio.wrap_future(
+            vault.index.build_embeddings_async(force=force)
+        )
+        return {"status": "completed", "chunks_embedded": embedded}

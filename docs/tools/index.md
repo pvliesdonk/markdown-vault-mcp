@@ -35,8 +35,8 @@ markdown-vault-mcp exposes MCP tools across several categories. Write tools are 
 | [`get_job_result`](#get_job_result) | Get Job Result | AI | Retrieve the outcome of a background job started by a long-running tool |
 | [`get_history`](#get_history) | Note History | Read (git) | List commits that touched a note, attachment, folder, or the whole vault |
 | [`get_diff`](#get_diff) | Note Diff | Read (git) | Return a diff of a note or attachment between two points in history |
-| [`reindex`](#reindex) | Reindex Vault | Admin | Force a full reindex of the vault |
-| [`build_embeddings`](#build_embeddings) | Build Embeddings | Admin | Build or rebuild vector embeddings |
+| [`reindex`](#reindex) | Reindex Vault | Admin | Incremental reindex; inline result when fast, job promotion when slow |
+| [`build_embeddings`](#build_embeddings) | Build Embeddings | Admin | Build or rebuild vector embeddings; inline result when fast, job promotion when slow |
 | [`write`](#write) | Write Note | Write | Create or overwrite a document or attachment |
 | [`edit`](#edit) | Edit Note | Write | Replace a unique text span in a document |
 | [`append`](#append) | Append to Note | Write | Append text to the end of a note without reading it first |
@@ -270,12 +270,12 @@ No parameters.
 
 Incrementally update the full-text search index to reflect file changes made outside this server. Only changed files are processed; unchanged documents are skipped, and files deliberately excluded from the index (missing required frontmatter, exclude-pattern matches, unparseable content) are remembered across scans so they are not re-parsed or re-reported until their content changes (#665).
 
-If semantic search is configured, the queued reindex job re-embeds the changed documents on the writer thread. Poll `get_index_status` and watch the `dirty_embeddings` counter to observe completion.
+If semantic search is configured, the reindex job re-embeds the changed documents on the writer thread. Poll `get_index_status` and watch the `dirty_embeddings` counter to observe embedding convergence.
 
 !!! note "Boot reconciliation"
     The server lifespan automatically queues one incremental reindex at every startup (#665), so files added, modified, or deleted while no server was running are reconciled without a manual `reindex` call. Reads served before that job completes report `index_stale: true` in `_meta`.
 
-**Returns:** `{"status": "queued"}`. The reindex runs asynchronously on the single-owner :class:`IndexWriter` thread (#559); poll `get_server_info` or `get_index_status` for completion. `get_index_status` exposes `queue_depth`, `in_flight`, `dirty_paths`, and `dirty_embeddings` so you can observe progress without blocking.
+**Returns:** The tool is dual-mode. A fast reindex (the common case, since work scales with the drift, not the vault) completes inline with `"status": "completed"` and its real counts: `added`, `modified`, `deleted`, `unchanged`, and `skipped`. A reindex still running at the jobs soft deadline (`JOBS_SOFT_DEADLINE_S`, default 25 s) continues on the single-owner :class:`IndexWriter` thread (#559) and returns `{"status": "working", "job_id": ...}` immediately; fetch the outcome with [`get_job_result`](#get_job_result). A failure within the deadline raises immediately; after promotion it is reported through `get_job_result` (and mirrored in `get_index_status`'s `last_reindex_error`). `get_index_status` remains the non-blocking observability view (`queue_depth`, `in_flight`, `dirty_paths`, `dirty_embeddings`), covering boot-time and file-watcher work no client call initiated.
 
 ### `build_embeddings`
 
@@ -289,7 +289,7 @@ Without `force`, an existing vector index is **converged** to the FTS chunk set 
 |-----------|------|---------|-------------|
 | `force` | bool | `false` | When true, discards existing embeddings and rebuilds from scratch. Use only if the embedding model has changed |
 
-**Returns:** `{"status": "queued"}`. The build runs asynchronously on the single-owner :class:`IndexWriter` thread (#559); poll `get_server_info` or `get_index_status` for completion.
+**Returns:** The tool is dual-mode. A fast convergence (small drift) completes inline with `"status": "completed"` and `chunks_embedded` (the total number of chunks embedded). A build still running at the jobs soft deadline (typical for a `force=true` rebuild of a large vault) continues on the single-owner :class:`IndexWriter` thread (#559) and returns `{"status": "working", "job_id": ...}` immediately; fetch the outcome with [`get_job_result`](#get_job_result). A failure within the deadline raises immediately (a missing embedding provider now surfaces here instead of landing only in `get_index_status`); after promotion it is reported through `get_job_result`.
 
 !!! note "When to use"
     Normally never: the server queues a `build_embeddings` job at every startup, which converges the vector index to whatever the boot reconciliation reindex found (#665). Manual calls are needed in three cases: embedding a vault for the first time without restarting; retrying after a provider outage; or rebuilding from scratch after an embedding-model change (pass `force=true`).
@@ -956,9 +956,9 @@ When the work is promoted to a background job, a dict with `"status": "working"`
 
 ### `get_job_result`
 
-Retrieve the outcome of a background job started by a long-running tool on this server (today, a [`summarize`](#summarize) call promoted past the jobs soft deadline). When such a call returns `{"status": "working", "job_id": ...}`, pass that `job_id` here to fetch the result, polling every few seconds while it is still running.
+Retrieve the outcome of a background job started by a long-running tool on this server: a [`summarize`](#summarize), [`reindex`](#reindex), or [`build_embeddings`](#build_embeddings) call promoted past the jobs soft deadline. When such a call returns `{"status": "working", "job_id": ...}`, pass that `job_id` here to fetch the result, polling every few seconds while it is still running.
 
-The tool is provided by the shared jobs subsystem (`fastmcp-pvl-core`), so its name, payload, and lifecycle vocabulary are uniform across the `*-mcp` server family. It is shown under the same conditions as `summarize` (a summarization backend must be configured), since promoted summaries are currently the only job producers. Retrieval is scoped to the calling subject: another caller's `job_id` answers exactly like an unknown one. Job records expire `JOBS_RESULT_TTL_S` seconds after creation (default one hour) and a promoted job does not survive a server restart, so fetch results soon after completion.
+The tool is provided by the shared jobs subsystem (`fastmcp-pvl-core`), so its name, payload, and lifecycle vocabulary are uniform across the `*-mcp` server family, and it is always registered (the index-maintenance tools produce job handles regardless of whether a summarize backend is configured). Retrieval is scoped to the calling subject: another caller's `job_id` answers exactly like an unknown one. Job records expire `JOBS_RESULT_TTL_S` seconds after creation (default one hour) and a promoted job does not survive a server restart, so fetch results soon after completion.
 
 **Parameters:**
 

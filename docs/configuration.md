@@ -202,7 +202,7 @@ The bare `OPENAI_BASE_URL` is honored as a *value* fallback when a key is set (s
 
 ## Background Jobs
 
-Long-running tools (today, `summarize`) are dual-mode: an MCP client that
+Long-running tools (`summarize`, `reindex`, `build_embeddings`) are dual-mode: an MCP client that
 speaks background tasks runs them as protocol-native tasks (see
 [Background tasks](#background-tasks) for the backend), while any other
 client runs them in the foreground up to a soft deadline. A call that beats

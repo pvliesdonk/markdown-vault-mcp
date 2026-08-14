@@ -160,9 +160,12 @@ class TestSummarizeDualMode:
         assert ann.readOnlyHint is True
         assert ann.destructiveHint is False
 
-    async def test_job_tools_hidden_without_backend(
+    async def test_summarize_hidden_but_job_tools_stay_without_backend(
         self, vault_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        """No backend hides summarize, but the generic jobs poller stays:
+        reindex and build_embeddings produce job handles regardless of the
+        summarize backend (#1033)."""
         for name in _SUMMARIZE_ENV:
             monkeypatch.delenv(name, raising=False)
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault_path))
@@ -170,4 +173,4 @@ class TestSummarizeDualMode:
         async with Client(server) as client:
             names = {t.name for t in await client.list_tools()}
         assert "summarize" not in names
-        assert "get_job_result" not in names
+        assert "get_job_result" in names

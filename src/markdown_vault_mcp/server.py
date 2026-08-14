@@ -270,15 +270,16 @@ def make_server(
     if config.git.repo_url is None:
         mcp.disable(tags={"git-managed"})
 
-    # The LLM-backed summarize tool is registered here rather than in the
-    # config-free register_tools() layer: it is a dual-mode long-running tool
-    # (#1033), and the Jobs mechanics it promotes slow calls onto are built
-    # from this already-loaded config (the register_domain_prompts pattern,
-    # #609). A client that speaks MCP tasks gets native task execution; any
-    # other client past the JOBS_SOFT_DEADLINE_S soft deadline gets a job
-    # handle to poll via the generic get_job_result tool.
+    # The dual-mode long-running tools (#1033) are registered here rather
+    # than in the config-free register_tools() layer: the Jobs mechanics
+    # their slow calls promote onto are built from this already-loaded
+    # config (the register_domain_prompts pattern, #609). A client that
+    # speaks MCP tasks gets native task execution; any other client past
+    # the JOBS_SOFT_DEADLINE_S soft deadline gets a job handle to poll via
+    # the generic get_job_result tool.
     from fastmcp_pvl_core import build_jobs, register_job_tools
 
+    from markdown_vault_mcp._server_tools import index as index_tools
     from markdown_vault_mcp._server_tools import summarize as summarize_tools
 
     # With no KV backend configured, core's default (>=4.11.1) is
@@ -287,10 +288,14 @@ def make_server(
     # needs no domain-side backend selection.
     jobs = build_jobs(config.server, config.jobs)
     summarize_tools.register(mcp, jobs)
+    index_tools.register_index_jobs(mcp, jobs)
     register_job_tools(
         mcp,
         jobs,
-        note=("On this server, background jobs come from slow summarize calls."),
+        note=(
+            "On this server, background jobs come from slow summarize, "
+            "reindex, and build_embeddings calls."
+        ),
     )
 
     # Hide the LLM-backed summarize tool unless a summarization backend is
@@ -299,13 +304,11 @@ def make_server(
     # provider. Checked directly
     # (not via to_vault_kwargs(), which builds an embedding provider and may
     # clone a git repo as a side effect — see the git-managed gate above).
-    # The generic jobs poller is hidden alongside it: summarize is currently
-    # the only producer of job handles, so without a backend the poller has
-    # nothing to resolve. Un-gate the "jobs" tag when another long-running
-    # tool joins.
+    # The generic jobs poller stays visible either way: reindex and
+    # build_embeddings produce job handles regardless of the summarize
+    # backend.
     if not config.summarize.has_provider():
         mcp.disable(tags={"summarize"})
-        mcp.disable(tags={"jobs"})
     else:
         # Substitute the live note limit into the tool description so calling
         # models can plan folder splits before their first call (#925).

@@ -418,9 +418,9 @@ markdown-vault-mcp reindex [--source-dir PATH] [--index-path PATH]
 | `list_documents` | List indexed documents; pass `include_attachments=true` to also list non-markdown files |
 | `list_folders` | List all folder paths in the vault |
 | `list_tags` | List all unique frontmatter tag values |
-| `reindex` | Force a full reindex of the vault |
+| `reindex` | Incrementally reindex files changed outside the server; fast runs answer inline with real counts, slow runs promote to a job (`get_job_result`) |
 | `stats` | Get vault statistics (document count, chunk count, link health metrics, etc.) |
-| `build_embeddings` | Build or rebuild vector embeddings for semantic search |
+| `build_embeddings` | Build or rebuild vector embeddings for semantic search; fast convergence answers inline, slow builds promote to a job (`get_job_result`) |
 | `embeddings_status` | Check embedding provider and index status |
 | `get_index_status` | Check background FTS build state (`queryable` / `building` / `failed`) |
 | `get_backlinks` | Find all documents that link to a given document |
@@ -434,7 +434,7 @@ markdown-vault-mcp reindex [--source-dir PATH] [--index-path PATH]
 | `get_most_linked` | Find the most-linked-to notes ranked by backlink count |
 | `get_connection_path` | Find the shortest path between two notes via BFS on the undirected link graph (max 10 hops) |
 | `summarize` | Summarize a note, a set of notes, or a folder subtree with an LLM; the synthesis references the individual source notes by path. Dual-mode: a task-capable MCP client runs it as a native background task, and for any other client a slow summary is promoted to a background job (retrieved via `get_job_result`) so the tool never hangs. Hidden unless an OpenAI-compatible backend is configured (`OPENAI_API_KEY` or a base URL). Sends note content to the model provider. |
-| `get_job_result` | Retrieve the outcome of a background job started by a long-running tool (today: a promoted `summarize` call), by its `job_id`. Registered alongside `summarize`. |
+| `get_job_result` | Retrieve the outcome of a background job started by a long-running tool (a promoted `summarize`, `reindex`, or `build_embeddings` call), by its `job_id`. Always registered. |
 | `get_history` | List commits that touched a note, attachment, folder, or the whole vault (git-backed vaults only) |
 | `get_diff` | Return a diff of a note or attachment between a reference commit/timestamp and HEAD; binary attachments return a `--stat` size summary instead of a unified patch (git-backed vaults only) |
 | `git_sync` | Force an immediate git pull / push / both, bypassing the periodic loops. Returns structured state (SHAs, commit counts, Syncthing-style conflict file paths if any). Hidden when `MARKDOWN_VAULT_MCP_GIT_REPO_URL` isn't set or `READ_ONLY=true`. |

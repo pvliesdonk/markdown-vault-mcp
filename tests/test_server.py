@@ -356,7 +356,6 @@ class TestToolManifest:
 
         assert names == [
             "append",
-            "build_embeddings",
             "delete",
             "edit",
             "embeddings_status",
@@ -386,7 +385,6 @@ class TestToolManifest:
             "okf_validate",
             "okf_verify",
             "read",
-            "reindex",
             "rename",
             "search",
             "stats",
@@ -507,10 +505,12 @@ class TestToolAnnotations:
         # full-registry sweep keeps asserting their metadata.
         from fastmcp_pvl_core import build_jobs, register_job_tools
 
+        from markdown_vault_mcp._server_tools import index as index_tools
         from markdown_vault_mcp._server_tools import summarize as summarize_tools
 
         jobs = build_jobs(config.server, config.jobs)
         summarize_tools.register(mcp, jobs)
+        index_tools.register_index_jobs(mcp, jobs)
         register_job_tools(mcp, jobs)
 
         tools = await mcp._list_tools()
@@ -727,26 +727,95 @@ class TestReindexTool:
     """Test the reindex MCP tool."""
 
     @pytest.mark.usefixtures("_mcp_env")
-    async def test_reindex_returns_queued_immediately(self) -> None:
-        """reindex submits a job to the writer and returns {'status': 'queued'}."""
+    async def test_reindex_fast_run_returns_inline_counts(self) -> None:
+        """A fast reindex completes inline with its real counts (#1033)."""
         server = make_server()
         async with Client(server) as client:
             result = await client.call_tool("reindex", {})
         data = result.data
-        assert data == {"status": "queued"}
+        assert data["status"] == "completed"
+        for key in ("added", "modified", "deleted", "unchanged", "skipped"):
+            assert isinstance(data[key], int)
+        assert "job_id" not in data
+
+    @pytest.mark.usefixtures("_mcp_env")
+    async def test_reindex_slow_run_promotes_to_job(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A reindex outliving the soft deadline promotes to a pollable job."""
+        import asyncio
+        import threading
+        from concurrent.futures import Future
+
+        from markdown_vault_mcp.facets.index import IndexFacet
+        from markdown_vault_mcp.types import ReindexResult
+
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_JOBS_SOFT_DEADLINE_S", "0.15")
+
+        def slow_reindex_async(_self: IndexFacet) -> Future[ReindexResult]:
+            fut: Future[ReindexResult] = Future()
+            threading.Timer(
+                0.5,
+                lambda: fut.set_result(
+                    ReindexResult(added=1, modified=0, deleted=0, unchanged=0)
+                ),
+            ).start()
+            return fut
+
+        monkeypatch.setattr(IndexFacet, "reindex_async", slow_reindex_async)
+        server = make_server()
+        async with Client(server) as client:
+            res = await client.call_tool("reindex", {})
+            assert res.data["status"] == "working"
+            assert res.data["poll_with"] == "get_job_result"
+            job_id = res.data["job_id"]
+            out: dict[str, Any] = {}
+            for _ in range(40):
+                out = (
+                    await client.call_tool("get_job_result", {"job_id": job_id})
+                ).data
+                if out["status"] != "working":
+                    break
+                await asyncio.sleep(0.1)
+        assert out["status"] == "completed"
+        assert out["result"]["added"] == 1
 
 
 class TestBuildEmbeddingsTool:
     """Test the build_embeddings MCP tool."""
 
     @pytest.mark.usefixtures("_mcp_env")
-    async def test_build_embeddings_returns_queued_immediately(self) -> None:
-        """build_embeddings submits a job and returns {'status': 'queued'}."""
+    async def test_build_embeddings_fast_run_returns_inline_count(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A fast build completes inline with its chunks_embedded count."""
+        from concurrent.futures import Future
+
+        from markdown_vault_mcp.facets.index import IndexFacet
+
+        def fast_build_async(_self: IndexFacet, *, force: bool = False) -> Future[int]:  # noqa: ARG001 — signature must match the patched method
+            fut: Future[int] = Future()
+            fut.set_result(7)
+            return fut
+
+        monkeypatch.setattr(IndexFacet, "build_embeddings_async", fast_build_async)
         server = make_server()
         async with Client(server) as client:
             result = await client.call_tool("build_embeddings", {})
-        data = result.data
-        assert data == {"status": "queued"}
+        assert result.data == {"status": "completed", "chunks_embedded": 7}
+
+    @pytest.mark.usefixtures("_mcp_env")
+    async def test_build_embeddings_without_provider_fails_inline(self) -> None:
+        """With no provider, the failure surfaces immediately (#1033).
+
+        Previously the tool answered {'status': 'queued'} and the
+        EmbeddingsNotConfiguredError landed only in get_index_status's
+        last_build_embeddings_error field.
+        """
+        server = make_server()
+        async with Client(server) as client:
+            with pytest.raises(ToolError, match=r"[Ee]mbedding"):
+                await client.call_tool("build_embeddings", {})
 
 
 # ---------------------------------------------------------------------------
