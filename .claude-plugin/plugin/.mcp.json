@@ -8,15 +8,20 @@
       "serve"
     ],
     "env": {
-      "MARKDOWN_VAULT_MCP_SOURCE_DIR": "${MARKDOWN_VAULT_MCP_SOURCE_DIR}",
-      "MARKDOWN_VAULT_MCP_READ_ONLY": "${MARKDOWN_VAULT_MCP_READ_ONLY:-true}",
-      "MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER": "${MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER:-}",
-      "MARKDOWN_VAULT_MCP_EXCLUDE": "${MARKDOWN_VAULT_MCP_EXCLUDE:-.obsidian/**,.trash/**,.git/**}",
-      "MARKDOWN_VAULT_MCP_GIT_REPO_URL": "${MARKDOWN_VAULT_MCP_GIT_REPO_URL:-}",
-      "MARKDOWN_VAULT_MCP_GIT_TOKEN": "${MARKDOWN_VAULT_MCP_GIT_TOKEN:-}",
-      "MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH": "${MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH:-}",
-      "MARKDOWN_VAULT_MCP_INDEX_PATH": "${MARKDOWN_VAULT_MCP_INDEX_PATH:-}",
-      "OLLAMA_HOST": "${OLLAMA_HOST:-http://localhost:11434}"
+      "MARKDOWN_VAULT_MCP_SOURCE_DIR": "${user_config.source_dir}",
+      "MARKDOWN_VAULT_MCP_READ_ONLY": "${user_config.read_only}",
+      "MARKDOWN_VAULT_MCP_EXCLUDE": "${user_config.exclude_patterns}",
+      "MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER": "${user_config.embedding_provider}",
+      "OLLAMA_HOST": "${user_config.ollama_host}",
+      "MARKDOWN_VAULT_MCP_OLLAMA_MODEL": "${user_config.ollama_model}",
+      "MARKDOWN_VAULT_MCP_FASTEMBED_MODEL": "${user_config.fastembed_model}",
+      "OPENAI_API_KEY": "${user_config.openai_api_key}",
+      "OPENAI_BASE_URL": "${user_config.openai_base_url}",
+      "OPENAI_EMBEDDING_MODEL": "${user_config.openai_embedding_model}",
+      "MARKDOWN_VAULT_MCP_GIT_REPO_URL": "${user_config.git_repo_url}",
+      "MARKDOWN_VAULT_MCP_GIT_TOKEN": "${user_config.git_token}",
+      "MARKDOWN_VAULT_MCP_SERVER_NAME": "${user_config.server_name}",
+      "FASTMCP_LOG_LEVEL": "${user_config.log_level}"
     }
   }
 }

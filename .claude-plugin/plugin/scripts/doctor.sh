@@ -26,13 +26,16 @@ print(
 PYEOF
 }
 
-# Resolve the source dir the way the SERVER will: the settings-file env
-# block reaches the server process and wins over the shell environment, so
-# it is checked FIRST, with the shell value only as fallback — checking the
-# shell first would let the doctor validate a path the server never uses
-# when both are set and disagree.
-src=""
-if [ -f "$HOME/.claude/settings.json" ]; then
+# Resolve the source dir the way the SERVER will. Since the userConfig
+# screen (#1040), .mcp.json wires MARKDOWN_VAULT_MCP_SOURCE_DIR to
+# ${user_config.source_dir}, so the plugin's stored config is the
+# authoritative source: hook processes receive it directly as
+# CLAUDE_PLUGIN_OPTION_SOURCE_DIR, with the persisted copy living under
+# pluginConfigs[<plugin-id>].options in the user-scope settings file.
+# The settings env block and the shell environment remain as legacy
+# fallbacks for installs that predate the screen.
+src="${CLAUDE_PLUGIN_OPTION_SOURCE_DIR:-}"
+if [ -z "$src" ] && [ -f "$HOME/.claude/settings.json" ]; then
   src=$(python3 - <<'PYEOF' 2>/dev/null
 import json
 import os
@@ -42,7 +45,15 @@ try:
     settings = json.load(open(path, encoding="utf-8"))
 except (OSError, ValueError):
     settings = {}
-print(settings.get("env", {}).get("MARKDOWN_VAULT_MCP_SOURCE_DIR", ""))
+value = ""
+for key, cfg in (settings.get("pluginConfigs") or {}).items():
+    if "markdown-vault-mcp" in key and isinstance(cfg, dict):
+        value = (cfg.get("options") or {}).get("source_dir") or ""
+        if value:
+            break
+if not value:
+    value = (settings.get("env") or {}).get("MARKDOWN_VAULT_MCP_SOURCE_DIR", "")
+print(value)
 PYEOF
 )
 fi
@@ -53,7 +64,7 @@ fi
 if [ -z "$src" ]; then
   emit \
     "markdown-vault-mcp: no vault configured — the MCP server cannot start. Ask Claude to set up your vault to fix this." \
-    "The markdown-vault-mcp plugin's MCP server is down because MARKDOWN_VAULT_MCP_SOURCE_DIR is not set (neither in the environment nor in ~/.claude/settings.json's env block). If the user asks about the vault or wants it working, use the vault-setup skill to run the guided setup."
+    "The markdown-vault-mcp plugin's MCP server is down because no vault directory is configured: the plugin's source_dir option is unset (no CLAUDE_PLUGIN_OPTION_SOURCE_DIR, nothing under pluginConfigs in ~/.claude/settings.json) and the legacy MARKDOWN_VAULT_MCP_SOURCE_DIR env fallbacks are empty too. If the user asks about the vault or wants it working, use the vault-setup skill to run the guided setup."
   exit 0
 fi
 

@@ -1736,6 +1736,10 @@ class PresentationContext:
     # The project's config-presentation.domain.yml content; only the wizard
     # renderer reads it today, but it is per-run input like the other two.
     domain_presentation: Mapping[str, Any] = dataclasses.field(default_factory=dict)
+    # The merged `files:` map (template + domain overlay) — lets a renderer
+    # resolve a cross-entry reference such as claude-plugin-env's
+    # `fields_from:` without re-merging.
+    files: Mapping[str, Any] = dataclasses.field(default_factory=dict)
 
     @property
     def required_names(self) -> Collection[str]:
@@ -2007,6 +2011,128 @@ def render_mcpb_user_config_file(
     data["user_config"] = user_config
     mcp_config["env"] = env
 
+    text = json.dumps(data, indent=2, ensure_ascii=False)
+    return f"{text}\n"
+
+
+def _resolve_fields_from(
+    file_spec: Mapping[str, Any], rel_path: str, ctx: PresentationContext
+) -> Mapping[str, Any]:
+    """Resolve a `fields_from:` reference to another entry's merged fields.
+
+    `kind: claude-plugin-env` derives its env mapping from the SAME fields
+    map its `kind: claude-plugin-user-config` sibling renders — declared
+    once, referenced here — so the plugin screen and its env wiring cannot
+    drift apart even though they live in two files.
+    """
+    source_path = file_spec.get("fields_from")
+    if not isinstance(source_path, str):
+        raise SystemExit(
+            f"ERROR: files[{rel_path!r}] (kind: claude-plugin-env) needs a "
+            "`fields_from:` naming the claude-plugin-user-config entry whose "
+            "fields drive this env mapping."
+        )
+    source = ctx.files.get(source_path)
+    if source is None or source.get("kind") != _CLAUDE_PLUGIN_UC_KIND:
+        raise SystemExit(
+            f"ERROR: files[{rel_path!r}] fields_from={source_path!r} does not "
+            "name a declared `kind: claude-plugin-user-config` entry."
+        )
+    return source.get("fields") or {}
+
+
+def _screen_fields_or_die(
+    fields: Mapping[str, Any],
+    vars_: Sequence[Var],
+    rel_path: str,
+) -> tuple[dict[str, Any], dict[str, str]]:
+    """Validate a fields map against the collected vars and build the pair."""
+    if not fields:
+        raise SystemExit(
+            f"ERROR: files[{rel_path!r}] declares no `fields:` — remove the "
+            "files entry instead if an empty screen is really intended."
+        )
+    var_by_name = {v.name: v for v in vars_}
+    unknown = sorted(name for name in fields if name not in var_by_name)
+    if unknown:
+        raise SystemExit(
+            f"ERROR: files[{rel_path!r}] names config vars that do not exist "
+            f"(check for a typo, or a var whose gate is off): {unknown!r}."
+        )
+    return _mcpb_screen_from_fields(fields, var_by_name, rel_path)
+
+
+def _load_json_target(project_root: Path, rel_path: str, kind: str) -> Any:
+    """Load a structurally-spliced JSON target that must already exist."""
+    target = project_root / rel_path
+    if not target.exists():
+        raise SystemExit(
+            f"ERROR: {target} does not exist — a `kind: {kind}` artifact "
+            "must already exist; this generator only replaces its declared "
+            "objects, never the surrounding file."
+        )
+    try:
+        return json.loads(target.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"ERROR: {rel_path} is not valid JSON: {exc}.") from exc
+
+
+def render_claude_plugin_user_config_file(
+    project_root: Path,
+    rel_path: str,
+    file_spec: Mapping[str, Any],
+    vars_: Sequence[Var],
+    ctx: PresentationContext,
+) -> str:
+    """Render one `kind: claude-plugin-user-config` artifact (plugin.json).
+
+    Replaces exactly the top-level ``userConfig`` object of a Claude Code
+    plugin manifest; everything else — identity, the release-flow-owned
+    ``version`` — survives untouched. Claude Code's `userConfig` schema uses
+    the same field vocabulary as mcpb's `user_config` (string / number /
+    boolean / directory / file, plus title / description / required /
+    default / sensitive), so the field specs and their fallbacks are shared
+    with `kind: mcpb-user-config`. The env side of the pairing lives in the
+    sibling `kind: claude-plugin-env` entry, which references this entry's
+    fields via `fields_from:`.
+    """
+    del ctx
+    data = _load_json_target(project_root, rel_path, _CLAUDE_PLUGIN_UC_KIND)
+    fields: Mapping[str, Any] = file_spec.get("fields") or {}
+    user_config, _env = _screen_fields_or_die(fields, vars_, rel_path)
+    data["userConfig"] = user_config
+    text = json.dumps(data, indent=2, ensure_ascii=False)
+    return f"{text}\n"
+
+
+def render_claude_plugin_env_file(
+    project_root: Path,
+    rel_path: str,
+    file_spec: Mapping[str, Any],
+    vars_: Sequence[Var],
+    ctx: PresentationContext,
+) -> str:
+    """Render one `kind: claude-plugin-env` artifact (the plugin .mcp.json).
+
+    Replaces the ``env`` object of every server entry in the plugin's
+    `.mcp.json` with ``{ENV_VAR: "${user_config.<id>}"}`` derived from the
+    `fields_from:` sibling's fields. Exec-form substitution is the only
+    context Claude Code allows `${user_config.*}` in, which is why the
+    scaffold's `.mcp.json` is exec-form to begin with. `command`, `args`
+    (including the release-flow-owned version pin) and any other keys
+    survive untouched.
+    """
+    fields = _resolve_fields_from(file_spec, rel_path, ctx)
+    _user_config, env = _screen_fields_or_die(fields, vars_, rel_path)
+    data = _load_json_target(project_root, rel_path, _CLAUDE_PLUGIN_ENV_KIND)
+    servers = [v for v in data.values() if isinstance(v, dict)]
+    if not servers:
+        raise SystemExit(
+            f"ERROR: {rel_path} has no server entries to hold the generated "
+            "env mapping — is this really a plugin .mcp.json?"
+        )
+    for server in servers:
+        server["env"] = dict(env)
     text = json.dumps(data, indent=2, ensure_ascii=False)
     return f"{text}\n"
 
@@ -2411,8 +2537,18 @@ _WIZARD_KIND = "wizard"
 _SPLICE_KIND = "splice"
 _JSON_SPLICE_KIND = "json-splice"
 _MCPB_KIND = "mcpb-user-config"
+_CLAUDE_PLUGIN_UC_KIND = "claude-plugin-user-config"
+_CLAUDE_PLUGIN_ENV_KIND = "claude-plugin-env"
 _KNOWN_FILE_KINDS = frozenset(
-    {_ENV_KIND, _WIZARD_KIND, _SPLICE_KIND, _JSON_SPLICE_KIND, _MCPB_KIND}
+    {
+        _ENV_KIND,
+        _WIZARD_KIND,
+        _SPLICE_KIND,
+        _JSON_SPLICE_KIND,
+        _MCPB_KIND,
+        _CLAUDE_PLUGIN_UC_KIND,
+        _CLAUDE_PLUGIN_ENV_KIND,
+    }
 )
 
 
@@ -2483,6 +2619,25 @@ def _assert_every_var_has_an_env_destination(
     )
 
 
+# One renderer per file kind, all normalised to the same five-argument
+# call shape `_render_one_artifact` dispatches with; the two lambdas adapt
+# the env/wizard renderers, which predate `PresentationContext` and take
+# their inputs directly.
+_ARTIFACT_RENDERERS: dict[str, Callable[..., str]] = {
+    _ENV_KIND: lambda _root, _rel, spec, vars_, ctx: render_env_file(
+        spec, vars_, ctx.answers
+    ),
+    _WIZARD_KIND: lambda _root, _rel, _spec, vars_, ctx: render_wizard_spec(
+        ctx.presentation, vars_, ctx.answers, domain_pres=ctx.domain_presentation
+    ),
+    _SPLICE_KIND: render_splice_file,
+    _JSON_SPLICE_KIND: render_json_splice_file,
+    _MCPB_KIND: render_mcpb_user_config_file,
+    _CLAUDE_PLUGIN_UC_KIND: render_claude_plugin_user_config_file,
+    _CLAUDE_PLUGIN_ENV_KIND: render_claude_plugin_env_file,
+}
+
+
 def _render_one_artifact(
     project_root: Path,
     rel_path: str,
@@ -2496,25 +2651,14 @@ def _render_one_artifact(
     producing nothing or raising a bare `KeyError`.
     """
     kind = file_spec.get("kind")
-    if kind == _ENV_KIND:
-        return render_env_file(file_spec, vars_, ctx.answers)
-    if kind == _WIZARD_KIND:
-        return render_wizard_spec(
-            ctx.presentation, vars_, ctx.answers, domain_pres=ctx.domain_presentation
+    renderer = _ARTIFACT_RENDERERS.get(kind) if isinstance(kind, str) else None
+    if renderer is None:
+        raise SystemExit(
+            f"ERROR: config-presentation.yml files[{rel_path!r}] has "
+            f"unknown kind {kind!r} — expected one of "
+            f"{sorted(_KNOWN_FILE_KINDS)!r}."
         )
-    if kind == _SPLICE_KIND:
-        return render_splice_file(project_root, rel_path, file_spec, vars_, ctx)
-    if kind == _JSON_SPLICE_KIND:
-        return render_json_splice_file(project_root, rel_path, file_spec, vars_, ctx)
-    if kind == _MCPB_KIND:
-        return render_mcpb_user_config_file(
-            project_root, rel_path, file_spec, vars_, ctx
-        )
-    raise SystemExit(
-        f"ERROR: config-presentation.yml files[{rel_path!r}] has "
-        f"unknown kind {kind!r} — expected one of "
-        f"{sorted(_KNOWN_FILE_KINDS)!r}."
-    )
+    return renderer(project_root, rel_path, file_spec, vars_, ctx)
 
 
 def _merged_files(
@@ -2612,17 +2756,17 @@ def write_artifacts(
         vars_ = collect_vars(project_root, answers)
 
     validate_presentation_keys(presentation, vars_)
+    merged_files = _merged_files(presentation, domain_presentation)
     ctx = PresentationContext(
         presentation=presentation,
         answers=answers,
         domain_presentation=domain_presentation,
+        files=merged_files,
     )
 
     artifacts: list[tuple[str, str]] = [
         (rel_path, _render_one_artifact(project_root, rel_path, file_spec, vars_, ctx))
-        for rel_path, file_spec in _merged_files(
-            presentation, domain_presentation
-        ).items()
+        for rel_path, file_spec in merged_files.items()
     ]
 
     # Checked after every file kind is known-good (so a genuinely malformed

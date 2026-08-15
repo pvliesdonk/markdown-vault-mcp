@@ -95,7 +95,9 @@ wizard_guards: []
 # via env vars per docs/configuration.md. One line per field to adjust.
 files:
   packaging/mcpb/manifest.json.in:
-    fields:
+    # Anchored so the Claude Code plugin screen below reuses the identical
+    # field set — one curation, two install channels (#1040/#1041).
+    fields: &vault_screen_fields
       "{PREFIX}_SOURCE_DIR":
         id: source_dir
         title: "Vault directory"
@@ -139,3 +141,34 @@ files:
         id: git_token
         title: "Git access token"
         sensitive: true
+
+  # Claude Code plugin install screen (#1040): the same curated fields
+  # drive plugin.json's userConfig object and .mcp.json's env wiring —
+  # `fields_from` keeps the pair drift-proof across the two files. The
+  # template's mcpb baseline (server name, log level) is added explicitly
+  # here since this channel's entries are domain-declared wholesale.
+  .claude-plugin/plugin/.claude-plugin/plugin.json:
+    kind: claude-plugin-user-config
+    fields:
+      <<: *vault_screen_fields
+      # Overrides the anchored spec: ${DOCUMENTS} is an mcpb-host
+      # placeholder Claude Code does not substitute, so the plugin's
+      # required directory picker ships without a default. The explicit
+      # null keeps the generator from falling back to the config field's
+      # own Path default (template#341).
+      "{PREFIX}_SOURCE_DIR":
+        id: source_dir
+        title: "Vault directory"
+        type: directory
+        required: true
+        default: null
+      "{PREFIX}_SERVER_NAME":
+        id: server_name
+        title: "Server name"
+      FASTMCP_LOG_LEVEL:
+        id: log_level
+        title: "Log level"
+
+  .claude-plugin/plugin/.mcp.json:
+    kind: claude-plugin-env
+    fields_from: .claude-plugin/plugin/.claude-plugin/plugin.json

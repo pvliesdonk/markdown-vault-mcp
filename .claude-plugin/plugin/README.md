@@ -58,6 +58,11 @@ For the full list of env vars, see the
   bodies out of the retained conversation context.
 - **Agent:** `vault-mapper` — the summarize skill's map-phase worker,
   restricted to the vault read tools.
+- **Configuration screen:** enabling the plugin prompts for the vault
+  directory (required), read-only mode, embedding provider settings, and
+  git sync — no shell-profile editing. Sensitive fields (API key, git
+  token) are masked and stored securely. The screen is generated from the
+  server's configuration surface, so it cannot drift from the code.
 - **Bootstrap:** a `vault-setup` skill runs a guided discover → validate →
   write-config → restart flow for first-run setup and later repairs (moved
   vault, expired git token), and a SessionStart doctor hook

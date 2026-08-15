@@ -13,13 +13,17 @@ are down while you run it — use only local file access.
 
 ## 1. Diagnose
 
-Read the effective configuration before changing anything:
+Read the effective configuration before changing anything. The plugin's
+`.mcp.json` wires the server to plugin `userConfig` values, so the
+authoritative source is the plugin's stored configuration:
 
-- The shell environment: `MARKDOWN_VAULT_MCP_SOURCE_DIR` and friends.
-- The `env` block of `~/.claude/settings.json`, which also reaches the
-  server process and **takes precedence over the shell environment** —
-  surprising to users who configured a shell profile first; say so if both
-  are set and disagree.
+- `CLAUDE_PLUGIN_OPTION_SOURCE_DIR` in the environment, and the persisted
+  copy under `pluginConfigs` (the key containing `markdown-vault-mcp`) →
+  `options.source_dir` in `~/.claude/settings.json`.
+- Legacy fallbacks from installs that predate the config screen: the
+  `env` block of `~/.claude/settings.json`, then the shell environment.
+  If a legacy value disagrees with the plugin option, the plugin option
+  is the one the server uses — say so.
 
 If the directory is set and exists, the problem is elsewhere (embedding
 provider, git token) — skip to step 4.
@@ -43,28 +47,37 @@ Offer the candidates; let the user pick or supply another path. Expand `~`.
 Validate the choice before persisting: the directory must exist, be
 readable, and (warn, do not block, if not) contain at least one `.md` file.
 
-Then write the value where the plugin's `.mcp.json` expansion will find it —
-the **user-scope** `~/.claude/settings.json` `env` block (project-scope
-settings are not appropriate for a per-user vault path):
+Then write the value where the plugin's `.mcp.json` substitution reads it —
+the plugin's stored options in the **user-scope** `~/.claude/settings.json`
+(project-scope settings are ignored for plugin configuration). Find the
+existing `pluginConfigs` key containing `markdown-vault-mcp` (or create
+one matching how other plugins are keyed there) and set:
 
 ```json
 {
-  "env": {
-    "MARKDOWN_VAULT_MCP_SOURCE_DIR": "/absolute/path/to/vault"
+  "pluginConfigs": {
+    "<existing markdown-vault-mcp key>": {
+      "options": {
+        "source_dir": "/absolute/path/to/vault"
+      }
+    }
   }
 }
 ```
 
 Merge into the existing file — read it first, preserve every other key, and
-show the user the exact change before writing. Never store secrets here in
-plain text without saying so.
+show the user the exact change before writing. Re-enabling the plugin also
+re-opens the interactive configuration prompt if the user prefers a dialog
+over an edit. Sensitive values (API keys, tokens) belong in the prompt's
+masked fields, not in plain-text settings — say so whenever one comes up.
 
 ## 4. Later-life repairs
 
 - **Moved vault**: same flow; re-point `MARKDOWN_VAULT_MCP_SOURCE_DIR`.
 - **Git sync failing / token expired**: a new fine-grained token scoped to
-  the vault repository goes in `MARKDOWN_VAULT_MCP_GIT_TOKEN` (same `env`
-  block; warn that it is stored in plain text there).
+  the vault repository goes in the plugin's `git_token` option — it is
+  marked sensitive, so entering it through the plugin's configuration
+  prompt stores it in secure storage instead of a plain-text file.
 - **Embeddings misconfigured**: `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER`
   plus its provider settings (`OLLAMA_HOST`, `OPENAI_API_KEY`, ...); an
   empty provider disables semantic search but the server still runs.

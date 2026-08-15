@@ -4,7 +4,7 @@ This guide walks through installing markdown-vault-mcp as a [Claude Code](https:
 
 ## Overview
 
-The Claude Code plugin installs markdown-vault-mcp directly into your Claude Code environment. It wires up the most commonly needed env vars with sensible defaults, and also installs a `vault-workflow` skill that gives Claude guidance on search strategy, reading patterns, link tools, and write semantics.
+The Claude Code plugin installs markdown-vault-mcp directly into your Claude Code environment. Enabling it opens a configuration prompt for the settings that matter on a personal install (the vault directory, read-only mode, embedding provider, git sync), with sensitive values stored securely and no shell-profile editing. The plugin also installs a `vault-workflow` skill that gives Claude guidance on search strategy, reading patterns, link tools, and write semantics.
 
 ## Prerequisites
 
@@ -79,10 +79,10 @@ A second skill, **`vault-summarize`**, triggers when you ask for a summary or ov
 If the vault server shows `Failed to connect` in `/mcp`, the plugin can repair itself in-session: skills, agents, and hooks keep working while the MCP server is down.
 
 - A **SessionStart doctor hook** checks the effective configuration when a session starts. When the vault directory is unset or no longer exists, it says so up front and offers help; when the configuration is healthy it stays silent.
-- Asking Claude to set up (or fix) your vault triggers the **`vault-setup` skill**. It looks for candidate vault directories (`.obsidian/` markers and note-like folders), checks that your choice exists and is readable, and then records it in the `env` block of your user-scope `~/.claude/settings.json`. The flow always ends with a restart of Claude Code, because MCP servers only start at session start.
+- Asking Claude to set up (or fix) your vault triggers the **`vault-setup` skill**. It looks for candidate vault directories (`.obsidian/` markers and note-like folders), checks that your choice exists and is readable, and then records it in the plugin's stored options in your user-scope `~/.claude/settings.json` (the same place the configuration prompt writes). The flow always ends with a restart of Claude Code, because MCP servers only start at session start.
 - The same flow covers later breakage: a moved vault, an expired git token, or a broken embedding-provider setting.
 
-One precedence rule worth knowing: values in the settings-file `env` block reach the server process and win over your shell environment. If you configured the vault in a shell profile first and later ran the guided setup, the settings file is the value that counts.
+One precedence rule worth knowing: the plugin's stored options are what the server actually receives; legacy configuration through the settings-file `env` block or a shell profile only applies when no plugin option is set. If an old shell-profile value disagrees with the plugin's configuration, the plugin's value is the one that counts.
 
 ## Update
 
