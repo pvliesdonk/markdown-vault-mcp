@@ -111,6 +111,10 @@ files:
       "{PREFIX}_EXCLUDE":
         id: exclude_patterns
         title: "Exclude patterns"
+        # The server itself applies no exclude fallback (unset → scan
+        # everything), so the install screens carry the safe default the
+        # old hand-written manifests baked into their shell fallbacks.
+        default: ".obsidian/**,.trash/**,.git/**"
       "{PREFIX}_EMBEDDING_PROVIDER":
         id: embedding_provider
         title: "Embedding provider"

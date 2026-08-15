@@ -88,7 +88,8 @@
       "type": "string",
       "title": "Exclude patterns",
       "description": "Comma-separated glob patterns excluded from scanning, e.g. .obsidian/**,.trash/**.",
-      "required": false
+      "required": false,
+      "default": ".obsidian/**,.trash/**,.git/**"
     },
     "embedding_provider": {
       "type": "string",

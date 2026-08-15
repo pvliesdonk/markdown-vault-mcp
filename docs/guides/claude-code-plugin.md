@@ -31,39 +31,32 @@ The first command adds the `pvliesdonk/claude-plugins` marketplace to your Claud
 
 ## Configure
 
-The only required env var is `MARKDOWN_VAULT_MCP_SOURCE_DIR`. Set it to the path of your vault:
+Enabling the plugin opens a configuration prompt. The only required field is the vault directory; everything else has a sensible default or can stay empty. Your answers persist across plugin updates, and sensitive fields (the OpenAI API key, the git access token) are masked and stored in secure storage rather than a settings file. Restart Claude Code after configuring so the server starts with your values.
 
-=== "Shell (current session)"
-
-    ```bash
-    export MARKDOWN_VAULT_MCP_SOURCE_DIR=/path/to/your/vault
-    ```
-
-=== "Shell profile (persistent)"
-
-    Add to your `~/.bashrc`, `~/.zshrc`, or equivalent:
-
-    ```bash
-    export MARKDOWN_VAULT_MCP_SOURCE_DIR=/path/to/your/vault
-    ```
-
-Restart Claude Code after setting the env var so the plugin picks it up.
+To change the configuration later, re-open the plugin's configuration from the `/plugin` menu, or just ask Claude to set up or repair your vault (the `vault-setup` skill walks through it).
 
 ## What you get
 
-The plugin wires up the following env vars. Vars with a default are filled in when the shell variable is unset; vars marked _(empty)_ stay blank when unset, which usually means "feature disabled" or "use the server's built-in default":
+The configuration prompt covers these settings, each wired to the matching server option. Fields marked _(empty)_ can stay blank, which means "feature disabled" or "use the server's built-in default":
 
-| Env var | Default | Description |
-|---------|---------|-------------|
-| `MARKDOWN_VAULT_MCP_SOURCE_DIR` | _(required)_ | Path to your vault directory |
-| `MARKDOWN_VAULT_MCP_READ_ONLY` | `true` | Set to `false` to enable the write tools (`write`, `edit`, `append`, `delete`, `rename`, `move_folder`, `fetch`, `git_sync`, the `okf_*` tools, `create_upload_link`) |
-| `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` | _(empty)_ | Embedding backend (`fastembed`, `ollama`, `openai`); leave empty for keyword-only search |
-| `MARKDOWN_VAULT_MCP_EXCLUDE` | `.obsidian/**,.trash/**,.git/**` | Comma-separated glob patterns to exclude from indexing |
-| `MARKDOWN_VAULT_MCP_GIT_REPO_URL` | _(empty)_ | Remote repository URL for git-backed vault sync; leave empty to disable git integration |
-| `MARKDOWN_VAULT_MCP_GIT_TOKEN` | _(empty)_ | Personal access token for the git remote; leave empty to disable git integration |
-| `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` | _(empty)_ | Base path for the embeddings `.npy` sidecar (runtime appends the suffix); leave empty to disable semantic search |
-| `MARKDOWN_VAULT_MCP_INDEX_PATH` | _(empty)_ | Override the FTS5 SQLite index file path; leave empty to use an in-memory index (rebuilt on every startup) |
-| `OLLAMA_HOST` | `http://localhost:11434` | Base URL for the Ollama API; only used when `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER=ollama` |
+| Setting | Default | What it sets |
+|---------|---------|--------------|
+| Vault directory | _(required)_ | `MARKDOWN_VAULT_MCP_SOURCE_DIR`: the vault to serve |
+| Read-only mode | `true` | `MARKDOWN_VAULT_MCP_READ_ONLY`; set `false` to enable the write tools (`write`, `edit`, `append`, `delete`, `rename`, `move_folder`, `fetch`, `git_sync`, the `okf_*` tools, `create_upload_link`) |
+| Exclude patterns | `.obsidian/**,.trash/**,.git/**` | `MARKDOWN_VAULT_MCP_EXCLUDE`: comma-separated globs kept out of the index |
+| Embedding provider | _(empty)_ | `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` (`fastembed`, `ollama`, `openai`); empty means keyword-only search |
+| Ollama host | `http://localhost:11434` | `OLLAMA_HOST`; used only with the `ollama` provider |
+| Ollama embedding model | `nomic-embed-text` | `MARKDOWN_VAULT_MCP_OLLAMA_MODEL` |
+| FastEmbed model | `BAAI/bge-small-en-v1.5` | `MARKDOWN_VAULT_MCP_FASTEMBED_MODEL` |
+| OpenAI API key | _(empty, masked)_ | `OPENAI_API_KEY`; used only with the `openai` provider |
+| OpenAI base URL | `https://api.openai.com/v1` | `OPENAI_BASE_URL` |
+| OpenAI embedding model | `text-embedding-3-small` | `OPENAI_EMBEDDING_MODEL` |
+| Git sync repository URL | _(empty)_ | `MARKDOWN_VAULT_MCP_GIT_REPO_URL`; empty disables git integration |
+| Git access token | _(empty, masked)_ | `MARKDOWN_VAULT_MCP_GIT_TOKEN` |
+| Server name | `markdown-vault-mcp` | `MARKDOWN_VAULT_MCP_SERVER_NAME` |
+| Log level | `INFO` | `FASTMCP_LOG_LEVEL` |
+
+Settings outside this screen (state and index paths, tuning, and the rest of [Configuration](../configuration.md)) stay reachable through env vars: the `env` block of your user-scope `~/.claude/settings.json` reaches the server process for anything the screen does not wire.
 
 The plugin also installs the **`vault-workflow` skill**, which gives Claude guidance on:
 

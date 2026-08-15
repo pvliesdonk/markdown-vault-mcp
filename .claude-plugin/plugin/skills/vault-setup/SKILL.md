@@ -73,7 +73,7 @@ masked fields, not in plain-text settings — say so whenever one comes up.
 
 ## 4. Later-life repairs
 
-- **Moved vault**: same flow; re-point `MARKDOWN_VAULT_MCP_SOURCE_DIR`.
+- **Moved vault**: same flow; re-point the plugin's `source_dir` option.
 - **Git sync failing / token expired**: a new fine-grained token scoped to
   the vault repository goes in the plugin's `git_token` option — it is
   marked sensitive, so entering it through the plugin's configuration
