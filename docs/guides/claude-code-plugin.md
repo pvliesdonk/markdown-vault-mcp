@@ -74,6 +74,16 @@ The plugin also installs the **`vault-workflow` skill**, which gives Claude guid
 
 A second skill, **`vault-summarize`**, triggers when you ask for a summary or overview spanning more than one note. It checks scope with `get_toc`, prefers the server-side `summarize` tool when your deployment configured one, and otherwise runs the server's `summarize-subtree` recipe with parallel **`vault-mapper`** subagents (a restricted read-only agent the plugin ships), so note bodies stay confined to the subagents instead of filling the main conversation.
 
+## Troubleshooting and guided setup
+
+If the vault server shows `Failed to connect` in `/mcp`, the plugin can repair itself in-session: skills, agents, and hooks keep working while the MCP server is down.
+
+- A **SessionStart doctor hook** checks the effective configuration when a session starts. When the vault directory is unset or no longer exists, it says so up front and offers help; when the configuration is healthy it stays silent.
+- Asking Claude to set up (or fix) your vault triggers the **`vault-setup` skill**. It looks for candidate vault directories (`.obsidian/` markers and note-like folders), checks that your choice exists and is readable, and then records it in the `env` block of your user-scope `~/.claude/settings.json`. The flow always ends with a restart of Claude Code, because MCP servers only start at session start.
+- The same flow covers later breakage: a moved vault, an expired git token, or a broken embedding-provider setting.
+
+One precedence rule worth knowing: values in the settings-file `env` block reach the server process and win over your shell environment. If you configured the vault in a shell profile first and later ran the guided setup, the settings file is the value that counts.
+
 ## Update
 
 To update the plugin to the latest version:

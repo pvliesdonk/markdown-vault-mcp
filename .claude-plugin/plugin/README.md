@@ -58,6 +58,12 @@ For the full list of env vars, see the
   bodies out of the retained conversation context.
 - **Agent:** `vault-mapper` — the summarize skill's map-phase worker,
   restricted to the vault read tools.
+- **Bootstrap:** a `vault-setup` skill runs a guided discover → validate →
+  write-config → restart flow for first-run setup and later repairs (moved
+  vault, expired git token), and a SessionStart doctor hook
+  (`scripts/doctor.sh`) tells you at session start when the server is down
+  for configuration reasons — instead of a silent `Failed to connect` in
+  `/mcp`. Healthy configs produce no output.
 - **Prompts:** `summarize`, `summarize-subtree`, `research`, `discuss`,
   `related`, `compare` (available as slash commands via MCP prompt surfacing).
 

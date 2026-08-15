@@ -23,6 +23,12 @@ test -f ".claude-plugin/plugin/skills/vault-summarize/SKILL.md" \
   || fail "vault-summarize skill missing from plugin"
 test -f ".claude-plugin/plugin/agents/vault-mapper.md" \
   || fail "vault-mapper agent missing from plugin"
+test -f ".claude-plugin/plugin/skills/vault-setup/SKILL.md" \
+  || fail "vault-setup skill missing from plugin"
+test -x ".claude-plugin/plugin/scripts/doctor.sh" \
+  || fail "doctor.sh missing or not executable in plugin"
+jq -e '.hooks.SessionStart' ".claude-plugin/plugin/hooks/hooks.json" > /dev/null \
+  || fail "hooks.json missing its SessionStart doctor entry"
 
 jq -e '.name == "markdown-vault-mcp" and (.version | length > 0)' "$PLUGIN_JSON" > /dev/null \
   || fail "$PLUGIN_JSON missing name/version"
