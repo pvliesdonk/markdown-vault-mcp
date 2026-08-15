@@ -16,12 +16,16 @@ src/markdown_vault_mcp/
     text.py            -- text normalization, position mapping, fuzzy matching
     links.py           -- link target computation and replacement
     serialization.py   -- toc_payload: TocEntry/SubtreeToc → JSON-able dicts
+    fs.py              -- filesystem traversal helpers: symlink-aware iteration, directory pruning (#508, #835)
+    fts.py             -- fts_row_to_note_info: FTS row → NoteInfo conversion shared across managers
   managers/
     link.py            -- LinkManager: backlinks, outlinks, broken, orphans, hubs, paths
     search.py          -- SearchManager: keyword/semantic/hybrid search, list, context, stats
     index.py           -- IndexManager: build_index, reindex, embeddings, flush
     document.py        -- DocumentManager: CRUD, attachments, path validation, backlinks
     git_query.py       -- GitQueryManager: git history/diff reads (#610)
+    summarize.py       -- SummarizeManager: LLM-backed note/subtree summarization, map-reduce batching (#922)
+    okf_migrate.py     -- OkfMigrationManager: one-shot OKF transforms — link conversion, index generation, log seeding (#963)
     _ranking.py        -- pure ranking pipeline: downweight/boost/grouping/snippets (#759)
     _vector_loader.py  -- shared load-or-self-heal routine for the vector sidecar (#736)
   indexing/
@@ -33,25 +37,66 @@ src/markdown_vault_mcp/
     writer.py          -- WriterFacet: write/edit/delete/rename/attachments (#604)
     graph.py           -- GraphFacet: backlinks/outlinks/broken/orphans/most-linked/paths (#604); neighborhood/hub graph views (#880)
     index.py           -- IndexFacet: build/reindex/embeddings, readiness, writer + embeddings status (#604)
-  transfer/
-    store.py           -- TransferStore: in-memory one-time transfer-token state machine (#622)
-    routes.py          -- ASGI handler for the /transfer/{token} download/upload route (#622)
+    summarize.py       -- SummarizeFacet: readiness-gated summarization surface; present only when a backend is configured (#925)
+  git/
+    __init__.py        -- package facade preserving the historical single-module import surface (incl. test patch targets)
+    _run.py            -- low-level git subprocess + credential plumbing
+    strategy.py        -- GitWriteStrategy: auto-commit per write, deferred background push
+    conflict.py        -- rebase-conflict resolution mechanics (caller holds the strategy lock)
+    query.py           -- read-only git history/diff queries; lock-free pure functions
+    types.py           -- PullResult/PushResult + pull/push reason-code constants
   scanner.py           -- file discovery, frontmatter parsing, chunking
   fts_index.py         -- SQLite FTS5 schema, BM25 search
   _fts_connection.py   -- per-thread sqlite connection registry + SQLITE_LOCKED retry (#760)
   vector_index.py      -- numpy embeddings, cosine similarity
+  embed_text.py        -- EmbedTextBuilder: single shared builder for (context-enriched) embedding input text
   providers.py         -- embedding provider ABC + implementations
   tracker.py           -- hash-based change detection
+  hashing.py           -- compute_etag / compute_file_hash: shared SHA-256 helpers
+  types.py             -- shared dataclasses and result types (NoteInfo, SkippedFile, SKIP_CATEGORIES, ...)
+  exceptions.py        -- exception hierarchy; re-exports pvl-core's ConfigurationError as the canonical config error (#638)
+  conventions.py       -- ConventionsResolver: per-folder _conventions.md authoring policy, accumulated root-first
+  okf.py               -- OKF detection probe + pure read-side annotations: type/status/staleness/trust (#961)
+  okf_bundle.py        -- OKF bundle-zip export from live vault state, served via an okf-bundle download ref (#963)
+  _okf_convention.py   -- OKF reserved-file maintenance after enforced writes: log.md bullet + index.md refresh (#964)
+  _okf_write.py        -- OKF enforced-write runtime: contextvar actor + provenance stamp / verified clear (#964)
+  summarizer.py        -- Summarizer ABC + OpenAI-compatible chat-completions backend (#915)
   vault.py             -- thin composition root: lifecycle, wiring, facet accessors (index-write → indexing/coordinator.py)
   write_callback.py    -- WriteCallbackDispatcher: deferred git-commit callback worker (#599)
   _write_tools.py      -- WRITE_TOOL_NAMES + write_tools_phrase: single source for the user-facing write-tool enumeration (#1009)
   config.py            -- template-owned skeleton: flat metadata-carrying ProjectConfig fields + section-view properties + from_env, all inside CONFIG-* sentinels (#900, #952)
   config_sections/
     _assembly.py         -- domain config-assembly kept out of template-owned config.py: to_vault_kwargs, derive_max_chunk_chars, git-strategy builder, from_env value resolvers (#900, #952)
+    _helpers.py          -- shared env-reading helpers for the sections' from_env classmethods (no config.py import)
+    content.py           -- ContentConfig: attachment/read limits, template/prompt folders, conventions file
+    embeddings.py        -- EmbeddingsConfig: provider selection + per-provider and shared embedding knobs
+    git.py               -- GitConfig: git auth, identity, sync cadence
+    indexing.py          -- IndexingConfig: paths, frontmatter, exclusions
+    search.py            -- SearchConfig: ranking weights + snippet-truncation knobs
+    summarize.py         -- SummarizeConfig: OpenAI-compatible summarization backend settings
+    sync.py              -- SyncConfig: file-watcher + GitHub-webhook settings
   domain.py            -- Service: owns the Vault lifecycle (build, boot index/reindex/embeddings jobs, file watcher); get_vault/get_config DI + vault singleton (#902)
   _instructions.py     -- build_default_instructions: domain server-instructions prose, applied in server.py's DOMAIN-WIRING (#901)
   _server_apps.py      -- template-owned MCP Apps scaffold; vault SPA + app-tools confined to DOMAIN-APP-TOOL-NAMES/DOMAIN-APP-RESOURCE/DOMAIN-APP-TOOLS sentinels (#905)
   _vault_apps.py       -- domain helpers backing _server_apps sentinels: Claude sandbox-domain compute + CDN CSP + GraphView→SPA wire serializer (#905)
+  _server_deps.py      -- server_lifespan + LifespanState: Service lifecycle and vault DI for request handlers
+  _server_tools/
+    __init__.py        -- register_tools: single entry point delegating to the per-facet groups (#578)
+    _common.py         -- shared tool plumbing: staleness-annotated results, drain waits
+    reader.py          -- read-side tool registrations (search/read/list/toc/context/...)
+    writer.py          -- write-side tool registrations (write/edit/delete/rename/attachments)
+    graph.py           -- link-graph tool registrations
+    index.py           -- index/reindex/embeddings-status tool registrations
+    git.py             -- git sync/history/diff tool registrations
+    summarize.py       -- dual-mode summarize job tool; registered from make_server's DOMAIN-WIRING (#1033)
+  _server_resources.py -- register_resources: MCP resource registrations
+  _server_prompts.py   -- register_prompts: MCP prompt registrations from static/prompts templates (#609)
+  _server_queryable.py -- needs_queryable decorator: MCP-layer wait/block on index readiness (#513)
+  _transfer_sink.py    -- VaultTransferSink: domain sink + validator hooks for pvl-core's transfer routes (#979)
+  _file_watcher.py     -- watchdog external-change watcher with debounce; used when git pull and webhook are off (#558)
+  _github_webhook.py   -- GitHub push-webhook route: HMAC verify → force_pull + reindex (#530)
+  _http_logging.py     -- quiet_http_loggers: pin httpx/httpcore to WARNING unless root level is DEBUG (#792)
+  _icons.py            -- Lucide SVG tool icons from static/icons/ as data URIs
   server.py            -- generic FastMCP server factory (make_server); template-owned, domain customization confined to DOMAIN-UPSTREAM/DOMAIN-WIRING (#901)
   cli.py               -- CLI entry point
 ```
