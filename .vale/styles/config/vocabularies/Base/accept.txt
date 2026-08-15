@@ -245,3 +245,9 @@ Zotero
 # --- Fonts / typography ---
 Newsreader
 Plex
+
+# --- Release-notes prose vocabulary ---
+accessor
+backoff
+globbed
+subcommands
