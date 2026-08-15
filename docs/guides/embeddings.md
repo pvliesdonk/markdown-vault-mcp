@@ -241,6 +241,24 @@ Regardless of which provider you choose:
 
     For very large vaults (thousands of notes), the first startup may take several minutes. If the process is interrupted mid-build, it will rebuild from scratch on the next startup — partial indices are never persisted.
 
+### Slow or CPU-only backends
+
+Each embedding request has a wall-clock budget, `MARKDOWN_VAULT_MCP_EMBED_TIMEOUT_S` (default `30.0` seconds). It applies to the network providers, OpenAI and Ollama. FastEmbed runs in-process with no network call and ignores it.
+
+The budget and the batch size interact, and the default pairing is tight on modest hardware. On a CPU-only Ollama running a large model such as `bge-m3`, a single chunk can take 4 to 11 seconds, so the default batch of 4 chunks may need 20 to 44 seconds against a 30-second budget. The result is intermittent timeouts under ordinary writing load rather than an outright failure, which makes it easy to misread (issue [#954](https://github.com/pvliesdonk/markdown-vault-mcp/issues/954)).
+
+If you see `embeddings request failed: Request timed out`, adjust one or both:
+
+```bash
+# give each request more room
+export MARKDOWN_VAULT_MCP_EMBED_TIMEOUT_S=120
+
+# and/or send fewer chunks per request, so each one finishes sooner
+export MARKDOWN_VAULT_MCP_EMBEDDING_BATCH_SIZE=2
+```
+
+Raising the timeout to 60 to 120 seconds and dropping the batch to 1 or 2 covers most CPU-only setups. Note that the two settings pull in opposite directions on throughput: a smaller batch means more round-trips, so prefer raising the timeout first and shrink the batch only if individual requests still overrun.
+
 ### Chunk sizing and the embedding context
 
 The chunker (shared by keyword and semantic search) bounds every chunk by a word cap (`MARKDOWN_VAULT_MCP_MAX_CHUNK_WORDS`, default `400`) and a character cap (`MARKDOWN_VAULT_MCP_MAX_CHUNK_CHARS`). The character cap exists because a chunk that fits the word cap can still exceed the embedding model's **token** limit; token-dense content (tables, code, CJK) packs far more tokens per word. Without it, such a chunk would abort the build (Ollama returns HTTP 400) or be silently truncated (FastEmbed), producing degraded embeddings.
