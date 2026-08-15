@@ -530,7 +530,7 @@ create_upload_link(path="assets/new-diagram.png")
 curl -X POST --data-binary @new-diagram.png "https://mcp.example.com/transfer/<token>"
 ```
 
-Each token is consumed on its first **successful** use. A failed or interrupted transfer does not burn the token; retry is permitted until the TTL expires.
+Each token grants exactly one operation. On success the link is **grace-settled**: its remaining lifetime shrinks to `MARKDOWN_VAULT_MCP_TRANSFER_GRACE_TTL_S` (default 60 seconds), so a stalled transfer can still retry. A failed or interrupted transfer releases the reservation with the full remaining TTL, so retry is permitted until the TTL expires.
 
 Requirements: HTTP or SSE transport; `MARKDOWN_VAULT_MCP_BASE_URL` set. See the [transfer links guide](https://pvliesdonk.github.io/markdown-vault-mcp/latest/guides/transfer-links/) for the full walkthrough and security model.
 
