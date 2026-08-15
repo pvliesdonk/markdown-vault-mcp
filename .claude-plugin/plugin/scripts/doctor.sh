@@ -26,13 +26,13 @@ print(
 PYEOF
 }
 
-src="${MARKDOWN_VAULT_MCP_SOURCE_DIR:-}"
-
-# The plugin's .mcp.json expands ${MARKDOWN_VAULT_MCP_SOURCE_DIR}; the
-# settings-file env block also reaches the server process and wins over the
-# shell environment, so check it as a fallback before declaring the var
-# unset.
-if [ -z "$src" ] && [ -f "$HOME/.claude/settings.json" ]; then
+# Resolve the source dir the way the SERVER will: the settings-file env
+# block reaches the server process and wins over the shell environment, so
+# it is checked FIRST, with the shell value only as fallback — checking the
+# shell first would let the doctor validate a path the server never uses
+# when both are set and disagree.
+src=""
+if [ -f "$HOME/.claude/settings.json" ]; then
   src=$(python3 - <<'PYEOF' 2>/dev/null
 import json
 import os
@@ -45,6 +45,9 @@ except (OSError, ValueError):
 print(settings.get("env", {}).get("MARKDOWN_VAULT_MCP_SOURCE_DIR", ""))
 PYEOF
 )
+fi
+if [ -z "$src" ]; then
+  src="${MARKDOWN_VAULT_MCP_SOURCE_DIR:-}"
 fi
 
 if [ -z "$src" ]; then
