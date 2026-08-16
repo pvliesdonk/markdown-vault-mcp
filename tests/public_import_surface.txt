@@ -1,0 +1,12 @@
+# Public import surface of the `markdown_vault_mcp` package root — one name
+# per line, sorted.  `#` lines and blank lines are ignored.
+#
+# Project-owned (seeded once by the template, never re-rendered), consumed by
+# the template-owned tests/test_import_surface.py.  Regenerate with:
+#
+#     uv run python tests/test_import_surface.py --update
+#
+# Removing a name from this file is a breaking change to the public library
+# interface: the commit that does it must be marked breaking (`feat!:` /
+# `fix!:`, or a `BREAKING CHANGE:` footer) per the versioning policy
+# (pvliesdonk/fastmcp-server-template#342).

@@ -26,9 +26,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          # On release events the triggering tag may move after the workflow is
-          # queued (semantic-release pushes a version-bump commit); build main.
-          ref: ${{ github.event_name == 'release' && 'main' || github.ref }}
+          # On release events, build the released tag: the release may have
+          # been cut from a release/X.Y branch, where `main` describes code
+          # that is not in the release.  The tag is safe to build since the
+          # version-bump commit lands inside the release commit the tag points
+          # at (see scripts/bump_manifests.py) — tags no longer move.
+          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || github.ref }}
 
       - name: Install uv
         uses: astral-sh/setup-uv@v8.2.0
@@ -59,21 +62,31 @@ jobs:
 
   deploy:
     # Publish versioned docs with mike, serving from the gh-pages branch:
-    #   stable release (prerelease=false) -> version <major.minor> + `latest` alias (default)
-    #   rc prerelease  (prerelease=true)  -> single rolling `unstable` version
+    #   stable release -> version <major.minor>; the `latest` alias (and
+    #                     set-default) move ONLY when the release is at least
+    #                     the current `latest` — a backport patch cut from an
+    #                     old release/X.Y updates its own minor's page and
+    #                     never repoints `latest` at the older series
+    #   push to main   -> single rolling `unstable` version: the docs face of
+    #                     the edge channel, following merged code continuously
+    #   rc prerelease  -> no deploy; rcs are rare branch-scoped stabilisation
+    #                     builds whose docs ship when the stable ships
     #
     # One-time setup before the first deploy (per-project, cannot be templated):
     #   1. Seed gh-pages:
     #        uv run mike deploy --push --update-aliases unstable --title "unstable (<ver>)"
     #   2. Repo Settings -> Pages -> Deploy from a branch -> gh-pages / (root).
     #   Order matters: seed (1) before switching source (2) so the site is never empty.
-    if: github.event_name == 'release'
+    if: github.event_name == 'push' || (github.event_name == 'release' && !github.event.release.prerelease)
     needs: build
-    # Serialize all release deploys (no cancellation) so two releases close
-    # together never push to gh-pages concurrently.
+    # Separate buckets per trigger: rolling-unstable deploys may cancel each
+    # other (only the newest merge matters) but must never cancel a pending
+    # release deploy, which GitHub's one-pending-per-group rule would allow in
+    # a shared bucket.  Cross-bucket gh-pages pushes are reconciled by the
+    # fetch-reset-retry loop in the publish step.
     concurrency:
-      group: ${{ github.workflow }}-deploy
-      cancel-in-progress: false
+      group: ${{ github.workflow }}-deploy-${{ github.event_name }}
+      cancel-in-progress: ${{ github.event_name == 'push' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -84,7 +97,9 @@ jobs:
         with:
           # Full history required: mike reads and pushes the gh-pages branch.
           fetch-depth: 0
-          ref: main
+          # Release deploys build the released tag (see the build job's ref
+          # comment); push deploys build the pushed main commit.
+          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || github.ref }}
 
       - name: Install uv
         uses: astral-sh/setup-uv@v8.2.0
@@ -105,14 +120,43 @@ jobs:
       - name: Publish versioned docs
         env:
           TAG: ${{ github.event.release.tag_name }}
-          # GitHub renders the JSON boolean as the string "true"/"false".
-          PRERELEASE: ${{ github.event.release.prerelease }}
+          EVENT: ${{ github.event_name }}
         run: |
-          version="${TAG#v}"
-          if [ "$PRERELEASE" = "true" ]; then
-            uv run mike deploy --push unstable --title "unstable (${version})"
-          else
+          # NOTE: deploy_docs is called from an `if` condition, where bash
+          # suppresses errexit — every failure path must propagate explicitly
+          # (bare `return` and the `&&` chain below), or a failed deploy would
+          # read as success.
+          deploy_docs() {
+            if [ "$EVENT" = "push" ]; then
+              uv run mike deploy --push unstable --title "unstable (${GITHUB_SHA:0:7})"
+              return
+            fi
+            version="${TAG#v}"
             minor="$(echo "$version" | cut -d. -f1-2)"
-            uv run mike deploy --push --update-aliases --title "$version" "$minor" latest
-            uv run mike set-default --push latest
-          fi
+            # Order-aware `latest`: read which minor currently holds the alias
+            # from mike's manifest on gh-pages. Empty (no gh-pages yet, or no
+            # alias) means first release — claim it.
+            current="$(git cat-file -p origin/gh-pages:versions.json 2>/dev/null \
+              | python3 -c 'import json,sys; vs=json.load(sys.stdin); print(next((v["version"] for v in vs if "latest" in (v.get("aliases") or [])), ""))' \
+              || true)"
+            if [ -z "$current" ] || [ "$(printf '%s\n%s\n' "$current" "$minor" | sort -V | tail -1)" = "$minor" ]; then
+              uv run mike deploy --push --update-aliases --title "$version" "$minor" latest \
+                && uv run mike set-default --push latest
+            else
+              uv run mike deploy --push --title "$version" "$minor"
+            fi
+          }
+          # Deploys from the push and release buckets can race on gh-pages;
+          # on a rejected push, re-sync the local gh-pages ref to the remote
+          # and redo the deploy on the fresh tip.
+          for attempt in 1 2 3; do
+            git fetch origin gh-pages || true
+            if git rev-parse -q --verify refs/remotes/origin/gh-pages > /dev/null; then
+              git update-ref refs/heads/gh-pages refs/remotes/origin/gh-pages
+            fi
+            if deploy_docs; then
+              exit 0
+            fi
+          done
+          echo "::error::docs deploy failed after 3 attempts"
+          exit 1

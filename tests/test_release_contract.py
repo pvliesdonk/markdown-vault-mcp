@@ -15,10 +15,32 @@ commits shipped a lockfile whose self entry lagged `pyproject.toml`, which made
 mutation (#325, #326).  The script is template-owned now, with
 `DOMAIN-MANIFESTS` seams for a project's own manifests; these tests are what
 keeps the two halves honest for anything added through those seams.
+
+A second invariant joined in template#345: the bumper must never pin a version
+the release will not publish.  Pre-releases skip PyPI, the MCP registry, and
+the marketplace publish, so on a pre-release run the manifests that name a
+published artifact (`server.json` and the Claude Code plugin pair) must stay
+at the last published stable, while `uv.lock` — which tracks `pyproject.toml`,
+not PyPI — must still move.  The behavioral tests below run the real script
+against a sandbox repo root and assert both directions: a stable version moves
+everything, a pre-release version moves only the lockfile.
+
+A third invariant joined in template#350: PSR's changelog writing has two
+halves that fail silently when either is missing.  `update` mode (the v10
+default) inserts version sections only at the insertion flag, so the config
+must name the flag and `CHANGELOG.md` must carry it — a flag-less changelog is
+never written, with no error.  And `changelog_file` must sit in its supported
+location (`changelog.default_templates`), not the deprecated bare
+`changelog.changelog_file` key.  The changelog tests below pin both halves.
 """
 
 from __future__ import annotations
 
+import json
+import os
+import shutil
+import subprocess
+import sys
 import tomllib
 from pathlib import Path
 from typing import Any
@@ -28,6 +50,8 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[1]
 BUMPER = REPO_ROOT / "scripts" / "bump_manifests.py"
 PYPROJECT = REPO_ROOT / "pyproject.toml"
+PLUGIN_JSON = Path(".claude-plugin/plugin/.claude-plugin/plugin.json")
+MCP_JSON = Path(".claude-plugin/plugin/.mcp.json")
 
 # Manifests the template itself bumps, mapped to the marker that proves the
 # bumper still handles them.  A domain manifest added through the
@@ -127,3 +151,129 @@ def test_domain_manifest_calls_sentinel_lives_inside_main() -> None:
     end = text.index("# DOMAIN-MANIFESTS-END")
     assert main_def < start < end
     assert text.index("_bump_lockfile(version)") < start
+
+
+def test_changelog_config_lives_in_the_supported_location() -> None:
+    """`changelog_file` sits under `default_templates`; `mode` is pinned.
+
+    The bare `changelog.changelog_file` key is the pre-v9.11 deprecated
+    location (template#350) — PSR may stop honouring it in a future major,
+    and while it is honoured it silently rewires `output_format`.  `mode` is
+    asserted so the update-at-flag contract the seeded CHANGELOG.md relies on
+    stays explicit rather than riding on PSR's default.
+    """
+    changelog_cfg = _semantic_release_config()["changelog"]
+    assert "changelog_file" not in changelog_cfg, (
+        "changelog.changelog_file is the deprecated pre-v9.11 location — move "
+        "it to [tool.semantic_release.changelog.default_templates]"
+    )
+    assert changelog_cfg["default_templates"]["changelog_file"] == "CHANGELOG.md"
+    assert changelog_cfg["mode"] == "update"
+
+
+def test_changelog_carries_the_insertion_flag() -> None:
+    """`CHANGELOG.md` contains the exact insertion flag the config names.
+
+    In `update` mode PSR inserts each release's version section at this flag
+    and preserves the rest of the file; without the flag it writes nothing —
+    silently, on every release (template#350).  If this project's
+    CHANGELOG.md predates the flag, add the line once by hand, anywhere a
+    machine-written version list should begin (typically after the intro
+    prose).
+    """
+    flag = _semantic_release_config()["changelog"]["insertion_flag"]
+    changelog = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    assert flag in changelog, (
+        f"CHANGELOG.md lacks the PSR insertion flag — add this exact line "
+        f"once, where version sections should be inserted: {flag}"
+    )
+
+
+def _run_bumper(workdir: Path, version: str) -> subprocess.CompletedProcess[str]:
+    """Run the real bumper against ``workdir`` with ``NEW_VERSION`` set."""
+    return subprocess.run(
+        [sys.executable, str(BUMPER)],
+        cwd=workdir,
+        env={**os.environ, "NEW_VERSION": version},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+@pytest.fixture
+def release_sandbox(tmp_path: Path) -> Path:
+    """A minimal repo root the bumper can rewrite without touching this repo.
+
+    `server.json` and the plugin manifests are copied verbatim so the test exercises the
+    real manifest shapes; `pyproject.toml` and `uv.lock` are minimal stand-ins
+    carrying only what `_bump_lockfile` reads.
+    """
+    shutil.copy(REPO_ROOT / "server.json", tmp_path / "server.json")
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "sandbox-pkg"\nversion = "1.2.3"\n', encoding="utf-8"
+    )
+    (tmp_path / "uv.lock").write_text(
+        '[[package]]\nname = "sandbox-pkg"\nversion = "1.2.3"\n', encoding="utf-8"
+    )
+    for manifest in (PLUGIN_JSON, MCP_JSON):
+        (tmp_path / manifest).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(REPO_ROOT / manifest, tmp_path / manifest)
+    return tmp_path
+
+
+def test_stable_release_bumps_every_published_version_field(
+    release_sandbox: Path,
+) -> None:
+    """A stable version moves every manifest the release publishes."""
+    result = _run_bumper(release_sandbox, "9.9.9")
+    assert result.returncode == 0, result.stderr
+
+    server = json.loads((release_sandbox / "server.json").read_text(encoding="utf-8"))
+    assert server["version"] == "9.9.9"
+    pypi = [p for p in server["packages"] if p.get("registryType") == "pypi"]
+    assert pypi and all(p["version"] == "9.9.9" for p in pypi)
+    oci = [p for p in server["packages"] if p.get("registryType") == "oci"]
+    assert all(p["identifier"].endswith(":v9.9.9") for p in oci)
+
+    lock = (release_sandbox / "uv.lock").read_text(encoding="utf-8")
+    assert 'version = "9.9.9"' in lock
+
+    plugin = json.loads((release_sandbox / PLUGIN_JSON).read_text(encoding="utf-8"))
+    assert plugin["version"] == "9.9.9"
+    mcp = json.loads((release_sandbox / MCP_JSON).read_text(encoding="utf-8"))
+    pins = [
+        arg
+        for server_cfg in mcp.values()
+        for arg in server_cfg.get("args", [])
+        if "==" in arg
+    ]
+    assert pins and all(pin.endswith("==9.9.9") for pin in pins)
+
+
+@pytest.mark.parametrize("version", ["9.9.9-rc.1", "9.9.9-rc.12"])
+def test_prerelease_leaves_published_version_fields_untouched(
+    release_sandbox: Path, version: str
+) -> None:
+    """A pre-release run must not pin versions PyPI/the registry never get.
+
+    `publish-pypi`, `publish-registry`, and the marketplace publish are all
+    gated on PSR's `is_prerelease` output, so a pre-release version never
+    exists on those channels — pinning it would leave the branch naming an
+    uninstallable version between stables (template#345).  `uv.lock` still
+    moves: it tracks `pyproject.toml`, and lagging there breaks
+    `uv lock --check` on `main`.
+    """
+    before_server = (release_sandbox / "server.json").read_bytes()
+    before_plugin = (release_sandbox / PLUGIN_JSON).read_bytes()
+    before_mcp = (release_sandbox / MCP_JSON).read_bytes()
+
+    result = _run_bumper(release_sandbox, version)
+    assert result.returncode == 0, result.stderr
+    assert "pre-release" in result.stdout
+
+    assert (release_sandbox / "server.json").read_bytes() == before_server
+    assert (release_sandbox / PLUGIN_JSON).read_bytes() == before_plugin
+    assert (release_sandbox / MCP_JSON).read_bytes() == before_mcp
+    lock = (release_sandbox / "uv.lock").read_text(encoding="utf-8")
+    assert f'version = "{version}"' in lock

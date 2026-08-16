@@ -42,7 +42,13 @@ With optional dependencies:
 uv pip install markdown-vault-mcp[all]
 ```
 
+<<<<<<< before updating
 ## From Source
+=======
+The `latest` tag is the newest stable release. The rolling `edge` tag tracks every merge to `main` and carries no version identity; see [Image tags](deployment/docker.md#image-tags) for the full list.
+
+## From source
+>>>>>>> after updating
 
 ```bash
 git clone https://github.com/pvliesdonk/markdown-vault-mcp.git

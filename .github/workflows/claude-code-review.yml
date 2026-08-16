@@ -3,10 +3,11 @@ name: Claude Code Review
 on:
   pull_request:
     # Match ci.yml's trigger. The review is gated on CI (wait-for-ci job), and
-    # the generated ci.yml only runs on PRs targeting main — firing the reviewer
-    # on other-target PRs would just idle the poll to its timeout, then skip.
-    # Broaden both together if a downstream gates CI on more branches.
-    branches: [main]
+    # the generated ci.yml only runs on PRs targeting main or release/* —
+    # firing the reviewer on other-target PRs would just idle the poll to its
+    # timeout, then skip. Broaden both together if a downstream gates CI on
+    # more branches.
+    branches: [main, "release/**"]
     types: [opened, synchronize, ready_for_review, reopened]
 
 jobs:

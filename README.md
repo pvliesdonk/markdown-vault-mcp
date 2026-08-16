@@ -83,8 +83,18 @@ uv sync --all-extras --all-groups
 docker pull ghcr.io/pvliesdonk/markdown-vault-mcp:latest
 ```
 
+<<<<<<< before updating
 <!-- DOMAIN-START -->
 The Docker image uses `[all]` (MCP + FastEmbed + API embeddings). By default, semantic search works locally with FastEmbed and can switch to Ollama/OpenAI when configured. A `compose.yml` ships at the repo root as a starting point: copy `.env.example` to `.env`, edit, and `docker compose up -d`.
+=======
+To run the newest merged code instead of the newest release, use the rolling `edge` tag. It is rebuilt on every merge to `main` and carries no version identity. See [Image tags](docs/deployment/docker.md#image-tags) for the full tag list.
+
+```bash
+docker pull ghcr.io/pvliesdonk/markdown-vault-mcp:edge
+```
+
+A `compose.yml` ships at the repo root as a starting point. Copy `.env.example` to `.env`, edit, and `docker compose up -d`.
+>>>>>>> after updating
 
 To attach a remote Python debugger (development only; the protocol is unauthenticated), see [Remote debugging](docs/deployment/docker.md#remote-debugging).
 
@@ -117,6 +127,7 @@ Installs the MCP server and the `vault-workflow` skill. See the [Claude Code plu
 
 ### As a library
 
+<<<<<<< before updating
 ```python
 from pathlib import Path
 from markdown_vault_mcp.vault import Vault
@@ -127,6 +138,21 @@ results = vault.reader.search("query text", limit=10)
 ```
 
 ### As an MCP server
+=======
+## Release channels
+
+Artifacts ship on three channels. Each row lists exactly what that channel publishes.
+
+| Channel | Version identity | Artifacts |
+|---|---|---|
+| `edge` (rolling) | None; the commit is the identity | Docker image `:edge` rebuilt on every merge to `main`; `.mcpb` bundle as the `mcpb-bundle-edge` workflow artifact; rolling `unstable` docs version. It leaves no git tag, GitHub release, or PyPI entry behind. |
+| Pre-release | `vX.Y.Z-rc.N`, cut from a `release/X.Y` branch | GitHub release with wheels, `sdist`, `.mcpb` bundle, and SBOM attached; Docker image under its immutable `vX.Y.Z-rc.N` tag only. Skips PyPI, `.deb`/`.rpm` packages, the plugin marketplace, the MCP registry, and the docs deploy. |
+| Stable | `vX.Y.Z` | Everything: PyPI, Docker (version tag plus ordering-aware `latest` / `vX` / `vX.Y`), `.deb`/`.rpm`, GitHub release assets (wheels, `sdist`, `.mcpb` bundle, SBOM), plugin marketplace and MCP registry entries (when the release is the newest stable), versioned docs with an ordering-aware `latest` alias. |
+
+The PyPI split is deliberate: `edge` and pre-release builds never reach PyPI, where every ordinary installer would see them. A pre-release's wheels are still attached to its GitHub release and installable by URL for anyone who opts in. Rolling pointers are ordering-aware, so a patch release cut from an old `release/X.Y` branch never moves `latest`-style tags back to older content. See [Release process](docs/deployment/release-process.md) for the full model.
+
+## Quick start
+>>>>>>> after updating
 
 ```bash
 export MARKDOWN_VAULT_MCP_SOURCE_DIR=/path/to/vault
@@ -622,17 +648,25 @@ CI workflows reference three repository secrets. Configure them via **Settings â
 
 | Secret | Used by | How to generate |
 |---|---|---|
+<<<<<<< before updating
 | `RELEASE_TOKEN` | `release.yml`, `copier-update.yml`, `renovate.yml`, `bootstrap.yml` | Fine-grained PAT at <https://github.com/settings/personal-access-tokens/new> with `contents: write`, `pull_requests: write`, and `administration: write` (bootstrap sets branch protection + auto-merge). Scoped to this repo. |
 | `CODECOV_TOKEN` | `ci.yml` | Sign in at <https://codecov.io> with GitHub, add the repo, then copy the upload token from the repo settings page. |
 | `CLAUDE_CODE_OAUTH_TOKEN` | `claude.yml`, `claude-code-review.yml` | Run `claude setup-token` locally and paste the result. |
+=======
+| `RELEASE_TOKEN` | `release.yml`, `release-notes.yml`, `copier-update.yml`, `renovate.yml`, `bootstrap.yml` | Fine-grained PAT at <https://github.com/settings/personal-access-tokens/new> with `contents: write`, `pull_requests: write`, and `administration: write` (bootstrap applies the repository rulesets + auto-merge). Must belong to a repository admin: the shipped rulesets grant bypass to the admin role, and the release workflow's direct pushes rely on it. Scoped to this repo. |
+| `CODECOV_TOKEN` | `ci.yml` | <https://codecov.io>: sign in with GitHub and add the repo. The upload token is on its settings page. |
+| `CLAUDE_CODE_OAUTH_TOKEN` | `claude.yml`, `claude-code-review.yml`, `release-notes.yml` | Run `claude setup-token` locally and paste the result. |
+>>>>>>> after updating
 
 `GITHUB_TOKEN` is auto-provided; no action needed.
 
 > Dependency updates are handled by **Renovate** (`renovate.yml`), which reuses
 > `RELEASE_TOKEN`. It maintains `uv.lock` and auto-merges patch/minor bumps once
-> the `CI Success` check is green; `bootstrap.yml` enables auto-merge and branch
-> protection on first push. GitHub Actions are updated in the copier template
-> and arrive via `copier update`, not per-repo.
+> the `CI Success` check is green; `bootstrap.yml` enables auto-merge and applies
+> the repository rulesets (`.github/rulesets/`) on first push. See
+> [Repository Protection](docs/deployment/repository-protection.md) for the
+> per-branch posture and bypass model. GitHub Actions are updated in the copier
+> template and arrive via `copier update`, not per-repo.
 
 ## Troubleshooting
 

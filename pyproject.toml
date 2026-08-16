@@ -333,13 +333,49 @@ assets = [
     "uv.lock",
 
     # The Claude Code plugin channel's manifests, bumped by
-    # scripts/bump_manifests.py in the same release commit.
+    # scripts/bump_manifests.py in the same release commit (stable releases
+    # only — pre-releases leave them at the last published stable, since the
+    # PyPI version they pin is never published for a pre-release).
     ".claude-plugin/plugin/.claude-plugin/plugin.json",
     ".claude-plugin/plugin/.mcp.json",
 
 ]
 
+# Branch groups: prerelease-ness is a property of the BRANCH, not of a
+# dispatch flag.  `main` always releases stable; a short-lived `release/X.Y`
+# stabilisation branch releases rcs by default, with the release workflow's
+# `finalize` input cutting the final stable X.Y.Z from the branch (it
+# generates a one-run config override, since PSR's CLI can force prerelease
+# ON but not OFF).  A branch matching neither pattern cannot release at all —
+# PSR refuses, which is the desired guard.  After ANY release cut from a
+# `release/*` branch, the branch must merge back into `main` (the release
+# workflow's merge-back job): with the tag unreachable from `main`, PSR
+# computes the same version from `main`'s own history, finds the tag taken
+# repo-globally, and reports "already released" forever.
+[tool.semantic_release.branches.main]
+match = "(main|master)"
+prerelease = false
+
+[tool.semantic_release.branches.release]
+match = "release/.*"
+prerelease = true
+prerelease_token = "rc"
+
+# PSR's changelog runs in `update` mode (the v10 default, pinned here so the
+# contract is visible): each release inserts its version section at the
+# insertion flag in CHANGELOG.md and preserves everything else in the file
+# verbatim.  Both halves are explicit because the flag is load-bearing — a
+# changelog without the flag line is silently never written (template#350).
+# CHANGELOG.md is seeded with the flag; a project whose CHANGELOG.md predates
+# it must add the flag line once, by hand (tests/test_release_contract.py
+# fails with the exact line until it is present).
 [tool.semantic_release.changelog]
+mode = "update"
+insertion_flag = "<!-- version list -->"
+
+# `changelog_file` lives under `default_templates` (its supported location
+# since PSR v9.11); the bare `changelog.changelog_file` key is deprecated.
+[tool.semantic_release.changelog.default_templates]
 changelog_file = "CHANGELOG.md"
 
 [tool.semantic_release.commit_parser_options]

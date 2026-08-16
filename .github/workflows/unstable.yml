@@ -1,0 +1,110 @@
+# Rolling unstable channel (#351): every merge to `main` rebuilds the
+# container image under the fixed `edge` tag and packs an mcpb bundle as a
+# workflow artifact. No git tag, no GitHub release, no version bump, no
+# manifest churn — this channel answers "let me run the latest merged code"
+# without release machinery. Version-numbered pre-releases (rc) remain
+# release.yml's job, cut from short-lived release/X.Y stabilisation branches
+# and published only under their immutable vX.Y.Z-rc.N image tags (the
+# rc-fed rolling `unstable` tag is retired; `edge` is the one rolling
+# unstable tag, and one tag must have exactly one producer).
+name: Unstable channel
+
+on:
+  push:
+    branches: [main]
+  # Manual dispatch seeds or refreshes the channel without waiting for a
+  # merge (first-time setup, registry hiccup recovery).
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Only the newest commit matters for a rolling tag: superseded runs are
+# cancelled so an older build cannot finish after a newer one and leave
+# `edge` pointing at stale code.
+concurrency:
+  group: unstable-channel
+  cancel-in-progress: true
+
+jobs:
+  docker-edge:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write
+
+    env:
+      REGISTRY: ghcr.io
+      IMAGE_NAME: ${{ github.repository }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels)
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          # A single fixed tag. metadata-action stamps
+          # org.opencontainers.image.revision with the commit sha, so the
+          # exact commit behind `edge` is always readable from the image
+          # despite the channel carrying no version.
+          tags: |
+            type=raw,value=edge
+          labels: |
+            org.opencontainers.image.title=markdown-vault-mcp
+            org.opencontainers.image.description=Generic markdown vault MCP server with FTS5 + semantic search
+            org.opencontainers.image.vendor=pvliesdonk
+            io.modelcontextprotocol.server.name=io.github.pvliesdonk/markdown-vault-mcp
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  mcpb-bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      # Render/validate/pack/smoke live in the shared composite action
+      # (.github/actions/build-mcpb) — the same steps release.yml and the
+      # pre-release-check workflow run, so this path cannot drift from what
+      # a real release executes.
+      - name: Build and smoke-test mcpb bundle
+        uses: ./.github/actions/build-mcpb
+        with:
+          # Constant, versionless by design: 0.0.0-dev is valid semver (so
+          # `mcpb validate` accepts it), sorts below every real release (so
+          # an unstable bundle can never masquerade as an upgrade), and is
+          # already the pre-release-check workflow's proven default.
+          version: 0.0.0-dev
+
+      - name: Upload mcpb bundle artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: mcpb-bundle-edge
+          path: dist/markdown-vault-mcp-*.mcpb
+          if-no-files-found: error

@@ -1,0 +1,175 @@
+# Agent-written release notes, half two of two (template#347).  When a
+# release-notes page lands on the default branch (normally by merging the PR
+# the Release Notes workflow opened), two deterministic follow-ups make the
+# merged page the release's front door:
+#
+#   1. Release-body upgrade — the NOTES-GENERATOR SEAM in release.yml wrote
+#      an interim summary+pointers body at release time (template#350's
+#      contract); this workflow replaces that summary with the page's marked
+#      summary block and deep-links the page, keeping the compare and
+#      CHANGELOG pointers.  Only bodies still carrying the interim marker
+#      line are touched, so a hand-tuned body is never clobbered.
+#   2. Versioned-docs redeploy — mike deployed /X.Y/ at release time, before
+#      the page existed, so the deep link would 404 without a redeploy.  The
+#      minor is redeployed from its newest tag with the default branch's
+#      docs/releases/ overlaid.  Pages live only on the default branch
+#      (release branches never carry them), so the overlay is the single
+#      source and a backport patch's section reaches its series' docs no
+#      matter which branch the patch was cut from.
+#
+# Deterministic by design: the agent's output was reviewed and merged in the
+# PR; nothing here generates content.  Human edits to a page republish the
+# same way — the docs redeploy re-runs; the body upgrade does not (see the
+# interim-marker rule above; use `gh release edit` for a body fix).
+name: Release Notes Publish
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/releases/*.md'
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    # Serialise with ourselves only; gh-pages races with docs.yml deploys are
+    # reconciled by the fetch-reset-retry loop below, same as docs.yml.
+    concurrency:
+      group: release-notes-publish
+      cancel-in-progress: false
+    permissions:
+      contents: write   # gh release edit + gh-pages push
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Full history: tags (locate each minor's releases) and the
+          # gh-pages branch (mike) both live outside the pushed commit.
+          fetch-depth: 0
+
+      - name: Find changed release pages
+        id: pages
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          # Cover multi-commit pushes; on a forced push or missing before-SHA
+          # fall back to the head commit alone.
+          if git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
+            range="${BEFORE}..HEAD"
+          else
+            range="HEAD^..HEAD"
+          fi
+          git diff --name-only --diff-filter=AM "$range" -- 'docs/releases/*.md' \
+            | grep -vE '/index\.md$' > changed-pages.txt || true
+          if [ -s changed-pages.txt ]; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+            cat changed-pages.txt
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "only the index changed — nothing to publish"
+          fi
+
+      - name: Upgrade release bodies from merged pages
+        if: steps.pages.outputs.found == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          while IFS= read -r page; do
+            minor=$(basename "$page" .md)
+            echo "$minor" | grep -qE '^[0-9]+\.[0-9]+$' \
+              || { echo "::warning::${page} does not follow docs/releases/X.Y.md — skipping"; continue; }
+            tags=$(git tag --list | grep -E "^v${minor//./\\.}\.[0-9]+$" | sort -V || true)
+            [ -n "$tags" ] \
+              || { echo "::warning::no stable tag in the ${minor} series yet — the body upgrade runs once the release exists"; continue; }
+            for TAG in $tags; do
+              # The page carries one marked summary block per release; a tag
+              # without a block (e.g. an old patch nobody wrote up) is left
+              # alone.
+              summary=$(awk -v tag="$TAG" '
+                index($0, "RELEASE-SUMMARY " tag " START") { f=1; next }
+                index($0, "RELEASE-SUMMARY " tag " END")   { f=0 }
+                f' "$page" | awk 'NF {p=1} p' | tac | awk 'NF {p=1} p' | tac)
+              [ -n "$summary" ] || continue
+              body=$(gh release view "$TAG" --json body --jq .body 2>/dev/null || true)
+              [ -n "$body" ] || { echo "no GitHub release for ${TAG} — skipping"; continue; }
+              # Upgrade once: only bodies still carrying release.yml's interim
+              # closing line. Anything else is either already upgraded or
+              # hand-written — leave it alone.
+              printf '%s' "$body" | grep -qF 'Release notes will move to a versioned notes page' \
+                || { echo "${TAG} body already upgraded or hand-edited — leaving it alone"; continue; }
+              ver="${TAG#v}"
+              prev=$(
+                { git tag --list | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+                    | grep -Fvx "$TAG"; echo "$TAG"; } \
+                  | sort -V | awk -v t="$TAG" '$0 == t { print p; exit } { p = $0 }'
+              )
+              {
+                printf '%s\n' "$summary"
+                echo
+                echo "- Release notes: https://pvliesdonk.github.io/markdown-vault-mcp/${minor}/releases/${minor}/"
+                if [ -n "$prev" ]; then
+                  echo "- All changes since ${prev}: https://github.com/${REPO}/compare/${prev}...${TAG}"
+                fi
+                echo "- Commit-level detail: [CHANGELOG.md](https://github.com/${REPO}/blob/${TAG}/CHANGELOG.md)"
+              } > release-body.md
+              gh release edit "$TAG" --notes-file release-body.md
+              echo "upgraded ${TAG} from ${page}"
+            done
+          done < changed-pages.txt
+
+      - name: Install uv
+        if: steps.pages.outputs.found == 'true'
+        uses: astral-sh/setup-uv@v8.2.0
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        if: steps.pages.outputs.found == 'true'
+        run: uv python install 3.12
+
+      - name: Install docs dependencies
+        if: steps.pages.outputs.found == 'true'
+        run: uv sync --no-default-groups --group docs --frozen
+
+      - name: Redeploy versioned docs with the merged pages
+        if: steps.pages.outputs.found == 'true'
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          MAIN_REF=$(git rev-parse HEAD)
+          while IFS= read -r page; do
+            minor=$(basename "$page" .md)
+            echo "$minor" | grep -qE '^[0-9]+\.[0-9]+$' || continue
+            TAG=$(git tag --list | grep -E "^v${minor//./\\.}\.[0-9]+$" | sort -V | tail -1 || true)
+            [ -n "$TAG" ] || continue
+            ver="${TAG#v}"
+            # Build the minor's docs from its newest tag — the content that
+            # release actually shipped — with the default branch's notes
+            # pages overlaid on top.  `--no-sync` reuses the docs venv
+            # installed above instead of re-locking against the tag.
+            git checkout --force "$TAG"
+            git checkout "$MAIN_REF" -- docs/releases
+            deployed=""
+            # Deploys race with docs.yml's push/release buckets on gh-pages;
+            # on a rejected push, re-sync the local gh-pages ref and redo the
+            # deploy on the fresh tip (same loop as docs.yml).
+            for attempt in 1 2 3; do
+              git fetch origin gh-pages || true
+              if git rev-parse -q --verify refs/remotes/origin/gh-pages > /dev/null; then
+                git update-ref refs/heads/gh-pages refs/remotes/origin/gh-pages
+              fi
+              if uv run --no-sync mike deploy --push --title "$ver" "$minor"; then
+                deployed=1
+                break
+              fi
+            done
+            [ "$deployed" = "1" ] \
+              || { echo "::error::docs redeploy for ${minor} failed after 3 attempts"; exit 1; }
+            git checkout --force "$MAIN_REF"
+          done < changed-pages.txt

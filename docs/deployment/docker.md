@@ -178,7 +178,27 @@ services:
 
 The entrypoint updates `appuser`'s UID/GID to the specified values and chowns `/data` to match.
 
+<<<<<<< before updating
 ### Build-time UID/GID (alternative for bind mounts)
+=======
+## Image tags
+
+| Tag | Contents | Updated by |
+|-----|----------|------------|
+| `latest` | Newest stable release | Each stable release that is newest across all series |
+| `vX.Y.Z` | That exact release (pre-releases included, as `vX.Y.Z-rc.N`) | Never (immutable) |
+| `vX.Y`, `vX` | Newest stable release in that series | Each stable release that is newest in its series |
+| `edge` | Newest commit on `main` | Every merge to `main` |
+
+Rolling tags are ordering-aware: a patch release cut from an old `release/X.Y` branch after a newer stable has shipped updates its own series tags but never `latest`. A pre-release pushes only its immutable `vX.Y.Z-rc.N` tag. To run the latest merged code, use `edge`, which follows `main` continuously and carries no version identity. To find the commit behind an `edge` image, read its `org.opencontainers.image.revision` label:
+
+```bash
+docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' \
+  ghcr.io/pvliesdonk/markdown-vault-mcp:edge
+```
+
+## Environment variables
+>>>>>>> after updating
 
 If you prefer to bake the UID/GID into the image:
 

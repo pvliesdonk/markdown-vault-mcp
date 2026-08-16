@@ -1,0 +1,92 @@
+name: Epic
+description: >
+  A multi-feature effort that ships as one user-facing story. Children are
+  linked as native GitHub sub-issues, not markdown checklists. See
+  CONTRIBUTING.md for how epics are structured.
+title: "[Epic]: "
+labels: ["epic"]
+body:
+  - type: textarea
+    id: user-facing-summary
+    attributes:
+      label: What changes for the user
+      description: >
+        One paragraph, written now, before any code exists. This is the
+        highest-value field: it becomes the release-notes highlight for the
+        whole epic, so write it for the user reading the notes, not for the
+        implementer. Release tooling edits and verifies this text against
+        what actually landed rather than reconstructing intent afterwards.
+      placeholder: "After this epic, you can ..."
+    validations:
+      required: true
+  - type: dropdown
+    id: surface-impact
+    attributes:
+      label: Surface impact
+      description: >
+        Which compatibility surfaces this epic touches. Decided once at epic
+        creation and inherited by the children, rather than argued per
+        commit; feeds the breaking-change policy.
+      multiple: true
+      options:
+        - Operator surface (config, env vars, CLI, deployment)
+        - Public library API
+        - MCP tool surface (tools, resources, prompts)
+        - None (internal only)
+    validations:
+      required: true
+  - type: dropdown
+    id: ships-atomically
+    attributes:
+      label: Ships atomically
+      description: >
+        If yes, no release may be cut while this epic is mid-flight. This
+        answer records the intent; the machine-readable signal release
+        tooling queries is a milestone or label set after filing (see the
+        checklist below) — forms cannot assign either.
+      options:
+        - "Yes — no release may be cut mid-epic"
+        - "No — children can ship independently"
+    validations:
+      required: true
+  - type: textarea
+    id: children
+    attributes:
+      label: Planned children
+      description: >
+        The planned child issues, one per line ("#N" for issues that already
+        exist, a one-line description for those that don't yet). This list
+        is planning prose only — the queryable relationship is the native
+        sub-issue link, created after filing (see the checklist below). Do
+        not maintain a markdown task list as the source of truth.
+    validations:
+      required: false
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: Out of scope
+      description: What this epic deliberately does not cover.
+    validations:
+      required: true
+  - type: markdown
+    attributes:
+      value: |
+        ### After filing (issue forms cannot do these)
+
+        Forms cannot create sub-issue links or assign milestones, so finish
+        the epic setup after submitting. The `authoring-issues-prs` skill
+        (`.claude/skills/authoring-issues-prs/SKILL.md`) performs these
+        steps mechanically.
+
+        1. **Link the children as native sub-issues** — issue sidebar
+           ("Create sub-issue" / "Add existing issue") or the sub-issues
+           API. This makes the grouping queryable (`has_parent`,
+           `sub_issues_summary`) instead of prose to pattern-match.
+        2. **If the epic ships atomically, make that queryable:**
+           - **Milestone (preferred):** assign the epic and its children to
+             the milestone of the target release, creating it if needed.
+             Milestones are per-repo and one-per-issue; for a cross-repo
+             epic the milestone lives in the repo where the release is cut.
+           - **Label (fallback):** apply `ships-atomically` when no target
+             release is named yet, or in the repos of a cross-repo epic
+             that do not cut the release.

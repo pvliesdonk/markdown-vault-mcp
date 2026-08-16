@@ -28,7 +28,8 @@ This removes the link copier uses to reattach. The weekly cron that ran
 ```bash
 rm -f .github/workflows/copier-update.yml \
       .github/workflows/claude.yml \
-      .github/workflows/claude-code-review.yml
+      .github/workflows/claude-code-review.yml \
+      .github/workflows/release-notes.yml
 rm -f scripts/copier_update_aggregator.py
 rm -rf scripts/copier_update_prompts
 ```
@@ -37,13 +38,20 @@ What this removes and why:
 
 - `copier-update.yml` — template-update automation; meaningless once detached.
 - `claude.yml`, `claude-code-review.yml` — fleet review-bot wiring.
+- `release-notes.yml` — the Claude-agent release-notes drafter (same
+  `CLAUDE_CODE_OAUTH_TOKEN` dependency as the review wiring). Keep it
+  instead if your fork keeps that secret and wants agent-drafted notes.
 - `scripts/copier_update_aggregator.py`, `scripts/copier_update_prompts/` —
   the orchestration that only `copier-update.yml` invoked; dead weight once
   that workflow is gone.
 
 **Keep** your own CI and release workflows: `ci.yml`, `codeql.yml`,
-`coverage-status.yml`, `docs.yml`, and `release.yml`. (`release.yml` still needs
-the `RELEASE_TOKEN` secret; only its `copier-update` justification is gone.)
+`coverage-status.yml`, `docs.yml`, `release.yml`, and
+`release-notes-publish.yml`. (`release.yml` still needs the `RELEASE_TOKEN`
+secret; only its `copier-update` justification is gone.
+`release-notes-publish.yml` is deterministic — no Claude dependency — and
+still publishes any `docs/releases/` page you write by hand: it upgrades the
+matching release body and redeploys the minor's versioned docs on merge.)
 
 ## Step 3 — Scrub template-tracking guidance from `CLAUDE.md`
 

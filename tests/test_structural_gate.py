@@ -8,6 +8,7 @@ wired correctly. Only rendered when ``enable_structural_gate`` is true.
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -200,21 +201,21 @@ def test_precommit_config_wires_pre_push_hook() -> None:
     block = _structural_hook_block(text)
     assert "stages: [pre-push]" in block
     assert "language: system" in block
-    # Mirrors the CI HAS_PY skip: no Python in the push → hook does not run.
+    # Mirrors the script's no-Python skip: no Python in the push → hook does
+    # not run.
     assert "types: [python]" in block
-    # The `entry: bash -c` wrapper is load-bearing: it makes the shell (not
-    # pre-commit's arg splitter) own the --options quoting verified by the
-    # end-to-end test. Assert it so a refactor to a direct `uv run` entry —
-    # which would break that quoting — can't pass silently.
-    assert "entry: bash -c " in block
-    assert f"--extend-select={STRUCTURAL}" in block
+    # The hook delegates to the shared script (one implementation for hook and
+    # CI); the diff-quality command itself is asserted on the script below.
+    assert "entry: bash scripts/structural_gate.sh" in block
 
 
 def test_ci_has_structure_job() -> None:
     text = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text()
     assert "structure:" in text
-    assert "diff-quality" in text
-    assert f"--extend-select={STRUCTURAL}" in text
+    # CI runs the same shared script as the pre-push hook, pinning the compare
+    # branch to the PR's real base via the script's env override.
+    assert "scripts/structural_gate.sh" in text
+    assert "STRUCTURAL_GATE_BASE" in text
     # PR-only, like the diff-cover patch-coverage steps.
     assert "github.event_name == 'pull_request'" in text
 
@@ -231,12 +232,85 @@ def test_claudemd_documents_the_gate_command() -> None:
 
 
 def test_structural_select_string_is_identical_across_surfaces() -> None:
-    """The select string lives in three rendered files; drift between them is a
-    silent gate weakening. Assert all three carry the canonical string verbatim.
+    """The select string lives in the shared script (which the pre-commit hook
+    and the CI job both execute) and in CLAUDE.md's documented command; drift
+    between them is a silent gate weakening. Assert both carry the canonical
+    string verbatim.
     """
     needle = f"--extend-select={STRUCTURAL}"
-    precommit = (REPO_ROOT / ".pre-commit-config.yaml").read_text()
-    ci = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text()
+    script = (REPO_ROOT / "scripts" / "structural_gate.sh").read_text()
     claudemd = (REPO_ROOT / "CLAUDE.md").read_text()
-    for name, text in [("pre-commit", precommit), ("ci", ci), ("CLAUDE.md", claudemd)]:
+    for name, text in [("structural_gate.sh", script), ("CLAUDE.md", claudemd)]:
         assert needle in text, f"{name} missing canonical structural select"
+
+
+def _print_base(repo: Path, env: dict[str, str] | None = None) -> str:
+    """Run the script's base-derivation seam and return the resolved base."""
+    proc = subprocess.run(
+        ["bash", str(REPO_ROOT / "scripts" / "structural_gate.sh")],
+        cwd=repo,
+        env={**os.environ, "STRUCTURAL_GATE_PRINT_BASE": "1", **(env or {})},
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return proc.stdout.strip()
+
+
+def _commit(repo: Path, name: str, stamp: str) -> None:
+    (repo / name).write_text(name + "\n")
+    _git(["add", "."], repo)
+    subprocess.run(
+        ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-m", name],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+        env={
+            **os.environ,
+            "GIT_AUTHOR_DATE": stamp,
+            "GIT_COMMITTER_DATE": stamp,
+        },
+    )
+
+
+def test_gate_script_derives_compare_branch(tmp_path: Path) -> None:
+    """Base derivation: a branch off main compares against origin/main; a
+    backport branch off release/X.Y compares against origin/release/X.Y (the
+    branch its PR targets); an explicit STRUCTURAL_GATE_BASE always wins.
+
+    The remote-tracking refs are created directly with update-ref — the
+    derivation reads refs/remotes/origin/*, not a live remote.
+    """
+    repo = tmp_path / "proj"
+    repo.mkdir()
+    _git(["init", "-b", "main"], repo)
+    _commit(repo, "c1.py", "2026-01-01T10:00:00")
+    _commit(repo, "c2.py", "2026-01-02T10:00:00")
+    _git(["update-ref", "refs/remotes/origin/main", "HEAD"], repo)
+
+    # Feature branch off main: only origin/main exists -> origin/main.
+    _git(["checkout", "-b", "feature"], repo)
+    _commit(repo, "f1.py", "2026-01-05T10:00:00")
+    assert _print_base(repo) == "origin/main"
+
+    # Cut release/4.0 from main's tip, advance it (newer merge-base than
+    # main's for anything branched off it), publish as a remote ref.
+    _git(["checkout", "-b", "release/4.0", "main"], repo)
+    _commit(repo, "r1.py", "2026-01-03T10:00:00")
+    _git(["update-ref", "refs/remotes/origin/release/4.0", "HEAD"], repo)
+
+    # Backport branch off the release branch -> origin/release/4.0.
+    _git(["checkout", "-b", "backport", "release/4.0"], repo)
+    _commit(repo, "b1.py", "2026-01-04T10:00:00")
+    assert _print_base(repo) == "origin/release/4.0"
+
+    # The feature branch still resolves to origin/main: both merge-bases land
+    # on the same cut commit, and the tie deliberately prefers origin/main...
+    _git(["checkout", "feature"], repo)
+    assert _print_base(repo) == "origin/main"
+    # ...and the explicit override beats any derivation.
+    assert (
+        _print_base(repo, {"STRUCTURAL_GATE_BASE": "origin/somewhere"})
+        == "origin/somewhere"
+    )

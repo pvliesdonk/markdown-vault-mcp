@@ -20,6 +20,9 @@ found nothing.
 ## Local review
 
 - [ ] Ran a local code-review pass on the cumulative diff before `gh pr create`.
+- [ ] Any commit carrying `!` breaks an operator or library surface that
+      existed at the **last stable release** (see the breaking-change policy
+      in `CLAUDE.md`) — MCP tool-surface changes alone do not earn a `!`.
 
 ## Docs impact
 

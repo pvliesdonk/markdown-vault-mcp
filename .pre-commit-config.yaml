@@ -26,9 +26,21 @@ repos:
         pass_filenames: false
         args: [src/, tests/]
 
+<<<<<<< before updating
+=======
+
+      # Structural-health gate: strict ruff structural rules on CHANGED LINES
+      # ONLY, sharing scripts/structural_gate.sh with the CI `structure` job so
+      # the command cannot drift between the two. The script derives its
+      # compare branch (nearest of origin/main and origin/release/*, or the
+      # STRUCTURAL_GATE_BASE override), so a backport branch targeting
+      # release/X.Y is measured against that base rather than origin/main.
+      # Pre-push (not commit-time): a commit has no base to compare and may be
+      # partial; pre-push sees the full branch range CI checks.
+>>>>>>> after updating
       - id: structural-diff-gate
-        name: structural quality (diff vs origin/main)
-        entry: bash -c 'uv run diff-quality --violations=ruff.check --options="--extend-select=C901,PLR0911,PLR0912,PLR0913,PLR0915,S" --compare-branch=origin/main --fail-under=100'
+        name: structural quality (diff vs derived base)
+        entry: bash scripts/structural_gate.sh
         language: system
         pass_filenames: false
         # Skip the hook when the push has no Python (with pass_filenames: false,

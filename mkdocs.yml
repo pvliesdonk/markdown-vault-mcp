@@ -94,6 +94,7 @@ plugins:
           - resources.md: MCP resources with URI patterns (config, stats, tags, folders, toc, similar, recent, ui)
           - prompts.md: All 6 MCP prompts with workflow descriptions
         Deployment:
+<<<<<<< before updating
           - deployment/index.md: Deployment overview
           - deployment/docker.md: Docker Compose, Traefik, volumes, UID/GID
           - deployment/systemd.md: systemd service — package install, manual install, security hardening
@@ -110,6 +111,13 @@ plugins:
         Releases:
           - releases/index.md: Release notes overview — page-per-minor model and available pages
           - releases/3.1.md: Release notes for 3.1 — upgrade notes, highlights, and linked evidence
+=======
+          - deployment/*.md
+        # Glob deliberately: each minor's release-notes page is auto-indexed
+        # without a sections-list update (same rationale as guides/*).
+        Release Notes:
+          - releases/*.md
+>>>>>>> after updating
         # PROJECT-LLMSTXT-SECTIONS-END
   - mkdocstrings:
       handlers:
@@ -183,6 +191,7 @@ nav:
       - Docker: deployment/docker.md
       - systemd: deployment/systemd.md
       - Claude Desktop: deployment/claude-desktop.md
+<<<<<<< before updating
       - OIDC Authentication: deployment/oidc.md
   - Python API:
       - Vault: api/vault.md
@@ -195,4 +204,12 @@ nav:
   - Releases:
       - Overview: releases/index.md
       - "3.1": releases/3.1.md
+=======
+      - Release Process: deployment/release-process.md
+      - Repository Protection: deployment/repository-protection.md
+  # Landing page only, deliberately: per-minor pages stay out of nav so a new
+  # release never needs a nav edit (mkdocs treats not-in-nav pages as INFO,
+  # so `--strict` stays green); the landing page and search link them.
+  - Release Notes: releases/index.md
+>>>>>>> after updating
   # PROJECT-NAV-END

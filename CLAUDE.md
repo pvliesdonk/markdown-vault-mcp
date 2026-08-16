@@ -123,6 +123,22 @@ This project is extracted from [`pvliesdonk/if-craft-corpus`](https://github.com
 The automated Claude review runs **only after CI passes** — if CI is red, no
 review is posted. Fix CI and push; the review runs on the next green run.
 
+## Breaking Changes and the `!` Marker
+
+Releases are cut by python-semantic-release from commit messages alone, so the `!` marker (or `BREAKING CHANGE:` footer) *is* the major-version decision — apply it deliberately, not by habit. A change is **breaking** only if it breaks one of two surfaces:
+
+- **Operator surface** — an environment variable, config file, CLI flag, deployment layout, or on-disk state format a human must change to upgrade.
+- **Public library interface** — anything importable from `markdown_vault_mcp` that a downstream Python consumer uses. A mechanical guard for this tier is tracked at pvliesdonk/fastmcp-server-template#352.
+
+A change to the **MCP tool surface** (tool names, parameters, return schemas, adding or removing tools) is **not** breaking on its own. The LLM client is stateless and re-discovers the surface over the protocol on connect, so a server restart resolves it with no user action.
+
+Two refinements:
+
+1. **Re-discovery covers a tool's *shape*, not its *semantics*.** A tool that keeps its signature but changes what it does can still break operator automation, prompts, or skills. If only the MCP surface changed and the previous behaviour is still reachable (additive / dual-mode), the change is not breaking; if the old behaviour is gone, treat it as breaking even though the schema re-discovers cleanly.
+2. **Assess against the last stable release, not the previous commit.** A change to something introduced in the same unreleased range breaks nothing a user has, and does not earn a `!`. When a feature and its rework land in one release cycle, only the net effect on the released surface counts. Sanity-check any commit carrying `!` before it merges: if `git tag --contains` on the commit that introduced the surface comes back empty, the surface never shipped and the `!` is spurious.
+
+The two-part test: (1) does an operator or a library consumer of the last stable release have to change something? → breaking. (2) If only the MCP surface changed, is the previous behaviour still reachable? → not breaking; if it is gone, breaking.
+
 ## Hard PR Acceptance Gates
 
 Every PR must pass **all** of the following locally before push. These are mechanical preconditions:
@@ -134,13 +150,11 @@ Every PR must pass **all** of the following locally before push. These are mecha
 
 5. **Structural quality (diff) passes** — new/changed code must introduce no new structural violations (complexity, too-many-*, security). Enforced on the diff only, so pre-existing code is never blocked. Run before pushing:
    ```bash
-   uv run diff-quality --violations=ruff.check \
-     --options="--extend-select=C901,PLR0911,PLR0912,PLR0913,PLR0915,S" \
-     --compare-branch=origin/main --fail-under=100
+   bash scripts/structural_gate.sh
    ```
-   `# noqa: C901` (etc.) with a one-line justification is the escape hatch for genuinely irreducible new code.
+   The script derives its compare branch (nearest of `origin/main` and `origin/release/*`; override with `STRUCTURAL_GATE_BASE`) and runs `diff-quality --violations=ruff.check --options="--extend-select=C901,PLR0911,PLR0912,PLR0913,PLR0915,S" --fail-under=100` against it. `# noqa: C901` (etc.) with a one-line justification is the escape hatch for genuinely irreducible new code.
 6. **Docs updated** — `README.md` and `docs/**` reflect any user-facing changes in the same commit
-7. **Manifest version lockstep** — `server.json`, `.claude-plugin/plugin/.claude-plugin/plugin.json`, and `.claude-plugin/plugin/.mcp.json` must all carry the same version. The release workflow bumps them atomically via PSR; manual touches require updating all three.
+7. **Manifest version lockstep** — `server.json`, `.claude-plugin/plugin/.claude-plugin/plugin.json`, and `.claude-plugin/plugin/.mcp.json` must all carry the same version: the latest *stable* release. Stable releases bump them atomically via PSR; pre-releases deliberately leave them untouched, because the versions they name are only published for stable releases. Manual touches require updating all three.
 
 
 ## Pre-commit Hooks
@@ -150,7 +164,7 @@ This project ships a `.pre-commit-config.yaml` that runs ruff (check + format), 
 - **Install once per clone:** `uv run pre-commit install`.
 - **Run on demand before pushing:** `uv run pre-commit run --all-files`. A green run is a precondition for gates #2 and #3 above.
 
-- **Structural gate runs at push time:** the `structural-diff-gate` hook (pre-push stage) runs the command above automatically. `uv run pre-commit install` wires it via `default_install_hook_types`. A clean local push implies a clean CI `structure` job — same command, same range, as long as your PR targets `main` (the hook hardcodes `origin/main`; CI compares against the PR's actual base branch).
+- **Structural gate runs at push time:** the `structural-diff-gate` hook (pre-push stage) runs `scripts/structural_gate.sh` automatically. `uv run pre-commit install` wires it via `default_install_hook_types`. A clean local push implies a clean CI `structure` job — CI runs the same script, pinning the compare branch to the PR's actual base, while the hook derives it (nearest of `origin/main` and `origin/release/*`), so backport branches targeting a release branch are measured against the right base locally too.
 
 - **Never bypass with `--no-verify`.** A failing hook means the same check will fail in CI; fix the underlying issue rather than silencing it.
 
@@ -207,6 +221,7 @@ Every issue, PR, and code change must consider documentation impact. Before clos
 
 - **`docs/design/design.md`** — the authoritative spec. Any new feature, changed behavior, or architectural decision must be reflected here. If the code diverges from the spec, update the spec.
 - **`README.md`** — user-facing documentation. New env vars, tools, resources, prompts, CLI flags, or configuration options must be documented here.
+<<<<<<< before updating
 - **`docs/` site pages** — the published documentation site. These pages must stay in sync with the codebase:
     - `docs/tools/index.md` — new or changed MCP tools
     - `docs/resources.md` — new or changed MCP resources
@@ -222,6 +237,13 @@ Every issue, PR, and code change must consider documentation impact. Before clos
 - **Inline docstrings** — new or changed public API methods need accurate docstrings.
 
 **Rule: code without matching docs is incomplete.** When writing issues, include a "Documentation" section listing which docs need updating. When reviewing PRs, verify documentation is included. A PR that adds a tool, env var, resource, or user-facing feature without updating the corresponding docs/ page and README section should not be merged.
+=======
+- **`docs/` site pages** — the published documentation site. New or changed MCP tools/resources/prompts, new env vars, new installation methods or deployment options.
+- **`CHANGELOG.md`** — machine-generated audit trail: python-semantic-release inserts each release's version section at the `<!-- version list -->` insertion flag during the release workflow. Never hand-edit version sections or the flag line. If this project was generated before the flag existed, add the flag line to `CHANGELOG.md` once by hand — `tests/test_release_contract.py` fails with the exact line until it is present.
+- **Inline docstrings** — new or changed public API methods need accurate Google-style docstrings.
+
+**Rule: code without matching docs is incomplete.**
+>>>>>>> after updating
 
 ## Documentation Conventions (user-facing vs internal)
 
@@ -330,7 +352,7 @@ These sentinel blocks in `Dockerfile` are preserved across `copier update`. Add 
 
 ### Release manifest extension points
 
-`scripts/bump_manifests.py` bumps `server.json` and refreshes `uv.lock`'s self-version entry inside the release commit, so the tag never points at a manifest whose version lags it. These sentinel blocks in that script are preserved across `copier update`. Add bumps for this project's own version-coupled manifests (a Claude Code `plugin.json`, an `.mcp.json`, another lockstep JSON/TOML) inside them:
+`scripts/bump_manifests.py` bumps `server.json` and refreshes `uv.lock`'s self-version entry inside the release commit, so a stable tag never points at a manifest whose version lags it. On pre-release versions the script leaves `server.json` and the Claude plugin manifests at the last published stable — pre-releases skip PyPI and the MCP registry, so bumping those pins would make `main` name a version that does not exist anywhere (`tests/test_release_contract.py` asserts both behaviors). `uv.lock` is refreshed on every release, pre-release included, because it tracks `pyproject.toml` rather than a published artifact. These sentinel blocks in that script are preserved across `copier update`. Add bumps for this project's own version-coupled manifests (a Claude Code `plugin.json`, an `.mcp.json`, another lockstep JSON/TOML) inside them:
 
 - `# DOMAIN-MANIFESTS-HELPERS-START` / `-END` — module-level helpers (use `_load` / `_dump` for JSON so the byte format matches what `scripts/gen_config_surface.py` asserts)
 - `# DOMAIN-MANIFESTS-START` / `-END` — the calls, inside `main()`, where `version` is in scope
@@ -340,13 +362,74 @@ Every path bumped there must also appear in `pyproject.toml`'s `[tool.semantic_r
 
 ## Claude Code plugin channel
 
-`.claude-plugin/plugin/` ships this server as a Claude Code plugin: `.claude-plugin/plugin.json` (identity + version) and an exec-form `.mcp.json` that launches the released PyPI package with `uvx --from <pkg>==<version>`. Both manifests are version-coupled to the release — `scripts/bump_manifests.py` bumps them in the release commit and `[tool.semantic_release] assets` stages them, so the marketplace entry published by the release workflow always installs the version it points at (`tests/test_release_contract.py` gates that pairing). The `env` block in `.mcp.json`, the plugin README, and any `skills/` directories are project-owned content: the files are seeded once and never re-rendered by template updates. Values in `env` may reference plugin `userConfig` entries as `${user_config.<id>}` declared in `plugin.json` — exec-form fields only; shell-form command strings reject the substitution.
+`.claude-plugin/plugin/` ships this server as a Claude Code plugin: `.claude-plugin/plugin.json` (identity + version) and an exec-form `.mcp.json` that launches the released PyPI package with `uvx --from <pkg>==<version>`. Both manifests are version-coupled to the *stable* release stream — `scripts/bump_manifests.py` bumps them in stable release commits and `[tool.semantic_release] assets` stages them, so the marketplace entry published by the release workflow always installs the version it points at. Pre-releases never reach PyPI, so on pre-release runs the script leaves both files at the last published stable rather than pinning a version `uvx` cannot resolve (`tests/test_release_contract.py` gates the assets/script pairing and this skip). The `env` block in `.mcp.json`, the plugin README, and any `skills/` directories are project-owned content: the files are seeded once and never re-rendered by template updates. Values in `env` may reference plugin `userConfig` entries as `${user_config.<id>}` declared in `plugin.json` — exec-form fields only; shell-form command strings reject the substitution.
 
 To generate the plugin's configuration screen from the config surface instead of hand-editing it, declare a `files:` pair in `config-presentation.domain.yml`: the plugin.json path with `kind: claude-plugin-user-config` and a `fields:` map (same field specs as the mcpb screen above), plus the `.mcp.json` path with `kind: claude-plugin-env` and `fields_from:` naming the first entry. One fields map then drives both the `userConfig` object and the `${user_config.<id>}` env wiring, and `scripts/gen_config_surface.py --check` gates the pair against drift.
+
+## Public import surface guard
+
+`tests/test_import_surface.py` (template-owned, re-rendered on template updates) asserts the set of public names importable from the `markdown_vault_mcp` package root against the project-owned snapshot `tests/public_import_surface.txt` (seeded once, never re-rendered by template updates — yours). The surface is enumerated in a fresh interpreter — every non-underscore name in `dir(package)` or `__all__` that resolves via `getattr` — so lazy `__getattr__` re-exports count, incidental submodule imports from earlier tests do not, and a root holding only a docstring and `__version__` has an empty surface. When the test fails:
+
+- **A name disappeared** — that is a breaking change to the public library interface. Either restore the name, or regenerate the snapshot (`uv run python tests/test_import_surface.py --update`) **and** mark the commit/PR breaking (`feat!:` / `fix!:`, or a `BREAKING CHANGE:` footer) per the versioning policy's public-library-interface tier (pvliesdonk/fastmcp-server-template#342).
+- **A name appeared** — not breaking; regenerate the snapshot and commit it alongside the change, so the snapshot diff stays the reviewable record of every surface change.
+
+The guard covers the package root only — submodule paths, env vars, and CLI flags are out of its scope.
 
 ## Pre-release artifact smoke test
 
 The `Pre-release check` workflow (Actions tab, `workflow_dispatch`) builds and validates the mcpb bundle from any branch at a caller-supplied version (default `0.0.0-dev`), uploads it as a workflow artifact for manual install testing, and can optionally attach it to a deletable `v<version>-rc` pre-release. It runs the exact same steps a real release runs — both call the shared `.github/actions/build-mcpb` composite — so a green pre-release check means the release path's bundle build is green too. Project-specific artifact assertions (extra bundles, plugin manifests) belong in `packaging/pre-release-checks.sh` — an executable script the workflow runs when present, with `VERSION` and `BUNDLE` exported; the file is project-owned, and template updates never touch it.
+
+## Release model
+
+`main` is trunk. Everything merges there, and **merging is not releasing**: a merge feeds the rolling `edge` channel (next section) and nothing else. A release is a separate, deliberate event — dispatching the Release workflow — and the sections below say when and from where.
+
+**The default release path is trunk.** When a release is wanted and trunk is quiescent (no atomic epic mid-flight — the cut criterion below), dispatch Release on `main`. It cuts a stable from HEAD: no branch, no ceremony. Most releases should look like this.
+
+**The cut criterion.** An epic that ships atomically makes trunk unreleasable while it is open: releasing `main` ships HEAD, mid-story. Judge quiescence from the queryable signal the epic conventions record (see CONTRIBUTING.md's Epics section): preferably the **release milestone** — safe to cut means no open issues in the target release's milestone — with the **`ships-atomically` label** as the fallback when no milestone names a release yet. An open atomic epic with unclosed children means either release from a commit before the epic started (a `release/X.Y` branch cut from that commit) or wait. The Release workflow's advisory step ("Warn about open ships-atomically epics") surfaces open labelled epics on every `main` dispatch; it warns and never blocks, because the cut may still be intentional.
+
+**The `release/X.Y` branch is the exception tool**, for exactly two cases:
+
+1. **Dirty trunk at cut time** — trunk carries unfinished work that must be excluded from the release. Cut the branch from the last quiescent commit behind HEAD, stabilise there (rcs), and finalize the stable.
+2. **Patching a shipped release** — an already-released version needs a fix while `main` has moved on past it. The branch does not need to exist in advance: create it retroactively from the tag (`git branch release/X.Y vX.Y.Z`), land the fix, release.
+
+Fixes flow trunk → branch only: land on `main` first, cherry-pick to the branch. The automated release merge-back (see the release machinery section below) is the single reverse flow — it carries PSR's release commits, never features.
+
+**Branching cannot defer a structural refactor.** A refactor that changes existing behaviour makes every later cherry-pick across it conflict-prone, so a stabilisation branch buys no room for one. Land structural refactors early in a cycle, far from the next cut — not late, when a branch is about to be needed.
+
+**Cadence: value-triggered, not time-boxed.** No fixed release train — a calendar cadence is wrong for a low-traffic project and adds nothing to a busy one. Release when unreleased user-visible work (features, fixes, and especially security patches) has accumulated, and never hold a release hostage to unfinished work: excluding that work is exactly what the branch tool is for. The failure mode to avoid is drift — weeks of unreleased commits held behind one open epic.
+
+**The three channels and their promises:**
+
+| Channel | Identity | Promise |
+|---|---|---|
+| `edge` | none — the commit is the identity | the newest merged code, rebuilt on every merge to `main`; rolling and disposable |
+| rc | `vX.Y.Z-rc.N`, target fixed at cut time | a stabilisation step toward exactly that version, cut only from `release/X.Y` (a fresh stabilisation branch starts at `X.Y.0-rc.1`) |
+| stable | `vX.Y.Z` | a quiescent-trunk release (the default) or the promotion of a stabilisation branch (`finalize`) |
+
+An rc is not "the latest build with a version number" — that job belongs to `edge`, which costs one build-and-push and leaves no tag, release, or version bump behind. Cut rcs only when genuinely stabilising a specific release.
+
+## Unstable channel (rolling `edge` image)
+
+The `Unstable channel` workflow (`.github/workflows/unstable.yml`) runs on every push to `main` (plus manual dispatch for seeding) and rebuilds two artifacts from that commit: the container image, pushed to `ghcr.io/pvliesdonk/markdown-vault-mcp:edge` — a fixed rolling tag whose contents each merge replaces — and an mcpb bundle built through the same shared `.github/actions/build-mcpb` composite the release path uses, uploaded as the `mcpb-bundle-edge` workflow artifact at the constant version `0.0.0-dev`. The channel is deliberately versionless: no git tag, no GitHub release, no version bump, no manifest change. "Run the latest merged code" costs one build-and-push and leaves nothing behind; the image's `org.opencontainers.image.revision` label carries the exact commit. The docs site's rolling `unstable` version deploys from the same trigger (`docs.yml`), so it tracks merged code the way `edge` does. Cutting a version-numbered pre-release (rc) remains `release.yml`'s job, from a `release/X.Y` branch (see the release machinery section below); rc images ship only under their immutable `vX.Y.Z-rc.N` tags — `edge` is the sole rolling unstable tag.
+
+## Release machinery (branches, rcs, merge-back)
+
+Prerelease-ness is a property of the **branch**, not of a dispatch flag: `[tool.semantic_release.branches]` maps `main` to stable releases and `release/.*` to rc pre-releases (token `rc`), and every publish gate in `release.yml` derives from PSR's own outputs (`is_prerelease`, tag ordering) — there is no pre-release checkbox to desync. Dispatching Release on `main` cuts a stable; on a short-lived `release/X.Y` stabilisation branch it cuts the next rc, or the final stable `X.Y.Z` when the `finalize` input is checked (implemented as a one-run generated config override, because PSR's CLI can force prerelease on but not off). The `force` input is main-only — a release branch's target is fixed at cut time. Branches matching neither group cannot release; PSR refuses them.
+
+Rolling channels are ordering-aware: Docker `latest`/`vX`/`vX.Y`, the GitHub latest-release pointer, the docs `latest` alias, the marketplace entry, and the registry entry only follow a release that is the newest in the relevant series, so a backport patch cut from an old `release/X.Y` never repoints them backwards.
+
+**After any release cut from a `release/*` branch, the branch must merge back into `main`.** The `merge-back` job does this automatically via `scripts/merge_back.sh` (version-coupled files resolve to `main`'s side; real conflicts fail loudly for a manual `git merge --no-ff release/X.Y`). This is a hard requirement, not hygiene: with the release tag unreachable from `main`, PSR recomputes the same version from `main`'s own history, finds the tag taken repo-globally, and reports "already released" forever. When to cut a branch at all — and the default of releasing from a quiescent trunk without one — is the [release model](#release-model) above, not machinery.
+
+<!-- TEMPLATE-TRACKING-START -->
+## Release notes pages
+
+`docs/releases/` is the canonical human-facing release narrative: one page per minor series, patch releases appending a dated section to their series page. The GitHub release body is a summary plus a deep link to the page, and `CHANGELOG.md` stays machine-written — never move narrative prose into it. After every stable release, the **Release Notes** workflow has an agent research the release range through the GitHub API (linked issues and PRs, never commit subjects) and open a PR adding or extending the page; the `writing-release-notes` skill (`.claude/skills/writing-release-notes/SKILL.md`) is the contract it follows. Notes pages always land on `main` via that PR — never by direct push, and never on a `release/*` branch.
+
+Two rules for working with these PRs:
+
+- **The evidence contract governs the page.** Every causal claim must trace to a linked issue or PR; no evidence, no narrative. Review a notes PR as an evidence check — follow the links and verify they support the claims — not as a prose polish; Vale (including the `ai-tells` pack) already gated the prose.
+- **Merging is what publishes.** On merge, the **Release Notes Publish** workflow upgrades the release body from the page's marked summary block and redeploys the minor's versioned docs so the deep link resolves. Notes PRs are tooling-authored and need no separate issue (same class as Renovate bumps).
+<!-- TEMPLATE-TRACKING-END -->
 
 ## Tool Registration Checklist
 
@@ -365,6 +448,10 @@ Every MCP tool you register must carry the full set of metadata below — not ju
 
 For services that talk to a remote upstream (e.g. paperless, an HTTP API), wire the upstream version inside the `DOMAIN-UPSTREAM-START` / `DOMAIN-UPSTREAM-END` sentinel in `src/markdown_vault_mcp/server.py`. Pass `upstream_version=` (a zero-arg callable returning a dict / str / None) and optionally `upstream_label="<service>"` (default `"upstream"`). The simplest pattern is a module-level upstream client (typically constructed from env vars at import time) whose version method is referenced from the callable — `CurrentContext()` is a FastMCP DI marker that only resolves inside parameter defaults, so it cannot be called directly from a zero-arg provider. The block is preserved across `copier update`.
 
+## Repository protection (rulesets)
+
+`.github/rulesets/*.json` are the source of truth for this repository's branch and tag rulesets — required PRs + the `CI Success` check on `main` and `release/*`, deletion/force-push protection for `v*` tags — and `bootstrap.yml` applies them (upsert by name) on pushes touching those files and on manual dispatch. Never adjust protection in the GitHub UI: the next bootstrap run resets it to the checked-in state. Change the JSON files instead. The release pipeline's `RELEASE_TOKEN` (a repository admin's PAT) bypasses these rules **by design** via the admin-role bypass entry — PSR's release commit + tag push and the merge-back to `main` are direct pushes. Posture and bypass model: `docs/deployment/repository-protection.md`.
+
 <!-- TEMPLATE-TRACKING-START -->
 ## Shared Infrastructure
 
@@ -378,6 +465,8 @@ Fixes and improvements to shared code land in those repos and propagate here via
 ## Contributing fixes upstream
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the three-tier routing (library to `fastmcp-pvl-core`, template to `fastmcp-server-template`, domain to this repo), the issue/PR discipline, and the uncertainty rule. CONTRIBUTING.md is the single source; this section is a pointer.
+
+The `authoring-issues-prs` skill (`.claude/skills/authoring-issues-prs/SKILL.md`) fires when filing issues or PRs: it walks the routing, picks the issue form, and performs the follow-up steps forms cannot (native sub-issue links for epics, the release milestone or `ships-atomically` label). The skill is template-owned and re-rendered on `copier update`; project-specific authoring conventions belong inside its `DOMAIN-AUTHORING` sentinel block.
 
 If a conflict marker appears in a copier-update bot PR, the conflict itself often signals a template bug — investigate whether the template's version needs fixing before resolving locally.
 <!-- TEMPLATE-TRACKING-END -->
