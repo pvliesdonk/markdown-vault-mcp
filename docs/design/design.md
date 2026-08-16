@@ -2115,6 +2115,13 @@ stays allowed and keeps its regular concurrency semantics; `edit()`,
 `ConcurrentModificationError` rather than the protection error. Default
 `False`, which preserves unconditional overwrite.
 
+The server's own read-modify-write maintenance of generated OKF files
+(`_okf_convention`'s `log.md` bullet, `OkfMigrationManager`'s `index.md`
+regeneration and link conversion) passes `write(..., allow_overwrite=True)`.
+The flag governs what a client can do to content it has not read; it is not a
+lock on the files themselves, and `allow_overwrite` is not reachable from the
+`write` tool.
+
 **`edit()` behavior**: supports three modes: (1) exact match: reads file,
 verifies `old_text` exists exactly once, replaces with `new_text`; (2) line-range:
 replaces lines `line_start..line_end` (1-based, inclusive) with `new_text`;

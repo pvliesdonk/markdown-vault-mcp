@@ -133,6 +133,11 @@ left alone. Uploads through a `create_upload_link` capability URL land through
 the same attachment-write path, so they are guarded too: mint the link for a
 fresh path, or remove the old attachment first.
 
+The server's own upkeep of the generated OKF files (the `log.md` bullet after
+an enforced write, and `index.md` regeneration) is exempt: those flows read the
+file and rewrite it in the same breath, which is what the guard exists to
+distinguish from a blind replacement.
+
 The default is `false`, which keeps the historical overwrite behavior.
 
 ## Index Build Timeout

@@ -134,7 +134,7 @@ class ConventionMaintainer:
                 new_text = append_okf_log_entry(
                     text, date=self._today().isoformat(), summary=summary
                 )
-                self._doc_mgr.write(log_path, new_text)
+                self._doc_mgr.write(log_path, new_text, allow_overwrite=True)
         except Exception:
             logger.warning("okf_convention_log_failed path=%s", log_path, exc_info=True)
 

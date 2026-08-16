@@ -111,7 +111,7 @@ class OkfMigrationManager:
             converted += n_conv
             skipped += n_skip
             if new_content != note_content.content:
-                self._doc_mgr.write(note.path, new_content)
+                self._doc_mgr.write(note.path, new_content, allow_overwrite=True)
                 files_changed += 1
         return OkfConvertResult(
             files_changed=files_changed,
@@ -182,7 +182,10 @@ class OkfMigrationManager:
         heading = folder.rsplit("/", 1)[-1] if folder else "Index"
         body = build_index_markdown(heading, entries)
         self._doc_mgr.write(
-            index_path, body, frontmatter=existing_fm if preserved else None
+            index_path,
+            body,
+            frontmatter=existing_fm if preserved else None,
+            allow_overwrite=True,
         )
         return OkfIndexResult(
             path=index_path, entries=len(entries), frontmatter_preserved=preserved

@@ -292,6 +292,15 @@ class TestWriteProtectExisting:
         with pytest.raises(ConcurrentModificationError):
             protected_doc_mgr.write("alpha.md", "# Replaced\n", if_match="deadbeef")
 
+    def test_allow_overwrite_bypasses_the_guard(
+        self, protected_doc_mgr: DocumentManager, doc_vault: Path
+    ) -> None:
+        result = protected_doc_mgr.write(
+            "alpha.md", "# Replaced\n", allow_overwrite=True
+        )
+        assert result.created is False
+        assert (doc_vault / "alpha.md").read_text(encoding="utf-8") == "# Replaced\n"
+
     def test_edit_is_unaffected(self, protected_doc_mgr: DocumentManager) -> None:
         result = protected_doc_mgr.edit("alpha.md", "Hello world.", "Goodbye world.")
         assert result.path == "alpha.md"

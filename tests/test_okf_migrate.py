@@ -118,6 +118,22 @@ class TestConvertLinks:
         finally:
             col.close()
 
+    def test_runs_under_write_protection(self, source_dir: Path) -> None:
+        """The transform rewrites notes it has read, so the guard exempts it."""
+        col = Vault(source_dir=source_dir, read_only=False, write_protect_existing=True)
+        col.index.build_index()
+        try:
+            _write(col, "x.md", "# X\n")
+            _write(col, "y.md", "# Y\nSee [[x]].\n")
+
+            result = col.writer.okf_convert_links()
+            wait_for_writer_drain(col)
+
+            assert result.files_changed == 1
+            assert "(/x.md)" in col.reader.read("y.md").content
+        finally:
+            col.close()
+
 
 class TestGenerateIndex:
     def test_lists_notes_and_preserves_frontmatter(self, vault: Vault) -> None:
@@ -146,6 +162,22 @@ class TestGenerateIndex:
         assert "- [Plain Note](/plain.md)" in body
         # index.md does not list itself.
         assert "/index.md)" not in body
+
+    def test_regenerates_under_write_protection(self, source_dir: Path) -> None:
+        """Regeneration reads the existing index.md, so the guard exempts it."""
+        col = Vault(source_dir=source_dir, read_only=False, write_protect_existing=True)
+        col.index.build_index()
+        try:
+            _write(col, "index.md", '---\nokf_version: "0.2"\n---\n# Old body\n')
+            _write(col, "plain.md", "# Plain Note\n")
+
+            result = col.writer.okf_generate_index()
+            wait_for_writer_drain(col)
+
+            assert result.frontmatter_preserved is True
+            assert "- [Plain Note](/plain.md)" in col.reader.read("index.md").content
+        finally:
+            col.close()
 
     def test_folder_index(self, vault: Vault) -> None:
         _write(vault, "guides/one.md", "# One\n")

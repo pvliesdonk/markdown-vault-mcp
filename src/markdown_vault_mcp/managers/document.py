@@ -783,6 +783,8 @@ class DocumentManager:
         content: str,
         frontmatter: dict[str, Any] | None = None,
         if_match: str | None = None,
+        *,
+        allow_overwrite: bool = False,
     ) -> WriteResult:
         """Create or overwrite a document.
 
@@ -800,6 +802,9 @@ class DocumentManager:
                 that does not yet exist raises
                 :exc:`~markdown_vault_mcp.exceptions.ConcurrentModificationError`.
                 Pass ``None`` (default) to skip the check.
+            allow_overwrite: Exempts this call from ``write_protect_existing``.
+                Reserved for the server's own read-modify-write maintenance of
+                generated files; not reachable from the ``write`` tool.
 
         Returns:
             :class:`~markdown_vault_mcp.types.WriteResult`.
@@ -815,7 +820,8 @@ class DocumentManager:
         self._check_writable()
         with self._file_write_lock:
             abs_path = self._validate_path(path)
-            self._check_no_clobber(abs_path, path, if_match)
+            if not allow_overwrite:
+                self._check_no_clobber(abs_path, path, if_match)
             self._check_if_match(abs_path, path, if_match)
             created = not abs_path.is_file()
 
