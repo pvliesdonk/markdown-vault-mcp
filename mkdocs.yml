@@ -107,6 +107,9 @@ plugins:
           - api/providers.md: Embedding provider API reference
           - api/types.md: All data types returned by the Vault API
           - api/exceptions.md: All exceptions raised by the library
+        Releases:
+          - releases/index.md: Release notes overview — page-per-minor model and available pages
+          - releases/3.1.md: Release notes for 3.1 — upgrade notes, highlights, and linked evidence
         # PROJECT-LLMSTXT-SECTIONS-END
   - mkdocstrings:
       handlers:
@@ -189,4 +192,7 @@ nav:
       - Embedding Providers: api/providers.md
       - Types: api/types.md
       - Exceptions: api/exceptions.md
+  - Releases:
+      - Overview: releases/index.md
+      - "3.1": releases/3.1.md
   # PROJECT-NAV-END

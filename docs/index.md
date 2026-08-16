@@ -39,6 +39,12 @@ A few flows the server enables with an LLM on top (none of these require a bespo
 
 See [MCP Prompts](prompts.md) for the codified workflows and the ambient-pattern reference.
 
+## Release notes
+
+Per-minor [release notes](releases/index.md) explain what changed in each
+release, who is affected, and what to check before upgrading. The GitHub
+release body links to the matching page.
+
 ## Quick Start
 
 ### As a library
