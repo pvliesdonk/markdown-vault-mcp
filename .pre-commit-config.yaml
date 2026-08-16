@@ -26,8 +26,6 @@ repos:
         pass_filenames: false
         args: [src/, tests/]
 
-<<<<<<< before updating
-=======
 
       # Structural-health gate: strict ruff structural rules on CHANGED LINES
       # ONLY, sharing scripts/structural_gate.sh with the CI `structure` job so
@@ -37,7 +35,6 @@ repos:
       # release/X.Y is measured against that base rather than origin/main.
       # Pre-push (not commit-time): a commit has no base to compare and may be
       # partial; pre-push sees the full branch range CI checks.
->>>>>>> after updating
       - id: structural-diff-gate
         name: structural quality (diff vs derived base)
         entry: bash scripts/structural_gate.sh

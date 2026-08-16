@@ -42,13 +42,7 @@ With optional dependencies:
 uv pip install markdown-vault-mcp[all]
 ```
 
-<<<<<<< before updating
 ## From Source
-=======
-The `latest` tag is the newest stable release. The rolling `edge` tag tracks every merge to `main` and carries no version identity; see [Image tags](deployment/docker.md#image-tags) for the full list.
-
-## From source
->>>>>>> after updating
 
 ```bash
 git clone https://github.com/pvliesdonk/markdown-vault-mcp.git
@@ -64,10 +58,10 @@ docker pull ghcr.io/pvliesdonk/markdown-vault-mcp:latest
 
 The Docker image uses `[all]` (MCP + FastEmbed + API embeddings). Semantic search is available by default with FastEmbed and can switch to Ollama/OpenAI when configured.
 
-For early adopters who want to test unreleased changes, an `:unstable` tag is published by the release workflow's pre-release mode. It tracks the latest release candidate and may include in-progress features. The floating `:latest`, `:vN`, and `:vN.M` tags only move on stable releases.
+The `latest` tag is the newest stable release. For early adopters who want to test unreleased changes, the rolling `edge` tag tracks every merge to `main` and carries no version identity; see [Image tags](deployment/docker.md#image-tags) for the full list. The floating `:latest`, `:vN`, and `:vN.M` tags only move on stable releases.
 
 ```bash
-docker pull ghcr.io/pvliesdonk/markdown-vault-mcp:unstable
+docker pull ghcr.io/pvliesdonk/markdown-vault-mcp:edge
 ```
 
 See [Docker deployment](deployment/docker.md) for compose setup and volume configuration.
