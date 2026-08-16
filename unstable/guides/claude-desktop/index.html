@@ -348,6 +348,26 @@
   
 
       
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../releases/" class="md-tabs__link">
+          
+  
+  
+  Releases
+
+        </a>
+      </li>
+    
+  
+
+      
     </ul>
   </div>
 </nav>
@@ -1663,6 +1683,62 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deployment/release-process/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release Process
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deployment/repository-protection/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Repository Protection
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -1907,6 +1983,123 @@
     
   
     Exceptions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Releases
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Releases
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../releases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../releases/3.1/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    3.1
   
 
     
@@ -2228,7 +2421,7 @@
 </ol>
 <div class="admonition note">
 <p class="admonition-title">Configured through the GUI wizard</p>
-<p>The <code>.mcpb</code> bundle surfaces a broad set of env vars in Claude Desktop's wizard: vault path, read-only mode, state/index/embedding paths, the embedding provider and its per-provider model settings, git configuration, and auth (bearer / OIDC), among others. If you need to set an option the wizard doesn't expose, use Step 1 (manual config) instead.</p>
+<p>The <code>.mcpb</code> bundle's wizard shows a deliberately small set of fields, generated from the server's configuration surface so it can never drift from the code: the vault directory (required), read-only mode, exclude patterns, the embedding provider with its per-provider settings and API key, git sync with its access token, and the server name and log level. Everything else (state and index paths, tuning, HTTP auth) stays configurable the documented way through env vars (see <a href="../../configuration/">Configuration</a>); if you need one of those, use Step 1 (manual config) instead.</p>
 </div>
 <hr />
 <h2 id="step-1-basic-read-only-setup">Step 1: Basic read-only setup<a class="headerlink" href="#step-1-basic-read-only-setup" title="Permanent link">&para;</a></h2>

@@ -348,6 +348,26 @@
   
 
       
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../releases/" class="md-tabs__link">
+          
+  
+  
+  Releases
+
+        </a>
+      </li>
+    
+  
+
+      
     </ul>
   </div>
 </nav>
@@ -983,6 +1003,17 @@
   
     <nav class="md-nav" aria-label="Common to all providers">
       <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#slow-or-cpu-only-backends" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Slow or CPU-only backends
+      
+    </span>
+  </a>
+  
+</li>
         
           <li class="md-nav__item">
   <a href="#chunk-sizing-and-the-embedding-context" class="md-nav__link">
@@ -1635,6 +1666,62 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deployment/release-process/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release Process
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deployment/repository-protection/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Repository Protection
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -1899,6 +1986,123 @@
   
 
     
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Releases
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Releases
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../releases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../releases/3.1/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    3.1
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
   </ul>
 </nav>
                   </div>
@@ -2108,6 +2312,17 @@
   
     <nav class="md-nav" aria-label="Common to all providers">
       <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#slow-or-cpu-only-backends" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Slow or CPU-only backends
+      
+    </span>
+  </a>
+  
+</li>
         
           <li class="md-nav__item">
   <a href="#chunk-sizing-and-the-embedding-context" class="md-nav__link">
@@ -2359,6 +2574,17 @@ curl<span class="w"> </span>https://api.openai.com/v1/embeddings<span class="w">
 <p>The ONNX batch size is tuned for the default <code>BAAI/bge-small-en-v1.5</code> model (512-token context). ONNX self-attention scales as O(batch × seq_len²) in RAM; long-context models require a much smaller batch size to avoid OOM — see issue <a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/306">#306</a>.</p>
 <p>For very large vaults (thousands of notes), the first startup may take several minutes. If the process is interrupted mid-build, it will rebuild from scratch on the next startup — partial indices are never persisted.</p>
 </div>
+<h3 id="slow-or-cpu-only-backends">Slow or CPU-only backends<a class="headerlink" href="#slow-or-cpu-only-backends" title="Permanent link">&para;</a></h3>
+<p>Each embedding request has a wall-clock budget, <code>MARKDOWN_VAULT_MCP_EMBED_TIMEOUT_S</code> (default <code>30.0</code> seconds). It applies to the network providers, OpenAI and Ollama. FastEmbed runs in-process with no network call and ignores it.</p>
+<p>The budget and the batch size interact, and the default pairing is tight on modest hardware. On a CPU-only Ollama running a large model such as <code>bge-m3</code>, a single chunk can take 4 to 11 seconds, so the default batch of 4 chunks may need 20 to 44 seconds against a 30-second budget. The result is intermittent timeouts under ordinary writing load rather than an outright failure, which makes it easy to misread (issue <a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/954">#954</a>).</p>
+<p>If you see <code>embeddings request failed: Request timed out</code>, adjust one or both:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># give each request more room</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">MARKDOWN_VAULT_MCP_EMBED_TIMEOUT_S</span><span class="o">=</span><span class="m">120</span>
+
+<span class="c1"># and/or send fewer chunks per request, so each one finishes sooner</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">MARKDOWN_VAULT_MCP_EMBEDDING_BATCH_SIZE</span><span class="o">=</span><span class="m">2</span>
+</code></pre></div>
+<p>Raising the timeout to 60 to 120 seconds and dropping the batch to 1 or 2 covers most CPU-only setups. Note that the two settings pull in opposite directions on throughput: a smaller batch means more round-trips, so prefer raising the timeout first and shrink the batch only if individual requests still overrun.</p>
 <h3 id="chunk-sizing-and-the-embedding-context">Chunk sizing and the embedding context<a class="headerlink" href="#chunk-sizing-and-the-embedding-context" title="Permanent link">&para;</a></h3>
 <p>The chunker (shared by keyword and semantic search) bounds every chunk by a word cap (<code>MARKDOWN_VAULT_MCP_MAX_CHUNK_WORDS</code>, default <code>400</code>) and a character cap (<code>MARKDOWN_VAULT_MCP_MAX_CHUNK_CHARS</code>). The character cap exists because a chunk that fits the word cap can still exceed the embedding model's <strong>token</strong> limit; token-dense content (tables, code, CJK) packs far more tokens per word. Without it, such a chunk would abort the build (Ollama returns HTTP 400) or be silently truncated (FastEmbed), producing degraded embeddings.</p>
 <p>When you don't set <code>MAX_CHUNK_CHARS</code> explicitly, the default is <code>min(1500, round(context_length × 2.8))</code>: retrieval quality peaks at ~256 to 512 tokens per chunk regardless of the model's context, and the 1500-char ceiling keeps the fastembed/ONNX path clear of the out-of-memory regime seen with oversize chunks (issue <a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/306">#306</a>). The result:</p>

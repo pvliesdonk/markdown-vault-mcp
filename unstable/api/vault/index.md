@@ -25,7 +25,7 @@ print(note.content)
 
 ## API Reference
 
-## `Vault(*, source_dir, index_path=None, embeddings_path=None, embedding_provider=None, read_only=True, state_path=None, indexed_frontmatter_fields=None, required_frontmatter=None, chunk_strategy='heading', on_write=None, git_strategy=None, git_pull_interval_s=0, exclude_patterns=None, attachment_extensions=None, max_attachment_size_mb=1.0, max_note_read_bytes=262144, chunks_per_file=2, snippet_words=200, length_downweight_alpha=0.25, max_chunk_words=400, max_chunk_chars=None, max_chunk_chars_override=None, chunk_overlap_words=0, summarizer=None, summarize_max_notes=50, summarize_max_input_chars=200000, summarize_inline_timeout=30.0, title_field='title', searchable_frontmatter_fields=None, embed_context=False, embedding_batch_size=4, folder_weights=None, fts_weights=None, conventions_file='_conventions.md', okf_mode='auto', okf_write=False)`
+## `Vault(*, source_dir, index_path=None, embeddings_path=None, embedding_provider=None, read_only=True, state_path=None, indexed_frontmatter_fields=None, required_frontmatter=None, chunk_strategy='heading', on_write=None, git_strategy=None, git_pull_interval_s=0, exclude_patterns=None, attachment_extensions=None, max_attachment_size_mb=1.0, max_note_read_bytes=262144, chunks_per_file=2, snippet_words=200, length_downweight_alpha=0.25, max_chunk_words=400, max_chunk_chars=None, max_chunk_chars_override=None, chunk_overlap_words=0, summarizer=None, summarize_max_notes=50, summarize_max_input_chars=200000, title_field='title', searchable_frontmatter_fields=None, embed_context=False, embedding_batch_size=4, folder_weights=None, fts_weights=None, conventions_file='_conventions.md', okf_mode='auto', okf_write=False)`
 
 Facade over FTS5 index, vector index, and change tracker.
 
@@ -94,22 +94,6 @@ Raises:
 | Type           | Description                                                                                                                         |
 | -------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | `RuntimeError` | If no summarization backend was configured (set OPENAI_API_KEY or an OpenAI-compatible base URL and install the [summarize] extra). |
-
-### `summary_jobs`
-
-Background-summarize job store (#937).
-
-Holds summaries promoted to background jobs when a `summarize` call exceeds its inline deadline; polled by the `get_summary` tool.
-
-Raises:
-
-| Type           | Description                                                                                 |
-| -------------- | ------------------------------------------------------------------------------------------- |
-| `RuntimeError` | If no summarization backend was configured (the store rides alongside the summarize facet). |
-
-### `summarize_inline_timeout`
-
-Soft deadline (seconds) before a `summarize` call is promoted to a background job (#937).
 
 ### `conventions`
 

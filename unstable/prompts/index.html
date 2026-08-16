@@ -348,6 +348,26 @@
   
 
       
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../releases/" class="md-tabs__link">
+          
+  
+  
+  Releases
+
+        </a>
+      </li>
+    
+  
+
+      
     </ul>
   </div>
 </nav>
@@ -1248,6 +1268,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#summarize-subtree" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        summarize-subtree
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#research" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1645,6 +1676,62 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../deployment/release-process/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release Process
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../deployment/repository-protection/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Repository Protection
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -1909,6 +1996,123 @@
   
 
     
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Releases
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Releases
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../releases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../releases/3.1/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    3.1
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
   </ul>
 </nav>
                   </div>
@@ -1951,6 +2155,17 @@
     <span class="md-ellipsis">
       
         summarize
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#summarize-subtree" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        summarize-subtree
       
     </span>
   </a>
@@ -2186,6 +2401,12 @@
 <td>Structured summary of a document</td>
 </tr>
 <tr>
+<td><a href="#summarize-subtree"><code>summarize-subtree</code></a></td>
+<td><code>paths</code>, <code>focus</code> (optional)</td>
+<td>Read</td>
+<td>Multi-note or folder summary using the client's own model, processed in batches (delegated to subagents when the client has them)</td>
+</tr>
+<tr>
 <td><a href="#research"><code>research</code></a></td>
 <td><code>topic</code></td>
 <td>Write</td>
@@ -2244,6 +2465,44 @@
 </tbody>
 </table>
 <p><strong>Workflow:</strong> Calls <code>read</code> on the given path, then produces a concise overview covering the document's main topics and key points.</p>
+<p>For a folder or several notes, use <a href="#summarize-subtree"><code>summarize-subtree</code></a> (or the <a href="../tools/#summarize"><code>summarize</code> tool</a> where a backend is configured) instead of repeating this prompt per note.</p>
+<h2 id="summarize-subtree"><code>summarize-subtree</code><a class="headerlink" href="#summarize-subtree" title="Permanent link">&para;</a></h2>
+<p>Summarize a folder subtree or a set of notes with the <em>client's</em> own model. The prompt ships the same map-reduce recipe the server-side <a href="../tools/#summarize"><code>summarize</code> tool</a> runs internally: partition into batches, one partial summary per batch, combine. Note bodies stay out of the retained conversation context: with subagents each phase runs in its own subagent, and without them the client processes batches sequentially, carrying only partial summaries forward. It needs no summarization backend and no API key on the server.</p>
+<p><strong>The prompt adapts to the server's configuration.</strong> Whether summarization runs server-side or client-side is an operator decision, expressed by configuring a summarization backend or not:</p>
+<ul>
+<li><strong>Backend configured</strong>: the <a href="../tools/#summarize"><code>summarize</code> tool</a> is registered and the prompt opens by preferring it: a single call with no context overhead for the client. The recipe remains available for when the user wants their own model to do the work.</li>
+<li><strong>No backend</strong>: the tool is absent and the prompt carries the recipe alone, without mentioning a tool the server does not have. The server instructions point clients at the prompt in this case.</li>
+</ul>
+<p>For operators deciding whether to configure a backend: the tool is the most efficient path for the client's primary model. Its backend usage is billed separately from the client, though; that matters when client usage is already covered by a subscription plan, and not at all for a local endpoint or a pay-per-token setup. Neither route is inherently more private: the backend can be a local model that discloses less than a cloud-hosted client model. And the backend receives frozen text, where a mapper subagent can follow a link mid-summary to resolve a reference.</p>
+<p><strong>Parameters:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>paths</code></td>
+<td>string</td>
+<td>One or more note paths and/or folder prefixes, separated by commas (such as <code>projects/alpha</code> or <code>notes/a.md, notes/b.md</code>)</td>
+</tr>
+<tr>
+<td><code>focus</code></td>
+<td>string | null</td>
+<td>Optional free-text steer, such as <code>"extract action items"</code>. Empty produces a general summary.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Workflow:</strong></p>
+<ol>
+<li><strong>Plan</strong>: expand folder prefixes via <code>get_toc</code>, de-duplicate, and pack the note paths into batches (delegated to a subagent when available; the toc carries paths, titles, and headings, never bodies).</li>
+<li><strong>Map</strong>: one detailed partial summary per batch, preserving concrete specifics and referencing every note by path. Parallel subagents fan out one mapper each; sequential subagents run one at a time; without subagents the client reads one batch at a time, keeping only each batch's partial summary.</li>
+<li><strong>Reduce</strong>: partial summaries are combined into one cohesive summary, by a reducer subagent or inline.</li>
+<li><strong>Deliver</strong>: the final summary plus a coverage note (notes summarized, notes skipped).</li>
+</ol>
 <h2 id="research"><code>research</code><a class="headerlink" href="#research" title="Permanent link">&para;</a></h2>
 <p>Search for a topic, synthesize findings across multiple documents, and create a new research note.</p>
 <p><strong>Parameters:</strong></p>

@@ -39,10 +39,12 @@ markdown-vault-mcp is a generic markdown vault MCP server with FTS5 full-text se
 ## Deployment
 
 - [Overview](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deployment/index.md): Deployment overview
-- [Docker](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deployment/docker/index.md): Docker Compose, Traefik, volumes, UID/GID
+- [Docker](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deployment/docker/index.md): Docker Compose, Traefik, volumes, UID/GID, image tags
 - [systemd](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deployment/systemd/index.md): systemd service — package install, manual install, security hardening
 - [Claude Desktop](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deployment/claude-desktop/index.md): Claude Desktop configuration reference
 - [OIDC Authentication](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deployment/oidc/index.md): OIDC authentication setup with Authelia
+- [Release Process](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deployment/release-process/index.md): Branch-aware release model — channels, release branches, merge-back
+- [Repository Protection](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deployment/repository-protection/index.md): Repository rulesets — per-branch posture and bypass model
 
 ## Python API
 
@@ -53,4 +55,9 @@ markdown-vault-mcp is a generic markdown vault MCP server with FTS5 full-text se
 - [Embedding Providers](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/api/providers/index.md): Embedding provider API reference
 - [Types](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/api/types/index.md): All data types returned by the Vault API
 - [Exceptions](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/api/exceptions/index.md): All exceptions raised by the library
+
+## Releases
+
+- [Overview](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/index.md): Release notes overview — page-per-minor model and available pages
+- [3.1](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/3.1/index.md): Release notes for 3.1 — upgrade notes, highlights, and linked evidence
 

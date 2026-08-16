@@ -45,6 +45,10 @@ A few flows the server enables with an LLM on top (none of these require a bespo
 
 See [MCP Prompts](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/prompts/index.md) for the codified workflows and the ambient-pattern reference.
 
+## Release notes
+
+Per-minor [release notes](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/index.md) explain what changed in each release, who is affected, and what to check before upgrading. The GitHub release body links to the matching page.
+
 ## Quick Start
 
 ### As a library
@@ -163,10 +167,10 @@ docker pull ghcr.io/pvliesdonk/markdown-vault-mcp:latest
 
 The Docker image uses `[all]` (MCP + FastEmbed + API embeddings). Semantic search is available by default with FastEmbed and can switch to Ollama/OpenAI when configured.
 
-For early adopters who want to test unreleased changes, an `:unstable` tag is published by the release workflow's pre-release mode. It tracks the latest release candidate and may include in-progress features. The floating `:latest`, `:vN`, and `:vN.M` tags only move on stable releases.
+The `latest` tag is the newest stable release. For early adopters who want to test unreleased changes, the rolling `edge` tag tracks every merge to `main` and carries no version identity; see [Image tags](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deployment/docker/#image-tags) for the full list. The floating `:latest`, `:vN`, and `:vN.M` tags only move on stable releases.
 
 ```
-docker pull ghcr.io/pvliesdonk/markdown-vault-mcp:unstable
+docker pull ghcr.io/pvliesdonk/markdown-vault-mcp:edge
 ```
 
 See [Docker deployment](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deployment/docker/index.md) for compose setup and volume configuration.
@@ -247,6 +251,16 @@ Operators can trim which tools this instance exposes. Each variable takes a comm
 - `MARKDOWN_VAULT_MCP_TOOLS_DENY`: hide the listed tools.
 
 Hidden tools disappear from `tools/list` and are rejected on `tools/call`; resources and prompts are unaffected. Setting both variables, or setting one to a value with no names in it, is a startup error. A name matching no registered tool is ignored, but an allowlist that matches nothing logs a startup `WARNING` since the instance then exposes zero tools. See `fastmcp-pvl-core`'s README for the full semantics.
+
+## Background tasks
+
+Every Markdown Vault MCP instance wires a background-task backend at startup, so a tool registered with `task=True` works with no extra setup. One variable picks the backend:
+
+- `MARKDOWN_VAULT_MCP_TASKS_URL`: `memory://` runs tasks in-process and loses them on restart; `redis://...` is durable and shared across processes.
+
+Unset, a `redis://` `MARKDOWN_VAULT_MCP_KV_STORE_URL` is reused for tasks as well, so a single URL configures every stateful subsystem. With neither set, the backend falls back to `memory://`, which the server logs at startup when running over HTTP. The queue name comes from the `MARKDOWN_VAULT_MCP` prefix, so two servers sharing one Redis do not share a queue.
+
+Worker tuning stays on the native `FASTMCP_DOCKET_*` variables (`FASTMCP_DOCKET_CONCURRENCY` and friends, listed in `.env.example`). Set the backend through `MARKDOWN_VAULT_MCP_TASKS_URL` rather than `FASTMCP_DOCKET_URL`: the former wins when both are set, and the server warns about the disagreement.
 
 ## Core
 
@@ -336,9 +350,9 @@ Embedding provider auto-detection
 
 When `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` is not set, the server tries providers in this order:
 
-1. **OpenAI** — if `OPENAI_API_KEY` is set
-1. **Ollama** — if `OLLAMA_HOST` is reachable
-1. **FastEmbed** — if the `fastembed` package is installed
+1. **OpenAI**, if `OPENAI_API_KEY` is set
+1. **Ollama**, if `OLLAMA_HOST` is reachable
+1. **FastEmbed**, if the `fastembed` package is installed
 
 Both API providers speak the OpenAI-compatible embeddings protocol through the official `openai` SDK: the `ollama` provider is a preset that targets `{OLLAMA_HOST}/v1` with no key required. The `OLLAMA_*` settings and their behavior are unchanged; `OLLAMA_CPU_ONLY` uses Ollama's native API, which is the only way to request CPU-only inference.
 
@@ -359,7 +373,8 @@ Powers the optional [`summarize`](https://pvliesdonk.github.io/markdown-vault-mc
 | `MARKDOWN_VAULT_MCP_SUMMARIZE_MAX_NOTES`       | int       | `50`                        | Cap on notes summarised per tool call; this is the coverage and cost lever. It is also the ceiling for the tool's per-call `max_notes` parameter. Notes beyond it are omitted and counted in the response's `notes_omitted`                                                                                                           |
 | `MARKDOWN_VAULT_MCP_SUMMARIZE_MAX_INPUT_CHARS` | int       | `200000`                    | Character budget of a single model request. A larger input is split into batches, each batch summarized, and the partial summaries combined (map-reduce), so this bounds request size, not coverage. Smaller values mean more model calls                                                                                             |
 | `MARKDOWN_VAULT_MCP_SUMMARIZE_TIMEOUT`         | float (s) | `120`                       | Per-request wall-clock budget for a single backend call. On timeout the tool fails with a clear message that says how to fit under the limit (narrow the request, or raise this) instead of running to the ~600 s default of the OpenAI SDK while the client abandons the request. Set it **below** your MCP client's request timeout |
-| `MARKDOWN_VAULT_MCP_SUMMARIZE_INLINE_TIMEOUT`  | float (s) | `30`                        | Inline deadline: a `summarize` call that runs longer is promoted to a background job (`{"status": "in_progress", "job_id": …}`) and retrieved later via `get_summary`, so the tool always responds promptly. Keep it comfortably below the client's request timeout; must be `<=` `SUMMARIZE_TIMEOUT`                                 |
+
+The former `MARKDOWN_VAULT_MCP_SUMMARIZE_INLINE_TIMEOUT` variable is gone: the soft deadline before a slow `summarize` call is promoted to a background job is no longer summarize-specific. It now belongs to the [background jobs](#background-jobs) subsystem as `MARKDOWN_VAULT_MCP_JOBS_SOFT_DEADLINE_S`.
 
 The bare `OPENAI_BASE_URL` is honored as a *value* fallback when a key is set (such as an organization-wide proxy), but it never enables the tool by itself: setting it purely for embeddings does not switch summarization on.
 
@@ -376,6 +391,18 @@ The `summarize` tool sends the referenced notes to the external model provider. 
 Explicit vs. auto-detect failure handling
 
 Same posture as embeddings: if you set `MARKDOWN_VAULT_MCP_SUMMARIZE_PROVIDER` explicitly and the backend cannot be loaded (missing SDK, empty key, unrecognised value), startup **fails fast** with a `ConfigurationError`. When the provider is *unset* (auto-detect) and the backend cannot be loaded, the server logs a warning and the `summarize` tool stays hidden.
+
+## Background Jobs
+
+Long-running tools (`summarize`, `reindex`, `build_embeddings`) are dual-mode: an MCP client that speaks background tasks runs them as protocol-native tasks (see [Background tasks](#background-tasks) for the backend), while any other client runs them in the foreground up to a soft deadline. A call that beats the deadline returns its result inline; a slower call keeps running in the background and immediately returns `{"status": "working", "job_id": …}`. Fetch the outcome with the [`get_job_result`](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/tools/#get_job_result) tool. These knobs are owned by the shared jobs subsystem, not by any single tool:
+
+| Variable                                  | Type      | Default | Description                                                                                                                                   |
+| ----------------------------------------- | --------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MARKDOWN_VAULT_MCP_JOBS_SOFT_DEADLINE_S` | float (s) | `25`    | Foreground window before a still-running call is promoted to a background job. Keep it below the strictest MCP-client request timeout in play |
+| `MARKDOWN_VAULT_MCP_JOBS_RESULT_TTL_S`    | float (s) | `3600`  | Job-record retention, measured from creation. After expiry the `job_id` is unknown, so fetch results promptly                                 |
+| `MARKDOWN_VAULT_MCP_JOBS_MAX_PER_SUBJECT` | int       | `256`   | Cap on live job records per calling subject; promotion past it fails the call                                                                 |
+
+Job records live in the unified key-value backend (`MARKDOWN_VAULT_MCP_KV_STORE_URL`, namespace `jobs`). When that variable is unset, job records use an in-process memory store rather than the file-tree default of other subsystems: records are ephemeral by design, and the file default's `/data/state` path only exists in the Docker image. A promoted job runs on the serving process and does not survive a restart either way; durable cross-restart execution is what the native task path with a `redis://` tasks backend is for.
 
 ## Git Integration
 
@@ -728,7 +755,7 @@ This is the easiest option for non-technical users.
 
 Configured through the GUI wizard
 
-The `.mcpb` bundle surfaces a broad set of env vars in Claude Desktop's wizard: vault path, read-only mode, state/index/embedding paths, the embedding provider and its per-provider model settings, git configuration, and auth (bearer / OIDC), among others. If you need to set an option the wizard doesn't expose, use Step 1 (manual config) instead.
+The `.mcpb` bundle's wizard shows a deliberately small set of fields, generated from the server's configuration surface so it can never drift from the code: the vault directory (required), read-only mode, exclude patterns, the embedding provider with its per-provider settings and API key, git sync with its access token, and the server name and log level. Everything else (state and index paths, tuning, HTTP auth) stays configurable the documented way through env vars (see [Configuration](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/configuration/index.md)); if you need one of those, use Step 1 (manual config) instead.
 
 ______________________________________________________________________
 
@@ -1531,6 +1558,24 @@ The initial embedding build uses two levels of batching to keep memory bounded:
 The ONNX batch size is tuned for the default `BAAI/bge-small-en-v1.5` model (512-token context). ONNX self-attention scales as O(batch × seq_len²) in RAM; long-context models require a much smaller batch size to avoid OOM — see issue [#306](https://github.com/pvliesdonk/markdown-vault-mcp/issues/306).
 
 For very large vaults (thousands of notes), the first startup may take several minutes. If the process is interrupted mid-build, it will rebuild from scratch on the next startup — partial indices are never persisted.
+
+### Slow or CPU-only backends
+
+Each embedding request has a wall-clock budget, `MARKDOWN_VAULT_MCP_EMBED_TIMEOUT_S` (default `30.0` seconds). It applies to the network providers, OpenAI and Ollama. FastEmbed runs in-process with no network call and ignores it.
+
+The budget and the batch size interact, and the default pairing is tight on modest hardware. On a CPU-only Ollama running a large model such as `bge-m3`, a single chunk can take 4 to 11 seconds, so the default batch of 4 chunks may need 20 to 44 seconds against a 30-second budget. The result is intermittent timeouts under ordinary writing load rather than an outright failure, which makes it easy to misread (issue [#954](https://github.com/pvliesdonk/markdown-vault-mcp/issues/954)).
+
+If you see `embeddings request failed: Request timed out`, adjust one or both:
+
+```
+# give each request more room
+export MARKDOWN_VAULT_MCP_EMBED_TIMEOUT_S=120
+
+# and/or send fewer chunks per request, so each one finishes sooner
+export MARKDOWN_VAULT_MCP_EMBEDDING_BATCH_SIZE=2
+```
+
+Raising the timeout to 60 to 120 seconds and dropping the batch to 1 or 2 covers most CPU-only setups. Note that the two settings pull in opposite directions on throughput: a smaller batch means more round-trips, so prefer raising the timeout first and shrink the batch only if individual requests still overrun.
 
 ### Chunk sizing and the embedding context
 
@@ -4077,7 +4122,7 @@ curl "https://mcp.example.com/transfer/AbCdEfGhIjKlMnOpQrStUvWxYz01234567890ab" 
 
 Or open the URL in a browser; the server sets `Content-Disposition: attachment` so the browser downloads rather than renders.
 
-After a successful download the token is consumed. A second request returns HTTP 404.
+After a successful download the link is grace-settled: its remaining lifetime shrinks to `MARKDOWN_VAULT_MCP_TRANSFER_GRACE_TTL_S` (default 60 seconds) so a stalled transfer can retry. Once that window passes, a further request returns HTTP 404.
 
 Token lifetime
 
@@ -4116,7 +4161,7 @@ curl -X POST \
 
 `PUT` is also accepted as an alias for `POST`. Both behave identically.
 
-After a successful upload the token is consumed and the file is available in the vault. The FTS index is updated and the git-commit callback fires (when git integration is configured).
+After a successful upload the file is available in the vault, and the link is grace-settled in the same way as a download. The FTS index is updated and the git-commit callback fires (when git integration is configured).
 
 Raw body, not multipart
 
@@ -4128,13 +4173,15 @@ Send the file bytes directly as the request body. Avoid `multipart/form-data`; t
 
 The `/transfer/{token}` route is mounted outside the server's auth middleware. The token itself is the authorization: a URL-safe random string generated by `secrets.token_urlsafe(32)` (43 characters, 256 bits of entropy). Anyone who holds the URL can perform the transfer, so treat the URL with the same care as a short-lived password.
 
-### One-time use (burn-on-success)
+### One-time use (grace-settled)
 
-A token is consumed on the **first successful** transfer. A failed request (network drop, size limit exceeded, server error) does not burn the token, so retry is permitted until the TTL expires. This is the "burn-on-success" pattern: the token survives transient failures but disappears once the bytes have moved.
+A valid token grants exactly one operation on one vault path. On success the link is **grace-settled** rather than burned outright: its remaining lifetime shrinks to `MARKDOWN_VAULT_MCP_TRANSFER_GRACE_TTL_S` (default 60 seconds). A transfer that was served but stalled part-way can still reclaim the link instead of being stranded by a spent one.
+
+A transient failure (network drop, size limit exceeded, server error) releases the reservation with the full remaining TTL, so the transfer can be retried until expiry. If a handler crashes mid-transfer, its in-flight reservation frees itself after `MARKDOWN_VAULT_MCP_TRANSFER_LEASE_S` (default 60 seconds) and the token becomes claimable again.
 
 ### Short TTL
 
-Tokens expire after a configurable TTL. The server default is 1 hour; the configurable ceiling is 24 hours. An expired token is rejected the moment it is used, and stale entries are purged from memory the next time a link is minted (no background thread is needed).
+Tokens expire after a configurable TTL, and that TTL is the security-relevant bound. The server default is 1 hour; the configurable ceiling is 24 hours. An expired token is rejected the moment it is used.
 
 ### Per-upload size cap
 
@@ -4148,18 +4195,23 @@ The upload destination path is validated for path traversal and allowed extensio
 
 - **No HTTP range requests.** Each GET reads the entire file into memory and streams it. Partial downloads (`Range:` header) are not supported.
 - **Raw body only.** The upload endpoint does not parse `multipart/form-data`. Send raw bytes.
-- **HTTP/SSE transport only.** The tools raise an error on stdio transport because there is no HTTP server to service the request.
-- **`BASE_URL` required.** Both tools raise an error if `MARKDOWN_VAULT_MCP_BASE_URL` is not configured.
-- **In-memory token store.** Tokens are not persisted to disk. A server restart invalidates all outstanding tokens.
+- **HTTP/SSE transport only.** The route and both tools are registered only on an HTTP or SSE transport, because the `/transfer/{token}` route needs an HTTP server. On stdio they are absent from the tool listing rather than present and failing.
+- **`BASE_URL` required.** The same registration also requires `MARKDOWN_VAULT_MCP_BASE_URL`, which supplies the public origin for the capability URL. Without it the tools do not appear.
+
+## Persistence
+
+The token store is KV-backed (`MARKDOWN_VAULT_MCP_KV_STORE_URL`, on-disk state by default), so links minted before a restart remain valid afterwards for the rest of their TTL.
 
 ## Configuration reference
 
-| Variable                                       | Default               | Description                                                                       |
-| ---------------------------------------------- | --------------------- | --------------------------------------------------------------------------------- |
-| `MARKDOWN_VAULT_MCP_BASE_URL`                  | (none)                | Public base URL used to construct the capability URL. Required for transfer tools |
-| `MARKDOWN_VAULT_MCP_TRANSFER_TTL_DEFAULT_S`    | `3600`                | Default token lifetime in seconds when `ttl_seconds` is omitted                   |
-| `MARKDOWN_VAULT_MCP_TRANSFER_TTL_MAX_S`        | `86400`               | Maximum permitted TTL; requested values above this are clamped                    |
-| `MARKDOWN_VAULT_MCP_TRANSFER_MAX_UPLOAD_BYTES` | `104857600` (100 MiB) | Per-upload size cap; exceeded bodies are rejected with HTTP 413                   |
+| Variable                                       | Default               | Description                                                                                                                                     |
+| ---------------------------------------------- | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MARKDOWN_VAULT_MCP_BASE_URL`                  | (none)                | Public base URL used to construct the capability URL. Required for transfer tools                                                               |
+| `MARKDOWN_VAULT_MCP_TRANSFER_TTL_DEFAULT_S`    | `3600`                | Default token lifetime in seconds when `ttl_seconds` is omitted                                                                                 |
+| `MARKDOWN_VAULT_MCP_TRANSFER_TTL_MAX_S`        | `86400`               | Maximum permitted TTL; requested values above this are clamped                                                                                  |
+| `MARKDOWN_VAULT_MCP_TRANSFER_GRACE_TTL_S`      | `60`                  | Grace window after a successful transfer. The token's remaining lifetime shrinks to this, so a stalled or retried transfer can reclaim the link |
+| `MARKDOWN_VAULT_MCP_TRANSFER_LEASE_S`          | `60`                  | Reclaim window for an in-flight reservation. A crashed handler's token becomes claimable again once this lease lapses                           |
+| `MARKDOWN_VAULT_MCP_TRANSFER_MAX_UPLOAD_BYTES` | `104857600` (100 MiB) | Per-upload size cap; exceeded bodies are rejected with HTTP 413                                                                                 |
 
 See [Configuration](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/configuration/#one-time-transfer-links) for the full details.
 
@@ -4169,7 +4221,7 @@ This guide walks through installing markdown-vault-mcp as a [Claude Code](https:
 
 ## Overview
 
-The Claude Code plugin installs markdown-vault-mcp directly into your Claude Code environment. It wires up the most commonly needed env vars with sensible defaults, and also installs a `vault-workflow` skill that gives Claude guidance on search strategy, reading patterns, link tools, and write semantics.
+The Claude Code plugin installs markdown-vault-mcp directly into your Claude Code environment. Enabling it opens a configuration prompt for the settings that matter on a personal install (the vault directory, read-only mode, embedding provider, git sync), with sensitive values stored securely and no shell-profile editing. The plugin also installs a `vault-workflow` skill that gives Claude guidance on search strategy, reading patterns, link tools, and write semantics.
 
 ## Prerequisites
 
@@ -4197,35 +4249,32 @@ By default, `/plugin install` installs into the current project. To install glob
 
 ## Configure
 
-The only required env var is `MARKDOWN_VAULT_MCP_SOURCE_DIR`. Set it to the path of your vault:
+Enabling the plugin opens a configuration prompt. The only required field is the vault directory; everything else has a sensible default or can stay empty. Your answers persist across plugin updates, and sensitive fields (the OpenAI API key, the git access token) are masked and stored in secure storage rather than a settings file. Restart Claude Code after configuring so the server starts with your values.
 
-```
-export MARKDOWN_VAULT_MCP_SOURCE_DIR=/path/to/your/vault
-```
-
-Add to your `~/.bashrc`, `~/.zshrc`, or equivalent:
-
-```
-export MARKDOWN_VAULT_MCP_SOURCE_DIR=/path/to/your/vault
-```
-
-Restart Claude Code after setting the env var so the plugin picks it up.
+To change the configuration later, re-open the plugin's configuration from the `/plugin` menu, or just ask Claude to set up or repair your vault (the `vault-setup` skill walks through it).
 
 ## What you get
 
-The plugin wires up the following env vars. Vars with a default are filled in when the shell variable is unset; vars marked *(empty)* stay blank when unset, which usually means "feature disabled" or "use the server's built-in default":
+The configuration prompt covers these settings, each wired to the matching server option. Fields marked *(empty)* can stay blank, which means "feature disabled" or "use the server's built-in default":
 
-| Env var                                 | Default                          | Description                                                                                                                                                           |
-| --------------------------------------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `MARKDOWN_VAULT_MCP_SOURCE_DIR`         | *(required)*                     | Path to your vault directory                                                                                                                                          |
-| `MARKDOWN_VAULT_MCP_READ_ONLY`          | `true`                           | Set to `false` to enable the write tools (`write`, `edit`, `append`, `delete`, `rename`, `move_folder`, `fetch`, `git_sync`, the `okf_*` tools, `create_upload_link`) |
-| `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` | *(empty)*                        | Embedding backend (`fastembed`, `ollama`, `openai`); leave empty for keyword-only search                                                                              |
-| `MARKDOWN_VAULT_MCP_EXCLUDE`            | `.obsidian/**,.trash/**,.git/**` | Comma-separated glob patterns to exclude from indexing                                                                                                                |
-| `MARKDOWN_VAULT_MCP_GIT_REPO_URL`       | *(empty)*                        | Remote repository URL for git-backed vault sync; leave empty to disable git integration                                                                               |
-| `MARKDOWN_VAULT_MCP_GIT_TOKEN`          | *(empty)*                        | Personal access token for the git remote; leave empty to disable git integration                                                                                      |
-| `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH`    | *(empty)*                        | Base path for the embeddings `.npy` sidecar (runtime appends the suffix); leave empty to disable semantic search                                                      |
-| `MARKDOWN_VAULT_MCP_INDEX_PATH`         | *(empty)*                        | Override the FTS5 SQLite index file path; leave empty to use an in-memory index (rebuilt on every startup)                                                            |
-| `OLLAMA_HOST`                           | `http://localhost:11434`         | Base URL for the Ollama API; only used when `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER=ollama`                                                                            |
+| Setting                 | Default                          | What it sets                                                                                                                                                                                       |
+| ----------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Vault directory         | *(required)*                     | `MARKDOWN_VAULT_MCP_SOURCE_DIR`: the vault to serve                                                                                                                                                |
+| Read-only mode          | `true`                           | `MARKDOWN_VAULT_MCP_READ_ONLY`; set `false` to enable the write tools (`write`, `edit`, `append`, `delete`, `rename`, `move_folder`, `fetch`, `git_sync`, the `okf_*` tools, `create_upload_link`) |
+| Exclude patterns        | `.obsidian/**,.trash/**,.git/**` | `MARKDOWN_VAULT_MCP_EXCLUDE`: comma-separated globs kept out of the index                                                                                                                          |
+| Embedding provider      | *(empty)*                        | `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` (`fastembed`, `ollama`, `openai`); empty means keyword-only search                                                                                         |
+| Ollama host             | `http://localhost:11434`         | `OLLAMA_HOST`; used only with the `ollama` provider                                                                                                                                                |
+| Ollama embedding model  | `nomic-embed-text`               | `MARKDOWN_VAULT_MCP_OLLAMA_MODEL`                                                                                                                                                                  |
+| FastEmbed model         | `BAAI/bge-small-en-v1.5`         | `MARKDOWN_VAULT_MCP_FASTEMBED_MODEL`                                                                                                                                                               |
+| OpenAI API key          | *(empty, masked)*                | `OPENAI_API_KEY`; used only with the `openai` provider                                                                                                                                             |
+| OpenAI base URL         | `https://api.openai.com/v1`      | `OPENAI_BASE_URL`                                                                                                                                                                                  |
+| OpenAI embedding model  | `text-embedding-3-small`         | `OPENAI_EMBEDDING_MODEL`                                                                                                                                                                           |
+| Git sync repository URL | *(empty)*                        | `MARKDOWN_VAULT_MCP_GIT_REPO_URL`; empty disables git integration                                                                                                                                  |
+| Git access token        | *(empty, masked)*                | `MARKDOWN_VAULT_MCP_GIT_TOKEN`                                                                                                                                                                     |
+| Server name             | `markdown-vault-mcp`             | `MARKDOWN_VAULT_MCP_SERVER_NAME`                                                                                                                                                                   |
+| Log level               | `INFO`                           | `FASTMCP_LOG_LEVEL`                                                                                                                                                                                |
+
+Settings outside this screen (state and index paths, tuning, and the rest of [Configuration](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/configuration/index.md)) stay reachable through env vars: the `env` block of your user-scope `~/.claude/settings.json` reaches the server process for anything the screen does not wire.
 
 The plugin also installs the **`vault-workflow` skill**, which gives Claude guidance on:
 
@@ -4233,6 +4282,18 @@ The plugin also installs the **`vault-workflow` skill**, which gives Claude guid
 - **Reading patterns**: note reading, link traversal, `get_context` usage, and efficient navigation
 - **Link tools**: `get_backlinks`, `get_outlinks`, `get_connection_path`, and the graph tools
 - **Write semantics**: creating, editing, renaming, and deleting notes safely
+
+A second skill, **`vault-summarize`**, triggers when you ask for a summary or overview spanning more than one note. It checks scope with `get_toc`, prefers the server-side `summarize` tool when your deployment configured one, and otherwise runs the server's `summarize-subtree` recipe with parallel **`vault-mapper`** subagents (a restricted read-only agent the plugin ships), so note bodies stay confined to the subagents instead of filling the main conversation.
+
+## Troubleshooting and guided setup
+
+If the vault server shows `Failed to connect` in `/mcp`, the plugin can repair itself in-session: skills, agents, and hooks keep working while the MCP server is down.
+
+- A **SessionStart doctor hook** checks the effective configuration when a session starts. When the vault directory is unset or no longer exists, it says so up front and offers help; when the configuration is healthy it stays silent.
+- Asking Claude to set up (or fix) your vault triggers the **`vault-setup` skill**. It looks for candidate vault directories (`.obsidian/` markers and note-like folders), checks that your choice exists and is readable, and then records it in the plugin's stored options in your user-scope `~/.claude/settings.json` (the same place the configuration prompt writes). The flow always ends with a restart of Claude Code, because MCP servers only start at session start.
+- The same flow covers later breakage: a moved vault, an expired git token, or a broken embedding-provider setting.
+
+One precedence rule worth knowing: the plugin's stored options are what the server actually receives; legacy configuration through the settings-file `env` block or a shell profile only applies when no plugin option is set. If an old shell-profile value disagrees with the plugin's configuration, the plugin's value is the one that counts.
 
 ## Update
 
@@ -4289,11 +4350,11 @@ Every read tool that queries the FTS index (`search`, `list_documents`, `list_fo
 | [`get_connection_path`](#get_connection_path)   | Connection Path        | Read        | Find the shortest path between two notes via link graph                                                              |
 | [`okf_validate`](#okf_validate)                 | Validate OKF Bundle    | Read        | Audit the vault's Open Knowledge Format conformance                                                                  |
 | [`summarize`](#summarize)                       | Summarize Notes        | AI          | Summarize a note, a set of notes, or a subtree with an LLM (needs `OPENAI_API_KEY` or an OpenAI-compatible base URL) |
-| [`get_summary`](#get_summary)                   | Get Summary            | AI          | Retrieve a summary that `summarize` promoted to a background job                                                     |
+| [`get_job_result`](#get_job_result)             | Get Job Result         | AI          | Retrieve the outcome of a background job started by a long-running tool                                              |
 | [`get_history`](#get_history)                   | Note History           | Read (git)  | List commits that touched a note, attachment, folder, or the whole vault                                             |
 | [`get_diff`](#get_diff)                         | Note Diff              | Read (git)  | Return a diff of a note or attachment between two points in history                                                  |
-| [`reindex`](#reindex)                           | Reindex Vault          | Admin       | Force a full reindex of the vault                                                                                    |
-| [`build_embeddings`](#build_embeddings)         | Build Embeddings       | Admin       | Build or rebuild vector embeddings                                                                                   |
+| [`reindex`](#reindex)                           | Reindex Vault          | Admin       | Incremental reindex; inline result when fast, job promotion when slow                                                |
+| [`build_embeddings`](#build_embeddings)         | Build Embeddings       | Admin       | Build or rebuild vector embeddings; inline result when fast, job promotion when slow                                 |
 | [`write`](#write)                               | Write Note             | Write       | Create or overwrite a document or attachment                                                                         |
 | [`edit`](#edit)                                 | Edit Note              | Write       | Replace a unique text span in a document                                                                             |
 | [`append`](#append)                             | Append to Note         | Write       | Append text to the end of a note without reading it first                                                            |
@@ -4508,13 +4569,13 @@ Calls to `reindex` and `build_embeddings` during a cold-start background FTS bui
 
 Incrementally update the full-text search index to reflect file changes made outside this server. Only changed files are processed; unchanged documents are skipped, and files deliberately excluded from the index (missing required frontmatter, exclude-pattern matches, unparseable content) are remembered across scans so they are not re-parsed or re-reported until their content changes (#665).
 
-If semantic search is configured, the queued reindex job re-embeds the changed documents on the writer thread. Poll `get_index_status` and watch the `dirty_embeddings` counter to observe completion.
+If semantic search is configured, the reindex job re-embeds the changed documents on the writer thread. Poll `get_index_status` and watch the `dirty_embeddings` counter to observe embedding convergence.
 
 Boot reconciliation
 
 The server lifespan automatically queues one incremental reindex at every startup (#665), so files added, modified, or deleted while no server was running are reconciled without a manual `reindex` call. Reads served before that job completes report `index_stale: true` in `_meta`.
 
-**Returns:** `{"status": "queued"}`. The reindex runs asynchronously on the single-owner :class:`IndexWriter` thread (#559); poll `get_server_info` or `get_index_status` for completion. `get_index_status` exposes `queue_depth`, `in_flight`, `dirty_paths`, and `dirty_embeddings` so you can observe progress without blocking.
+**Returns:** The tool is dual-mode. A fast reindex (the common case, since work scales with the drift, not the vault) completes inline with `"status": "completed"` and its real counts: `added`, `modified`, `deleted`, `unchanged`, and `skipped`. A reindex still running at the jobs soft deadline (`JOBS_SOFT_DEADLINE_S`, default 25 s) continues on the single-owner :class:`IndexWriter` thread (#559) and returns `{"status": "working", "job_id": ...}` immediately; fetch the outcome with [`get_job_result`](#get_job_result). A failure within the deadline raises immediately; after promotion it is reported through `get_job_result` (and mirrored in `get_index_status`'s `last_reindex_error`). `get_index_status` remains the non-blocking observability view (`queue_depth`, `in_flight`, `dirty_paths`, `dirty_embeddings`), covering boot-time and file-watcher work no client call initiated.
 
 ### `build_embeddings`
 
@@ -4528,7 +4589,7 @@ Without `force`, an existing vector index is **converged** to the FTS chunk set 
 | --------- | ---- | ------- | -------------------------------------------------------------------------------------------------------------- |
 | `force`   | bool | `false` | When true, discards existing embeddings and rebuilds from scratch. Use only if the embedding model has changed |
 
-**Returns:** `{"status": "queued"}`. The build runs asynchronously on the single-owner :class:`IndexWriter` thread (#559); poll `get_server_info` or `get_index_status` for completion.
+**Returns:** The tool is dual-mode. A fast convergence (small drift) completes inline with `"status": "completed"` and `chunks_embedded` (the total number of chunks embedded). A build still running at the jobs soft deadline (typical for a `force=true` rebuild of a large vault) continues on the single-owner :class:`IndexWriter` thread (#559) and returns `{"status": "working", "job_id": ...}` immediately; fetch the outcome with [`get_job_result`](#get_job_result). A failure within the deadline raises immediately (a missing embedding provider now surfaces here instead of landing only in `get_index_status`); after promotion it is reported through `get_job_result`.
 
 When to use
 
@@ -4739,13 +4800,13 @@ Download a file from a URL and save it to the vault as a note or attachment. Des
 
 **Parameters:**
 
-| Parameter     | Type   | Default  | Description                                                                                                                                                                                                                  |
-| ------------- | ------ | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `url`         | string | required | Source URL to download. Only `http`/`https` schemes allowed; the host is resolved and private or internal addresses are blocked; the validated IP is pinned for the connection; redirects are not followed (SSRF protection) |
-| `path`        | string | required | Destination path in vault. Extension determines handling: `.md` for notes, anything else for attachments                                                                                                                     |
-| `frontmatter` | object | `null`   | Optional YAML frontmatter dict for `.md` files. Ignored for attachments                                                                                                                                                      |
-| `if_match`    | string | `null`   | Optional etag from a previous `read` call for optimistic concurrency                                                                                                                                                         |
-| `timeout_s`   | float  | `30.0`   | Download timeout in seconds                                                                                                                                                                                                  |
+| Parameter     | Type   | Default  | Description                                                                                                                                                                                                                                                                                                                                                                    |
+| ------------- | ------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `url`         | string | required | Source URL to download. Only `http`/`https` schemes allowed; the host is resolved and blocked unless every address is publicly routable (private, loopback, link-local, CGNAT/shared, and reserved ranges are all refused); the validated IP is pinned for the connection; ambient `HTTP(S)_PROXY`/`.netrc` settings are ignored; redirects are not followed (SSRF protection) |
+| `path`        | string | required | Destination path in vault. Extension determines handling: `.md` for notes, anything else for attachments                                                                                                                                                                                                                                                                       |
+| `frontmatter` | object | `null`   | Optional YAML frontmatter dict for `.md` files. Ignored for attachments                                                                                                                                                                                                                                                                                                        |
+| `if_match`    | string | `null`   | Optional etag from a previous `read` call for optimistic concurrency                                                                                                                                                                                                                                                                                                           |
+| `timeout_s`   | float  | `30.0`   | Download timeout in seconds                                                                                                                                                                                                                                                                                                                                                    |
 
 **Context cost:** zero. The file is downloaded server-side. Reference the saved file by `path` for downstream tools rather than `read()`-ing it back into context.
 
@@ -4753,9 +4814,7 @@ Download a file from a URL and save it to the vault as a note or attachment. Des
 
 For `.md` destinations, the response may also include a `conventions` list; see [`write`](#write).
 
-Dependency
-
-Requires `httpx`. Install with `pip install 'markdown-vault-mcp[all]'`.
+The download itself runs through `fastmcp-pvl-core`'s hardened `fetch_url` primitive, so the SSRF protections above are shared, audited code rather than a local copy.
 
 ### `git_sync`
 
@@ -5117,7 +5176,7 @@ The tool is only registered when a summarization backend is configured: an `OPEN
 
 Inputs larger than one model request are handled map-reduce style. Notes are packed into batches of at most `SUMMARIZE_MAX_INPUT_CHARS` characters and each batch is summarized on its own; a final pass combines the partial summaries into one result. Large folders issue several model calls and take proportionally longer. Coverage per call is capped at the note limit (`SUMMARIZE_MAX_NOTES`, also the ceiling for the per-call `max_notes` parameter); the response reports exactly how many notes made it in (`notes_included`) and how many were dropped (`notes_omitted`). When notes were dropped, the response carries a `hint` telling the caller that full coverage needs separate calls on subfolders or smaller path sets. The live configured limit is substituted into the tool description and into the server instructions at startup, so a calling model can plan those splits before its first call.
 
-**Slow summaries do not block.** A summary that finishes within the inline deadline (`SUMMARIZE_INLINE_TIMEOUT`, default 30 s) returns inline with `"status": "completed"` and the fields below. If it is still running when the deadline elapses, the tool returns `{"status": "in_progress", "job_id": ...}` immediately and keeps generating in the background; fetch the result with [`get_summary`](#get_summary) using that `job_id`. Each individual backend call is itself bounded by `SUMMARIZE_TIMEOUT` (default 120 s); on timeout the summary fails with a clear message that says how to retry rather than a vague client-side hang.
+**Slow summaries do not block.** The tool is dual-mode: an MCP client that speaks background tasks runs it as a protocol-native task, and for any other client the call runs in the foreground up to the jobs soft deadline (`JOBS_SOFT_DEADLINE_S`, default 25 s). A summary that finishes within the deadline returns inline with `"status": "completed"` and the fields below. If it is still running when the deadline elapses, the tool returns `{"status": "working", "job_id": ...}` immediately and keeps generating in the background; fetch the result with [`get_job_result`](#get_job_result) using that `job_id`. Each individual backend call is itself bounded by `SUMMARIZE_TIMEOUT` (default 120 s); on timeout the summary fails with a clear message that says how to retry rather than a vague client-side hang.
 
 **Parameters:**
 
@@ -5128,7 +5187,7 @@ Inputs larger than one model request are handled map-reduce style. Notes are pac
 | `mode`      | `"synthesis"`   | `"per_note"` | `"synthesis"`                                                                                                                                                                                    |
 | `max_notes` | int             | server limit | Per-call note limit. Values above the server's configured cap are clamped to it; values below it narrow the work.                                                                                |
 
-**Returns:** When the summary completes within the inline deadline, a dict with `"status": "completed"` plus:
+**Returns:** When the summary completes within the soft deadline, a dict with `"status": "completed"` plus:
 
 - `summary` (string): the generated summary text.
 - `sources` (list of `{path, title}`): the notes that were summarised, always populated so individual notes are attributable even when the prose does not name every one.
@@ -5139,13 +5198,13 @@ Inputs larger than one model request are handled map-reduce style. Notes are pac
 - `notes_limit` (int): the note limit in effect for this call.
 - `hint` (string or null): recovery guidance when notes were omitted; `null` when the selection was fully covered.
 
-When the work is promoted to the background, a dict with `"status": "in_progress"`, a `job_id` string, and a `message`. Call [`get_summary`](#get_summary) with the `job_id` to fetch the result.
+When the work is promoted to a background job, a dict with `"status": "working"`, a `job_id` string, a `poll_with` field naming the polling tool, a `retry_after_s` hint, and a `message`. Call [`get_job_result`](#get_job_result) with the `job_id` to fetch the result.
 
-**Errors:** raises if `paths` is empty, `mode` is invalid, no readable notes were found, or the backend call fails within the inline deadline. A backend failure after promotion is reported through `get_summary` instead.
+**Errors:** raises if `paths` is empty, `mode` is invalid, no readable notes were found, or the backend call fails within the soft deadline. A backend failure after promotion is reported through `get_job_result` instead.
 
-Note content leaves your environment
+Note content goes to the configured backend
 
-The referenced notes are sent to the external model provider to generate the summary. Do not summarize notes whose content must not leave your environment.
+The referenced notes are sent to the summarization backend the operator configured, which may be a remote provider or a local endpoint. Do not summarize notes whose content must not be shared with that backend. The [`summarize-subtree` prompt](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/prompts/#summarize-subtree) is the client-side alternative that summarizes with the client's own model; see its docs for how the two routes relate.
 
 Dependency
 
@@ -5153,24 +5212,25 @@ Requires the `openai` SDK and an OpenAI-compatible backend (an `OPENAI_API_KEY`,
 
 ______________________________________________________________________
 
-### `get_summary`
+### `get_job_result`
 
-Retrieve a summary that [`summarize`](#summarize) promoted to a background job. When a `summarize` call runs past its inline deadline it returns `{"status": "in_progress", "job_id": ...}`; pass that `job_id` here to fetch the result, polling every few seconds while it is still running.
+Retrieve the outcome of a background job started by a long-running tool on this server: a [`summarize`](#summarize), [`reindex`](#reindex), or [`build_embeddings`](#build_embeddings) call promoted past the jobs soft deadline. When such a call returns `{"status": "working", "job_id": ...}`, pass that `job_id` here to fetch the result, polling every few seconds while it is still running.
 
-Registered under the same conditions as `summarize` (a summarization backend must be configured). Job records are held in memory and are lost on server restart; a finished job is retained for a while and then evicted, so fetch it soon after it completes.
+The tool is provided by the shared jobs subsystem (`fastmcp-pvl-core`), so its name, payload, and lifecycle vocabulary are uniform across the `*-mcp` server family, and it is always registered (the index-maintenance tools produce job handles regardless of whether a summarize backend is configured). Retrieval is scoped to the calling subject: another caller's `job_id` answers exactly like an unknown one. Job records expire `JOBS_RESULT_TTL_S` seconds after creation (default one hour) and a promoted job does not survive a server restart, so fetch results soon after completion.
 
 **Parameters:**
 
-| Parameter | Type   | Default  | Description                                           |
-| --------- | ------ | -------- | ----------------------------------------------------- |
-| `job_id`  | string | required | The `job_id` returned by a promoted `summarize` call. |
+| Parameter | Type   | Default  | Description                                                                |
+| --------- | ------ | -------- | -------------------------------------------------------------------------- |
+| `job_id`  | string | required | The `job_id` from a `{"status": "working"}` answer of a long-running tool. |
 
-**Returns:** Dict whose `status` is one of:
+**Returns:** Dict with `job_id`, `status`, `result`, and `error`, where `status` is one of:
 
-- `"completed"`: the summary is ready; the dict also carries the same fields as a completed `summarize` result (`summary`, `sources`, `mode`, `truncated`, `notes_included`, `notes_omitted`, `notes_limit`, `hint`).
-- `"in_progress"`: still generating; poll again shortly.
-- `"failed"`: generation failed; see `error` for the reason (often a backend timeout; narrow the request and retry).
-- `"not_found"`: no such job. The id is unknown, or the job has already expired.
+- `"working"`: still running; the dict adds `running_for_s` and a `retry_after_s` polling hint. Poll again shortly.
+- `"completed"`: the work is done; `result` carries the tool's full result object (for `summarize`: `summary`, `sources`, `mode`, `truncated`, `notes_included`, `notes_omitted`, `notes_limit`, `hint`).
+- `"failed"`: the work failed; see `error` for the reason (often a backend timeout; narrow the request and retry).
+
+**Errors:** raises for an unknown, expired, or foreign `job_id`.
 
 ______________________________________________________________________
 
@@ -5520,15 +5580,16 @@ Prompt templates guide the LLM through multi-step workflows using the vault tool
 
 ## Quick Reference
 
-| Prompt                                          | Parameters                                | Category | Description                                                                      |
-| ----------------------------------------------- | ----------------------------------------- | -------- | -------------------------------------------------------------------------------- |
-| [`summarize`](#summarize)                       | `path`                                    | Read     | Structured summary of a document                                                 |
-| [`research`](#research)                         | `topic`                                   | Write    | Search, synthesize, and create a research note                                   |
-| [`discuss`](#discuss)                           | `path`                                    | Write    | Analyze and suggest improvements using `edit`                                    |
-| [`create_from_template`](#create_from_template) | `template_name` (optional)                | Write    | Create a new note from a template in your templates folder                       |
-| [`related`](#related)                           | `path`                                    | Read     | Find related notes and suggest cross-references                                  |
-| [`compare`](#compare)                           | `path1`, `path2`                          | Read     | Side-by-side comparison of two documents                                         |
-| [`propose-links`](#propose-links)               | `scope`, `per_note_limit` (both optional) | Write    | Propose new links between semantically close notes that aren't already connected |
+| Prompt                                          | Parameters                                | Category | Description                                                                                                                       |
+| ----------------------------------------------- | ----------------------------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| [`summarize`](#summarize)                       | `path`                                    | Read     | Structured summary of a document                                                                                                  |
+| [`summarize-subtree`](#summarize-subtree)       | `paths`, `focus` (optional)               | Read     | Multi-note or folder summary using the client's own model, processed in batches (delegated to subagents when the client has them) |
+| [`research`](#research)                         | `topic`                                   | Write    | Search, synthesize, and create a research note                                                                                    |
+| [`discuss`](#discuss)                           | `path`                                    | Write    | Analyze and suggest improvements using `edit`                                                                                     |
+| [`create_from_template`](#create_from_template) | `template_name` (optional)                | Write    | Create a new note from a template in your templates folder                                                                        |
+| [`related`](#related)                           | `path`                                    | Read     | Find related notes and suggest cross-references                                                                                   |
+| [`compare`](#compare)                           | `path1`, `path2`                          | Read     | Side-by-side comparison of two documents                                                                                          |
+| [`propose-links`](#propose-links)               | `scope`, `per_note_limit` (both optional) | Write    | Propose new links between semantically close notes that aren't already connected                                                  |
 
 ______________________________________________________________________
 
@@ -5543,6 +5604,33 @@ Read a document and produce a structured summary with key themes and takeaways.
 | `path`    | string | Relative path to the document being summarized |
 
 **Workflow:** Calls `read` on the given path, then produces a concise overview covering the document's main topics and key points.
+
+For a folder or several notes, use [`summarize-subtree`](#summarize-subtree) (or the [`summarize` tool](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/tools/#summarize) where a backend is configured) instead of repeating this prompt per note.
+
+## `summarize-subtree`
+
+Summarize a folder subtree or a set of notes with the *client's* own model. The prompt ships the same map-reduce recipe the server-side [`summarize` tool](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/tools/#summarize) runs internally: partition into batches, one partial summary per batch, combine. Note bodies stay out of the retained conversation context: with subagents each phase runs in its own subagent, and without them the client processes batches sequentially, carrying only partial summaries forward. It needs no summarization backend and no API key on the server.
+
+**The prompt adapts to the server's configuration.** Whether summarization runs server-side or client-side is an operator decision, expressed by configuring a summarization backend or not:
+
+- **Backend configured**: the [`summarize` tool](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/tools/#summarize) is registered and the prompt opens by preferring it: a single call with no context overhead for the client. The recipe remains available for when the user wants their own model to do the work.
+- **No backend**: the tool is absent and the prompt carries the recipe alone, without mentioning a tool the server does not have. The server instructions point clients at the prompt in this case.
+
+For operators deciding whether to configure a backend: the tool is the most efficient path for the client's primary model. Its backend usage is billed separately from the client, though; that matters when client usage is already covered by a subscription plan, and not at all for a local endpoint or a pay-per-token setup. Neither route is inherently more private: the backend can be a local model that discloses less than a cloud-hosted client model. And the backend receives frozen text, where a mapper subagent can follow a link mid-summary to resolve a reference.
+
+**Parameters:**
+
+| Parameter | Type   | Description                                                                                                               |
+| --------- | ------ | ------------------------------------------------------------------------------------------------------------------------- |
+| `paths`   | string | One or more note paths and/or folder prefixes, separated by commas (such as `projects/alpha` or `notes/a.md, notes/b.md`) |
+| `focus`   | string | null                                                                                                                      |
+
+**Workflow:**
+
+1. **Plan**: expand folder prefixes via `get_toc`, de-duplicate, and pack the note paths into batches (delegated to a subagent when available; the toc carries paths, titles, and headings, never bodies).
+1. **Map**: one detailed partial summary per batch, preserving concrete specifics and referencing every note by path. Parallel subagents fan out one mapper each; sequential subagents run one at a time; without subagents the client reads one batch at a time, keeping only each batch's partial summary.
+1. **Reduce**: partial summaries are combined into one cohesive summary, by a reducer subagent or inline.
+1. **Deliver**: the final summary plus a coverage note (notes summarized, notes skipped).
 
 ## `research`
 
@@ -5806,6 +5894,22 @@ docker compose up -d
 
 # Check it's running
 curl http://localhost:8000/health
+```
+
+## Image tags
+
+| Tag          | Contents                                                     | Updated by                                           |
+| ------------ | ------------------------------------------------------------ | ---------------------------------------------------- |
+| `latest`     | Newest stable release                                        | Each stable release that is newest across all series |
+| `vX.Y.Z`     | That exact release (pre-releases included, as `vX.Y.Z-rc.N`) | Never (immutable)                                    |
+| `vX.Y`, `vX` | Newest stable release in that series                         | Each stable release that is newest in its series     |
+| `edge`       | Newest commit on `main`                                      | Every merge to `main`                                |
+
+Rolling tags are ordering-aware: a patch release cut from an old `release/X.Y` branch after a newer stable has shipped updates its own series tags but never `latest`. A pre-release pushes only its immutable `vX.Y.Z-rc.N` tag. To run the latest merged code, use `edge`, which follows `main` continuously and carries no version identity. To find the commit behind an `edge` image, read its `org.opencontainers.image.revision` label:
+
+```
+docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' \
+  ghcr.io/pvliesdonk/markdown-vault-mcp:edge
 ```
 
 ## Docker Compose Configuration
@@ -6820,6 +6924,106 @@ This works when `markdown-vault-mcp` is the **only** OAuth service on the hostna
 
 - **Dedicated hostname** (preferred): give `markdown-vault-mcp` its own hostname (such as `vault.example.com`) so discovery routes do not collide.
 - **External auth gateway**: use `mcp-auth-proxy` as a sidecar instead of native OIDC. The MCP server runs unauthenticated behind the proxy, and the proxy handles OAuth discovery at its own routes.
+
+# Release Process
+
+`main` is trunk: every change merges there, and merging is not releasing. A merge feeds the rolling `edge` channel and nothing else. A release is a separate, deliberate event, cut by dispatching the **Release** workflow, and this page describes what each kind of release publishes and where releases come from.
+
+## Channels
+
+| Channel     | Version identity                 | What it promises                                                                                                                                                                                                                                                                                                           |
+| ----------- | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `edge`      | None; the commit is the identity | The newest merged code. Every merge to `main` rebuilds the rolling Docker tag plus an `.mcpb` bundle workflow artifact, and the rolling `unstable` docs version deploys from the same trigger. It leaves no git tag, GitHub release, or PyPI entry behind.                                                                 |
+| Pre-release | `vX.Y.Z-rc.N`, fixed at cut time | A stabilisation step toward exactly that version, cut from a `release/X.Y` branch. Publishes a GitHub release with wheels, `sdist`, `.mcpb` bundle, and SBOM attached, plus a Docker image under its immutable version tag. Skips PyPI, `.deb`/`.rpm` packages, the marketplace and registry entries, and the docs deploy. |
+| Stable      | `vX.Y.Z`                         | The full artifact set: PyPI, Docker, Linux packages, GitHub release assets (wheels, `sdist`, `.mcpb` bundle, SBOM), marketplace and registry entries, versioned docs.                                                                                                                                                      |
+
+Pre-release and `edge` builds never reach PyPI: PyPI is where every ordinary installer looks, and unstable builds do not belong in front of it. A pre-release's wheels are still attached to its [GitHub release](https://github.com/pvliesdonk/markdown-vault-mcp/releases) and installable by URL for anyone who opts in.
+
+Rolling pointers are ordering-aware. The Docker `latest`, `vX`, and `vX.Y` tags, the GitHub latest-release pointer, the docs `latest` alias, and the marketplace and registry entries follow a release only when it is the newest in the relevant series, so a patch release cut from an old `release/X.Y` branch never moves them back to older content. See [Image tags](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deployment/docker/#image-tags) for the Docker tag list.
+
+## Releasing from trunk
+
+The default release path is trunk. When trunk is quiescent (no epic that must ship whole is mid-flight), dispatching Release on `main` cuts a stable from the head commit: no branch, no ceremony. The workflow prints an advisory warning when open `ships-atomically` epics exist, because releasing `main` ships everything merged so far; the warning never blocks, since the cut may still be intentional.
+
+## Stabilisation branches
+
+A short-lived `release/X.Y` branch is the exception tool, for two cases:
+
+1. **Trunk carries unfinished work** that the release must exclude. The branch is cut from the last quiescent commit behind the head, release candidates are cut there while fixes land, and the `finalize` dispatch input cuts the final stable `X.Y.Z`.
+1. **A shipped release needs a patch** while `main` has moved on. The branch can be created retroactively from the release tag, so no branch needs to exist in advance of the need.
+
+Fixes flow from trunk to the branch: they land on `main` first and are cherry-picked over. After any release cut from a `release/X.Y` branch, an automated merge-back job merges the branch into `main`; that merge is the single reverse flow, and it carries only the release machinery's version commits, never features.
+
+Release branches carry shipped releases, so they get the same protection as `main`: pull requests plus green CI, applied by the shipped rulesets. See [Repository Protection](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deployment/repository-protection/index.md).
+
+## Where to read about a release
+
+Each release is described in three places with distinct jobs:
+
+- **The GitHub release body** carries a short user-facing summary and a link to the release's notes page on this site. The body is a pointer, not the record.
+- **The release notes pages on this docs site** are the canonical human-facing narrative of what changed and why it matters.
+- **`CHANGELOG.md`** in the repository is the machine-written, commit-level audit trail, generated from conventional commits by the release tooling.
+
+### How the notes pages are produced
+
+The pages under [Release Notes](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/index.md) cover one minor series each; a patch release adds a dated section to its series page. After every stable release, the **Release Notes** workflow drafts the page: an agent researches the release range through the GitHub API (the linked issues and pull requests, not commit subjects) and opens a pull request against `main`. Every causal claim in a page must cite a linked issue or pull request, and the draft must pass the same prose lint as the rest of this site before the pull request opens.
+
+A maintainer merge is the publication step. Nothing lands on the site without review, and until the merge the release keeps the short interim body the release workflow wrote; a failed or unconvincing draft never blocks or alters a release. On merge, the **Release Notes Publish** workflow updates the GitHub release body from the page's summary and redeploys that minor's versioned docs so the body's deep link resolves. Later hand edits to a merged page redeploy the docs the same way.
+
+# Repository Protection
+
+The template ships GitHub repository rulesets that gate the branches a release can ship from. The rules live as JSON files in `.github/rulesets/` and the `bootstrap.yml` workflow applies them, so the effective protection state is checked in, reviewed, and re-applied rather than clicked together in the UI and forgotten.
+
+## What ships
+
+Three rulesets, one file each:
+
+| Ruleset                    | Targets              | Rules                                                                                                  |
+| -------------------------- | -------------------- | ------------------------------------------------------------------------------------------------------ |
+| `protect-main`             | the default branch   | pull request required (zero approvals), `CI Success` status check (strict), no deletion, no force push |
+| `protect-release-branches` | `release/*` branches | same gates as the default branch                                                                       |
+| `protect-release-tags`     | `v*` tags            | no deletion, no force move (creation stays open)                                                       |
+
+The reasoning per branch class:
+
+- **`main`** requires a pull request and the aggregate `CI Success` check. Zero required approvals is deliberate: a solo-maintainer account has no second reviewer, and requiring one would deadlock the Renovate patch/minor auto-merge. The pull request requirement still routes every change through CI and the review tooling; the check requirement is what holds an auto-merge until CI is green.
+- **`release/*`** stabilisation branches carry a shipped release for their lifetime, so backports get the same gate class as `main`: pull request plus `CI Success`, with the CI structural gate measuring the diff against the release branch itself rather than `main`. The generated `ci.yml` runs on pull requests targeting `release/*` for exactly this reason. Status checks are not enforced on branch creation, so cutting `release/X.Y` is a plain push.
+- **`v*` tags** are the identity of every shipped release: package registries, Docker tags, and install instructions all point at them. The ruleset blocks deleting or force-moving them. Creating tags stays unrestricted because the release workflow creates one per release.
+
+## Who bypasses, and how
+
+Ruleset bypass lists name roles, teams, apps, or deploy keys, not user accounts. The shipped entry grants bypass to the **repository admin role** (`actor_id` 5, the one actor a template can name without knowing your account), with `bypass_mode: always`.
+
+The release flow depends on this. `RELEASE_TOKEN` is a personal access token, and a personal access token (classic or fine-grained) acts as its owner and holds the repository role of that owner. With the token owned by a repository admin, all of the release pipeline's direct pushes bypass the rules:
+
+- the release commit and `vX.Y.Z` tag that python-semantic-release pushes to the released branch (`main` or `release/X.Y`),
+- the merge-back merge commit pushed to `main` after a release cut from a `release/*` branch,
+- the owner's own hotfix pushes, preserving the escape hatch the previous classic protection provided via its disabled admin enforcement.
+
+Everyone below admin, including outside collaborators, write-role contributors, and any workflow using the default `GITHUB_TOKEN`, goes through a pull request with green CI.
+
+If your release credential is a GitHub App installation token rather than a personal access token, the role-based entry does not cover it: add a bypass actor with `actor_type: Integration` and the app id to each ruleset file.
+
+## The files own the state
+
+`bootstrap.yml` upserts each ruleset by name: it updates the existing ruleset when one matches and creates it otherwise. Every apply replaces the whole ruleset with the checked-in state. Edits made by hand in the GitHub UI are reset on the next run, so change the JSON files instead. A push that touches `.github/rulesets/` or the bootstrap workflow re-applies automatically; `workflow_dispatch` re-applies on demand. Rulesets with other names are never touched, so you can add your own alongside.
+
+The apply step needs `administration: write`, a permission the default `GITHUB_TOKEN` cannot be granted, so it runs with `RELEASE_TOKEN`, matching the permission set the README already asks for.
+
+## Applying by hand
+
+Without the bootstrap workflow (or when importing into another repository):
+
+```
+gh api -X POST "repos/OWNER/REPO/rulesets" \
+  --input .github/rulesets/protect-main.json
+```
+
+or import each file in the UI under **Settings → Rules → Rulesets → New ruleset → Import a ruleset**. The JSON files use the same schema the UI exports.
+
+## Plan limits
+
+GitHub enforces rulesets on public repositories on every plan; private repositories need a paid plan. On a Free-plan private repository the ruleset API rejects the apply and the `settings` job fails; the labels job still runs, and the rulesets take effect once the repository is public or the plan allows enforcement.
 # Python API
 
 # Vault
@@ -6849,7 +7053,7 @@ print(note.content)
 
 ## API Reference
 
-## `Vault(*, source_dir, index_path=None, embeddings_path=None, embedding_provider=None, read_only=True, state_path=None, indexed_frontmatter_fields=None, required_frontmatter=None, chunk_strategy='heading', on_write=None, git_strategy=None, git_pull_interval_s=0, exclude_patterns=None, attachment_extensions=None, max_attachment_size_mb=1.0, max_note_read_bytes=262144, chunks_per_file=2, snippet_words=200, length_downweight_alpha=0.25, max_chunk_words=400, max_chunk_chars=None, max_chunk_chars_override=None, chunk_overlap_words=0, summarizer=None, summarize_max_notes=50, summarize_max_input_chars=200000, summarize_inline_timeout=30.0, title_field='title', searchable_frontmatter_fields=None, embed_context=False, embedding_batch_size=4, folder_weights=None, fts_weights=None, conventions_file='_conventions.md', okf_mode='auto', okf_write=False)`
+## `Vault(*, source_dir, index_path=None, embeddings_path=None, embedding_provider=None, read_only=True, state_path=None, indexed_frontmatter_fields=None, required_frontmatter=None, chunk_strategy='heading', on_write=None, git_strategy=None, git_pull_interval_s=0, exclude_patterns=None, attachment_extensions=None, max_attachment_size_mb=1.0, max_note_read_bytes=262144, chunks_per_file=2, snippet_words=200, length_downweight_alpha=0.25, max_chunk_words=400, max_chunk_chars=None, max_chunk_chars_override=None, chunk_overlap_words=0, summarizer=None, summarize_max_notes=50, summarize_max_input_chars=200000, title_field='title', searchable_frontmatter_fields=None, embed_context=False, embedding_batch_size=4, folder_weights=None, fts_weights=None, conventions_file='_conventions.md', okf_mode='auto', okf_write=False)`
 
 Facade over FTS5 index, vector index, and change tracker.
 
@@ -6918,22 +7122,6 @@ Raises:
 | Type           | Description                                                                                                                         |
 | -------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | `RuntimeError` | If no summarization backend was configured (set OPENAI_API_KEY or an OpenAI-compatible base URL and install the [summarize] extra). |
-
-### `summary_jobs`
-
-Background-summarize job store (#937).
-
-Holds summaries promoted to background jobs when a `summarize` call exceeds its inline deadline; polled by the `get_summary` tool.
-
-Raises:
-
-| Type           | Description                                                                                 |
-| -------------- | ------------------------------------------------------------------------------------------- |
-| `RuntimeError` | If no summarization backend was configured (the store rides alongside the summarize facet). |
-
-### `summarize_inline_timeout`
-
-Soft deadline (seconds) before a `summarize` call is promoted to a background job (#937).
 
 ### `conventions`
 
@@ -8319,7 +8507,7 @@ vault = Vault(**to_vault_kwargs(config))
 
 ## API Reference
 
-## `ProjectConfig(server=ServerConfig(), source_dir=Path('/data/vault'), read_only=True, server_name='markdown-vault-mcp', instructions=None, disable_apps_ui=False, index_path=None, state_path=None, embeddings_path=None, indexed_fields=None, required_fields=None, exclude=None, title_field='title', searchable_fields=None, templates_folder='_templates', prompts_folder=None, conventions_file='_conventions.md', okf_mode='auto', okf_write=False, okf_verify='elicit', attachment_extensions=None, max_attachment_size_mb=1.0, max_note_read_bytes=262144, chunks_per_file=2, snippet_words=200, length_downweight_alpha=0.25, max_chunk_words=400, max_chunk_chars=None, chunk_overlap_words=40, folder_weights=None, fts_weights=None, embedding_provider=None, ollama_host='http://localhost:11434', openai_api_key=None, ollama_model='nomic-embed-text', ollama_cpu_only=False, openai_base_url='https://api.openai.com/v1', openai_embedding_model='text-embedding-3-small', fastembed_model='BAAI/bge-small-en-v1.5', fastembed_cache_dir=None, embed_context=False, embed_timeout_s=30.0, embedding_batch_size=4, git_repo_url=None, git_token=None, git_username='x-access-token', git_pull_interval_s=600, git_push_delay_s=30.0, git_commit_name='markdown-vault-mcp', git_commit_email='noreply@markdown-vault-mcp', git_commit_name_claim=None, git_commit_email_claim=None, git_lfs=True, file_watcher=True, file_watcher_debounce_s=2.0, file_watcher_root_floor=True, github_webhook_secret=None, summarize_provider=None, summarize_openai_api_key=None, summarize_openai_base_url=None, summarize_openai_model='gpt-5-mini', summarize_max_tokens=8192, summarize_max_notes=50, summarize_max_input_chars=200000, summarize_timeout=120.0, summarize_inline_timeout=30.0, transfer=TransferConfig())`
+## `ProjectConfig(server=ServerConfig(), source_dir=Path('/data/vault'), read_only=True, server_name='markdown-vault-mcp', instructions=None, disable_apps_ui=False, index_path=None, state_path=None, embeddings_path=None, indexed_fields=None, required_fields=None, exclude=None, title_field='title', searchable_fields=None, templates_folder='_templates', prompts_folder=None, conventions_file='_conventions.md', okf_mode='auto', okf_write=False, okf_verify='elicit', attachment_extensions=None, max_attachment_size_mb=1.0, max_note_read_bytes=262144, chunks_per_file=2, snippet_words=200, length_downweight_alpha=0.25, max_chunk_words=400, max_chunk_chars=None, chunk_overlap_words=40, folder_weights=None, fts_weights=None, embedding_provider=None, ollama_host='http://localhost:11434', openai_api_key=None, ollama_model='nomic-embed-text', ollama_cpu_only=False, openai_base_url='https://api.openai.com/v1', openai_embedding_model='text-embedding-3-small', fastembed_model='BAAI/bge-small-en-v1.5', fastembed_cache_dir=None, embed_context=False, embed_timeout_s=30.0, embedding_batch_size=4, git_repo_url=None, git_token=None, git_username='x-access-token', git_pull_interval_s=600, git_push_delay_s=30.0, git_commit_name='markdown-vault-mcp', git_commit_email='noreply@markdown-vault-mcp', git_commit_name_claim=None, git_commit_email_claim=None, git_lfs=True, file_watcher=True, file_watcher_debounce_s=2.0, file_watcher_root_floor=True, github_webhook_secret=None, summarize_provider=None, summarize_openai_api_key=None, summarize_openai_base_url=None, summarize_openai_model='gpt-5-mini', summarize_max_tokens=8192, summarize_max_notes=50, summarize_max_input_chars=200000, summarize_timeout=120.0, transfer=TransferConfig(), jobs=JobsConfig())`
 
 Domain config for Markdown Vault MCP. Compose — don't inherit.
 
@@ -9171,3 +9359,172 @@ Raised when a write operation is attempted on a read-only vault.
 ## Configuration Errors
 
 `markdown_vault_mcp.exceptions.ConfigurationError` is re-exported from [`fastmcp-pvl-core`](https://github.com/pvliesdonk/fastmcp-pvl-core), the shared base library across the `*-mcp` server series, so the whole ecosystem raises one canonical config error. It is raised for invalid or out-of-range configuration at startup (such as a non-numeric env var, a value outside its documented range, or a missing required variable). Unlike the other exceptions on this page it is not a subclass of `MarkdownMCPError`.
+# Releases
+
+# Release notes
+
+Human-readable notes for each minor release: what changed, who is affected, and what to do about it, with every claim linked to the issue or pull request behind it.
+
+## Available pages
+
+- [3.1](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/3.1/index.md) (released July 8, 2026)
+
+## How these pages work
+
+**One page per minor version.** Each minor release gets a single page, named for the minor (`3.1`, `3.2`, and so on). This matches how the documentation site is deployed: each minor is published as its own site version, so the notes for a release always travel with the documentation that describes it.
+
+**Patch releases append to the minor's page.** A patch release adds a dated section to its minor's page rather than getting a page of its own, so the full story of a minor stays in one linkable document.
+
+**The GitHub release links here.** The release body on GitHub carries a short summary and a link to the matching page on this site. These pages are the canonical narrative; the release body is the pointer.
+
+**`CHANGELOG.md` stays machine-generated.** The [commit-level audit trail](https://github.com/pvliesdonk/markdown-vault-mcp/blob/main/CHANGELOG.md) records what landed, commit by commit; these pages explain whether to upgrade and what to check first. The two are generated separately and neither replaces the other.
+
+## Coverage
+
+Pages for releases before 3.1 arrive through a one-time backfill ([#1058](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1058)). Pages for future releases are drafted by a generation workflow maintained upstream in the project template ([fastmcp-server-template#347](https://github.com/pvliesdonk/fastmcp-server-template/issues/347)), reviewed as an ordinary pull request before publication.
+
+# 3.1
+
+Released July 8, 2026.
+
+This is the release where other people's vaults broke it. Three outside reporters ran markdown-vault-mcp against a 4,400-document home directory, a symlink farm, and an Obsidian vault full of table navigators, and between them filed the issues behind most of what follows. The headline work is not a new feature: it is that discovery, watching and semantic recall now behave the same on a large real vault as they did on a small test one.
+
+Alongside that, the four in-panel MCP App views were rebuilt on a shared visual foundation, and two new tools landed.
+
+## Upgrade notes
+
+Read these before upgrading. Two affect existing deployments.
+
+### `VaultConfig` is now `ProjectConfig`, with no alias
+
+The configuration dataclass was renamed from `VaultConfig` to `ProjectConfig` ([#767](https://github.com/pvliesdonk/markdown-vault-mcp/issues/767)). No back-compatible alias was kept, so `from markdown_vault_mcp.config import VaultConfig` now raises `ImportError`. Only Python API consumers are affected. Environment variables, MCP tools and the CLI are unchanged.
+
+The rename was forced by an upstream template gate, `tests/test_config_wizard_drift.py`, which hard-imports `ProjectConfig` and could not collect against this repository at all. The same change taught the gate to see configuration reads that are delegated into `config_sections/` submodules, which it had previously been scanning past. Roughly 40 domain environment variables were unchecked before this landed.
+
+### Check `EMBEDDINGS_PATH` if it ends in `.npy`
+
+Setting `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` to a path with a `.npy` extension could destroy the vector store ([#819](https://github.com/pvliesdonk/markdown-vault-mcp/issues/819)). The loader probed for the sidecar by appending `.npy` to the configured base, while save and load derived it with `Path.with_suffix`. The two agreed only when the base had no extension. With `embeddings.npy` configured, the loader looked for `embeddings.npy.npy`, found nothing, cold-built an empty index, and the next save overwrote the real store.
+
+The reporter lost a 68,796-vector store to a 604-chunk watcher delta on the first `serve` after building it with `index --force`. `embeddings_status` carried the same defect and reported `chunk_count=0` for a store that existed.
+
+Both call sites now derive with `with_suffix`. If you configured an extension and your store looks empty, rebuild with `index --force`.
+
+### New setting: `FILE_WATCHER_ROOT_FLOOR`
+
+`MARKDOWN_VAULT_MCP_FILE_WATCHER_ROOT_FLOOR` (default `true`) keeps the non-recursive watch on the vault root, so root-level `.md` changes still trigger a reindex. Set it to `false` to register zero watches rooted at the source directory, at the cost of root-level files being picked up only by scans.
+
+This exists for macOS. A non-recursive watchdog watch is emulated there, and still opens an OS-level recursive `FSEvents` stream over the whole tree, so a vault rooted at `$HOME` produces repeated "would like to access data from other apps" consent prompts naming the Python binary ([#823](https://github.com/pvliesdonk/markdown-vault-mcp/issues/823)).
+
+## Highlights
+
+### Large vaults are no longer minutes behind
+
+File discovery globbed `**/*.md` across the whole vault and applied exclude patterns per file afterwards, so every excluded subtree was fully descended on every scan ([#822](https://github.com/pvliesdonk/markdown-vault-mcp/issues/822)). On a home-directory vault with 4,400 documents and 23 exclude patterns, one `detect_changes` call took 5,043 seconds. A second run sat 28 minutes inside a single `opendir` system call before it was killed. With the watcher on, any churn started the scan again, so the process scanned all day and save-to-searchable latency was measured in minutes.
+
+Discovery now prunes a directory before descending into it, but only when the exclude patterns provably cover everything beneath. The per-file filter stays as the correctness layer. The same scan now takes 3.2 seconds across 25,263 directories, and save-to-searchable drops to about 15 seconds.
+
+The watcher was rebuilt on the same pruning helper. Instead of one recursive watch on the vault root, it derives watch roots from the root's immediate children minus the provably excluded ones: 94 scoped watches on the reporter's vault, none rooted at the source directory.
+
+That re-rooting also fixes a second defect in the same issue. The watcher now decides whether a path is hidden relative to the watch root that delivered the event, rather than relative to the vault root. A vault whose content lives under a dot directory, such as `.claude/` beneath `$HOME`, previously never reindexed from its own edits.
+
+Two follow-ups landed in the same release. Watch roots are resolved to their real paths, because watchdog's FSEvents emitter delivers realpath-prefixed events that the root-relative filter was dropping silently, leaving the watcher live but blind on symlinked layouts ([#849](https://github.com/pvliesdonk/markdown-vault-mcp/issues/849)). And the vault's own state directory and `.git` are never watch roots, after the scoped watch work reintroduced the self-feedback reindex loop that [#720](https://github.com/pvliesdonk/markdown-vault-mcp/issues/720) had fixed: `reindex()` writes tracker state unconditionally, that write is an event under the state-directory watch, and the loop sustains itself ([#830](https://github.com/pvliesdonk/markdown-vault-mcp/issues/830)).
+
+### Semantic search recall no longer depends on `limit`
+
+Semantic search sized its candidate pool from the caller's `limit` before grouping chunks by document, which made the pool a recall cap ([#820](https://github.com/pvliesdonk/markdown-vault-mcp/issues/820)). When a few chunk-heavy documents filled the pool, a smaller document whose best chunk ranked just past it disappeared from the results, even when it was the best-scoring document for the query.
+
+On a 6,916-chunk vault, one query's true best document scored 0.685 and was absent at every limit from 3 to 12, while the returned top result scored 0.495. It appeared only at limit 13 or higher. Scores were also not comparable across limits, because the pool changed what got grouped.
+
+The pool is now floored at 1,000. Because `VectorIndex.search` already scans and sorts the whole index anyway, a wider pool costs only the slice at the end. No extra distance computation happens.
+
+### Chunking gained overlap, and a ceiling
+
+Adjacent chunks now share a configurable within-section overlap, so a passage straddling a chunk boundary stays retrievable from either side ([#791](https://github.com/pvliesdonk/markdown-vault-mcp/issues/791)).
+
+Separately, the derived chunk-character cap has an upper bound ([#790](https://github.com/pvliesdonk/markdown-vault-mcp/issues/790)). It scaled linearly with the embedding model's context length and had no ceiling, so an 8,192-token model produced a roughly 22,900-character cap. That is the regime a previous release moved away from after the fastembed ONNX path froze on oversize chunks, and picking any long-context model silently re-entered it. Pass `-1` to opt back into unbounded behaviour.
+
+### Vault Views rebuilt as "Paper"
+
+The four in-panel MCP App views were restyled onto a shared warm, editorial foundation with serif headings and one accent colour, aware of light and dark ([#809](https://github.com/pvliesdonk/markdown-vault-mcp/issues/809)). Paper tokens map onto the host's existing `--color-*` variables with Paper values as fallback, so a host that pushes its own theme still wins.
+
+Data fetching, routing and tool wiring are unchanged. This was a restyle, and no tool was renamed or removed.
+
+- **Foundation**: token layer, fonts and tab strip ([#811](https://github.com/pvliesdonk/markdown-vault-mcp/issues/811))
+- **Context Card**: folder breadcrumb, relative timestamp, type and status chips, collapsible sections with count badges, similarity scores with progress bars ([#812](https://github.com/pvliesdonk/markdown-vault-mcp/issues/812))
+- **Vault Browser**: restyled tree with attachment glyphs, active-row highlighting, and the hybrid search field ([#813](https://github.com/pvliesdonk/markdown-vault-mcp/issues/813))
+- **Note Preview**: table of contents, collapsible frontmatter and tags, copy actions
+- **Graph Explorer**: level-of-detail labels
+
+As a prerequisite, the single 52 KB `app.src.html` was split into modular partials assembled at build time by `build_spa.py` ([#810](https://github.com/pvliesdonk/markdown-vault-mcp/issues/810)).
+
+### Move a whole folder in one call
+
+`move_folder(old_dir, new_dir)` moves a subtree and rewrites every affected link across the vault in a single pass ([#511](https://github.com/pvliesdonk/markdown-vault-mcp/issues/511)).
+
+Previously an agent had to enumerate the subtree and call `rename` per file, which corrupted links between documents inside the moved subtree: when file A moved, its backlink in still-unmoved sibling B was rewritten to A's new home, then B itself moved, and the intermediate rewrites interleaved badly. Computing the full old-to-new mapping first and rewriting once afterwards is what makes this correct.
+
+The directory move is all-or-nothing and validates before touching anything, so a target collision aborts with nothing moved. Link rewrites stay best-effort and report how many succeeded, matching the existing single-file behaviour.
+
+### Table of contents for a folder
+
+`get_toc` returns a heading outline for a folder or subtree, not just one note ([#773](https://github.com/pvliesdonk/markdown-vault-mcp/issues/773)). The per-note outline was previously reachable only through the `toc://vault/{path}` resource, which left clients that surface tools but not resources with no way to get it at all.
+
+### Skipped notes are visible without reading container logs
+
+A note whose YAML frontmatter failed to parse was dropped from the index and reported only as a warning in the container log ([#775](https://github.com/pvliesdonk/markdown-vault-mcp/issues/775)). `get_index_status` said `queryable` with zero dirty paths and no error, `read` said the document did not exist, and the note surfaced only indirectly as broken inbound links from elsewhere. A parse-skipped note was indistinguishable from one that had not synced yet.
+
+`get_index_status` now returns `skipped_files` with a category and detail per path. Follow-up work separates a true `internal_error` from a `parse_error`, so tooling built on the field can tell "this document has a data problem you can fix" from "the indexer itself hit a bug" ([#802](https://github.com/pvliesdonk/markdown-vault-mcp/issues/802)).
+
+### Aliased wikilinks in tables resolve
+
+`[[path\|alias]]` parsed with the escaping backslash baked into the target, so the link was reported broken and its graph edge was dropped ([#731](https://github.com/pvliesdonk/markdown-vault-mcp/issues/731)). This is the canonical on-disk form, because Obsidian requires the pipe to be escaped inside a table cell. The reporter's vault had about 190 false broken links, all from this.
+
+## Other changes
+
+### Indexing and watching
+
+- An already-indexed file that fails to re-hash is kept rather than purged. It was dropped from the disk snapshot and then computed as deleted, which removed a live document from FTS and its embedding until a later scan ([#831](https://github.com/pvliesdonk/markdown-vault-mcp/issues/831)).
+- Transient descriptor exhaustion is retried with backoff while hashing during a scan, instead of silently dropping the file from the scan ([#821](https://github.com/pvliesdonk/markdown-vault-mcp/issues/821)).
+- Excluded files are invisible in `build_index` for file-shaped patterns such as `**/*.draft.md`, matching the contract that discovery pruning already met for directory-shaped ones ([#832](https://github.com/pvliesdonk/markdown-vault-mcp/issues/832)).
+- An unreadable subtree is logged rather than silently skipped, and a watcher that ends up with zero active watches is reported above `INFO` instead of logging success ([#835](https://github.com/pvliesdonk/markdown-vault-mcp/issues/835)).
+- The vector sidecar is written atomically, corrupt sidecars self-heal on load, and row-count parity is enforced.
+
+### Reading and search
+
+- `read(path, section=...)` returns the whole section. Any section large enough to be split across chunks returned only its first chunk, with no error or truncation marker, and a section with sub-headings returned only the preamble before the first one ([#741](https://github.com/pvliesdonk/markdown-vault-mcp/issues/741)).
+- Whole-document `read` degrades to `None` on malformed frontmatter, and is guarded against mid-read failure.
+- Git sync resolves its ref as `origin/<branch>` rather than `@{upstream}`.
+
+### Diagnostics
+
+- The `index` and `reindex` CLI commands no longer swallow internal embedding failures. A blanket `except ValueError: pass`, intended to skip when embeddings are not configured, also caught an internal consistency failure, so a corrupt sidecar produced `Indexed N documents` and a zero exit code ([#774](https://github.com/pvliesdonk/markdown-vault-mcp/issues/774)).
+- Internal semantic-search failures surface from `get_context`.
+- `httpx` per-request logs are quiet at the default level. One `INFO` line per Ollama embed batch flooded the log during a build ([#792](https://github.com/pvliesdonk/markdown-vault-mcp/issues/792)).
+- One malformed prompt no longer aborts registration of every prompt after it ([#799](https://github.com/pvliesdonk/markdown-vault-mcp/issues/799)), and prompts are built from a synthetic signature instead of `exec()`.
+
+### MCP Apps
+
+- Graph and context app tools no longer fail on a note larger than `MAX_NOTE_READ_BYTES`. Four sites called the size-capped `read()` purely to extract a title for a node label, so one 375 KB note failed the whole tool. A metadata accessor backed by the index is used instead ([#855](https://github.com/pvliesdonk/markdown-vault-mcp/issues/855)).
+- Graph canvas colours are resolved by probe, so nodes are not black on Claude Desktop.
+- The Vault Explorer view honours host container dimensions on mobile.
+
+### Tooling and plumbing
+
+- Every tool carries a human-readable `title` annotation. VS Code's MCP client honours only `title` and `readOnlyHint` among annotations, so tools had been rendering under their raw machine names ([#751](https://github.com/pvliesdonk/markdown-vault-mcp/issues/751)).
+- Eight `copier update` commits took the upstream template from v2.1.1 to v2.10.1. Most of that range is developer-facing: a diff-scoped structural health gate, Vale linting of user-facing docs, a configuration-wizard coverage gate, and a `DOMAIN-COMMANDS` sentinel for domain CLI subcommands. The in-browser configuration generator on the documentation site arrived the same way.
+
+## Thanks
+
+This release leans heavily on reports from outside the repository, several carrying measurements, stack samples and fault-injection reproductions:
+
+- [@michael-denyer](https://github.com/michael-denyer) for [#819](https://github.com/pvliesdonk/markdown-vault-mcp/issues/819), [#820](https://github.com/pvliesdonk/markdown-vault-mcp/issues/820), [#821](https://github.com/pvliesdonk/markdown-vault-mcp/issues/821), [#822](https://github.com/pvliesdonk/markdown-vault-mcp/issues/822), [#823](https://github.com/pvliesdonk/markdown-vault-mcp/issues/823) and [#849](https://github.com/pvliesdonk/markdown-vault-mcp/issues/849)
+- [@Finomosec](https://github.com/Finomosec) for [#720](https://github.com/pvliesdonk/markdown-vault-mcp/issues/720)
+- [@Denzilla04](https://github.com/Denzilla04) for [#731](https://github.com/pvliesdonk/markdown-vault-mcp/issues/731)
+
+## Patch releases
+
+No patch releases yet.
+
+## All changes
+
+See [CHANGELOG.md](https://github.com/pvliesdonk/markdown-vault-mcp/blob/main/CHANGELOG.md) for the full commit-level list, or the [v3.0.0 to v3.1.0 comparison](https://github.com/pvliesdonk/markdown-vault-mcp/compare/v3.0.0...v3.1.0).

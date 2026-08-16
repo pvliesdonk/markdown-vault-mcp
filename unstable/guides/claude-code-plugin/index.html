@@ -348,6 +348,26 @@
   
 
       
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../releases/" class="md-tabs__link">
+          
+  
+  
+  Releases
+
+        </a>
+      </li>
+    
+  
+
+      
     </ul>
   </div>
 </nav>
@@ -1136,6 +1156,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#troubleshooting-and-guided-setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Troubleshooting and guided setup
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#update" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1523,6 +1554,62 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deployment/release-process/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release Process
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deployment/repository-protection/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Repository Protection
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -1787,6 +1874,123 @@
   
 
     
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Releases
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Releases
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../releases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../releases/3.1/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    3.1
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
   </ul>
 </nav>
                   </div>
@@ -1869,6 +2073,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#troubleshooting-and-guided-setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Troubleshooting and guided setup
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#update" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1924,7 +2139,7 @@
 <h1 id="claude-code-plugin">Claude Code Plugin<a class="headerlink" href="#claude-code-plugin" title="Permanent link">&para;</a></h1>
 <p>This guide walks through installing markdown-vault-mcp as a <a href="https://claude.ai/claude-code">Claude Code</a> plugin, either for the current project or globally.</p>
 <h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
-<p>The Claude Code plugin installs markdown-vault-mcp directly into your Claude Code environment. It wires up the most commonly needed env vars with sensible defaults, and also installs a <code>vault-workflow</code> skill that gives Claude guidance on search strategy, reading patterns, link tools, and write semantics.</p>
+<p>The Claude Code plugin installs markdown-vault-mcp directly into your Claude Code environment. Enabling it opens a configuration prompt for the settings that matter on a personal install (the vault directory, read-only mode, embedding provider, git sync), with sensitive values stored securely and no shell-profile editing. The plugin also installs a <code>vault-workflow</code> skill that gives Claude guidance on search strategy, reading patterns, link tools, and write semantics.</p>
 <h2 id="prerequisites">Prerequisites<a class="headerlink" href="#prerequisites" title="Permanent link">&para;</a></h2>
 <ul>
 <li><a href="https://docs.astral.sh/uv/">uv</a> installed</li>
@@ -1943,79 +2158,92 @@
 </code></pre></div>
 </div>
 <h2 id="configure">Configure<a class="headerlink" href="#configure" title="Permanent link">&para;</a></h2>
-<p>The only required env var is <code>MARKDOWN_VAULT_MCP_SOURCE_DIR</code>. Set it to the path of your vault:</p>
-<div class="tabbed-set tabbed-alternate" data-tabs="1:2"><input checked="checked" id="__tabbed_1_1" name="__tabbed_1" type="radio" /><input id="__tabbed_1_2" name="__tabbed_1" type="radio" /><div class="tabbed-labels"><label for="__tabbed_1_1">Shell (current session)</label><label for="__tabbed_1_2">Shell profile (persistent)</label></div>
-<div class="tabbed-content">
-<div class="tabbed-block">
-<div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">MARKDOWN_VAULT_MCP_SOURCE_DIR</span><span class="o">=</span>/path/to/your/vault
-</code></pre></div>
-</div>
-<div class="tabbed-block">
-<p>Add to your <code>~/.bashrc</code>, <code>~/.zshrc</code>, or equivalent:</p>
-<div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">MARKDOWN_VAULT_MCP_SOURCE_DIR</span><span class="o">=</span>/path/to/your/vault
-</code></pre></div>
-</div>
-</div>
-</div>
-<p>Restart Claude Code after setting the env var so the plugin picks it up.</p>
+<p>Enabling the plugin opens a configuration prompt. The only required field is the vault directory; everything else has a sensible default or can stay empty. Your answers persist across plugin updates, and sensitive fields (the OpenAI API key, the git access token) are masked and stored in secure storage rather than a settings file. Restart Claude Code after configuring so the server starts with your values.</p>
+<p>To change the configuration later, re-open the plugin's configuration from the <code>/plugin</code> menu, or just ask Claude to set up or repair your vault (the <code>vault-setup</code> skill walks through it).</p>
 <h2 id="what-you-get">What you get<a class="headerlink" href="#what-you-get" title="Permanent link">&para;</a></h2>
-<p>The plugin wires up the following env vars. Vars with a default are filled in when the shell variable is unset; vars marked <em>(empty)</em> stay blank when unset, which usually means "feature disabled" or "use the server's built-in default":</p>
+<p>The configuration prompt covers these settings, each wired to the matching server option. Fields marked <em>(empty)</em> can stay blank, which means "feature disabled" or "use the server's built-in default":</p>
 <table>
 <thead>
 <tr>
-<th>Env var</th>
+<th>Setting</th>
 <th>Default</th>
-<th>Description</th>
+<th>What it sets</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>MARKDOWN_VAULT_MCP_SOURCE_DIR</code></td>
+<td>Vault directory</td>
 <td><em>(required)</em></td>
-<td>Path to your vault directory</td>
+<td><code>MARKDOWN_VAULT_MCP_SOURCE_DIR</code>: the vault to serve</td>
 </tr>
 <tr>
-<td><code>MARKDOWN_VAULT_MCP_READ_ONLY</code></td>
+<td>Read-only mode</td>
 <td><code>true</code></td>
-<td>Set to <code>false</code> to enable the write tools (<code>write</code>, <code>edit</code>, <code>append</code>, <code>delete</code>, <code>rename</code>, <code>move_folder</code>, <code>fetch</code>, <code>git_sync</code>, the <code>okf_*</code> tools, <code>create_upload_link</code>)</td>
+<td><code>MARKDOWN_VAULT_MCP_READ_ONLY</code>; set <code>false</code> to enable the write tools (<code>write</code>, <code>edit</code>, <code>append</code>, <code>delete</code>, <code>rename</code>, <code>move_folder</code>, <code>fetch</code>, <code>git_sync</code>, the <code>okf_*</code> tools, <code>create_upload_link</code>)</td>
 </tr>
 <tr>
-<td><code>MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER</code></td>
-<td><em>(empty)</em></td>
-<td>Embedding backend (<code>fastembed</code>, <code>ollama</code>, <code>openai</code>); leave empty for keyword-only search</td>
-</tr>
-<tr>
-<td><code>MARKDOWN_VAULT_MCP_EXCLUDE</code></td>
+<td>Exclude patterns</td>
 <td><code>.obsidian/**,.trash/**,.git/**</code></td>
-<td>Comma-separated glob patterns to exclude from indexing</td>
+<td><code>MARKDOWN_VAULT_MCP_EXCLUDE</code>: comma-separated globs kept out of the index</td>
 </tr>
 <tr>
-<td><code>MARKDOWN_VAULT_MCP_GIT_REPO_URL</code></td>
+<td>Embedding provider</td>
 <td><em>(empty)</em></td>
-<td>Remote repository URL for git-backed vault sync; leave empty to disable git integration</td>
+<td><code>MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER</code> (<code>fastembed</code>, <code>ollama</code>, <code>openai</code>); empty means keyword-only search</td>
 </tr>
 <tr>
-<td><code>MARKDOWN_VAULT_MCP_GIT_TOKEN</code></td>
-<td><em>(empty)</em></td>
-<td>Personal access token for the git remote; leave empty to disable git integration</td>
-</tr>
-<tr>
-<td><code>MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH</code></td>
-<td><em>(empty)</em></td>
-<td>Base path for the embeddings <code>.npy</code> sidecar (runtime appends the suffix); leave empty to disable semantic search</td>
-</tr>
-<tr>
-<td><code>MARKDOWN_VAULT_MCP_INDEX_PATH</code></td>
-<td><em>(empty)</em></td>
-<td>Override the FTS5 SQLite index file path; leave empty to use an in-memory index (rebuilt on every startup)</td>
-</tr>
-<tr>
-<td><code>OLLAMA_HOST</code></td>
+<td>Ollama host</td>
 <td><code>http://localhost:11434</code></td>
-<td>Base URL for the Ollama API; only used when <code>MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER=ollama</code></td>
+<td><code>OLLAMA_HOST</code>; used only with the <code>ollama</code> provider</td>
+</tr>
+<tr>
+<td>Ollama embedding model</td>
+<td><code>nomic-embed-text</code></td>
+<td><code>MARKDOWN_VAULT_MCP_OLLAMA_MODEL</code></td>
+</tr>
+<tr>
+<td>FastEmbed model</td>
+<td><code>BAAI/bge-small-en-v1.5</code></td>
+<td><code>MARKDOWN_VAULT_MCP_FASTEMBED_MODEL</code></td>
+</tr>
+<tr>
+<td>OpenAI API key</td>
+<td><em>(empty, masked)</em></td>
+<td><code>OPENAI_API_KEY</code>; used only with the <code>openai</code> provider</td>
+</tr>
+<tr>
+<td>OpenAI base URL</td>
+<td><code>https://api.openai.com/v1</code></td>
+<td><code>OPENAI_BASE_URL</code></td>
+</tr>
+<tr>
+<td>OpenAI embedding model</td>
+<td><code>text-embedding-3-small</code></td>
+<td><code>OPENAI_EMBEDDING_MODEL</code></td>
+</tr>
+<tr>
+<td>Git sync repository URL</td>
+<td><em>(empty)</em></td>
+<td><code>MARKDOWN_VAULT_MCP_GIT_REPO_URL</code>; empty disables git integration</td>
+</tr>
+<tr>
+<td>Git access token</td>
+<td><em>(empty, masked)</em></td>
+<td><code>MARKDOWN_VAULT_MCP_GIT_TOKEN</code></td>
+</tr>
+<tr>
+<td>Server name</td>
+<td><code>markdown-vault-mcp</code></td>
+<td><code>MARKDOWN_VAULT_MCP_SERVER_NAME</code></td>
+</tr>
+<tr>
+<td>Log level</td>
+<td><code>INFO</code></td>
+<td><code>FASTMCP_LOG_LEVEL</code></td>
 </tr>
 </tbody>
 </table>
+<p>Settings outside this screen (state and index paths, tuning, and the rest of <a href="../../configuration/">Configuration</a>) stay reachable through env vars: the <code>env</code> block of your user-scope <code>~/.claude/settings.json</code> reaches the server process for anything the screen does not wire.</p>
 <p>The plugin also installs the <strong><code>vault-workflow</code> skill</strong>, which gives Claude guidance on:</p>
 <ul>
 <li><strong>Search strategy</strong>: when to use keyword vs. semantic vs. hybrid search</li>
@@ -2023,6 +2251,15 @@
 <li><strong>Link tools</strong>: <code>get_backlinks</code>, <code>get_outlinks</code>, <code>get_connection_path</code>, and the graph tools</li>
 <li><strong>Write semantics</strong>: creating, editing, renaming, and deleting notes safely</li>
 </ul>
+<p>A second skill, <strong><code>vault-summarize</code></strong>, triggers when you ask for a summary or overview spanning more than one note. It checks scope with <code>get_toc</code>, prefers the server-side <code>summarize</code> tool when your deployment configured one, and otherwise runs the server's <code>summarize-subtree</code> recipe with parallel <strong><code>vault-mapper</code></strong> subagents (a restricted read-only agent the plugin ships), so note bodies stay confined to the subagents instead of filling the main conversation.</p>
+<h2 id="troubleshooting-and-guided-setup">Troubleshooting and guided setup<a class="headerlink" href="#troubleshooting-and-guided-setup" title="Permanent link">&para;</a></h2>
+<p>If the vault server shows <code>Failed to connect</code> in <code>/mcp</code>, the plugin can repair itself in-session: skills, agents, and hooks keep working while the MCP server is down.</p>
+<ul>
+<li>A <strong>SessionStart doctor hook</strong> checks the effective configuration when a session starts. When the vault directory is unset or no longer exists, it says so up front and offers help; when the configuration is healthy it stays silent.</li>
+<li>Asking Claude to set up (or fix) your vault triggers the <strong><code>vault-setup</code> skill</strong>. It looks for candidate vault directories (<code>.obsidian/</code> markers and note-like folders), checks that your choice exists and is readable, and then records it in the plugin's stored options in your user-scope <code>~/.claude/settings.json</code> (the same place the configuration prompt writes). The flow always ends with a restart of Claude Code, because MCP servers only start at session start.</li>
+<li>The same flow covers later breakage: a moved vault, an expired git token, or a broken embedding-provider setting.</li>
+</ul>
+<p>One precedence rule worth knowing: the plugin's stored options are what the server actually receives; legacy configuration through the settings-file <code>env</code> block or a shell profile only applies when no plugin option is set. If an old shell-profile value disagrees with the plugin's configuration, the plugin's value is the one that counts.</p>
 <h2 id="update">Update<a class="headerlink" href="#update" title="Permanent link">&para;</a></h2>
 <p>To update the plugin to the latest version:</p>
 <div class="highlight"><pre><span></span><code>/plugin update markdown-vault-mcp

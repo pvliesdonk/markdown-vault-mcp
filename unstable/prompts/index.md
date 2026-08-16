@@ -4,15 +4,16 @@ Prompt templates guide the LLM through multi-step workflows using the vault tool
 
 ## Quick Reference
 
-| Prompt                                          | Parameters                                | Category | Description                                                                      |
-| ----------------------------------------------- | ----------------------------------------- | -------- | -------------------------------------------------------------------------------- |
-| [`summarize`](#summarize)                       | `path`                                    | Read     | Structured summary of a document                                                 |
-| [`research`](#research)                         | `topic`                                   | Write    | Search, synthesize, and create a research note                                   |
-| [`discuss`](#discuss)                           | `path`                                    | Write    | Analyze and suggest improvements using `edit`                                    |
-| [`create_from_template`](#create_from_template) | `template_name` (optional)                | Write    | Create a new note from a template in your templates folder                       |
-| [`related`](#related)                           | `path`                                    | Read     | Find related notes and suggest cross-references                                  |
-| [`compare`](#compare)                           | `path1`, `path2`                          | Read     | Side-by-side comparison of two documents                                         |
-| [`propose-links`](#propose-links)               | `scope`, `per_note_limit` (both optional) | Write    | Propose new links between semantically close notes that aren't already connected |
+| Prompt                                          | Parameters                                | Category | Description                                                                                                                       |
+| ----------------------------------------------- | ----------------------------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| [`summarize`](#summarize)                       | `path`                                    | Read     | Structured summary of a document                                                                                                  |
+| [`summarize-subtree`](#summarize-subtree)       | `paths`, `focus` (optional)               | Read     | Multi-note or folder summary using the client's own model, processed in batches (delegated to subagents when the client has them) |
+| [`research`](#research)                         | `topic`                                   | Write    | Search, synthesize, and create a research note                                                                                    |
+| [`discuss`](#discuss)                           | `path`                                    | Write    | Analyze and suggest improvements using `edit`                                                                                     |
+| [`create_from_template`](#create_from_template) | `template_name` (optional)                | Write    | Create a new note from a template in your templates folder                                                                        |
+| [`related`](#related)                           | `path`                                    | Read     | Find related notes and suggest cross-references                                                                                   |
+| [`compare`](#compare)                           | `path1`, `path2`                          | Read     | Side-by-side comparison of two documents                                                                                          |
+| [`propose-links`](#propose-links)               | `scope`, `per_note_limit` (both optional) | Write    | Propose new links between semantically close notes that aren't already connected                                                  |
 
 ______________________________________________________________________
 
@@ -27,6 +28,33 @@ Read a document and produce a structured summary with key themes and takeaways.
 | `path`    | string | Relative path to the document being summarized |
 
 **Workflow:** Calls `read` on the given path, then produces a concise overview covering the document's main topics and key points.
+
+For a folder or several notes, use [`summarize-subtree`](#summarize-subtree) (or the [`summarize` tool](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/tools/#summarize) where a backend is configured) instead of repeating this prompt per note.
+
+## `summarize-subtree`
+
+Summarize a folder subtree or a set of notes with the *client's* own model. The prompt ships the same map-reduce recipe the server-side [`summarize` tool](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/tools/#summarize) runs internally: partition into batches, one partial summary per batch, combine. Note bodies stay out of the retained conversation context: with subagents each phase runs in its own subagent, and without them the client processes batches sequentially, carrying only partial summaries forward. It needs no summarization backend and no API key on the server.
+
+**The prompt adapts to the server's configuration.** Whether summarization runs server-side or client-side is an operator decision, expressed by configuring a summarization backend or not:
+
+- **Backend configured**: the [`summarize` tool](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/tools/#summarize) is registered and the prompt opens by preferring it: a single call with no context overhead for the client. The recipe remains available for when the user wants their own model to do the work.
+- **No backend**: the tool is absent and the prompt carries the recipe alone, without mentioning a tool the server does not have. The server instructions point clients at the prompt in this case.
+
+For operators deciding whether to configure a backend: the tool is the most efficient path for the client's primary model. Its backend usage is billed separately from the client, though; that matters when client usage is already covered by a subscription plan, and not at all for a local endpoint or a pay-per-token setup. Neither route is inherently more private: the backend can be a local model that discloses less than a cloud-hosted client model. And the backend receives frozen text, where a mapper subagent can follow a link mid-summary to resolve a reference.
+
+**Parameters:**
+
+| Parameter | Type   | Description                                                                                                               |
+| --------- | ------ | ------------------------------------------------------------------------------------------------------------------------- |
+| `paths`   | string | One or more note paths and/or folder prefixes, separated by commas (such as `projects/alpha` or `notes/a.md, notes/b.md`) |
+| `focus`   | string | null                                                                                                                      |
+
+**Workflow:**
+
+1. **Plan**: expand folder prefixes via `get_toc`, de-duplicate, and pack the note paths into batches (delegated to a subagent when available; the toc carries paths, titles, and headings, never bodies).
+1. **Map**: one detailed partial summary per batch, preserving concrete specifics and referencing every note by path. Parallel subagents fan out one mapper each; sequential subagents run one at a time; without subagents the client reads one batch at a time, keeping only each batch's partial summary.
+1. **Reduce**: partial summaries are combined into one cohesive summary, by a reducer subagent or inline.
+1. **Deliver**: the final summary plus a coverage note (notes summarized, notes skipped).
 
 ## `research`
 

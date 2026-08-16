@@ -348,6 +348,26 @@
   
 
       
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../releases/" class="md-tabs__link">
+          
+  
+  
+  Releases
+
+        </a>
+      </li>
+    
+  
+
+      
     </ul>
   </div>
 </nav>
@@ -583,6 +603,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#background-tasks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Background tasks
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#core" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -670,6 +701,17 @@
     <span class="md-ellipsis">
       
         Summarization
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#background-jobs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Background Jobs
       
     </span>
   </a>
@@ -1645,6 +1687,62 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../deployment/release-process/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release Process
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../deployment/repository-protection/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Repository Protection
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -1909,6 +2007,123 @@
   
 
     
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Releases
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Releases
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../releases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../releases/3.1/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    3.1
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
   </ul>
 </nav>
                   </div>
@@ -1940,6 +2155,17 @@
     <span class="md-ellipsis">
       
         Tool visibility
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#background-tasks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Background tasks
       
     </span>
   </a>
@@ -2034,6 +2260,17 @@
     <span class="md-ellipsis">
       
         Summarization
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#background-jobs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Background Jobs
       
     </span>
   </a>
@@ -2194,6 +2431,24 @@ to a value with no names in it, is a startup error. A name matching no
 registered tool is ignored, but an allowlist that matches nothing logs a
 startup <code>WARNING</code> since the instance then exposes zero tools. See
 <code>fastmcp-pvl-core</code>'s README for the full semantics.</p>
+<h2 id="background-tasks">Background tasks<a class="headerlink" href="#background-tasks" title="Permanent link">&para;</a></h2>
+<p>Every Markdown Vault MCP instance wires a background-task backend at startup, so
+a tool registered with <code>task=True</code> works with no extra setup. One variable
+picks the backend:</p>
+<ul>
+<li><code>MARKDOWN_VAULT_MCP_TASKS_URL</code>: <code>memory://</code> runs tasks in-process and loses
+  them on restart; <code>redis://...</code> is durable and shared across processes.</li>
+</ul>
+<p>Unset, a <code>redis://</code> <code>MARKDOWN_VAULT_MCP_KV_STORE_URL</code> is reused for tasks as
+well, so a single URL configures every stateful subsystem. With neither set,
+the backend falls back to <code>memory://</code>, which the server logs at startup when
+running over HTTP. The queue name comes from the <code>MARKDOWN_VAULT_MCP</code> prefix, so
+two servers sharing one Redis do not share a queue.</p>
+<p>Worker tuning stays on the native <code>FASTMCP_DOCKET_*</code> variables
+(<code>FASTMCP_DOCKET_CONCURRENCY</code> and friends, listed in <code>.env.example</code>). Set the
+backend through <code>MARKDOWN_VAULT_MCP_TASKS_URL</code> rather than
+<code>FASTMCP_DOCKET_URL</code>: the former wins when both are set, and the server warns
+about the disagreement.</p>
 <!-- DOMAIN-CONFIG-VARS-START -->
 <h2 id="core">Core<a class="headerlink" href="#core" title="Permanent link">&para;</a></h2>
 <table>
@@ -2571,9 +2826,9 @@ chronic backlog.</p>
 <p class="admonition-title">Embedding provider auto-detection</p>
 <p>When <code>MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER</code> is not set, the server tries providers in this order:</p>
 <ol>
-<li><strong>OpenAI</strong> — if <code>OPENAI_API_KEY</code> is set</li>
-<li><strong>Ollama</strong> — if <code>OLLAMA_HOST</code> is reachable</li>
-<li><strong>FastEmbed</strong> — if the <code>fastembed</code> package is installed</li>
+<li><strong>OpenAI</strong>, if <code>OPENAI_API_KEY</code> is set</li>
+<li><strong>Ollama</strong>, if <code>OLLAMA_HOST</code> is reachable</li>
+<li><strong>FastEmbed</strong>, if the <code>fastembed</code> package is installed</li>
 </ol>
 <p>Both API providers speak the OpenAI-compatible embeddings protocol through the official <code>openai</code> SDK: the <code>ollama</code> provider is a preset that targets <code>{OLLAMA_HOST}/v1</code> with no key required. The <code>OLLAMA_*</code> settings and their behavior are unchanged; <code>OLLAMA_CPU_ONLY</code> uses Ollama's native API, which is the only way to request CPU-only inference.</p>
 <p><strong>Explicit vs. auto-detect failure handling:</strong> when you set <code>MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER</code> to a specific backend and it cannot be constructed at startup — a missing dependency, missing/empty credentials, or an unrecognised value — the server <strong>fails fast</strong> with a <code>ConfigurationError</code> rather than silently falling back to keyword-only search. (An unreachable Ollama/OpenAI <em>service</em> does not prevent startup — the provider still loads; the failure surfaces later as an embedding error during index build.) When the variable is <em>unset</em> (auto-detect) and no backend is available, the server logs a warning and continues with semantic search disabled. Set the variable explicitly if you want a missing provider to be a hard startup error.</p>
@@ -2644,14 +2899,13 @@ chronic backlog.</p>
 <td><code>120</code></td>
 <td>Per-request wall-clock budget for a single backend call. On timeout the tool fails with a clear message that says how to fit under the limit (narrow the request, or raise this) instead of running to the ~600 s default of the OpenAI SDK while the client abandons the request. Set it <strong>below</strong> your MCP client's request timeout</td>
 </tr>
-<tr>
-<td><code>MARKDOWN_VAULT_MCP_SUMMARIZE_INLINE_TIMEOUT</code></td>
-<td>float (s)</td>
-<td><code>30</code></td>
-<td>Inline deadline: a <code>summarize</code> call that runs longer is promoted to a background job (<code>{"status": "in_progress", "job_id": …}</code>) and retrieved later via <code>get_summary</code>, so the tool always responds promptly. Keep it comfortably below the client's request timeout; must be <code>&lt;=</code> <code>SUMMARIZE_TIMEOUT</code></td>
-</tr>
 </tbody>
 </table>
+<p>The former <code>MARKDOWN_VAULT_MCP_SUMMARIZE_INLINE_TIMEOUT</code> variable is gone: the
+soft deadline before a slow <code>summarize</code> call is promoted to a background job
+is no longer summarize-specific. It now belongs to the
+<a href="#background-jobs">background jobs</a> subsystem as
+<code>MARKDOWN_VAULT_MCP_JOBS_SOFT_DEADLINE_S</code>.</p>
 <p>The bare <code>OPENAI_BASE_URL</code> is honored as a <em>value</em> fallback when a key is set (such as an organization-wide proxy), but it never enables the tool by itself: setting it purely for embeddings does not switch summarization on.</p>
 <div class="admonition example">
 <p class="admonition-title">Provider recipes</p>
@@ -2669,6 +2923,54 @@ chronic backlog.</p>
 <p class="admonition-title">Explicit vs. auto-detect failure handling</p>
 <p>Same posture as embeddings: if you set <code>MARKDOWN_VAULT_MCP_SUMMARIZE_PROVIDER</code> explicitly and the backend cannot be loaded (missing SDK, empty key, unrecognised value), startup <strong>fails fast</strong> with a <code>ConfigurationError</code>. When the provider is <em>unset</em> (auto-detect) and the backend cannot be loaded, the server logs a warning and the <code>summarize</code> tool stays hidden.</p>
 </div>
+<h2 id="background-jobs">Background Jobs<a class="headerlink" href="#background-jobs" title="Permanent link">&para;</a></h2>
+<p>Long-running tools (<code>summarize</code>, <code>reindex</code>, <code>build_embeddings</code>) are dual-mode: an MCP client that
+speaks background tasks runs them as protocol-native tasks (see
+<a href="#background-tasks">Background tasks</a> for the backend), while any other
+client runs them in the foreground up to a soft deadline. A call that beats
+the deadline returns its result inline; a slower call keeps running in the
+background and immediately returns <code>{"status": "working", "job_id": …}</code>.
+Fetch the outcome with the <a href="../tools/#get_job_result"><code>get_job_result</code></a>
+tool. These knobs are owned by the shared jobs subsystem, not by any single
+tool:</p>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>MARKDOWN_VAULT_MCP_JOBS_SOFT_DEADLINE_S</code></td>
+<td>float (s)</td>
+<td><code>25</code></td>
+<td>Foreground window before a still-running call is promoted to a background job. Keep it below the strictest MCP-client request timeout in play</td>
+</tr>
+<tr>
+<td><code>MARKDOWN_VAULT_MCP_JOBS_RESULT_TTL_S</code></td>
+<td>float (s)</td>
+<td><code>3600</code></td>
+<td>Job-record retention, measured from creation. After expiry the <code>job_id</code> is unknown, so fetch results promptly</td>
+</tr>
+<tr>
+<td><code>MARKDOWN_VAULT_MCP_JOBS_MAX_PER_SUBJECT</code></td>
+<td>int</td>
+<td><code>256</code></td>
+<td>Cap on live job records per calling subject; promotion past it fails the call</td>
+</tr>
+</tbody>
+</table>
+<p>Job records live in the unified key-value backend
+(<code>MARKDOWN_VAULT_MCP_KV_STORE_URL</code>, namespace <code>jobs</code>). When that variable is
+unset, job records use an in-process memory store rather than the file-tree
+default of other subsystems: records are ephemeral by design, and the file
+default's <code>/data/state</code> path only exists in the Docker image. A promoted job
+runs on the serving process and does not survive a restart either way;
+durable cross-restart execution is what the native task path with a
+<code>redis://</code> tasks backend is for.</p>
 <h2 id="git-integration">Git Integration<a class="headerlink" href="#git-integration" title="Permanent link">&para;</a></h2>
 <p>Git integration has three modes:</p>
 <ul>

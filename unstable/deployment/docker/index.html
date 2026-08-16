@@ -348,6 +348,26 @@
   
 
       
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../releases/" class="md-tabs__link">
+          
+  
+  
+  Releases
+
+        </a>
+      </li>
+    
+  
+
+      
     </ul>
   </div>
 </nav>
@@ -1354,6 +1374,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#image-tags" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Image tags
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#docker-compose-configuration" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1685,6 +1716,62 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../release-process/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release Process
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../repository-protection/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Repository Protection
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -1949,6 +2036,123 @@
   
 
     
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Releases
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Releases
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../releases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../releases/3.1/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    3.1
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
   </ul>
 </nav>
                   </div>
@@ -1980,6 +2184,17 @@
     <span class="md-ellipsis">
       
         Quick Start
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#image-tags" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Image tags
       
     </span>
   </a>
@@ -2259,6 +2474,42 @@ docker<span class="w"> </span>compose<span class="w"> </span>up<span class="w"> 
 
 <span class="c1"># Check it&#39;s running</span>
 curl<span class="w"> </span>http://localhost:8000/health
+</code></pre></div>
+<h2 id="image-tags">Image tags<a class="headerlink" href="#image-tags" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Tag</th>
+<th>Contents</th>
+<th>Updated by</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>latest</code></td>
+<td>Newest stable release</td>
+<td>Each stable release that is newest across all series</td>
+</tr>
+<tr>
+<td><code>vX.Y.Z</code></td>
+<td>That exact release (pre-releases included, as <code>vX.Y.Z-rc.N</code>)</td>
+<td>Never (immutable)</td>
+</tr>
+<tr>
+<td><code>vX.Y</code>, <code>vX</code></td>
+<td>Newest stable release in that series</td>
+<td>Each stable release that is newest in its series</td>
+</tr>
+<tr>
+<td><code>edge</code></td>
+<td>Newest commit on <code>main</code></td>
+<td>Every merge to <code>main</code></td>
+</tr>
+</tbody>
+</table>
+<p>Rolling tags are ordering-aware: a patch release cut from an old <code>release/X.Y</code> branch after a newer stable has shipped updates its own series tags but never <code>latest</code>. A pre-release pushes only its immutable <code>vX.Y.Z-rc.N</code> tag. To run the latest merged code, use <code>edge</code>, which follows <code>main</code> continuously and carries no version identity. To find the commit behind an <code>edge</code> image, read its <code>org.opencontainers.image.revision</code> label:</p>
+<div class="highlight"><pre><span></span><code>docker<span class="w"> </span>inspect<span class="w"> </span>--format<span class="w"> </span><span class="s1">&#39;{{ index .Config.Labels &quot;org.opencontainers.image.revision&quot; }}&#39;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>ghcr.io/pvliesdonk/markdown-vault-mcp:edge
 </code></pre></div>
 <h2 id="docker-compose-configuration">Docker Compose Configuration<a class="headerlink" href="#docker-compose-configuration" title="Permanent link">&para;</a></h2>
 <p>The <code>compose.yml</code> defines a single service:</p>
