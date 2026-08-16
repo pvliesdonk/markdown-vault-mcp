@@ -106,6 +106,12 @@
           "default": "false"
         },
         {
+          "name": "MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING",
+          "description": "Set to true to refuse a write that would overwrite an existing file when no if_match etag is supplied. Deliberate replacement (read first, pass if_match) still works, and edit / append / delete / rename are unaffected.",
+          "format": "boolean",
+          "default": "false"
+        },
+        {
           "name": "MARKDOWN_VAULT_MCP_DISABLE_APPS_UI",
           "description": "Hide the MCP Apps UI tools (browse_vault, show_context) from the tool listing for clients that do not render MCP Apps panels.",
           "format": "boolean",
@@ -647,6 +653,12 @@
         {
           "name": "MARKDOWN_VAULT_MCP_READ_ONLY",
           "description": "Set to true to hide the write tools (write, edit, append, delete, rename, move_folder, fetch, git_sync, the okf_* tools, create_upload_link) and serve a search-only vault. git_sync also needs managed git mode; create_upload_link needs an HTTP transport.",
+          "format": "boolean",
+          "default": "false"
+        },
+        {
+          "name": "MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING",
+          "description": "Set to true to refuse a write that would overwrite an existing file when no if_match etag is supplied. Deliberate replacement (read first, pass if_match) still works, and edit / append / delete / rename are unaffected.",
           "format": "boolean",
           "default": "false"
         },

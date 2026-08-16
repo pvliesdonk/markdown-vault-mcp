@@ -98,6 +98,18 @@ class ProjectConfig:
             "tags": ("vault",),
         },
     )
+    write_protect_existing: bool = field(
+        default=False,
+        metadata={
+            "help": (
+                "Set to true to refuse a write that would overwrite an "
+                "existing file when no if_match etag is supplied. Deliberate "
+                "replacement (read first, pass if_match) still works, and "
+                "edit / append / delete / rename are unaffected."
+            ),
+            "tags": ("vault",),
+        },
+    )
     # server_name / instructions are declared by the template-owned
     # config-presentation.yml (template provenance), so they carry no
     # metadata here and are read outside from_env (read_server_identity)
@@ -1005,6 +1017,9 @@ class ProjectConfig:
             # config-presentation.domain.yml instead.
             source_dir=require_source_dir(env(_ENV_PREFIX, "SOURCE_DIR")),
             read_only=to_bool(env(_ENV_PREFIX, "READ_ONLY"), default=False),
+            write_protect_existing=to_bool(
+                env(_ENV_PREFIX, "WRITE_PROTECT_EXISTING"), default=False
+            ),
             server_name=read_server_name(_ENV_PREFIX),
             instructions=read_instructions(_ENV_PREFIX),
             disable_apps_ui=to_bool(env(_ENV_PREFIX, "DISABLE_APPS_UI"), default=False),

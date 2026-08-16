@@ -464,6 +464,13 @@
       "help": "Set to true to hide the write tools (write, edit, append, delete, rename, move_folder, fetch, git_sync, the okf_* tools, create_upload_link) and serve a search-only vault. git_sync also needs managed git mode; create_upload_link needs an HTTP transport."
     },
     {
+      "id": "write_protect_existing",
+      "label": "Write Protect Existing",
+      "type": "bool",
+      "var": "MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING",
+      "help": "Set to true to refuse a write that would overwrite an existing file when no if_match etag is supplied. Deliberate replacement (read first, pass if_match) still works, and edit / append / delete / rename are unaffected."
+    },
+    {
       "id": "disable_apps_ui",
       "label": "Disable Apps Ui",
       "type": "bool",

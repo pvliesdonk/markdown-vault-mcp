@@ -153,6 +153,7 @@ def to_vault_kwargs(config: ProjectConfig) -> dict[str, Any]:
     kwargs: dict[str, Any] = {
         "source_dir": config.source_dir,
         "read_only": config.read_only,
+        "write_protect_existing": config.write_protect_existing,
         "index_path": config.indexing.index_path,
         "embeddings_path": config.indexing.embeddings_path,
         "state_path": config.indexing.state_path,

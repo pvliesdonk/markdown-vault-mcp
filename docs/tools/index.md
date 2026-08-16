@@ -350,6 +350,11 @@ if it does not.
 !!! warning
     `write` replaces the entire file. Use `edit` for targeted changes to existing documents.
 
+!!! note "Overwrite protection"
+    With `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true`, a `write` to a path
+    that already exists fails unless the call carries a matching `if_match`
+    etag. See [Write protection](../configuration.md#write-protection).
+
 ### `edit`
 
 Make a targeted text replacement in an existing document. Supports three modes:

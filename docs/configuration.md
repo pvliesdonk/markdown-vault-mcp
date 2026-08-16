@@ -57,7 +57,12 @@ about the disagreement.
 | Variable | Type | Default | Required | Description |
 |----------|------|---------|----------|-------------|
 | `MARKDOWN_VAULT_MCP_SOURCE_DIR` | path | (none) | **Yes** | Path to the markdown vault directory. Symbolic links inside the vault are followed on Python 3.13+ (3.11/3.12 do not follow symlinks); cyclic links hang the scan, so symlink-farm layouts must be acyclic |
+<<<<<<< HEAD
 | `MARKDOWN_VAULT_MCP_READ_ONLY` | bool | `false` | No | Set to `true` to hide the write tools and serve a search-only vault. See the upgrade note below |
+=======
+| `MARKDOWN_VAULT_MCP_READ_ONLY` | bool | `true` | No | Set to `false` to enable write operations |
+| `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING` | bool | `false` | No | Set to `true` to refuse a `write` that would overwrite an existing file when no `if_match` etag is supplied. A deliberate replacement (read the file first, pass its etag as `if_match`) still succeeds, and `edit`, `append`, `delete`, and `rename` are unaffected. Uploads through a `create_upload_link` capability URL are subject to the same guard. See [Write protection](#write-protection) |
+>>>>>>> 258ac6d (feat(config): WRITE_PROTECT_EXISTING guard against blind overwrites)
 | `MARKDOWN_VAULT_MCP_INDEX_PATH` | path | in-memory | No | Path to the SQLite FTS5 index file; set for persistence across restarts |
 | `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` | path | disabled | No | Path to the numpy embeddings file; required to enable semantic search |
 | `MARKDOWN_VAULT_MCP_STATE_PATH` | path | `{SOURCE_DIR}/.markdown_vault_mcp/state.json` | No | Path to the change-tracking state file |
@@ -108,6 +113,27 @@ The file watcher never watches the directories that hold `INDEX_PATH`,
 while indexing do not trigger it again. If you place one of these paths inside a
 content directory, that whole top-level directory stops being watched, so keep
 them at the vault root or outside the vault to keep sibling content watched live.
+
+## Write protection
+
+`write` replaces the whole file, frontmatter included. On a writable vault, an
+LLM client that reaches for `write` where `edit` was meant drops everything the
+note held. `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true` turns that case
+into an error instead:
+
+- A `write` to a path that does not exist yet: unchanged.
+- A `write` to an existing path **without** `if_match`: rejected with
+  `DocumentExistsError`, and the file on disk stays untouched.
+- A `write` to an existing path **with** a matching `if_match` etag: allowed.
+  The caller has read the file, so the replacement is deliberate rather than
+  blind.
+
+`edit`, `append`, `delete`, and `rename` never clobber unread content and are
+left alone. Uploads through a `create_upload_link` capability URL land through
+the same attachment-write path, so they are guarded too: mint the link for a
+fresh path, or remove the old attachment first.
+
+The default is `false`, which keeps the historical overwrite behavior.
 
 ## Index Build Timeout
 

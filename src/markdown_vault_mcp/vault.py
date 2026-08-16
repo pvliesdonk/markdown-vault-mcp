@@ -167,6 +167,10 @@ class Vault:
             it costs nothing — the server path always passes the value
             explicitly through ``to_vault_kwargs`` — and moving it would be
             an independent breaking change to the public library interface.
+        write_protect_existing: When ``True``, a write that would overwrite an
+            existing file without an *if_match* etag raises
+            :exc:`~markdown_vault_mcp.exceptions.DocumentExistsError`
+            (default ``False``, i.e. writes overwrite unconditionally).
         state_path: Path to the hash-state JSON file used by
             :class:`~markdown_vault_mcp.tracker.ChangeTracker`.  Defaults to
             ``{source_dir}/.markdown_vault_mcp/state.json``.
@@ -240,6 +244,7 @@ class Vault:
         embeddings_path: Path | None = None,
         embedding_provider: EmbeddingProvider | None = None,
         read_only: bool = True,
+        write_protect_existing: bool = False,
         state_path: Path | None = None,
         indexed_frontmatter_fields: list[str] | None = None,
         required_frontmatter: list[str] | None = None,
@@ -277,6 +282,7 @@ class Vault:
         self._embedding_provider = embedding_provider
         self._embedding_batch_size = embedding_batch_size
         self._read_only = read_only
+        self._write_protect_existing = write_protect_existing
         self._indexed_frontmatter_fields: list[str] = indexed_frontmatter_fields or []
         # OKF detection (disk probe, index-independent). When read semantics
         # are active at construction time, the OKF scalar keys join the
@@ -507,6 +513,7 @@ class Vault:
             write_lock=self._file_write_lock,
             chunk_strategy=self._chunk_strategy,
             read_only=self._read_only,
+            write_protect_existing=self._write_protect_existing,
             exclude_patterns=self._exclude_patterns,
             attachment_extensions=self._attachment_extensions,
             max_note_read_bytes=self._max_note_read_bytes,
