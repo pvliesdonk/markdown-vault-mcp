@@ -2999,48 +2999,96 @@ combined diff.
 
 ### Release channels
 
-The release workflow (`.github/workflows/release.yml`) publishes two
-distinct channels via a single `workflow_dispatch` trigger:
+The release model is trunk-based: `main` is trunk, every change merges
+there, and **merging is not releasing**. A merge rebuilds only the
+rolling `edge` channel; a release is a separate, deliberate
+`workflow_dispatch` of `release.yml`. **Prerelease-ness is a property of
+the branch the workflow runs on, not a dispatch flag.**
+`[tool.semantic_release.branches]` maps `main` to stable releases and
+`release/.*` to rc pre-releases (token `rc`), and every publish gate in
+`release.yml` derives from semantic-release's own outputs
+(`is_prerelease`, tag ordering) — there is no prerelease checkbox that
+can desync from the tag. (This replaced an earlier `inputs.prerelease`
+flag and a tag-scanning `detect-rc` job, both removed; the rc-fed
+`:unstable` Docker tag was retired in favour of `edge`.)
 
-- **Stable** (`prerelease: false`): full pipeline. semantic-release
-  cuts a `vX.Y.Z` tag, PyPI receives the wheel + sdist, the Docker
-  image publishes `:latest`, `:vX.Y.Z`, `:vX.Y`, `:vX`, `.deb`/`.rpm`
-  packages attach to the GitHub Release, the Claude Code catalog entry
-  in `pvliesdonk/claude-plugins` is updated by a direct commit to that
-  repo's default branch (template v3.4.0: the job first verifies
-  `.claude-plugin/plugin` exists at the tag — a `git-subdir` entry
-  pointing at a missing path is uninstallable — validates the bumped
-  `marketplace.json`, then pushes with a five-attempt rebase-retry
-  loop for concurrent sibling releases; no human-merged PR remains in
-  the loop), and the MCP Registry receives the new `server.json`.
-  Intended for promoting a verified build to every distribution
-  surface.
+Three channels, with distinct identities and promises:
 
-- **Pre-release** (`prerelease: true`, the dispatch default):
-  exercises the full pipeline without touching public catalogs.
-  semantic-release cuts a `vX.Y.Z-rc.N` tag and marks the GitHub
-  Release as a pre-release. The Docker image publishes `:unstable`
-  and `:vX.Y.Z-rc.N` only; `:latest`, `:vX.Y`, `:vX` never move on
-  a pre-release. The mcpb bundle is built and attached to the
-  pre-release for manual smoke-test in Claude Desktop. PyPI, linux
-  packages, the Claude Code catalog publish, and the MCP Registry publish
-  are all skipped. This is the default dispatch mode so real releases
-  require an explicit opt-out.
+| Channel | Identity | Built from | Promise |
+|---|---|---|---|
+| **edge** | none — the commit is the identity | every push to `main` | newest merged code, rolling and disposable; no tag, release, version bump, or manifest change |
+| **rc** | `vX.Y.Z-rc.N`, target fixed at cut time | a `release/X.Y` branch only | a stabilisation step toward exactly that version (a fresh branch starts at `X.Y.0-rc.1`) |
+| **stable** | `vX.Y.Z` | quiescent `main` (default) or a finalized `release/X.Y` | promotion of a verified build to every distribution surface |
 
-The `build-mcpb` and `publish-mcpb` jobs run unchanged in both modes:
-`build-mcpb` reads `needs.release.outputs.version` (which already
-carries the rc suffix on pre-release) and delegates to the shared
-`.github/actions/build-mcpb` composite action (template v3.4.0), which
-threads the version through `envsubst '${VERSION}'` into
-`packaging/mcpb/manifest.json.in` and `pyproject.toml.in`, runs
-`mcpb validate`, packs the bundle, and smoke-tests the packed artifact;
-`publish-mcpb` then uploads the resulting `.mcpb` to the GitHub
-Release. The same composite action backs the manually dispatched
-`Pre-release check` workflow, which additionally runs
-`packaging/pre-release-checks.sh` for the plugin-manifest and
-vault-screen assertions — so a pre-release smoke test exercises exactly
-the steps a real release runs. No committed manifest bump is needed
-for the bundle.
+**The default release path is trunk.** Dispatching `release.yml` on
+`main` at a quiescent commit cuts a stable from HEAD — no branch, no
+ceremony. The short-lived `release/X.Y` branch is the exception tool for
+exactly two cases: a dirty trunk whose unfinished work must be excluded
+(cut the branch from the last quiescent commit behind HEAD, stabilise
+with rcs, then finalize), or a patch to an already-shipped release while
+`main` has moved on (create the branch retroactively from the tag). On a
+`release/X.Y` branch a dispatch cuts the next rc, or the final stable
+`X.Y.Z` when the `finalize` input is set; the `force` bump input is
+`main`-only, since a branch's target is fixed at cut time.
+
+**Stable** runs the full pipeline: semantic-release cuts a `vX.Y.Z` tag,
+PyPI receives the wheel + sdist, the Docker image publishes `:vX.Y.Z`
+plus the rolling `:latest`/`:vX`/`:vX.Y`, `.deb`/`.rpm` packages attach
+to the GitHub Release, the Claude Code catalog entry in
+`pvliesdonk/claude-plugins` is updated by a direct commit (the job first
+verifies `.claude-plugin/plugin` exists at the tag — a `git-subdir`
+entry pointing at a missing path is uninstallable — validates the bumped
+`marketplace.json`, then pushes with a five-attempt rebase-retry loop
+for concurrent sibling releases), and the MCP Registry receives the new
+`server.json`. The rolling pointers are **ordering-aware**:
+`:latest`/`:vX`/`:vX.Y`, the GitHub latest-release pointer, the docs
+`latest` alias, the marketplace entry, and the registry entry only move
+for a release that is the newest in its series, so a backport patch cut
+from an old `release/X.Y` never repoints them backwards; the immutable
+`:vX.Y.Z` always publishes.
+
+**rc** exercises the pipeline without touching public catalogs:
+semantic-release cuts a `vX.Y.Z-rc.N` tag and marks the GitHub Release
+as a pre-release, the Docker image publishes `:vX.Y.Z-rc.N` only
+(`edge` is the sole rolling unstable tag — no `:latest`/`:vX.Y`/`:vX`
+movement), and the mcpb bundle is built from the branch and attached for
+manual smoke-test. PyPI, linux packages, the Claude Code catalog
+publish, and the MCP Registry publish are all skipped.
+
+**Merge-back is mandatory after any release cut from a `release/*`
+branch.** The `merge-back` job merges the branch into `main` via
+`scripts/merge_back.sh` (version-coupled files resolve to `main`'s side;
+a real conflict fails loudly for a manual `git merge --no-ff`). This is
+a correctness requirement, not hygiene: with the release tag unreachable
+from `main`, semantic-release recomputes the same version from `main`'s
+own history, finds the tag taken repo-globally, and reports "already
+released" forever — the merge-back is the single reverse flow, carrying
+release commits, never feature cherry-picks.
+
+The `edge` channel is produced by a separate `Unstable channel`
+workflow (`.github/workflows/unstable.yml`), not `release.yml`: every
+push to `main` rebuilds `ghcr.io/pvliesdonk/markdown-vault-mcp:edge` and
+an `mcpb-bundle-edge` artifact at the constant version `0.0.0-dev`,
+leaving no tag or release behind (the image's
+`org.opencontainers.image.revision` label carries the exact commit). The
+docs site's rolling `unstable` version deploys from the same trigger.
+
+The `build-mcpb` and `publish-mcpb` jobs run in both release modes:
+`build-mcpb` reads `needs.release.outputs.version` (carrying the rc
+suffix on a pre-release) and delegates to the shared
+`.github/actions/build-mcpb` composite action, which threads the version
+through `envsubst '${VERSION}'` into `packaging/mcpb/manifest.json.in`
+and `pyproject.toml.in`, runs `mcpb validate`, packs the bundle, and
+smoke-tests the packed artifact; `publish-mcpb` uploads the resulting
+`.mcpb` to the GitHub Release. The same composite action backs the
+manually dispatched `Pre-release check` workflow, which additionally
+runs `packaging/pre-release-checks.sh` for the plugin-manifest and
+vault-screen assertions — so a smoke test exercises exactly the steps a
+real release runs. No committed manifest bump is needed for the bundle.
+
+> The operator-facing companion to this section — when to cut, the cut
+> criterion, and the branch-vs-trunk decision — lives under "Release
+> model", "Unstable channel", and "Release machinery" in `CLAUDE.md`.
 
 ### Future Work
 
