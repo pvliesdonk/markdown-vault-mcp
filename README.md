@@ -182,7 +182,7 @@ markdown-vault-mcp serve
 | `examples/obsidian-oidc.env` | Obsidian vault, read-only, OIDC authentication (Authelia) |
 | `examples/ifcraftcorpus.env` | Strict frontmatter enforcement, read-only corpus |
 
-For reverse proxy (Traefik) and deployment setup, see [`docs/deployment.md`](docs/deployment.md).
+For reverse proxy (Traefik) and deployment setup, see the [deployment guides](docs/deployment/index.md).
 
 ### Server info
 
