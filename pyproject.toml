@@ -379,5 +379,28 @@ insertion_flag = "<!-- version list -->"
 changelog_file = "CHANGELOG.md"
 
 [tool.semantic_release.commit_parser_options]
+# The accepted commit types, stated explicitly rather than left to the
+# parser's default, because this list is one half of a contract: CI's
+# `PR Title` job runs scripts/check_pr_title.py against the same set, and
+# tests/test_commit_conventions.py fails when the two halves disagree.
+#
+# Getting a type wrong is not a cosmetic problem. A subject whose type is not
+# listed here does not parse, and PSR then omits the commit from CHANGELOG.md
+# entirely — no fallback heading, no warning. `revert` is added on top of the
+# parser's own default set for exactly that reason: reverts belong in the
+# audit trail, and the default drops them.
+allowed_tags = [
+    "build",
+    "chore",
+    "ci",
+    "docs",
+    "feat",
+    "fix",
+    "perf",
+    "refactor",
+    "revert",
+    "style",
+    "test",
+]
 minor_tags = ["feat"]
 patch_tags = ["fix", "perf"]

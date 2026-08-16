@@ -433,6 +433,40 @@ jobs:
         run: bash scripts/structural_gate.sh
 
 
+  pr-title:
+    name: PR Title
+    # A squash merge takes the pull-request title as the commit subject, and
+    # python-semantic-release drops a subject it cannot parse from
+    # CHANGELOG.md silently — not under a fallback heading, absent. This is
+    # the last point at which that subject can still be corrected.
+    #
+    # PR-only by design: the writers to `main` outside a merge are PSR's own
+    # release commit and the automated merge-back, both machine-generated and
+    # already conformant. On push/dispatch the job is skipped, which the
+    # `ci-success` aggregate below treats as a pass.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check pull-request title
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        # Read the CURRENT title from the API rather than from
+        # `github.event.pull_request.title`. A re-run replays the original
+        # event payload, so an author who fixes the title would otherwise have
+        # to push a commit to clear a red check that a retitle already fixed.
+        run: |
+          set -euo pipefail
+          TITLE="$(gh api "repos/${REPO}/pulls/${PR_NUMBER}" --jq .title)"
+          python3 scripts/check_pr_title.py "$TITLE"
+
   ci-success:
     name: CI Success
     # Single aggregate gate for branch protection / Renovate auto-merge to
@@ -446,6 +480,7 @@ jobs:
       - audit
       - secrets
       - vale
+      - pr-title
 
       - structure
 

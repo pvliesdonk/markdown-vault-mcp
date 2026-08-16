@@ -66,24 +66,44 @@ jobs:
           echo "::error::Dispatch with force='' — commits on the branch advance the rc revision; check 'finalize' to cut the final stable."
           exit 1
 
-      # Advisory only: an open epic marked ships-atomically means trunk may be
-      # mid-story.  Releasing from main ships HEAD, so warn (the cut may still
-      # be intentional — or belongs on a release/X.Y branch cut from an
-      # earlier commit).  Label query per the epic-form convention; milestones
-      # are per-release and checked by the maintainer when choosing the cut.
-      - name: Warn about open ships-atomically epics
+      # Advisory only (never blocks — the cut may be intentional, or belong on
+      # a release/X.Y branch cut from an earlier commit).  Surfaces both
+      # queryable quiescence signals the epic conventions record:
+      #   * the preferred milestone — a release-named milestone (X.Y) with
+      #     open issues means that version is not yet safe to cut; and
+      #   * the ships-atomically label — for each open epic it also counts
+      #     open native sub-issues, which may live in another repo, so a
+      #     cross-repo epic whose children are elsewhere stays visible.
+      # Every gh call is guarded so a failure or an unsupported endpoint
+      # degrades to no warning rather than failing the step under pipefail.
+      - name: Warn about open ships-atomically epics and release milestones
         if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
         run: |
-          open_atomic=$(gh issue list --repo "${{ github.repository }}" \
-            --label ships-atomically --state open --json number,title \
-            --jq '.[] | "#\(.number) \(.title)"' || true)
-          if [ -n "$open_atomic" ]; then
-            echo "::warning::Open ships-atomically epic(s) — releasing main ships HEAD mid-story. Consider a release/X.Y branch cut from before the epic started:"
-            printf '%s\n' "$open_atomic" | while IFS= read -r line; do
-              echo "::warning::  $line"
-            done
+          # (1) Open ships-atomically epics, each with a count of still-open
+          #     children (native sub-issues — cross-repo aware).
+          epics=$(gh issue list --repo "$REPO" --label ships-atomically \
+            --state open --json number,title \
+            --jq '.[] | "\(.number)\t\(.title)"' 2>/dev/null || true)
+          if [ -n "$epics" ]; then
+            printf '%s\n' "$epics" | while IFS="$(printf '\t')" read -r num title; do
+              [ -n "$num" ] || continue
+              kids=$(gh api "repos/$REPO/issues/$num/sub_issues" \
+                --jq '[.[] | select(.state == "open")] | length' 2>/dev/null || echo '?')
+              echo "::warning::Open ships-atomically epic #$num ($title) — $kids open child issue(s). Releasing $REPO@main ships HEAD mid-story; consider a release/X.Y branch cut from before the epic started."
+            done || true
+          fi
+          # (2) The preferred signal: a release-named milestone (X.Y) that
+          #     still has open issues — that version is not yet quiescent.
+          milestones=$(gh api "repos/$REPO/milestones?state=open&per_page=100" \
+            --jq '.[] | select(.open_issues > 0) | select(.title | test("^[0-9]+[.][0-9]+$")) | "\(.title): \(.open_issues) open issue(s)"' 2>/dev/null || true)
+          if [ -n "$milestones" ]; then
+            printf '%s\n' "$milestones" | while IFS= read -r ms; do
+              [ -n "$ms" ] || continue
+              echo "::warning::Release milestone $ms — not yet safe to cut that version from a quiescent trunk."
+            done || true
           fi
 
       # PSR's CLI can force prerelease ON (--as-prerelease) but not OFF, so
@@ -217,8 +237,13 @@ jobs:
               echo "- All changes since ${prev}: https://github.com/${REPO}/compare/${prev}...${TAG}"
             fi
             echo "- Commit-level detail: [CHANGELOG.md](https://github.com/${REPO}/blob/${TAG}/CHANGELOG.md)"
-            echo
-            echo "Release notes will move to a versioned notes page on the documentation site; until then, the links above carry the full change record."
+            # Only a stable's body gets the notes-page promise: the Release
+            # Notes Publish workflow matches stable tags only, so an rc body
+            # would carry a pointer nothing ever fulfils.
+            if [ "$IS_PRERELEASE" != "true" ]; then
+              echo
+              echo "Release notes will move to a versioned notes page on the documentation site; until then, the links above carry the full change record."
+            fi
           } > release-body.md
           gh release edit "$TAG" --notes-file release-body.md
 

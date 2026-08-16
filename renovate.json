@@ -3,6 +3,7 @@
   "extends": ["config:recommended", ":dependencyDashboard"],
   "labels": ["dependencies"],
   "enabledManagers": ["pep621"],
+  "semanticCommits": "enabled",
   "rangeStrategy": "update-lockfile",
   "lockFileMaintenance": {
     "enabled": true,

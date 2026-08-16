@@ -114,11 +114,38 @@ This project is extracted from [`pvliesdonk/if-craft-corpus`](https://github.com
 - Python 3.11+
 - `uv` for package management, `ruff` for linting/formatting (line length 88)
 - `hatchling` build backend
-- Conventional commits: `feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`
+- Conventional commits, one type from `build`, `chore`, `ci`, `docs`, `feat`, `fix`, `perf`, `refactor`, `revert`, `style`, `test` — optionally scoped (`feat(search): ...`) and with `!` for a breaking change. `feat` cuts a minor release, `fix` and `perf` cut a patch, the rest cut none.
 - Google-style docstrings on all public functions
 - `logging.getLogger(__name__)` throughout, no `print()`
 - Type hints everywhere
 - Tests: `pytest` with fixtures in `tests/fixtures/`
+
+**Pull-request titles are enforced, not merely encouraged.** A squash merge
+takes the PR title as the commit subject, so CI's `PR Title` job checks it
+against the type list above and fails the `CI Success` aggregate when it does
+not match. This is not style policing: python-semantic-release parses that
+subject, and a type it does not recognise is dropped from `CHANGELOG.md`
+without a warning — no fallback heading, no entry at all. A commit that never
+reaches the changelog never reaches the release notes that link into it.
+
+Retitling is enough to clear a failure — the job reads the current title from
+the API, so re-running it after a retitle needs no push.
+
+**Reverts are the one accepted title with a caveat.** `Revert "..."`, the
+shape `git revert` and GitHub's revert button generate, passes: it is the
+ecosystem's convention, and Conventional Commits deliberately leaves reverts
+unspecified. But no python-semantic-release parser reads it — `angular` and
+`conventional` both fail on it — so such a commit does **not** reach
+`CHANGELOG.md`. The job says so with a warning annotation rather than letting
+you find out at release time. `revert: ORIGINAL SUBJECT` is the form that does
+reach the changelog. Either way the revert is narrated on the
+`docs/releases/` page, whose research runs off merged pull requests and linked
+issues rather than commit subjects.
+
+The accepted set lives in `pyproject.toml` under
+`[tool.semantic_release.commit_parser_options] allowed_tags`.
+`scripts/check_pr_title.py` and the list above are checked against it by
+`tests/test_commit_conventions.py`, so no one of the three can drift alone.
 
 The automated Claude review runs **only after CI passes** — if CI is red, no
 review is posted. Fix CI and push; the review runs on the next green run.
@@ -367,7 +394,7 @@ The `Pre-release check` workflow (Actions tab, `workflow_dispatch`) builds and v
 
 **The default release path is trunk.** When a release is wanted and trunk is quiescent (no atomic epic mid-flight — the cut criterion below), dispatch Release on `main`. It cuts a stable from HEAD: no branch, no ceremony. Most releases should look like this.
 
-**The cut criterion.** An epic that ships atomically makes trunk unreleasable while it is open: releasing `main` ships HEAD, mid-story. Judge quiescence from the queryable signal the epic conventions record (see CONTRIBUTING.md's Epics section): preferably the **release milestone** — safe to cut means no open issues in the target release's milestone — with the **`ships-atomically` label** as the fallback when no milestone names a release yet. An open atomic epic with unclosed children means either release from a commit before the epic started (a `release/X.Y` branch cut from that commit) or wait. The Release workflow's advisory step ("Warn about open ships-atomically epics") surfaces open labelled epics on every `main` dispatch; it warns and never blocks, because the cut may still be intentional.
+**The cut criterion.** An epic that ships atomically makes trunk unreleasable while it is open: releasing `main` ships HEAD, mid-story. Judge quiescence from the queryable signal the epic conventions record (see CONTRIBUTING.md's Epics section): preferably the **release milestone** — safe to cut means no open issues in the target release's milestone — with the **`ships-atomically` label** as the fallback when no milestone names a release yet. An open atomic epic with unclosed children means either release from a commit before the epic started (a `release/X.Y` branch cut from that commit) or wait. The Release workflow's advisory step surfaces both signals on every `main` dispatch — a release-named milestone (`X.Y`) that still has open issues, and open `ships-atomically` epics (each with a count of its native sub-issues, so a cross-repo epic whose children live elsewhere stays visible); it warns and never blocks, because the cut may still be intentional.
 
 **The `release/X.Y` branch is the exception tool**, for exactly two cases:
 

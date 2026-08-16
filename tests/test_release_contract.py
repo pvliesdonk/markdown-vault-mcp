@@ -32,12 +32,19 @@ must name the flag and `CHANGELOG.md` must carry it — a flag-less changelog is
 never written, with no error.  And `changelog_file` must sit in its supported
 location (`changelog.default_templates`), not the deprecated bare
 `changelog.changelog_file` key.  The changelog tests below pin both halves.
+
+A fourth invariant joined in template#375: the two behavioral tests above
+prove the *bumper* never writes a pre-release pin, but nothing read the
+committed manifests themselves.  The stable-pin test below does, so a bad
+pin that arrives by hand edit or a half-applied update — outside the bumper
+— still fails.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -186,6 +193,99 @@ def test_changelog_carries_the_insertion_flag() -> None:
     assert flag in changelog, (
         f"CHANGELOG.md lacks the PSR insertion flag — add this exact line "
         f"once, where version sections should be inserted: {flag}"
+    )
+
+
+_PRERELEASE_SUFFIX = re.compile(r"-(?:alpha|beta|rc|dev|pre|a|b)\b", re.IGNORECASE)
+
+
+def _published_manifest_versions() -> dict[str, str]:
+    """Version each committed published-manifest currently pins.
+
+    These are the files the "Manifest version lockstep" rule keeps at the
+    latest *stable* release: ``server.json``'s own version and its pypi
+    package versions, plus the Claude plugin pair. The oci image identifier is
+    excluded — it legitimately ends in the tag form ``:vX.Y.Z``.
+    """
+    versions: dict[str, str] = {}
+    server = json.loads((REPO_ROOT / "server.json").read_text(encoding="utf-8"))
+    versions["server.json version"] = str(server["version"])
+    for pkg in server.get("packages", []):
+        if pkg.get("registryType") == "pypi":
+            versions[f"server.json pypi {pkg.get('identifier', '')}"] = str(
+                pkg["version"]
+            )
+    plugin = json.loads((REPO_ROOT / PLUGIN_JSON).read_text(encoding="utf-8"))
+    versions["plugin.json version"] = str(plugin["version"])
+    mcp = json.loads((REPO_ROOT / MCP_JSON).read_text(encoding="utf-8"))
+    for server_cfg in mcp.values():
+        for arg in server_cfg.get("args", []):
+            if isinstance(arg, str) and "==" in arg:
+                versions[f".mcp.json pin {arg}"] = arg.split("==", 1)[1]
+    return versions
+
+
+def test_committed_manifest_pins_are_stable_versions() -> None:
+    """No committed published-manifest pins a pre-release version.
+
+    The bumper leaves these files at the last published stable on a
+    pre-release run (proven by the sandbox tests below), but a value can
+    reach the committed file another way — a hand edit, a bad merge, a
+    half-applied copier update.  A pre-release pin such as ``X.Y.Z-rc.N``
+    names a version PyPI, the MCP registry, and the marketplace never
+    publish, so ``uvx --from pkg==X.Y.Z-rc.N`` cannot resolve it (the failure
+    tracked at markdown-vault-mcp#1053).  This reads the committed files
+    themselves, which the sandbox tests never touch.
+    """
+    bad = {
+        where: ver
+        for where, ver in _published_manifest_versions().items()
+        if _PRERELEASE_SUFFIX.search(ver)
+    }
+    assert not bad, (
+        "committed manifests must pin the latest stable release, but these "
+        "carry a pre-release version: "
+        + ", ".join(f"{where} = {ver}" for where, ver in sorted(bad.items()))
+    )
+
+
+def _stable_release_tags() -> list[str] | None:
+    """Stable ``vX.Y.Z`` tags in this repo, or ``None`` when git is absent.
+
+    A freshly generated project is not yet a git repository and has no tags,
+    so the caller skips there rather than failing.
+    """
+    try:
+        completed = subprocess.run(
+            ["git", "-C", str(REPO_ROOT), "tag", "--list"],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=15,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return [t for t in completed.stdout.split() if re.fullmatch(r"v\d+\.\d+\.\d+", t)]
+
+
+def test_committed_server_version_matches_a_released_tag() -> None:
+    """When the repo has stable tags, ``server.json`` names one of them.
+
+    Best-effort and self-skipping: it asserts nothing before a project's
+    first stable, but once stables exist a committed version with no matching
+    ``vX.Y.Z`` tag means the pin drifted from what was actually released.
+    """
+    tags = _stable_release_tags()
+    if not tags:
+        pytest.skip("no stable release tags in this repository yet")
+    version = str(
+        json.loads((REPO_ROOT / "server.json").read_text(encoding="utf-8"))["version"]
+    )
+    if version in {"0.0.0", "0.1.0"}:
+        pytest.skip("initial placeholder version, before the first release")
+    assert f"v{version}" in tags, (
+        f"server.json pins {version}, but no matching stable tag v{version} "
+        "exists — the manifest must name a released stable version"
     )
 
 
