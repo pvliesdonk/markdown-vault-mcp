@@ -135,3 +135,5 @@ env var must rename their references. No deprecation shims ship.
   chunking provenance and triggers a one-time automatic cold rebuild on
   the next startup; pre-upgrade indexes with default config warm-restart
   untouched.
+
+<!-- version list -->

@@ -37,8 +37,10 @@ site/
 .mcpregistry_*
 .repowise/
 .worktrees/
-.claude/worktrees/
-.claude/settings.local.json
+# Everything under .claude/ is local EXCEPT skills/ — that subtree ships the
+# repo's agent skills (authoring, release notes) and must stay tracked.
+.claude/*
+!.claude/skills/
 docs/superpowers/
 
 # Vale-synced style packages (downloaded by `vale sync`). Custom config
