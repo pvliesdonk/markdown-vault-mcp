@@ -125,6 +125,8 @@ class WriterFacet:
             ConcurrentModificationError: If *if_match* is provided and does
                 not match the current file hash, or *if_match* is supplied
                 for a file that does not yet exist.
+            DocumentExistsError: If write protection is enabled and *path*
+                already exists while no *if_match* is supplied.
             ValueError: If *path* escapes the source directory.
         """
         result = self._doc_mgr.write(
@@ -339,6 +341,8 @@ class WriterFacet:
             ConcurrentModificationError: If *if_match* is provided and does
                 not match the current file hash, or *if_match* is supplied
                 for a file that does not yet exist.
+            DocumentExistsError: If write protection is enabled and *path*
+                already exists while no *if_match* is supplied.
             ValueError: If the path escapes the source directory or has an
                 extension not in the allowlist.
         """

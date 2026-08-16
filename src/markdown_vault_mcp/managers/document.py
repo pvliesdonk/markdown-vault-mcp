@@ -126,6 +126,9 @@ class DocumentManager:
         chunk_strategy: Strategy for splitting documents into chunks.
         read_only: When ``True``, write operations raise
             :exc:`~markdown_vault_mcp.exceptions.ReadOnlyError`.
+        write_protect_existing: When ``True``, :meth:`write` and
+            :meth:`write_attachment` refuse to overwrite an existing file
+            unless the caller supplies an ``if_match`` etag.
         exclude_patterns: Glob patterns for paths to exclude.
         attachment_extensions: Allowlist of attachment file extensions.
         max_note_read_bytes: Maximum bytes returned by full-document reads.
@@ -152,6 +155,7 @@ class DocumentManager:
         write_lock: threading.RLock,
         chunk_strategy: ChunkStrategy,
         read_only: bool = True,
+        write_protect_existing: bool = False,
         exclude_patterns: list[str] | None = None,
         attachment_extensions: list[str] | None = None,
         max_note_read_bytes: int = 262144,
@@ -165,6 +169,7 @@ class DocumentManager:
         self._file_write_lock = write_lock
         self._chunk_strategy = chunk_strategy
         self._read_only = read_only
+        self._write_protect_existing = write_protect_existing
         self._exclude_patterns = exclude_patterns
         self._attachment_extensions = attachment_extensions
         self._max_note_read_bytes = max_note_read_bytes
@@ -659,6 +664,35 @@ class DocumentManager:
                 path, expected=if_match, actual=current_hash
             )
 
+    def _check_no_clobber(
+        self, abs_path: Path, path: str, if_match: str | None
+    ) -> None:
+        """Reject a blind overwrite when write protection is enabled.
+
+        A write carrying an ``if_match`` etag is a deliberate replacement of
+        content the caller has read, so it stays allowed; only a write that
+        would replace a file the caller never looked at is refused.
+
+        Args:
+            abs_path: Absolute path of the target file.
+            path: Vault-relative path, used in the error.
+            if_match: Etag supplied by the caller, or ``None``.
+
+        Raises:
+            DocumentExistsError: If ``write_protect_existing`` is enabled,
+                *if_match* is ``None``, and *abs_path* already exists.
+        """
+        if not self._write_protect_existing or if_match is not None:
+            return
+        if abs_path.is_file():
+            raise DocumentExistsError(
+                f"Refusing to overwrite existing file: {path}. "
+                "Write protection is enabled "
+                "(MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING). Use 'edit' or "
+                "'append' for changes, pass if_match to replace the file "
+                "deliberately, or delete it first."
+            )
+
     def _atomic_write(self, abs_path: Path, data: str | bytes) -> None:
         """Write *data* to *abs_path* atomically via a sibling tempfile.
 
@@ -734,11 +768,14 @@ class DocumentManager:
             ReadOnlyError: If the vault is read-only.
             ConcurrentModificationError: If *if_match* is provided and does
                 not match the current file hash (or the file does not exist).
+            DocumentExistsError: If ``write_protect_existing`` is enabled and
+                *path* already exists while no *if_match* is supplied.
             ValueError: If *path* escapes the source directory.
         """
         self._check_writable()
         with self._file_write_lock:
             abs_path = self._validate_path(path)
+            self._check_no_clobber(abs_path, path, if_match)
             self._check_if_match(abs_path, path, if_match)
             created = not abs_path.is_file()
 
@@ -877,12 +914,15 @@ class DocumentManager:
             ConcurrentModificationError: If *if_match* is provided and does
                 not match the current file hash, or *if_match* is supplied
                 for a file that does not yet exist.
+            DocumentExistsError: If ``write_protect_existing`` is enabled and
+                *path* already exists while no *if_match* is supplied.
             ValueError: If the path escapes the source directory or has an
                 extension not in the allowlist.
         """
         self._check_writable()
         with self._file_write_lock:
             abs_path = self._validate_attachment_path(path)
+            self._check_no_clobber(abs_path, path, if_match)
             self._check_if_match(abs_path, path, if_match)
             created = not abs_path.is_file()
             abs_path.parent.mkdir(parents=True, exist_ok=True)

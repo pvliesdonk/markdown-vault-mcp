@@ -814,6 +814,47 @@ def writable_with_embeddings(
         col.close()
 
 
+class TestWriteProtectExisting:
+    """The Vault-level wiring of the overwrite guard."""
+
+    @pytest.fixture
+    def protected(self, vault_path: Path) -> Iterator[Vault]:
+        col = Vault(source_dir=vault_path, read_only=False, write_protect_existing=True)
+        try:
+            col.index.build_index()
+            yield col
+        finally:
+            col.close()
+
+    def test_new_file_is_written(self, protected: Vault, vault_path: Path) -> None:
+        """A path that does not exist yet is unaffected by the guard."""
+        result = protected.writer.write("brand_new.md", "# Brand New\n")
+
+        assert result.created is True
+        assert (vault_path / "brand_new.md").is_file()
+
+    def test_blind_overwrite_raises(self, protected: Vault, vault_path: Path) -> None:
+        """write() without if_match refuses to replace an existing note."""
+        before = (vault_path / "simple.md").read_text(encoding="utf-8")
+
+        with pytest.raises(DocumentExistsError):
+            protected.writer.write("simple.md", "# Replaced\n")
+
+        assert (vault_path / "simple.md").read_text(encoding="utf-8") == before
+
+    def test_overwrite_with_if_match_succeeds(
+        self, protected: Vault, vault_path: Path
+    ) -> None:
+        """A deliberate, etag-guarded replacement stays allowed."""
+        note = protected.reader.read("simple.md")
+        assert note is not None
+
+        result = protected.writer.write("simple.md", "# Replaced\n", if_match=note.etag)
+
+        assert result.created is False
+        assert (vault_path / "simple.md").read_text(encoding="utf-8") == "# Replaced\n"
+
+
 class TestWrite:
     def test_write_creates_new_file(self, writable: Vault, vault_path: Path) -> None:
         """write() creates a new file on disk and returns created=True."""

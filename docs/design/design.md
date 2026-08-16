@@ -1943,6 +1943,15 @@ intermediate directories as needed (`mkdir -p` semantics). If `frontmatter` is
 provided, it is serialized as YAML front matter at the top of the file. Updates
 the FTS index and triggers `on_write`.
 
+**`write_protect_existing=True`**: `write()` and `write_attachment()` raise
+`DocumentExistsError` when the target file exists and no `if_match` etag was
+supplied. An `if_match` write proves the caller read the file first, so it
+stays allowed and keeps its regular concurrency semantics; `edit()`,
+`append()`, `delete()`, and `rename()` are untouched. The guard runs before the
+`if_match` check, so a stale etag on an existing file still reports
+`ConcurrentModificationError` rather than the protection error. Default
+`False`, which preserves unconditional overwrite.
+
 **`edit()` behavior**: supports three modes: (1) exact match: reads file,
 verifies `old_text` exists exactly once, replaces with `new_text`; (2) line-range:
 replaces lines `line_start..line_end` (1-based, inclusive) with `new_text`;
@@ -2570,6 +2579,7 @@ For MCP server deployment:
 | `MARKDOWN_VAULT_MCP_DISABLE_APPS_UI` | Hide MCP-Apps UI tools (`browse_vault`, `show_context`) from the listing | `false` |
 | `MARKDOWN_VAULT_MCP_SOURCE_DIR` | Path to markdown files | required |
 | `MARKDOWN_VAULT_MCP_READ_ONLY` | Disable write tools | `true` |
+| `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING` | Refuse a `write` over an existing file when no `if_match` is supplied | `false` |
 | `MARKDOWN_VAULT_MCP_INDEX_PATH` | SQLite index path | in-memory |
 | `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` | Embeddings directory | disabled |
 | `MARKDOWN_VAULT_MCP_INDEXED_FIELDS` | Comma-separated frontmatter fields to index into `document_tags` | none |

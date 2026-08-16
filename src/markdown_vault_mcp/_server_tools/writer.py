@@ -179,7 +179,11 @@ def register(mcp: FastMCP) -> None:
                 ``MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB``.
             McpError: If if_match is provided and the file has been
                 modified, or if_match is supplied for a file that does not
-                yet exist (ConcurrentModificationError).
+                yet exist (ConcurrentModificationError). Also when the server
+                runs with ``MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true``
+                and path already exists while no if_match is supplied
+                (DocumentExistsError) — use 'edit' or 'append' instead, or
+                read the file first and pass its etag as if_match.
         """
         if not path.endswith(".md"):
             if not content_base64:

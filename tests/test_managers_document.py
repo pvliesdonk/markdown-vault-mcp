@@ -100,6 +100,22 @@ def doc_mgr(doc_vault: Path) -> DocumentManager:
 
 
 @pytest.fixture()
+def protected_doc_mgr(doc_vault: Path) -> DocumentManager:
+    """Build a writable DocumentManager with overwrite protection enabled."""
+    fts = FTSIndex(db_path=":memory:")
+    for note in scan_directory(doc_vault):
+        fts.upsert_note(note)
+    return DocumentManager(
+        fts=fts,
+        source_dir=doc_vault,
+        write_lock=threading.RLock(),
+        chunk_strategy=HeadingChunker(),
+        read_only=False,
+        write_protect_existing=True,
+    )
+
+
+@pytest.fixture()
 def ro_doc_mgr(doc_vault: Path) -> DocumentManager:
     """Build a read-only DocumentManager."""
     fts = FTSIndex(db_path=":memory:")
@@ -241,6 +257,80 @@ class TestWrite:
     def test_write_path_traversal_raises(self, doc_mgr: DocumentManager) -> None:
         with pytest.raises(ValueError, match="Path traversal"):
             doc_mgr.write("../../escape.md", "bad")
+
+
+class TestWriteProtectExisting:
+    """Tests for the write_protect_existing overwrite guard."""
+
+    def test_new_document_is_written(
+        self, protected_doc_mgr: DocumentManager, doc_vault: Path
+    ) -> None:
+        result = protected_doc_mgr.write("fresh.md", "# Fresh\n")
+        assert result.created is True
+        assert (doc_vault / "fresh.md").read_text(encoding="utf-8") == "# Fresh\n"
+
+    def test_blind_overwrite_raises(
+        self, protected_doc_mgr: DocumentManager, doc_vault: Path
+    ) -> None:
+        before = (doc_vault / "alpha.md").read_text(encoding="utf-8")
+        with pytest.raises(DocumentExistsError, match=r"alpha\.md"):
+            protected_doc_mgr.write("alpha.md", "# Replaced\n")
+        assert (doc_vault / "alpha.md").read_text(encoding="utf-8") == before
+
+    def test_overwrite_with_valid_if_match_succeeds(
+        self, protected_doc_mgr: DocumentManager, doc_vault: Path
+    ) -> None:
+        note = protected_doc_mgr.read("alpha.md")
+        assert note is not None
+        result = protected_doc_mgr.write("alpha.md", "# Replaced\n", if_match=note.etag)
+        assert result.created is False
+        assert (doc_vault / "alpha.md").read_text(encoding="utf-8") == "# Replaced\n"
+
+    def test_stale_if_match_still_reports_the_conflict(
+        self, protected_doc_mgr: DocumentManager
+    ) -> None:
+        with pytest.raises(ConcurrentModificationError):
+            protected_doc_mgr.write("alpha.md", "# Replaced\n", if_match="deadbeef")
+
+    def test_edit_is_unaffected(self, protected_doc_mgr: DocumentManager) -> None:
+        result = protected_doc_mgr.edit("alpha.md", "Hello world.", "Goodbye world.")
+        assert result.path == "alpha.md"
+
+    def test_append_is_unaffected(self, protected_doc_mgr: DocumentManager) -> None:
+        result = protected_doc_mgr.append("alpha.md", "More text.\n")
+        assert result.created is False
+
+    def test_new_attachment_is_written(
+        self, protected_doc_mgr: DocumentManager, doc_vault: Path
+    ) -> None:
+        result = protected_doc_mgr.write_attachment("fresh.pdf", b"data")
+        assert result.created is True
+        assert (doc_vault / "fresh.pdf").read_bytes() == b"data"
+
+    def test_blind_attachment_overwrite_raises(
+        self, protected_doc_mgr: DocumentManager, doc_vault: Path
+    ) -> None:
+        before = (doc_vault / "image.png").read_bytes()
+        with pytest.raises(DocumentExistsError, match=r"image\.png"):
+            protected_doc_mgr.write_attachment("image.png", b"replaced")
+        assert (doc_vault / "image.png").read_bytes() == before
+
+    def test_attachment_overwrite_with_valid_if_match_succeeds(
+        self, protected_doc_mgr: DocumentManager, doc_vault: Path
+    ) -> None:
+        attachment = protected_doc_mgr.read_attachment("image.png")
+        result = protected_doc_mgr.write_attachment(
+            "image.png", b"replaced", if_match=attachment.etag
+        )
+        assert result.created is False
+        assert (doc_vault / "image.png").read_bytes() == b"replaced"
+
+    def test_disabled_by_default(
+        self, doc_mgr: DocumentManager, doc_vault: Path
+    ) -> None:
+        result = doc_mgr.write("alpha.md", "# Replaced\n")
+        assert result.created is False
+        assert (doc_vault / "alpha.md").read_text(encoding="utf-8") == "# Replaced\n"
 
 
 # ---------------------------------------------------------------------------
