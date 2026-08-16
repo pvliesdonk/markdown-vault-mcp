@@ -1912,6 +1912,27 @@
 
 <h1 id="31">3.1<a class="headerlink" href="#31" title="Permanent link">&para;</a></h1>
 <p>Released July 8, 2026.</p>
+<div class="admonition note">
+<p class="admonition-title">Reconstructed after the fact</p>
+<p>This page is a best-effort backfill written in August 2026, not a
+contemporaneous release note. It was reconstructed from the commit range
+(<code>v3.0.4...v3.1.0</code>), the pull requests in it, and the issues those pull
+requests closed
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1058">#1058</a>).
+Every claim below links its evidence, but the page is weaker evidence than
+a note written at release time.</p>
+</div>
+<!-- RELEASE-SUMMARY v3.1.0 START -->
+<p>3.1 is the scale-hardening release. A single outside reporter ran
+markdown-vault-mcp against a 4,400-document home directory and a symlink farm
+and filed six of the issues fixed here, so discovery, watching and semantic
+recall now behave the same on a large real vault as on a small test one. The
+four in-panel MCP App views were also rebuilt on a shared visual foundation,
+and two new tools landed. Upgrading from 3.0 touches only Python API consumers:
+the configuration dataclass is now <code>ProjectConfig</code> with no <code>VaultConfig</code> alias,
+and an <code>EMBEDDINGS_PATH</code> value ending in <code>.npy</code> needs a look.</p>
+<!-- RELEASE-SUMMARY v3.1.0 END -->
+
 <p>This is the release where other people's vaults broke it. One outside reporter
 ran markdown-vault-mcp against a 4,400-document home directory and a symlink
 farm, and filed six of the issues behind what follows. The headline work is not
