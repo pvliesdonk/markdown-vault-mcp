@@ -112,6 +112,8 @@ plugins:
         Releases:
           - releases/index.md: Release notes overview — page-per-minor model and available pages
           - releases/3.1.md: Release notes for 3.1 — upgrade notes, highlights, and linked evidence
+          - releases/3.0.md: Release notes for 3.0 and its patch releases — Vault rename, non-blocking startup, field-collapsed search (backfilled)
+          - releases/1.x.md: Release notes for the whole 1.x line — capability arc, version-number gaps, and evidence limits (backfilled)
         # PROJECT-LLMSTXT-SECTIONS-END
   - mkdocstrings:
       handlers:
@@ -199,4 +201,6 @@ nav:
   - Releases:
       - Overview: releases/index.md
       - "3.1": releases/3.1.md
+      - "3.0": releases/3.0.md
+      - "1.x": releases/1.x.md
   # PROJECT-NAV-END
