@@ -20,6 +20,7 @@ src/markdown_vault_mcp/
     fs.py              -- filesystem traversal helpers: symlink-aware iteration, directory pruning (#508, #835)
     fts.py             -- fts_row_to_note_info: FTS row → NoteInfo conversion shared across managers
   managers/
+    __init__.py        -- package aggregator: re-exports DocumentManager/IndexManager/LinkManager/SearchManager
     link.py            -- LinkManager: backlinks, outlinks, broken, orphans, hubs, paths
     search.py          -- SearchManager: keyword/semantic/hybrid search, list, context, stats
     index.py           -- IndexManager: build_index, reindex, embeddings, flush
@@ -30,10 +31,12 @@ src/markdown_vault_mcp/
     _ranking.py        -- pure ranking pipeline: downweight/boost/grouping/snippets (#759)
     _vector_loader.py  -- shared load-or-self-heal routine for the vector sidecar (#736)
   indexing/
+    __init__.py        -- package aggregator: re-exports IndexWriteCoordinator, IndexWriter + writer job dataclasses, ReadinessState
     index_writer.py    -- IndexWriter: single-owner FIFO writer thread + job dataclasses/runners
     readiness.py       -- ReadinessState: build-readiness state machine (#576)
     coordinator.py     -- IndexWriteCoordinator: owns the writer + build/async orchestration (#576)
   facets/
+    __init__.py        -- package aggregator: re-exports the five facets (Reader/Writer/Graph/Index/Summarize)
     reader.py          -- ReaderFacet: search/read/list/toc/similar/context/stats/history (#604)
     writer.py          -- WriterFacet: write/edit/delete/rename/attachments (#604)
     graph.py           -- GraphFacet: backlinks/outlinks/broken/orphans/most-linked/paths (#604); neighborhood/hub graph views (#880)
@@ -67,6 +70,7 @@ src/markdown_vault_mcp/
   _write_tools.py      -- WRITE_TOOL_NAMES + write_tools_phrase: single source for the user-facing write-tool enumeration (#1009)
   config.py            -- template-owned skeleton: flat metadata-carrying ProjectConfig fields + section-view properties + from_env, all inside CONFIG-* sentinels (#900, #952)
   config_sections/
+    __init__.py          -- package aggregator: re-exports the seven section configs (Content/Embeddings/Git/Indexing/Search/Summarize/Sync)
     _assembly.py         -- domain config-assembly kept out of template-owned config.py: to_vault_kwargs, derive_max_chunk_chars, git-strategy builder, from_env value resolvers (#900, #952)
     _helpers.py          -- shared env-reading helpers for the sections' from_env classmethods (no config.py import)
     content.py           -- ContentConfig: attachment/read limits, template/prompt folders, conventions file

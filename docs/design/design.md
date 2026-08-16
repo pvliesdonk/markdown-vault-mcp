@@ -3031,6 +3031,22 @@ with rcs, then finalize), or a patch to an already-shipped release while
 `X.Y.Z` when the `finalize` input is set; the `force` bump input is
 `main`-only, since a branch's target is fixed at cut time.
 
+**The cut criterion — when trunk is safe to release.** An epic that
+ships atomically makes trunk unreleasable while it is open: dispatching
+`release.yml` on `main` would ship HEAD mid-story. Whether trunk is
+quiescent is judged from a queryable signal recorded on the epic —
+preferably a **release milestone** named for the target version (`X.Y`)
+with no open issues, and the **`ships-atomically` label** as the
+fallback when no milestone names the release yet. `release.yml` carries
+an **advisory step** on every `main` dispatch that surfaces both
+signals — a release-named milestone that still has open issues, and each
+open `ships-atomically` epic (with a count of its still-open native
+sub-issues, so a cross-repo epic whose children live elsewhere stays
+visible) — and it warns without blocking, since the cut may be
+intentional. An open atomic epic with unclosed children means either
+releasing from a commit before the epic started (a `release/X.Y` branch
+cut from there) or waiting.
+
 **Stable** runs the full pipeline: semantic-release cuts a `vX.Y.Z` tag,
 PyPI receives the wheel + sdist, the Docker image publishes `:vX.Y.Z`
 plus the rolling `:latest`/`:vX`/`:vX.Y`, `.deb`/`.rpm` packages attach
@@ -3221,3 +3237,9 @@ Later decisions (2026-08-14, #1035):
 | 20 | Client-side summarization | `summarize-subtree` MCP prompt carrying the plan → map → reduce recipe, registered config-dependently with a registration-time `${route_note}` slot (prefer-the-tool note when a backend is configured, standalone recipe when not); mapper/reducer prose derived from `_SYSTEM_MAP` / `_SYSTEM_REDUCE` | Prompts are served with the server over plain HTTP-hosted MCP (unlike plugin skills); covers keyless installs after sampling's rejection (decision 18). The recipe runs with or without subagents; trade-off prose is operator-facing and lives in docs/prompts.md only. The plugin channel's `vault-summarize` skill + `vault-mapper` read-only agent wrap this same recipe rather than duplicating it (#1036, resolved) |
 | 21 | Plugin bootstrap and repair | A `vault-setup` skill (discover candidates via `.obsidian/` markers → validate → write the plugin's stored options in user-scope `~/.claude/settings.json` (originally the `env` block, moved with decision 22) → instruct restart) plus a SessionStart doctor hook (`scripts/doctor.sh`) that emits guidance only when `MARKDOWN_VAULT_MCP_SOURCE_DIR` is unset or missing, silent when healthy | The plugin container is the natural repair path (#1042): skills and hooks keep working while the MCP server is down, settings-file `env` reaches the server process and beats the shell environment, project-scope settings are wrong for a per-user vault path, and a restart is the floor because servers only start at session start. Replaces the shell-profile-and-README dead end; no server-side "setup mode" needed (epic #1043 non-goal) |
 | 22 | Plugin configuration screen | `plugin.json`'s `userConfig` and `.mcp.json`'s env wiring are generated from the config surface as a split-file pair (`claude-plugin-user-config` + `claude-plugin-env` with `fields_from`, template v3.6.0), sharing the mcpb screen's curated field set via a YAML anchor in `config-presentation.domain.yml`; `.mcp.json` env values are `${user_config.<id>}` references (exec-form only), replacing the legacy `${VAR:-default}` shell expansion; the plugin's `source_dir` ships without the mcpb `${DOCUMENTS}/Vault` default (an mcpb-host placeholder Claude Code does not substitute) | One fields map drives both files so the screen and its wiring cannot drift (#1040); values persist across plugin updates in `pluginConfigs`, sensitive fields (API key, git token) go to secure storage; the doctor hook and vault-setup skill resolve/write the plugin options surface accordingly (CLAUDE_PLUGIN_OPTION_*, `pluginConfigs[...].options`), with the env-block and shell environment demoted to legacy fallbacks |
+
+Later decisions (2026-08-16, #1054):
+
+| # | Topic | Decision | Rationale |
+|-|-|-|-|
+| 23 | Release model — how to cut an RC | Short-lived `release/X.Y` stabilisation branches cut on demand, not a long-lived `unstable` branch; prerelease-ness is a property of the branch (semantic-release branch groups: `main`→stable, `release/.*`→rc), not a dispatch flag; "run the latest code" is served by the versionless rolling `edge` channel; merge-back into `main` after any branch-cut release is mandatory | The disagreement that stalled the 4.0.0 cut. **Rejected:** a permanent `unstable` branch with cherry-picks forward to `main` — forward-porting is the expensive direction (epics are multi-commit and interleaved) and every quality gate is `main`-relative, so an unstable-first PR is measured against an ever-growing diff. **Rejected:** cutting rcs from trunk / a `prerelease` dispatch flag — a pre-release tag then asserts a next-version prediction semantic-release keeps falsifying (the `v3.2.0-rc.*` series that could no longer produce 3.2.0), and the flag can desync from the tag. **Rejected:** per-channel feature-flag defaults (preview-on in rc) — it dogfoods a configuration no user runs, whereas a release branch is bit-for-bit what ships. **Adopted** because a frozen branch's version is a decision made at cut time rather than an extrapolation, which makes the renumbering problem structurally impossible; the merge-back is a correctness requirement, since without the tag reachable from `main`, semantic-release recomputes the same version, finds it taken repo-globally, and reports "already released" forever. The channel identities, branch mechanics, and cut criterion are specified under [Release channels](#release-channels) above |

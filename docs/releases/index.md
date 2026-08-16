@@ -7,7 +7,7 @@ behind it.
 ## Available pages
 
 <!-- RELEASE-PAGES-START -->
-- [3.1](3.1.md) (released July 8, 2026)
+- [3.1](3.1.md) (released July 8, 2026). Backfilled.
 - [3.0](3.0.md) (released June 17, 2026, with patch releases through v3.0.4).
   Backfilled.
 - [1.x](1.x.md) (March 9 to May 3, 2026; the whole 1.x line on one page).
