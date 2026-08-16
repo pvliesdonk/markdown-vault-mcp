@@ -45,9 +45,13 @@ pytest
 ruff
 
 # --- Operational / config jargon ---
+backports
 config
 deployer
 env
+hotfix
+ruleset
+rulesets
 systemd
 truthy
 uncommented
