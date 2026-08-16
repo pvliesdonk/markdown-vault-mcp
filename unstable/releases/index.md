@@ -5,6 +5,8 @@ Human-readable notes for each minor release: what changed, who is affected, and 
 ## Available pages
 
 - [3.1](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/3.1/index.md) (released July 8, 2026)
+- [3.0](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/3.0/index.md) (released June 17, 2026, with patch releases through v3.0.4). Backfilled.
+- [1.x](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/1.x/index.md) (March 9 to May 3, 2026; the whole 1.x line on one page). Backfilled, and closed: the 1.x line receives no further releases, so that page is final. The pages above it stay open and gain a section whenever their minor gets a patch release.
 
 ## How these pages work
 
@@ -18,4 +20,6 @@ Human-readable notes for each minor release: what changed, who is affected, and 
 
 ## Coverage
 
-Pages for releases before 3.1 arrive through a one-time backfill ([#1058](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1058)). Pages for future releases are drafted by a generation workflow maintained upstream in the project template ([fastmcp-server-template#347](https://github.com/pvliesdonk/fastmcp-server-template/issues/347)), reviewed as an ordinary pull request before publication.
+Pages marked **backfilled** were reconstructed after the fact from commit history and whatever issues existed at the time ([#1058](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1058)), and each carries a banner saying so. They are weaker evidence than a page written at release time, especially for upgrade guidance. The 1.x line is deliberately one page rather than 27: the record behind it is too thin to support 27, and the value of per-release detail decays with age.
+
+Pages for future releases are drafted by a generation workflow maintained upstream in the project template ([fastmcp-server-template#347](https://github.com/pvliesdonk/fastmcp-server-template/issues/347)), reviewed as an ordinary pull request before publication.

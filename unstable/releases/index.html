@@ -1918,6 +1918,62 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="3.0/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    3.0
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="1.x/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    1.x
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -2011,6 +2067,12 @@ behind it.</p>
 <h2 id="available-pages">Available pages<a class="headerlink" href="#available-pages" title="Permanent link">&para;</a></h2>
 <ul>
 <li><a href="3.1/">3.1</a> (released July 8, 2026)</li>
+<li><a href="3.0/">3.0</a> (released June 17, 2026, with patch releases through v3.0.4).
+  Backfilled.</li>
+<li><a href="1.x/">1.x</a> (March 9 to May 3, 2026; the whole 1.x line on one page).
+  Backfilled, and closed: the 1.x line receives no further releases, so that
+  page is final. The pages above it stay open and gain a section whenever their
+  minor gets a patch release.</li>
 </ul>
 <h2 id="how-these-pages-work">How these pages work<a class="headerlink" href="#how-these-pages-work" title="Permanent link">&para;</a></h2>
 <p><strong>One page per minor version.</strong> Each minor release gets a single page, named
@@ -2029,9 +2091,14 @@ records what landed, commit by commit; these pages explain whether to upgrade
 and what to check first. The two are generated separately and neither replaces
 the other.</p>
 <h2 id="coverage">Coverage<a class="headerlink" href="#coverage" title="Permanent link">&para;</a></h2>
-<p>Pages for releases before 3.1 arrive through a one-time backfill
-(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1058">#1058</a>).
-Pages for future releases are drafted by a generation workflow maintained
+<p>Pages marked <strong>backfilled</strong> were reconstructed after the fact from commit
+history and whatever issues existed at the time
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1058">#1058</a>), and
+each carries a banner saying so. They are weaker evidence than a page written
+at release time, especially for upgrade guidance. The 1.x line is deliberately
+one page rather than 27: the record behind it is too thin to support 27, and
+the value of per-release detail decays with age.</p>
+<p>Pages for future releases are drafted by a generation workflow maintained
 upstream in the project template
 (<a href="https://github.com/pvliesdonk/fastmcp-server-template/issues/347">fastmcp-server-template#347</a>),
 reviewed as an ordinary pull request before publication.</p>

@@ -10,13 +10,13 @@
       
       
       
-        <link rel="canonical" href="https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/3.1/">
+        <link rel="canonical" href="https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/3.0/">
       
       
-        <link rel="prev" href="../">
+        <link rel="prev" href="../3.1/">
       
       
-        <link rel="next" href="../3.0/">
+        <link rel="next" href="../1.x/">
       
       
         
@@ -27,7 +27,7 @@
     
     
       
-        <title>3.1 - markdown-vault-mcp</title>
+        <title>3.0 - markdown-vault-mcp</title>
       
     
     
@@ -82,7 +82,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#31" class="md-skip">
+        <a href="#30" class="md-skip">
           Skip to content
         </a>
       
@@ -120,7 +120,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              3.1
+              3.0
             
           </span>
         </div>
@@ -1814,6 +1814,34 @@
                 
   
   
+  
+  
+    <li class="md-nav__item">
+      <a href="../3.1/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    3.1
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
     
   
   
@@ -1833,7 +1861,7 @@
   <span class="md-ellipsis">
     
   
-    3.1
+    3.0
   
 
     
@@ -1851,7 +1879,7 @@
   <span class="md-ellipsis">
     
   
-    3.1
+    3.0
   
 
     
@@ -1877,6 +1905,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#why-the-number-jumped-from-128-to-30" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why the number jumped from 1.28 to 3.0
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#upgrade-notes" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1889,10 +1928,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#vaultconfig-is-now-projectconfig-with-no-alias" class="md-nav__link">
+  <a href="#the-package-root-exports-vault-not-collection" class="md-nav__link">
     <span class="md-ellipsis">
       
-        VaultConfig is now ProjectConfig, with no alias
+        The package root exports Vault, not Collection
       
     </span>
   </a>
@@ -1900,10 +1939,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#check-embeddings_path-if-it-ends-in-npy" class="md-nav__link">
+  <a href="#chunks_per_doc-is-now-chunks_per_file-and-limit-counts-files" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Check EMBEDDINGS_PATH if it ends in .npy
+        chunks_per_doc is now chunks_per_file, and limit counts files
       
     </span>
   </a>
@@ -1911,10 +1950,21 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#new-setting-file_watcher_root_floor" class="md-nav__link">
+  <a href="#attachment-reads-are-capped-at-1-mb-note-reads-at-256-kb" class="md-nav__link">
     <span class="md-ellipsis">
       
-        New setting: FILE_WATCHER_ROOT_FLOOR
+        Attachment reads are capped at 1 MB, note reads at 256 KB
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#a-reindex-is-worth-running-once-after-the-upgrade" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A reindex is worth running once after the upgrade
       
     </span>
   </a>
@@ -1939,10 +1989,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#large-vaults-are-no-longer-minutes-behind" class="md-nav__link">
+  <a href="#startup-no-longer-blocks-on-the-index" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Large vaults are no longer minutes behind
+        Startup no longer blocks on the index
       
     </span>
   </a>
@@ -1950,10 +2000,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#semantic-search-recall-no-longer-depends-on-limit" class="md-nav__link">
+  <a href="#search-returns-files-not-chunks" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Semantic search recall no longer depends on limit
+        Search returns files, not chunks
       
     </span>
   </a>
@@ -1961,10 +2011,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#chunking-gained-overlap-and-a-ceiling" class="md-nav__link">
+  <a href="#git-synchronisation-you-can-trigger-and-a-webhook" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Chunking gained overlap, and a ceiling
+        Git synchronisation you can trigger, and a webhook
       
     </span>
   </a>
@@ -1972,10 +2022,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#vault-views-rebuilt-as-paper" class="md-nav__link">
+  <a href="#external-edits-are-noticed-without-git" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Vault Views rebuilt as "Paper"
+        External edits are noticed without git
       
     </span>
   </a>
@@ -1983,10 +2033,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#move-a-whole-folder-in-one-call" class="md-nav__link">
+  <a href="#a-production-report-rebuilt-index-state-integrity" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Move a whole folder in one call
+        A production report rebuilt index-state integrity
       
     </span>
   </a>
@@ -1994,10 +2044,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#table-of-contents-for-a-folder" class="md-nav__link">
+  <a href="#configuration-fails-fast" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Table of contents for a folder
+        Configuration fails fast
       
     </span>
   </a>
@@ -2005,10 +2055,21 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#skipped-notes-are-visible-without-reading-container-logs" class="md-nav__link">
+  <a href="#transfer-links-removed-and-rebuilt" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Skipped notes are visible without reading container logs
+        Transfer links, removed and rebuilt
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-documentation-site-gained-a-generator-and-versions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The documentation site gained a generator and versions
       
     </span>
   </a>
@@ -2017,6 +2078,17 @@
         
       </ul>
     </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#security" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Security
+      
+    </span>
+  </a>
   
 </li>
       
@@ -2033,10 +2105,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#indexing-and-watching" class="md-nav__link">
+  <a href="#reading-and-editing" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Indexing and watching
+        Reading and editing
       
     </span>
   </a>
@@ -2044,10 +2116,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#diagnostics" class="md-nav__link">
+  <a href="#indexing-and-links" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Diagnostics
+        Indexing and links
       
     </span>
   </a>
@@ -2055,10 +2127,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#mcp-apps" class="md-nav__link">
+  <a href="#graph-and-mcp-apps" class="md-nav__link">
     <span class="md-ellipsis">
       
-        MCP Apps
+        Graph and MCP Apps
       
     </span>
   </a>
@@ -2066,10 +2138,21 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#tooling-and-plumbing" class="md-nav__link">
+  <a href="#embeddings" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Tooling and plumbing
+        Embeddings
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#platform" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Platform
       
     </span>
   </a>
@@ -2078,17 +2161,6 @@
         
       </ul>
     </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#shipped-earlier-in-the-30-patch-line" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Shipped earlier, in the 3.0 patch line
-      
-    </span>
-  </a>
   
 </li>
       
@@ -2115,6 +2187,50 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#v301-june-22-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v3.0.1 (June 22, 2026)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v302-june-25-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v3.0.2 (June 25, 2026)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v303-june-26-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v3.0.3 (June 26, 2026)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v304-june-27-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v3.0.4 (June 27, 2026)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#all-changes" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2129,34 +2245,6 @@
   
 </nav>
       
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../3.0/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    3.0
-  
-
-    
-  </span>
-  
-  
-
-      </a>
     </li>
   
 
@@ -2224,6 +2312,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#why-the-number-jumped-from-128-to-30" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why the number jumped from 1.28 to 3.0
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#upgrade-notes" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2236,10 +2335,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#vaultconfig-is-now-projectconfig-with-no-alias" class="md-nav__link">
+  <a href="#the-package-root-exports-vault-not-collection" class="md-nav__link">
     <span class="md-ellipsis">
       
-        VaultConfig is now ProjectConfig, with no alias
+        The package root exports Vault, not Collection
       
     </span>
   </a>
@@ -2247,10 +2346,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#check-embeddings_path-if-it-ends-in-npy" class="md-nav__link">
+  <a href="#chunks_per_doc-is-now-chunks_per_file-and-limit-counts-files" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Check EMBEDDINGS_PATH if it ends in .npy
+        chunks_per_doc is now chunks_per_file, and limit counts files
       
     </span>
   </a>
@@ -2258,10 +2357,21 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#new-setting-file_watcher_root_floor" class="md-nav__link">
+  <a href="#attachment-reads-are-capped-at-1-mb-note-reads-at-256-kb" class="md-nav__link">
     <span class="md-ellipsis">
       
-        New setting: FILE_WATCHER_ROOT_FLOOR
+        Attachment reads are capped at 1 MB, note reads at 256 KB
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#a-reindex-is-worth-running-once-after-the-upgrade" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A reindex is worth running once after the upgrade
       
     </span>
   </a>
@@ -2286,10 +2396,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#large-vaults-are-no-longer-minutes-behind" class="md-nav__link">
+  <a href="#startup-no-longer-blocks-on-the-index" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Large vaults are no longer minutes behind
+        Startup no longer blocks on the index
       
     </span>
   </a>
@@ -2297,10 +2407,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#semantic-search-recall-no-longer-depends-on-limit" class="md-nav__link">
+  <a href="#search-returns-files-not-chunks" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Semantic search recall no longer depends on limit
+        Search returns files, not chunks
       
     </span>
   </a>
@@ -2308,10 +2418,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#chunking-gained-overlap-and-a-ceiling" class="md-nav__link">
+  <a href="#git-synchronisation-you-can-trigger-and-a-webhook" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Chunking gained overlap, and a ceiling
+        Git synchronisation you can trigger, and a webhook
       
     </span>
   </a>
@@ -2319,10 +2429,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#vault-views-rebuilt-as-paper" class="md-nav__link">
+  <a href="#external-edits-are-noticed-without-git" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Vault Views rebuilt as "Paper"
+        External edits are noticed without git
       
     </span>
   </a>
@@ -2330,10 +2440,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#move-a-whole-folder-in-one-call" class="md-nav__link">
+  <a href="#a-production-report-rebuilt-index-state-integrity" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Move a whole folder in one call
+        A production report rebuilt index-state integrity
       
     </span>
   </a>
@@ -2341,10 +2451,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#table-of-contents-for-a-folder" class="md-nav__link">
+  <a href="#configuration-fails-fast" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Table of contents for a folder
+        Configuration fails fast
       
     </span>
   </a>
@@ -2352,10 +2462,21 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#skipped-notes-are-visible-without-reading-container-logs" class="md-nav__link">
+  <a href="#transfer-links-removed-and-rebuilt" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Skipped notes are visible without reading container logs
+        Transfer links, removed and rebuilt
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-documentation-site-gained-a-generator-and-versions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The documentation site gained a generator and versions
       
     </span>
   </a>
@@ -2364,6 +2485,17 @@
         
       </ul>
     </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#security" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Security
+      
+    </span>
+  </a>
   
 </li>
       
@@ -2380,10 +2512,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#indexing-and-watching" class="md-nav__link">
+  <a href="#reading-and-editing" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Indexing and watching
+        Reading and editing
       
     </span>
   </a>
@@ -2391,10 +2523,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#diagnostics" class="md-nav__link">
+  <a href="#indexing-and-links" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Diagnostics
+        Indexing and links
       
     </span>
   </a>
@@ -2402,10 +2534,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#mcp-apps" class="md-nav__link">
+  <a href="#graph-and-mcp-apps" class="md-nav__link">
     <span class="md-ellipsis">
       
-        MCP Apps
+        Graph and MCP Apps
       
     </span>
   </a>
@@ -2413,10 +2545,21 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#tooling-and-plumbing" class="md-nav__link">
+  <a href="#embeddings" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Tooling and plumbing
+        Embeddings
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#platform" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Platform
       
     </span>
   </a>
@@ -2425,17 +2568,6 @@
         
       </ul>
     </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#shipped-earlier-in-the-30-patch-line" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Shipped earlier, in the 3.0 patch line
-      
-    </span>
-  </a>
   
 </li>
       
@@ -2455,6 +2587,50 @@
     <span class="md-ellipsis">
       
         Patch releases
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v301-june-22-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v3.0.1 (June 22, 2026)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v302-june-25-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v3.0.2 (June 25, 2026)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v303-june-26-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v3.0.3 (June 26, 2026)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v304-june-27-2026" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v3.0.4 (June 27, 2026)
       
     </span>
   </a>
@@ -2492,284 +2668,429 @@
   
 
 
-<h1 id="31">3.1<a class="headerlink" href="#31" title="Permanent link">&para;</a></h1>
-<p>Released July 8, 2026.</p>
-<p>This is the release where other people's vaults broke it. One outside reporter
-ran markdown-vault-mcp against a 4,400-document home directory and a symlink
-farm, and filed six of the issues behind what follows. The headline work is not
-a new feature: it is that discovery, watching and semantic recall now behave
-the same on a large real vault as they did on a small test one.</p>
-<p>Alongside that, the four in-panel MCP App views were rebuilt on a shared visual
-foundation, and two new tools landed.</p>
+<h1 id="30">3.0<a class="headerlink" href="#30" title="Permanent link">&para;</a></h1>
+<p>Released June 17, 2026.</p>
+<div class="admonition note">
+<p class="admonition-title">Reconstructed after the fact</p>
+<p>This page is a best-effort backfill written in August 2026, not a
+contemporaneous release note. It was reconstructed from the commit range,
+the pull requests in it, and the issues those pull requests closed
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1058">#1058</a>).
+Every claim below links its evidence, but the page is weaker evidence than
+a note written at release time. Treat the upgrade section as a starting
+point for your own check, not as an exhaustive audit.</p>
+</div>
+<!-- RELEASE-SUMMARY v3.0.0 START -->
+<p>3.0 is the release where the vault stopped being a single-threaded library
+with a server bolted on. Startup no longer blocks on building the index,
+search returns files rather than chunks, and git synchronisation became
+something you can trigger and observe instead of only wait for. The Python
+class you import is now <code>Vault</code>, not <code>Collection</code>, which is the change that
+earns the major version. 261 commits between v1.28.0 and v3.0.0.</p>
+<!-- RELEASE-SUMMARY v3.0.0 END -->
+
+<h2 id="why-the-number-jumped-from-128-to-30">Why the number jumped from 1.28 to 3.0<a class="headerlink" href="#why-the-number-jumped-from-128-to-30" title="Permanent link">&para;</a></h2>
+<p>There was never a stable 2.0.0. The work on this page was stabilised as
+<code>v2.0.0-rc.1</code> through <code>v2.0.0-rc.5</code>, and the final dispatch produced <code>v3.0.0</code>
+instead of the 2.0.0 it was stabilising towards.</p>
+<p><code>[per the maintainer]</code> this was a release-workflow defect, not a decision: a
+forced version bump compounded on the pre-release's series target instead of
+naming the release kind, so dispatching a major bump at <code>v2.0.0-rc.5</code> emitted
+3.0.0 and 2.0.0 was never cut. The defect is
+<a href="https://github.com/pvliesdonk/fastmcp-server-template/issues/154">fastmcp-server-template#154</a>,
+since fixed upstream, and the framing is recorded in
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1054">#1054</a>. No work
+was abandoned and no feature was renumbered. The
+<a href="../1.x/#version-numbers-that-were-never-released">1.x page</a> carries the full
+ledger of skipped numbers.</p>
 <h2 id="upgrade-notes">Upgrade notes<a class="headerlink" href="#upgrade-notes" title="Permanent link">&para;</a></h2>
-<p>Read these before upgrading. Two affect existing deployments.</p>
-<h3 id="vaultconfig-is-now-projectconfig-with-no-alias"><code>VaultConfig</code> is now <code>ProjectConfig</code>, with no alias<a class="headerlink" href="#vaultconfig-is-now-projectconfig-with-no-alias" title="Permanent link">&para;</a></h3>
-<p>The configuration dataclass was renamed from <code>VaultConfig</code> to <code>ProjectConfig</code>
-(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/767">#767</a>). No
-back-compatible alias was kept, so <code>from markdown_vault_mcp.config import
-VaultConfig</code> now raises <code>ImportError</code>. Only Python API consumers are affected.
-Environment variables, MCP tools and the CLI are unchanged.</p>
-<p>The rename was forced by an upstream template gate,
-<code>tests/test_config_wizard_drift.py</code>, which hard-imports <code>ProjectConfig</code> and
-could not collect against this repository at all. The same change taught the
-gate to see configuration reads that are delegated into <code>config_sections/</code>
-submodules, which it had previously been scanning past. Roughly 40 domain
-environment variables were unchecked before this landed.</p>
-<h3 id="check-embeddings_path-if-it-ends-in-npy">Check <code>EMBEDDINGS_PATH</code> if it ends in <code>.npy</code><a class="headerlink" href="#check-embeddings_path-if-it-ends-in-npy" title="Permanent link">&para;</a></h3>
-<p>Setting <code>MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH</code> to a path with a <code>.npy</code> extension
-could destroy the vector store
-(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/819">#819</a>). The
-loader probed for the sidecar by appending <code>.npy</code> to the configured base, while
-save and load derived it with <code>Path.with_suffix</code>. The two agreed only when the
-base had no extension. With <code>embeddings.npy</code> configured, the loader looked for
-<code>embeddings.npy.npy</code>, found nothing, cold-built an empty index, and the next
-save overwrote the real store.</p>
-<p>The reporter lost a 68,796-vector store to a 604-chunk watcher delta on the
-first <code>serve</code> after building it with <code>index --force</code>. <code>embeddings_status</code>
-carried the same defect and reported <code>chunk_count=0</code> for a store that existed.</p>
-<p>Both call sites now derive with <code>with_suffix</code>. If you configured an extension
-and your store looks empty, rebuild with <code>index --force</code>.</p>
-<h3 id="new-setting-file_watcher_root_floor">New setting: <code>FILE_WATCHER_ROOT_FLOOR</code><a class="headerlink" href="#new-setting-file_watcher_root_floor" title="Permanent link">&para;</a></h3>
-<p><code>MARKDOWN_VAULT_MCP_FILE_WATCHER_ROOT_FLOOR</code> (default <code>true</code>) keeps the
-non-recursive watch on the vault root, so root-level <code>.md</code> changes still
-trigger a reindex. Set it to <code>false</code> to register zero watches rooted at the
-source directory, at the cost of root-level files being picked up only by
-scans.</p>
-<p>This exists for macOS. A non-recursive watchdog watch is emulated there, and
-still opens an OS-level recursive <code>FSEvents</code> stream over the whole tree, so a
-vault rooted at <code>$HOME</code> produces repeated "would like to access data from other
-apps" consent prompts naming the Python binary
-(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/823">#823</a>).</p>
+<p>Read these before upgrading from 1.28. Four affect existing deployments.</p>
+<h3 id="the-package-root-exports-vault-not-collection">The package root exports <code>Vault</code>, not <code>Collection</code><a class="headerlink" href="#the-package-root-exports-vault-not-collection" title="Permanent link">&para;</a></h3>
+<p><code>Collection</code> was renamed to <code>Vault</code>, <code>CollectionConfig</code> to <code>VaultConfig</code>, and
+<code>CollectionStats</code> to <code>VaultStats</code>, with the module moving from <code>collection.py</code>
+to <code>vault.py</code>
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/629">#629</a>). No
+back-compatible alias ships, so <code>from markdown_vault_mcp import Collection</code>
+raises <code>ImportError</code> after the upgrade. <code>load_config</code> and <code>SimilarItem</code> are
+gone from the package root as well; configuration is now built with
+<code>VaultConfig.from_env()</code>.</p>
+<p>This is the change the major version is for. Only Python API consumers are
+affected. Environment variables, the CLI and the MCP tool names are unchanged
+by the rename.</p>
+<p>The rename was the final step of a decomposition that ran through the whole
+release. <code>Collection</code> had grown to 1,705 lines and owned index-write state
+alongside everything else
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/576">#576</a>); the
+work extracted an <code>indexing/</code> package, a write-callback dispatcher, and four
+facets (reader, writer, graph and index,
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/604">#604</a>) before
+removing the 39 flat delegators and renaming what was left.</p>
+<h3 id="chunks_per_doc-is-now-chunks_per_file-and-limit-counts-files"><code>chunks_per_doc</code> is now <code>chunks_per_file</code>, and <code>limit</code> counts files<a class="headerlink" href="#chunks_per_doc-is-now-chunks_per_file-and-limit-counts-files" title="Permanent link">&para;</a></h3>
+<p><code>MARKDOWN_VAULT_MCP_CHUNKS_PER_DOC</code> was renamed to
+<code>MARKDOWN_VAULT_MCP_CHUNKS_PER_FILE</code>, keeping its default of <code>2</code>. Set the new
+name; the old one is no longer read.</p>
+<p>The <code>limit</code> parameter on <code>search</code> and <code>get_similar</code> now counts files rather
+than chunks
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/469">#469</a>). See
+<a href="#search-returns-files-not-chunks">Search returns files, not chunks</a> below for
+what changed in the response shape.</p>
+<h3 id="attachment-reads-are-capped-at-1-mb-note-reads-at-256-kb">Attachment reads are capped at 1 MB, note reads at 256 KB<a class="headerlink" href="#attachment-reads-are-capped-at-1-mb-note-reads-at-256-kb" title="Permanent link">&para;</a></h3>
+<p><code>MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB</code> dropped from <code>10.0</code> to <code>1.0</code>.
+The configuration reference at v3.0.0 gives the reason: most LLM contexts
+cannot survive a 10 MB base64-encoded attachment, so the old default was a
+silent context blow-up. Set the variable back to <code>10</code> explicitly if a non-LLM consumer needs
+the old ceiling.</p>
+<p><code>MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES</code> is new, defaulting to 262144 bytes.
+Whole-document <code>.md</code> reads above it raise <code>ValueError</code>; partial reads through
+<code>read(path, section=...)</code> bypass the cap, and <code>0</code> disables it
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/442">#442</a>).</p>
+<h3 id="a-reindex-is-worth-running-once-after-the-upgrade">A reindex is worth running once after the upgrade<a class="headerlink" href="#a-reindex-is-worth-running-once-after-the-upgrade" title="Permanent link">&para;</a></h3>
+<p>Chunk boundaries and vector metadata both changed during this range. Vector
+rows gained <code>start_line</code> so that sections sort stably inside a group, and the
+character cap on chunks is now derived from the embedding model's context
+length (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/649">#649</a>).
+Existing indexes keep working, but a single <code>reindex</code> after upgrading puts
+them on the new boundaries.</p>
 <h2 id="highlights">Highlights<a class="headerlink" href="#highlights" title="Permanent link">&para;</a></h2>
-<h3 id="large-vaults-are-no-longer-minutes-behind">Large vaults are no longer minutes behind<a class="headerlink" href="#large-vaults-are-no-longer-minutes-behind" title="Permanent link">&para;</a></h3>
-<p>File discovery globbed <code>**/*.md</code> across the whole vault and applied exclude
-patterns per file afterwards, so every excluded subtree was fully descended on
-every scan
-(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/822">#822</a>). On a
-home-directory vault with 4,400 documents and 23 exclude patterns, one
-<code>detect_changes</code> call took 5,043 seconds. A second run sat 28 minutes inside a
-single <code>opendir</code> system call before it was killed. With the watcher on, any
-churn started the scan again, so the process scanned all day and
-save-to-searchable latency was measured in minutes.</p>
-<p>Discovery now prunes a directory before descending into it, but only when the
-exclude patterns provably cover everything beneath. The per-file filter stays
-as the correctness layer. The same scan now takes 3.2 seconds across 25,263
-directories, and save-to-searchable drops to about 15 seconds.</p>
-<p>The watcher was rebuilt on the same pruning helper. Instead of one recursive
-watch on the vault root, it derives watch roots from the root's immediate
-children minus the provably excluded ones: 94 scoped watches on the reporter's
-vault, none rooted at the source directory.</p>
-<p>That re-rooting also fixes a second defect in the same issue. The watcher now
-decides whether a path is hidden relative to the watch root that delivered the
-event, rather than relative to the vault root. A vault whose content lives
-under a dot directory, such as <code>.claude/</code> beneath <code>$HOME</code>, previously never
-reindexed from its own edits.</p>
-<p>Two follow-ups landed in the same release. Watch roots are resolved to their
-real paths, because watchdog's FSEvents emitter delivers realpath-prefixed
-events that the root-relative filter was dropping silently, leaving the watcher
-live but blind on symlinked layouts
-(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/849">#849</a>). And the
-vault's own state directory and <code>.git</code> are never watch roots, after the scoped
-watch work reintroduced the self-feedback reindex loop that
-<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/720">#720</a> had fixed:
-<code>reindex()</code> writes tracker state unconditionally, that write is an event under
-the state-directory watch, and the loop sustains itself
-(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/830">#830</a>).</p>
-<h3 id="semantic-search-recall-no-longer-depends-on-limit">Semantic search recall no longer depends on <code>limit</code><a class="headerlink" href="#semantic-search-recall-no-longer-depends-on-limit" title="Permanent link">&para;</a></h3>
-<p>Semantic search sized its candidate pool from the caller's <code>limit</code> before
-grouping chunks by document, which made the pool a recall cap
-(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/820">#820</a>). When a
-few chunk-heavy documents filled the pool, a smaller document whose best chunk
-ranked just past it disappeared from the results, even when it was the
-best-scoring document for the query.</p>
-<p>On a 6,916-chunk vault, one query's true best document scored 0.685 and was
-absent at every limit from 3 to 12, while the returned top result scored 0.495.
-It appeared only at limit 13 or higher. Scores were also not comparable across
-limits, because the pool changed what got grouped.</p>
-<p>The pool is now floored at 1,000. Because <code>VectorIndex.search</code> already scans
-and sorts the whole index anyway, a wider pool costs only the slice at the end.
-No extra distance computation happens.</p>
-<h3 id="chunking-gained-overlap-and-a-ceiling">Chunking gained overlap, and a ceiling<a class="headerlink" href="#chunking-gained-overlap-and-a-ceiling" title="Permanent link">&para;</a></h3>
-<p>Adjacent chunks now share a configurable within-section overlap, so a passage
-straddling a chunk boundary stays retrievable from either side
-(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/791">#791</a>).</p>
-<p>Separately, the derived chunk-character cap has an upper bound
-(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/790">#790</a>). It
-scaled linearly with the embedding model's context length and had no ceiling,
-so an 8,192-token model produced a roughly 22,900-character cap. That is the
-regime a previous release moved away from after the fastembed ONNX path froze
-on oversize chunks, and picking any long-context model silently re-entered it.
-Pass <code>-1</code> to opt back into unbounded behaviour.</p>
-<h3 id="vault-views-rebuilt-as-paper">Vault Views rebuilt as "Paper"<a class="headerlink" href="#vault-views-rebuilt-as-paper" title="Permanent link">&para;</a></h3>
-<p>The four in-panel MCP App views were restyled onto a shared warm, editorial
-foundation with serif headings and one accent colour, aware of light and dark
-(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/809">#809</a>). Paper
-tokens map onto the host's existing <code>--color-*</code> variables with Paper values as
-fallback, so a host that pushes its own theme still wins.</p>
-<p>Data fetching, routing and tool wiring are unchanged. This was a restyle, and
-no tool was renamed or removed.</p>
+<h3 id="startup-no-longer-blocks-on-the-index">Startup no longer blocks on the index<a class="headerlink" href="#startup-no-longer-blocks-on-the-index" title="Permanent link">&para;</a></h3>
+<p>Before this release, a cold start built the full-text index inside the MCP
+<code>initialize</code> handshake. On a large vault with no pre-built index that pushed
+the handshake past the client's timeout, and the documented workaround was to
+run the CLI first
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/513">#513</a>).</p>
+<p>The lifespan now loads whatever persistent state exists, schedules the rest as
+background work, and returns. Read tools answer from whatever is indexed at
+that moment. Tools that cannot answer at all from a partial index wait on
+readiness at the MCP layer rather than failing, and <code>get_index_status</code> is a
+tool rather than a field buried in <code>get_server_info</code>. Pre-building through the
+CLI became an optimisation instead of a prerequisite.</p>
+<p>Getting there took the concurrency work underneath it. Sharing one SQLite
+connection across threads surfaces cross-thread errors on Python 3.12 and
+later, and several attempts at background indexing failed on exactly that;
+the index moved to per-thread connections with a strong-reference registry
+first (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/519">#519</a>),
+then to a single-owner writer thread that owns every mutation of both the
+full-text and vector indexes through a first-in-first-out job queue
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/559">#559</a>).
+Contended writes retry on <code>SQLITE_LOCKED</code>
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/560">#560</a>).</p>
+<p>The vocabulary changed with it. <code>get_index_status</code> reports <code>queryable</code> rather
+than <code>ready</code>, <code>IndexNotReadyError</code> became <code>IndexUnavailableError</code> and carries a
+<code>reason</code> discriminator, and <code>MARKDOWN_VAULT_MCP_READY_TIMEOUT_S</code> became
+<code>MARKDOWN_VAULT_MCP_BUILD_TIMEOUT_S</code>
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/538">#538</a>). All of
+those names were introduced and renamed inside this same range, so upgrading
+from 1.28 sees only the final spelling.</p>
+<p>Because writes are now asynchronous, reads say whether they might be behind.
+Every index-querying read tool reports freshness in <code>result._meta.index_stale</code>
+and returns its bare payload unchanged
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/646">#646</a>); a
+caller that needs a guarantee passes <code>wait_for_pending_writes=true</code> and blocks
+until the writer drains, bounded by
+<code>MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S</code>
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/534">#534</a>).</p>
+<h3 id="search-returns-files-not-chunks">Search returns files, not chunks<a class="headerlink" href="#search-returns-files-not-chunks" title="Permanent link">&para;</a></h3>
+<p>Adaptive chunking, which landed in 1.28, had an unintended consequence:
+<code>search</code>, <code>get_similar</code> and <code>get_context</code> started surfacing several chunks of
+the <em>same</em> document in the top results, crowding out other
+files that matched. In the reported case a <code>get_context</code> call with <code>similar_limit=5</code>
+returned two distinct documents, four of the five slots taken by chunks of one
+note (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/469">#469</a>).</p>
+<p>All three call sites now field-collapse: the result is a <code>GroupedResult</code> per
+file, scored by its best section, with the matching sections as a sub-list of
+<code>SectionHit</code>. <code>chunks_per_file</code> bounds the sections shown per file, defaulting
+to <code>2</code> for <code>search</code> and <code>get_similar</code> and <code>1</code> for <code>get_context</code> so dossiers
+stay compact. The design follows the same fuse-then-collapse ordering as
+Elasticsearch's reciprocal-rank-fusion retriever and Qdrant's grouped queries,
+with the per-chunk length downweight applied before collapsing.</p>
+<p><code>SimilarItem</code> was removed rather than aliased. A companion fix stopped the
+length downweight applying inside <code>get_similar</code> and <code>get_context.similar</code>,
+where it penalised exactly the long documents those calls exist to surface
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/472">#472</a>).</p>
+<h3 id="git-synchronisation-you-can-trigger-and-a-webhook">Git synchronisation you can trigger, and a webhook<a class="headerlink" href="#git-synchronisation-you-can-trigger-and-a-webhook" title="Permanent link">&para;</a></h3>
+<p><code>git_sync</code> is a new tool that runs a pull, a push, or both, synchronously, and
+returns what happened
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/444">#444</a>). Before
+it, both directions were purely time-based, with a deferred push 30 seconds
+after the last write and a pull every 600 seconds. The issue gives two
+motivating cases. In the first, an assistant finishes a multi-write workflow
+while the user waits to see the result on another device. In the second, a
+user has edited the vault elsewhere and wants the latest state before asking a
+question. Conflicts come back as conflict-file paths in
+the response rather than as a log line. The tool is hidden when git is not in
+managed mode.</p>
+<p>For multi-author vaults there is now a push webhook. Setting
+<code>MARKDOWN_VAULT_MCP_GITHUB_WEBHOOK_SECRET</code> mounts a <code>POST /github-webhook</code>
+route that verifies the GitHub HMAC-SHA256 signature and triggers a forced
+pull plus reindex, cutting staleness from up to the pull interval down to
+delivery latency. The route is only mounted on HTTP transports and only when
+the secret is set, so stdio and single-user deployments are unaffected. The
+periodic pull loop stays on as a backstop for missed deliveries.</p>
+<p>Pulls also became less likely to leave a mess. A write landing on disk just
+before its deferred commit, concurrent with a pull, used to abort the pull on
+a dirty tree and cascade into a rejected push and a spurious conflict sibling.
+Both pull paths now pause new writes and drain the deferred-commit queue
+before fetching, so the merge always runs on a clean tree
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/571">#571</a>).</p>
+<p>Two smaller git changes are worth knowing about: commit identity can be taken
+from OIDC claims per request, via
+<code>MARKDOWN_VAULT_MCP_GIT_COMMIT_NAME_CLAIM</code> and
+<code>MARKDOWN_VAULT_MCP_GIT_COMMIT_EMAIL_CLAIM</code>, with the author separated from
+the committer so per-user attribution survives; and <code>get_history</code> and
+<code>get_diff</code> now work on attachments, rename-aware
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/342">#342</a>).</p>
+<h3 id="external-edits-are-noticed-without-git">External edits are noticed without git<a class="headerlink" href="#external-edits-are-noticed-without-git" title="Permanent link">&para;</a></h3>
+<p>A vault edited by something other than the server (a text editor, a sync
+daemon, a <code>cp -r</code>) had no automatic detection unless git pull or the webhook
+was running
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/558">#558</a>). A
+watchdog-backed file watcher now triggers a reindex after a debounce window,
+controlled by <code>MARKDOWN_VAULT_MCP_FILE_WATCHER</code> and
+<code>MARKDOWN_VAULT_MCP_FILE_WATCHER_DEBOUNCE_S</code>. It is mutually exclusive with
+the pull loop and the webhook, both of which already reindex on their own
+cadence; mixing them risks scanning mid-checkout.</p>
+<h3 id="a-production-report-rebuilt-index-state-integrity">A production report rebuilt index-state integrity<a class="headerlink" href="#a-production-report-rebuilt-index-state-integrity" title="Permanent link">&para;</a></h3>
+<p><a href="https://github.com/mikebronner">@mikebronner</a> ran the server on a 181 MB,
+729-file vault, hit boot times past the 30-second client timeout, and diagnosed
+four defects on a fork of 1.20.0 before re-verifying each against the 2.0.0-rc
+line and filing them as one issue with file-and-line evidence
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/665">#665</a>). The
+deployment pattern behind them is one the issue argues is common for MCP
+servers: external processes write markdown while no server is running, and
+several instances boot concurrently against the same index.</p>
+<p>The fixes landed as three pull requests, contributed by the reporter:</p>
 <ul>
-<li><strong>Foundation</strong>: token layer, fonts and tab strip
-  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/811">#811</a>)</li>
-<li><strong>Context Card</strong>: folder breadcrumb, relative timestamp, type and status
-  chips, collapsible sections with count badges, similarity scores with
-  progress bars
-  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/812">#812</a>)</li>
-<li><strong>Vault Browser</strong>: restyled tree with attachment glyphs, active-row
-  highlighting, and the hybrid search field
-  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/813">#813</a>)</li>
-<li><strong>Note Preview</strong>: table of contents, collapsible frontmatter and tags, copy
-  actions</li>
-<li><strong>Graph Explorer</strong>: level-of-detail labels</li>
+<li><strong>Warm boots reconcile offline changes.</strong> A warm restart short-circuited on
+  a sentinel and never scanned the filesystem, so anything written while the
+  server was down stayed invisible until an unrelated event, and the new
+  staleness signal reported fresh, because it was computed from in-process
+  writer state only. The lifespan now enqueues an incremental reindex after
+  the build job.</li>
+<li><strong>Skipped files are remembered.</strong> Files failing the frontmatter check never
+  entered the index, and tracker state was rebuilt from index contents, so
+  every scan re-detected them as added and re-logged each skip. Tracker state
+  is now versioned and records deterministic skips by content hash; transient
+  errors are deliberately not recorded, so they retry.</li>
+<li><strong>Embeddings converge instead of drifting.</strong> <code>build_embeddings(force=False)</code>
+  skipped all work whenever the vector index was non-empty, which made drift
+  permanent once present. It now diffs the indexed chunk set against stored
+  vector metadata and embeds exactly the missing chunks, dropping orphans.</li>
+<li><strong>A dotted <code>--cov</code> no longer kills the test session.</strong> The eager package
+  root pulled in the whole tree, and coverage's package resolution left an
+  orphaned import hook behind that took the next import down with it. The
+  package root became lazy through PEP 562.</li>
 </ul>
-<p>As a prerequisite, the single 52 KB <code>app.src.html</code> was split into modular
-partials assembled at build time by <code>build_spa.py</code>
-(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/810">#810</a>).</p>
-<h3 id="move-a-whole-folder-in-one-call">Move a whole folder in one call<a class="headerlink" href="#move-a-whole-folder-in-one-call" title="Permanent link">&para;</a></h3>
-<p><code>move_folder(old_dir, new_dir)</code> moves a subtree and rewrites every affected
-link across the vault in a single pass
-(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/511">#511</a>).</p>
-<p>Previously an agent had to enumerate the subtree and call <code>rename</code> per file,
-which corrupted links between documents inside the moved subtree: when file A
-moved, its backlink in still-unmoved sibling B was rewritten to A's new home,
-then B itself moved, and the intermediate rewrites interleaved badly. Computing
-the full old-to-new mapping first and rewriting once afterwards is what makes
-this correct.</p>
-<p>The directory move is all-or-nothing and validates before touching anything, so
-a target collision aborts with nothing moved. Link rewrites stay best-effort
-and report how many succeeded, matching the existing single-file behaviour.</p>
-<h3 id="table-of-contents-for-a-folder">Table of contents for a folder<a class="headerlink" href="#table-of-contents-for-a-folder" title="Permanent link">&para;</a></h3>
-<p><code>get_toc</code> returns a heading outline for a folder or subtree, not just one note
-(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/773">#773</a>). The
-per-note outline was previously reachable only through the <code>toc://vault/{path}</code>
-resource, which left clients that surface tools but not resources with no way
-to get it at all.</p>
-<h3 id="skipped-notes-are-visible-without-reading-container-logs">Skipped notes are visible without reading container logs<a class="headerlink" href="#skipped-notes-are-visible-without-reading-container-logs" title="Permanent link">&para;</a></h3>
-<p>A note whose YAML frontmatter failed to parse was dropped from the index and
-reported only as a warning in the container log
-(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/775">#775</a>).
-<code>get_index_status</code> said <code>queryable</code> with zero dirty paths and no error, <code>read</code>
-said the document did not exist, and the note surfaced only indirectly as
-broken inbound links from elsewhere. A parse-skipped note was indistinguishable
-from one that had not synced yet.</p>
-<p><code>get_index_status</code> now returns <code>skipped_files</code> with a category and detail per
-path. Follow-up work separates a true <code>internal_error</code> from a
-<code>parse_error</code>, so tooling built on the field can tell "this document has a data
-problem you can fix" from "the indexer itself hit a bug"
-(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/802">#802</a>).</p>
+<p>Measured on the reporter's vault and quoted from the issue: warm boot fell
+from 30 s or more to between 1 and 2 s. Index size fell from 1.8 GB to 4.7 MB. Drift
+converged to zero on each boot.</p>
+<h3 id="configuration-fails-fast">Configuration fails fast<a class="headerlink" href="#configuration-fails-fast" title="Permanent link">&para;</a></h3>
+<p>Invalid configuration used to degrade quietly. Most sharply: when an embedding
+provider could not be constructed, the server logged a warning and continued
+with keyword-only search, even when the operator had explicitly named a
+backend in <code>MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER</code>, so a misconfigured
+deployment silently lost semantic search with no signal
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/638">#638</a>).</p>
+<p>An explicitly chosen provider that cannot be built now raises at startup.
+Auto-detection is unchanged: with the variable unset and no backend available,
+the server still warns and continues with semantic search disabled, so the
+zero-configuration path keeps working. Range checks moved into construction so
+they also cover direct <code>VaultConfig(...)</code> calls, and the project standardised
+on one catchable <code>ConfigurationError</code> shared across the server family.</p>
+<h3 id="transfer-links-removed-and-rebuilt">Transfer links, removed and rebuilt<a class="headerlink" href="#transfer-links-removed-and-rebuilt" title="Permanent link">&para;</a></h3>
+<p>One-time download links existed before this release, built on shared
+file-exchange machinery. All of it was removed
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/620">#620</a>) and
+replaced by local code written from scratch, deliberately without reusing the
+old machinery.</p>
+<p>What ships is two tools and one route: <code>create_download_link(path)</code> mints a
+one-time capability URL for a note or attachment, <code>create_upload_link(path)</code>
+mints one for a fixed, pre-validated destination, and
+<code>GET/POST /transfer/{token}</code> serves them. Both move bytes out of band, so a
+file transfer costs no LLM context. Lifetimes are bounded by
+<code>MARKDOWN_VAULT_MCP_TRANSFER_TTL_DEFAULT_S</code> and
+<code>MARKDOWN_VAULT_MCP_TRANSFER_TTL_MAX_S</code>, and uploads by
+<code>MARKDOWN_VAULT_MCP_TRANSFER_MAX_UPLOAD_BYTES</code>. The guide is
+<a href="../../guides/transfer-links/">Transfer links</a>.</p>
+<h3 id="the-documentation-site-gained-a-generator-and-versions">The documentation site gained a generator and versions<a class="headerlink" href="#the-documentation-site-gained-a-generator-and-versions" title="Permanent link">&para;</a></h3>
+<p>The <a href="../../configuration-generator/">configuration generator</a> is a decision-tree
+wizard that emits a Claude configuration file, a <code>.env</code>, a <code>docker run</code> line, a
+Compose file or a systemd unit for your answers
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/693">#693</a>).
+Everything runs in the browser; non-secret answers are encoded in the URL so a
+configuration is shareable, and secret fields are kept out of the URL with
+placeholders in the output.</p>
+<p>The site itself became versioned with <code>mike</code>
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/700">#700</a>): each
+stable release publishes its own minor version with a selector, and
+pre-releases feed a single rolling unstable version.</p>
+<h2 id="security">Security<a class="headerlink" href="#security" title="Permanent link">&para;</a></h2>
+<p>The <code>fetch</code> tool's guard against server-side request forgery only inspected the
+host literal in the URL, so a public hostname resolving to an internal address
+passed the check, and a host that passed could be re-pointed between the check
+and the connection. The old helper's own docstring conceded it did not prevent
+rebinding. <code>fetch</code> now resolves before connecting, rejects the request if any
+resolved address is private, loopback, link-local, unspecified, reserved or
+multicast, fails closed on a resolution error, and dials the exact address it
+validated while carrying the original <code>Host</code> header and TLS server name
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/704">PR #704</a>).</p>
+<p>Dependency work in the same range cleared advisories in <code>starlette</code>, <code>pyjwt</code>,
+<code>cryptography</code>, <code>python-multipart</code>, <code>pip</code> and <code>urllib3</code>.</p>
 <h2 id="other-changes">Other changes<a class="headerlink" href="#other-changes" title="Permanent link">&para;</a></h2>
-<h3 id="indexing-and-watching">Indexing and watching<a class="headerlink" href="#indexing-and-watching" title="Permanent link">&para;</a></h3>
+<h3 id="reading-and-editing">Reading and editing<a class="headerlink" href="#reading-and-editing" title="Permanent link">&para;</a></h3>
 <ul>
-<li>An already-indexed file that fails to re-hash is kept rather than purged. It
-  was dropped from the disk snapshot and then computed as deleted, which
-  removed a live document from FTS and its embedding until a later scan
-  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/831">#831</a>).</li>
-<li>Transient descriptor exhaustion is retried with backoff while hashing during
-  a scan, instead of silently dropping the file from the scan
-  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/821">#821</a>).</li>
-<li>Excluded files are invisible in <code>build_index</code> for file-shaped patterns such
-  as <code>**/*.draft.md</code>, matching the contract that discovery pruning already met
-  for directory-shaped ones
-  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/832">#832</a>).</li>
-<li>An unreadable subtree is logged rather than silently skipped, and a watcher
-  that ends up with zero active watches is reported above <code>INFO</code> instead of
-  logging success
-  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/835">#835</a>).</li>
+<li><code>read</code> error messages point at the alternative that would have worked, and
+  read-side size guards are documented as a context cost on the tools that
+  incur one
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/442">#442</a>).</li>
+<li><code>read(path, section=...)</code> tolerates whitespace-run differences when matching
+  a heading
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/497">PR #497</a>).</li>
+<li>Failed multi-line edits report the line that actually diverged
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/502">PR #502</a>).</li>
+<li>A UTF-8 byte-order mark is normalised on every vault markdown read
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/673">#673</a>) and on
+  ingress through <code>fetch</code> and transfer uploads
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/681">#681</a>).</li>
 </ul>
-<h3 id="diagnostics">Diagnostics<a class="headerlink" href="#diagnostics" title="Permanent link">&para;</a></h3>
+<h3 id="indexing-and-links">Indexing and links<a class="headerlink" href="#indexing-and-links" title="Permanent link">&para;</a></h3>
 <ul>
-<li>The <code>index</code> and <code>reindex</code> CLI commands no longer swallow internal embedding
-  failures. A blanket <code>except ValueError: pass</code>, intended to skip when
-  embeddings are not configured, also caught an internal consistency failure,
-  so a corrupt sidecar produced <code>Indexed N documents</code> and a zero exit code
-  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/774">#774</a>).</li>
-<li>Internal semantic-search failures surface from <code>get_context</code>.</li>
-<li><code>httpx</code> per-request logs are quiet at the default level. One <code>INFO</code> line per
-  Ollama embed batch flooded the log during a build
-  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/792">#792</a>).</li>
-<li>One malformed prompt no longer aborts registration of every prompt after it
-  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/799">#799</a>), and
-  prompts are built from a synthetic signature instead of <code>exec()</code>.</li>
+<li>Wikilinks are resolved after every write, edit, delete and rename, not only
+  on a full reindex
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/495">PR #495</a>).</li>
+<li>Symlinked content is followed on Python 3.13 and later, including when the
+  source directory is itself a symlink
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/508">#508</a>).</li>
+<li>Excluded paths are filtered before hashing during change detection, instead
+  of being hashed and discarded downstream
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/257">#257</a>), and
+  the index runs an <code>optimize</code> pass after bulk purges
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/669">#669</a>).</li>
+<li>Tied search results break their tie deterministically
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/499">PR #499</a>), and
+  no chunk exceeds the configured word budget
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/496">PR #496</a>).</li>
+<li>Embedding-build progress is logged in deciles rather than per batch
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/311">#311</a>).</li>
 </ul>
-<h3 id="mcp-apps">MCP Apps<a class="headerlink" href="#mcp-apps" title="Permanent link">&para;</a></h3>
+<h3 id="graph-and-mcp-apps">Graph and MCP Apps<a class="headerlink" href="#graph-and-mcp-apps" title="Permanent link">&para;</a></h3>
 <ul>
-<li>Graph and context app tools no longer fail on a note larger than
-  <code>MAX_NOTE_READ_BYTES</code>. Four sites called the size-capped <code>read()</code> purely to
-  extract a title for a node label, so one 375 KB note failed the whole tool. A
-  metadata accessor backed by the index is used instead
-  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/855">#855</a>).</li>
-<li>Graph canvas colours are resolved by probe, so nodes are not black on Claude
-  Desktop.</li>
-<li>The Vault Explorer view honours host container dimensions on mobile.</li>
+<li><code>get_backlinks</code> and <code>get_outlinks</code> accept a <code>limit</code>
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/617">#617</a>).</li>
+<li>The hub graph view fetches in parallel, producing byte-identical output to
+  the sequential version
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/285">#285</a>).</li>
+<li><code>MARKDOWN_VAULT_MCP_DISABLE_APPS_UI</code> hides <code>browse_vault</code> and <code>show_context</code>
+  from the tool listing, for clients that cannot render an MCP Apps panel and
+  pay for the listing anyway
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/527">#527</a>).</li>
 </ul>
-<h3 id="tooling-and-plumbing">Tooling and plumbing<a class="headerlink" href="#tooling-and-plumbing" title="Permanent link">&para;</a></h3>
+<h3 id="embeddings">Embeddings<a class="headerlink" href="#embeddings" title="Permanent link">&para;</a></h3>
 <ul>
-<li>Every tool carries a human-readable <code>title</code> annotation. VS Code's MCP client
-  honours only <code>title</code> and <code>readOnlyHint</code> among annotations, so tools had been
-  rendering under their raw machine names
-  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/751">#751</a>).</li>
-<li>Eight <code>copier update</code> commits took the upstream template from v2.1.1 to
-  v2.10.1. Most of that range is developer-facing: a diff-scoped structural
-  health gate, Vale linting of user-facing docs, a configuration-wizard
-  coverage gate, and a <code>DOMAIN-COMMANDS</code> sentinel for domain CLI subcommands.
-  The in-browser configuration generator on the documentation site arrived the
-  same way.</li>
+<li>The <code>openai</code> provider accepts <code>MARKDOWN_VAULT_MCP_OPENAI_BASE_URL</code> and
+  <code>MARKDOWN_VAULT_MCP_OPENAI_EMBEDDING_MODEL</code>, so it can point at any
+  OpenAI-compatible embeddings endpoint. Defaults are unchanged. Per the
+  contributing pull request, the alternative was patching installed package
+  files, which does not survive a fresh <code>uvx</code> environment
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/505">PR #505</a>).</li>
+<li>The chunk character cap is derived from the embedding model's context length
+  rather than a word count. A word budget does not bound tokens: token-dense
+  content produced chunks of 287 to 399 words carrying 4,000 to 5,400 tokens, which Ollama
+  rejected outright and FastEmbed silently truncated
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/649">#649</a>).</li>
 </ul>
-<h2 id="shipped-earlier-in-the-30-patch-line">Shipped earlier, in the 3.0 patch line<a class="headerlink" href="#shipped-earlier-in-the-30-patch-line" title="Permanent link">&para;</a></h2>
-<p>The first draft of this page was written against the <code>v3.0.0...v3.1.0</code> range
-rather than <code>v3.0.4...v3.1.0</code>, so it narrated several fixes that had already
-reached users in a 3.0 patch release. Rather than drop them, this section
-keeps each one with a pointer to where it is described in full, so a reader who
-followed a link expecting it on this page still finds it.</p>
+<h3 id="platform">Platform<a class="headerlink" href="#platform" title="Permanent link">&para;</a></h3>
 <ul>
-<li>Escaped-pipe wikilinks, <code>[[path\|alias]]</code>, resolve instead of being reported
-  broken. Shipped in v3.0.2
-  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/731">#731</a>,
-  <a href="../3.0/#v302-june-25-2026">3.0 notes</a>).</li>
-<li>The vector sidecar is written atomically, a corrupt sidecar self-heals on
-  load, and row-count parity is enforced. Shipped in v3.0.2
-  (<a href="../3.0/#v302-june-25-2026">3.0 notes</a>).</li>
-<li><code>read(path, section=...)</code> returns the whole section rather than its first
-  chunk, and whole-document <code>read</code> degrades to <code>None</code> on malformed frontmatter
-  instead of raising. Shipped in v3.0.3
-  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/741">#741</a>,
-  <a href="../3.0/#v303-june-26-2026">3.0 notes</a>).</li>
-<li>Git sync resolves its comparison ref as <code>origin/&lt;branch&gt;</code> rather than
-  <code>@{upstream}</code>. Shipped in v3.0.4
-  (<a href="../3.0/#v304-june-27-2026">3.0 notes</a>).</li>
+<li>The server adopted <code>fastmcp-pvl-core</code> 3.x, which reworked the middleware
+  stack and replaced the event-store factory with a unified key-value factory
+  behind <code>MARKDOWN_VAULT_MCP_KV_STORE_URL</code>
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/492">#492</a>).</li>
+<li>The mcpb bundle and Claude Code plugin manifests cover the full environment
+  surface
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/345">#345</a>).</li>
+<li>The README, configuration reference and guides were audited against the code
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/653">#653</a>), and
+  the docs corpus was scrubbed of machine-prose tells and brought under Vale
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/686">#686</a>).</li>
 </ul>
 <h2 id="thanks">Thanks<a class="headerlink" href="#thanks" title="Permanent link">&para;</a></h2>
-<p>This release leans heavily on reports from outside the repository, several
-carrying measurements, stack samples and fault-injection reproductions:</p>
+<p>Three contributions in this release came from outside the repository:</p>
 <ul>
-<li><a href="https://github.com/michael-denyer">@michael-denyer</a> for
-  <a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/819">#819</a>,
-  <a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/820">#820</a>,
-  <a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/821">#821</a>,
-  <a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/822">#822</a>,
-  <a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/823">#823</a> and
-  <a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/849">#849</a></li>
+<li><a href="https://github.com/mikebronner">@mikebronner</a> for
+  <a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/665">#665</a>: four
+  diagnosed defects with file-and-line evidence, re-verified against <code>main</code>,
+  and three of the four fixes contributed as pull requests, plus
+  <a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/669">#669</a></li>
+<li><a href="https://github.com/Finomosec">@Finomosec</a> for the
+  <code>DISABLE_APPS_UI</code> setting
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/527">#527</a>)</li>
+<li><a href="https://github.com/huiyi9420">@huiyi9420</a> for OpenAI-compatible embedding
+  configuration
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/505">PR #505</a>)</li>
 </ul>
-<p>Two more outside reports shape this release without belonging to it.
-<a href="https://github.com/Finomosec">@Finomosec</a> reported the idle reindex loop
-(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/720">#720</a>), fixed in
-the 3.0 patch line and credited on the <a href="../3.0/#patch-releases">3.0 page</a>. The
-scoped-watch work in this release reintroduced that loop, and
-<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/830">#830</a> fixed it
-again here. <a href="https://github.com/Denzilla04">@Denzilla04</a> reported the
-escaped-pipe wikilinks
-(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/731">#731</a>), which
-also shipped in the 3.0 patch line.</p>
 <!-- PATCH-RELEASES-START -->
 
 <h2 id="patch-releases">Patch releases<a class="headerlink" href="#patch-releases" title="Permanent link">&para;</a></h2>
-<p>No patch releases yet.</p>
+<h2 id="v301-june-22-2026">v3.0.1 (June 22, 2026)<a class="headerlink" href="#v301-june-22-2026" title="Permanent link">&para;</a></h2>
+<!-- RELEASE-SUMMARY v3.0.1 START -->
+<p>Fixes an idle-CPU regression in the file watcher. Anyone running with
+<code>MARKDOWN_VAULT_MCP_FILE_WATCHER=true</code> on a non-git vault should take this
+patch.</p>
+<!-- RELEASE-SUMMARY v3.0.1 END -->
+
+<p>On a non-git vault with the watcher active, the server reindexed endlessly and
+burned 20% to 30% of a CPU at idle with no real file changes, logging
+<code>0 added, 0 modified, 0 deleted</code> continuously
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/720">#720</a>, reported
+with <code>py-spy</code> and <code>inotifywait</code> evidence by
+<a href="https://github.com/Finomosec">@Finomosec</a>).</p>
+<p>The reindex walk itself was the trigger. Hashing every file makes the kernel
+emit inotify read events, the handler filtered only on hidden paths and not on
+event type, so each walk scheduled the next one. The handler now
+reacts only to mutating events, and the vector index is saved only when a
+reindex actually changed it, instead of on every empty-diff pass.</p>
+<h2 id="v302-june-25-2026">v3.0.2 (June 25, 2026)<a class="headerlink" href="#v302-june-25-2026" title="Permanent link">&para;</a></h2>
+<!-- RELEASE-SUMMARY v3.0.2 START -->
+<p>Hardens the vector sidecar against corruption and fixes wikilinks written with
+an escaped pipe, the form Obsidian requires inside a table cell.</p>
+<!-- RELEASE-SUMMARY v3.0.2 END -->
+
+<p>The vector sidecar is now written atomically, a corrupt sidecar self-heals on
+load rather than failing the process, both load paths share one loader
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/736">#736</a>), and
+row-count parity between the sidecar and its metadata is enforced.</p>
+<p><code>[[path\|alias]]</code> parsed with the escaping backslash baked into the link
+target, so the link was reported broken and its graph edge was dropped
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/731">#731</a>, reported
+by <a href="https://github.com/Denzilla04">@Denzilla04</a>). The reporter's vault had
+about 190 false broken links, all from this.</p>
+<h2 id="v303-june-26-2026">v3.0.3 (June 26, 2026)<a class="headerlink" href="#v303-june-26-2026" title="Permanent link">&para;</a></h2>
+<!-- RELEASE-SUMMARY v3.0.3 START -->
+<p>Fixes partial results from <code>read(path, section=...)</code>. Anyone reading long
+sections through the tool was silently getting only part of them.</p>
+<!-- RELEASE-SUMMARY v3.0.3 END -->
+
+<p>A section large enough to be split across chunks returned only its first
+chunk, with no error and no truncation marker, and a section with sub-headings
+returned only the preamble before the first one
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/741">#741</a>). Section
+reads now reassemble every row under the heading.</p>
+<p>Two guards landed alongside it: whole-document <code>read</code> degrades to <code>None</code> with
+a logged warning on malformed frontmatter
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/742">#742</a>) rather
+than raising, and its content read is guarded against failing mid-read
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/745">#745</a>).</p>
+<h2 id="v304-june-27-2026">v3.0.4 (June 27, 2026)<a class="headerlink" href="#v304-june-27-2026" title="Permanent link">&para;</a></h2>
+<!-- RELEASE-SUMMARY v3.0.4 START -->
+<p>One fix: git sync resolves its comparison ref as <code>origin/&lt;branch&gt;</code> instead of
+<code>@{upstream}</code>, which is absent on a branch with no configured upstream.</p>
+<!-- RELEASE-SUMMARY v3.0.4 END -->
+
 <!-- PATCH-RELEASES-END -->
 
 <h2 id="all-changes">All changes<a class="headerlink" href="#all-changes" title="Permanent link">&para;</a></h2>
 <p>See <a href="https://github.com/pvliesdonk/markdown-vault-mcp/blob/main/CHANGELOG.md">CHANGELOG.md</a>
 for the full commit-level list, or the
-<a href="https://github.com/pvliesdonk/markdown-vault-mcp/compare/v3.0.4...v3.1.0">v3.0.4 to v3.1.0 comparison</a>.</p>
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/compare/v1.28.0...v3.0.0">v1.28.0 to v3.0.0 comparison</a>.</p>
 
 
 

@@ -2,7 +2,7 @@
 
 Released July 8, 2026.
 
-This is the release where other people's vaults broke it. Three outside reporters ran markdown-vault-mcp against a 4,400-document home directory, a symlink farm, and an Obsidian vault full of table navigators, and between them filed the issues behind most of what follows. The headline work is not a new feature: it is that discovery, watching and semantic recall now behave the same on a large real vault as they did on a small test one.
+This is the release where other people's vaults broke it. One outside reporter ran markdown-vault-mcp against a 4,400-document home directory and a symlink farm, and filed six of the issues behind what follows. The headline work is not a new feature: it is that discovery, watching and semantic recall now behave the same on a large real vault as they did on a small test one.
 
 Alongside that, the four in-panel MCP App views were rebuilt on a shared visual foundation, and two new tools landed.
 
@@ -90,10 +90,6 @@ A note whose YAML frontmatter failed to parse was dropped from the index and rep
 
 `get_index_status` now returns `skipped_files` with a category and detail per path. Follow-up work separates a true `internal_error` from a `parse_error`, so tooling built on the field can tell "this document has a data problem you can fix" from "the indexer itself hit a bug" ([#802](https://github.com/pvliesdonk/markdown-vault-mcp/issues/802)).
 
-### Aliased wikilinks in tables resolve
-
-`[[path\|alias]]` parsed with the escaping backslash baked into the target, so the link was reported broken and its graph edge was dropped ([#731](https://github.com/pvliesdonk/markdown-vault-mcp/issues/731)). This is the canonical on-disk form, because Obsidian requires the pipe to be escaped inside a table cell. The reporter's vault had about 190 false broken links, all from this.
-
 ## Other changes
 
 ### Indexing and watching
@@ -102,13 +98,6 @@ A note whose YAML frontmatter failed to parse was dropped from the index and rep
 - Transient descriptor exhaustion is retried with backoff while hashing during a scan, instead of silently dropping the file from the scan ([#821](https://github.com/pvliesdonk/markdown-vault-mcp/issues/821)).
 - Excluded files are invisible in `build_index` for file-shaped patterns such as `**/*.draft.md`, matching the contract that discovery pruning already met for directory-shaped ones ([#832](https://github.com/pvliesdonk/markdown-vault-mcp/issues/832)).
 - An unreadable subtree is logged rather than silently skipped, and a watcher that ends up with zero active watches is reported above `INFO` instead of logging success ([#835](https://github.com/pvliesdonk/markdown-vault-mcp/issues/835)).
-- The vector sidecar is written atomically, corrupt sidecars self-heal on load, and row-count parity is enforced.
-
-### Reading and search
-
-- `read(path, section=...)` returns the whole section. Any section large enough to be split across chunks returned only its first chunk, with no error or truncation marker, and a section with sub-headings returned only the preamble before the first one ([#741](https://github.com/pvliesdonk/markdown-vault-mcp/issues/741)).
-- Whole-document `read` degrades to `None` on malformed frontmatter, and is guarded against mid-read failure.
-- Git sync resolves its ref as `origin/<branch>` rather than `@{upstream}`.
 
 ### Diagnostics
 
@@ -128,13 +117,22 @@ A note whose YAML frontmatter failed to parse was dropped from the index and rep
 - Every tool carries a human-readable `title` annotation. VS Code's MCP client honours only `title` and `readOnlyHint` among annotations, so tools had been rendering under their raw machine names ([#751](https://github.com/pvliesdonk/markdown-vault-mcp/issues/751)).
 - Eight `copier update` commits took the upstream template from v2.1.1 to v2.10.1. Most of that range is developer-facing: a diff-scoped structural health gate, Vale linting of user-facing docs, a configuration-wizard coverage gate, and a `DOMAIN-COMMANDS` sentinel for domain CLI subcommands. The in-browser configuration generator on the documentation site arrived the same way.
 
+## Shipped earlier, in the 3.0 patch line
+
+The first draft of this page was written against the `v3.0.0...v3.1.0` range rather than `v3.0.4...v3.1.0`, so it narrated several fixes that had already reached users in a 3.0 patch release. Rather than drop them, this section keeps each one with a pointer to where it is described in full, so a reader who followed a link expecting it on this page still finds it.
+
+- Escaped-pipe wikilinks, `[[path\|alias]]`, resolve instead of being reported broken. Shipped in v3.0.2 ([#731](https://github.com/pvliesdonk/markdown-vault-mcp/issues/731), [3.0 notes](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/3.0/#v302-june-25-2026)).
+- The vector sidecar is written atomically, a corrupt sidecar self-heals on load, and row-count parity is enforced. Shipped in v3.0.2 ([3.0 notes](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/3.0/#v302-june-25-2026)).
+- `read(path, section=...)` returns the whole section rather than its first chunk, and whole-document `read` degrades to `None` on malformed frontmatter instead of raising. Shipped in v3.0.3 ([#741](https://github.com/pvliesdonk/markdown-vault-mcp/issues/741), [3.0 notes](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/3.0/#v303-june-26-2026)).
+- Git sync resolves its comparison ref as `origin/<branch>` rather than `@{upstream}`. Shipped in v3.0.4 ([3.0 notes](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/3.0/#v304-june-27-2026)).
+
 ## Thanks
 
 This release leans heavily on reports from outside the repository, several carrying measurements, stack samples and fault-injection reproductions:
 
 - [@michael-denyer](https://github.com/michael-denyer) for [#819](https://github.com/pvliesdonk/markdown-vault-mcp/issues/819), [#820](https://github.com/pvliesdonk/markdown-vault-mcp/issues/820), [#821](https://github.com/pvliesdonk/markdown-vault-mcp/issues/821), [#822](https://github.com/pvliesdonk/markdown-vault-mcp/issues/822), [#823](https://github.com/pvliesdonk/markdown-vault-mcp/issues/823) and [#849](https://github.com/pvliesdonk/markdown-vault-mcp/issues/849)
-- [@Finomosec](https://github.com/Finomosec) for [#720](https://github.com/pvliesdonk/markdown-vault-mcp/issues/720)
-- [@Denzilla04](https://github.com/Denzilla04) for [#731](https://github.com/pvliesdonk/markdown-vault-mcp/issues/731)
+
+Two more outside reports shape this release without belonging to it. [@Finomosec](https://github.com/Finomosec) reported the idle reindex loop ([#720](https://github.com/pvliesdonk/markdown-vault-mcp/issues/720)), fixed in the 3.0 patch line and credited on the [3.0 page](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/3.0/#patch-releases). The scoped-watch work in this release reintroduced that loop, and [#830](https://github.com/pvliesdonk/markdown-vault-mcp/issues/830) fixed it again here. [@Denzilla04](https://github.com/Denzilla04) reported the escaped-pipe wikilinks ([#731](https://github.com/pvliesdonk/markdown-vault-mcp/issues/731)), which also shipped in the 3.0 patch line.
 
 ## Patch releases
 
@@ -142,4 +140,4 @@ No patch releases yet.
 
 ## All changes
 
-See [CHANGELOG.md](https://github.com/pvliesdonk/markdown-vault-mcp/blob/main/CHANGELOG.md) for the full commit-level list, or the [v3.0.0 to v3.1.0 comparison](https://github.com/pvliesdonk/markdown-vault-mcp/compare/v3.0.0...v3.1.0).
+See [CHANGELOG.md](https://github.com/pvliesdonk/markdown-vault-mcp/blob/main/CHANGELOG.md) for the full commit-level list, or the [v3.0.4 to v3.1.0 comparison](https://github.com/pvliesdonk/markdown-vault-mcp/compare/v3.0.4...v3.1.0).

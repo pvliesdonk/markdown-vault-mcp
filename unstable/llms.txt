@@ -60,4 +60,6 @@ markdown-vault-mcp is a generic markdown vault MCP server with FTS5 full-text se
 
 - [Overview](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/index.md): Release notes overview — page-per-minor model and available pages
 - [3.1](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/3.1/index.md): Release notes for 3.1 — upgrade notes, highlights, and linked evidence
+- [3.0](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/3.0/index.md): Release notes for 3.0 and its patch releases — Vault rename, non-blocking startup, field-collapsed search (backfilled)
+- [1.x](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/1.x/index.md): Release notes for the whole 1.x line — capability arc, version-number gaps, and evidence limits (backfilled)
 
