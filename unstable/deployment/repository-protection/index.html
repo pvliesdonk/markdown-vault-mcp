@@ -2176,6 +2176,14 @@ rules:</p>
 <li>the owner's own hotfix pushes, preserving the escape hatch the previous
   classic protection provided via its disabled admin enforcement.</li>
 </ul>
+<p>Two clean-up operations the release model implies depend on this bypass
+too. <code>protect-release-branches</code> blocks deleting a <code>release/X.Y</code> branch, and
+<code>protect-release-tags</code> blocks deleting a <code>v*</code> tag, yet a stabilisation
+branch is short-lived, and the <code>Pre-release check</code> workflow describes its
+<code>v&lt;version&gt;-rc</code> pre-release as safe to delete. Both deletions are available
+only to the admin role, through the same bypass. A <code>RELEASE_TOKEN</code> that is
+not owned by a repository admin cannot perform them, and those spent
+branches and pre-release tags then accumulate until an admin removes them.</p>
 <p>Everyone below admin, including outside collaborators, write-role
 contributors, and any workflow using the default <code>GITHUB_TOKEN</code>, goes
 through a pull request with green CI.</p>

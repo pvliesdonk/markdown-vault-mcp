@@ -28,6 +28,8 @@ The release flow depends on this. `RELEASE_TOKEN` is a personal access token, an
 - the merge-back merge commit pushed to `main` after a release cut from a `release/*` branch,
 - the owner's own hotfix pushes, preserving the escape hatch the previous classic protection provided via its disabled admin enforcement.
 
+Two clean-up operations the release model implies depend on this bypass too. `protect-release-branches` blocks deleting a `release/X.Y` branch, and `protect-release-tags` blocks deleting a `v*` tag, yet a stabilisation branch is short-lived, and the `Pre-release check` workflow describes its `v<version>-rc` pre-release as safe to delete. Both deletions are available only to the admin role, through the same bypass. A `RELEASE_TOKEN` that is not owned by a repository admin cannot perform them, and those spent branches and pre-release tags then accumulate until an admin removes them.
+
 Everyone below admin, including outside collaborators, write-role contributors, and any workflow using the default `GITHUB_TOKEN`, goes through a pull request with green CI.
 
 If your release credential is a GitHub App installation token rather than a personal access token, the role-based entry does not cover it: add a bypass actor with `actor_type: Integration` and the app id to each ruleset file.

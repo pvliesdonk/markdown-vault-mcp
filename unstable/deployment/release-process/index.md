@@ -16,7 +16,7 @@ Rolling pointers are ordering-aware. The Docker `latest`, `vX`, and `vX.Y` tags,
 
 ## Releasing from trunk
 
-The default release path is trunk. When trunk is quiescent (no epic that must ship whole is mid-flight), dispatching Release on `main` cuts a stable from the head commit: no branch, no ceremony. The workflow prints an advisory warning when open `ships-atomically` epics exist, because releasing `main` ships everything merged so far; the warning never blocks, since the cut may still be intentional.
+The default release path is trunk. When trunk is quiescent (no epic that must ship whole is mid-flight), dispatching Release on `main` cuts a stable from the head commit: no branch, no ceremony. The workflow prints an advisory warning when a release-named milestone still has open issues, or when an open `ships-atomically` epic shows work in flight. It counts the epic's native sub-issues, which may live in another repository, so a cross-repo epic stays visible. Either way the warning never blocks, since the cut may still be intentional.
 
 ## Stabilisation branches
 
@@ -39,6 +39,6 @@ Each release is described in three places with distinct jobs:
 
 ### How the notes pages are produced
 
-The pages under [Release Notes](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/index.md) cover one minor series each; a patch release adds a dated section to its series page. After every stable release, the **Release Notes** workflow drafts the page: an agent researches the release range through the GitHub API (the linked issues and pull requests, not commit subjects) and opens a pull request against `main`. Every causal claim in a page must cite a linked issue or pull request, and the draft must pass the same prose lint as the rest of this site before the pull request opens.
+The pages under [Release Notes](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/index.md) cover one minor series each; a patch release adds a dated section to its series page. After every stable release, the **Release Notes** workflow drafts the page: an agent researches the release range through the GitHub API (the linked issues and pull requests, not commit subjects) and opens a pull request against `main`. Every causal claim in a page must cite a linked issue or pull request. The drafting agent runs the same prose lint as the rest of this site while it writes, and the notes pull request's own CI enforces it: the `vale` job must pass before the pull request can merge, the same gate every change to this site clears.
 
 A maintainer merge is the publication step. Nothing lands on the site without review, and until the merge the release keeps the short interim body the release workflow wrote; a failed or unconvincing draft never blocks or alters a release. On merge, the **Release Notes Publish** workflow updates the GitHub release body from the page's summary and redeploys that minor's versioned docs so the body's deep link resolves. Later hand edits to a merged page redeploy the docs the same way.
