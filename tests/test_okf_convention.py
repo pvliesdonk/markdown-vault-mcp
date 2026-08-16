@@ -186,6 +186,33 @@ class TestConventionMaintenanceIntegration:
         # The drain makes the just-written note appear in the refreshed listing.
         assert "[Playbook](/guides/playbook.md)" in index
 
+    def test_log_and_index_upkeep_survive_write_protection(
+        self, tmp_path: Path
+    ) -> None:
+        """Convention upkeep rewrites files it has read, so the guard exempts it."""
+        root = tmp_path / "protected_vault"
+        (root / "guides").mkdir(parents=True)
+        (root / "index.md").write_text(_ROOT_INDEX, encoding="utf-8")
+        col = Vault(
+            source_dir=root,
+            read_only=False,
+            write_protect_existing=True,
+            okf_mode="on",
+            okf_write=True,
+        )
+        col.index.build_index()
+        try:
+            col.writer.write("guides/a.md", "# A\n")
+            wait_for_writer_drain(col)
+            col.writer.write("guides/b.md", "# B\n")
+            wait_for_writer_drain(col)
+
+            log = _content(col, "guides/log.md")
+            assert log is not None
+            assert log.count("- **Update**:") == 2
+        finally:
+            col.close()
+
     def test_second_same_day_write_appends_bullet(self, enforced_vault: Vault) -> None:
         enforced_vault.writer.write("guides/a.md", "# A\n")
         wait_for_writer_drain(enforced_vault)
