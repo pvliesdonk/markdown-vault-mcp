@@ -10,7 +10,9 @@ behind it.
 - [3.0](3.0.md) (released June 17, 2026, with patch releases through v3.0.4).
   Backfilled.
 - [1.x](1.x.md) (March 9 to May 3, 2026; the whole 1.x line on one page).
-  Backfilled.
+  Backfilled, and closed: the 1.x line receives no further releases, so that
+  page is final. The pages above it stay open and gain a section whenever their
+  minor gets a patch release.
 
 ## How these pages work
 
