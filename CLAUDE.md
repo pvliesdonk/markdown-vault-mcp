@@ -13,6 +13,7 @@ The authoritative design specification lives at [`docs/design/design.md`](docs/d
 src/markdown_vault_mcp/
   __init__.py        -- minimal template-skeleton root (docstring + __version__); import from submodules, not the root (#665, #903)
   utils/
+    __init__.py        -- path-traversal guard (validate_path) + attachment/exclusion helpers re-exported for managers and facets
     text.py            -- text normalization, position mapping, fuzzy matching
     links.py           -- link target computation and replacement
     serialization.py   -- toc_payload: TocEntry/SubtreeToc → JSON-able dicts
@@ -22,7 +23,7 @@ src/markdown_vault_mcp/
     link.py            -- LinkManager: backlinks, outlinks, broken, orphans, hubs, paths
     search.py          -- SearchManager: keyword/semantic/hybrid search, list, context, stats
     index.py           -- IndexManager: build_index, reindex, embeddings, flush
-    document.py        -- DocumentManager: CRUD, attachments, path validation, backlinks
+    document.py        -- DocumentManager: CRUD, attachments, backlinks; path checks delegate to utils.validate_path
     git_query.py       -- GitQueryManager: git history/diff reads (#610)
     summarize.py       -- SummarizeManager: LLM-backed note/subtree summarization, map-reduce batching (#922)
     okf_migrate.py     -- OkfMigrationManager: one-shot OKF transforms — link conversion, index generation, log seeding (#963)

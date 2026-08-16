@@ -6,6 +6,7 @@ behind it.
 
 ## Available pages
 
+<!-- RELEASE-PAGES-START -->
 - [3.1](3.1.md) (released July 8, 2026)
 - [3.0](3.0.md) (released June 17, 2026, with patch releases through v3.0.4).
   Backfilled.
@@ -13,6 +14,7 @@ behind it.
   Backfilled, and closed: the 1.x line receives no further releases, so that
   page is final. The pages above it stay open and gain a section whenever their
   minor gets a patch release.
+<!-- RELEASE-PAGES-END -->
 
 ## How these pages work
 
