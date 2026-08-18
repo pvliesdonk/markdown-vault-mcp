@@ -319,14 +319,23 @@ jobs:
           # commits, and the agent gets NO local git: read-oriented git
           # commands still carry arbitrary-file-write flags (git log
           # --output=...) that would bypass the write scoping, and the skill
-          # reads tags and files-at-refs through the API instead.  The
-          # job's `contents: read` keeps the agent from pushing anything.
+          # reads tags and files-at-refs through the API instead.  mkdocs is
+          # pinned to the exact quality-gate invocation — with a wildcard,
+          # `-f` would build an agent-written config whose `hooks:` execute
+          # arbitrary Python.  The job's `contents: read` keeps the agent
+          # from pushing anything.
           claude_args: |
-            --allowedTools "Skill,Task,Read,Glob,Grep,Write(docs/releases/**),Edit(docs/releases/**),Write(.vale/styles/config/vocabularies/**),Edit(.vale/styles/config/vocabularies/**),Write(.release-notes-pr-body.md),Edit(.release-notes-pr-body.md),mcp__github__get_*,mcp__github__list_*,mcp__github__search_*,Bash(gh api *),Bash(vale *),Bash(uv run mkdocs *)"
+            --allowedTools "Skill,Task,Read,Glob,Grep,Write(docs/releases/**),Edit(docs/releases/**),Write(.vale/styles/config/vocabularies/**),Edit(.vale/styles/config/vocabularies/**),Write(.release-notes-pr-body.md),Edit(.release-notes-pr-body.md),mcp__github__get_*,mcp__github__list_*,mcp__github__search_*,Bash(gh api *),Bash(vale *),Bash(uv run mkdocs build --strict)"
 
       - name: Land the drafted page
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          # No global or system git config in the credentialed step: a
+          # gadget that reached $HOME (or injected env via GITHUB_ENV —
+          # explicit step env overrides it) must not hand git a
+          # core.fsmonitor or credential helper to execute here.
+          GIT_CONFIG_GLOBAL: /dev/null
+          GIT_CONFIG_SYSTEM: /dev/null
           TAG: ${{ steps.ctx.outputs.tag }}
           DEFAULT: ${{ github.event.repository.default_branch }}
           REPO: ${{ github.repository }}

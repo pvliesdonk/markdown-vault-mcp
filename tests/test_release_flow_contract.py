@@ -549,6 +549,16 @@ def test_notes_workflow_is_callable_and_not_release_triggered() -> None:
     assert "gh auth setup-git" not in text, (
         "no global credential-helper setup — auth is per-invocation only"
     )
+    assert "Bash(uv run mkdocs build --strict)" in text, (
+        "mkdocs must be pinned to the exact quality-gate invocation — a "
+        "wildcard admits -f with an agent-written config whose hooks "
+        "execute arbitrary Python"
+    )
+    assert "mkdocs *" not in text, "no mkdocs wildcard may reappear in the allowlist"
+    assert "GIT_CONFIG_GLOBAL: /dev/null" in text, (
+        "the credentialed landing step must read no global git config — "
+        "a gadget reaching $HOME must not hand git code to execute there"
+    )
     call_half = text[text.index('if [ -n "$PREP_BRANCH" ]') :]
     call_half = call_half[: call_half.index("# Dispatch mode")]
     assert "::error::" in call_half and "skip_notes" in call_half, (
