@@ -1485,6 +1485,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#the-release-pull-request" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The release pull request
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#releasing-from-trunk" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1900,6 +1911,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#the-release-pull-request" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The release pull request
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#releasing-from-trunk" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1970,11 +1992,13 @@
 
 
 <h1 id="release-process">Release Process<a class="headerlink" href="#release-process" title="Permanent link">&para;</a></h1>
-<p><code>main</code> is trunk: every change merges there, and merging is not releasing.
-A merge feeds the rolling <code>edge</code> channel and nothing else. A release is a
-separate, deliberate event, cut by dispatching the <strong>Release</strong> workflow,
-and this page describes what each kind of release publishes and where
-releases come from.</p>
+<p><code>main</code> is trunk: every change merges there, and merging a feature is not
+releasing. A merge feeds the rolling <code>edge</code> channel and nothing else. A
+release is a separate, deliberate event: a maintainer dispatches the
+<strong>Release Prepare</strong> workflow, reviews the release pull request it opens,
+and merges it. The merge is what tags and publishes. This page describes
+that flow, what each kind of release publishes, and where releases come
+from.</p>
 <h2 id="channels">Channels<a class="headerlink" href="#channels" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -1992,8 +2016,8 @@ releases come from.</p>
 </tr>
 <tr>
 <td>Pre-release</td>
-<td><code>vX.Y.Z-rc.N</code>, fixed at cut time</td>
-<td>A stabilisation step toward exactly that version, cut from a <code>release/X.Y</code> branch. Publishes a GitHub release with wheels, <code>sdist</code>, <code>.mcpb</code> bundle, and SBOM attached, plus a Docker image under its immutable version tag. Skips PyPI, <code>.deb</code>/<code>.rpm</code> packages, the marketplace and registry entries, and the docs deploy.</td>
+<td><code>vX.Y.Z-rc.N</code>, computed and reviewed in its release pull request</td>
+<td>A stabilisation step toward exactly that version, normally cut from a <code>release/X.Y</code> branch. Publishes a GitHub release with wheels, <code>sdist</code>, <code>.mcpb</code> bundle, and SBOM attached, plus a Docker image under its immutable version tag. Skips PyPI, <code>.deb</code>/<code>.rpm</code> packages, the marketplace and registry entries, and the docs deploy.</td>
 </tr>
 <tr>
 <td>Stable</td>
@@ -2011,47 +2035,86 @@ and installable by URL for anyone who opts in.</p>
 tags, the GitHub latest-release pointer, the docs <code>latest</code> alias, and the
 marketplace and registry entries follow a release only when it is the
 newest in the relevant series, so a patch release cut from an old
-<code>release/X.Y</code> branch never moves them back to older content. See
+<code>release/X.Y</code> branch never moves them back to older content. This holds
+even when two releases overlap: each rolling channel checks the tag
+ordering again inside its own publish job. See
 <a href="../docker/#image-tags">Image tags</a> for the Docker tag list.</p>
+<h2 id="the-release-pull-request">The release pull request<a class="headerlink" href="#the-release-pull-request" title="Permanent link">&para;</a></h2>
+<p>Dispatching <strong>Release Prepare</strong> on the branch to release from has the
+release tool, <a href="https://knope.tech/">knope</a>, compute the next version from
+the conventional commits since the last release in that branch's history.
+It stamps the version-coupled files (<code>pyproject.toml</code> and <code>CHANGELOG.md</code>
+natively; <code>uv.lock</code>'s self-version entry on every prepare and the
+install-channel manifests on stable prepares, both through
+<code>scripts/stamp_manifests.py</code>) and opens a release pull request against
+the dispatched branch. The dispatch's <code>channel</code> input
+picks the release kind: <code>auto</code> prepares a release candidate on
+<code>release/X.Y</code> branches and a stable elsewhere, and an explicit <code>rc</code> or
+<code>stable</code> choice overrides that. The optional <code>override_version</code> input
+replaces the computed version with an explicit one, for the rare range
+whose commits the tool counts nothing in; the workflow refuses a
+dispatch on any branch other than the default branch or <code>release/X.Y</code>,
+and refuses a computed version whose tag already exists.</p>
+<p>The release pull request is an ordinary pull request: full CI runs on it,
+and the reviewer checks the computed version against the breaking-change
+policy and reads the changelog section in the diff. Merging it is the
+release decision. On merge, the <strong>Release</strong> workflow tags the merge
+commit and creates the GitHub release, then hands off to the publish
+fan-out; every publish gate derives from the reviewed version string.</p>
+<p>Two rules keep the flow sound:</p>
+<ul>
+<li>Never press GitHub's "Update branch" button on a release pull request.
+  If the base branch moves while the pull request is open, dispatch
+  Release Prepare again: it recreates the preparation branch from the
+  base and refreshes the same pull request in place.</li>
+<li>A release candidate promotes through a plain <code>channel: stable</code> dispatch
+  over the same commits. A guard verifies that nothing but release stamps
+  and release-notes pages changed since the last candidate, first when
+  the promotion is prepared (a drifted promotion refuses before its pull
+  request even opens) and again before any tag is created; any other
+  change forces a new candidate instead of a silently different stable.</li>
+</ul>
 <h2 id="releasing-from-trunk">Releasing from trunk<a class="headerlink" href="#releasing-from-trunk" title="Permanent link">&para;</a></h2>
 <p>The default release path is trunk. When trunk is quiescent (no epic that
-must ship whole is mid-flight), dispatching Release on <code>main</code> cuts a
-stable from the head commit: no branch, no ceremony. The workflow prints
-an advisory warning when a release-named milestone still has open issues,
-or when an open <code>ships-atomically</code> epic shows work in flight. It counts the
-epic's native sub-issues, which may live in another repository, so a
-cross-repo epic stays visible. Either way the warning never blocks, since
-the cut may still be intentional.</p>
+must ship whole is mid-flight), dispatch Release Prepare on <code>main</code> and
+merge the release pull request: no branch, no ceremony. The prepare
+workflow prints an advisory warning when a release-named milestone still
+has open issues, or when an open <code>ships-atomically</code> epic shows work in
+flight. It counts the epic's native sub-issues, which may live in another
+repository, so a cross-repo epic stays visible. Either way the warning
+never blocks, since the cut may still be intentional.</p>
 <h2 id="stabilisation-branches">Stabilisation branches<a class="headerlink" href="#stabilisation-branches" title="Permanent link">&para;</a></h2>
 <p>A short-lived <code>release/X.Y</code> branch is the exception tool, for two cases:</p>
 <ol>
 <li><strong>Trunk carries unfinished work</strong> that the release must exclude. The
-   branch is cut from the last quiescent commit behind the head, release candidates are
-   cut there while fixes land, and the <code>finalize</code> dispatch input cuts the
-   final stable <code>X.Y.Z</code>.</li>
+   branch is cut from the last quiescent commit behind the head, release
+   candidates are cut there while fixes land, and a plain <code>channel:
+   stable</code> dispatch promotes the final <code>X.Y.Z</code>.</li>
 <li><strong>A shipped release needs a patch</strong> while <code>main</code> has moved on. The
    branch can be created retroactively from the release tag, so no branch
    needs to exist in advance of the need.</li>
 </ol>
 <p>Fixes flow from trunk to the branch: they land on <code>main</code> first and are
-cherry-picked over. After any release cut from a <code>release/X.Y</code> branch, an
-automated merge-back job merges the branch into <code>main</code>; that merge is the
-single reverse flow, and it carries only the release machinery's version
-commits, never features.</p>
+cherry-picked over. After a stable release cut from a <code>release/X.Y</code>
+branch, an automated job opens an ordinary pull request that carries the
+release's changelog section back to <code>main</code>, reviewed and CI-gated like
+any other change, with no direct pushes to protected branches. Release
+candidates port nothing: the stable's changelog section covers the whole
+cycle.</p>
 <p>Release branches carry shipped releases, so they get the same protection
 as <code>main</code>: pull requests plus green CI, applied by the shipped rulesets.
 See <a href="../repository-protection/">Repository Protection</a>.</p>
 <h2 id="where-to-read-about-a-release">Where to read about a release<a class="headerlink" href="#where-to-read-about-a-release" title="Permanent link">&para;</a></h2>
 <p>Each release is described in three places with distinct jobs:</p>
 <ul>
-<li><strong>The GitHub release body</strong> carries a short user-facing summary and a
-  link to the release's notes page on this site. The body is a pointer,
-  not the record.</li>
+<li><strong>The GitHub release body</strong> carries the release's machine-written
+  changelog section and pointers: the versioned docs, the compare view,
+  and, once the release's notes page exists, a deep link to it.</li>
 <li><strong>The release notes pages on this docs site</strong> are the canonical
   human-facing narrative of what changed and why it matters.</li>
-<li><strong><code>CHANGELOG.md</code></strong> in the repository is the machine-written,
-  commit-level audit trail, generated from conventional commits by the
-  release tooling.</li>
+<li><strong><code>CHANGELOG.md</code></strong> in the repository is the machine-written audit
+  trail, generated from conventional commits into each release pull
+  request.</li>
 </ul>
 <h3 id="how-the-notes-pages-are-produced">How the notes pages are produced<a class="headerlink" href="#how-the-notes-pages-are-produced" title="Permanent link">&para;</a></h3>
 <p>The pages under <a href="../../releases/">Release Notes</a> cover one minor
@@ -2059,18 +2122,25 @@ series each; a patch release adds a dated section to its series page.
 After every stable release, the <strong>Release Notes</strong> workflow drafts the
 page: an agent researches the release range through the GitHub API (the
 linked issues and pull requests, not commit subjects) and opens a pull
-request against <code>main</code>. Every causal claim in a page must cite a linked
-issue or pull request. The drafting agent runs the same prose lint as the
-rest of this site while it writes, and the notes pull request's own CI
-enforces it: the <code>vale</code> job must pass before the pull request can merge,
-the same gate every change to this site clears.</p>
+request against <code>main</code>. The same workflow can also be dispatched while a
+release pull request is still open, so the notes draft is reviewable
+during a release-candidate cycle rather than only after the stable ships.
+Every causal claim in a page must cite a linked issue or pull request.
+The drafting agent runs the same prose lint as the rest of this site
+while it writes, and the notes pull request's own CI enforces it: the
+<code>vale</code> job must pass before the pull request can merge, the same gate
+every change to this site clears.</p>
 <p>A maintainer merge is the publication step. Nothing lands on the site
-without review, and until the merge the release keeps the short interim
-body the release workflow wrote; a failed or unconvincing draft never
-blocks or alters a release. On merge, the <strong>Release Notes Publish</strong>
-workflow updates the GitHub release body from the page's summary and
-redeploys that minor's versioned docs so the body's deep link resolves.
-Later hand edits to a merged page redeploy the docs the same way.</p>
+without review, and until the merge the release keeps the changelog and
+pointer body the release workflow wrote; a failed or unconvincing draft
+never blocks or alters a release. The docs deploy for a stable overlays
+the merged pages from <code>main</code> into the release's versioned docs, so they
+are present whichever branch the release was cut from. When the page is already merged before
+the stable publishes, the release body deep-links it immediately;
+otherwise, on merge, the <strong>Release Notes Publish</strong> workflow updates the
+GitHub release body from the page's summary and redeploys that minor's
+versioned docs so the body's deep link resolves. Later hand edits to a
+merged page redeploy the docs the same way.</p>
 
 
 

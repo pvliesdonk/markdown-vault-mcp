@@ -2018,17 +2018,23 @@ accounts. The shipped entry grants bypass to the <strong>repository admin role</
 account), with <code>bypass_mode: always</code>.</p>
 <p>The release flow depends on this. <code>RELEASE_TOKEN</code> is a personal access
 token, and a personal access token (classic or fine-grained) acts as its
-owner and holds the repository role of that owner. With the token owned by
-a repository admin, all of the release pipeline's direct pushes bypass the
-rules:</p>
+owner and holds the repository role of that owner. The release-PR flow
+shrank what the token does: version bumps reach <code>main</code> through reviewed
+pull requests now, so no release commit or merge-back is ever pushed
+directly to a protected branch. Its remaining operations still rely on
+the admin bypass:</p>
 <ul>
-<li>the release commit and <code>vX.Y.Z</code> tag that python-semantic-release pushes
-  to the released branch (<code>main</code> or <code>release/X.Y</code>),</li>
-<li>the merge-back merge commit pushed to <code>main</code> after a release cut from a
-  <code>release/*</code> branch,</li>
+<li>the <code>vX.Y.Z</code> tag and GitHub release that knope creates after a release
+  pull request merges (tag creation is open, but the token must satisfy
+  the <code>v*</code> tag ruleset's other rules),</li>
 <li>the owner's own hotfix pushes, preserving the escape hatch the previous
   classic protection provided via its disabled admin enforcement.</li>
 </ul>
+<p>The token's other release-flow duties (pushing the <code>knope/prepare/*</code>
+preparation branches, and opening the release, notes, and port
+pull requests) need no bypass at all. They use a personal token rather
+than <code>GITHUB_TOKEN</code> only so the resulting pull requests trigger CI, which
+a <code>GITHUB_TOKEN</code>-created pull request never does.</p>
 <p>Two clean-up operations the release model implies depend on this bypass
 too. <code>protect-release-branches</code> blocks deleting a <code>release/X.Y</code> branch, and
 <code>protect-release-tags</code> blocks deleting a <code>v*</code> tag, yet a stabilisation
