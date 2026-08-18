@@ -1,26 +1,29 @@
 #!/usr/bin/env python3
-"""Stamp the install-channel manifests with a stable release version.
+"""Stamp uv.lock and the install-channel manifests with a release version.
 
 Successor of the PSR-era ``scripts/bump_manifests.py``, which the Phase-2
 swap deleted together with python-semantic-release
 (fastmcp-server-template#406).  knope's ``prepare-release`` workflow
 (knope.toml) invokes this script as a Command step with the computed
-``$version`` after ``PrepareRelease`` has bumped ``pyproject.toml`` — the
-sole knope ``versioned_file``, which this script deliberately never
-touches.
+``$version`` after ``PrepareRelease`` has bumped ``pyproject.toml`` —
+knope's only ``versioned_files`` entry, which this script deliberately
+never touches.
 
-``uv.lock``'s self-version entry is stamped here on EVERY version, rc and
-stable, in the PEP 440 canonical spelling (``4.0.0-rc.2`` → ``4.0.0rc2``):
-uv rewrites the lockfile to that spelling on any re-lock, so keeping the
-lock among knope's ``versioned_files`` (whose current values must parse as
-semver) would refuse every prepare during an rc window.
+Two stamping tiers:
 
-The install-channel manifests are stable-only, per the per-surface
-resolvability rule (release-vision D12): ``server.json`` and the Claude
-Code plugin pair pin artifacts that are published exclusively for stable
-releases (PyPI, the MCP registry, the marketplace), so a pre-release
-version stamps only ``uv.lock`` and leaves the manifests at the last
-published stable.
+- ``uv.lock``'s self-version entry moves on EVERY release, rc included, in
+  the **PEP 440 canonical spelling** (``-rc.N`` becomes ``rcN``).  It is
+  stamped here rather than as a knope versioned file because uv rewrites
+  the entry to canonical form on any re-lock, while knope requires its
+  versioned files to agree with pyproject.toml's SemVer spelling — a
+  re-lock during an rc window would otherwise break every later
+  ``PrepareRelease``.  Stamping canonical from the start means a re-lock
+  changes nothing.
+- The install-channel manifests are stable-only, per the per-surface
+  resolvability rule (release-vision D12): ``server.json`` and the Claude
+  Code plugin pair pin artifacts that are published exclusively for stable
+  releases (PyPI, the MCP registry, the marketplace), so a pre-release
+  version leaves them at the last published stable.
 
 Fail-loud and atomic (the markdown-vault-mcp#1083 lesson): an expected pin
 that cannot be found and stamped exits non-zero naming the file and the
@@ -89,50 +92,43 @@ def _is_prerelease(version: str) -> bool:
 
 
 def _pep440_canonical(version: str) -> str:
-    """Return ``version`` in the PEP 440 canonical spelling uv writes.
+    """Return knope's SemVer spelling in PEP 440 canonical form.
 
-    knope hands over semver (``X.Y.Z`` or ``X.Y.Z-rc.N``); the canonical
-    spelling of the rc form is ``X.Y.ZrcN``.  Any other shape refuses —
-    fail-loud, never guess.
+    The release flow produces exactly two shapes: ``X.Y.Z`` (already
+    canonical) and ``X.Y.Z-rc.N``, whose canonical spelling is
+    ``X.Y.ZrcN``.  Anything else passes through unchanged — uv would
+    canonicalize it on the next re-lock, and the stamp must not invent a
+    normalization of its own beyond the shapes the flow can emit.
     """
-    match = re.fullmatch(r"(\d+\.\d+\.\d+)(?:-rc\.(\d+))?", version)
-    if match is None:
-        raise StampError(
-            f"cannot canonicalize {version!r} — expected X.Y.Z or X.Y.Z-rc.N"
-        )
-    return match[1] if match[2] is None else f"{match[1]}rc{match[2]}"
+    return re.sub(r"-rc\.(\d+)$", r"rc\1", version)
 
 
 def _stamp_uv_lock(version: str) -> list[Path]:
-    """Stamp ``uv.lock``'s self-version entry — every version, rc and stable.
+    """Stamp ``uv.lock``'s self-version entry, on every release.
 
-    The lock is deliberately not a knope ``versioned_file``: uv rewrites the
-    self-version to the PEP 440 canonical spelling (``4.0.0rc2``) on any
-    re-lock, and knope's versioned-files agreement requirement would then
-    refuse every prepare during an rc window.  Stamping it here, canonically,
-    keeps ``uv lock --check`` green whatever last touched the file.  The
-    entry is matched by the PEP 503-normalized distribution name, tolerant
-    of whichever spelling the current value carries.
+    The entry is located by the PEP 503-normalized distribution name from
+    ``pyproject.toml`` and rewritten to the PEP 440 canonical spelling of
+    ``version``, whatever spelling (SemVer or canonical) it currently
+    carries — so a legacy-spelled entry is simply restamped, and a later
+    ``uv lock`` run rewrites nothing.  A lockfile without the entry is
+    broken and refuses the run.
     """
-    pyproject = Path("pyproject.toml")
-    if not pyproject.is_file():
-        raise StampError(f"{pyproject}: not found — run from the repository root")
-    with pyproject.open("rb") as fh:
-        name = tomllib.load(fh)["project"]["name"]
-    normalized = re.sub(r"[-_.]+", "-", str(name)).lower()
-
+    with Path("pyproject.toml").open("rb") as fh:
+        project_name = str(tomllib.load(fh)["project"]["name"])
+    normalized = re.sub(r"[-_.]+", "-", project_name).lower()
     path = Path("uv.lock")
     if not path.is_file():
         raise StampError(f"{path}: not found — run from the repository root")
+    text = path.read_text(encoding="utf-8")
     canonical = _pep440_canonical(version)
-    pattern = re.compile(rf'(name = "{re.escape(normalized)}"\nversion = ")[^"]+(")')
-    new_text, count = pattern.subn(
-        rf"\g<1>{canonical}\g<2>", path.read_text(encoding="utf-8")
+    new_text, n = re.subn(
+        rf'(name = "{re.escape(normalized)}"\nversion = ")[^"]+(")',
+        rf"\g<1>{canonical}\g<2>",
+        text,
     )
-    if count != 1:
+    if n == 0:
         raise StampError(
-            f"{path}: expected exactly one self-version entry for "
-            f'name = "{normalized}", found {count}'
+            f"{path}: no 'name = \"{normalized}\"' entry with a version line to stamp"
         )
     tmp = path.parent / f".{path.name}.stamp-tmp"
     try:
@@ -141,7 +137,7 @@ def _stamp_uv_lock(version: str) -> list[Path]:
     except BaseException:
         tmp.unlink(missing_ok=True)
         raise
-    print(f"stamp_manifests: uv.lock -> {canonical}")
+    print(f"stamp_manifests: uv.lock -> {canonical} (PEP 440 canonical)")
     return [path]
 
 
@@ -249,9 +245,9 @@ def main(argv: list[str]) -> int:
         return 1
     version = argv[1]
 
-    # The lock stamp runs on EVERY version — rc and stable alike — because
-    # uv.lock tracks pyproject.toml (which knope bumps for both channels),
-    # not a published artifact; see _stamp_uv_lock.
+    # uv.lock tracks pyproject.toml, not a published artifact, so its
+    # self-version entry moves on EVERY release — before the pre-release
+    # skip below.
     stamped = _stamp_uv_lock(version)
 
     if _is_prerelease(version):
@@ -263,17 +259,19 @@ def main(argv: list[str]) -> int:
             "server.json and the Claude plugin "
             "manifests left at the last published stable"
         )
-    else:
-        stamped += _stamp_server_json(version)
-        stamped += _stamp_claude_plugin_manifests(version)
-        # DOMAIN-MANIFESTS-START — stamp this project's extra versioned
-        # manifests here; `version` is a stable version string (pre-releases
-        # skip this branch) and the repo root is the cwd.  Extend `stamped`
-        # with every path you rewrite so it is staged into the release
-        # commit.  Raise StampError to refuse the release on a missing pin —
-        # never warn and continue.  Kept across copier update; everything
-        # outside these markers is template-owned and re-rendered.
-        # DOMAIN-MANIFESTS-END
+        _git_stage(stamped)
+        return 0
+
+    stamped += _stamp_server_json(version)
+    stamped += _stamp_claude_plugin_manifests(version)
+    # DOMAIN-MANIFESTS-START — stamp this project's extra versioned manifests
+    # here; `version` is a stable version string (pre-releases returned above)
+    # and the repo root is the cwd.  Extend `stamped` with every path you
+    # rewrite so it is staged into the release commit.  Raise StampError to
+    # refuse the release on a missing pin — never warn and continue.  Kept
+    # across copier update; everything outside these markers is
+    # template-owned and re-rendered.
+    # DOMAIN-MANIFESTS-END
     _git_stage(stamped)
     return 0
 

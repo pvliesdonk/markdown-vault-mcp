@@ -15,13 +15,16 @@
 #      at release time, upgraded earlier, or hand-edited) is never
 #      clobbered.  The marker literal appears in release.yml's body step
 #      too — reword them together.
-#   2. Versioned-docs redeploy — mike deployed /X.Y/ at release time, before
-#      the page existed, so the deep link would 404 without a redeploy.  The
-#      minor is redeployed from its newest tag with the default branch's
-#      docs/releases/ overlaid.  Pages live only on the default branch
-#      (release branches never carry them), so the overlay is the single
-#      source and a backport patch's section reaches its series' docs no
-#      matter which branch the patch was cut from.
+#   2. Versioned-docs redeploy — docs.yml's release deploy overlays the
+#      pages that existed at publish time, but a page merged (or edited)
+#      AFTERWARDS is missing from the deployed /X.Y/ docs, and the deep
+#      link would 404 without a redeploy.  The minor is redeployed from its
+#      newest tag with the default branch's docs/releases/ overlaid — the
+#      same overlay mechanism docs.yml uses at release time.  Pages live
+#      only on the default branch (release branches never carry them), so
+#      the overlay is the single source and a backport patch's section
+#      reaches its series' docs no matter which branch the patch was cut
+#      from.
 #
 # Deterministic by design: the agent's output was reviewed and merged in the
 # PR; nothing here generates content.  Human edits to a page republish the

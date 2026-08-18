@@ -17,6 +17,11 @@
 #     release.  Guard-before-Release ordering is load-bearing (release-vision
 #     section 4.4): a guard refusal must leave no tag behind.
 #
+# The promotion guard runs in BOTH workflows (release-vision D10's two
+# layers): at prepare time — the early gate, so a drifted promotion never
+# becomes a mergeable PR — and pre-tag — the immutable-tag backstop, for
+# drift that lands between prepare and merge.
+#
 # NOTE on `base`: knope 0.23.0's CreatePullRequest `base` is a plain string —
 # it is not templatable (spike-verified).  release-prepare.yml patches it to
 # the dispatching ref with sed at run time; the placeholder below only
@@ -24,15 +29,16 @@
 # (knope's prepare commit stages only the release files).
 
 [package]
-# pyproject.toml only: uv.lock is deliberately NOT a versioned_file.  uv
-# rewrites the lockfile's self-version to the PEP 440 canonical spelling
-# (`4.0.0rc2`, not semver's `4.0.0-rc.2`) on any re-lock, which knope's
-# versioned-files agreement requirement rejects as invalid semver — every
-# prepare during an rc window would refuse.  The lock's self-version entry
-# is stamped canonically by scripts/stamp_manifests.py instead (always, rc
-# and stable); full dependency re-resolution is never part of release
-# preparation (release-vision D12).
-versioned_files = ["pyproject.toml"]
+# pyproject.toml is knope's ONLY versioned file.  uv.lock's self-version
+# entry is deliberately NOT here: uv rewrites that entry to the PEP 440
+# canonical spelling (`4.0.0rc1`) on any re-lock, while knope requires its
+# versioned_files to agree with pyproject.toml's SemVer spelling
+# (`4.0.0-rc.1`) — so a re-lock during an rc window would break every later
+# PrepareRelease.  scripts/stamp_manifests.py rewrites the lockfile entry
+# instead, in canonical spelling, on every release (rc included).
+versioned_files = [
+  "pyproject.toml",
+]
 changelog = "CHANGELOG.md"
 # knope counts only feat / fix / breaking changes; these three sections are
 # renamed to today's CHANGELOG.md titles.  Other commit types are invisible
@@ -51,10 +57,11 @@ name = "prepare-release"
 [[workflows.steps]]
 type = "PrepareRelease"
 
-# Stamping outside knope's own `versioned_files` (pyproject.toml above):
-# uv.lock's self-version entry always (rc and stable, PEP 440 canonical —
-# see the versioned_files note), the install-channel manifests (server.json
-# and the Claude plugin pair, when present) on stable versions only.
+# The stamp script runs on EVERY release: it rewrites uv.lock's self-version
+# entry (PEP 440 canonical spelling — see the versioned_files note above)
+# unconditionally, and the install-channel manifests (server.json and the
+# Claude plugin pair, when present) on stable versions only.  pyproject.toml
+# is knope's own `versioned_files` entry and the script never touches it.
 [[workflows.steps]]
 type = "Command"
 command = "python3 scripts/stamp_manifests.py $version"
@@ -63,6 +70,22 @@ shell = true
 [[workflows.steps]]
 type = "Command"
 command = "git commit -m \"chore: prepare release $version\""
+
+# PREPARE-TIME half of the two-layer same-source guard (release-vision D10:
+# the guard gates the promotion PR at prepare time AND hard pre-tag).  It
+# runs here — after the prep commit exists, so it can read the stamped
+# pyproject version and diff the last reachable rc against HEAD — and
+# BEFORE the push/CreatePullRequest steps, so a drifted promotion refuses
+# with no branch pushed and no PR opened: it never becomes a mergeable PR,
+# and no stamped-but-untagged state is left behind to double-bump a later
+# prepare.  The guard self-skips for prereleases and rc-less trunk
+# releases.  The tag-release run below keeps the same guard as the hard
+# backstop: tags are immutable, so the pre-tag check must hold even if a
+# commit lands on the base between this prepare and the merge.
+[[workflows.steps]]
+type = "Command"
+command = "bash scripts/promotion_guard.sh"
+shell = true
 
 # Push BEFORE CreatePullRequest: the PR API call 422s if the head branch does
 # not exist on the remote yet (knope's own documented recipe ordering).  The

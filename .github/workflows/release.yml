@@ -178,7 +178,11 @@ jobs:
       # stable, the notes deep link is CONDITIONAL on the series page
       # existing on the default branch at publish time — notes merged during
       # the rc window (migration M6 admits them into the promotion diff) get
-      # their deep link right here.  A stable published before its notes PR
+      # their deep link right here.  The link resolves regardless of the cut
+      # branch because docs.yml's release deploy overlays the default
+      # branch's docs/releases/ into the deployed minor — the tag itself
+      # (a release/X.Y cut above all) may carry none of the pages.  A
+      # stable published before its notes PR
       # merges instead gets plain pointers plus the invisible
       # `<!-- release-notes-pending -->` marker: release-notes-publish.yml
       # upgrades ONLY bodies carrying that marker (opt-in) and removes it in
@@ -725,11 +729,13 @@ jobs:
           # commit: its `## <version>` heading up to (not including) the
           # next `## ` heading.
           git show "${MERGE_SHA}:CHANGELOG.md" > /tmp/released-changelog.md
-          # Escape the dots for the awk regex, identically to the dedup grep
-          # below — an unescaped version would also match lookalike headings.
-          ver_re="${VERSION//./\\.}"
-          awk -v ver="$ver_re" '
-            $0 ~ ("^## v?" ver "([ (]|$)") { found=1; print; next }
+          # Escape the version's dots INSIDE awk (an escaped `-v` value
+          # would be mangled by awk's own escape processing), so the
+          # heading regex here and the dedup grep below match identically —
+          # neither treats `4.1.0` as also matching `4x1y0`.
+          awk -v ver="$VERSION" '
+            BEGIN { gsub(/\./, "\\.", ver); re = "^## v?" ver "([ (]|$)" }
+            $0 ~ re { found=1; print; next }
             found && /^## / { exit }
             found { print }
           ' /tmp/released-changelog.md > /tmp/section.md

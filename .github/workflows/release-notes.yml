@@ -114,15 +114,16 @@ jobs:
             # step, not the hour-long agent job.  The checkout holds only
             # the default branch, so a release-branch source commit may need
             # fetching; a successful fetch is itself proof the ref exists on
-            # origin.  Resolve to a SHA either way: a ref that only exists
-            # on origin resolves locally solely through FETCH_HEAD, and a
-            # SHA stays stable for the whole agent run.
+            # origin.  Either way, resolve RANGE_END to a SHA: a fetched ref
+            # lands only in FETCH_HEAD, so the agent job's local git
+            # commands could not resolve the ref NAME later.
             if git rev-parse -q --verify "${SOURCE_REF}^{commit}" > /dev/null; then
               RANGE_END="$(git rev-parse "${SOURCE_REF}^{commit}")"
             elif git fetch -q origin "$SOURCE_REF"; then
               RANGE_END="$(git rev-parse FETCH_HEAD)"
             else
-              echo "::error::source_ref '${SOURCE_REF}' is neither a known commit nor fetchable from origin"; exit 1
+              echo "::error::source_ref '${SOURCE_REF}' is neither a known commit nor fetchable from origin"
+              exit 1
             fi
           else
             if [ -z "$TAG" ]; then

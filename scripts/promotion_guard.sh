@@ -2,11 +2,14 @@
 # promotion_guard: same-source promotion guard for the knope release-PR flow
 # (release-vision D10, migration M6; fastmcp-server-template#406).
 #
-# Invoked by knope.toml's tag-release workflow BEFORE the Release (tag) step
-# — the ordering is load-bearing: tags are immutable, so a refusal must
-# leave no tag behind.  For a stable promotion of an rc series, verifies
-# that the diff between the highest reachable rc tag for the target version
-# and HEAD touches only the release stamps plus the release-notes pages.
+# Invoked from BOTH knope workflows (the two-layer design in knope.toml):
+# in prepare-release after the prep commit and before the push/PR steps —
+# the early gate, so a drifted promotion never becomes a mergeable PR — and
+# in tag-release BEFORE the Release (tag) step, where the ordering is
+# load-bearing: tags are immutable, so a refusal must leave no tag behind.
+# For a stable promotion of an rc series, verifies that the diff between
+# the highest reachable rc tag for the target version and HEAD touches only
+# the release stamps plus the release-notes pages.
 #
 # The allowed set (M6): the release-stamp files knope + stamp_manifests
 # write, PLUS docs/releases/** — the notes PR for the release being promoted
@@ -68,7 +71,9 @@ for f in "${changed[@]}"; do
 done
 
 if ((${#violations[@]} > 0)); then
-  echo "promotion_guard: REFUSING to tag v${version}." >&2
+  # Context-neutral wording: this guard fires at prepare time (no PR yet)
+  # AND pre-tag (no tag yet) — see knope.toml's two-layer note.
+  echo "promotion_guard: REFUSING the promotion to v${version}." >&2
   echo "promotion_guard: diff ${last_rc}..HEAD touches non-stamp files:" >&2
   printf 'promotion_guard:   %s\n' "${violations[@]}" >&2
   echo "promotion_guard: new source requires a new rc (release-vision D10)." >&2

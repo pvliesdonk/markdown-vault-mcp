@@ -10,23 +10,29 @@ The invariants mirror the retired PSR suite's intent, respecified for the
 release-PR model:
 
 - ``knope.toml`` and ``scripts/stamp_manifests.py`` are two halves of one
-  mechanism — knope's ``versioned_files`` own ``pyproject.toml`` (only),
-  the stamp Command owns ``uv.lock``'s self-version entry (every version,
-  PEP 440 canonical) and the install-channel manifests (stable-only), and a
-  stamp declared in one half only must fail here rather than ship a stale
-  file (the #325 failure shape, carried over).
+  mechanism — knope's ``versioned_files`` own ``pyproject.toml`` alone, the
+  stamp Command owns ``uv.lock``'s self-version entry (every release, PEP
+  440 canonical spelling — uv re-locks would rewrite a SemVer-spelled entry
+  and break knope's version-agreement requirement) and the install-channel
+  manifests (stable only), and a stamp declared in one half only must fail
+  here rather than ship a stale file (the #325 failure shape, carried
+  over).
 - The stamp script is fail-loud and atomic (the markdown-vault-mcp#1083
   lesson: no warn-and-continue): a stable version moves every published
-  pin, a pre-release stamps only the lock and leaves the manifests
+  pin, a pre-release moves ``uv.lock`` alone and leaves the manifests
   byte-identical, and a missing or malformed pin exits non-zero naming the
   file.
-- The promotion guard runs BEFORE knope's Release step (release-vision D10:
-  a refusal must leave no tag behind) and admits only release stamps plus
+- The promotion guard runs in two layers (release-vision D10): at prepare
+  time between the prep commit and the push/PR steps (a drifted promotion
+  never becomes a mergeable PR), and again BEFORE knope's Release step (a
+  refusal must leave no tag behind).  It admits only release stamps plus
   ``docs/releases/**`` (migration M6).
 - Committed pins may equal the last stable release OR the version the
   current diff prepares — a stable release PR is exactly the state the old
   tag-coupled asserts would reject, and under the release-PR model it must
-  pass CI.
+  pass CI.  ``prepared`` counts only when it is itself a stable ``X.Y.Z``:
+  an rc in ``pyproject.toml`` must never make an rc pin in the published
+  manifests pass CI (the markdown-vault-mcp#1053 class).
 - Tags-absent behavior fails loudly only when the repo demonstrably has
   releases (``CHANGELOG.md`` carries version sections) while no tags are
   visible — the template#387 failure mode is a tag-less checkout of a
@@ -72,21 +78,20 @@ def _stamper_text() -> str:
     return STAMPER.read_text(encoding="utf-8")
 
 
-def test_knope_declares_the_native_versioned_files() -> None:
-    """knope owns ``pyproject.toml`` — and only that.
+def test_knope_versioned_files_is_pyproject_only() -> None:
+    """knope owns ``pyproject.toml`` and nothing else.
 
-    ``uv.lock`` must NOT be a ``versioned_file``: uv rewrites the lock's
-    self-version to the PEP 440 canonical spelling (``4.0.0rc2``) on any
-    re-lock, which knope's versioned-files agreement requirement rejects as
-    invalid semver — every prepare during an rc window would refuse.  The
-    lock's self-version entry is stamped canonically by
-    ``scripts/stamp_manifests.py`` instead (asserted in the sandbox tests
-    below), keeping ``uv lock --check`` green whichever tool last wrote it.
+    ``uv.lock`` must NOT be a versioned file: uv rewrites the self-version
+    entry to the PEP 440 canonical spelling (``4.0.0rc1``) on any re-lock,
+    and knope requires versioned files to agree with pyproject.toml's
+    SemVer spelling (``4.0.0-rc.1``) — as a versioned file, every re-lock
+    during an rc window would break the next ``PrepareRelease``.  The stamp
+    script owns the lockfile entry instead (canonical spelling, every
+    release), asserted behaviorally below.
     """
     files = _knope_config()["package"]["versioned_files"]
     assert files == ["pyproject.toml"], (
-        "versioned_files must be exactly ['pyproject.toml'] — uv.lock is "
-        "stamped by scripts/stamp_manifests.py, never versioned by knope"
+        f"versioned_files must be exactly ['pyproject.toml'], got: {files!r}"
     )
 
 
@@ -111,11 +116,11 @@ def test_knope_changelog_config_keeps_todays_section_titles() -> None:
 def test_prepare_workflow_invokes_the_stamp_script() -> None:
     """The invocation-coupling assert, knope edition.
 
-    knope's ``versioned_files`` cover only ``pyproject.toml``; ``uv.lock``
-    and the install-channel manifests move via the stamp Command.  A stamp
-    script that exists but is never invoked (or an invocation whose script
-    is gone) ships a stale lock or manifest silently — exactly the #325
-    failure shape.
+    knope's ``versioned_files`` cover only ``pyproject.toml``; ``uv.lock``'s
+    self-version entry and the install-channel manifests move via the stamp
+    Command.  A stamp script that exists but is never invoked (or an
+    invocation whose script is gone) ships a stale lockfile and manifests
+    silently — exactly the #325 failure shape.
     """
     steps = _knope_workflow("prepare-release")["steps"]
     types = [step.get("type") for step in steps]
@@ -145,11 +150,39 @@ def test_prepare_workflow_invokes_the_stamp_script() -> None:
     assert prepare_idx < stamp_idx < commit_idx
 
 
+def test_prepare_workflow_runs_the_guard_between_commit_and_push() -> None:
+    """The prepare-time half of the two-layer guard (release-vision D10).
+
+    A drifted promotion must refuse at prepare time — after the prep commit
+    exists (the guard reads the stamped pyproject version and diffs the
+    last reachable rc against HEAD) and BEFORE the push and
+    CreatePullRequest steps — so it never becomes a mergeable PR and no
+    stamped branch is left behind.  The tag-release guard below stays as
+    the backstop for drift landing between prepare and merge.
+    """
+    steps = _knope_workflow("prepare-release")["steps"]
+    commands = [str(step.get("command", "")) for step in steps]
+    guard_indices = [
+        i for i, c in enumerate(commands) if "scripts/promotion_guard.sh" in c
+    ]
+    assert guard_indices, "prepare-release never invokes scripts/promotion_guard.sh"
+    commit_idx = next(i for i, c in enumerate(commands) if "git commit" in c)
+    push_idx = next(i for i, c in enumerate(commands) if "git push" in c)
+    pr_idx = next(
+        i for i, step in enumerate(steps) if step.get("type") == "CreatePullRequest"
+    )
+    assert commit_idx < guard_indices[0] < push_idx < pr_idx, (
+        "the prepare-time guard must run after the prep commit and before "
+        "the push/CreatePullRequest steps"
+    )
+
+
 def test_tag_workflow_runs_the_guard_before_release() -> None:
     """Guard-before-Release ordering is load-bearing (release-vision D10).
 
     Tags are immutable: a same-source refusal that fired after tagging would
-    recreate exactly the burned-tag failure class the redesign removes.
+    recreate exactly the burned-tag failure class the redesign removes —
+    this is the hard backstop behind the prepare-time gate above.
     """
     steps = _knope_workflow("tag-release")["steps"]
     guard_indices = [
@@ -229,8 +262,10 @@ def test_domain_manifest_sentinels_present_once_and_in_scope() -> None:
     """Both seams survive as matched pairs, in the scopes downstreams extend.
 
     Same contract as the PSR-era bumper: helpers at module level, calls
-    inside ``main()`` after the template's own stamps and before the git
-    staging, so a domain manifest is committed with the release.
+    inside ``main()`` after the template's own stamps and before the FINAL
+    git staging, so a domain manifest is committed with the release (the
+    pre-release path stages the lockfile and returns before the block —
+    domain manifests are stable-only, like the template's own).
     """
     text = _stamper_text()
     for name in ("DOMAIN-MANIFESTS-HELPERS", "DOMAIN-MANIFESTS"):
@@ -242,7 +277,7 @@ def test_domain_manifest_sentinels_present_once_and_in_scope() -> None:
     assert text.index("# DOMAIN-MANIFESTS-HELPERS-START") < main_def
     assert main_def < start < end
     assert text.index("_stamp_server_json(version)") < start
-    assert end < text.index("_git_stage(stamped)")
+    assert end < text.rindex("_git_stage(stamped)")
 
 
 def test_release_workflows_are_interlocked_on_the_psr_block() -> None:
@@ -289,10 +324,11 @@ def stamp_sandbox(tmp_path: Path) -> Path:
     """A minimal repo root the stamper can rewrite without touching this repo.
 
     ``server.json`` and the plugin manifests are copied verbatim so the tests exercise the
-    real manifest shapes; ``pyproject.toml`` is a stand-in that must come
-    through byte-identical (knope's sole ``versioned_file``), while
-    ``uv.lock``'s stand-in self-version entry is exactly what the stamper
-    must rewrite — canonically, on every version.  ``git init`` gives the
+    real manifest shapes.  ``pyproject.toml`` is a stand-in that must come
+    through byte-identical (knope's sole versioned file, never the
+    stamper's); ``uv.lock`` is a stand-in self-package entry the stamper
+    rewrites, seeded with a dependency block of a different name to prove
+    the rewrite targets the self entry alone.  ``git init`` gives the
     script's staging step a real index.
     """
     shutil.copy(REPO_ROOT / "server.json", tmp_path / "server.json")
@@ -300,7 +336,14 @@ def stamp_sandbox(tmp_path: Path) -> Path:
         '[project]\nname = "sandbox-pkg"\nversion = "1.2.3"\n', encoding="utf-8"
     )
     (tmp_path / "uv.lock").write_text(
-        '[[package]]\nname = "sandbox-pkg"\nversion = "1.2.3"\n', encoding="utf-8"
+        "[[package]]\n"
+        'name = "sandbox-pkg"\n'
+        'version = "1.2.3"\n'
+        "\n"
+        "[[package]]\n"
+        'name = "other-dep"\n'
+        'version = "0.5.0"\n',
+        encoding="utf-8",
     )
     for manifest in (PLUGIN_JSON, MCP_JSON):
         (tmp_path / manifest).parent.mkdir(parents=True, exist_ok=True)
@@ -309,8 +352,12 @@ def stamp_sandbox(tmp_path: Path) -> Path:
     return tmp_path
 
 
+def _lock_text(sandbox: Path) -> str:
+    return (sandbox / "uv.lock").read_text(encoding="utf-8")
+
+
 def test_stable_version_stamps_every_published_pin(stamp_sandbox: Path) -> None:
-    """A stable version moves every install-channel pin plus the lock entry."""
+    """A stable version moves every install-channel pin plus the lockfile."""
     before_pyproject = (stamp_sandbox / "pyproject.toml").read_bytes()
 
     result = _run_stamper(stamp_sandbox, "9.9.9")
@@ -334,12 +381,12 @@ def test_stable_version_stamps_every_published_pin(stamp_sandbox: Path) -> None:
     ]
     assert pins and all(pin.endswith("==9.9.9") for pin in pins)
 
-    # pyproject.toml is knope's versioned_file and must not be touched here;
-    # uv.lock's self-version entry IS the stamper's (stable spelling is
-    # already PEP 440 canonical).
-    assert (stamp_sandbox / "pyproject.toml").read_bytes() == before_pyproject
-    lock = (stamp_sandbox / "uv.lock").read_text(encoding="utf-8")
+    # The self entry moves; the dependency entry and pyproject.toml (knope's
+    # versioned file) must come through untouched.
+    lock = _lock_text(stamp_sandbox)
     assert 'name = "sandbox-pkg"\nversion = "9.9.9"' in lock
+    assert 'name = "other-dep"\nversion = "0.5.0"' in lock
+    assert (stamp_sandbox / "pyproject.toml").read_bytes() == before_pyproject
 
     status = subprocess.run(
         ["git", "status", "--porcelain"],
@@ -352,7 +399,7 @@ def test_stable_version_stamps_every_published_pin(stamp_sandbox: Path) -> None:
         "the stamped manifests must be staged for knope's release commit"
     )
     assert re.search(r"^A .*uv\.lock$", status, re.MULTILINE), (
-        "the stamped lock must be staged for knope's release commit"
+        "the stamped lockfile must be staged for knope's release commit"
     )
 
 
@@ -360,15 +407,16 @@ def test_stable_version_stamps_every_published_pin(stamp_sandbox: Path) -> None:
     ("version", "canonical"),
     [("9.9.9-rc.1", "9.9.9rc1"), ("9.9.9-rc.12", "9.9.9rc12")],
 )
-def test_prerelease_stamps_only_the_lock_canonically(
+def test_prerelease_stamps_only_the_lockfile_in_canonical_spelling(
     stamp_sandbox: Path, version: str, canonical: str
 ) -> None:
-    """Pre-releases never reach PyPI/registry/marketplace — no pin may move.
+    """Pre-releases move ``uv.lock`` alone — in PEP 440 canonical spelling.
 
-    The one exception is ``uv.lock``'s self-version entry, which tracks
-    ``pyproject.toml`` (knope bumps it for rc and stable alike) and must be
-    written in the PEP 440 canonical spelling uv itself would produce, so a
-    later re-lock is a no-op on that line.
+    The published manifests stay byte-identical (their pins name artifacts
+    PyPI/registry/marketplace never publish for an rc), while the lockfile
+    entry is stamped canonically so a later ``uv lock`` run rewrites
+    nothing — uv canonicalizes ``-rc.N`` to ``rcN``, which as a knope
+    versioned file used to break the next prepare.
     """
     before = {
         path: (stamp_sandbox / path).read_bytes()
@@ -381,12 +429,39 @@ def test_prerelease_stamps_only_the_lock_canonically(
     assert result.returncode == 0, result.stderr
     assert "pre-release" in result.stdout
 
+    lock = _lock_text(stamp_sandbox)
+    assert f'name = "sandbox-pkg"\nversion = "{canonical}"' in lock
+    assert version not in lock, "the SemVer spelling must not reach uv.lock"
     for path, content in before.items():
         assert (stamp_sandbox / path).read_bytes() == content, f"{path} was touched"
-    lock = (stamp_sandbox / "uv.lock").read_text(encoding="utf-8")
-    assert f'name = "sandbox-pkg"\nversion = "{canonical}"' in lock, (
-        "the lock's self-version must carry the PEP 440 canonical spelling"
+
+
+def test_stable_restamps_a_legacy_spelled_lock_entry(stamp_sandbox: Path) -> None:
+    """A lock entry in either spelling is simply restamped.
+
+    Covers both the canonical spelling a ``uv lock`` run leaves behind
+    (``1.2.3rc4``) and whatever a legacy SemVer-spelled entry carries — the
+    rewrite matches the entry by name, not by its current version.
+    """
+    lock_path = stamp_sandbox / "uv.lock"
+    lock_path.write_text(
+        _lock_text(stamp_sandbox).replace('version = "1.2.3"', 'version = "1.2.3rc4"'),
+        encoding="utf-8",
     )
+    result = _run_stamper(stamp_sandbox, "9.9.9")
+    assert result.returncode == 0, result.stderr
+    assert 'name = "sandbox-pkg"\nversion = "9.9.9"' in _lock_text(stamp_sandbox)
+
+
+def test_lockfile_without_the_self_entry_refuses_loudly(stamp_sandbox: Path) -> None:
+    """A lockfile missing the self-package entry fails the release."""
+    (stamp_sandbox / "uv.lock").write_text(
+        '[[package]]\nname = "other-dep"\nversion = "0.5.0"\n', encoding="utf-8"
+    )
+    result = _run_stamper(stamp_sandbox, "9.9.9")
+    assert result.returncode != 0
+    assert "uv.lock" in result.stderr
+    assert "sandbox-pkg" in result.stderr, "the refusal must name the missing entry"
 
 
 def test_missing_manifest_refuses_loudly(stamp_sandbox: Path) -> None:
@@ -395,20 +470,6 @@ def test_missing_manifest_refuses_loudly(stamp_sandbox: Path) -> None:
     result = _run_stamper(stamp_sandbox, "9.9.9")
     assert result.returncode != 0
     assert "server.json" in result.stderr
-
-
-def test_lock_without_a_self_entry_refuses_loudly(stamp_sandbox: Path) -> None:
-    """A lock missing this package's entry refuses — rc and stable alike."""
-    (stamp_sandbox / "uv.lock").write_text(
-        '[[package]]\nname = "other-pkg"\nversion = "0.0.1"\n', encoding="utf-8"
-    )
-    for version in ("9.9.9", "9.9.9-rc.1"):
-        result = _run_stamper(stamp_sandbox, version)
-        assert result.returncode != 0
-        assert "uv.lock" in result.stderr
-        assert "sandbox-pkg" in result.stderr, (
-            "the refusal must name the missing self-version entry"
-        )
 
 
 def test_unstampable_oci_pin_refuses_and_names_the_file(stamp_sandbox: Path) -> None:
@@ -495,19 +556,26 @@ def _published_pins() -> dict[str, str]:
 
 
 def test_committed_pins_name_the_last_stable_or_the_prepared_version() -> None:
-    """Pins equal the last stable OR the *stable* version this diff prepares.
+    """Pins equal the last stable release OR the version this diff prepares.
 
     The release-PR intermediate state is the load-bearing half: on a stable
     release PR every pin already names the version being prepared (which has
     no tag yet), and that PR must pass CI — merging it is the release.  A
     tag-coupled "pins must name a released tag" assert would reject exactly
-    that state.  Outside a release PR, pins sit at the last stable; an rc in
-    ``pyproject.toml`` never widens the allowed set (see the inline note).
+    that state.  Outside a release PR, pins sit at the last stable and
+    ``pyproject.toml`` agrees.
 
     "Last stable" is REACHABILITY-scoped (highest stable tag reachable from
     HEAD), not repo-global: on a ``release/X.Y`` backport branch older than
     the newest stable, the manifests correctly pin that series' own stable,
     and a repo-global comparison would make the branch unmergeable.
+
+    ``prepared`` widens the allowed set ONLY when it is itself a stable
+    ``X.Y.Z``: on an rc release PR ``pyproject.toml`` carries the rc
+    version, and admitting it would let an rc pin in the published
+    manifests pass CI — naming a version PyPI, the registry, and the
+    marketplace never publish (the markdown-vault-mcp#1053 class the
+    stamper's rc skip exists to prevent).
     """
     pins = _published_pins()
     if pins["server.json version"] in {"0.0.0", "0.1.0"}:
@@ -526,19 +594,13 @@ def test_committed_pins_name_the_last_stable_or_the_prepared_version() -> None:
     with (REPO_ROOT / "pyproject.toml").open("rb") as fh:
         prepared = str(tomllib.load(fh)["project"]["version"])
     allowed = {last_stable}
-    # The prepared version joins the allowed set only when it is itself a
-    # stable X.Y.Z: an rc in pyproject.toml (an rc release PR, or trunk
-    # between rc and promotion) must never admit an rc pin into the
-    # install-channel manifests — rc versions are unpublished on PyPI/the
-    # registry/the marketplace, exactly the drift class markdown-vault-mcp#1053
-    # was about.
     if re.fullmatch(r"\d+\.\d+\.\d+", prepared):
         allowed.add(prepared)
     bad = {where: ver for where, ver in pins.items() if ver not in allowed}
     assert not bad, (
         f"committed pins must name the last reachable stable ({last_stable}) "
-        f"or the version this diff prepares ({prepared}), but these do "
-        "neither: "
+        f"or the stable version this diff prepares ({prepared}), but these "
+        "do neither: "
         + ", ".join(f"{where} = {ver}" for where, ver in sorted(bad.items()))
     )
 

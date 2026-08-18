@@ -34,10 +34,11 @@ newest in the relevant series, so a patch release cut from an old
 Dispatching **Release Prepare** on the branch to release from has the
 release tool, [knope](https://knope.tech/), compute the next version from
 the conventional commits since the last release in that branch's history.
-It stamps the version-coupled files (`pyproject.toml`, `CHANGELOG.md`,
-and `uv.lock` natively, plus the install-channel manifests through
-`scripts/stamp_manifests.py` on stable prepares) and opens a release pull
-request against the dispatched branch. The dispatch's `channel` input
+It stamps the version-coupled files (`pyproject.toml` and `CHANGELOG.md`
+natively; `uv.lock`'s self-version entry on every prepare and the
+install-channel manifests on stable prepares, both through
+`scripts/stamp_manifests.py`) and opens a release pull request against
+the dispatched branch. The dispatch's `channel` input
 picks the release kind: `auto` prepares a release candidate on
 `release/X.Y` branches and a stable elsewhere, and an explicit `rc` or
 `stable` choice overrides that. The optional `override_version` input
@@ -60,10 +61,11 @@ Two rules keep the flow sound:
   Release Prepare again: it recreates the preparation branch from the
   base and refreshes the same pull request in place.
 - A release candidate promotes through a plain `channel: stable` dispatch
-  over the same commits. A guard verifies, before any tag is created,
-  that nothing but release stamps and release-notes pages changed since
-  the last candidate; any other change forces a new candidate instead of
-  a silently different stable.
+  over the same commits. A guard verifies that nothing but release stamps
+  and release-notes pages changed since the last candidate, first when
+  the promotion is prepared (a drifted promotion refuses before its pull
+  request even opens) and again before any tag is created; any other
+  change forces a new candidate instead of a silently different stable.
 
 ## Releasing from trunk
 
@@ -132,7 +134,9 @@ every change to this site clears.
 A maintainer merge is the publication step. Nothing lands on the site
 without review, and until the merge the release keeps the changelog and
 pointer body the release workflow wrote; a failed or unconvincing draft
-never blocks or alters a release. When the page is already merged before
+never blocks or alters a release. The docs deploy for a stable overlays
+the merged pages from `main` into the release's versioned docs, so they
+are present whichever branch the release was cut from. When the page is already merged before
 the stable publishes, the release body deep-links it immediately;
 otherwise, on merge, the **Release Notes Publish** workflow updates the
 GitHub release body from the page's summary and redeploys that minor's
