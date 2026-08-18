@@ -532,10 +532,19 @@ def test_notes_workflow_is_callable_and_not_release_triggered() -> None:
         "gh's per invocation — a helper planted in the checkout must "
         "never run with the PAT in scope"
     )
-    assert "core.hooksPath=/dev/null" in text, (
-        "the landing step's commits and pushes must ignore working-tree "
-        "hooks — agent-influenced state must not execute in the "
-        "credentialed step"
+    assert "Bash(git" not in text, (
+        "the drafting agent gets no local git — read-oriented git "
+        "commands still carry arbitrary-file-write flags (git log "
+        "--output=...) that bypass the write-tool scoping; the skill "
+        "reads tags and files-at-refs through the API instead"
+    )
+    assert 'clone --quiet --single-branch --branch "${PREP_BRANCH:-$DEFAULT}"' in (
+        text
+    ), (
+        "the landing step must run git only in a fresh clone — the "
+        "agent's checkout is data, not git state, and planted config "
+        "(core.fsmonitor, helpers, hooks) would execute on the first "
+        "git command there"
     )
     assert "gh auth setup-git" not in text, (
         "no global credential-helper setup — auth is per-invocation only"

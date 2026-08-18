@@ -130,10 +130,9 @@ jobs:
           # content and belongs in that PR's diff, and the tree there (base
           # plus knope's stamps) is exactly the state the page describes.
           # Dispatch mode: the default branch, where the accumulated pages
-          # live.  Research is API-driven, but full depth supplies the tags
-          # for the previous-stable computation and the tag-to-tag surface
-          # diffs (import surface, env examples) the upgrade section
-          # derives from.
+          # live.  Research is API-driven (the agent has no local git);
+          # full depth supplies the tags for the context step's
+          # previous-stable computation.
           ref: ${{ inputs.prep_branch || steps.discover.outputs.prep_branch || github.event.repository.default_branch }}
           fetch-depth: 0
           # PAT, so the push below triggers CI on the release PR (call
@@ -312,17 +311,18 @@ jobs:
           include_fix_links: false
           # Read-only GitHub research (MCP read tools + gh api), Task for the
           # per-theme fan-out, Skill to load the contract, vale + mkdocs for
-          # the quality loop, and read-only git for tag-to-tag surface diffs.
-          # The file tools are listed explicitly: in headless mode
-          # --allowedTools IS the allowlist — nothing is inherited from the
-          # action, and the first live run had every page write denied before
-          # failing the watermark gate (template#421).  Write/Edit are scoped
-          # to the notes surface the landing step commits: an unscoped write
-          # tool would let a prompt-injected research source plant git
-          # config or hooks that the credentialed landing step executes.
-          # The job's `contents: read` keeps the agent from pushing anything.
+          # the quality loop.  The file tools are listed explicitly: in
+          # headless mode --allowedTools IS the allowlist — nothing is
+          # inherited from the action, and the first live run had every page
+          # write denied before failing the watermark gate (template#421).
+          # Write/Edit are scoped to the notes surface the landing step
+          # commits, and the agent gets NO local git: read-oriented git
+          # commands still carry arbitrary-file-write flags (git log
+          # --output=...) that would bypass the write scoping, and the skill
+          # reads tags and files-at-refs through the API instead.  The
+          # job's `contents: read` keeps the agent from pushing anything.
           claude_args: |
-            --allowedTools "Skill,Task,Read,Glob,Grep,Write(docs/releases/**),Edit(docs/releases/**),Write(.vale/styles/config/vocabularies/**),Edit(.vale/styles/config/vocabularies/**),Write(.release-notes-pr-body.md),Edit(.release-notes-pr-body.md),mcp__github__get_*,mcp__github__list_*,mcp__github__search_*,Bash(gh api *),Bash(vale *),Bash(uv run mkdocs *),Bash(git tag *),Bash(git show *),Bash(git diff *),Bash(git log *)"
+            --allowedTools "Skill,Task,Read,Glob,Grep,Write(docs/releases/**),Edit(docs/releases/**),Write(.vale/styles/config/vocabularies/**),Edit(.vale/styles/config/vocabularies/**),Write(.release-notes-pr-body.md),Edit(.release-notes-pr-body.md),mcp__github__get_*,mcp__github__list_*,mcp__github__search_*,Bash(gh api *),Bash(vale *),Bash(uv run mkdocs *)"
 
       - name: Land the drafted page
         env:
@@ -336,19 +336,41 @@ jobs:
           RANGE_END: ${{ steps.ctx.outputs.range_end }}
         run: |
           set -euo pipefail
+          # The drafting agent ran in THIS checkout on research-controlled
+          # input, so nothing here is trustworthy as git state: planted
+          # config (core.fsmonitor, credential helpers, hooks) would
+          # execute on the first git command a credentialed step runs.
+          # The landing therefore treats the agent's tree as DATA only —
+          # the notes surface is copied out, and every git operation runs
+          # in a fresh clone the agent never touched, with inherited
+          # credential helpers reset and gh's named per invocation.
           # Only the notes surface is ever committed: the release pages and
           # any vocabulary the Vale loop legitimately added.
           ACCEPT=".vale/styles/config/vocabularies/Base/accept.txt"
+          BODY=.release-notes-pr-body.md
+          SURFACE="$RUNNER_TEMP/notes-surface"
+          rm -rf "$SURFACE"
+          mkdir -p "$SURFACE"
+          [ ! -d docs/releases ] || cp -R docs/releases "$SURFACE/releases"
+          [ ! -f "$ACCEPT" ] || cp "$ACCEPT" "$SURFACE/accept.txt"
+          [ ! -f "$BODY" ] || cp "$BODY" "$SURFACE/body.md"
+          LAND="$RUNNER_TEMP/land"
+          rm -rf "$LAND"
+          git -c credential.helper= -c 'credential.helper=!gh auth git-credential' \
+            clone --quiet --single-branch --branch "${PREP_BRANCH:-$DEFAULT}" \
+            "https://github.com/${REPO}.git" "$LAND"
+          cd "$LAND"
           git config user.name "github-actions"
           git config user.email "actions@users.noreply.github.com"
-          # This step must not trust git state the agent could have
-          # influenced: every commit and push below runs with working-tree
-          # hooks disabled, and every network call resets inherited
-          # credential helpers before naming gh's per invocation — nothing
-          # the checkout carries can execute here or see the PAT.
-          GIT_PUSH=(git -c credential.helper= \
-            -c 'credential.helper=!gh auth git-credential' \
-            -c core.hooksPath=/dev/null push)
+          if [ -d "$SURFACE/releases" ]; then
+            rm -rf docs/releases
+            mkdir -p docs
+            cp -R "$SURFACE/releases" docs/releases
+          fi
+          if [ -f "$SURFACE/accept.txt" ]; then
+            mkdir -p "$(dirname "$ACCEPT")"
+            cp "$SURFACE/accept.txt" "$ACCEPT"
+          fi
           if [ -n "$PREP_BRANCH" ]; then
             # Call mode: the page is release content — commit it onto the
             # release PR's prep branch so the release PR's diff carries it
@@ -373,13 +395,14 @@ jobs:
               accepted_head="$EXPECTED_HEAD"
             else
               git add docs/releases "$ACCEPT"
-              git -c core.hooksPath=/dev/null commit -m "docs(releases): notes for ${TAG}"
+              git commit -m "docs(releases): notes for ${TAG}"
               # Lease on the stamp head this draft was cut against: a
               # Release Prepare re-dispatch force-recreates the prep
               # branch, and a stale draft must never clobber the newer
               # prepare — the lease fails this push loudly instead; the
               # newer dispatch's own draft-notes job owns the branch.
-              "${GIT_PUSH[@]}" --force-with-lease="${PREP_BRANCH}:${EXPECTED_HEAD}" \
+              git -c credential.helper= -c 'credential.helper=!gh auth git-credential' \
+                push --force-with-lease="${PREP_BRANCH}:${EXPECTED_HEAD}" \
                 origin "HEAD:${PREP_BRANCH}"
               accepted_head="$(git rev-parse HEAD)"
             fi
@@ -411,21 +434,22 @@ jobs:
             echo "no notes changes produced — skipping PR"
             exit 0
           fi
-          BODY=.release-notes-pr-body.md
-          if [ ! -f "$BODY" ]; then
+          BODYFILE="$SURFACE/body.md"
+          if [ ! -f "$BODYFILE" ]; then
             {
               echo "Agent-drafted release notes for ${TAG} (the drafting run left no PR body; review the page against its inline evidence links)."
               echo
               echo "Refs: https://github.com/${REPO}/releases/tag/${TAG}"
-            } > "$BODY"
+            } > "$BODYFILE"
           fi
           BRANCH="release-notes/${TAG}"
           git checkout -B "$BRANCH"
           git add docs/releases "$ACCEPT"
-          git -c core.hooksPath=/dev/null commit -m "docs(releases): release notes for ${TAG}"
+          git commit -m "docs(releases): release notes for ${TAG}"
           # Force: a re-dispatch for the same tag replaces the previous draft.
-          "${GIT_PUSH[@]}" --force origin "HEAD:${BRANCH}"
+          git -c credential.helper= -c 'credential.helper=!gh auth git-credential' \
+            push --force origin "HEAD:${BRANCH}"
           gh pr create --base "$DEFAULT" --head "$BRANCH" \
             --title "docs(releases): release notes for ${TAG}" \
-            --body-file "$BODY" \
+            --body-file "$BODYFILE" \
             || echo "PR for ${BRANCH} already exists — the force-push updated it"
