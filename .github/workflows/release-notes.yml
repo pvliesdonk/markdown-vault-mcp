@@ -140,15 +140,28 @@ jobs:
           # mode) or on the standalone notes PR (dispatch mode) —
           # GITHUB_TOKEN pushes trigger no workflows.
           token: ${{ secrets.RELEASE_TOKEN }}
+          # The PAT authenticates the checkout ONLY — it must not survive
+          # into the working tree.  The drafting agent has unrestricted
+          # Read, and a prompt-injected research source must never be able
+          # to lift a persisted credential out of .git/config into content
+          # the landing step publishes.  Steps that need network git
+          # authenticate per-step via `gh auth setup-git`, whose helper
+          # holds no secret on disk and only works where GH_TOKEN is in
+          # that step's env — which the agent step's is not.
+          persist-credentials: false
 
       - name: Resolve release context
         id: ctx
         env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           INPUT_TAG: ${{ inputs.tag }}
           TARGET_VERSION: ${{ inputs.target_version }}
           SOURCE_REF: ${{ inputs.source_ref }}
         run: |
           set -euo pipefail
+          # Credentials are not persisted by the checkout; the fetch
+          # fallback below authenticates through gh's credential helper.
+          gh auth setup-git
           TAG="$INPUT_TAG"
           if [ -n "$TARGET_VERSION" ]; then
             # Prepare-time mode: the tag does not exist yet.  Key everything
@@ -327,6 +340,10 @@ jobs:
           ACCEPT=".vale/styles/config/vocabularies/Base/accept.txt"
           git config user.name "github-actions"
           git config user.email "actions@users.noreply.github.com"
+          # The checkout did not persist credentials (the agent step must
+          # not see them); this step's pushes authenticate through gh's
+          # credential helper with the PAT from this step's env.
+          gh auth setup-git
           if [ -n "$PREP_BRANCH" ]; then
             # Call mode: the page is release content — commit it onto the
             # release PR's prep branch so the release PR's diff carries it

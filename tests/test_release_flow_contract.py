@@ -516,6 +516,16 @@ def test_notes_workflow_is_callable_and_not_release_triggered() -> None:
         "explicitly — in headless mode the flag IS the allowlist, nothing "
         "is inherited, and without them every page write is denied"
     )
+    assert "persist-credentials: false" in text, (
+        "the checkout must not persist the release PAT — the agent's "
+        "unrestricted Read would let a prompt-injected research source "
+        "lift it out of .git/config into published content"
+    )
+    assert text.count("gh auth setup-git") >= 2, (
+        "with no persisted credentials, the context step's fetch fallback "
+        "and the landing step's pushes must each authenticate per-step "
+        "via gh's credential helper"
+    )
     call_half = text[text.index('if [ -n "$PREP_BRANCH" ]') :]
     call_half = call_half[: call_half.index("# Dispatch mode")]
     assert "::error::" in call_half and "skip_notes" in call_half, (
