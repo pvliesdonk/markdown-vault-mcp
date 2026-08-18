@@ -199,14 +199,20 @@ jobs:
               | sort -V | awk -v t="$TAG" '$0 == t { print p; exit } { p = $0 }'
           )
           page="docs/releases/${minor}.md"
-          # Mode: patch-append only for an actual patch release (X.Y.Z with
-          # Z > 0).  With prepare-time drafting the minor's page can exist
-          # BEFORE the X.Y.0 tag does; appending would duplicate the very
-          # release the page already covers, so an existing page for an
-          # X.Y.0 target is re-drafted in place instead (template#406).
+          # Mode: patch-append only when the page does NOT yet carry this
+          # release's section.  With prepare-time drafting the page can
+          # already cover the target before its tag exists — an X.Y.0 page
+          # drafted at prepare time (template#406), or a patch section
+          # written by an earlier rc of the same target (rc.1 → rc.2 →
+          # stable all normalise to the same vX.Y.Z).  Appending again
+          # would duplicate the section and its summary markers, so any
+          # page that already carries the target's RELEASE-SUMMARY marker
+          # is re-drafted in place instead (template#421).
           mode=new
           if [ -f "$page" ]; then
-            if [ "${ver##*.}" -gt 0 ]; then
+            if grep -qF "RELEASE-SUMMARY ${TAG} START" "$page"; then
+              mode=redraft
+            elif [ "${ver##*.}" -gt 0 ]; then
               mode=patch
             else
               mode=redraft

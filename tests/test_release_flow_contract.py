@@ -621,6 +621,38 @@ def test_pending_marker_machinery_is_gone() -> None:
     )
 
 
+def test_rc_series_redrafts_and_rc_bodies_read_the_stable_marker() -> None:
+    """An rc series must refresh one section, and rc bodies must find it.
+
+    Every candidate of a target normalises to the same stable version, so
+    a later rc (or the promotion) of a patch release must re-draft the
+    section its first rc wrote — mode selection keys on the page's
+    RELEASE-SUMMARY marker, not on ``Z > 0`` alone, or each refresh
+    appends a duplicate section.  And because the skill writes the marker
+    for the STABLE tag, the release-body extraction must normalise an rc
+    tag the same way or every rc body ships an empty summary.
+    """
+    notes = NOTES_WORKFLOW.read_text(encoding="utf-8")
+    marker_check = 'grep -qF "RELEASE-SUMMARY ${TAG} START" "$page"'
+    assert marker_check in notes, (
+        "mode selection must detect an already-covered target via its "
+        "RELEASE-SUMMARY marker and re-draft in place"
+    )
+    assert notes.index(marker_check) < notes.index('"${ver##*.}" -gt 0'), (
+        "the marker check must take precedence over the Z > 0 patch-append "
+        "branch — an rc.2 of a patch target must re-draft rc.1's section"
+    )
+    release = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+    assert 'marker_tag="v${ver%%-*}"' in release, (
+        "the body step must normalise the tag to the stable version before "
+        "the marker lookup — the skill keys the summary block on vX.Y.Z"
+    )
+    assert 'awk -v tag="$marker_tag"' in release, (
+        "the summary extraction must search with the normalised marker tag, "
+        "not the literal (possibly -rc.N) release tag"
+    )
+
+
 def test_port_bookkeeping_carries_the_notes_page() -> None:
     """A branch-cut stable's page reaches the default branch like the changelog.
 

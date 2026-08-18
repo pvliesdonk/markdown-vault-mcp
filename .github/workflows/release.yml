@@ -243,11 +243,15 @@ jobs:
               | sort -V | awk -v t="$TAG" '$0 == t { print p; exit } { p = $0 }'
           )
           body=$(gh release view "$TAG" --json body --jq .body)
-          # The page's marked summary block for THIS tag, if the page in the
-          # tagged tree carries one (the skill writes one per release).
+          # The page's marked summary block for this release, if the page in
+          # the tagged tree carries one.  The skill keys everything on the
+          # target's STABLE version — an rc drafts its stable's page and
+          # writes `RELEASE-SUMMARY vX.Y.Z START` — so the lookup normalises
+          # the tag the same way (v4.0.0-rc.2 reads the v4.0.0 block).
+          marker_tag="v${ver%%-*}"
           summary=""
           if [ -f "$page" ]; then
-            summary=$(awk -v tag="$TAG" '
+            summary=$(awk -v tag="$marker_tag" '
               index($0, "RELEASE-SUMMARY " tag " START") { f=1; next }
               index($0, "RELEASE-SUMMARY " tag " END")   { f=0 }
               f' "$page" | awk 'NF {p=1} p' | tac | awk 'NF {p=1} p' | tac)

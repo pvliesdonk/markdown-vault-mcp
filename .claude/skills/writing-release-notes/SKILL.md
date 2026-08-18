@@ -40,12 +40,14 @@ You are given, or must derive first:
   way — only the range endpoints move. A prepare-time draft is refreshed
   (branch force-pushed) alongside any re-dispatch of the release PR.
 - Mode — **new page** (the minor's page does not exist: write the whole
-  page), **patch append** (the page exists and the target is a patch
-  release, `Z > 0`: add one dated section inside the patch sentinels; leave
-  the rest of the page alone unless it is factually wrong), or **redraft**
-  (the page exists for an `X.Y.0` target — typically because it was drafted
-  at prepare time: update or extend the page in place, and never append a
-  duplicate section for a release the page already covers).
+  page), **patch append** (the page exists but does not yet cover the
+  target patch release, `Z > 0`: add one dated section inside the patch
+  sentinels; leave the rest of the page alone unless it is factually
+  wrong), or **redraft** (the page already covers the target — an `X.Y.0`
+  page drafted at prepare time, or any target whose `RELEASE-SUMMARY`
+  marker an earlier candidate already wrote: update the covering section
+  and its summary block in place, and never append a duplicate section
+  for a release the page already covers).
 - Watermark — an existing page carries an invisible
   `<!-- notes-range-end: SHA -->` comment recording where its last
   accepted draft's research ended. This is the incremental-research
