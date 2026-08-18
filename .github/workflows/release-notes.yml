@@ -52,7 +52,7 @@ on:
       # tag strictly below the target ... the release PR's source commit";
       # the evidence rules are unchanged, only the range endpoints move.
       target_version:
-        description: 'Re-draft against an open release PR: its target version (e.g. 4.0.0 or 4.0.0-rc.2). Empty = tag mode.'
+        description: 'Re-draft against an OPEN release PR: the exact version its pyproject.toml carries (e.g. 4.0.0 or 4.0.0-rc.2). The draft lands on that PR''s prep branch, like the prepare-time run. Empty = tag mode (standalone backfill PR for a shipped release).'
         type: string
         default: ''
       source_ref:
@@ -78,6 +78,51 @@ jobs:
       pull-requests: read
       id-token: write
     steps:
+      # Manual target_version re-drafts land on the open release PR's prep
+      # branch, exactly like the prepare-time run — a re-draft that opened
+      # a standalone PR against the default branch would bypass the
+      # release PR's review and its draft hold (template#421).  The prep
+      # branch is discovered the same way the reservation check reads
+      # reservations: the open knope/prepare/* PR whose stamped
+      # pyproject.toml carries the target version.  No match is an error —
+      # backfilling a SHIPPED release is tag mode's job.  Pure API, so it
+      # runs before checkout; skipped in call mode (prep_branch given) and
+      # tag mode (no target_version).
+      - name: Discover the release PR for a manual re-draft
+        id: discover
+        if: ${{ inputs.target_version != '' && !inputs.prep_branch }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TARGET_VERSION: ${{ inputs.target_version }}
+        run: |
+          set -euo pipefail
+          found=""
+          heads="$(gh pr list --repo "$REPO" --state open --limit 100 \
+            --json headRefName,headRefOid \
+            --jq '.[] | select(.headRefName | startswith("knope/prepare/")) | [.headRefName, .headRefOid] | @tsv')"
+          if [ -n "$heads" ]; then
+            while IFS="$(printf '\t')" read -r head oid; do
+              [ -n "$head" ] || continue
+              ver="$(gh api "repos/${REPO}/contents/pyproject.toml?ref=${head}" \
+                --jq '.content' 2>/dev/null | base64 -d 2>/dev/null \
+                | sed -n 's/^version = "\(.*\)"/\1/p' | head -1 || true)"
+              if [ "$ver" = "${TARGET_VERSION#v}" ]; then
+                found=1
+                {
+                  echo "prep_branch=${head}"
+                  echo "expected_head=${oid}"
+                } >> "$GITHUB_OUTPUT"
+                echo "re-draft targets release PR branch ${head} at ${oid}"
+                break
+              fi
+            done <<< "$heads"
+          fi
+          if [ -z "$found" ]; then
+            echo "::error::no open release PR carries version ${TARGET_VERSION} — re-dispatch Release Prepare first, or use tag mode to backfill a shipped release"
+            exit 1
+          fi
+
       - name: Checkout the branch the draft lands on
         uses: actions/checkout@v7
         with:
@@ -89,7 +134,7 @@ jobs:
           # for the previous-stable computation and the tag-to-tag surface
           # diffs (import surface, env examples) the upgrade section
           # derives from.
-          ref: ${{ inputs.prep_branch || github.event.repository.default_branch }}
+          ref: ${{ inputs.prep_branch || steps.discover.outputs.prep_branch || github.event.repository.default_branch }}
           fetch-depth: 0
           # PAT, so the push below triggers CI on the release PR (call
           # mode) or on the standalone notes PR (dispatch mode) —
@@ -259,8 +304,8 @@ jobs:
           TAG: ${{ steps.ctx.outputs.tag }}
           DEFAULT: ${{ github.event.repository.default_branch }}
           REPO: ${{ github.repository }}
-          PREP_BRANCH: ${{ inputs.prep_branch }}
-          EXPECTED_HEAD: ${{ inputs.expected_head }}
+          PREP_BRANCH: ${{ inputs.prep_branch || steps.discover.outputs.prep_branch }}
+          EXPECTED_HEAD: ${{ inputs.expected_head || steps.discover.outputs.expected_head }}
           PAGE: ${{ steps.ctx.outputs.page }}
           RANGE_END: ${{ steps.ctx.outputs.range_end }}
         run: |
@@ -286,6 +331,7 @@ jobs:
             if ! git status --porcelain -- docs/releases "$ACCEPT" | grep -q .; then
               if [ -f "$PAGE" ] && grep -qF "notes-range-end: ${RANGE_END}" "$PAGE"; then
                 echo "page ${PAGE} already covers this range (watermark at ${RANGE_END}) — nothing to commit; the release PR ships the accepted draft from its base"
+                accepted_head="$EXPECTED_HEAD"
               else
                 echo "::error::the drafting run produced no notes changes and ${PAGE} is missing or its notes-range-end watermark does not match ${RANGE_END} — an unchanged page is only current when its watermark matches. Re-run this job, or re-dispatch Release Prepare with skip_notes=true to release without a notes refresh"
                 exit 1
@@ -300,17 +346,27 @@ jobs:
               # newer dispatch's own draft-notes job owns the branch.
               git push --force-with-lease="${PREP_BRANCH}:${EXPECTED_HEAD}" \
                 origin "HEAD:${PREP_BRANCH}"
+              accepted_head="$(git rev-parse HEAD)"
             fi
             # The notes are in (or confirmed current) — lift the draft hold
             # release-prepare.yml placed on the release PR, making it
-            # mergeable only now that it is complete (template#421).
+            # mergeable only now that it is complete (template#421).  The
+            # lift is guarded on the PR still pointing at the head THIS run
+            # accepted: a newer Release Prepare may have force-recreated
+            # the branch (and restored the hold) since — an older notes
+            # run must never mark that refreshed, notes-less head ready.
             pr="$(gh pr list --state open --head "$PREP_BRANCH" \
               --json number --jq '.[0].number' 2>/dev/null || true)"
-            if [ -n "$pr" ]; then
-              gh pr ready "$pr" || echo "::warning::could not mark release PR #${pr} ready — lift the draft hold by hand"
-            else
+            if [ -z "$pr" ]; then
               echo "::warning::no open release PR found for ${PREP_BRANCH} — nothing to mark ready"
+              exit 0
             fi
+            current_head="$(gh pr view "$pr" --json headRefOid --jq .headRefOid 2>/dev/null || true)"
+            if [ "$current_head" != "$accepted_head" ]; then
+              echo "::warning::release PR #${pr} head ${current_head} is not the head this run accepted (${accepted_head}) — a newer prepare owns the PR; leaving its draft hold in place"
+              exit 0
+            fi
+            gh pr ready "$pr" || echo "::warning::could not mark release PR #${pr} ready — lift the draft hold by hand"
             exit 0
           fi
           # Dispatch mode (backfill / re-draft): a standalone notes PR

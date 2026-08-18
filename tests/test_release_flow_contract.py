@@ -521,6 +521,15 @@ def test_notes_workflow_is_callable_and_not_release_triggered() -> None:
         "the call mode must lift the release PR's draft hold once the "
         "notes land or are confirmed current"
     )
+    assert "headRefOid" in call_half and "accepted_head" in call_half, (
+        "the ready-lift must verify the PR still points at the head this "
+        "run accepted — an older notes run surviving a re-dispatch must "
+        "never mark the refreshed, notes-less head ready"
+    )
+    assert "Discover the release PR for a manual re-draft" in text, (
+        "a manual target_version re-draft must land on the open release "
+        "PR's prep branch, not a standalone PR against the default branch"
+    )
 
 
 def test_release_pr_is_held_draft_until_the_notes_land() -> None:
