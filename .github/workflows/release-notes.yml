@@ -7,11 +7,17 @@
 # this workflow only supplies context, tools, and the mechanical PR.
 #
 # INVARIANT: nothing here gates or blocks the release path.  By the time
-# this runs, the release has shipped with the interim summary+pointers body
-# release.yml wrote (its NOTES-GENERATOR SEAM step).  A failed or junk run
-# leaves that body standing; re-run via workflow_dispatch when wanted.  The
-# body upgrade and the versioned-docs redeploy happen only after a human
-# merges the notes PR — see release-notes-publish.yml.
+# this runs on a release event, the release has shipped with the
+# machine-changelog + pointers body release.yml wrote (deep-linking the
+# notes page only if it already existed).  A failed or junk run leaves that
+# body standing; re-run via workflow_dispatch when wanted.  The body
+# upgrade and the versioned-docs redeploy happen only after a human merges
+# the notes PR — see release-notes-publish.yml.
+#
+# A second dispatch path (target_version + source_ref) drafts notes at
+# release-PR prepare time, before any tag exists — see the input comments
+# below (fastmcp-server-template#406, migration P1.5).  The tag-based path
+# above is unchanged.
 name: Release Notes
 
 on:
@@ -20,7 +26,23 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Stable tag to draft notes for (e.g. v1.2.0). Empty = newest stable tag.'
+        description: 'Stable tag to draft notes for (e.g. v1.2.0). Empty = newest stable tag. Mutually exclusive with target_version.'
+        type: string
+        default: ''
+      # Prepare-time entry (fastmcp-server-template#406, migration P1.5): a
+      # release PR makes notes draftable BEFORE any tag exists — rc phase
+      # included.  The research range generalizes to "newest stable tag
+      # strictly below the target ... the release PR's source commit"; the
+      # evidence rules are unchanged, only the range endpoints move.
+      # Re-dispatch with the same target to refresh the draft alongside a
+      # release-PR re-dispatch (the branch is keyed on the target version
+      # and force-pushed).
+      target_version:
+        description: 'Prepare-time drafting: target version of an open release PR (e.g. 4.0.0 or 4.0.0-rc.2 — an rc drafts its stable minor page). Empty = tag mode.'
+        type: string
+        default: ''
+      source_ref:
+        description: 'Prepare-time drafting: the release PR source commit/ref that ends the research range. Required with target_version.'
         type: string
         default: ''
 
@@ -69,16 +91,44 @@ jobs:
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
           INPUT_TAG: ${{ inputs.tag }}
+          TARGET_VERSION: ${{ inputs.target_version }}
+          SOURCE_REF: ${{ inputs.source_ref }}
         run: |
           set -euo pipefail
           TAG="${RELEASE_TAG:-$INPUT_TAG}"
-          if [ -z "$TAG" ]; then
-            TAG=$(git tag --list | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
+          if [ -n "$TARGET_VERSION" ]; then
+            # Prepare-time mode: the tag does not exist yet.  Key everything
+            # on the target's stable version (an rc target drafts its
+            # stable's minor page) and end the research range at the release
+            # PR's source commit instead of a tag.
+            [ -z "$TAG" ] \
+              || { echo "::error::tag and target_version are mutually exclusive"; exit 1; }
+            [ -n "$SOURCE_REF" ] \
+              || { echo "::error::source_ref is required with target_version — pass the release PR's source commit"; exit 1; }
+            stable="${TARGET_VERSION#v}"
+            stable="${stable%%-*}"
+            TAG="v${stable}"
+            echo "$TAG" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+              || { echo "::error::'${TARGET_VERSION}' does not name a version — expected X.Y.Z or X.Y.Z-rc.N"; exit 1; }
+            # Validate the range end EARLY — a typo must fail this cheap
+            # step, not the hour-long agent job.  The checkout holds only
+            # the default branch, so a release-branch source commit may need
+            # fetching; a successful fetch is itself proof the ref exists on
+            # origin.
+            git rev-parse -q --verify "${SOURCE_REF}^{commit}" > /dev/null \
+              || git fetch -q origin "$SOURCE_REF" \
+              || { echo "::error::source_ref '${SOURCE_REF}' is neither a known commit nor fetchable from origin"; exit 1; }
+            RANGE_END="$SOURCE_REF"
+          else
+            if [ -z "$TAG" ]; then
+              TAG=$(git tag --list | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
+            fi
+            echo "$TAG" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+              || { echo "::error::'${TAG}' is not a stable vX.Y.Z tag — notes pages are per stable minor; rcs have no page"; exit 1; }
+            git rev-parse -q --verify "refs/tags/${TAG}" > /dev/null \
+              || { echo "::error::tag ${TAG} not found"; exit 1; }
+            RANGE_END="$TAG"
           fi
-          echo "$TAG" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$' \
-            || { echo "::error::'${TAG}' is not a stable vX.Y.Z tag — notes pages are per stable minor; rcs have no page"; exit 1; }
-          git rev-parse -q --verify "refs/tags/${TAG}" > /dev/null \
-            || { echo "::error::tag ${TAG} not found"; exit 1; }
           ver="${TAG#v}"
           minor="${ver%.*}"
           # Highest stable tag strictly below this release (same series-aware
@@ -89,13 +139,25 @@ jobs:
               | sort -V | awk -v t="$TAG" '$0 == t { print p; exit } { p = $0 }'
           )
           page="docs/releases/${minor}.md"
+          # Mode: patch-append only for an actual patch release (X.Y.Z with
+          # Z > 0).  With prepare-time drafting the minor's page can exist
+          # BEFORE the X.Y.0 tag does; appending would duplicate the very
+          # release the page already covers, so an existing page for an
+          # X.Y.0 target is re-drafted in place instead (template#406).
           mode=new
-          [ -f "$page" ] && mode=patch
+          if [ -f "$page" ]; then
+            if [ "${ver##*.}" -gt 0 ]; then
+              mode=patch
+            else
+              mode=redraft
+            fi
+          fi
           {
             echo "tag=$TAG"
             echo "version=$ver"
             echo "minor=$minor"
             echo "prev=$prev"
+            echo "range_end=$RANGE_END"
             echo "page=$page"
             echo "mode=$mode"
           } >> "$GITHUB_OUTPUT"
@@ -160,8 +222,9 @@ jobs:
             - repository: ${{ github.repository }}
             - tag: ${{ steps.ctx.outputs.tag }} (version ${{ steps.ctx.outputs.version }}, minor series ${{ steps.ctx.outputs.minor }})
             - previous stable: ${{ steps.ctx.outputs.prev }} (empty means first release)
+            - research range end (RANGE_END): ${{ steps.ctx.outputs.range_end }} (equals the tag after a release; at prepare time it is the open release PR's source commit — the tag does not exist yet)
             - page: ${{ steps.ctx.outputs.page }}
-            - mode: ${{ steps.ctx.outputs.mode }} (new = write the whole page and add it to docs/releases/index.md; patch = append one dated section inside the patch sentinels)
+            - mode: ${{ steps.ctx.outputs.mode }} (new = write the whole page and add it to docs/releases/index.md; patch = append one dated section inside the patch sentinels; redraft = the minor's page already exists — e.g. drafted at prepare time — so update/extend it in place and never append a duplicate section for this release)
 
             The vale binary (packs synced) and `uv run mkdocs build --strict` are available for the skill's quality gates. Write your proposed pull-request body to .release-notes-pr-body.md at the repository root. Do not commit, push, or open a PR yourself — the workflow's next step does that mechanically from your working tree.
           track_progress: true

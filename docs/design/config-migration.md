@@ -278,8 +278,8 @@ structurally instead: for each declared array it walks to the array's
 parent object and replaces that one array wholesale, leaving every other
 key in the document, including `version` and the `oci` package's
 `identifier`, untouched. Those two keys are rewritten separately by
-`scripts/bump_manifests.py` on release, so keeping the generator off them
-is intentional, not an oversight.
+`scripts/stamp_manifests.py` on stable releases, so keeping the generator
+off them is intentional, not an oversight.
 
 **Merge hazard for the release-managed keys:** `copier update` can leave
 conflict hunks in `server.json` whose template side carries the

@@ -1,162 +1,149 @@
-# Prerelease-ness is a property of the BRANCH, not of a dispatch flag (see
-# [tool.semantic_release.branches] in pyproject.toml): dispatching from `main`
-# cuts a stable release; dispatching from a short-lived `release/X.Y`
-# stabilisation branch cuts an rc by default, or the final stable X.Y.Z when
-# the `finalize` box is checked.  Every publish gate below derives from PSR's
-# own outputs (`is_prerelease`) and from tag ordering — never from a dispatch
-# input — so a mismatched dispatch cannot open a stable-only gate for an rc.
-# After any release cut from a `release/*` branch, the `merge-back` job merges
-# the branch back into `main`; without that, the tag is unreachable from
-# `main` and PSR deadlocks there ("already released" forever).
+# Release-PR flow, half two of two (knope; fastmcp-server-template#406).
+# Merge = release: when a release PR (head `knope/prepare/<base>`, opened by
+# release-prepare.yml) merges, run knope's tag-release workflow on the PR's
+# merge commit, then fan out the publishes.  Inside knope.toml the
+# same-source promotion guard (scripts/promotion_guard.sh) runs BEFORE the
+# Release step, so a guard refusal fails the release job with no tag created
+# (release-vision section 4.4 — tags are immutable; a refusal must leave
+# nothing behind).
+#
+# Prerelease-ness is a property of the reviewed diff, not of any dispatch
+# flag: the version knope computed sits in the merged pyproject.toml, an
+# `-rc.` suffix marks a pre-release, and every publish gate below derives
+# from that (plus tag ordering) — a mismatched dispatch cannot open a
+# stable-only gate for an rc, because there is no dispatch.
+#
+# Operator rules (load-bearing — see release-vision sections 4.2/4.4):
+#   * NEVER use GitHub's "Update branch" button on a release PR — the only
+#     refresh is re-dispatching Release Prepare.
+#   * A branch release (base != default branch) is followed by the
+#     port-bookkeeping job below, which opens an ordinary PR carrying the
+#     changelog section to the default branch — there is no merge-back.
 name: Release
 
 on:
-  workflow_dispatch:
-    inputs:
-      force:
-        description: 'Force version bump type (empty = auto from commits). patch/minor/major override commit analysis. Only valid on main — a release/X.Y branch has its target fixed at cut time.'
-        type: choice
-        default: ''
-        options:
-          - ''
-          - patch
-          - minor
-          - major
-      finalize:
-        description: 'On a release/X.Y branch: cut the final stable X.Y.Z instead of the next rc. No effect on main, which always releases stable.'
-        type: boolean
-        default: false
+  pull_request:
+    types: [closed]
 
 permissions:
   contents: read
 
 jobs:
   release:
+    # Only merged release PRs; the head-ref prefix is the prep-branch
+    # namespace release-prepare.yml creates (per base, so concurrent release
+    # PRs on main and release/X.Y stay distinguishable here).  Defense in
+    # depth on top of release-prepare.yml's own refusals: the head must
+    # live in THIS repository (a fork branch named knope/prepare/* must not
+    # trigger a release), and the base must itself be a releasable ref (the
+    # default branch or release/*), mirroring the prepare-time gate.
+    if: >-
+      github.event.pull_request.merged == true &&
+      startsWith(github.event.pull_request.head.ref, 'knope/prepare/') &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      (github.event.pull_request.base.ref == github.event.repository.default_branch ||
+       startsWith(github.event.pull_request.base.ref, 'release/'))
     runs-on: ubuntu-latest
-    # Per-branch buckets: a patch release off release/X.Y must not serialise
-    # behind a minor off main.  Cross-branch resources stay safe without a
-    # global bucket: PyPI/GitHub-release/registry writes are per-version, the
-    # marketplace push rebase-retries, docs deploys serialise in docs.yml, and
-    # the rolling Docker tags are ordering-gated below.
+    # Per-base buckets, mirroring release-prepare.yml's: a patch release off
+    # release/X.Y must not serialise behind (or cancel) a release off main.
+    # Cross-branch resources stay safe without a global bucket: the
+    # GitHub-release/PyPI/registry writes are per-version, the marketplace
+    # push rebase-retries, docs deploys serialise in docs.yml, and the
+    # rolling Docker tags are ordering-gated below.
     concurrency:
-      group: release-${{ github.ref_name }}
+      group: release-${{ github.event.pull_request.base.ref }}
       cancel-in-progress: false
+    timeout-minutes: 30
 
     permissions:
       contents: write
       id-token: write
 
     steps:
-      - name: Checkout repository
+      - name: Checkout the release PR's merge commit (full depth, with tags)
         uses: actions/checkout@v7
         with:
+          # The MERGE COMMIT, not the base branch head: a commit landing on
+          # the base between merge and checkout must neither get tagged as
+          # the release nor spuriously trip the promotion guard.  The merge
+          # commit is exactly what "merging the release PR is the release"
+          # promises to tag.
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          # Full history + tags: the promotion guard diffs HEAD against the
+          # highest reachable rc tag of the target version, and the ordering
+          # step below compares the new tag against every stable.
           fetch-depth: 0
-          ref: ${{ github.ref_name }}
-          token: ${{ secrets.RELEASE_TOKEN }}
+          fetch-tags: true
 
-      # The branch fixes the version target, so only two dispatch surfaces
-      # remain and each is guarded: `force` is a main-only override (on a
-      # release branch it would compound past the target fixed at cut time —
-      # the failure mode behind template#154), and any branch matching neither
-      # PSR branch group is rejected by PSR itself before anything publishes.
-      - name: Reject force bump on a release branch
-        if: startsWith(github.ref, 'refs/heads/release/') && inputs.force != ''
+      # Swap-completeness guard (migration P1.0/P2): during the additive
+      # phase this interlock kept the knope flow inert while
+      # python-semantic-release was still the release path; the PSR config
+      # block is gone now, so it always passes — and it stays here so the
+      # two release models can never both be live again.  If this fails, a
+      # `[tool.semantic_release]` block has reappeared in pyproject.toml.
+      - name: Refuse while python-semantic-release is still the release path
         run: |
-          echo "::error::force=${{ inputs.force }} is not valid on ${{ github.ref_name }}: a release branch's version target is fixed at cut time."
-          echo "::error::Dispatch with force='' — commits on the branch advance the rc revision; check 'finalize' to cut the final stable."
-          exit 1
+          if grep -q '^\[tool\.semantic_release\]' pyproject.toml; then
+            echo "::error::pyproject.toml carries a [tool.semantic_release] block — the PSR and knope release flows must never both be live. Remove the block (the knope release-PR flow is this project's release path), or remove the knope machinery before resurrecting PSR."
+            exit 1
+          fi
+          echo "interlock: no [tool.semantic_release] block — knope flow is armed"
 
-      # Advisory only (never blocks — the cut may be intentional, or belong on
-      # a release/X.Y branch cut from an earlier commit).  Surfaces both
-      # queryable quiescence signals the epic conventions record:
-      #   * the preferred milestone — a release-named milestone (X.Y) with
-      #     open issues means that version is not yet safe to cut; and
-      #   * the ships-atomically label — for each open epic it also counts
-      #     open native sub-issues, which may live in another repo, so a
-      #     cross-repo epic whose children are elsewhere stays visible.
-      # Every gh call is guarded so a failure or an unsupported endpoint
-      # degrades to no warning rather than failing the step under pipefail.
-      - name: Warn about open ships-atomically epics and release milestones
-        if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+      # knope-dev/action installs the pinned knope CLI.  Renovate: the
+      # action ref is covered by the template repo's jinja-workflow regex
+      # manager, and the `version:` input below by its knope-cli regex
+      # manager (github-releases, depName knope-dev/knope) — keep the
+      # `version:` key on its own line so that manager keeps matching.
+      - name: Install knope
+        uses: knope-dev/action@v2.1.2
+        with:
+          version: 0.23.0
+
+      # RELEASE_TOKEN (release-vision section 4.3): a tag or release created
+      # with the workflow's own GITHUB_TOKEN triggers NO downstream
+      # workflows (verified 0-for-10 in the live spike), which would silence
+      # docs.yml's `release: published` deploy and the notes flow.  The PAT
+      # keeps every event consumer firing.  Guard-before-Release ordering
+      # lives in knope.toml's tag-release workflow.
+      - name: Guard, then tag and create the GitHub release
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-        run: |
-          # (1) Open ships-atomically epics, each with a count of still-open
-          #     children (native sub-issues — cross-repo aware).
-          epics=$(gh issue list --repo "$REPO" --label ships-atomically \
-            --state open --json number,title \
-            --jq '.[] | "\(.number)\t\(.title)"' 2>/dev/null || true)
-          if [ -n "$epics" ]; then
-            printf '%s\n' "$epics" | while IFS="$(printf '\t')" read -r num title; do
-              [ -n "$num" ] || continue
-              kids=$(gh api "repos/$REPO/issues/$num/sub_issues" \
-                --jq '[.[] | select(.state == "open")] | length' 2>/dev/null || echo '?')
-              echo "::warning::Open ships-atomically epic #$num ($title) — $kids open child issue(s). Releasing $REPO@main ships HEAD mid-story; consider a release/X.Y branch cut from before the epic started."
-            done || true
-          fi
-          # (2) The preferred signal: a release-named milestone (X.Y) that
-          #     still has open issues — that version is not yet quiescent.
-          milestones=$(gh api "repos/$REPO/milestones?state=open&per_page=100" \
-            --jq '.[] | select(.open_issues > 0) | select(.title | test("^[0-9]+[.][0-9]+$")) | "\(.title): \(.open_issues) open issue(s)"' 2>/dev/null || true)
-          if [ -n "$milestones" ]; then
-            printf '%s\n' "$milestones" | while IFS= read -r ms; do
-              [ -n "$ms" ] || continue
-              echo "::warning::Release milestone $ms — not yet safe to cut that version from a quiescent trunk."
-            done || true
-          fi
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: knope tag-release --verbose
 
-      # PSR's CLI can force prerelease ON (--as-prerelease) but not OFF, so
-      # the final stable from a release branch needs a one-run config override:
-      # the same [tool.semantic_release] config with the release group's
-      # `prerelease` flipped to false.  Generated from pyproject.toml at run
-      # time (never committed — PSR stages only version files and assets), so
-      # it cannot drift from the real config.
-      - name: Prepare stable-finalize config override
-        id: psr-config
-        if: inputs.finalize && startsWith(github.ref, 'refs/heads/release/')
-        run: |
-          python3 - <<'EOF'
-          import json
-          import tomllib
-
-          with open("pyproject.toml", "rb") as fh:
-              cfg = tomllib.load(fh)["tool"]["semantic_release"]
-          # Fails loudly (KeyError) if the branch groups were removed/renamed;
-          # silently inventing a group here would mask a broken config.
-          cfg["branches"]["release"]["prerelease"] = False
-          with open(".psr-finalize.json", "w") as fh:
-              json.dump({"semantic_release": cfg}, fh)
-          EOF
-          echo "config_file=.psr-finalize.json" >> "$GITHUB_OUTPUT"
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v8.2.0
-        with:
-          version: "0.6"
-
-      - name: Setup Python
-        run: uv python install 3.12
-
-      - name: Semantic Version Release
+      # Everything downstream derives from the merged, reviewed diff: the
+      # version is what knope stamped into pyproject.toml (the tag is
+      # v<version>), and prerelease-ness is the `-rc.` marker in it.  The
+      # tag itself was created remotely by knope's Release step, so re-fetch
+      # tags to make it visible to the ordering computation below.
+      - name: Resolve the released version from the merged diff
         id: release
-        uses: python-semantic-release/python-semantic-release@v10.5.3
-        with:
-          github_token: ${{ secrets.RELEASE_TOKEN }}
-          git_committer_name: "github-actions"
-          git_committer_email: "actions@users.noreply.github.com"
-          force: ${{ inputs.force }}
-          # Empty unless finalizing a release branch; "" means pyproject.toml.
-          config_file: ${{ steps.psr-config.outputs.config_file }}
+        run: |
+          version="$(sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml | head -1)"
+          if [ -z "$version" ]; then
+            echo "::error::could not read a version from the merged pyproject.toml"
+            exit 1
+          fi
+          tag="v${version}"
+          case "$version" in
+            *-rc.*) is_prerelease=true ;;
+            *) is_prerelease=false ;;
+          esac
+          git fetch --tags --force origin
+          git rev-parse -q --verify "refs/tags/${tag}" > /dev/null \
+            || { echo "::error::knope tag-release reported success but tag ${tag} does not exist"; exit 1; }
+          {
+            echo "version=${version}"
+            echo "tag=${tag}"
+            echo "is_prerelease=${is_prerelease}"
+          } >> "$GITHUB_OUTPUT"
 
       # A release from an old series must not repoint rolling channels at
       # older content: Docker `latest`/`vX`/`vX.Y`, the GitHub "latest
       # release" pointer, the marketplace entry, and the MCP registry all
       # follow ONLY when this release is the highest in the relevant series.
-      # Tags are complete here: full-depth checkout plus the tag PSR just cut.
+      # Tags are complete here: full-depth checkout plus the re-fetch above.
       - name: Determine channel ordering
         id: ordering
-        if: steps.release.outputs.released == 'true'
         env:
           TAG: ${{ steps.release.outputs.tag }}
           IS_PRERELEASE: ${{ steps.release.outputs.is_prerelease }}
@@ -185,30 +172,27 @@ jobs:
             echo "is_latest_minor=$is_latest_minor"
           } >> "$GITHUB_OUTPUT"
 
-      # Release-body contract (template#350, settled jointly with
-      # template#347): the body is a user-facing summary plus pointers — the
-      # docs site is canonical, and commit-level detail stays behind the
-      # compare link and CHANGELOG.md.  Composing the body here (overwriting
-      # PSR's default commit-list notes) makes it independent of the
-      # tag-to-tag commit range, so a stable that finalises an rc series gets
-      # the same body as any other release instead of an empty-range one.
-      # The compare link spans the cycle since the previous STABLE tag — one
-      # definition of "what belongs in this release" for stables and rcs
-      # alike.  Tags are complete here (see the ordering step above).
-      # NOTES-GENERATOR SEAM (template#347): consumed. The body written here
-      # is the at-release interim state; after the Release Notes workflow's
-      # agent-drafted docs/releases page merges, release-notes-publish.yml
-      # replaces the interim summary with the page's marked summary block and
-      # a deep link into the versioned docs/releases page, keeping the
-      # compare and CHANGELOG pointers. The closing line below doubles as the
-      # upgrade-once marker that workflow keys on — reword them together.
-      - name: Set release body (summary + docs pointers)
-        if: steps.release.outputs.released == 'true'
+      # Release-body contract (template#350, reworked for the release-PR
+      # flow): knope's Release step already set the body to the release's
+      # machine changelog section; this step appends the pointers.  For a
+      # stable, the notes deep link is CONDITIONAL on the series page
+      # existing on the default branch at publish time — notes merged during
+      # the rc window (migration M6 admits them into the promotion diff) get
+      # their deep link right here.  A stable published before its notes PR
+      # merges instead gets plain pointers plus the invisible
+      # `<!-- release-notes-pending -->` marker: release-notes-publish.yml
+      # upgrades ONLY bodies carrying that marker (opt-in) and removes it in
+      # the upgrade, so a hand-edited body is never clobbered — the marker
+      # literal appears on both sides; reword them together.  rc bodies
+      # never promise a notes page: the rc cycle's content lands in the
+      # minor's page for the stable.
+      - name: Append release-body pointers (docs, compare, changelog)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.release.outputs.tag }}
           IS_PRERELEASE: ${{ steps.release.outputs.is_prerelease }}
           REPO: ${{ github.repository }}
+          DEFAULT: ${{ github.event.repository.default_branch }}
         run: |
           ver="${TAG#v}"
           minor="${ver%%-*}"
@@ -220,29 +204,39 @@ jobs:
                 | grep -Fvx "$TAG"; echo "$TAG"; } \
               | sort -V | awk -v t="$TAG" '$0 == t { print p; exit } { p = $0 }'
           )
+          body=$(gh release view "$TAG" --json body --jq .body)
+          notes_pending=""
           {
             if [ "$IS_PRERELEASE" = "true" ]; then
-              echo "Release candidate ${ver}: a branch-scoped stabilisation build for the upcoming v${minor} stable. Install it only to help test that release."
+              echo "Release candidate ${ver}: a stabilisation build toward the upcoming v${minor} stable. Install it only to help test that release."
               echo
+            fi
+            printf '%s\n' "$body"
+            echo
+            if [ "$IS_PRERELEASE" = "true" ]; then
               # The stable's versioned docs publish when the stable ships;
               # rcs deploy no docs, so point at the site root instead of a
               # not-yet-existing /X.Y/ page.
               echo "- Documentation: https://pvliesdonk.github.io/markdown-vault-mcp/ (the v${minor} pages publish when the stable ships)"
             else
-              echo "markdown-vault-mcp ${ver}."
-              echo
+              # The page check: pages live only on the default branch (a
+              # branch-cut stable's tag does not carry them), so ask the
+              # default branch, not the tag.
+              if gh api --silent "repos/${REPO}/contents/docs/releases/${minor}.md?ref=${DEFAULT}" 2>/dev/null; then
+                echo "- Release notes: https://pvliesdonk.github.io/markdown-vault-mcp/${minor}/releases/${minor}/"
+              else
+                notes_pending=yes
+              fi
               echo "- Documentation: https://pvliesdonk.github.io/markdown-vault-mcp/${minor}/"
             fi
             if [ -n "$prev" ]; then
               echo "- All changes since ${prev}: https://github.com/${REPO}/compare/${prev}...${TAG}"
             fi
             echo "- Commit-level detail: [CHANGELOG.md](https://github.com/${REPO}/blob/${TAG}/CHANGELOG.md)"
-            # Only a stable's body gets the notes-page promise: the Release
-            # Notes Publish workflow matches stable tags only, so an rc body
-            # would carry a pointer nothing ever fulfils.
-            if [ "$IS_PRERELEASE" != "true" ]; then
+            if [ -n "$notes_pending" ]; then
+              # Invisible upgrade-once marker for release-notes-publish.yml.
               echo
-              echo "Release notes will move to a versioned notes page on the documentation site; until then, the links above carry the full change record."
+              echo "<!-- release-notes-pending -->"
             fi
           } > release-body.md
           gh release edit "$TAG" --notes-file release-body.md
@@ -251,17 +245,23 @@ jobs:
       # release", which would repoint /releases/latest (and the versionless
       # .deb/.rpm URLs) at a backport patch cut after a newer stable. Demote it.
       - name: Keep the GitHub latest-release pointer ordered
-        if: steps.release.outputs.released == 'true' && steps.release.outputs.is_prerelease == 'false' && steps.ordering.outputs.is_latest == 'false'
+        if: steps.release.outputs.is_prerelease == 'false' && steps.ordering.outputs.is_latest == 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release edit ${{ steps.release.outputs.tag }} --latest=false
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.2.0
+        with:
+          version: "0.6"
+
+      - name: Setup Python
+        run: uv python install 3.12
+
       - name: Build package
-        if: steps.release.outputs.released == 'true'
         run: uv build
 
       - name: Generate SBOM
-        if: steps.release.outputs.released == 'true'
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610  # v0.24.0
         with:
           path: .
@@ -270,32 +270,24 @@ jobs:
           upload-artifact: false
           upload-release-assets: false
 
-      - name: Upload SBOM to GitHub Release
-        if: steps.release.outputs.released == 'true'
-        run: gh release upload ${{ steps.release.outputs.tag }} sbom.cdx.json
+      - name: Upload SBOM and build artifacts to GitHub Release
+        run: gh release upload ${{ steps.release.outputs.tag }} sbom.cdx.json dist/* --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload to GitHub Release Assets
-        uses: python-semantic-release/publish-action@v10.6.1
-        if: steps.release.outputs.released == 'true'
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          tag: ${{ steps.release.outputs.tag }}
-
       - name: Upload build artifacts
-        if: steps.release.outputs.released == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: dist
           path: dist/
 
     outputs:
-      released: ${{ steps.release.outputs.released }}
+      # "true" only when the release job ran to a successful tag — the
+      # single source every publish gate below derives from, so gate state
+      # can never desync from what knope actually cut.
+      released: ${{ steps.release.outputs.tag != '' }}
       version: ${{ steps.release.outputs.version }}
       tag: ${{ steps.release.outputs.tag }}
-      # "true"/"false" from PSR itself — the single source the publish gates
-      # below derive from, so gate state can never desync from what PSR cut.
       is_prerelease: ${{ steps.release.outputs.is_prerelease }}
       is_latest: ${{ steps.ordering.outputs.is_latest }}
       is_latest_major: ${{ steps.ordering.outputs.is_latest_major }}
@@ -656,7 +648,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           # The released ref, not a branch: the release commit — with the
-          # bumped server.json this job publishes — lives on whatever branch
+          # stamped server.json this job publishes — lives on whatever branch
           # the release was cut from, and mid-cycle `main` may carry a
           # different version entirely.
           ref: ${{ needs.release.outputs.tag }}
@@ -682,53 +674,97 @@ jobs:
       - name: Publish to MCP Registry
         run: ./mcp-publisher publish
 
-  # After ANY release cut from a release/* branch, the branch merges back into
-  # the default branch.  This is not housekeeping but a hard requirement:
-  # with the new tag unreachable from main, PSR on main recomputes the same
-  # version from main's own history, finds the tag taken repo-globally, and
-  # reports "already released" forever — no later commit unblocks it.  The
-  # merge is the only reverse flow (it carries PSR's release commits; feature
-  # cherry-picks never come back), and it also keeps main's version metadata
-  # current so edge builds self-report a real version.  scripts/merge_back.sh
-  # resolves version-coupled files (pyproject.toml, changelog, PSR assets) to
-  # main's side — main is authoritative for current metadata; the tag
-  # preserves the branch's own state — and fails loudly on any other
-  # conflict, leaving a clean tree for a manual merge:
-  #   git checkout main && git merge --no-ff release/X.Y  (resolve, push)
-  merge-back:
+  # Branch-release bookkeeping (release-vision section 4.5): after a STABLE
+  # release cut from a branch other than the default one, the default branch
+  # still wants the changelog section (and the notes-page delta, which in
+  # practice never exists — notes pages only ever land on the default
+  # branch).  That ports over as an ORDINARY pull request, opened with
+  # RELEASE_TOKEN so its CI runs — no admin-bypass push, no merge-back, and
+  # nothing deadlocks if it merges late.  Stables only: knope's stable
+  # section is cumulative over the whole rc cycle, so porting per rc would
+  # only manufacture pairwise conflicts and duplicate entries for content
+  # the stable's port carries anyway.  The version stamps are deliberately
+  # NOT ported (the default branch's pyproject.toml and manifests describe
+  # its own series) — which is why release-prepare.yml refuses a computed
+  # version whose tag already exists repo-globally.  A CHANGELOG.md whose
+  # flag line or section boundaries have drifted fails this job loudly; the
+  # remedy is a hand-opened PR carrying the section.
+  port-bookkeeping:
     needs: release
-    if: needs.release.outputs.released == 'true' && startsWith(github.ref, 'refs/heads/release/')
+    if: >-
+      needs.release.outputs.released == 'true' &&
+      needs.release.outputs.is_prerelease == 'false' &&
+      github.event.pull_request.base.ref != github.event.repository.default_branch
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
     steps:
       - name: Checkout default branch
         uses: actions/checkout@v7
         with:
           ref: ${{ github.event.repository.default_branch }}
           fetch-depth: 0
-          # Same PAT that pushes the release commit; a plain GITHUB_TOKEN push
-          # would also suppress the CI/docs/edge workflows this merge should
-          # trigger on main.
+          # PAT, so the branch push and PR below trigger CI on the port PR
+          # (GITHUB_TOKEN-created PRs run no workflows and could never pass
+          # the required CI Success check).
           token: ${{ secrets.RELEASE_TOKEN }}
 
-      - name: Merge release branch back into default branch
+      - name: Open the bookkeeping port PR
         env:
-          BRANCH: ${{ github.ref_name }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           TAG: ${{ needs.release.outputs.tag }}
+          VERSION: ${{ needs.release.outputs.version }}
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+          BASE: ${{ github.event.pull_request.base.ref }}
           DEFAULT: ${{ github.event.repository.default_branch }}
+          REPO: ${{ github.repository }}
         run: |
+          set -euo pipefail
+          git fetch -q origin "$MERGE_SHA"
+          # Extract this release's changelog section from the released
+          # commit: its `## <version>` heading up to (not including) the
+          # next `## ` heading.
+          git show "${MERGE_SHA}:CHANGELOG.md" > /tmp/released-changelog.md
+          awk -v ver="$VERSION" '
+            $0 ~ ("^## v?" ver "([ (]|$)") { found=1; print; next }
+            found && /^## / { exit }
+            found { print }
+          ' /tmp/released-changelog.md > /tmp/section.md
+          if ! [ -s /tmp/section.md ]; then
+            echo "::error::could not find the ## ${VERSION} section in the released CHANGELOG.md — port the changelog section to ${DEFAULT} by hand (ordinary PR)"
+            exit 1
+          fi
+          if grep -qE "^## v?${VERSION//./\\.}([ (]|\$)" CHANGELOG.md; then
+            echo "${DEFAULT}'s CHANGELOG.md already carries the ${VERSION} section — nothing to port"
+            exit 0
+          fi
+          # Insert directly below the insertion flag: newest-inserted-first
+          # matches release chronology (a backport releases after the newer
+          # stables above it were inserted).
+          if ! grep -qF '<!-- version list -->' CHANGELOG.md; then
+            echo "::error::${DEFAULT}'s CHANGELOG.md has no '<!-- version list -->' flag line — port the ${VERSION} section by hand (ordinary PR)"
+            exit 1
+          fi
+          awk 'BEGIN { while ((getline line < "/tmp/section.md") > 0) sec = sec line "\n" }
+               { print }
+               $0 == "<!-- version list -->" { printf "\n%s", sec }' \
+            CHANGELOG.md > CHANGELOG.md.new
+          mv CHANGELOG.md.new CHANGELOG.md
           git config user.name "github-actions"
           git config user.email "actions@users.noreply.github.com"
-          # Concurrent pushes to main race with ours; redo the whole merge on
-          # a fresh tip rather than rebasing a merge commit.
-          for attempt in 1 2 3; do
-            git fetch origin "$BRANCH" "$DEFAULT"
-            git reset --hard "origin/$DEFAULT"
-            bash scripts/merge_back.sh "origin/$BRANCH" "$TAG"
-            if git push origin "HEAD:$DEFAULT"; then
-              exit 0
-            fi
-          done
-          echo "::error::could not push the merge-back of $BRANCH after 3 attempts; merge $BRANCH into $DEFAULT manually — until it lands, PSR cannot release from $DEFAULT"
-          exit 1
+          BRANCH="knope/port/${TAG}"
+          git switch --force-create "$BRANCH"
+          git add CHANGELOG.md
+          git commit -m "chore: port ${TAG} release bookkeeping to ${DEFAULT}"
+          git push --force origin "HEAD:${BRANCH}"
+          # Skip cleanly when a port PR is already open (the force-push just
+          # refreshed it); otherwise create WITHOUT masking failures — a
+          # 403 or API error must fail this job loudly, per its contract.
+          existing="$(gh pr list --head "$BRANCH" --base "$DEFAULT" --state open --json number --jq 'length')"
+          if [ "$existing" != "0" ]; then
+            echo "port PR for ${BRANCH} already open — the force-push refreshed it"
+            exit 0
+          fi
+          gh pr create --base "$DEFAULT" --head "$BRANCH" \
+            --title "chore: port ${TAG} release bookkeeping to ${DEFAULT}" \
+            --body "Ports the ${TAG} changelog section from \`${BASE}\` to \`${DEFAULT}\` after the branch release ([release](https://github.com/${REPO}/releases/tag/${TAG})). Version stamps are deliberately not ported — ${DEFAULT}'s manifests describe its own series. Ordinary PR: review and merge on its own clock; conflicts (if the insertion drifted) are resolved by hand."

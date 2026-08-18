@@ -3,12 +3,18 @@
 # the Release Notes workflow opened), two deterministic follow-ups make the
 # merged page the release's front door:
 #
-#   1. Release-body upgrade — the NOTES-GENERATOR SEAM in release.yml wrote
-#      an interim summary+pointers body at release time (template#350's
-#      contract); this workflow replaces that summary with the page's marked
-#      summary block and deep-links the page, keeping the compare and
-#      CHANGELOG pointers.  Only bodies still carrying the interim marker
-#      line are touched, so a hand-tuned body is never clobbered.
+#   1. Release-body upgrade — release.yml wrote the machine-changelog body
+#      with pointers at release time (template#350's contract, knope
+#      edition), deep-linking the notes page when it already existed on the
+#      default branch and otherwise appending the invisible
+#      `<!-- release-notes-pending -->` marker; this workflow upgrades a
+#      marked body to the page's marked summary block plus the deep link,
+#      keeping the compare and CHANGELOG pointers.  The upgrade is OPT-IN:
+#      only bodies carrying the marker are touched, and the rewritten body
+#      drops the marker so it fires once — a body without it (deep-linked
+#      at release time, upgraded earlier, or hand-edited) is never
+#      clobbered.  The marker literal appears in release.yml's body step
+#      too — reword them together.
 #   2. Versioned-docs redeploy — mike deployed /X.Y/ at release time, before
 #      the page existed, so the deep link would 404 without a redeploy.  The
 #      minor is redeployed from its newest tag with the default branch's
@@ -20,7 +26,7 @@
 # Deterministic by design: the agent's output was reviewed and merged in the
 # PR; nothing here generates content.  Human edits to a page republish the
 # same way — the docs redeploy re-runs; the body upgrade does not (see the
-# interim-marker rule above; use `gh release edit` for a body fix).
+# opt-in marker rule above; use `gh release edit` for a body fix).
 name: Release Notes Publish
 
 on:
@@ -83,9 +89,14 @@ jobs:
             minor=$(basename "$page" .md)
             echo "$minor" | grep -qE '^[0-9]+\.[0-9]+$' \
               || { echo "::warning::${page} does not follow docs/releases/X.Y.md — skipping"; continue; }
+            # No-stable-yet skip: a page merged at prepare/rc time has no
+            # release body to upgrade.  Nothing re-fires this workflow for
+            # that page, and nothing needs to — release.yml's release-time
+            # page check writes the deep link into the stable's body
+            # directly when the page is already on the default branch.
             tags=$(git tag --list | grep -E "^v${minor//./\\.}\.[0-9]+$" | sort -V || true)
             [ -n "$tags" ] \
-              || { echo "::warning::no stable tag in the ${minor} series yet — the body upgrade runs once the release exists"; continue; }
+              || { echo "::warning::no stable tag in the ${minor} series yet — release.yml adds the deep link at publish time"; continue; }
             for TAG in $tags; do
               # The page carries one marked summary block per release; a tag
               # without a block (e.g. an old patch nobody wrote up) is left
@@ -97,11 +108,17 @@ jobs:
               [ -n "$summary" ] || continue
               body=$(gh release view "$TAG" --json body --jq .body 2>/dev/null || true)
               [ -n "$body" ] || { echo "no GitHub release for ${TAG} — skipping"; continue; }
-              # Upgrade once: only bodies still carrying release.yml's interim
-              # closing line. Anything else is either already upgraded or
-              # hand-written — leave it alone.
-              printf '%s' "$body" | grep -qF 'Release notes will move to a versioned notes page' \
-                || { echo "${TAG} body already upgraded or hand-edited — leaving it alone"; continue; }
+              # Upgrade once, OPT-IN: only bodies carrying the invisible
+              # marker release.yml appends when it publishes a stable whose
+              # notes page does not exist yet (the marker literal lives in
+              # its body step too — reword them together).  The rewrite
+              # below drops the marker, so the upgrade fires once; a body
+              # without it — deep-linked at release time, upgraded earlier,
+              # or hand-edited — is never touched.
+              if ! printf '%s' "$body" | grep -qF '<!-- release-notes-pending -->'; then
+                echo "${TAG} body carries no release-notes-pending marker — leaving it alone"
+                continue
+              fi
               ver="${TAG#v}"
               prev=$(
                 { git tag --list | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \

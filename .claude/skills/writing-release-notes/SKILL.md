@@ -26,14 +26,24 @@ produced the failure the rule prevents.
 
 You are given, or must derive first:
 
-- `TAG` / `VERSION` — the stable release (e.g. `v3.2.0` / `3.2.0`).
+- `TAG` / `VERSION` — the stable release (e.g. `v3.2.0` / `3.2.0`). At
+  prepare time (an open release PR, tag not yet created) these name the
+  release being prepared; an rc target still drafts its stable minor's page.
 - `MINOR` — the series (e.g. `3.2`); the page is `docs/releases/MINOR.md`.
-- `PREV` — the highest stable tag strictly below `TAG` (series-aware,
-  `sort -V`); empty on a first release.
-- Mode — **new page** (first stable of the minor: write the whole page) or
-  **patch append** (the page exists: add one dated section for this patch,
-  inside the patch sentinels; leave the rest of the page alone unless it is
-  factually wrong).
+- `PREV` — the highest stable tag strictly below the target version
+  (series-aware, `sort -V`); empty on a first release.
+- `RANGE_END` — where the research range ends. After a release this equals
+  `TAG`; at prepare time it is the release PR's source commit, because the
+  tag does not exist yet. The evidence rules below are identical either
+  way — only the range endpoints move. A prepare-time draft is refreshed
+  (branch force-pushed) alongside any re-dispatch of the release PR.
+- Mode — **new page** (the minor's page does not exist: write the whole
+  page), **patch append** (the page exists and the target is a patch
+  release, `Z > 0`: add one dated section inside the patch sentinels; leave
+  the rest of the page alone unless it is factually wrong), or **redraft**
+  (the page exists for an `X.Y.0` target — typically because it was drafted
+  at prepare time: update or extend the page in place, and never append a
+  duplicate section for a release the page already covers).
 
 ## Non-negotiables
 
@@ -60,9 +70,11 @@ You are given, or must derive first:
 
 ### 1. Enumerate the range through the API, not local git
 
-- Commit list: `gh api "repos/OWNER/REPO/compare/PREV...TAG"` (paginate past
-  250 commits; if PREV is empty this is the whole history — fall back to the
-  release's own compare link or the full commit list). The compare API is
+- Commit list: `gh api "repos/OWNER/REPO/compare/PREV...RANGE_END"`
+  (paginate past 250 commits; if PREV is empty this is the whole history —
+  fall back to the release's own compare link or the full commit list). The
+  compare API accepts a tag or a commit SHA as either endpoint, so the same
+  call covers post-release and prepare-time drafting. The compare API is
   authoritative; a shallow local clone silently truncates ranges.
 - Commit to PR: `gh api "repos/OWNER/REPO/commits/SHA/pulls"` — never regex
   `(#N)` out of subjects (breaks on squash subjects without the suffix and
@@ -138,7 +150,8 @@ A list of tools shipped is the failure mode, not the deliverable.
 
 Do **not** trust `!` markers or `BREAKING CHANGE:` footers — trials found
 them wrong in both directions. Derive the section from the actual surfaces
-between `PREV` and `TAG`, classified against the breaking-change policy in
+between `PREV` and `RANGE_END` (`git show` accepts a SHA where the tag does
+not exist yet), classified against the breaking-change policy in
 `CLAUDE.md` (operator surface and public library interface, assessed against
 the last stable):
 

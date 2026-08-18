@@ -100,10 +100,11 @@ jobs:
           # with ZERO approvals (a solo account has no second reviewer —
           # requiring one would deadlock patch/minor auto-merge) plus the
           # single drift-proof CI Success context; the repository-admin bypass
-          # entry keeps the release workflow's RELEASE_TOKEN pushes (PSR's
-          # release commit + tag, the merge-back to main) and the owner's
-          # direct-push hotfix path working — the ruleset equivalent of the
-          # old classic protection's enforce_admins=false.
+          # entry keeps the release workflow's RELEASE_TOKEN operations (the
+          # vX.Y.Z tag + GitHub release knope creates after a release PR
+          # merges, under the v* tag ruleset) and the owner's direct-push
+          # hotfix path working — the ruleset equivalent of the old classic
+          # protection's enforce_admins=false.
           #
           # DESTRUCTIVE-IDEMPOTENT: each PUT replaces the whole ruleset with
           # the checked-in state, not a read-merge-write. Bootstrap

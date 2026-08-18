@@ -1640,7 +1640,7 @@ def _json_array_container(
     Returning the container rather than the array itself is what keeps the
     replacement surgical: the caller assigns one key and every other key in
     the document — ``version`` and the OCI ``identifier`` above all, both
-    owned by `bump_manifests.py` — is left byte-untouched by construction
+    owned by `stamp_manifests.py` — is left byte-untouched by construction
     rather than by remembering to copy it.
 
     Every way the walk can fail (a missing key, an out-of-range index, a
@@ -1693,7 +1693,7 @@ def _assert_packaging_matches_container(
     The `packaging:` ids are deliberately spelled the same as `server.json`'s
     own ``registryType`` values, which makes the binding self-checking: when
     the resolved parent object declares a ``registryType``, it must equal the
-    declared packaging. `scripts/bump_manifests.py` — the other tool that
+    declared packaging. `scripts/stamp_manifests.py` — the other tool that
     rewrites this file — already locates packages by ``registryType`` rather
     than by index, so this also stops the two tools disagreeing about which
     package is which.
@@ -1769,7 +1769,7 @@ def render_json_splice_file(
     its `path:` and replaced wholesale, and every other key in the document
     survives untouched because it is never read, rewritten or reordered.
     That matters most for ``server.json``'s ``version`` and its OCI
-    ``identifier`` suffix, which `bump_manifests.py` rewrites on every
+    ``identifier`` suffix, which `stamp_manifests.py` rewrites on every
     release and this generator must never touch.
 
     Like `kind: splice` and unlike a whole-file artifact, the target must
@@ -1779,7 +1779,7 @@ def render_json_splice_file(
 
     Serialisation is ``json.dump``-equivalent with ``indent=2``,
     ``ensure_ascii=False`` and exactly one trailing newline — byte-identical
-    to `bump_manifests.py`'s own write of this same file. A mismatch would
+    to `stamp_manifests.py`'s own write of this same file. A mismatch would
     make the two tools reformat the file against each other on alternate
     runs: permanent churn, and `template-ci`'s render-twice ``diff -r``
     would fail.

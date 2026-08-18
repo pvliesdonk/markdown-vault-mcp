@@ -1,0 +1,113 @@
+# knope configuration for the release-PR flow (fastmcp-server-template#406).
+#
+# The two GitHub workflows that run these knope workflows
+# (release-prepare.yml, release.yml) carry a swap-completeness guard: they
+# refuse if a `[tool.semantic_release]` block ever reappears in
+# `pyproject.toml`, so this flow and the retired python-semantic-release
+# flow can never both be live.
+#
+# Two knope workflows:
+#   prepare-release — run by release-prepare.yml on a per-base prep branch
+#     (`knope/prepare/<base>`, force-created from the dispatching ref).
+#     Computes the version from conventional commits, stamps version-coupled
+#     files, commits, pushes the prep branch, and opens/refreshes the release
+#     PR.  Merging that PR is the release decision.
+#   tag-release — run by release.yml after the release PR merges.  Runs
+#     the same-source promotion guard FIRST, then tags and creates the GitHub
+#     release.  Guard-before-Release ordering is load-bearing (release-vision
+#     section 4.4): a guard refusal must leave no tag behind.
+#
+# NOTE on `base`: knope 0.23.0's CreatePullRequest `base` is a plain string —
+# it is not templatable (spike-verified).  release-prepare.yml patches it to
+# the dispatching ref with sed at run time; the placeholder below only
+# matters for local dry runs.  The patched knope.toml is never committed
+# (knope's prepare commit stages only the release files).
+
+[package]
+versioned_files = [
+  "pyproject.toml",
+  # uv.lock's self-version entry only — a textual stamp, exactly like the
+  # PSR-era `_bump_lockfile`; full dependency re-resolution is never part of
+  # release preparation (release-vision D12).  uv writes the PEP 503-
+  # normalized distribution name into the lockfile.
+  { path = "uv.lock", regex = 'name = "markdown-vault-mcp"\nversion = "(?<version>[^"]+)"' },
+]
+changelog = "CHANGELOG.md"
+# knope counts only feat / fix / breaking changes; these three sections are
+# renamed to today's CHANGELOG.md titles.  Other commit types are invisible
+# to knope by design — richness lives in docs/releases/ (migration M4).
+# Declaration order controls render order: breaking changes lead the
+# changelog section and the release body.
+extra_changelog_sections = [
+  { name = "Breaking Changes", types = ["major"] },
+  { name = "Features", types = ["minor"] },
+  { name = "Bug Fixes", types = ["patch"] },
+]
+
+[[workflows]]
+name = "prepare-release"
+
+[[workflows.steps]]
+type = "PrepareRelease"
+
+# Stable-only stamping of the install-channel manifests (server.json and the
+# Claude plugin pair, when present); pyproject.toml and uv.lock are knope's
+# own `versioned_files` above and the stamp script never touches them.
+[[workflows.steps]]
+type = "Command"
+command = "python3 scripts/stamp_manifests.py $version"
+shell = true
+
+[[workflows.steps]]
+type = "Command"
+command = "git commit -m \"chore: prepare release $version\""
+
+# Push BEFORE CreatePullRequest: the PR API call 422s if the head branch does
+# not exist on the remote yet (knope's own documented recipe ordering).  The
+# prep-branch name is per-base (knope/prepare/<base>), so it arrives via the
+# KNOPE_PREP_BRANCH environment variable release-prepare.yml exports.
+[[workflows.steps]]
+type = "Command"
+command = "git push --force --set-upstream origin \"$KNOPE_PREP_BRANCH\""
+shell = true
+
+[[workflows.steps]]
+type = "CreatePullRequest"
+base = "KNOPE-BASE-PLACEHOLDER"  # patched to the dispatching ref by release-prepare.yml — see header note
+
+# The title is pinned to a `chore:`-typed subject so the release PR itself
+# passes the PR-title gate (scripts/check_pr_title.py).
+[workflows.steps.title]
+template = "chore: prepare release $version"
+
+[workflows.steps.body]
+template = """
+Merging this pull request releases **$version** — the merge is the release
+decision.  On merge, the Release workflow tags the merge commit, creates
+the GitHub release, and runs the publish fan-out; for a stable promotion the same-source guard
+(`scripts/promotion_guard.sh`) runs first, so drifted source refuses with no
+tag created.
+
+Do NOT use GitHub's "Update branch" button on this PR — the only valid
+refresh is re-dispatching the Release Prepare workflow, which recreates this
+branch from its base.
+
+## Changelog
+
+$changelog
+"""
+
+[[workflows]]
+name = "tag-release"
+
+[[workflows.steps]]
+type = "Command"
+command = "bash scripts/promotion_guard.sh"
+shell = true
+
+[[workflows.steps]]
+type = "Release"
+
+[github]
+owner = "pvliesdonk"
+repo = "markdown-vault-mcp"

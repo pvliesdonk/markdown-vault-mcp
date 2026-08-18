@@ -3,16 +3,18 @@
 
 A squash merge takes the pull-request title as the resulting commit subject,
 so the title is the last point at which a subject can be corrected before it
-reaches ``main``.  That matters more than style: python-semantic-release
-builds its subject regex from the types listed in ``pyproject.toml``'s
-``[tool.semantic_release.commit_parser_options] allowed_tags``, and a subject
-whose type is not among them fails to parse and is dropped from the generated
-``CHANGELOG.md`` entirely -- not filed under a fallback heading, absent.  The
-release audit trail is only as complete as the subjects feeding it.
+reaches ``main``.  That matters more than style: knope, the release tool,
+computes versions and writes ``CHANGELOG.md`` from these subjects -- it
+counts only ``feat``, ``fix``, and the ``!``/breaking marker, and every
+other subject is ignored silently, with no warning and no fallback heading.
+An unrecognised type is exactly that silent-drop class, so this gate keeps
+the history parseable and the accepted set deliberate.  The release audit
+trail is only as complete as the subjects feeding it.
 
-The type list below and ``allowed_tags`` are two halves of one contract.
-``tests/test_commit_conventions.py`` fails when they disagree, so neither half
-can drift alone.
+The type list below, the knope-counted subset, and ``CLAUDE.md``'s
+Conventions prose are three legs of one contract.
+``tests/test_commit_conventions.py`` fails when they disagree, so no leg can
+drift alone.
 
 Usage::
 
@@ -28,8 +30,11 @@ from __future__ import annotations
 import re
 import sys
 
-#: Commit types this project accepts, kept in agreement with
-#: ``[tool.semantic_release.commit_parser_options] allowed_tags``.
+#: Commit types this project accepts.  Only ``feat``, ``fix``, and the ``!``
+#: marker drive releases (knope ignores the rest for both version and
+#: changelog); the wider set keeps history classifiable and is documented in
+#: ``CLAUDE.md``, with ``tests/test_commit_conventions.py`` holding all
+#: three in lockstep.
 ALLOWED_TYPES: tuple[str, ...] = (
     "build",
     "chore",
@@ -44,9 +49,9 @@ ALLOWED_TYPES: tuple[str, ...] = (
     "test",
 )
 
-# Mirrors python-semantic-release's angular parser: an optional
-# parenthesised scope, an optional `!` breaking marker, a colon, whitespace,
-# then a non-empty subject.  Case-sensitive, as the parser is.
+# The conventional-commit subject shape: an optional parenthesised scope, an
+# optional `!` breaking marker, a colon, whitespace, then a non-empty
+# subject.  Case-sensitive, as knope's parsing is.
 _TITLE_RE = re.compile(
     r"^(?P<type>[A-Za-z]+)"
     r"(?:\((?P<scope>[^()\n]+)\))?"
@@ -62,11 +67,11 @@ _TITLE_RE = re.compile(
 # of a revert produces: `Revert "Revert "feat: x""`.
 #
 # It does carry a cost, and the caller is told about it rather than left to
-# find out: python-semantic-release has no revert handling in any parser (both
-# `angular` and `conventional` return ParseError for this shape), so a commit
-# with this subject does not reach CHANGELOG.md.  The release-notes page is
-# where such a change gets narrated -- its research runs off merged pull
-# requests and linked issues, not commit subjects.
+# find out: NO revert form reaches CHANGELOG.md -- knope counts only
+# feat/fix/breaking subjects, so this shape and the conventional `revert:`
+# type are both changelog-invisible.  The release-notes page is where a
+# revert gets narrated -- its research runs off merged pull requests and
+# linked issues, not commit subjects.
 _GIT_REVERT_RE = re.compile(r'^Revert\s+".+"\s*$')
 
 _TYPES_LINE = ", ".join(ALLOWED_TYPES)
@@ -87,13 +92,14 @@ def _example() -> str:
     )
 
 
-#: Emitted for an accepted title that the release parser still cannot read.
+#: Emitted for an accepted title the release tooling still ignores.
 REVERT_CAVEAT = (
     'Accepted: this is the Revert "..." form git and GitHub generate. '
-    "python-semantic-release cannot parse it, though, so the commit will not "
-    "appear in CHANGELOG.md. Title it 'revert: ORIGINAL SUBJECT' instead if "
-    "you want it there; either way the release-notes page narrates it, since "
-    "that research runs off merged pull requests rather than commit subjects."
+    "Neither revert form reaches CHANGELOG.md, though -- knope counts only "
+    "feat/fix/breaking subjects, so 'revert: ORIGINAL SUBJECT' is equally "
+    "changelog-invisible. The release-notes page is what narrates reverts, "
+    "since that research runs off merged pull requests rather than commit "
+    "subjects."
 )
 
 
@@ -141,9 +147,9 @@ def check_title(title: str) -> str | None:
         if lowered in ALLOWED_TYPES:
             hint = f"\nTypes are case-sensitive; use {lowered!r}, not {commit_type!r}."
         return (
-            f"{commit_type!r} is not an accepted commit type. A subject with "
-            "an unrecognised type is dropped from CHANGELOG.md without a "
-            "warning.\n"
+            f"{commit_type!r} is not an accepted commit type. The release "
+            "tooling silently ignores a subject with an unrecognised type -- "
+            "no version bump, no CHANGELOG.md entry, no warning.\n"
             f"Accepted types: {_TYPES_LINE}{hint}\n{_HOW_TO_FIX}"
         )
 

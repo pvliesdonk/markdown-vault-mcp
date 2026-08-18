@@ -119,7 +119,7 @@ This project is extracted from [`pvliesdonk/if-craft-corpus`](https://github.com
 - Python 3.11+
 - `uv` for package management, `ruff` for linting/formatting (line length 88)
 - `hatchling` build backend
-- Conventional commits, one type from `build`, `chore`, `ci`, `docs`, `feat`, `fix`, `perf`, `refactor`, `revert`, `style`, `test` — optionally scoped (`feat(search): ...`) and with `!` for a breaking change. `feat` cuts a minor release, `fix` and `perf` cut a patch, the rest cut none.
+- Conventional commits, one type from `build`, `chore`, `ci`, `docs`, `feat`, `fix`, `perf`, `refactor`, `revert`, `style`, `test` — optionally scoped (`feat(search): ...`) and with `!` for a breaking change. Only `feat`, `fix`, and the `!` marker drive releases: `feat` cuts a minor, `fix` a patch, `!` a major. Every other type — `perf` included — cuts nothing and never reaches `CHANGELOG.md`; a performance change that must ship on its own is either honestly a `fix:` (it fixes a performance defect) or released with Release Prepare's explicit `override_version` input.
 - Google-style docstrings on all public functions
 - `logging.getLogger(__name__)` throughout, no `print()`
 - Type hints everywhere
@@ -128,10 +128,14 @@ This project is extracted from [`pvliesdonk/if-craft-corpus`](https://github.com
 **Pull-request titles are enforced, not merely encouraged.** A squash merge
 takes the PR title as the commit subject, so CI's `PR Title` job checks it
 against the type list above and fails the `CI Success` aggregate when it does
-not match. This is not style policing: python-semantic-release parses that
-subject, and a type it does not recognise is dropped from `CHANGELOG.md`
-without a warning — no fallback heading, no entry at all. A commit that never
-reaches the changelog never reaches the release notes that link into it.
+not match. This is not style policing: knope computes versions and writes
+`CHANGELOG.md` from those subjects, and it silently ignores a subject whose
+type it does not count — no fallback heading, no entry, no warning. That
+silent-drop class is exactly what the gate exists for: it keeps the history
+parseable and the accepted set deliberate. The changelog itself carries three
+sections per release — Breaking Changes first, then Features, then Bug
+Fixes — fed only by `!`/`feat`/`fix` subjects; the richness for everything
+else lives on the `docs/releases/` notes page, not in the changelog.
 
 Retitling is enough to clear a failure — the job reads the current title from
 the API, so re-running it after a retitle needs no push.
@@ -139,25 +143,24 @@ the API, so re-running it after a retitle needs no push.
 **Reverts are the one accepted title with a caveat.** `Revert "..."`, the
 shape `git revert` and GitHub's revert button generate, passes: it is the
 ecosystem's convention, and Conventional Commits deliberately leaves reverts
-unspecified. But no python-semantic-release parser reads it — `angular` and
-`conventional` both fail on it — so such a commit does **not** reach
-`CHANGELOG.md`. The job says so with a warning annotation rather than letting
-you find out at release time. `revert: ORIGINAL SUBJECT` is the form that does
-reach the changelog. Either way the revert is narrated on the
-`docs/releases/` page, whose research runs off merged pull requests and linked
-issues rather than commit subjects.
+unspecified. But **neither revert form reaches `CHANGELOG.md`** — knope
+counts only `feat`/`fix`/`!`, so `revert: ORIGINAL SUBJECT` is just as
+changelog-invisible as the quoted form. The job says so with a warning
+annotation rather than letting you find out at release time. The revert is
+narrated on the `docs/releases/` page instead, whose research runs off merged
+pull requests and linked issues rather than commit subjects.
 
-The accepted set lives in `pyproject.toml` under
-`[tool.semantic_release.commit_parser_options] allowed_tags`.
-`scripts/check_pr_title.py` and the list above are checked against it by
-`tests/test_commit_conventions.py`, so no one of the three can drift alone.
+The accepted set lives in `scripts/check_pr_title.py`. That list, the
+knope-counted subset (`feat`/`fix`/`!`), and this section's prose are checked
+against each other by `tests/test_commit_conventions.py`, so no one of the
+three can drift alone.
 
 The automated Claude review runs **only after CI passes** — if CI is red, no
 review is posted. Fix CI and push; the review runs on the next green run.
 
 ## Breaking Changes and the `!` Marker
 
-Releases are cut by python-semantic-release from commit messages alone, so the `!` marker (or `BREAKING CHANGE:` footer) *is* the major-version decision — apply it deliberately, not by habit. A change is **breaking** only if it breaks one of two surfaces:
+The release version is computed by knope from commit subjects and lands in a reviewed release PR, so the `!` marker (or `BREAKING CHANGE:` footer) *is* the major-version decision — apply it deliberately, not by habit; the release-PR review is where a mis-typed `!` gets caught, but the reviewer should never have to. A change is **breaking** only if it breaks one of two surfaces:
 
 - **Operator surface** — an environment variable, config file, CLI flag, deployment layout, or on-disk state format a human must change to upgrade.
 - **Public library interface** — anything importable from `markdown_vault_mcp` that a downstream Python consumer uses. A mechanical guard for this tier is tracked at pvliesdonk/fastmcp-server-template#352.
@@ -186,7 +189,7 @@ Every PR must pass **all** of the following locally before push. These are mecha
    ```
    The script derives its compare branch (nearest of `origin/main` and `origin/release/*`; override with `STRUCTURAL_GATE_BASE`) and runs `diff-quality --violations=ruff.check --options="--extend-select=C901,PLR0911,PLR0912,PLR0913,PLR0915,S" --fail-under=100` against it. `# noqa: C901` (etc.) with a one-line justification is the escape hatch for genuinely irreducible new code.
 6. **Docs updated** — `README.md` and `docs/**` reflect any user-facing changes in the same commit
-7. **Manifest version lockstep** — `server.json`, `.claude-plugin/plugin/.claude-plugin/plugin.json`, and `.claude-plugin/plugin/.mcp.json` must all carry the same version: the latest *stable* release. Stable releases bump them atomically via PSR; pre-releases deliberately leave them untouched, because the versions they name are only published for stable releases. Manual touches require updating all three.
+7. **Manifest version lockstep** — `server.json`, `.claude-plugin/plugin/.claude-plugin/plugin.json`, and `.claude-plugin/plugin/.mcp.json` must all carry the same version: the latest *stable* release. A stable release PR stamps them atomically (knope invokes `scripts/stamp_manifests.py`); rc release PRs deliberately leave them untouched, because the versions they name are only published for stable releases. Manual touches require updating all three.
 
 
 ## Pre-commit Hooks
@@ -254,7 +257,7 @@ Every issue, PR, and code change must consider documentation impact. Before clos
 - **`docs/design/design.md`** — the authoritative spec. Any new feature, changed behavior, or architectural decision must be reflected here. If the code diverges from the spec, update the spec.
 - **`README.md`** — user-facing documentation. New env vars, tools, resources, prompts, CLI flags, or configuration options must be documented here.
 - **`docs/` site pages** — the published documentation site. New or changed MCP tools/resources/prompts, new env vars, new installation methods or deployment options.
-- **`CHANGELOG.md`** — machine-generated audit trail: python-semantic-release inserts each release's version section at the `<!-- version list -->` insertion flag during the release workflow. Never hand-edit version sections or the flag line. If this project was generated before the flag existed, add the flag line to `CHANGELOG.md` once by hand — `tests/test_release_contract.py` fails with the exact line until it is present.
+- **`CHANGELOG.md`** — machine-generated audit trail: knope writes each release's version section (below the `<!-- version list -->` insertion flag) into the release PR's diff. Never hand-edit version sections or the flag line. If this project was generated before the flag existed, add the flag line to `CHANGELOG.md` once by hand — `tests/test_release_flow_contract.py` fails with the exact line until it is present.
 - **Inline docstrings** — new or changed public API methods need accurate Google-style docstrings.
 
 **Rule: code without matching docs is incomplete.**
@@ -366,17 +369,17 @@ These sentinel blocks in `Dockerfile` are preserved across `copier update`. Add 
 
 ### Release manifest extension points
 
-`scripts/bump_manifests.py` bumps `server.json` and refreshes `uv.lock`'s self-version entry inside the release commit, so a stable tag never points at a manifest whose version lags it. On pre-release versions the script leaves `server.json` and the Claude plugin manifests at the last published stable — pre-releases skip PyPI and the MCP registry, so bumping those pins would make `main` name a version that does not exist anywhere (`tests/test_release_contract.py` asserts both behaviors). `uv.lock` is refreshed on every release, pre-release included, because it tracks `pyproject.toml` rather than a published artifact. These sentinel blocks in that script are preserved across `copier update`. Add bumps for this project's own version-coupled manifests (a Claude Code `plugin.json`, an `.mcp.json`, another lockstep JSON/TOML) inside them:
+`scripts/stamp_manifests.py` stamps the install-channel manifests — `server.json` and the Claude plugin pair — inside each *stable* release PR, so a stable tag never points at a manifest whose version lags it (knope's `prepare-release` workflow invokes it with the computed version; `pyproject.toml` and `uv.lock` are knope's own `versioned_files` and the script never touches them). On rc versions the script exits without touching any file — pre-releases skip PyPI, the MCP registry, and the marketplace, so stamping those pins would make the branch name a version that does not exist anywhere (`tests/test_release_flow_contract.py` asserts both behaviors). These sentinel blocks in that script are preserved across `copier update`. Add stamps for this project's own version-coupled manifests (another lockstep JSON/TOML) inside them:
 
-- `# DOMAIN-MANIFESTS-HELPERS-START` / `-END` — module-level helpers (use `_load` / `_dump` for JSON so the byte format matches what `scripts/gen_config_surface.py` asserts)
-- `# DOMAIN-MANIFESTS-START` / `-END` — the calls, inside `main()`, where `version` is in scope
+- `# DOMAIN-MANIFESTS-HELPERS-START` / `-END` — module-level helpers (use `_load` / `_dump` for JSON so the byte format matches what `scripts/gen_config_surface.py` asserts; raise `StampError` for a pin that cannot be stamped — never warn and continue)
+- `# DOMAIN-MANIFESTS-START` / `-END` — the calls, inside `main()`, where `version` is in scope; extend `stamped` with every path you rewrite so it is staged into the release commit
 
-Every path bumped there must also appear in `pyproject.toml`'s `[tool.semantic_release] assets`, or PSR leaves it out of the release commit. The two are checked against each other by `tests/test_release_contract.py`, so a manifest named in one and not the other fails the gate rather than shipping a release commit with a stale file in it.
+The script must actually be invoked by knope's stamp Command, or a stale manifest ships silently; `tests/test_release_flow_contract.py` asserts that invocation coupling (the successor of the PSR-era `assets` pairing rule), so a stamp declared in one half only fails the gate rather than shipping a release commit with a stale file in it.
 
 
 ## Claude Code plugin channel
 
-`.claude-plugin/plugin/` ships this server as a Claude Code plugin: `.claude-plugin/plugin.json` (identity + version) and an exec-form `.mcp.json` that launches the released PyPI package with `uvx --from <pkg>==<version>`. Both manifests are version-coupled to the *stable* release stream — `scripts/bump_manifests.py` bumps them in stable release commits and `[tool.semantic_release] assets` stages them, so the marketplace entry published by the release workflow always installs the version it points at. Pre-releases never reach PyPI, so on pre-release runs the script leaves both files at the last published stable rather than pinning a version `uvx` cannot resolve (`tests/test_release_contract.py` gates the assets/script pairing and this skip). The `env` block in `.mcp.json`, the plugin README, and any `skills/` directories are project-owned content: the files are seeded once and never re-rendered by template updates. Values in `env` may reference plugin `userConfig` entries as `${user_config.<id>}` declared in `plugin.json` — exec-form fields only; shell-form command strings reject the substitution.
+`.claude-plugin/plugin/` ships this server as a Claude Code plugin: `.claude-plugin/plugin.json` (identity + version) and an exec-form `.mcp.json` that launches the released PyPI package with `uvx --from <pkg>==<version>`. Both manifests are version-coupled to the *stable* release stream — `scripts/stamp_manifests.py` stamps and stages them inside each stable release PR, so the marketplace entry published by the release workflow always installs the version it points at. Pre-releases never reach PyPI, so on rc prepares the script leaves both files at the last published stable rather than pinning a version `uvx` cannot resolve (`tests/test_release_flow_contract.py` gates the invocation pairing and this skip). The `env` block in `.mcp.json`, the plugin README, and any `skills/` directories are project-owned content: the files are seeded once and never re-rendered by template updates. Values in `env` may reference plugin `userConfig` entries as `${user_config.<id>}` declared in `plugin.json` — exec-form fields only; shell-form command strings reject the substitution.
 
 To generate the plugin's configuration screen from the config surface instead of hand-editing it, declare a `files:` pair in `config-presentation.domain.yml`: the plugin.json path with `kind: claude-plugin-user-config` and a `fields:` map (same field specs as the mcpb screen above), plus the `.mcp.json` path with `kind: claude-plugin-env` and `fields_from:` naming the first entry. One fields map then drives both the `userConfig` object and the `${user_config.<id>}` env wiring, and `scripts/gen_config_surface.py --check` gates the pair against drift.
 
@@ -395,18 +398,18 @@ The `Pre-release check` workflow (Actions tab, `workflow_dispatch`) builds and v
 
 ## Release model
 
-`main` is trunk. Everything merges there, and **merging is not releasing**: a merge feeds the rolling `edge` channel (next section) and nothing else. A release is a separate, deliberate event — dispatching the Release workflow — and the sections below say when and from where.
+`main` is trunk. Everything merges there, and **merging a feature is not releasing**: a merge feeds the rolling `edge` channel (next section) and nothing else. A release is a separate, deliberate event — dispatching the **Release Prepare** workflow, reviewing the release PR it opens, and merging that PR, which is what tags and publishes — and the sections below say when and from where.
 
-**The default release path is trunk.** When a release is wanted and trunk is quiescent (no atomic epic mid-flight — the cut criterion below), dispatch Release on `main`. It cuts a stable from HEAD: no branch, no ceremony. Most releases should look like this.
+**The default release path is trunk.** When a release is wanted and trunk is quiescent (no atomic epic mid-flight — the cut criterion below), dispatch Release Prepare on `main` and merge the release PR it opens. That cuts a stable: no branch, no ceremony. Most releases should look like this.
 
-**The cut criterion.** An epic that ships atomically makes trunk unreleasable while it is open: releasing `main` ships HEAD, mid-story. Judge quiescence from the queryable signal the epic conventions record (see CONTRIBUTING.md's Epics section): preferably the **release milestone** — safe to cut means no open issues in the target release's milestone — with the **`ships-atomically` label** as the fallback when no milestone names a release yet. An open atomic epic with unclosed children means either release from a commit before the epic started (a `release/X.Y` branch cut from that commit) or wait. The Release workflow's advisory step surfaces both signals on every `main` dispatch — a release-named milestone (`X.Y`) that still has open issues, and open `ships-atomically` epics (each with a count of its native sub-issues, so a cross-repo epic whose children live elsewhere stays visible); it warns and never blocks, because the cut may still be intentional.
+**The cut criterion.** An epic that ships atomically makes trunk unreleasable while it is open: releasing `main` ships HEAD, mid-story. Judge quiescence from the queryable signal the epic conventions record (see CONTRIBUTING.md's Epics section): preferably the **release milestone** — safe to cut means no open issues in the target release's milestone — with the **`ships-atomically` label** as the fallback when no milestone names a release yet. An open atomic epic with unclosed children means either release from a commit before the epic started (a `release/X.Y` branch cut from that commit) or wait. The Release Prepare workflow's advisory step surfaces both signals on every default-branch dispatch — a release-named milestone (`X.Y`) that still has open issues, and open `ships-atomically` epics (each with a count of its native sub-issues, so a cross-repo epic whose children live elsewhere stays visible); it warns and never blocks, because the cut may still be intentional.
 
 **The `release/X.Y` branch is the exception tool**, for exactly two cases:
 
 1. **Dirty trunk at cut time** — trunk carries unfinished work that must be excluded from the release. Cut the branch from the last quiescent commit behind HEAD, stabilise there (rcs), and finalize the stable.
 2. **Patching a shipped release** — an already-released version needs a fix while `main` has moved on past it. The branch does not need to exist in advance: create it retroactively from the tag (`git branch release/X.Y vX.Y.Z`), land the fix, release.
 
-Fixes flow trunk → branch only: land on `main` first, cherry-pick to the branch. The automated release merge-back (see the release machinery section below) is the single reverse flow — it carries PSR's release commits, never features.
+Fixes flow trunk → branch only: land on `main` first, cherry-pick to the branch. There is no merge-back: after a branch release, the automated port-bookkeeping PR (see the release machinery section below) carries the changelog section to `main` as an ordinary reviewed PR — never features, and nothing deadlocks if it merges late.
 
 **Branching cannot defer a structural refactor.** A refactor that changes existing behaviour makes every later cherry-pick across it conflict-prone, so a stabilisation branch buys no room for one. Land structural refactors early in a cycle, far from the next cut — not late, when a branch is about to be needed.
 
@@ -417,22 +420,26 @@ Fixes flow trunk → branch only: land on `main` first, cherry-pick to the branc
 | Channel | Identity | Promise |
 |---|---|---|
 | `edge` | none — the commit is the identity | the newest merged code, rebuilt on every merge to `main`; rolling and disposable |
-| rc | `vX.Y.Z-rc.N`, target fixed at cut time | a stabilisation step toward exactly that version, cut only from `release/X.Y` (a fresh stabilisation branch starts at `X.Y.0-rc.1`) |
-| stable | `vX.Y.Z` | a quiescent-trunk release (the default) or the promotion of a stabilisation branch (`finalize`) |
+| rc | `vX.Y.Z-rc.N`, target computed and reviewed in the merged release PR | a stabilisation step toward exactly that version — normally cut from `release/X.Y`, or from quiescent trunk when continuing a series whose rc tags are reachable there |
+| stable | `vX.Y.Z` | a quiescent-trunk release (the default) or the promotion of an rc series (a plain, non-rc prepare over the same commits, guarded to a stamps-only diff) |
 
 An rc is not "the latest build with a version number" — that job belongs to `edge`, which costs one build-and-push and leaves no tag, release, or version bump behind. Cut rcs only when genuinely stabilising a specific release.
 
 ## Unstable channel (rolling `edge` image)
 
-The `Unstable channel` workflow (`.github/workflows/unstable.yml`) runs on every push to `main` (plus manual dispatch for seeding) and rebuilds two artifacts from that commit: the container image, pushed to `ghcr.io/pvliesdonk/markdown-vault-mcp:edge` — a fixed rolling tag whose contents each merge replaces — and an mcpb bundle built through the same shared `.github/actions/build-mcpb` composite the release path uses, uploaded as the `mcpb-bundle-edge` workflow artifact at the constant version `0.0.0-dev`. The channel is deliberately versionless: no git tag, no GitHub release, no version bump, no manifest change. "Run the latest merged code" costs one build-and-push and leaves nothing behind; the image's `org.opencontainers.image.revision` label carries the exact commit. The docs site's rolling `unstable` version deploys from the same trigger (`docs.yml`), so it tracks merged code the way `edge` does. Cutting a version-numbered pre-release (rc) remains `release.yml`'s job, from a `release/X.Y` branch (see the release machinery section below); rc images ship only under their immutable `vX.Y.Z-rc.N` tags — `edge` is the sole rolling unstable tag.
+The `Unstable channel` workflow (`.github/workflows/unstable.yml`) runs on every push to `main` (plus manual dispatch for seeding) and rebuilds two artifacts from that commit: the container image, pushed to `ghcr.io/pvliesdonk/markdown-vault-mcp:edge` — a fixed rolling tag whose contents each merge replaces — and an mcpb bundle built through the same shared `.github/actions/build-mcpb` composite the release path uses, uploaded as the `mcpb-bundle-edge` workflow artifact at the constant version `0.0.0-dev`. The channel is deliberately versionless: no git tag, no GitHub release, no version bump, no manifest change. "Run the latest merged code" costs one build-and-push and leaves nothing behind; the image's `org.opencontainers.image.revision` label carries the exact commit. The docs site's rolling `unstable` version deploys from the same trigger (`docs.yml`), so it tracks merged code the way `edge` does. Cutting a version-numbered pre-release (rc) remains the release-PR flow's job (see the release machinery section below); rc images ship only under their immutable `vX.Y.Z-rc.N` tags — `edge` is the sole rolling unstable tag.
 
-## Release machinery (branches, rcs, merge-back)
+## Release machinery (prepare, release PRs, promotion)
 
-Prerelease-ness is a property of the **branch**, not of a dispatch flag: `[tool.semantic_release.branches]` maps `main` to stable releases and `release/.*` to rc pre-releases (token `rc`), and every publish gate in `release.yml` derives from PSR's own outputs (`is_prerelease`, tag ordering) — there is no pre-release checkbox to desync. Dispatching Release on `main` cuts a stable; on a short-lived `release/X.Y` stabilisation branch it cuts the next rc, or the final stable `X.Y.Z` when the `finalize` input is checked (implemented as a one-run generated config override, because PSR's CLI can force prerelease on but not off). The `force` input is main-only — a release branch's target is fixed at cut time. Branches matching neither group cannot release; PSR refuses them.
+**A release is a pull request.** Dispatching **Release Prepare** on the ref to release from (`main`, or a `release/X.Y` branch) has knope compute the version from the conventional commits since the last release in that ref's ancestry, stamp the version-coupled files (`pyproject.toml`, `CHANGELOG.md`, `uv.lock` natively; the install-channel manifests via `scripts/stamp_manifests.py`, stable prepares only), and open — or refresh — a release PR against that ref. The dispatch's `channel` input picks rc or stable (`auto` = rc on `release/*`, stable elsewhere), and the optional `override_version` input replaces the whole computation with an explicit version — the escape hatch for ranges knope counts nothing in, never the default. Only the default branch and `release/*` can be dispatched on or merged into; both workflows refuse anything else. Merging the release PR is the release decision: the **Release** workflow tags the merge commit, creates the GitHub release, and runs the publish fan-out, with every gate derived from the reviewed version string (`-rc.` marks a pre-release) and tag ordering — there is no dispatch flag to desync.
+
+**Promotion is the plain run.** After an rc series, dispatching prepare with `channel: stable` on the same ref computes exactly `X.Y.Z` from the same commits — no finalize flag, no config override. The same-source guard (`scripts/promotion_guard.sh`) runs **before** the tag is created and refuses unless the diff since the last reachable rc touches only release stamps plus `docs/releases/**` (notes are release metadata); a refusal leaves no tag behind, and any other commit landing between rc and promotion forces a new rc.
+
+Two operator rules are load-bearing: **never use GitHub's "Update branch" button on a release PR** — it merges the base into the prep branch behind the tool's back; the only refresh is re-dispatching Release Prepare, which recreates the prep branch from its base. And a stale release PR is already hard-blocked by the ruleset's strict required checks — re-dispatch instead of merging around staleness.
 
 Rolling channels are ordering-aware: Docker `latest`/`vX`/`vX.Y`, the GitHub latest-release pointer, the docs `latest` alias, the marketplace entry, and the registry entry only follow a release that is the newest in the relevant series, so a backport patch cut from an old `release/X.Y` never repoints them backwards.
 
-**After any release cut from a `release/*` branch, the branch must merge back into `main`.** The `merge-back` job does this automatically via `scripts/merge_back.sh` (version-coupled files resolve to `main`'s side; real conflicts fail loudly for a manual `git merge --no-ff release/X.Y`). This is a hard requirement, not hygiene: with the release tag unreachable from `main`, PSR recomputes the same version from `main`'s own history, finds the tag taken repo-globally, and reports "already released" forever. When to cut a branch at all — and the default of releasing from a quiescent trunk without one — is the [release model](#release-model) above, not machinery.
+**There is no merge-back.** What `main` still wants from a branch release is bookkeeping: after a *stable* branch release, the `port-bookkeeping` job in `release.yml` opens an ordinary PR carrying the release's changelog section to the default branch (rcs port nothing — knope's stable section is cumulative over the rc cycle) — reviewed CI-gated merge, no admin-bypass push, and nothing deadlocks if it merges late. Version stamps are deliberately not ported, so a later prepare on another branch can recompute an already-released version; Release Prepare catches exactly that — it refuses when the computed version already carries a repo-global tag, naming the remedy (`override_version`, or porting the version stamps first) — so the collision surfaces at prepare time with a clear message, never at tag time. When to cut a branch at all — and the default of releasing from a quiescent trunk without one — is the [release model](#release-model) above, not machinery.
 
 <!-- TEMPLATE-TRACKING-START -->
 ## Release notes pages
@@ -464,7 +471,7 @@ For services that talk to a remote upstream (e.g. paperless, an HTTP API), wire 
 
 ## Repository protection (rulesets)
 
-`.github/rulesets/*.json` are the source of truth for this repository's branch and tag rulesets — required PRs + the `CI Success` check on `main` and `release/*`, deletion/force-push protection for `v*` tags — and `bootstrap.yml` applies them (upsert by name) on pushes touching those files and on manual dispatch. Never adjust protection in the GitHub UI: the next bootstrap run resets it to the checked-in state. Change the JSON files instead. The release pipeline's `RELEASE_TOKEN` (a repository admin's PAT) bypasses these rules **by design** via the admin-role bypass entry — PSR's release commit + tag push and the merge-back to `main` are direct pushes. Posture and bypass model: `docs/deployment/repository-protection.md`.
+`.github/rulesets/*.json` are the source of truth for this repository's branch and tag rulesets — required PRs + the `CI Success` check on `main` and `release/*`, deletion/force-push protection for `v*` tags — and `bootstrap.yml` applies them (upsert by name) on pushes touching those files and on manual dispatch. Never adjust protection in the GitHub UI: the next bootstrap run resets it to the checked-in state. Change the JSON files instead. The release pipeline's `RELEASE_TOKEN` (a repository admin's PAT) bypasses these rules **by design** via the admin-role bypass entry — its remaining jobs are creating the `vX.Y.Z` tag + GitHub release after a release PR merges (the `v*` tag ruleset applies) and opening the release/notes/port PRs whose CI must run; direct release-commit and merge-back pushes to protected branches are gone with PSR. Posture and bypass model: `docs/deployment/repository-protection.md`.
 
 <!-- TEMPLATE-TRACKING-START -->
 ## Shared Infrastructure
@@ -472,9 +479,9 @@ For services that talk to a remote upstream (e.g. paperless, an HTTP API), wire 
 Shared infrastructure (auth providers, middleware stack, logging bootstrap, event store factory, CLI scaffolding, release pipeline, Docker entrypoint, nfpm packaging, mcpb bundle) lives upstream in two places:
 
 - [`fastmcp-pvl-core`](https://github.com/pvliesdonk/fastmcp-pvl-core) — the Python library that provides `ServerConfig`, auth builders, middleware helpers, and the `make_serve_parser` / `configure_logging_from_env` / `normalise_http_path` CLI helpers.
-- [`fastmcp-server-template`](https://github.com/pvliesdonk/fastmcp-server-template) — the copier template this project was generated from. Ships the CI/release workflows, `Dockerfile`, `packaging/nfpm.yaml`, `packaging/mcpb/*`, `scripts/bump_manifests.py`, server.py skeleton, and this very section of CLAUDE.md.
+- [`fastmcp-server-template`](https://github.com/pvliesdonk/fastmcp-server-template) — the copier template this project was generated from. Ships the CI/release workflows, `knope.toml`, `Dockerfile`, `packaging/nfpm.yaml`, `packaging/mcpb/*`, `scripts/stamp_manifests.py`, server.py skeleton, and this very section of CLAUDE.md.
 
-Fixes and improvements to shared code land in those repos and propagate here via `copier update` against the template's latest tag — run manually or via the weekly `.github/workflows/copier-update.yml` cron. Starter files listed in `_skip_if_exists` (e.g. `packaging/mcpb/*`, the `tools.py` / `resources.py` / `prompts.py` / `domain.py` scaffolds, `CHANGELOG.md`, `LICENSE`) are written once and require manual reconciliation on template updates; `CLAUDE.md`, `README.md`, `.pre-commit-config.yaml` and `scripts/bump_manifests.py` are deliberately *not* among them — all four are re-rendered on update, and only content inside their domain sentinels survives (`DOMAIN-START` / `DOMAIN-END` in the two Markdown files, `DOMAIN-HOOKS` in the pre-commit config, `DOMAIN-MANIFESTS-HELPERS` / `DOMAIN-MANIFESTS` in the bumper) — review `_skip_if_exists` in the template's `copier.yml` if you need to force-sync a file. Domain-specific code (tools, resources, prompts, and the fields and logic inside the `CONFIG-FIELDS-START` / `CONFIG-FIELDS-END`, `CONFIG-FROM-ENV-START` / `CONFIG-FROM-ENV-END`, and `CONFIG-VALIDATE-START` / `CONFIG-VALIDATE-END` sentinels) stays in this repo.
+Fixes and improvements to shared code land in those repos and propagate here via `copier update` against the template's latest tag — run manually or via the weekly `.github/workflows/copier-update.yml` cron. Starter files listed in `_skip_if_exists` (e.g. `packaging/mcpb/*`, the `tools.py` / `resources.py` / `prompts.py` / `domain.py` scaffolds, `CHANGELOG.md`, `LICENSE`) are written once and require manual reconciliation on template updates; `CLAUDE.md`, `README.md`, `.pre-commit-config.yaml` and `scripts/stamp_manifests.py` are deliberately *not* among them — all four are re-rendered on update, and only content inside their domain sentinels survives (`DOMAIN-START` / `DOMAIN-END` in the two Markdown files, `DOMAIN-HOOKS` in the pre-commit config, `DOMAIN-MANIFESTS-HELPERS` / `DOMAIN-MANIFESTS` in the stamp script) — review `_skip_if_exists` in the template's `copier.yml` if you need to force-sync a file. Domain-specific code (tools, resources, prompts, and the fields and logic inside the `CONFIG-FIELDS-START` / `CONFIG-FIELDS-END`, `CONFIG-FROM-ENV-START` / `CONFIG-FROM-ENV-END`, and `CONFIG-VALIDATE-START` / `CONFIG-VALIDATE-END` sentinels) stays in this repo.
 
 ## Contributing fixes upstream
 

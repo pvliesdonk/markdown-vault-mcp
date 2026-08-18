@@ -29,8 +29,8 @@ jobs:
           # On release events, build the released tag: the release may have
           # been cut from a release/X.Y branch, where `main` describes code
           # that is not in the release.  The tag is safe to build since the
-          # version-bump commit lands inside the release commit the tag points
-          # at (see scripts/bump_manifests.py) — tags no longer move.
+          # version stamps land inside the merged release PR the tag points
+          # at (knope + scripts/stamp_manifests.py) — tags never move.
           ref: ${{ github.event_name == 'release' && github.event.release.tag_name || github.ref }}
 
       - name: Install uv

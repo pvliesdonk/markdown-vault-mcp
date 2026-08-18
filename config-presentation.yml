@@ -516,7 +516,7 @@ files:
   # pair to live. This kind splices structurally instead: each declared
   # `path` is replaced wholesale and every other key survives untouched —
   # which is what keeps `version` and the OCI `identifier` suffix, both
-  # rewritten by scripts/bump_manifests.py on every release, out of this
+  # rewritten by scripts/stamp_manifests.py on stable releases, out of this
   # generator's reach. Membership per array comes from `packaging:` above.
   server.json:
     kind: json-splice

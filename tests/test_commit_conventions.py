@@ -1,39 +1,44 @@
-"""Guards for the commit-type contract between PSR, CI, and the docs.
+"""Guards for the commit-type contract between the gate, knope, and the docs.
 
-Three places name the accepted commit types: `pyproject.toml`'s
-`[tool.semantic_release.commit_parser_options] allowed_tags` (what
-python-semantic-release will parse), `scripts/check_pr_title.py` (what CI
-rejects before a squash merge turns a title into a subject), and `CLAUDE.md`
-(what a contributor reads). Let any one drift and the failure is silent: PSR
-does not warn about a subject it cannot parse, it simply omits the commit from
-`CHANGELOG.md` — no fallback heading, no entry.
+Three parties define what a commit subject means here: `scripts/check_pr_title.py`
+(what CI rejects before a squash merge turns a title into a subject), knope
+(the release tool, which counts only `feat`, `fix`, and the `!`/breaking
+marker — every other type is invisible to both the version computation and
+`CHANGELOG.md`, silently), and `CLAUDE.md` (what a contributor reads). Let
+any one drift and the failure is silent: knope does not warn about a subject
+it does not count, it simply ignores it — the same silent-drop class the
+gate was built around under python-semantic-release, so the gate's rationale
+carries over unchanged (migration M4).
 
 That is not hypothetical. Seven commits reached one downstream project's
 `main` with `diag(review):` / `experiment(review):` / prose subjects and are
-absent from its generated changelog (see the template's #368). These tests are
-what keeps the three halves honest.
+absent from its generated changelog (see the template's #368). These tests
+are what keeps the three parties honest.
 """
 
 from __future__ import annotations
 
 import subprocess
 import sys
-import tomllib
 from pathlib import Path
 
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CHECKER = REPO_ROOT / "scripts" / "check_pr_title.py"
-PYPROJECT = REPO_ROOT / "pyproject.toml"
 CI_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "ci.yml"
 CLAUDE_MD = REPO_ROOT / "CLAUDE.md"
 
+# The subset knope actually counts, plus the `!` marker (or a
+# `BREAKING CHANGE:` footer) for a major. Fixed by the tool, not configured:
+# knope has no allowed-tags list to read, so this constant is the assertion
+# surface the old PSR-config leg used to provide.
+KNOPE_COUNTED_TYPES = ("feat", "fix")
 
-def _parser_options() -> dict[str, list[str]]:
-    data = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))
-    options = data["tool"]["semantic_release"]["commit_parser_options"]
-    return {key: [str(item) for item in value] for key, value in options.items()}
+# The exact prose CLAUDE.md's Conventions section must carry, so the
+# documented reality cannot drift from the tool's (the third leg of the
+# three-way lockstep).
+CLAUDE_MD_COUNTED_PHRASE = "Only `feat`, `fix`, and the `!` marker drive releases"
 
 
 def _run_checker(*args: str) -> subprocess.CompletedProcess[str]:
@@ -51,16 +56,9 @@ def _checker_types() -> list[str]:
     return result.stdout.split()
 
 
-def test_checker_and_psr_accept_the_same_types() -> None:
-    """The gate must not reject what PSR accepts, or accept what it drops."""
-    assert set(_checker_types()) == set(_parser_options()["allowed_tags"])
-
-
-def test_release_bump_types_are_parseable() -> None:
-    """A type that bumps a version but does not parse would never bump one."""
-    options = _parser_options()
-    bumping = set(options["minor_tags"]) | set(options["patch_tags"])
-    assert bumping <= set(options["allowed_tags"])
+def test_knope_counted_types_are_accepted_by_the_gate() -> None:
+    """The gate must accept every type the release tool counts."""
+    assert set(KNOPE_COUNTED_TYPES) <= set(_checker_types())
 
 
 def test_claude_md_documents_every_accepted_type() -> None:
@@ -68,6 +66,21 @@ def test_claude_md_documents_every_accepted_type() -> None:
     prose = CLAUDE_MD.read_text(encoding="utf-8")
     missing = [f"`{tag}`" for tag in _checker_types() if f"`{tag}`" not in prose]
     assert not missing, f"CLAUDE.md does not document: {missing}"
+
+
+def test_claude_md_calls_out_the_knope_counted_subset() -> None:
+    """CLAUDE.md states which types actually drive releases, verbatim.
+
+    knope counts only ``feat``/``fix``/``!`` — the other accepted types keep
+    history parseable but cut nothing and never reach ``CHANGELOG.md``. The
+    docs must say so in the exact phrase pinned here, or the documented
+    conventions drift from the tool's silently.
+    """
+    prose = CLAUDE_MD.read_text(encoding="utf-8")
+    assert CLAUDE_MD_COUNTED_PHRASE in prose, (
+        f"CLAUDE.md's Conventions section must carry the phrase "
+        f"{CLAUDE_MD_COUNTED_PHRASE!r} (kept in lockstep with this test)"
+    )
 
 
 def test_ci_runs_the_checker_and_gates_on_it() -> None:
@@ -86,6 +99,7 @@ def test_ci_runs_the_checker_and_gates_on_it() -> None:
         "fix(search): stop the writer thread on shutdown",
         "feat(config)!: drop the deprecated env alias",
         "chore(deps): update dependency ruff to v0.9.0",
+        "chore: prepare release 1.2.3",
         "revert: feat(search): add hybrid ranking",
         'Revert "feat: add a thing"',
         'Revert "Revert "feat: add a thing""',
@@ -127,11 +141,10 @@ def test_rejection_names_the_accepted_types() -> None:
 def test_git_revert_titles_pass_but_warn_about_the_changelog() -> None:
     """The git/GitHub revert form is accepted; its cost is stated, not hidden.
 
-    Neither of python-semantic-release 10.5.3's parsers reads that shape --
-    both return ParseError -- so the commit never reaches CHANGELOG.md. The
-    check accepts the title (it is what git itself generates) and annotates
-    the run rather than leaving the author to discover the gap at release
-    time.
+    Neither revert form reaches ``CHANGELOG.md`` under knope — it counts only
+    ``feat``/``fix``/``!`` — so the check accepts the title (it is what git
+    itself generates) and annotates the run pointing at the notes page, which
+    is where reverts get narrated.
     """
     result = _run_checker('Revert "feat: add a thing"')
     assert result.returncode == 0, result.stderr
@@ -140,7 +153,13 @@ def test_git_revert_titles_pass_but_warn_about_the_changelog() -> None:
 
 
 def test_conventional_revert_titles_pass_without_a_warning() -> None:
-    """`revert:` is in allowed_tags, so that form does reach the changelog."""
+    """`revert:` is an accepted type, so it passes the gate cleanly.
+
+    It is changelog-invisible like every non-counted type (chore, docs, ...),
+    which earns no per-title warning — the convention is documented in
+    CLAUDE.md instead; the ``Revert "..."`` warning exists because that shape
+    is not a conventional-commit subject at all.
+    """
     result = _run_checker("revert: feat: add a thing")
     assert result.returncode == 0, result.stderr
     assert "::warning" not in result.stdout

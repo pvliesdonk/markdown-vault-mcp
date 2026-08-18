@@ -112,6 +112,16 @@ jobs:
             experimental: true
     steps:
       - uses: actions/checkout@v7
+        with:
+          # Tags inform the release-contract tests (template#387): without
+          # them a checkout of a repo that HAS releases looks like a fresh
+          # project, and the tag-coupled asserts mis-skip instead of running.
+          # Full depth because the pins invariant is REACHABILITY-scoped
+          # (`git tag --merged HEAD`, series-aware on release/* branches) —
+          # on a shallow clone no tag is reachable and the test would
+          # silently skip.
+          fetch-depth: 0
+          fetch-tags: true
 
       - name: Install uv
         uses: astral-sh/setup-uv@v8.2.0
@@ -436,14 +446,15 @@ jobs:
   pr-title:
     name: PR Title
     # A squash merge takes the pull-request title as the commit subject, and
-    # python-semantic-release drops a subject it cannot parse from
-    # CHANGELOG.md silently — not under a fallback heading, absent. This is
-    # the last point at which that subject can still be corrected.
+    # knope silently ignores a subject it does not count (only feat / fix /
+    # `!` reach the version computation and CHANGELOG.md — no fallback
+    # heading, no warning). This is the last point at which that subject can
+    # still be corrected.
     #
-    # PR-only by design: the writers to `main` outside a merge are PSR's own
-    # release commit and the automated merge-back, both machine-generated and
-    # already conformant. On push/dispatch the job is skipped, which the
-    # `ci-success` aggregate below treats as a pass.
+    # PR-only by design: under the release-PR flow every commit reaches
+    # `main` through a pull request whose title this gate already checked.
+    # On push/dispatch the job is skipped, which the `ci-success` aggregate
+    # below treats as a pass.
     runs-on: ubuntu-latest
     timeout-minutes: 5
     if: github.event_name == 'pull_request'

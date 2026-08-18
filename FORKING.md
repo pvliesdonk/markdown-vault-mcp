@@ -46,8 +46,8 @@ What this removes and why:
   that workflow is gone.
 
 **Keep** your own CI and release workflows: `ci.yml`, `codeql.yml`,
-`coverage-status.yml`, `docs.yml`, `release.yml`, and
-`release-notes-publish.yml`. (`release.yml` still needs the `RELEASE_TOKEN`
+`coverage-status.yml`, `docs.yml`, `release-prepare.yml`, `release.yml`, and
+`release-notes-publish.yml`. (The release pair still needs the `RELEASE_TOKEN`
 secret; only its `copier-update` justification is gone.
 `release-notes-publish.yml` is deterministic — no Claude dependency — and
 still publishes any `docs/releases/` page you write by hand: it upgrades the
@@ -77,7 +77,7 @@ strips the copier-update wording that no longer describes a detached fork: the
 template/domain split is moot), the "Kept across copier update" notes on the
 DOMAIN blocks, the remaining "preserved/survive across copier update" notes
 (the pre-commit defaults, the `Dockerfile` sentinels, the
-`scripts/bump_manifests.py` release-manifest sentinels, and the upstream
+`scripts/stamp_manifests.py` release-manifest sentinels, and the upstream
 sentinel),
 and the copier-specific trigger on the config-wizard spec generation note (the
 generator still runs in a fork, just not on a copier lifecycle event).

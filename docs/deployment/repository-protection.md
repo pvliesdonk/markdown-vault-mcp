@@ -45,16 +45,23 @@ account), with `bypass_mode: always`.
 
 The release flow depends on this. `RELEASE_TOKEN` is a personal access
 token, and a personal access token (classic or fine-grained) acts as its
-owner and holds the repository role of that owner. With the token owned by
-a repository admin, all of the release pipeline's direct pushes bypass the
-rules:
+owner and holds the repository role of that owner. The release-PR flow
+shrank what the token does: version bumps reach `main` through reviewed
+pull requests now, so no release commit or merge-back is ever pushed
+directly to a protected branch. Its remaining operations still rely on
+the admin bypass:
 
-- the release commit and `vX.Y.Z` tag that python-semantic-release pushes
-  to the released branch (`main` or `release/X.Y`),
-- the merge-back merge commit pushed to `main` after a release cut from a
-  `release/*` branch,
+- the `vX.Y.Z` tag and GitHub release that knope creates after a release
+  pull request merges (tag creation is open, but the token must satisfy
+  the `v*` tag ruleset's other rules),
 - the owner's own hotfix pushes, preserving the escape hatch the previous
   classic protection provided via its disabled admin enforcement.
+
+The token's other release-flow duties (pushing the `knope/prepare/*`
+preparation branches, and opening the release, notes, and port
+pull requests) need no bypass at all. They use a personal token rather
+than `GITHUB_TOKEN` only so the resulting pull requests trigger CI, which
+a `GITHUB_TOKEN`-created pull request never does.
 
 Two clean-up operations the release model implies depend on this bypass
 too. `protect-release-branches` blocks deleting a `release/X.Y` branch, and
