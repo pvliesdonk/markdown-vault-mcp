@@ -204,6 +204,11 @@ ignore = ["E501"]
 # the checks. Only bites when the structural diff-gate adds `S` on the diff
 # pass (S isn't in the base select).
 "src/markdown_vault_mcp/git/*.py" = ["S603", "S607"]
+# stamp_manifests' _git_stage runs a fixed-argv `git add` with PATH-resolved
+# `git` by design (template-owned code; same rationale as the git/ package
+# above). Gate-only, so a `# noqa` would be stripped as unused (RUF100) on
+# the whole-repo pass where S isn't selected — per-file ignore it is.
+"scripts/stamp_manifests.py" = ["S603", "S607"]
 # query.py's module-private diff helpers mirror get_file_diff's wide surface
 # (two refs + two path forms + env + a binary flag); a param object for
 # single-caller private functions is pure ceremony. PLR0913 is gate-only
