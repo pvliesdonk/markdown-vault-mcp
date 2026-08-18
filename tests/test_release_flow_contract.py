@@ -536,6 +536,26 @@ def test_notes_workflow_is_callable_and_not_release_triggered() -> None:
         "and copy only files the draft changed — never revert concurrent "
         "notes changes with an hour-old checkout"
     )
+    assert "git merge-file" in text, (
+        "a file both the draft and the base changed must be three-way "
+        "merged, failing loudly on overlap — a silent clobber reverts "
+        "the concurrent change"
+    )
+    assert "\n  land:\n    needs: draft" in text, (
+        "the landing must run in a SEPARATE job on a fresh runner — the "
+        "drafting runner may be poisoned beyond the tree (GITHUB_PATH, "
+        "GITHUB_ENV, overwritten executables) and the PAT must never "
+        "exist on it"
+    )
+    draft_half = text[: text.index("\n  land:")]
+    assert "RELEASE_TOKEN" not in draft_half, (
+        "no step of the draft job may carry the release PAT — it exists "
+        "only in the landing job"
+    )
+    assert "notes-surface" in text and "notes-pre" in text, (
+        "the surface and the pre-draft snapshot must cross jobs as "
+        "artifacts — data, not environment"
+    )
     assert "persist-credentials: false" in text, (
         "the checkout must not persist the release PAT — the agent's "
         "unrestricted Read would let a prompt-injected research source "

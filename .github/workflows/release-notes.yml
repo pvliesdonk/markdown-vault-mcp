@@ -73,10 +73,19 @@ jobs:
       cancel-in-progress: false
     timeout-minutes: 60
     permissions:
-      contents: read       # the agent only reads; the PR push uses RELEASE_TOKEN
+      contents: read       # the agent only reads; the landing job pushes
       issues: read
       pull-requests: read
       id-token: write
+    # Everything the landing job needs, resolved BEFORE the agent ran:
+    # job outputs are captured from each step's completion, so nothing
+    # the agent later does on this runner can alter them.
+    outputs:
+      tag: ${{ steps.ctx.outputs.tag }}
+      page: ${{ steps.ctx.outputs.page }}
+      range_end: ${{ steps.ctx.outputs.range_end }}
+      prep_branch: ${{ inputs.prep_branch || steps.discover.outputs.prep_branch }}
+      expected_head: ${{ inputs.expected_head || steps.discover.outputs.expected_head }}
     steps:
       # Manual target_version re-drafts land on the open release PR's prep
       # branch, exactly like the prepare-time run — a re-draft that opened
@@ -135,25 +144,23 @@ jobs:
           # previous-stable computation.
           ref: ${{ inputs.prep_branch || steps.discover.outputs.prep_branch || github.event.repository.default_branch }}
           fetch-depth: 0
-          # PAT, so the push below triggers CI on the release PR (call
-          # mode) or on the standalone notes PR (dispatch mode) —
-          # GITHUB_TOKEN pushes trigger no workflows.
-          token: ${{ secrets.RELEASE_TOKEN }}
-          # The PAT authenticates the checkout ONLY — it must not survive
-          # into the working tree.  The drafting agent has unrestricted
-          # Read, and a prompt-injected research source must never be able
-          # to lift a persisted credential out of .git/config into content
-          # the landing step publishes.  Steps that need network git name
-          # gh's credential helper per invocation (with inherited helpers
-          # reset), so no credential state ever lives on disk and the
-          # helper resolves only where GH_TOKEN is in that step's env —
-          # which the agent step's is not.
+          # The release PAT never touches this job's runner — the default
+          # GITHUB_TOKEN authenticates the checkout, and even it is not
+          # persisted: the drafting agent has unrestricted Read, and a
+          # prompt-injected research source must never be able to lift a
+          # credential out of .git/config into content the landing job
+          # publishes.  The context step's fetch fallback names gh's
+          # credential helper per invocation with GH_TOKEN in that step's
+          # env; the PAT-credentialed pushes live in the separate landing
+          # job.
           persist-credentials: false
 
       - name: Resolve release context
         id: ctx
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          # Read-only fetch fallback — GITHUB_TOKEN, never the PAT: the
+          # release PAT must not exist anywhere in this job.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           INPUT_TAG: ${{ inputs.tag }}
           TARGET_VERSION: ${{ inputs.target_version }}
           SOURCE_REF: ${{ inputs.source_ref }}
@@ -265,6 +272,16 @@ jobs:
           cp -R docs/releases "$PRE/releases"
           cp "$ACCEPT" "$PRE/accept.txt"
 
+      # Uploaded BEFORE the agent runs — the landing job's trusted
+      # baseline for "what did this draft actually change".
+      - name: Upload the pre-draft snapshot
+        uses: actions/upload-artifact@v7
+        with:
+          name: notes-pre
+          path: ${{ runner.temp }}/pre-notes
+          if-no-files-found: error
+          retention-days: 1
+
       - name: Install uv
         uses: astral-sh/setup-uv@v8.2.0
         with:
@@ -359,34 +376,16 @@ jobs:
           claude_args: |
             --allowedTools "Skill,Task,Read,Glob,Grep,Edit(docs/releases/**),Edit(.vale/styles/config/vocabularies/**),Edit(.release-notes-pr-body.md),mcp__github__get_*,mcp__github__list_*,mcp__github__search_*,Bash(gh api *),Bash(vale *),Bash(uv run mkdocs build --strict)"
 
-      - name: Land the drafted page
-        env:
-          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
-          # No global or system git config in the credentialed step: a
-          # gadget that reached $HOME (or injected env via GITHUB_ENV —
-          # explicit step env overrides it) must not hand git a
-          # core.fsmonitor or credential helper to execute here.
-          GIT_CONFIG_GLOBAL: /dev/null
-          GIT_CONFIG_SYSTEM: /dev/null
-          TAG: ${{ steps.ctx.outputs.tag }}
-          DEFAULT: ${{ github.event.repository.default_branch }}
-          REPO: ${{ github.repository }}
-          PREP_BRANCH: ${{ inputs.prep_branch || steps.discover.outputs.prep_branch }}
-          EXPECTED_HEAD: ${{ inputs.expected_head || steps.discover.outputs.expected_head }}
-          PAGE: ${{ steps.ctx.outputs.page }}
-          RANGE_END: ${{ steps.ctx.outputs.range_end }}
+      # The agent is done; everything after this line treats this runner
+      # as compromised.  The surface ships to a FRESH runner as an
+      # artifact — data, not environment — because an agent able to run
+      # any output-producing command could have poisoned this runner
+      # beyond the tree: $GITHUB_PATH prepends, $GITHUB_ENV injections,
+      # overwritten executables under $RUNNER_TEMP.  No credentialed
+      # step runs here.
+      - name: Collect the drafted surface
         run: |
           set -euo pipefail
-          # The drafting agent ran in THIS checkout on research-controlled
-          # input, so nothing here is trustworthy as git state: planted
-          # config (core.fsmonitor, credential helpers, hooks) would
-          # execute on the first git command a credentialed step runs.
-          # The landing therefore treats the agent's tree as DATA only —
-          # the notes surface is copied out, and every git operation runs
-          # in a fresh clone the agent never touched, with inherited
-          # credential helpers reset and gh's named per invocation.
-          # Only the notes surface is ever committed: the release pages and
-          # any vocabulary the Vale loop legitimately added.
           ACCEPT=".vale/styles/config/vocabularies/Base/accept.txt"
           BODY=.release-notes-pr-body.md
           SURFACE="$RUNNER_TEMP/notes-surface"
@@ -395,6 +394,71 @@ jobs:
           [ ! -d docs/releases ] || cp -R docs/releases "$SURFACE/releases"
           [ ! -f "$ACCEPT" ] || cp "$ACCEPT" "$SURFACE/accept.txt"
           [ ! -f "$BODY" ] || cp "$BODY" "$SURFACE/body.md"
+
+      - name: Upload the drafted surface
+        uses: actions/upload-artifact@v7
+        with:
+          name: notes-surface
+          path: ${{ runner.temp }}/notes-surface
+          if-no-files-found: error
+          retention-days: 1
+
+  # The landing runs on a FRESH runner: the drafting agent executes
+  # research-controlled input, and an allowlisted command with shell
+  # output redirection could poison the drafting runner for its later
+  # steps — $GITHUB_PATH prepends, $GITHUB_ENV injections (LD_PRELOAD,
+  # GIT_*), executables overwritten under $RUNNER_TEMP and re-run by a
+  # later allowlisted call.  A separate job discards all of it; only
+  # the two artifacts (treated as data) and the draft job's outputs
+  # (finalized before the agent ran) cross over.  The PAT exists only
+  # in this job.
+  land:
+    needs: draft
+    runs-on: ubuntu-latest
+    concurrency:
+      group: release-notes-draft
+      cancel-in-progress: false
+    timeout-minutes: 15
+    permissions:
+      contents: read       # pushes use RELEASE_TOKEN, not GITHUB_TOKEN
+    steps:
+      - name: Download the drafted surface
+        uses: actions/download-artifact@v8
+        with:
+          name: notes-surface
+          path: ${{ runner.temp }}/notes-surface
+
+      - name: Download the pre-draft snapshot
+        uses: actions/download-artifact@v8
+        with:
+          name: notes-pre
+          path: ${{ runner.temp }}/pre-notes
+
+      - name: Land the drafted page
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          # No global or system git config in the credentialed step —
+          # nothing may hand git a core.fsmonitor or credential helper
+          # to execute here.
+          GIT_CONFIG_GLOBAL: /dev/null
+          GIT_CONFIG_SYSTEM: /dev/null
+          TAG: ${{ needs.draft.outputs.tag }}
+          DEFAULT: ${{ github.event.repository.default_branch }}
+          REPO: ${{ github.repository }}
+          PREP_BRANCH: ${{ needs.draft.outputs.prep_branch }}
+          EXPECTED_HEAD: ${{ needs.draft.outputs.expected_head }}
+          PAGE: ${{ needs.draft.outputs.page }}
+          RANGE_END: ${{ needs.draft.outputs.range_end }}
+        run: |
+          set -euo pipefail
+          # The artifacts are DATA from an untrusted producer; all git
+          # runs in this job's own fresh clone, with inherited credential
+          # helpers reset and gh's named per invocation.  Only the notes
+          # surface is ever committed: the release pages and any
+          # vocabulary the Vale loop legitimately added.
+          ACCEPT=".vale/styles/config/vocabularies/Base/accept.txt"
+          SURFACE="$RUNNER_TEMP/notes-surface"
+          PRE="$RUNNER_TEMP/pre-notes"
           LAND="$RUNNER_TEMP/land"
           rm -rf "$LAND"
           git -c credential.helper= -c 'credential.helper=!gh auth git-credential' \
@@ -404,25 +468,38 @@ jobs:
           git config user.name "github-actions"
           git config user.email "actions@users.noreply.github.com"
           # Overlay ONLY files this draft changed, judged against the
-          # pre-draft snapshot — the checkout is an hour old, and pages
-          # it never touched must keep the fresh clone's state so notes
-          # changes that merged concurrently are not reverted.
-          PRE="$RUNNER_TEMP/pre-notes"
-          if [ -d "$SURFACE/releases" ]; then
-            (cd "$SURFACE/releases" && find . -type f -print0) \
-              | while IFS= read -r -d '' f; do
-              rel="${f#./}"
-              if [ ! -f "$PRE/releases/$rel" ] \
-                || ! cmp -s "$SURFACE/releases/$rel" "$PRE/releases/$rel"; then
-                mkdir -p "docs/releases/$(dirname "$rel")"
-                cp "$SURFACE/releases/$rel" "docs/releases/$rel"
+          # pre-draft snapshot — the draft is an hour old, and files it
+          # never touched keep the fresh clone's state.  A file BOTH the
+          # draft and the base changed (index entries, vocabulary) is
+          # three-way merged, failing loudly on overlap — a silent
+          # clobber would revert the concurrent change.
+          overlay() {
+            src="$1"; base="$2"; dst="$3"
+            [ -f "$base" ] || base=/dev/null
+            if cmp -s "$src" "$base"; then
+              return 0    # the draft left this file as it found it
+            fi
+            if [ -f "$dst" ] && ! cmp -s "$dst" "$base"; then
+              merged="$(mktemp)"
+              cp "$src" "$merged"
+              if ! git merge-file "$merged" "$base" "$dst"; then
+                echo "::error::concurrent change to ${dst} conflicts with the draft — re-run the drafting job against the current base"
+                exit 1
               fi
-            done
+              mv "$merged" "$dst"
+              return 0
+            fi
+            mkdir -p "$(dirname "$dst")"
+            cp "$src" "$dst"
+          }
+          if [ -d "$SURFACE/releases" ]; then
+            while IFS= read -r -d '' f; do
+              rel="${f#"$SURFACE"/releases/}"
+              overlay "$f" "$PRE/releases/$rel" "$LAND/docs/releases/$rel"
+            done < <(find "$SURFACE/releases" -type f -print0)
           fi
-          if [ -f "$SURFACE/accept.txt" ] \
-            && ! cmp -s "$SURFACE/accept.txt" "$PRE/accept.txt"; then
-            mkdir -p "$(dirname "$ACCEPT")"
-            cp "$SURFACE/accept.txt" "$ACCEPT"
+          if [ -f "$SURFACE/accept.txt" ]; then
+            overlay "$SURFACE/accept.txt" "$PRE/accept.txt" "$LAND/$ACCEPT"
           fi
           if [ -n "$PREP_BRANCH" ]; then
             # Call mode: the page is release content — commit it onto the
