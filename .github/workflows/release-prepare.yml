@@ -43,12 +43,19 @@ jobs:
       issues: read
       # For the version-reservation check's open-release-PR listing.
       pull-requests: read
-    # Per-base buckets, mirroring release.yml's release-${ref} buckets: a
-    # backport prepare off release/X.Y must not serialise behind (or cancel)
-    # a trunk prepare.  cancel-in-progress stays false — a prepare is short
-    # and cancelling one mid-push could leave a half-refreshed release PR.
+    # ONE global bucket, deliberately not per base: the version-reservation
+    # step below reads the open release PRs BEFORE CreatePullRequest writes
+    # this run's own, so two concurrent prepares on DIFFERENT bases
+    # computing the same version could otherwise both pass the check and
+    # open two mergeable release PRs racing for one tag.  Serializing the
+    # whole job makes check-through-create atomic — the second prepare
+    # always sees the first's open PR.  A prepare is short, so cross-base
+    # queueing costs seconds; cancel-in-progress stays false — cancelling
+    # one mid-push could leave a half-refreshed release PR.  (GitHub keeps
+    # one PENDING run per group: a third simultaneous dispatch cancels the
+    # second's queued run, visibly — just re-dispatch it.)
     concurrency:
-      group: release-prepare-${{ github.ref_name }}
+      group: release-prepare
       cancel-in-progress: false
     timeout-minutes: 15
     steps:
@@ -83,11 +90,12 @@ jobs:
           fi
           echo "interlock: no [tool.semantic_release] block — knope flow is armed"
 
-      # Only the default branch and release/* branches release (the PSR-era
-      # branch groups' refusal, carried over as an explicit gate): a feature
-      # branch's ancestry would compute a bogus version, and its release PR
-      # would target a branch no publish should ever run from.  release.yml
-      # enforces the same rule on the merged PR's base as defense in depth.
+      # Only the default branch and release/X.Y stabilisation branches
+      # release (the PSR-era branch groups' refusal, carried over as an
+      # explicit gate): a feature branch's ancestry would compute a bogus
+      # version, and its release PR would target a branch no publish should
+      # ever run from.  release.yml enforces the same rule on the merged
+      # PR's base as defense in depth.
       - name: Refuse a non-releasable ref
         env:
           REF: ${{ github.ref_name }}

@@ -35,8 +35,11 @@ jobs:
     # PRs on main and release/X.Y stay distinguishable here).  Defense in
     # depth on top of release-prepare.yml's own refusals: the head must
     # live in THIS repository (a fork branch named knope/prepare/* must not
-    # trigger a release), and the base must itself be a releasable ref (the
-    # default branch or release/*), mirroring the prepare-time gate.
+    # trigger a release), and the base must look releasable — the default
+    # branch or a release/ prefix.  The prefix half is deliberately coarse
+    # (workflow expressions cannot regex-match): the exact release/X.Y form
+    # is enforced by the head-to-base step below, so a deeper ref starts
+    # the job only to be refused there before anything is tagged.
     if: >-
       github.event.pull_request.merged == true &&
       startsWith(github.event.pull_request.head.ref, 'knope/prepare/') &&
@@ -44,12 +47,16 @@ jobs:
       (github.event.pull_request.base.ref == github.event.repository.default_branch ||
        startsWith(github.event.pull_request.base.ref, 'release/'))
     runs-on: ubuntu-latest
-    # Per-base buckets, mirroring release-prepare.yml's: a patch release off
-    # release/X.Y must not serialise behind (or cancel) a release off main.
-    # Cross-branch resources stay safe without a global bucket: the
-    # GitHub-release/PyPI/registry writes are per-version, the marketplace
-    # push rebase-retries, docs deploys serialise in docs.yml, and the
-    # rolling Docker tags are ordering-gated below.
+    # Per-base buckets: a patch release off release/X.Y must not serialise
+    # behind (or cancel) a release off main.  (release-prepare.yml's bucket
+    # is deliberately GLOBAL instead — its version reservation must be
+    # atomic across bases.)  Cross-branch resources stay safe without a
+    # global bucket here: the GitHub-release/PyPI writes are per-version,
+    # docs deploys serialise in docs.yml, the GitHub latest-release pointer
+    # self-orders (see the demote step below), and every mutable rolling
+    # channel — Docker latest/vX/vX.Y, the marketplace entry, the registry
+    # entry — rechecks tag ordering at publish time under its own global
+    # concurrency group (see those jobs).
     concurrency:
       group: release-${{ github.event.pull_request.base.ref }}
       cancel-in-progress: false
@@ -165,11 +172,16 @@ jobs:
             echo "is_prerelease=${is_prerelease}"
           } >> "$GITHUB_OUTPUT"
 
-      # A release from an old series must not repoint rolling channels at
-      # older content: Docker `latest`/`vX`/`vX.Y`, the GitHub "latest
-      # release" pointer, the marketplace entry, and the MCP registry all
-      # follow ONLY when this release is the highest in the relevant series.
-      # Tags are complete here: full-depth checkout plus the re-fetch above.
+      # First-pass ordering gates: a release from an old series must not
+      # repoint rolling channels at older content — Docker `latest`/`vX`/
+      # `vX.Y`, the GitHub "latest release" pointer, the marketplace entry,
+      # and the MCP registry all follow ONLY when this release is the
+      # highest in the relevant series.  These outputs see the tags visible
+      # NOW (full-depth checkout plus the re-fetch above), so a stable
+      # racing in from another base may be missing — staleness only ever
+      # OVER-claims (fewer tags make this release look newer, never older),
+      # which is safe for the job-level gates below because each mutable
+      # channel rechecks with a complete view at publish time.
       - name: Determine channel ordering
         id: ordering
         env:
@@ -273,9 +285,15 @@ jobs:
           } > release-body.md
           gh release edit "$TAG" --notes-file release-body.md
 
-      # GitHub auto-marks the newest non-prerelease as the repo's "latest
-      # release", which would repoint /releases/latest (and the versionless
-      # .deb/.rpm URLs) at a backport patch cut after a newer stable. Demote it.
+      # GitHub auto-marks the newest CREATED non-prerelease as the repo's
+      # "latest release", which would repoint /releases/latest (and the
+      # versionless .deb/.rpm URLs) at a backport patch cut after a newer
+      # stable.  Demote it.  This pointer needs no publish-time recheck:
+      # whichever release is created LAST either sees every earlier tag in
+      # the ordering step above (its re-fetch ran after this job's own
+      # release creation) and demotes itself here, or is genuinely the
+      # newest — and a stale pointer set by an earlier creation is
+      # auto-superseded by the next one.
       - name: Keep the GitHub latest-release pointer ordered
         if: steps.release.outputs.is_prerelease == 'false' && steps.ordering.outputs.is_latest == 'false'
         env:
@@ -357,6 +375,15 @@ jobs:
     needs: release
     if: needs.release.outputs.released == 'true'
     runs-on: ubuntu-latest
+    # One global bucket per mutable rolling channel: competing stable
+    # releases from different bases write the same rolling tags, and the
+    # publish-time recheck below is only convergent when the writers are
+    # serialized (see that step).  cancel-in-progress stays false; if a
+    # third simultaneous release ever queues here, GitHub cancels the
+    # second's pending job visibly — re-run it.
+    concurrency:
+      group: release-rolling-docker
+      cancel-in-progress: false
 
     permissions:
       contents: read
@@ -397,23 +424,80 @@ jobs:
           echo "major=$(echo "$VERSION" | cut -d. -f1)" >> $GITHUB_OUTPUT
           echo "minor=$(echo "$VERSION" | cut -d. -f1-2)" >> $GITHUB_OUTPUT
 
+      # Publish-time ordering recheck — the authoritative gate for the
+      # rolling tags.  The release job's ordering outputs were computed
+      # against the tags visible when THAT job ran, and a concurrent stable
+      # on another base may have tagged since (release buckets are per
+      # base).  Staleness only ever over-claims, so those outputs stay as
+      # cheap early gates and this recheck demotes with a complete view.
+      # The job's concurrency group makes this convergent: every release's
+      # tag exists before its publish jobs start, so the LAST writer here
+      # always sees every earlier one — the rolling tags end at the true
+      # newest whatever order racing publishes finish in.  If the remote
+      # tag listing fails, fall back to the release-time answer rather than
+      # blocking the immutable version tag this job also pushes.
+      - name: Recheck rolling-tag ordering at publish time
+        id: recheck
+        env:
+          TAG: ${{ needs.release.outputs.tag }}
+          IS_PRERELEASE: ${{ needs.release.outputs.is_prerelease }}
+          FALLBACK_LATEST: ${{ needs.release.outputs.is_latest }}
+          FALLBACK_MINOR: ${{ needs.release.outputs.is_latest_minor }}
+          FALLBACK_MAJOR: ${{ needs.release.outputs.is_latest_major }}
+        run: |
+          is_latest=false
+          is_latest_major=false
+          is_latest_minor=false
+          if [ "$IS_PRERELEASE" != "true" ]; then
+            ver="${TAG#v}"
+            major="${ver%%.*}"
+            minor="${ver%.*}"
+            stable=$(git ls-remote --tags --refs origin 2>/dev/null \
+              | awk -F'refs/tags/' '{print $2}' \
+              | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' || true)
+            if [ -z "$stable" ]; then
+              # A stable release always sees at least its own tag, so an
+              # empty list means the query failed, not that no tags exist.
+              echo "::warning::could not list remote tags — falling back to the release-time ordering"
+              is_latest="$FALLBACK_LATEST"
+              is_latest_minor="$FALLBACK_MINOR"
+              is_latest_major="$FALLBACK_MAJOR"
+            else
+              if [ "$(printf '%s\n' "$stable" | sort -V | tail -1)" = "$TAG" ]; then
+                is_latest=true
+              fi
+              if [ "$(printf '%s\n' "$stable" | grep -E "^v${major}\." | sort -V | tail -1)" = "$TAG" ]; then
+                is_latest_major=true
+              fi
+              if [ "$(printf '%s\n' "$stable" | grep -E "^v${minor//./\\.}\." | sort -V | tail -1)" = "$TAG" ]; then
+                is_latest_minor=true
+              fi
+            fi
+          fi
+          {
+            echo "is_latest=$is_latest"
+            echo "is_latest_minor=$is_latest_minor"
+            echo "is_latest_major=$is_latest_major"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Extract metadata (tags, labels)
         id: meta
         uses: docker/metadata-action@v6
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          # Rolling tags are ordering-gated (see the release job): a backport
-          # patch cut after a newer stable updates only the series tags it is
-          # actually the newest member of, and never `latest`.  An rc pushes
-          # its immutable version tag alone — the rolling `unstable` tag is
-          # retired now that rcs are rare, branch-scoped stabilisation builds
-          # ("run the latest code" is the `edge` tag, pushed per merge to main
-          # by the Unstable channel workflow).
+          # Rolling tags are ordering-gated by the publish-time recheck
+          # above (NOT the release job's stale-able outputs): a backport
+          # patch cut after a newer stable updates only the series tags it
+          # is actually the newest member of, and never `latest`.  An rc
+          # pushes its immutable version tag alone — the rolling `unstable`
+          # tag is retired now that rcs are rare, branch-scoped
+          # stabilisation builds ("run the latest code" is the `edge` tag,
+          # pushed per merge to main by the Unstable channel workflow).
           tags: |
             type=raw,value=v${{ steps.version.outputs.version }}
-            type=raw,value=latest,enable=${{ needs.release.outputs.is_latest == 'true' }}
-            type=raw,value=v${{ steps.version.outputs.minor }},enable=${{ needs.release.outputs.is_latest_minor == 'true' }}
-            type=raw,value=v${{ steps.version.outputs.major }},enable=${{ needs.release.outputs.is_latest_major == 'true' }}
+            type=raw,value=latest,enable=${{ steps.recheck.outputs.is_latest == 'true' }}
+            type=raw,value=v${{ steps.version.outputs.minor }},enable=${{ steps.recheck.outputs.is_latest_minor == 'true' }}
+            type=raw,value=v${{ steps.version.outputs.major }},enable=${{ steps.recheck.outputs.is_latest_major == 'true' }}
           labels: |
             org.opencontainers.image.title=markdown-vault-mcp
             org.opencontainers.image.description=Generic markdown vault MCP server with FTS5 + semantic search
@@ -565,11 +649,43 @@ jobs:
   publish-claude-plugin:
     needs: release
     # `is_latest` keeps the single marketplace entry ordered: a backport patch
-    # from an old series must not repoint the catalog at older content.
+    # from an old series must not repoint the catalog at older content.  The
+    # release-time output can only over-admit (a concurrent stable's tag may
+    # have been invisible to it), so it stays as the cheap job gate and the
+    # recheck step below re-derives the answer at publish time, serialized
+    # by this channel's global concurrency group.
     if: needs.release.outputs.released == 'true' && needs.release.outputs.is_prerelease == 'false' && needs.release.outputs.is_latest == 'true'
     runs-on: ubuntu-latest
+    concurrency:
+      group: release-rolling-marketplace
+      cancel-in-progress: false
     steps:
+      # Same convergence design as the Docker recheck: under the channel
+      # mutex the last writer always sees every earlier release's tag, so
+      # the catalog entry ends at the true newest whatever order racing
+      # publishes finish in.  Degrades open — on an API failure the publish
+      # proceeds on the release-time answer rather than failing a release
+      # the outage never made wrong.
+      - name: Recheck marketplace ordering at publish time
+        id: recheck
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.release.outputs.tag }}
+          REPO: ${{ github.repository }}
+        run: |
+          still_latest=true
+          stable=$(gh api --paginate "repos/${REPO}/tags" --jq '.[].name' 2>/dev/null \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' || true)
+          if [ -n "$stable" ]; then
+            newest=$(printf '%s\n' "$stable" | sort -V | tail -1)
+            if [ "$newest" != "$TAG" ]; then
+              still_latest=false
+              echo "::notice::${TAG} is no longer the newest stable (${newest} exists) — skipping the marketplace bump; the newer release's own publish owns the entry"
+            fi
+          fi
+          echo "still_latest=${still_latest}" >> "$GITHUB_OUTPUT"
       - name: Check plugin artifact exists at tag
+        if: steps.recheck.outputs.still_latest == 'true'
         id: plugin_check
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -667,9 +783,15 @@ jobs:
     needs: [release, publish-pypi, publish-docker]
     # `is_latest` for the same reason as the marketplace: the registry entry
     # is a discovery surface for the newest release; a backport's audience
-    # already holds pins and installs from PyPI or GitHub releases.
+    # already holds pins and installs from PyPI or GitHub releases.  As
+    # there, the release-time output can only over-admit, so the recheck
+    # step below re-derives the answer at publish time under this channel's
+    # global concurrency group.
     if: needs.release.outputs.released == 'true' && needs.release.outputs.is_prerelease == 'false' && needs.release.outputs.is_latest == 'true'
     runs-on: ubuntu-latest
+    concurrency:
+      group: release-rolling-registry
+      cancel-in-progress: false
 
     permissions:
       contents: read
@@ -686,7 +808,29 @@ jobs:
           ref: ${{ needs.release.outputs.tag }}
           fetch-depth: 1
 
+      # Same convergence design as the Docker recheck (see that job); the
+      # empty-list fallback likewise degrades open to the release-time
+      # answer, since a stable release always sees at least its own tag.
+      - name: Recheck registry ordering at publish time
+        id: recheck
+        env:
+          TAG: ${{ needs.release.outputs.tag }}
+        run: |
+          still_latest=true
+          stable=$(git ls-remote --tags --refs origin 2>/dev/null \
+            | awk -F'refs/tags/' '{print $2}' \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' || true)
+          if [ -n "$stable" ]; then
+            newest=$(printf '%s\n' "$stable" | sort -V | tail -1)
+            if [ "$newest" != "$TAG" ]; then
+              still_latest=false
+              echo "::notice::${TAG} is no longer the newest stable (${newest} exists) — skipping the registry publish; the newer release's own publish owns the entry"
+            fi
+          fi
+          echo "still_latest=${still_latest}" >> "$GITHUB_OUTPUT"
+
       - name: Install mcp-publisher
+        if: steps.recheck.outputs.still_latest == 'true'
         env:
           # v1.7.x is the first that requests the per-deployment OIDC audience
           # the registry now requires (PR modelcontextprotocol/registry#1229,
@@ -701,9 +845,11 @@ jobs:
           tar xz -f mcp-publisher.tar.gz mcp-publisher
 
       - name: Authenticate to MCP Registry
+        if: steps.recheck.outputs.still_latest == 'true'
         run: ./mcp-publisher login github-oidc
 
       - name: Publish to MCP Registry
+        if: steps.recheck.outputs.still_latest == 'true'
         run: ./mcp-publisher publish
 
   # Branch-release bookkeeping (release-vision section 4.5): after a STABLE

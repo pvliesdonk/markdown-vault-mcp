@@ -26,7 +26,9 @@ Rolling pointers are ordering-aware. The Docker `latest`, `vX`, and `vX.Y`
 tags, the GitHub latest-release pointer, the docs `latest` alias, and the
 marketplace and registry entries follow a release only when it is the
 newest in the relevant series, so a patch release cut from an old
-`release/X.Y` branch never moves them back to older content. See
+`release/X.Y` branch never moves them back to older content. This holds
+even when two releases overlap: each rolling channel checks the tag
+ordering again inside its own publish job. See
 [Image tags](docker.md#image-tags) for the Docker tag list.
 
 ## The release pull request

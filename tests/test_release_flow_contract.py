@@ -362,6 +362,175 @@ def test_prepare_collision_step_covers_tags_and_open_release_prs() -> None:
     )
 
 
+def test_prepare_concurrency_group_is_global() -> None:
+    """The prepare job serializes globally — the reservation must be atomic.
+
+    The version-reservation step reads the open release PRs BEFORE
+    ``CreatePullRequest`` writes this run's own: with per-base buckets, two
+    concurrent prepares on different bases computing the same version both
+    pass the check and open two mergeable release PRs racing for one tag.
+    One global bucket makes check-through-create atomic — the second
+    prepare always sees the first's open PR.  release.yml's release job
+    deliberately KEEPS per-base buckets (a backport must not serialise
+    behind a trunk release); its mutable rolling channels are protected by
+    their own publish-time rechecks, asserted below.
+    """
+    prepare = PREPARE_WORKFLOW.read_text(encoding="utf-8")
+    match = re.search(r"concurrency:\n\s+group: (.+)\n", prepare)
+    assert match, "release-prepare.yml declares no concurrency group"
+    assert match.group(1).strip() == "release-prepare", (
+        "the prepare concurrency group must be the fixed string "
+        f"'release-prepare' (atomic cross-base reservation), got: {match.group(1)!r}"
+    )
+    release = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+    assert "group: release-${{ github.event.pull_request.base.ref }}" in release, (
+        "release.yml's release job must keep its per-base concurrency bucket"
+    )
+
+
+def _release_job_block(name: str, next_name: str | None) -> str:
+    """The text of one top-level job in release.yml, by its neighbours."""
+    text = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+    start = text.index(f"\n  {name}:")
+    end = text.index(f"\n  {next_name}:") if next_name else len(text)
+    return text[start:end]
+
+
+@pytest.mark.parametrize(
+    ("job", "next_job", "group"),
+    [
+        ("publish-docker", "publish-linux-packages", "release-rolling-docker"),
+        ("publish-claude-plugin", "publish-registry", "release-rolling-marketplace"),
+        ("publish-registry", "port-bookkeeping", "release-rolling-registry"),
+    ],
+)
+def test_mutable_channels_recheck_ordering_at_publish_time(
+    job: str, next_job: str, group: str
+) -> None:
+    """Every mutable rolling channel rechecks tag ordering before writing.
+
+    The release job's ordering outputs go stale the moment a concurrent
+    stable on another base tags (release buckets are per base), and a stale
+    publish finishing last would repoint a rolling channel at older
+    content.  Each mutable channel therefore re-derives the answer inside
+    its own publish job, serialized by a per-channel global concurrency
+    group — the last writer always sees every earlier release's tag, so the
+    channel converges to the true newest regardless of finish order.  The
+    per-version channels (PyPI, GitHub-release assets, mcpb) stay
+    mutex-free: their writes are immutable and unordered.
+    """
+    block = _release_job_block(job, next_job)
+    assert f"group: {group}" in block, f"{job} lost its per-channel mutex"
+    assert "cancel-in-progress: false" in block
+    assert "id: recheck" in block, f"{job} lost its publish-time ordering recheck"
+    assert "sort -V" in block, f"{job}'s recheck lost the version-ordered comparison"
+
+
+def test_docker_rolling_tags_gate_on_the_recheck_not_the_release_job() -> None:
+    """The rolling-tag enables read the publish-time recheck's outputs.
+
+    Wiring them back to ``needs.release.outputs`` would resurrect the stale
+    ordering race the recheck exists to close, while leaving the recheck
+    step green — exactly the silent-drift shape this suite guards against.
+    """
+    block = _release_job_block("publish-docker", "publish-linux-packages")
+    for output in ("is_latest", "is_latest_minor", "is_latest_major"):
+        needle = "enable=${{ steps.recheck.outputs." + output + " == 'true' }}"
+        assert needle in block, (
+            f"the rolling-tag enable for {output} must read the recheck step"
+        )
+    assert "enable=${{ needs.release.outputs" not in block, (
+        "no rolling-tag enable may read the release job's stale-able outputs"
+    )
+
+
+def _run_guard(workdir: Path) -> subprocess.CompletedProcess[str]:
+    """Run the real promotion guard against ``workdir``."""
+    return subprocess.run(
+        ["bash", str(GUARD)],
+        cwd=workdir,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+@pytest.fixture
+def guard_sandbox(tmp_path: Path) -> Path:
+    """A tagged repo promoting stable 9.9.9 over its rc.1.
+
+    One commit holding ``pyproject.toml`` (already stamped stable — the
+    guard reads the version being promoted from it) plus a source file,
+    tagged as the rc; tests then land post-rc commits and run the guard.
+    """
+
+    def run(*args: str) -> None:
+        subprocess.run(args, cwd=tmp_path, check=True, capture_output=True)
+
+    run("git", "init", "-q")
+    run("git", "config", "user.email", "guard@test")
+    run("git", "config", "user.name", "guard")
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nversion = "9.9.9"\n', encoding="utf-8"
+    )
+    (tmp_path / "module.py").write_text("VALUE = 1\n", encoding="utf-8")
+    run("git", "add", "-A")
+    run("git", "commit", "-q", "-m", "rc state")
+    run("git", "tag", "v9.9.9-rc.1")
+    return tmp_path
+
+
+def test_promotion_guard_admits_a_notes_page_after_the_rc(
+    guard_sandbox: Path,
+) -> None:
+    """A ``docs/releases/`` page landing between rc and stable passes (M6)."""
+    notes = guard_sandbox / "docs" / "releases" / "9.9.md"
+    notes.parent.mkdir(parents=True)
+    notes.write_text("# 9.9\n", encoding="utf-8")
+    subprocess.run(
+        ["git", "add", "-A"], cwd=guard_sandbox, check=True, capture_output=True
+    )
+    subprocess.run(
+        ["git", "commit", "-q", "-m", "docs: notes"],
+        cwd=guard_sandbox,
+        check=True,
+        capture_output=True,
+    )
+    result = _run_guard(guard_sandbox)
+    assert result.returncode == 0, result.stderr
+
+
+def test_promotion_guard_sees_both_sides_of_a_rename(guard_sandbox: Path) -> None:
+    """A file MOVED into an allowed subtree still refuses the promotion.
+
+    With git's default rename detection, ``git diff --name-only`` reports
+    only the destination path — so relocating source content into
+    ``docs/releases/`` would read as an allowed notes change while the
+    promotion silently deletes the source path.  The guard disables rename
+    detection so the delete side is judged on its own.
+    """
+    releases = guard_sandbox / "docs" / "releases"
+    releases.mkdir(parents=True)
+    subprocess.run(
+        ["git", "mv", "module.py", "docs/releases/module.py"],
+        cwd=guard_sandbox,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "commit", "-q", "-m", "sneaky move"],
+        cwd=guard_sandbox,
+        check=True,
+        capture_output=True,
+    )
+    result = _run_guard(guard_sandbox)
+    assert result.returncode != 0, (
+        "the guard admitted a rename out of the source tree: "
+        f"{result.stdout}{result.stderr}"
+    )
+    assert "module.py" in result.stderr, "the refusal must name the vanished path"
+
+
 def _run_stamper(workdir: Path, *args: str) -> subprocess.CompletedProcess[str]:
     """Run the real stamp script against ``workdir``."""
     return subprocess.run(

@@ -55,7 +55,12 @@ if [[ -z "$last_rc" ]]; then
 fi
 
 echo "promotion_guard: verifying stamps-only diff ${last_rc}..HEAD for stable ${version}"
-mapfile -t changed < <(git diff --name-only "${last_rc}" HEAD)
+# --no-renames: with rename detection on (git's default), a file MOVED into
+# an allowed subtree would surface only under its destination path and slip
+# the check below — the promotion would silently delete the source path.
+# Without detection the diff reports the delete and the add separately, so
+# the vanished source path is judged on its own.
+mapfile -t changed < <(git diff --name-only --no-renames "${last_rc}" HEAD)
 
 violations=()
 for f in "${changed[@]}"; do
