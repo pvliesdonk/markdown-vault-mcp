@@ -479,6 +479,13 @@ jobs:
             if cmp -s "$src" "$base"; then
               return 0    # the draft left this file as it found it
             fi
+            if [ "$base" != /dev/null ] && [ ! -f "$dst" ]; then
+              # Edit-versus-delete divergence: the draft changed a file
+              # the base deleted while it ran.  Copying would silently
+              # resurrect the deleted file; a human decides.
+              echo "::error::${dst} was deleted on the base while the draft edited it — resolve by hand and re-run the drafting job"
+              exit 1
+            fi
             if [ -f "$dst" ] && ! cmp -s "$dst" "$base"; then
               merged="$(mktemp)"
               cp "$src" "$merged"

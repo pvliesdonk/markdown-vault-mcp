@@ -541,6 +541,10 @@ def test_notes_workflow_is_callable_and_not_release_triggered() -> None:
         "merged, failing loudly on overlap — a silent clobber reverts "
         "the concurrent change"
     )
+    assert "deleted on the base" in text, (
+        "an edit-versus-delete divergence must fail loudly — copying "
+        "would silently resurrect the file the base deleted"
+    )
     assert "\n  land:\n    needs: draft" in text, (
         "the landing must run in a SEPARATE job on a fresh runner — the "
         "drafting runner may be poisoned beyond the tree (GITHUB_PATH, "
