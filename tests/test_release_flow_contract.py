@@ -511,14 +511,30 @@ def test_notes_workflow_is_callable_and_not_release_triggered() -> None:
         "events; this workflow runs on workflow_dispatch/workflow_call, "
         "where passing it is a hard error before the agent starts"
     )
-    assert "Write(docs/releases/" in text and "Edit(docs/releases/" in text, (
+    assert "Edit(docs/releases/" in text, (
         "the drafting agent needs the file tools explicitly (in headless "
-        "mode --allowedTools IS the allowlist), scoped to the notes surface"
+        "mode --allowedTools IS the allowlist), scoped to the notes "
+        "surface via Edit(path) — the only path-scoped file gate Claude "
+        "Code consults, covering the Write tool as well"
+    )
+    allowlist = next(line for line in text.splitlines() if '--allowedTools "' in line)
+    assert "Write(" not in allowlist, (
+        "Write(path) rules are accepted but never matched — a dead rule "
+        "in the allowlist would suggest scoping that does not exist"
     )
     assert ",Write," not in text and ",Edit," not in text, (
         "no unscoped Write/Edit may appear in the allowlist — an unscoped "
         "write tool lets a prompt-injected research source plant git "
         "config or hooks that the credentialed landing step executes"
+    )
+    assert "Seed and snapshot the notes surface" in text and "pre-notes" in text, (
+        "the trusted pre-agent step must seed the files a draft may "
+        "create (so Edit suffices) and snapshot the pre-draft surface"
+    )
+    assert "cmp -s" in text, (
+        "the landing overlay must compare against the pre-draft snapshot "
+        "and copy only files the draft changed — never revert concurrent "
+        "notes changes with an hour-old checkout"
     )
     assert "persist-credentials: false" in text, (
         "the checkout must not persist the release PAT — the agent's "

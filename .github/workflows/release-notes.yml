@@ -238,6 +238,33 @@ jobs:
             echo "mode=$mode"
           } >> "$GITHUB_OUTPUT"
 
+      # Two jobs before the agent runs, while the tree is still trusted.
+      # SEED: pre-create the files a draft may need to bring into being
+      # (the target page, the PR-body file, the vocabulary, a first-ever
+      # index) so the agent works entirely through Edit — Edit(path)
+      # rules are the only path-scoped file gate Claude Code consults.
+      # Seeding runs after mode resolution: an empty page must not flip
+      # the mode away from `new`.  SNAPSHOT: copy the pre-draft notes
+      # surface aside so the landing step can overlay ONLY files this
+      # draft changed — an hour-long agent run must never revert notes
+      # changes that merged concurrently on the base.
+      - name: Seed and snapshot the notes surface
+        env:
+          PAGE: ${{ steps.ctx.outputs.page }}
+        run: |
+          set -euo pipefail
+          ACCEPT=".vale/styles/config/vocabularies/Base/accept.txt"
+          mkdir -p docs/releases "$(dirname "$ACCEPT")"
+          [ -f "$PAGE" ] || : > "$PAGE"
+          [ -f docs/releases/index.md ] || : > docs/releases/index.md
+          [ -f "$ACCEPT" ] || : > "$ACCEPT"
+          [ -f .release-notes-pr-body.md ] || : > .release-notes-pr-body.md
+          PRE="$RUNNER_TEMP/pre-notes"
+          rm -rf "$PRE"
+          mkdir -p "$PRE"
+          cp -R docs/releases "$PRE/releases"
+          cp "$ACCEPT" "$PRE/accept.txt"
+
       - name: Install uv
         uses: astral-sh/setup-uv@v8.2.0
         with:
@@ -315,17 +342,22 @@ jobs:
           # headless mode --allowedTools IS the allowlist — nothing is
           # inherited from the action, and the first live run had every page
           # write denied before failing the watermark gate (template#421).
-          # Write/Edit are scoped to the notes surface the landing step
-          # commits, and the agent gets NO local git: read-oriented git
-          # commands still carry arbitrary-file-write flags (git log
-          # --output=...) that would bypass the write scoping, and the skill
-          # reads tags and files-at-refs through the API instead.  mkdocs is
-          # pinned to the exact quality-gate invocation — with a wildcard,
-          # `-f` would build an agent-written config whose `hooks:` execute
-          # arbitrary Python.  The job's `contents: read` keeps the agent
-          # from pushing anything.
+          # File mutation is scoped to the notes surface the landing step
+          # commits, via Edit(path) rules — the only path-scoped file gate
+          # Claude Code consults, covering the Write tool as well (a
+          # Write(path) rule is accepted but never matched).  The seed step
+          # above pre-creates the files a draft may need, so Edit suffices
+          # even where Write-tool creation is unavailable.  The agent gets
+          # NO local git: read-oriented git commands still carry
+          # arbitrary-file-write flags (git log --output=...) that would
+          # bypass the write scoping, and the skill reads tags and
+          # files-at-refs through the API instead.  mkdocs is pinned to the
+          # exact quality-gate invocation — with a wildcard, `-f` would
+          # build an agent-written config whose `hooks:` execute arbitrary
+          # Python.  The job's `contents: read` keeps the agent from
+          # pushing anything.
           claude_args: |
-            --allowedTools "Skill,Task,Read,Glob,Grep,Write(docs/releases/**),Edit(docs/releases/**),Write(.vale/styles/config/vocabularies/**),Edit(.vale/styles/config/vocabularies/**),Write(.release-notes-pr-body.md),Edit(.release-notes-pr-body.md),mcp__github__get_*,mcp__github__list_*,mcp__github__search_*,Bash(gh api *),Bash(vale *),Bash(uv run mkdocs build --strict)"
+            --allowedTools "Skill,Task,Read,Glob,Grep,Edit(docs/releases/**),Edit(.vale/styles/config/vocabularies/**),Edit(.release-notes-pr-body.md),mcp__github__get_*,mcp__github__list_*,mcp__github__search_*,Bash(gh api *),Bash(vale *),Bash(uv run mkdocs build --strict)"
 
       - name: Land the drafted page
         env:
@@ -371,12 +403,24 @@ jobs:
           cd "$LAND"
           git config user.name "github-actions"
           git config user.email "actions@users.noreply.github.com"
+          # Overlay ONLY files this draft changed, judged against the
+          # pre-draft snapshot — the checkout is an hour old, and pages
+          # it never touched must keep the fresh clone's state so notes
+          # changes that merged concurrently are not reverted.
+          PRE="$RUNNER_TEMP/pre-notes"
           if [ -d "$SURFACE/releases" ]; then
-            rm -rf docs/releases
-            mkdir -p docs
-            cp -R "$SURFACE/releases" docs/releases
+            (cd "$SURFACE/releases" && find . -type f -print0) \
+              | while IFS= read -r -d '' f; do
+              rel="${f#./}"
+              if [ ! -f "$PRE/releases/$rel" ] \
+                || ! cmp -s "$SURFACE/releases/$rel" "$PRE/releases/$rel"; then
+                mkdir -p "docs/releases/$(dirname "$rel")"
+                cp "$SURFACE/releases/$rel" "docs/releases/$rel"
+              fi
+            done
           fi
-          if [ -f "$SURFACE/accept.txt" ]; then
+          if [ -f "$SURFACE/accept.txt" ] \
+            && ! cmp -s "$SURFACE/accept.txt" "$PRE/accept.txt"; then
             mkdir -p "$(dirname "$ACCEPT")"
             cp "$SURFACE/accept.txt" "$ACCEPT"
           fi
@@ -444,7 +488,9 @@ jobs:
             exit 0
           fi
           BODYFILE="$SURFACE/body.md"
-          if [ ! -f "$BODYFILE" ]; then
+          # -s: the seed step pre-creates the body file empty; an empty
+          # body means the agent left none.
+          if [ ! -s "$BODYFILE" ]; then
             {
               echo "Agent-drafted release notes for ${TAG} (the drafting run left no PR body; review the page against its inline evidence links)."
               echo
