@@ -512,10 +512,16 @@ def test_notes_workflow_is_callable_and_not_release_triggered() -> None:
         "an empty draft with no existing page must fail loudly and name skip_notes"
     )
     assert "notes-range-end: ${RANGE_END}" in call_half, (
-        "an unchanged page counts as already-current ONLY when its "
-        "notes-range-end watermark equals this run's range end — an honest "
-        "agent failure also leaves no edits, and accepting it would "
-        "silently ship stale notes"
+        "the target page's notes-range-end watermark must be verified "
+        "against this run's range end — an incomplete or failed draft "
+        "must never silently ship stale notes"
+    )
+    assert call_half.index("notes-range-end: ${RANGE_END}") < call_half.index(
+        "git status --porcelain -- docs/releases"
+    ), (
+        "the watermark check must be UNCONDITIONAL — before the "
+        "changed/unchanged split, so a draft that edited only vocabulary, "
+        "the index, or another page still fails this release's refresh"
     )
     assert "gh pr ready " in call_half, (
         "the call mode must lift the release PR's draft hold once the "
@@ -629,6 +635,11 @@ def test_port_bookkeeping_carries_the_notes_page() -> None:
         "the port step no longer stages the release-notes page"
     )
     assert "released-page.md" in port
+    assert "RELEASE-PAGES-START" in port and "index-entry.md" in port, (
+        "a first-of-minor branch cut must port its index ENTRY too — by "
+        "insertion, never wholesale copy (a backport branch's index "
+        "predates newer minors on the default branch)"
+    )
 
 
 def _run_guard(workdir: Path) -> subprocess.CompletedProcess[str]:

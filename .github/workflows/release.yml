@@ -948,10 +948,34 @@ jobs:
               cp /tmp/released-page.md "$page"
             fi
           fi
+          # The index entry ports by INSERTION, never wholesale copy: a
+          # backport branch's index predates newer minors listed on the
+          # default branch, so copying it would delete their entries.  When
+          # the default branch's index lacks this minor's entry (the
+          # first-stable-of-a-minor branch cut), the released index's entry
+          # lines — the `(minor.md)` line through the entry's continuation
+          # lines — are inserted right after the RELEASE-PAGES-START
+          # sentinel, newest-first like the changelog insertion.
+          index="docs/releases/index.md"
+          if [ -f "$index" ] && ! grep -qF "(${minor}.md)" "$index" \
+            && git show "${MERGE_SHA}:${index}" > /tmp/released-index.md 2>/dev/null \
+            && grep -qF "(${minor}.md)" /tmp/released-index.md; then
+            awk -v ref="(${minor}.md)" '
+              index($0, ref) { f=1; print; next }
+              f && (/^- / || /RELEASE-PAGES-END/) { exit }
+              f { print }
+            ' /tmp/released-index.md > /tmp/index-entry.md
+            awk 'BEGIN { while ((getline l < "/tmp/index-entry.md") > 0) e = e l "\n" }
+                 { print }
+                 /RELEASE-PAGES-START/ { start=1 }
+                 start && !done && /-->[[:space:]]*$/ { printf "%s", e; done=1 }' \
+              "$index" > "${index}.new"
+            mv "${index}.new" "$index"
+          fi
           # status --porcelain, not diff: a newly created page is untracked
           # and would be invisible to git diff.
-          if ! git status --porcelain -- CHANGELOG.md "$page" | grep -q .; then
-            echo "${DEFAULT} already carries both the changelog section and the notes page — nothing to port"
+          if ! git status --porcelain -- CHANGELOG.md docs/releases | grep -q .; then
+            echo "${DEFAULT} already carries the changelog section and the notes pages — nothing to port"
             exit 0
           fi
           git config user.name "github-actions"
@@ -959,7 +983,7 @@ jobs:
           BRANCH="knope/port/${TAG}"
           git switch --force-create "$BRANCH"
           git add CHANGELOG.md
-          [ ! -f "$page" ] || git add "$page"
+          [ ! -d docs/releases ] || git add docs/releases
           git commit -m "chore: port ${TAG} release bookkeeping to ${DEFAULT}"
           git push --force origin "HEAD:${BRANCH}"
           # Skip cleanly when a port PR is already open (the force-push just

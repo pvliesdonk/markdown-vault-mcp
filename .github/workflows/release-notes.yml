@@ -318,24 +318,25 @@ jobs:
           if [ -n "$PREP_BRANCH" ]; then
             # Call mode: the page is release content — commit it onto the
             # release PR's prep branch so the release PR's diff carries it
-            # and the merge puts it in the tagged tree (template#419).  An
-            # empty draft is a success ONLY when the existing page's
-            # notes-range-end watermark equals this run's range end — the
-            # mechanically checkable already-current case (normal at a
-            # quiet promotion).  Any other empty draft — page missing,
-            # watermark stale or absent — is a failed refresh: an honest
-            # agent failure also leaves no edits, and accepting it would
+            # and the merge puts it in the tagged tree (template#419).
+            # First, UNCONDITIONALLY: the target page must exist and carry
+            # this run's notes-range-end watermark.  An agent run that
+            # edited only vocabulary, the index, or another page — or
+            # nothing at all (an honest failure leaves no edits) — has
+            # still failed THIS release's refresh, and accepting it would
             # silently ship stale notes.  Re-run this job, or re-dispatch
             # Release Prepare with skip_notes to consciously release
             # without a refresh.
+            if ! { [ -f "$PAGE" ] && grep -qF "notes-range-end: ${RANGE_END}" "$PAGE"; }; then
+              echo "::error::${PAGE} is missing or its notes-range-end watermark does not match ${RANGE_END} — the draft did not refresh this release's page. Re-run this job, or re-dispatch Release Prepare with skip_notes=true to release without a notes refresh"
+              exit 1
+            fi
             if ! git status --porcelain -- docs/releases "$ACCEPT" | grep -q .; then
-              if [ -f "$PAGE" ] && grep -qF "notes-range-end: ${RANGE_END}" "$PAGE"; then
-                echo "page ${PAGE} already covers this range (watermark at ${RANGE_END}) — nothing to commit; the release PR ships the accepted draft from its base"
-                accepted_head="$EXPECTED_HEAD"
-              else
-                echo "::error::the drafting run produced no notes changes and ${PAGE} is missing or its notes-range-end watermark does not match ${RANGE_END} — an unchanged page is only current when its watermark matches. Re-run this job, or re-dispatch Release Prepare with skip_notes=true to release without a notes refresh"
-                exit 1
-              fi
+              # Watermark verified above, tree untouched: the accepted
+              # draft already covers this range (normal at a quiet
+              # promotion).
+              echo "page ${PAGE} already covers this range (watermark at ${RANGE_END}) — nothing to commit; the release PR ships the accepted draft from its base"
+              accepted_head="$EXPECTED_HEAD"
             else
               git add docs/releases "$ACCEPT"
               git commit -m "docs(releases): notes for ${TAG}"
