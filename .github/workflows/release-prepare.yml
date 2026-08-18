@@ -30,6 +30,10 @@ on:
         description: 'Optional explicit version (X.Y.Z or X.Y.Z-rc.N). Overrides BOTH commit analysis and the channel input — the version is used exactly as given, so include any -rc.N suffix yourself. The remedy for ranges knope counts nothing in (perf/chore-only) and for a version collision after a branch-only release.'
         type: string
         default: ''
+      skip_notes:
+        description: 'Escape hatch: prepare the release PR WITHOUT drafting/refreshing its release-notes page (e.g. the drafting agent is down, or the page was just hand-edited). The release PR then ships whatever docs/releases/ state its base carries.'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -37,6 +41,11 @@ permissions:
 jobs:
   prepare:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.reserve.outputs.version }}
+      prep_branch: ${{ steps.prep.outputs.branch }}
+      source_sha: ${{ steps.prep.outputs.source_sha }}
+      prep_head: ${{ steps.head.outputs.sha }}
     permissions:
       contents: read
       # For the advisory quiescence step's issue/milestone reads.
@@ -230,7 +239,12 @@ jobs:
         run: |
           branch="knope/prepare/${GITHUB_REF_NAME//\//-}"
           git switch --force-create "$branch"
-          echo "branch=${branch}" >> "$GITHUB_OUTPUT"
+          {
+            echo "branch=${branch}"
+            # The base commit this prepare was cut from — the end of the
+            # notes job's research range (the tag does not exist yet).
+            echo "source_sha=$(git rev-parse HEAD)"
+          } >> "$GITHUB_OUTPUT"
 
       # The version knope is about to prepare must not already carry a tag
       # ANYWHERE in the repo.  Version computation is ancestry-local and the
@@ -247,6 +261,7 @@ jobs:
       # stamped versions too — first-merged would otherwise win the tag and
       # strand the other release PR at tag time.
       - name: Refuse a version that is already tagged or reserved
+        id: reserve
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PREP_BRANCH: ${{ steps.prep.outputs.branch }}
@@ -291,6 +306,8 @@ jobs:
             done <<< "$reserved"
           fi
           echo "computed version ${version} is untaken and unreserved — proceeding"
+          # For the draft-notes job: the notes page targets this version.
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
 
       # knope's prepare-release workflow (knope.toml): PrepareRelease bumps
       # pyproject.toml and writes the changelog section, the stamp Command
@@ -309,3 +326,36 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           KNOPE_PREP_BRANCH: ${{ steps.prep.outputs.branch }}
         run: knope prepare-release --verbose ${{ steps.channel.outputs.flags }}
+
+      # The pushed stamp head — the lease anchor for the draft-notes job's
+      # commit, so a stale draft can never clobber a newer re-dispatch's
+      # recreated prep branch.
+      - name: Record the prep head
+        id: head
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  # Release notes are release content with exactly the changelog's
+  # lifecycle (template#419): drafted here, into the release PR's diff,
+  # reviewed as part of the release decision, landed on the base by the
+  # merge — and therefore in every tag by construction.  The drafting
+  # agent, research contract, and quality gates live in release-notes.yml
+  # (called, not duplicated); it commits the page onto the prep branch
+  # with a lease on the stamp head above.  skip_notes is the escape
+  # hatch: a drafting outage may delay a release only by choice, so with
+  # skip_notes=true the release PR ships whatever docs/releases/ state
+  # its base carries.
+  draft-notes:
+    needs: prepare
+    if: ${{ !inputs.skip_notes }}
+    uses: ./.github/workflows/release-notes.yml
+    with:
+      target_version: ${{ needs.prepare.outputs.version }}
+      source_ref: ${{ needs.prepare.outputs.source_sha }}
+      prep_branch: ${{ needs.prepare.outputs.prep_branch }}
+      expected_head: ${{ needs.prepare.outputs.prep_head }}
+    secrets: inherit
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+      id-token: write

@@ -1,48 +1,62 @@
-# Agent-written release notes, half one of two (template#347).  After every
-# stable release an agent researches the release range through the GitHub
-# API — commits, their PRs, the PRs' linked issues; never commit subjects —
-# and opens a PR that adds or extends the release's per-minor page under
-# docs/releases/.  The research contract (theme fan-out, evidence rules,
-# page format, Vale loop) lives in .claude/skills/writing-release-notes/;
-# this workflow only supplies context, tools, and the mechanical PR.
+# Agent-written release notes (template#347, reshaped by template#419).
+# The notes page under docs/releases/ is a document with exactly the
+# changelog's lifecycle — written by release preparation, reviewed in the
+# release PR, landed by its merge, present in every tag by construction.
+# It differs from CHANGELOG.md only in author and source material: an agent
+# researches the release range through the GitHub API — commits, their PRs,
+# the PRs' linked issues; never commit subjects.  The research contract
+# (theme fan-out, evidence rules, page format, Vale loop) lives in
+# .claude/skills/writing-release-notes/; this workflow supplies context,
+# tools, and the mechanical commit.
 #
-# INVARIANT: nothing here gates or blocks the release path.  By the time
-# this runs on a release event, the release has shipped with the
-# machine-changelog + pointers body release.yml wrote (deep-linking the
-# notes page only if it already existed).  A failed or junk run leaves that
-# body standing; re-run via workflow_dispatch when wanted.  The body
-# upgrade and the versioned-docs redeploy happen only after a human merges
-# the notes PR — see release-notes-publish.yml.
-#
-# A second dispatch path (target_version + source_ref) drafts notes at
-# release-PR prepare time, before any tag exists — see the input comments
-# below (fastmcp-server-template#406, migration P1.5).  The tag-based path
-# above is unchanged.
+# Two entries:
+#   * workflow_call — the primary path.  release-prepare.yml's draft-notes
+#     job calls this after knope opens the release PR; the drafted page is
+#     committed ONTO the prep branch (lease-guarded), so the release PR's
+#     diff carries stamps + changelog + notes and merging it puts the page
+#     in the tagged tree.  Every release PR, rc and stable alike.
+#   * workflow_dispatch — the backfill / re-draft tool: tag mode drafts a
+#     standalone notes PR for an already-shipped release (e.g. a release
+#     prepared with skip_notes); target_version mode re-drafts against an
+#     open release PR without re-running the whole prepare.
 name: Release Notes
 
 on:
-  release:
-    types: [published]
+  workflow_call:
+    inputs:
+      target_version:
+        description: 'Target version of the open release PR (X.Y.Z or X.Y.Z-rc.N — an rc drafts its stable minor page).'
+        type: string
+        required: true
+      source_ref:
+        description: 'The release PR source commit that ends the research range.'
+        type: string
+        required: true
+      prep_branch:
+        description: 'The knope/prepare/* branch to commit the drafted page onto.'
+        type: string
+        required: true
+      expected_head:
+        description: 'The prep-branch head the draft was cut against; the push is leased on it so a newer Release Prepare re-dispatch is never clobbered.'
+        type: string
+        required: true
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Stable tag to draft notes for (e.g. v1.2.0). Empty = newest stable tag. Mutually exclusive with target_version.'
+        description: 'Backfill: stable tag to draft a standalone notes PR for (e.g. v1.2.0). Empty = newest stable tag. Mutually exclusive with target_version.'
         type: string
         default: ''
-      # Prepare-time entry (fastmcp-server-template#406, migration P1.5): a
-      # release PR makes notes draftable BEFORE any tag exists — rc phase
-      # included.  The research range generalizes to "newest stable tag
-      # strictly below the target ... the release PR's source commit"; the
-      # evidence rules are unchanged, only the range endpoints move.
-      # Re-dispatch with the same target to refresh the draft alongside a
-      # release-PR re-dispatch (the branch is keyed on the target version
-      # and force-pushed).
+      # Prepare-time re-draft (fastmcp-server-template#406, migration P1.5):
+      # refresh a draft against an open release PR without re-running the
+      # whole prepare.  The research range generalizes to "newest stable
+      # tag strictly below the target ... the release PR's source commit";
+      # the evidence rules are unchanged, only the range endpoints move.
       target_version:
-        description: 'Prepare-time drafting: target version of an open release PR (e.g. 4.0.0 or 4.0.0-rc.2 — an rc drafts its stable minor page). Empty = tag mode.'
+        description: 'Re-draft against an open release PR: its target version (e.g. 4.0.0 or 4.0.0-rc.2). Empty = tag mode.'
         type: string
         default: ''
       source_ref:
-        description: 'Prepare-time drafting: the release PR source commit/ref that ends the research range. Required with target_version.'
+        description: 'Re-draft: the release PR source commit/ref that ends the research range. Required with target_version.'
         type: string
         default: ''
 
@@ -51,11 +65,6 @@ permissions:
 
 jobs:
   draft:
-    # Stables only: rcs are branch-scoped stabilisation builds that deploy no
-    # versioned docs, and the notes page is per minor (template#350) — the rc
-    # cycle's content lands in the minor's page when the stable finalises,
-    # via the since-previous-stable range below.
-    if: github.event_name == 'workflow_dispatch' || github.event.release.prerelease == false
     runs-on: ubuntu-latest
     # Serialise drafts: two quick successive releases would race on the same
     # index page and branch namespace.
@@ -69,33 +78,33 @@ jobs:
       pull-requests: read
       id-token: write
     steps:
-      - name: Checkout default branch
+      - name: Checkout the branch the draft lands on
         uses: actions/checkout@v7
         with:
-          # Always the default branch, whatever branch the release was cut
-          # from: notes pages live only there (a backport patch appends to
-          # the page on the default branch; release-notes-publish.yml
-          # overlays these pages onto the tag when redeploying docs, which
-          # is what resolves template#347's patch-page ordering problem).
-          # Research is API-driven, but full depth supplies the tags for the
-          # previous-stable computation and the tag-to-tag surface diffs
-          # (import surface, env examples) the upgrade section derives from.
-          ref: ${{ github.event.repository.default_branch }}
+          # Call mode: the release PR's prep branch — the draft is release
+          # content and belongs in that PR's diff, and the tree there (base
+          # plus knope's stamps) is exactly the state the page describes.
+          # Dispatch mode: the default branch, where the accumulated pages
+          # live.  Research is API-driven, but full depth supplies the tags
+          # for the previous-stable computation and the tag-to-tag surface
+          # diffs (import surface, env examples) the upgrade section
+          # derives from.
+          ref: ${{ inputs.prep_branch || github.event.repository.default_branch }}
           fetch-depth: 0
-          # PAT, so the branch push and PR below trigger CI/review on the
-          # notes PR (GITHUB_TOKEN-created PRs run no workflows).
+          # PAT, so the push below triggers CI on the release PR (call
+          # mode) or on the standalone notes PR (dispatch mode) —
+          # GITHUB_TOKEN pushes trigger no workflows.
           token: ${{ secrets.RELEASE_TOKEN }}
 
       - name: Resolve release context
         id: ctx
         env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
           INPUT_TAG: ${{ inputs.tag }}
           TARGET_VERSION: ${{ inputs.target_version }}
           SOURCE_REF: ${{ inputs.source_ref }}
         run: |
           set -euo pipefail
-          TAG="${RELEASE_TAG:-$INPUT_TAG}"
+          TAG="$INPUT_TAG"
           if [ -n "$TARGET_VERSION" ]; then
             # Prepare-time mode: the tag does not exist yet.  Key everything
             # on the target's stable version (an rc target drafts its
@@ -232,7 +241,7 @@ jobs:
             - page: ${{ steps.ctx.outputs.page }}
             - mode: ${{ steps.ctx.outputs.mode }} (new = write the whole page and add it to docs/releases/index.md; patch = append one dated section inside the patch sentinels; redraft = the minor's page already exists — e.g. drafted at prepare time — so update/extend it in place and never append a duplicate section for this release)
 
-            The vale binary (packs synced) and `uv run mkdocs build --strict` are available for the skill's quality gates. Write your proposed pull-request body to .release-notes-pr-body.md at the repository root. Do not commit, push, or open a PR yourself — the workflow's next step does that mechanically from your working tree.
+            The vale binary (packs synced) and `uv run mkdocs build --strict` are available for the skill's quality gates. Write your proposed pull-request body to .release-notes-pr-body.md at the repository root (used only when this run opens a standalone notes PR; ignored when the draft lands on a release PR's branch). Do not commit, push, or open a PR yourself — the workflow's next step lands your working tree mechanically.
           track_progress: true
           display_report: true
           include_fix_links: false
@@ -244,21 +253,57 @@ jobs:
           claude_args: |
             --allowedTools "Skill,Task,mcp__github__get_*,mcp__github__list_*,mcp__github__search_*,Bash(gh api *),Bash(vale *),Bash(uv run mkdocs *),Bash(git tag *),Bash(git show *),Bash(git diff *),Bash(git log *)"
 
-      - name: Open the notes PR
+      - name: Land the drafted page
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           TAG: ${{ steps.ctx.outputs.tag }}
           DEFAULT: ${{ github.event.repository.default_branch }}
           REPO: ${{ github.repository }}
+          PREP_BRANCH: ${{ inputs.prep_branch }}
+          EXPECTED_HEAD: ${{ inputs.expected_head }}
+          PAGE: ${{ steps.ctx.outputs.page }}
         run: |
           set -euo pipefail
           # Only the notes surface is ever committed: the release pages and
-          # any vocabulary the Vale loop legitimately added.  An agent run
-          # that changed nothing (honest failure) opens no PR — the release
-          # stands with its interim body.
+          # any vocabulary the Vale loop legitimately added.
           ACCEPT=".vale/styles/config/vocabularies/Base/accept.txt"
+          git config user.name "github-actions"
+          git config user.email "actions@users.noreply.github.com"
+          if [ -n "$PREP_BRANCH" ]; then
+            # Call mode: the page is release content — commit it onto the
+            # release PR's prep branch so the release PR's diff carries it
+            # and the merge puts it in the tagged tree (template#419).  An
+            # empty draft splits two ways: an EXISTING page with no changes
+            # means the accepted draft already covers this range (the
+            # incremental-research contract's already-current case — normal
+            # at a quiet promotion), while a MISSING page with no changes is
+            # a failed draft, and a release PR without its notes is
+            # incomplete — re-run this job, or re-dispatch Release Prepare
+            # with skip_notes to consciously release without a refresh.
+            if ! git status --porcelain -- docs/releases "$ACCEPT" | grep -q .; then
+              if [ -f "$PAGE" ]; then
+                echo "page ${PAGE} already covers this range — nothing to commit; the release PR ships the accepted draft from its base"
+                exit 0
+              fi
+              echo "::error::the drafting run produced no notes changes and ${PAGE} does not exist — re-run this job, or re-dispatch Release Prepare with skip_notes=true to release without a notes refresh"
+              exit 1
+            fi
+            git add docs/releases "$ACCEPT"
+            git commit -m "docs(releases): notes for ${TAG}"
+            # Lease on the stamp head this draft was cut against: a Release
+            # Prepare re-dispatch force-recreates the prep branch, and a
+            # stale draft must never clobber the newer prepare — the lease
+            # fails this push loudly instead; the newer dispatch's own
+            # draft-notes job owns the branch.
+            git push --force-with-lease="${PREP_BRANCH}:${EXPECTED_HEAD}" \
+              origin "HEAD:${PREP_BRANCH}"
+            exit 0
+          fi
+          # Dispatch mode (backfill / re-draft): a standalone notes PR
+          # against the default branch.  An agent run that changed nothing
+          # (honest failure) opens no PR.
           if ! git status --porcelain -- docs/releases "$ACCEPT" | grep -q .; then
-            echo "no notes changes produced — skipping PR; the release keeps its interim body"
+            echo "no notes changes produced — skipping PR"
             exit 0
           fi
           BODY=.release-notes-pr-body.md
@@ -270,8 +315,6 @@ jobs:
             } > "$BODY"
           fi
           BRANCH="release-notes/${TAG}"
-          git config user.name "github-actions"
-          git config user.email "actions@users.noreply.github.com"
           git checkout -B "$BRANCH"
           git add docs/releases "$ACCEPT"
           git commit -m "docs(releases): release notes for ${TAG}"

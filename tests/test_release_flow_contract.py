@@ -58,6 +58,11 @@ STAMPER = REPO_ROOT / "scripts" / "stamp_manifests.py"
 GUARD = REPO_ROOT / "scripts" / "promotion_guard.sh"
 PREPARE_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "release-prepare.yml"
 RELEASE_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "release.yml"
+NOTES_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "release-notes.yml"
+NOTES_PUBLISH_WORKFLOW = (
+    REPO_ROOT / ".github" / "workflows" / "release-notes-publish.yml"
+)
+DOCS_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "docs.yml"
 PLUGIN_JSON = Path(".claude-plugin/plugin/.claude-plugin/plugin.json")
 MCP_JSON = Path(".claude-plugin/plugin/.mcp.json")
 
@@ -449,6 +454,113 @@ def test_docker_rolling_tags_gate_on_the_recheck_not_the_release_job() -> None:
     assert "enable=${{ needs.release.outputs" not in block, (
         "no rolling-tag enable may read the release job's stale-able outputs"
     )
+
+
+def test_prepare_drafts_notes_into_the_release_pr() -> None:
+    """Release notes are a generated artifact of preparation (template#419).
+
+    The notes page has exactly the changelog's lifecycle: drafted by the
+    prepare run into the release PR's diff, reviewed as part of the release
+    decision, landed on the base by the merge — so every tag carries its
+    own page.  The draft-notes job must call the notes workflow (not
+    duplicate it), be skippable only via the explicit ``skip_notes``
+    escape hatch, and hand over the four values the call mode needs.
+    """
+    text = PREPARE_WORKFLOW.read_text(encoding="utf-8")
+    assert "skip_notes:" in text, "the skip_notes escape hatch is gone"
+    assert "draft-notes:" in text, "the draft-notes job is gone"
+    block = text[text.index("draft-notes:") :]
+    assert "uses: ./.github/workflows/release-notes.yml" in block, (
+        "draft-notes must CALL release-notes.yml, not duplicate the agent"
+    )
+    assert "secrets: inherit" in block
+    assert "needs: prepare" in block
+    for handed_over in (
+        "target_version:",
+        "source_ref:",
+        "prep_branch:",
+        "expected_head:",
+    ):
+        assert handed_over in block, f"draft-notes no longer passes {handed_over}"
+
+
+def test_notes_workflow_is_callable_and_not_release_triggered() -> None:
+    """The notes workflow serves the release PR; the post-hoc path is gone.
+
+    A ``release: published`` trigger would resurrect notes that arrive
+    after the tag — the exact state template#419 removed (the tag tree
+    must be self-contained).  The call mode commits onto the prep branch
+    with a lease on the stamp head, so a stale draft can never clobber a
+    newer Release Prepare re-dispatch, and an empty draft must FAIL the
+    call (a release PR without notes is incomplete; skip_notes is the
+    only sanctioned way around it).
+    """
+    text = NOTES_WORKFLOW.read_text(encoding="utf-8")
+    assert "workflow_call:" in text, "the notes workflow lost its call entry"
+    assert "workflow_dispatch:" in text, "the backfill dispatch entry is gone"
+    on_block = text[text.index("\non:") : text.index("\npermissions:")]
+    assert "release:" not in on_block, (
+        "the post-stable release trigger must stay deleted — notes travel "
+        "in the release PR, not after the tag"
+    )
+    assert "--force-with-lease=" in text, (
+        "the prep-branch commit must be leased on the expected stamp head"
+    )
+    call_half = text[text.index('if [ -n "$PREP_BRANCH" ]') :]
+    call_half = call_half[: call_half.index("# Dispatch mode")]
+    assert "::error::" in call_half and "skip_notes" in call_half, (
+        "an empty draft with no existing page must fail loudly and name skip_notes"
+    )
+    assert "already covers" in call_half, (
+        "an unchanged EXISTING page is the already-current success case "
+        "(the incremental-research contract), not a failure"
+    )
+
+
+def test_pending_marker_machinery_is_gone() -> None:
+    """No deferred body upgrade, no default-branch overlay at release time.
+
+    The page lives in the tagged tree, so release.yml composes the body —
+    summary block and deep link — from the local checkout at publish time,
+    docs deploys build the tag as-is, and the publish workflow only
+    redeploys docs when a released page is edited later.  Any reappearance
+    of the marker or the overlay means the post-hoc model is creeping
+    back.
+    """
+    marker = "release-notes-pending"
+    for workflow in (RELEASE_WORKFLOW, NOTES_PUBLISH_WORKFLOW, DOCS_WORKFLOW):
+        assert marker not in workflow.read_text(encoding="utf-8"), (
+            f"{workflow.name} resurrects the {marker} marker"
+        )
+    release = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+    assert "RELEASE-SUMMARY" in release, (
+        "the release body must take its summary from the page in the tag"
+    )
+    docs = DOCS_WORKFLOW.read_text(encoding="utf-8")
+    assert "Overlay release-notes pages" not in docs, (
+        "the release-deploy overlay is dead — the tag is the source of truth"
+    )
+    publish = NOTES_PUBLISH_WORKFLOW.read_text(encoding="utf-8")
+    assert "GH_TOKEN" not in publish, (
+        "the publish workflow must not talk to the releases API any more — "
+        "its only job is the docs redeploy for later page edits"
+    )
+
+
+def test_port_bookkeeping_carries_the_notes_page() -> None:
+    """A branch-cut stable's page reaches the default branch like the changelog.
+
+    The pages for all releases accumulate on the default branch (the docs
+    site reads them there); a release cut from release/X.Y lands its page
+    on that branch only, so the port PR must carry it over alongside the
+    changelog section.
+    """
+    text = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+    port = text[text.index("port-bookkeeping:") :]
+    assert 'page="docs/releases/${minor}.md"' in port, (
+        "the port step no longer stages the release-notes page"
+    )
+    assert "released-page.md" in port
 
 
 def _run_guard(workdir: Path) -> subprocess.CompletedProcess[str]:

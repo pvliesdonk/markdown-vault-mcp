@@ -113,6 +113,12 @@ the GitHub release, and runs the publish fan-out; for a stable promotion the sam
 (`scripts/promotion_guard.sh`) runs first, so drifted source refuses with no
 tag created.
 
+This PR also carries the release-notes page under `docs/releases/`,
+drafted by the prepare run's notes job — review it as part of the release
+(an evidence check: every causal claim must trace to its linked issue or
+PR).  If the notes commit has not appeared yet, the notes job is still
+running or failed — check the prepare run before merging.
+
 Do NOT use GitHub's "Update branch" button on this PR — the only valid
 refresh is re-dispatching the Release Prepare workflow, which recreates this
 branch from its base.

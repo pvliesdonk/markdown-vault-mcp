@@ -2,11 +2,13 @@
 name: writing-release-notes
 description: >-
   Use when drafting or revising a release-notes page under docs/releases/ —
-  the Release Notes workflow invokes it after every stable release, and a
-  human may invoke it for a re-draft or backfill. Walks the API-driven
-  research fan-out (commits to PRs to linked issues, never commit subjects),
-  the evidence contract, the per-minor page format, and the Vale loop, and
-  ends with pages written for a pull request — never a direct push.
+  the Release Prepare workflow's notes job invokes it for every release PR
+  (rc and stable alike), and a human may invoke the Release Notes dispatch
+  for a re-draft or backfill. Walks the API-driven research fan-out (commits
+  to PRs to linked issues, never commit subjects), the evidence contract,
+  the per-minor page format, and the Vale loop, and ends with pages written
+  into the working tree for the calling workflow to land — never a direct
+  push.
 ---
 
 <!-- ===== TEMPLATE-OWNED — re-rendered on template updates. ===== -->
@@ -44,6 +46,30 @@ You are given, or must derive first:
   (the page exists for an `X.Y.0` target — typically because it was drafted
   at prepare time: update or extend the page in place, and never append a
   duplicate section for a release the page already covers).
+- Watermark — an existing page carries an invisible
+  `<!-- notes-range-end: SHA -->` comment recording where its last
+  accepted draft's research ended. This is the incremental-research
+  anchor for the modes below.
+
+## Incremental research (patch and redraft modes)
+
+The accepted page is the cache; do not re-research a range the page
+already covers. When the page carries the watermark:
+
+- If the watermark SHA equals `RANGE_END`, the page is already current:
+  change nothing and say so in your final report — the calling workflow
+  treats an unchanged existing page as success.
+- Otherwise research only `WATERMARK..RANGE_END` (the same fan-out and
+  evidence rules, over the delta), fold the findings into the existing
+  narrative — extend a theme, add one, or leave prose untouched when the
+  delta is stamps and mechanics — and verify claims the delta might have
+  invalidated rather than re-deriving the whole page.
+- Always move the watermark to `RANGE_END` when you touch the page, and
+  write it (once, at the top of the page after the front matter or title)
+  when you create a page.
+
+A page without a watermark predates this contract: research the full
+`PREV..RANGE_END` range once, and add the watermark with the result.
 
 ## Non-negotiables
 
@@ -53,10 +79,12 @@ You are given, or must derive first:
    dropped, not hedged. Concrete numbers appear only verbatim from a source.
    Attribute quoted judgements (for example "[per the maintainer]" with the
    link) rather than presenting them as your own analysis.
-2. **Output is a pull request, never a push.** The dominant failure mode is
-   plausible-but-wrong rationale, and a confabulated "why" on a published
-   docs site is worse than no narrative. A human merges the page; write the
-   PR body to make that evidence check easy.
+2. **Output is reviewed before it publishes, never pushed live.** The
+   dominant failure mode is plausible-but-wrong rationale, and a
+   confabulated "why" on a published docs site is worse than no narrative.
+   The page reaches a human either inside the release PR's diff (the
+   primary flow — the release review includes the notes evidence check) or
+   as a standalone notes PR (backfill); write for that review either way.
 3. **Never touch `CHANGELOG.md`.** It is machine-generated and stays that
    way. The two artifacts answer different questions: "what landed" versus
    "should I upgrade".
@@ -231,8 +259,9 @@ Release Notes entry yet, note that in the PR body instead of adding one.
 Leave the working tree holding only: the release page, `docs/releases/index.md`
 (new-page mode), any `accept.txt` additions, and your proposed PR body in
 `.release-notes-pr-body.md` at the repository root (the workflow's mechanical
-step commits the docs paths, opens the PR from the body file, and discards
-the body file). The PR body must carry:
+step commits the docs paths — onto the release PR's prep branch in the
+primary flow, or as a standalone notes PR from the body file in backfill
+mode — and discards the body file). The PR body must carry:
 
 - the release tag and compare link;
 - a claim-by-claim evidence summary (or a statement that every inline link
@@ -244,5 +273,6 @@ the body file). The PR body must carry:
 **Honest failure beats confident junk.** If the range has too few linked
 issues to support a narrative, write the modest factual page the evidence
 supports. If you cannot produce even that, change nothing and say why in
-your final report — the release stands with its interim body, and nothing
-downstream breaks.
+your final report — in the primary flow the workflow then fails loudly and
+the operator re-runs or consciously releases with skip_notes; a backfill
+run simply opens no PR.

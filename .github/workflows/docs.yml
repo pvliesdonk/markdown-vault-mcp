@@ -117,32 +117,11 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      # Release deploys build the released tag, but release-notes pages live
-      # ONLY on the default branch (the notes flow's invariant) — a stable
-      # cut from release/X.Y checks out a tag that carries none of them, and
-      # even a trunk cut's tag misses pages merged after the cut.  Overlay
-      # the default branch's docs/releases/ (the per-minor pages plus their
-      # index; the same overlay mechanism release-notes-publish.yml uses on
-      # its post-merge redeploy) so every stable's deployed docs include the
-      # current pages — which is what lets release.yml's body step deep-link
-      # a page that exists on the default branch at publish time without the
-      # link 404ing.  Nav needs nothing extra: mkdocs.yml lists only
-      # releases/index.md in the nav and globs the per-minor pages into
-      # not_in_nav, and both entries are template-owned and present at the
-      # tag.
-      - name: Overlay release-notes pages from the default branch
-        if: github.event_name == 'release'
-        env:
-          DEFAULT: ${{ github.event.repository.default_branch }}
-        run: |
-          git fetch origin "$DEFAULT"
-          if git rev-parse -q --verify "origin/${DEFAULT}:docs/releases" > /dev/null; then
-            git checkout "origin/${DEFAULT}" -- docs/releases
-            echo "overlaid docs/releases from ${DEFAULT}"
-          else
-            echo "no docs/releases on ${DEFAULT} yet — nothing to overlay"
-          fi
-
+      # No notes overlay here (template#419): the release-notes page travels
+      # inside the release PR, so the tagged tree this deploy builds already
+      # carries its own page — the tag is the source of truth.  A page
+      # edited on the default branch AFTER a release's docs deployed is
+      # refreshed by release-notes-publish.yml's redeploy instead.
       - name: Publish versioned docs
         env:
           TAG: ${{ github.event.release.tag_name }}

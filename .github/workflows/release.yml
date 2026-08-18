@@ -212,35 +212,29 @@ jobs:
             echo "is_latest_minor=$is_latest_minor"
           } >> "$GITHUB_OUTPUT"
 
-      # Release-body contract (template#350, reworked for the release-PR
-      # flow): knope's Release step already set the body to the release's
-      # machine changelog section; this step appends the pointers.  For a
-      # stable, the notes deep link is CONDITIONAL on the series page
-      # existing on the default branch at publish time — notes merged during
-      # the rc window (migration M6 admits them into the promotion diff) get
-      # their deep link right here.  The link resolves regardless of the cut
-      # branch because docs.yml's release deploy overlays the default
-      # branch's docs/releases/ into the deployed minor — the tag itself
-      # (a release/X.Y cut above all) may carry none of the pages.  A
-      # stable published before its notes PR
-      # merges instead gets plain pointers plus the invisible
-      # `<!-- release-notes-pending -->` marker: release-notes-publish.yml
-      # upgrades ONLY bodies carrying that marker (opt-in) and removes it in
-      # the upgrade, so a hand-edited body is never clobbered — the marker
-      # literal appears on both sides; reword them together.  rc bodies
-      # never promise a notes page: the rc cycle's content lands in the
-      # minor's page for the stable.
-      - name: Append release-body pointers (docs, compare, changelog)
+      # Release-body contract (template#350 → #419): knope's Release step
+      # already set the body to the release's machine changelog section;
+      # this step prepends the notes summary and appends the pointers.  The
+      # notes page is part of the release PR's diff (drafted by
+      # release-prepare.yml's draft-notes job), so the TAGGED TREE — checked
+      # out right here — is the source of truth: the summary block for this
+      # tag is read from the local page, and the deep link is emitted
+      # whenever the page exists in the tree.  No default-branch API check,
+      # no pending-marker deferral — a release prepared with skip_notes just
+      # ships without the summary/link, and a backfill notes PR plus
+      # `gh release edit` is the manual remedy.  rc docs never deploy, so
+      # rc bodies link the page at the tag on GitHub instead of the site.
+      - name: Compose the release body (summary, docs, compare, changelog)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.release.outputs.tag }}
           IS_PRERELEASE: ${{ steps.release.outputs.is_prerelease }}
           REPO: ${{ github.repository }}
-          DEFAULT: ${{ github.event.repository.default_branch }}
         run: |
           ver="${TAG#v}"
           minor="${ver%%-*}"
           minor="${minor%.*}"
+          page="docs/releases/${minor}.md"
           # Highest stable tag strictly below this release (series-aware via
           # sort -V; empty on a project's very first release).
           prev=$(
@@ -249,27 +243,35 @@ jobs:
               | sort -V | awk -v t="$TAG" '$0 == t { print p; exit } { p = $0 }'
           )
           body=$(gh release view "$TAG" --json body --jq .body)
-          notes_pending=""
+          # The page's marked summary block for THIS tag, if the page in the
+          # tagged tree carries one (the skill writes one per release).
+          summary=""
+          if [ -f "$page" ]; then
+            summary=$(awk -v tag="$TAG" '
+              index($0, "RELEASE-SUMMARY " tag " START") { f=1; next }
+              index($0, "RELEASE-SUMMARY " tag " END")   { f=0 }
+              f' "$page" | awk 'NF {p=1} p' | tac | awk 'NF {p=1} p' | tac)
+          fi
           {
             if [ "$IS_PRERELEASE" = "true" ]; then
               echo "Release candidate ${ver}: a stabilisation build toward the upcoming v${minor} stable. Install it only to help test that release."
               echo
             fi
+            if [ -n "$summary" ]; then
+              printf '%s\n' "$summary"
+              echo
+            fi
             printf '%s\n' "$body"
             echo
             if [ "$IS_PRERELEASE" = "true" ]; then
-              # The stable's versioned docs publish when the stable ships;
-              # rcs deploy no docs, so point at the site root instead of a
-              # not-yet-existing /X.Y/ page.
+              # rcs deploy no versioned docs; the page travels in the tag.
+              if [ -f "$page" ]; then
+                echo "- Release notes (draft, in-tag): https://github.com/${REPO}/blob/${TAG}/${page}"
+              fi
               echo "- Documentation: https://pvliesdonk.github.io/markdown-vault-mcp/ (the v${minor} pages publish when the stable ships)"
             else
-              # The page check: pages live only on the default branch (a
-              # branch-cut stable's tag does not carry them), so ask the
-              # default branch, not the tag.
-              if gh api --silent "repos/${REPO}/contents/docs/releases/${minor}.md?ref=${DEFAULT}" 2>/dev/null; then
+              if [ -f "$page" ]; then
                 echo "- Release notes: https://pvliesdonk.github.io/markdown-vault-mcp/${minor}/releases/${minor}/"
-              else
-                notes_pending=yes
               fi
               echo "- Documentation: https://pvliesdonk.github.io/markdown-vault-mcp/${minor}/"
             fi
@@ -277,11 +279,6 @@ jobs:
               echo "- All changes since ${prev}: https://github.com/${REPO}/compare/${prev}...${TAG}"
             fi
             echo "- Commit-level detail: [CHANGELOG.md](https://github.com/${REPO}/blob/${TAG}/CHANGELOG.md)"
-            if [ -n "$notes_pending" ]; then
-              # Invisible upgrade-once marker for release-notes-publish.yml.
-              echo
-              echo "<!-- release-notes-pending -->"
-            fi
           } > release-body.md
           gh release edit "$TAG" --notes-file release-body.md
 
@@ -854,9 +851,10 @@ jobs:
 
   # Branch-release bookkeeping (release-vision section 4.5): after a STABLE
   # release cut from a branch other than the default one, the default branch
-  # still wants the changelog section (and the notes-page delta, which in
-  # practice never exists — notes pages only ever land on the default
-  # branch).  That ports over as an ORDINARY pull request, opened with
+  # still wants the changelog section and the release-notes page — both
+  # landed on the release branch inside the merged release PR (template#419)
+  # and both accumulate on the default branch, where the docs site reads
+  # them.  That ports over as an ORDINARY pull request, opened with
   # RELEASE_TOKEN so its CI runs — no admin-bypass push, no merge-back, and
   # nothing deadlocks if it merges late.  Stables only: knope's stable
   # section is cumulative over the whole rc cycle, so porting per rc would
@@ -918,26 +916,50 @@ jobs:
             exit 1
           fi
           if grep -qE "^## v?${VERSION//./\\.}([ (]|\$)" CHANGELOG.md; then
-            echo "${DEFAULT}'s CHANGELOG.md already carries the ${VERSION} section — nothing to port"
+            echo "${DEFAULT}'s CHANGELOG.md already carries the ${VERSION} section — skipping the changelog half"
+          else
+            # Insert directly below the insertion flag: newest-inserted-first
+            # matches release chronology (a backport releases after the newer
+            # stables above it were inserted).
+            if ! grep -qF '<!-- version list -->' CHANGELOG.md; then
+              echo "::error::${DEFAULT}'s CHANGELOG.md has no '<!-- version list -->' flag line — port the ${VERSION} section by hand (ordinary PR)"
+              exit 1
+            fi
+            awk 'BEGIN { while ((getline line < "/tmp/section.md") > 0) sec = sec line "\n" }
+                 { print }
+                 $0 == "<!-- version list -->" { printf "\n%s", sec }' \
+              CHANGELOG.md > CHANGELOG.md.new
+            mv CHANGELOG.md.new CHANGELOG.md
+          fi
+          # The notes page follows the changelog's port path (template#419):
+          # a branch-cut stable's page section landed on the release branch
+          # inside its release PR, and the default branch — where the pages
+          # for all releases accumulate — needs it too.  The released page
+          # is copied wholesale; if the default branch's copy moved since
+          # the cut, that divergence surfaces as this PR's reviewable diff
+          # and is resolved by hand there, same contract as the changelog.
+          minor="${VERSION%.*}"
+          page="docs/releases/${minor}.md"
+          if git show "${MERGE_SHA}:${page}" > /tmp/released-page.md 2>/dev/null; then
+            if [ -f "$page" ] && cmp -s /tmp/released-page.md "$page"; then
+              echo "${DEFAULT}'s ${page} already matches the released page — skipping the notes half"
+            else
+              mkdir -p docs/releases
+              cp /tmp/released-page.md "$page"
+            fi
+          fi
+          # status --porcelain, not diff: a newly created page is untracked
+          # and would be invisible to git diff.
+          if ! git status --porcelain -- CHANGELOG.md "$page" | grep -q .; then
+            echo "${DEFAULT} already carries both the changelog section and the notes page — nothing to port"
             exit 0
           fi
-          # Insert directly below the insertion flag: newest-inserted-first
-          # matches release chronology (a backport releases after the newer
-          # stables above it were inserted).
-          if ! grep -qF '<!-- version list -->' CHANGELOG.md; then
-            echo "::error::${DEFAULT}'s CHANGELOG.md has no '<!-- version list -->' flag line — port the ${VERSION} section by hand (ordinary PR)"
-            exit 1
-          fi
-          awk 'BEGIN { while ((getline line < "/tmp/section.md") > 0) sec = sec line "\n" }
-               { print }
-               $0 == "<!-- version list -->" { printf "\n%s", sec }' \
-            CHANGELOG.md > CHANGELOG.md.new
-          mv CHANGELOG.md.new CHANGELOG.md
           git config user.name "github-actions"
           git config user.email "actions@users.noreply.github.com"
           BRANCH="knope/port/${TAG}"
           git switch --force-create "$BRANCH"
           git add CHANGELOG.md
+          [ ! -f "$page" ] || git add "$page"
           git commit -m "chore: port ${TAG} release bookkeeping to ${DEFAULT}"
           git push --force origin "HEAD:${BRANCH}"
           # Skip cleanly when a port PR is already open (the force-push just
@@ -950,4 +972,4 @@ jobs:
           fi
           gh pr create --base "$DEFAULT" --head "$BRANCH" \
             --title "chore: port ${TAG} release bookkeeping to ${DEFAULT}" \
-            --body "Ports the ${TAG} changelog section from \`${BASE}\` to \`${DEFAULT}\` after the branch release ([release](https://github.com/${REPO}/releases/tag/${TAG})). Version stamps are deliberately not ported — ${DEFAULT}'s manifests describe its own series. Ordinary PR: review and merge on its own clock; conflicts (if the insertion drifted) are resolved by hand."
+            --body "Ports the ${TAG} changelog section and release-notes page from \`${BASE}\` to \`${DEFAULT}\` after the branch release ([release](https://github.com/${REPO}/releases/tag/${TAG})). Version stamps are deliberately not ported — ${DEFAULT}'s manifests describe its own series. Ordinary PR: review and merge on its own clock; divergence (if ${DEFAULT}'s copy moved since the cut) shows as this PR's diff and is resolved by hand."
