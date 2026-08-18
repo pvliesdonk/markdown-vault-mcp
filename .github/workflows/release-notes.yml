@@ -144,10 +144,11 @@ jobs:
           # into the working tree.  The drafting agent has unrestricted
           # Read, and a prompt-injected research source must never be able
           # to lift a persisted credential out of .git/config into content
-          # the landing step publishes.  Steps that need network git
-          # authenticate per-step via `gh auth setup-git`, whose helper
-          # holds no secret on disk and only works where GH_TOKEN is in
-          # that step's env — which the agent step's is not.
+          # the landing step publishes.  Steps that need network git name
+          # gh's credential helper per invocation (with inherited helpers
+          # reset), so no credential state ever lives on disk and the
+          # helper resolves only where GH_TOKEN is in that step's env —
+          # which the agent step's is not.
           persist-credentials: false
 
       - name: Resolve release context
@@ -159,9 +160,6 @@ jobs:
           SOURCE_REF: ${{ inputs.source_ref }}
         run: |
           set -euo pipefail
-          # Credentials are not persisted by the checkout; the fetch
-          # fallback below authenticates through gh's credential helper.
-          gh auth setup-git
           TAG="$INPUT_TAG"
           if [ -n "$TARGET_VERSION" ]; then
             # Prepare-time mode: the tag does not exist yet.  Key everything
@@ -186,7 +184,7 @@ jobs:
             # commands could not resolve the ref NAME later.
             if git rev-parse -q --verify "${SOURCE_REF}^{commit}" > /dev/null; then
               RANGE_END="$(git rev-parse "${SOURCE_REF}^{commit}")"
-            elif git fetch -q origin "$SOURCE_REF"; then
+            elif git -c credential.helper= -c 'credential.helper=!gh auth git-credential' fetch -q origin "$SOURCE_REF"; then
               RANGE_END="$(git rev-parse FETCH_HEAD)"
             else
               echo "::error::source_ref '${SOURCE_REF}' is neither a known commit nor fetchable from origin"
@@ -318,10 +316,13 @@ jobs:
           # The file tools are listed explicitly: in headless mode
           # --allowedTools IS the allowlist — nothing is inherited from the
           # action, and the first live run had every page write denied before
-          # failing the watermark gate (template#421).  The job's
-          # `contents: read` keeps the agent from pushing anything.
+          # failing the watermark gate (template#421).  Write/Edit are scoped
+          # to the notes surface the landing step commits: an unscoped write
+          # tool would let a prompt-injected research source plant git
+          # config or hooks that the credentialed landing step executes.
+          # The job's `contents: read` keeps the agent from pushing anything.
           claude_args: |
-            --allowedTools "Skill,Task,Read,Write,Edit,Glob,Grep,mcp__github__get_*,mcp__github__list_*,mcp__github__search_*,Bash(gh api *),Bash(vale *),Bash(uv run mkdocs *),Bash(git tag *),Bash(git show *),Bash(git diff *),Bash(git log *)"
+            --allowedTools "Skill,Task,Read,Glob,Grep,Write(docs/releases/**),Edit(docs/releases/**),Write(.vale/styles/config/vocabularies/**),Edit(.vale/styles/config/vocabularies/**),Write(.release-notes-pr-body.md),Edit(.release-notes-pr-body.md),mcp__github__get_*,mcp__github__list_*,mcp__github__search_*,Bash(gh api *),Bash(vale *),Bash(uv run mkdocs *),Bash(git tag *),Bash(git show *),Bash(git diff *),Bash(git log *)"
 
       - name: Land the drafted page
         env:
@@ -340,10 +341,14 @@ jobs:
           ACCEPT=".vale/styles/config/vocabularies/Base/accept.txt"
           git config user.name "github-actions"
           git config user.email "actions@users.noreply.github.com"
-          # The checkout did not persist credentials (the agent step must
-          # not see them); this step's pushes authenticate through gh's
-          # credential helper with the PAT from this step's env.
-          gh auth setup-git
+          # This step must not trust git state the agent could have
+          # influenced: every commit and push below runs with working-tree
+          # hooks disabled, and every network call resets inherited
+          # credential helpers before naming gh's per invocation — nothing
+          # the checkout carries can execute here or see the PAT.
+          GIT_PUSH=(git -c credential.helper= \
+            -c 'credential.helper=!gh auth git-credential' \
+            -c core.hooksPath=/dev/null push)
           if [ -n "$PREP_BRANCH" ]; then
             # Call mode: the page is release content — commit it onto the
             # release PR's prep branch so the release PR's diff carries it
@@ -368,13 +373,13 @@ jobs:
               accepted_head="$EXPECTED_HEAD"
             else
               git add docs/releases "$ACCEPT"
-              git commit -m "docs(releases): notes for ${TAG}"
+              git -c core.hooksPath=/dev/null commit -m "docs(releases): notes for ${TAG}"
               # Lease on the stamp head this draft was cut against: a
               # Release Prepare re-dispatch force-recreates the prep
               # branch, and a stale draft must never clobber the newer
               # prepare — the lease fails this push loudly instead; the
               # newer dispatch's own draft-notes job owns the branch.
-              git push --force-with-lease="${PREP_BRANCH}:${EXPECTED_HEAD}" \
+              "${GIT_PUSH[@]}" --force-with-lease="${PREP_BRANCH}:${EXPECTED_HEAD}" \
                 origin "HEAD:${PREP_BRANCH}"
               accepted_head="$(git rev-parse HEAD)"
             fi
@@ -417,9 +422,9 @@ jobs:
           BRANCH="release-notes/${TAG}"
           git checkout -B "$BRANCH"
           git add docs/releases "$ACCEPT"
-          git commit -m "docs(releases): release notes for ${TAG}"
+          git -c core.hooksPath=/dev/null commit -m "docs(releases): release notes for ${TAG}"
           # Force: a re-dispatch for the same tag replaces the previous draft.
-          git push --force origin "HEAD:${BRANCH}"
+          "${GIT_PUSH[@]}" --force origin "HEAD:${BRANCH}"
           gh pr create --base "$DEFAULT" --head "$BRANCH" \
             --title "docs(releases): release notes for ${TAG}" \
             --body-file "$BODY" \

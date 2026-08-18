@@ -511,20 +511,34 @@ def test_notes_workflow_is_callable_and_not_release_triggered() -> None:
         "events; this workflow runs on workflow_dispatch/workflow_call, "
         "where passing it is a hard error before the agent starts"
     )
-    assert "Read,Write,Edit,Glob,Grep" in text, (
-        "the drafting agent's --allowedTools must list the file tools "
-        "explicitly — in headless mode the flag IS the allowlist, nothing "
-        "is inherited, and without them every page write is denied"
+    assert "Write(docs/releases/" in text and "Edit(docs/releases/" in text, (
+        "the drafting agent needs the file tools explicitly (in headless "
+        "mode --allowedTools IS the allowlist), scoped to the notes surface"
+    )
+    assert ",Write," not in text and ",Edit," not in text, (
+        "no unscoped Write/Edit may appear in the allowlist — an unscoped "
+        "write tool lets a prompt-injected research source plant git "
+        "config or hooks that the credentialed landing step executes"
     )
     assert "persist-credentials: false" in text, (
         "the checkout must not persist the release PAT — the agent's "
         "unrestricted Read would let a prompt-injected research source "
         "lift it out of .git/config into published content"
     )
-    assert text.count("gh auth setup-git") >= 2, (
-        "with no persisted credentials, the context step's fetch fallback "
-        "and the landing step's pushes must each authenticate per-step "
-        "via gh's credential helper"
+    assert "-c credential.helper= " in text.replace("\\\n", " ") and (
+        "credential.helper=!gh auth git-credential" in text
+    ), (
+        "network git must reset inherited credential helpers and name "
+        "gh's per invocation — a helper planted in the checkout must "
+        "never run with the PAT in scope"
+    )
+    assert "core.hooksPath=/dev/null" in text, (
+        "the landing step's commits and pushes must ignore working-tree "
+        "hooks — agent-influenced state must not execute in the "
+        "credentialed step"
+    )
+    assert "gh auth setup-git" not in text, (
+        "no global credential-helper setup — auth is per-invocation only"
     )
     call_half = text[text.index('if [ -n "$PREP_BRANCH" ]') :]
     call_half = call_half[: call_half.index("# Dispatch mode")]
