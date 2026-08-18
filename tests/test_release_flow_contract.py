@@ -534,16 +534,18 @@ def test_release_pr_is_held_draft_until_the_notes_land() -> None:
     ``gh pr ready`` lifts the hold.
     """
     prepare = PREPARE_WORKFLOW.read_text(encoding="utf-8")
-    step_name = "Hold the release PR as draft until its notes land"
+    step_name = "Set the release PR draft hold"
     assert step_name in prepare, "the draft-hold step is gone"
     step = prepare[prepare.index(step_name) :]
     step = step[: step.index("- name:")] if "- name:" in step else step
     assert "gh pr ready --undo" in step, (
         "the hold must use draft conversion — a draft PR cannot be merged"
     )
-    assert "skip_notes" in prepare[: prepare.index(step_name)] or (
-        "skip_notes" in step
-    ), "the hold must be skippable only via skip_notes"
+    assert "SKIP_NOTES" in step and "isDraft" in step, (
+        "the step must set the state in BOTH directions: skip_notes must "
+        "explicitly lift a hold a previous run's failed notes job left on "
+        "the refreshed PR — the skipped draft-notes job cannot do it"
+    )
 
 
 def test_publish_workflow_skips_release_pr_merges() -> None:
@@ -556,8 +558,14 @@ def test_publish_workflow_skips_release_pr_merges() -> None:
     release-PR merge (the pinned squash subject) must be skipped wholesale.
     """
     publish = NOTES_PUBLISH_WORKFLOW.read_text(encoding="utf-8")
+    assert "/pulls" in publish and 'startswith("knope/prepare/")' in publish, (
+        "release-merge detection must be merge-strategy independent — the "
+        "commits API associates the pushed head with its PR under squash, "
+        "merge commit, and rebase alike"
+    )
     assert "^chore: prepare release " in publish, (
-        "the publish workflow must detect and skip release-PR merges"
+        "the squash-subject check must remain as the degraded fallback for "
+        "an API failure"
     )
     gate_idx = publish.index("^chore: prepare release ")
     pages_idx = publish.index("Find changed release pages")
@@ -591,9 +599,10 @@ def test_pending_marker_machinery_is_gone() -> None:
         "the release-deploy overlay is dead — the tag is the source of truth"
     )
     publish = NOTES_PUBLISH_WORKFLOW.read_text(encoding="utf-8")
-    assert "GH_TOKEN" not in publish, (
-        "the publish workflow must not talk to the releases API any more — "
-        "its only job is the docs redeploy for later page edits"
+    assert "--notes-file" not in publish, (
+        "the publish workflow must not rewrite release bodies any more — "
+        "its jobs are the release-merge gate and the docs redeploy for "
+        "later page edits"
     )
 
 

@@ -48,18 +48,34 @@ jobs:
       # tag" BEFORE the release workflow has created the new one, so it
       # could overwrite the fresh deploy with the previous tag's content
       # (template#421).  Out-of-band page edits are this workflow's only
-      # job, so a push whose head commit is a release-PR merge (the pinned
-      # squash subject) is skipped wholesale.
+      # job, so a push whose head commit came from a release PR is skipped
+      # wholesale.  Detection is merge-strategy independent: the commits
+      # API associates the pushed head with its PR under squash, merge
+      # commit, and rebase alike; on an API failure the check degrades to
+      # the pinned squash subject (the repo's convention), which then
+      # covers the common case.
       - name: Skip release-PR merges — the release deploys its own docs
         id: gate
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
         run: |
-          subject="$(git log -1 --format=%s HEAD)"
-          if printf '%s' "$subject" | grep -qE '^chore: prepare release '; then
-            echo "release-PR merge (${subject}) — the release workflow owns this deploy; skipping"
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
+          skip=false
+          head_sha="$(git rev-parse HEAD)"
+          prep_prs="$(gh api "repos/${REPO}/commits/${head_sha}/pulls" \
+            --jq '[.[] | select(.head.ref | startswith("knope/prepare/"))] | length' \
+            2>/dev/null || echo "")"
+          if [ "$prep_prs" != "" ] && [ "$prep_prs" != "0" ]; then
+            skip=true
+            echo "head ${head_sha} belongs to a knope/prepare/* PR — the release workflow owns this deploy; skipping"
+          elif [ -z "$prep_prs" ]; then
+            subject="$(git log -1 --format=%s HEAD)"
+            if printf '%s' "$subject" | grep -qE '^chore: prepare release '; then
+              skip=true
+              echo "commits API unavailable; squash subject (${subject}) marks a release-PR merge — skipping"
+            fi
           fi
+          echo "skip=${skip}" >> "$GITHUB_OUTPUT"
 
       - name: Find changed release pages
         if: steps.gate.outputs.skip != 'true'

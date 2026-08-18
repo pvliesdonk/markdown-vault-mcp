@@ -342,14 +342,16 @@ jobs:
       # DRAFT until the notes land; the draft-notes job lifts the hold
       # after its commit (or after confirming the page is already
       # current).  A failed draft leaves the PR visibly draft and
-      # unmergeable — exactly the incomplete state it is in.  With
-      # skip_notes the hold is skipped: the operator chose to ship the
-      # base's page state.
-      - name: Hold the release PR as draft until its notes land
-        if: ${{ !inputs.skip_notes }}
+      # unmergeable — exactly the incomplete state it is in.  The step
+      # sets the state in BOTH directions: with skip_notes the operator
+      # chose to ship the base's page state, and a refreshed PR that a
+      # previous run's failed notes job left draft must be lifted
+      # explicitly here — the skipped draft-notes job cannot do it.
+      - name: Set the release PR draft hold
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           PREP_BRANCH: ${{ steps.prep.outputs.branch }}
+          SKIP_NOTES: ${{ inputs.skip_notes }}
         run: |
           pr="$(gh pr list --state open --head "$PREP_BRANCH" \
             --json number --jq '.[0].number')"
@@ -357,8 +359,15 @@ jobs:
             echo "::error::no open release PR found for ${PREP_BRANCH} — CreatePullRequest reported success but the PR is not listed"
             exit 1
           fi
-          gh pr ready --undo "$pr"
-          echo "release PR #${pr} held as draft until draft-notes lands"
+          if [ "$SKIP_NOTES" = "true" ]; then
+            if [ "$(gh pr view "$pr" --json isDraft --jq .isDraft)" = "true" ]; then
+              gh pr ready "$pr"
+            fi
+            echo "skip_notes: release PR #${pr} ready without a notes hold"
+          else
+            gh pr ready --undo "$pr"
+            echo "release PR #${pr} held as draft until draft-notes lands"
+          fi
 
   # Release notes are release content with exactly the changelog's
   # lifecycle (template#419): drafted here, into the release PR's diff,
