@@ -3001,44 +3001,62 @@ combined diff.
 
 The release model is trunk-based: `main` is trunk, every change merges
 there, and **merging is not releasing**. A merge rebuilds only the
-rolling `edge` channel; a release is a separate, deliberate
-`workflow_dispatch` of `release.yml`. **Prerelease-ness is a property of
-the branch the workflow runs on, not a dispatch flag.**
-`[tool.semantic_release.branches]` maps `main` to stable releases and
-`release/.*` to rc pre-releases (token `rc`), and every publish gate in
-`release.yml` derives from semantic-release's own outputs
-(`is_prerelease`, tag ordering) — there is no prerelease checkbox that
-can desync from the tag. (This replaced an earlier `inputs.prerelease`
-flag and a tag-scanning `detect-rc` job, both removed; the rc-fed
-`:unstable` Docker tag was retired in favour of `edge`.)
+rolling `edge` channel; a release is a **reviewed release pull request**
+(the knope release-PR flow — authoritative design in
+[`release-vision.md`](release-vision.md), migration record in
+[`release-migration.md`](release-migration.md)). Two workflows implement
+it: `Release Prepare` (`release-prepare.yml`, `workflow_dispatch` on the
+ref to release from — `main` or `release/X.Y`) has knope compute the
+version from conventional commits since the last reachable release tag,
+write the `CHANGELOG.md` section, stamp the version-coupled files, and
+open (or force-refresh) a release PR from the per-base prep branch
+`knope/prepare/<base>`; merging that PR is the release decision, and
+`release.yml` (`Release`) then tags the merge commit via knope's
+tag-release workflow and runs the publish fan-out.
+**Prerelease-ness is a property of the reviewed diff, not a dispatch
+flag**: the prepare `channel` input (`auto`/`rc`/`stable`, rc being the
+`release/*` derivation default) picks the series at prepare time, an
+`-rc.` suffix in the merged version marks a pre-release, and every
+publish gate derives from that plus tag ordering. An `override_version`
+input covers ranges knope counts nothing in (only `feat`, `fix`, and
+`!`/`BREAKING CHANGE` drive the computation) and post-collision
+recovery.
 
 Three channels, with distinct identities and promises:
 
 | Channel | Identity | Built from | Promise |
 |---|---|---|---|
 | **edge** | none — the commit is the identity | every push to `main` | newest merged code, rolling and disposable; no tag, release, version bump, or manifest change |
-| **rc** | `vX.Y.Z-rc.N`, target fixed at cut time | a `release/X.Y` branch only | a stabilisation step toward exactly that version (a fresh branch starts at `X.Y.0-rc.1`) |
-| **stable** | `vX.Y.Z` | quiescent `main` (default) or a finalized `release/X.Y` | promotion of a verified build to every distribution surface |
+| **rc** | `vX.Y.Z-rc.N`, target fixed at cut time | a `release/X.Y` branch, or quiescent trunk when the rc continues a reachable series of the target version | a stabilisation step toward exactly that version (a fresh series starts at `X.Y.0-rc.1`) |
+| **stable** | `vX.Y.Z` | quiescent `main` (default) or the promotion of an rc series | promotion of a verified build to every distribution surface |
 
-**The default release path is trunk.** Dispatching `release.yml` on
-`main` at a quiescent commit cuts a stable from HEAD — no branch, no
-ceremony. The short-lived `release/X.Y` branch is the exception tool for
-exactly two cases: a dirty trunk whose unfinished work must be excluded
-(cut the branch from the last quiescent commit behind HEAD, stabilise
-with rcs, then finalize), or a patch to an already-shipped release while
-`main` has moved on (create the branch retroactively from the tag). On a
-`release/X.Y` branch a dispatch cuts the next rc, or the final stable
-`X.Y.Z` when the `finalize` input is set; the `force` bump input is
-`main`-only, since a branch's target is fixed at cut time.
+**The default release path is trunk.** Dispatching `Release Prepare` on
+`main` at a quiescent commit prepares a stable from HEAD — no branch,
+no ceremony. The short-lived `release/X.Y` branch is the exception tool
+for exactly two cases: a dirty trunk whose unfinished work must be
+excluded (cut the branch from the last quiescent commit behind HEAD,
+stabilise with rcs, then promote), or a patch to an already-shipped
+release while `main` has moved on (create the branch retroactively from
+the tag). Promoting an rc series is not a special mode: it is a plain
+`channel: stable` prepare on the same ref, guarded by the
+**same-source promotion guard** (`scripts/promotion_guard.sh`, invoked
+from `knope.toml` before the Release step): the promotion diff against
+the highest reachable rc of the target may contain only release stamps
+and `docs/releases/**` — any other commit landing in between forces a
+new rc, and a refusal fails before any tag exists. Two operator rules
+are load-bearing: never use GitHub's "Update branch" on a release PR
+(the only refresh is re-dispatching prepare, which recreates the prep
+branch from base), and the ruleset's strict required checks hard-block
+merging a stale release PR anyway.
 
 **The cut criterion — when trunk is safe to release.** An epic that
-ships atomically makes trunk unreleasable while it is open: dispatching
-`release.yml` on `main` would ship HEAD mid-story. Whether trunk is
+ships atomically makes trunk unreleasable while it is open: preparing a
+release on `main` would ship HEAD mid-story. Whether trunk is
 quiescent is judged from a queryable signal recorded on the epic —
 preferably a **release milestone** named for the target version (`X.Y`)
 with no open issues, and the **`ships-atomically` label** as the
-fallback when no milestone names the release yet. `release.yml` carries
-an **advisory step** on every `main` dispatch that surfaces both
+fallback when no milestone names the release yet. `release-prepare.yml`
+carries an **advisory step** on every `main` dispatch that surfaces both
 signals — a release-named milestone that still has open issues, and each
 open `ships-atomically` epic (with a count of its still-open native
 sub-issues, so a cross-repo epic whose children live elsewhere stays
@@ -3047,8 +3065,13 @@ intentional. An open atomic epic with unclosed children means either
 releasing from a commit before the epic started (a `release/X.Y` branch
 cut from there) or waiting.
 
-**Stable** runs the full pipeline: semantic-release cuts a `vX.Y.Z` tag,
-PyPI receives the wheel + sdist, the Docker image publishes `:vX.Y.Z`
+**Stable** runs the full pipeline: the merged release PR carries the
+version in `pyproject.toml`/`uv.lock` (knope `versioned_files`) and the
+committed pins in `server.json` plus the two Claude-plugin manifests
+(stamped by `scripts/stamp_manifests.py` on stable prepares only —
+fail-loud, never warn-and-continue); on merge, knope cuts the `vX.Y.Z`
+tag and GitHub release, PyPI receives the wheel + sdist, the Docker
+image publishes `:vX.Y.Z`
 plus the rolling `:latest`/`:vX`/`:vX.Y`, `.deb`/`.rpm` packages attach
 to the GitHub Release, the Claude Code catalog entry in
 `pvliesdonk/claude-plugins` is updated by a direct commit (the job first
@@ -3063,23 +3086,23 @@ for a release that is the newest in its series, so a backport patch cut
 from an old `release/X.Y` never repoints them backwards; the immutable
 `:vX.Y.Z` always publishes.
 
-**rc** exercises the pipeline without touching public catalogs:
-semantic-release cuts a `vX.Y.Z-rc.N` tag and marks the GitHub Release
-as a pre-release, the Docker image publishes `:vX.Y.Z-rc.N` only
-(`edge` is the sole rolling unstable tag — no `:latest`/`:vX.Y`/`:vX`
-movement), and the mcpb bundle is built from the branch and attached for
-manual smoke-test. PyPI, linux packages, the Claude Code catalog
-publish, and the MCP Registry publish are all skipped.
+**rc** exercises the pipeline without touching public catalogs: knope
+cuts a `vX.Y.Z-rc.N` tag and marks the GitHub Release as a pre-release,
+the Docker image publishes `:vX.Y.Z-rc.N` only (`edge` is the sole
+rolling unstable tag — no `:latest`/`:vX.Y`/`:vX` movement), and the
+mcpb bundle is built from the merge commit and attached for manual
+smoke-test. PyPI, linux packages, the Claude Code catalog publish, and
+the MCP Registry publish are all skipped; rc prepares leave the
+`server.json`/plugin pins untouched at the last published stable, since
+the versions those pins name only exist for stable releases.
 
-**Merge-back is mandatory after any release cut from a `release/*`
-branch.** The `merge-back` job merges the branch into `main` via
-`scripts/merge_back.sh` (version-coupled files resolve to `main`'s side;
-a real conflict fails loudly for a manual `git merge --no-ff`). This is
-a correctness requirement, not hygiene: with the release tag unreachable
-from `main`, semantic-release recomputes the same version from `main`'s
-own history, finds the tag taken repo-globally, and reports "already
-released" forever — the merge-back is the single reverse flow, carrying
-release commits, never feature cherry-picks.
+**There is no merge-back.** A stable released from a `release/*` branch
+is followed by an automated **bookkeeping port PR** to `main` carrying
+the changelog section (an ordinary PR, reviewed and merged like any
+other); rcs port nothing. A prepare whose computed version is already
+tagged repo-globally refuses with the remedy in its message — the
+release tag no longer needs to be reachable from `main` for the next
+computation to succeed, which is what made PSR's merge-back mandatory.
 
 The `edge` channel is produced by a separate `Unstable channel`
 workflow (`.github/workflows/unstable.yml`), not `release.yml`: every
@@ -3243,3 +3266,9 @@ Later decisions (2026-08-16, #1054):
 | # | Topic | Decision | Rationale |
 |-|-|-|-|
 | 23 | Release model — how to cut an RC | Short-lived `release/X.Y` stabilisation branches cut on demand, not a long-lived `unstable` branch; prerelease-ness is a property of the branch (semantic-release branch groups: `main`→stable, `release/.*`→rc), not a dispatch flag; "run the latest code" is served by the versionless rolling `edge` channel; merge-back into `main` after any branch-cut release is mandatory | The disagreement that stalled the 4.0.0 cut. **Rejected:** a permanent `unstable` branch with cherry-picks forward to `main` — forward-porting is the expensive direction (epics are multi-commit and interleaved) and every quality gate is `main`-relative, so an unstable-first PR is measured against an ever-growing diff. **Rejected:** cutting rcs from trunk / a `prerelease` dispatch flag — a pre-release tag then asserts a next-version prediction semantic-release keeps falsifying (the `v3.2.0-rc.*` series that could no longer produce 3.2.0), and the flag can desync from the tag. **Rejected:** per-channel feature-flag defaults (preview-on in rc) — it dogfoods a configuration no user runs, whereas a release branch is bit-for-bit what ships. **Adopted** because a frozen branch's version is a decision made at cut time rather than an extrapolation, which makes the renumbering problem structurally impossible; the merge-back is a correctness requirement, since without the tag reachable from `main`, semantic-release recomputes the same version, finds it taken repo-globally, and reports "already released" forever. The channel identities, branch mechanics, and cut criterion are specified under [Release channels](#release-channels) above |
+
+Later decisions (2026-08-18, #1082/#1086):
+
+| # | Topic | Decision | Rationale |
+|-|-|-|-|
+| 24 | Release mechanics — how a release is cut | The knope release-PR flow replaces python-semantic-release: `Release Prepare` computes the version into a reviewed release PR, merging the PR tags and publishes, promotion is a plain stable prepare guarded by the same-source promotion guard, and a bookkeeping port PR replaces the mandatory merge-back. Decision 23's channel model (trunk-first, short-lived `release/X.Y`, rolling `edge`) survives intact; superseded within it are the semantic-release branch groups, the `finalize`/`force` inputs, the merge-back, and the rc-only-from-branch rule (an rc may continue a reachable series from quiescent trunk) | The version becomes a reviewed decision instead of a publish-time computation, and the "already released forever" failure class dies with the reachability requirement. Authoritative pair: [`release-vision.md`](release-vision.md) (target design) and [`release-migration.md`](release-migration.md) (decisions M1–M6 and the migration record); the implemented behaviour is summarised under [Release channels](#release-channels) above |

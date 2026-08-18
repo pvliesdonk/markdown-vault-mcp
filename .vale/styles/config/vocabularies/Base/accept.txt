@@ -38,6 +38,7 @@ move_folder
 
 # --- Python / runtime ecosystem ---
 debugpy
+knope
 mypy
 namespace
 namespaced

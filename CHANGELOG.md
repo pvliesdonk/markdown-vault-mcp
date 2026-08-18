@@ -2,7 +2,7 @@
 
 <!-- version list -->
 
-## v4.0.0-rc.1 (2026-08-16)
+## 4.0.0-rc.1 (2026-08-16)
 
 ### Bug Fixes
 
@@ -95,7 +95,7 @@
   [`9cb80e0`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/9cb80e01f6003bce909e6bd0fd1de2b5119a15ef))
 
 
-## v3.2.0-rc.7 (2026-08-12)
+## 3.2.0-rc.7 (2026-08-12)
 
 ### Bug Fixes
 
@@ -272,10 +272,10 @@
   [`74f46a0`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/74f46a0fa5a971228cb5a815a08ee8c1eaf3cfd5))
 
 
-## v3.2.0-rc.6 (2026-07-16)
+## 3.2.0-rc.6 (2026-07-16)
 
 
-## v3.2.0-rc.5 (2026-07-16)
+## 3.2.0-rc.5 (2026-07-16)
 
 ### Features
 
@@ -284,7 +284,7 @@
   [`6ccf140`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/6ccf140962f8c397792634cf4889c34cf1f72690))
 
 
-## v3.2.0-rc.4 (2026-07-16)
+## 3.2.0-rc.4 (2026-07-16)
 
 ### Features
 
@@ -293,7 +293,7 @@
   [`46ce4c2`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/46ce4c2991217ca70164c7e0daf8eff9a6de255b))
 
 
-## v3.2.0-rc.3 (2026-07-16)
+## 3.2.0-rc.3 (2026-07-16)
 
 ### Bug Fixes
 
@@ -318,7 +318,7 @@
   [`c8f30ca`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/c8f30cab69af73da136477b0371aae8eec27e6e5))
 
 
-## v3.2.0-rc.2 (2026-07-15)
+## 3.2.0-rc.2 (2026-07-15)
 
 ### Features
 
@@ -363,7 +363,7 @@
   [`144e1da`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/144e1da2238d3b516456fc31bd5f83f96e9da6c4))
 
 
-## v3.2.0-rc.1 (2026-07-10)
+## 3.2.0-rc.1 (2026-07-10)
 
 ### Bug Fixes
 
@@ -424,10 +424,10 @@
   [`e3890ce`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/e3890ce40013e21b216ce38bc8d55db462317b0f))
 
 
-## v3.1.0 (2026-07-08)
+## 3.1.0 (2026-07-08)
 
 
-## v3.1.0-rc.3 (2026-07-05)
+## 3.1.0-rc.3 (2026-07-05)
 
 ### Bug Fixes
 
@@ -436,7 +436,7 @@
   [`b2260d7`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/b2260d7dc49ba3fe6b777c58bd0f260c3ff225cb))
 
 
-## v3.1.0-rc.2 (2026-07-03)
+## 3.1.0-rc.2 (2026-07-03)
 
 ### Bug Fixes
 
@@ -453,7 +453,7 @@
   [`18e3688`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/18e368840d00d456ae25cdc571a86f210147ccf5))
 
 
-## v3.1.0-rc.1 (2026-07-03)
+## 3.1.0-rc.1 (2026-07-03)
 
 ### Bug Fixes
 
@@ -632,7 +632,7 @@
   [`42c03d7`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/42c03d7e874ef731edf7731a5372f36272333441))
 
 
-## v3.0.4 (2026-06-27)
+## 3.0.4 (2026-06-27)
 
 ### Bug Fixes
 
@@ -641,7 +641,7 @@
   [`30b9118`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/30b9118cdc5e2acff63b7b138276b1e57ac3dcea))
 
 
-## v3.0.3 (2026-06-26)
+## 3.0.3 (2026-06-26)
 
 ### Bug Fixes
 
@@ -664,7 +664,7 @@
   [`0dee650`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/0dee650da9d3bf66d76c523ebb816184552532cb))
 
 
-## v3.0.2 (2026-06-25)
+## 3.0.2 (2026-06-25)
 
 ### Bug Fixes
 
@@ -691,7 +691,7 @@
   [`409dfa7`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/409dfa74bfce1dd8338e5c1ecfae2b0b1d9964f0))
 
 
-## v3.0.1 (2026-06-22)
+## 3.0.1 (2026-06-22)
 
 ### Bug Fixes
 
@@ -738,10 +738,10 @@
   [`57b0d93`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/57b0d93d1509db41679b2ec5b1ac4aabdd9a3c8e))
 
 
-## v3.0.0 (2026-06-17)
+## 3.0.0 (2026-06-17)
 
 
-## v2.0.0-rc.5 (2026-06-17)
+## 2.0.0-rc.5 (2026-06-17)
 
 ### Bug Fixes
 
@@ -770,7 +770,7 @@
   [`5e7edfd`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/5e7edfd2a85f0c9c6f87f19d9c4090396c5af53b))
 
 
-## v2.0.0-rc.4 (2026-06-16)
+## 2.0.0-rc.4 (2026-06-16)
 
 ### Features
 
@@ -779,7 +779,7 @@
   [`75aedcb`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/75aedcbdcad2a23f1084314c5af560917eb2e6d5))
 
 
-## v2.0.0-rc.3 (2026-06-16)
+## 2.0.0-rc.3 (2026-06-16)
 
 ### Chores
 
@@ -814,7 +814,7 @@
   [`2522aec`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/2522aecb9792b1732a8335f3a6bee2ccda0ed5ca))
 
 
-## v2.0.0-rc.2 (2026-06-12)
+## 2.0.0-rc.2 (2026-06-12)
 
 ### Bug Fixes
 
@@ -923,7 +923,7 @@
   [`a6acc2e`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/a6acc2ec817caa14d90eec52a56c94fde8882187))
 
 
-## v2.0.0-rc.1 (2026-06-09)
+## 2.0.0-rc.1 (2026-06-09)
 
 ### Bug Fixes
 
@@ -1645,7 +1645,7 @@
   ([`f387c47`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/f387c4701c43cec7c15f56fe03b88b580c413b1b))
 
 
-## v1.28.0 (2026-05-03)
+## 1.28.0 (2026-05-03)
 
 ### Bug Fixes
 
@@ -1749,7 +1749,7 @@
   ([`3089743`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/3089743b9fece116efd990546c49f9c10b3f7378))
 
 
-## v1.27.1 (2026-04-23)
+## 1.27.1 (2026-04-23)
 
 ### Bug Fixes
 
@@ -1878,10 +1878,10 @@
   [`c189478`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/c189478c8f0c54a05322983c9c834506255572aa))
 
 
-## v1.27.0 (2026-04-21)
+## 1.27.0 (2026-04-21)
 
 
-## v1.26.0-rc.1 (2026-04-21)
+## 1.26.0-rc.1 (2026-04-21)
 
 ### Chores
 
@@ -1910,10 +1910,10 @@
   ([`978e6b8`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/978e6b80dab7598081ee9d29cf2df2bc34cecef2))
 
 
-## v1.25.0 (2026-04-20)
+## 1.25.0 (2026-04-20)
 
 
-## v1.24.0-rc.1 (2026-04-20)
+## 1.24.0-rc.1 (2026-04-20)
 
 ### Chores
 
@@ -1952,10 +1952,10 @@
   [`5706948`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/5706948b0c8e90510c062109c8e0b57b3de6ef7c))
 
 
-## v1.23.1 (2026-04-20)
+## 1.23.1 (2026-04-20)
 
 
-## v1.23.2-rc.1 (2026-04-20)
+## 1.23.2-rc.1 (2026-04-20)
 
 ### Testing
 
@@ -1964,7 +1964,7 @@
   [`132fc92`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/132fc92cdeaff4c1bb14bcaa6f65d03434dbc0ab))
 
 
-## v1.23.1-rc.1 (2026-04-19)
+## 1.23.1-rc.1 (2026-04-19)
 
 ### Bug Fixes
 
@@ -1983,7 +1983,7 @@
   [`b27b20b`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/b27b20b27edfcaa0311978b4198204794e1dfb31))
 
 
-## v1.23.0 (2026-04-19)
+## 1.23.0 (2026-04-19)
 
 ### Bug Fixes
 
@@ -2030,7 +2030,7 @@
   [`529156f`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/529156fa0cf5821be3970250e0c5c16ae8befe26))
 
 
-## v1.22.1 (2026-04-17)
+## 1.22.1 (2026-04-17)
 
 ### Bug Fixes
 
@@ -2065,7 +2065,7 @@
   [`1ddb97f`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/1ddb97fc05a6631d962c2615c81ce4b4e1e46e83))
 
 
-## v1.22.0 (2026-04-16)
+## 1.22.0 (2026-04-16)
 
 ### Chores
 
@@ -2101,7 +2101,7 @@
   [`2788a6f`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/2788a6f5fa39d06d7a4b598bed6c6c601e598b06))
 
 
-## v1.22.0-rc.1 (2026-04-11)
+## 1.22.0-rc.1 (2026-04-11)
 
 ### Bug Fixes
 
@@ -2222,7 +2222,7 @@
   ([`476ab6e`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/476ab6ed1e5bd6ef8d2aadb9322a3d2befb8606f))
 
 
-## v1.21.0 (2026-04-10)
+## 1.21.0 (2026-04-10)
 
 ### Bug Fixes
 
@@ -2263,7 +2263,7 @@
   [`1db46e3`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/1db46e37db34faf4f2aa196fa69a27a62936d809))
 
 
-## v1.20.1 (2026-04-10)
+## 1.20.1 (2026-04-10)
 
 ### Bug Fixes
 
@@ -2288,7 +2288,7 @@
   ([`133cf1b`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/133cf1bd34cb6acb32e95c6150e7f9f4117793b6))
 
 
-## v1.20.0 (2026-04-08)
+## 1.20.0 (2026-04-08)
 
 ### Bug Fixes
 
@@ -2318,7 +2318,7 @@
   [`c581122`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/c581122ee05cb73d221b89a92a1ffc0a53b72bad))
 
 
-## v1.19.1 (2026-04-04)
+## 1.19.1 (2026-04-04)
 
 ### Bug Fixes
 
@@ -2335,7 +2335,7 @@
   ([`c77b512`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/c77b512dbb49cff478c2614ccf7b65eff8ec807d))
 
 
-## v1.19.0 (2026-04-04)
+## 1.19.0 (2026-04-04)
 
 ### Bug Fixes
 
@@ -2432,7 +2432,7 @@
   [`3096482`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/3096482bcc1b47de9fd63af6de7beb6f40fa7556))
 
 
-## v1.18.1 (2026-04-02)
+## 1.18.1 (2026-04-02)
 
 ### Bug Fixes
 
@@ -2465,7 +2465,7 @@
   [`50472ba`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/50472ba220e4367573ce2359c24f255359ee66c2))
 
 
-## v1.18.0 (2026-03-31)
+## 1.18.0 (2026-03-31)
 
 ### Bug Fixes
 
@@ -2845,7 +2845,7 @@
   ([`29e0b14`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/29e0b14c04c74d4d5fa29c3057b8867484708853))
 
 
-## v1.17.0 (2026-03-24)
+## 1.17.0 (2026-03-24)
 
 ### Bug Fixes
 
@@ -2895,7 +2895,7 @@
   [`a21c6a1`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/a21c6a14c0e335056cfff3e42760afb9570d2e56))
 
 
-## v1.16.0 (2026-03-23)
+## 1.16.0 (2026-03-23)
 
 ### Bug Fixes
 
@@ -2939,7 +2939,7 @@
   [`8152726`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/81527262799152d1b06d8451971ad37816583adc))
 
 
-## v1.15.0 (2026-03-21)
+## 1.15.0 (2026-03-21)
 
 ### Bug Fixes
 
@@ -3067,7 +3067,7 @@
   ([`fb8ee3b`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/fb8ee3b3917a55e72b246a36bb4cadc6c192363c))
 
 
-## v1.14.0 (2026-03-19)
+## 1.14.0 (2026-03-19)
 
 ### Bug Fixes
 
@@ -3124,7 +3124,7 @@
   [`b3a9952`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/b3a99520d23fc9cd3aabe30be4d41a2fe6d458c8))
 
 
-## v1.13.4 (2026-03-19)
+## 1.13.4 (2026-03-19)
 
 ### Bug Fixes
 
@@ -3144,7 +3144,7 @@
   ([`0fda9ce`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/0fda9ceeb8a5c3c3961567804d82a9b7d5b31002))
 
 
-## v1.13.3 (2026-03-19)
+## 1.13.3 (2026-03-19)
 
 ### Bug Fixes
 
@@ -3164,7 +3164,7 @@
   ([`360c614`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/360c6147b401c173e5ac0e599f9b7c202a7b00b4))
 
 
-## v1.13.2 (2026-03-19)
+## 1.13.2 (2026-03-19)
 
 ### Bug Fixes
 
@@ -3181,7 +3181,7 @@
   ([`7b7697f`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/7b7697fd69e10ae3db922dd330b3ffeb6c8218a3))
 
 
-## v1.13.1 (2026-03-18)
+## 1.13.1 (2026-03-18)
 
 ### Bug Fixes
 
@@ -3201,7 +3201,7 @@
   ([`66aefc7`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/66aefc7778a85bb0426660f7be9be75c2f416125))
 
 
-## v1.13.0 (2026-03-18)
+## 1.13.0 (2026-03-18)
 
 ### Bug Fixes
 
@@ -3259,7 +3259,7 @@
   ([`a870b0f`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/a870b0f2f95f18b77fc82c0cf3cc931405553e0d))
 
 
-## v1.12.0 (2026-03-16)
+## 1.12.0 (2026-03-16)
 
 ### Bug Fixes
 
@@ -3379,7 +3379,7 @@
   ([`7d169ca`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/7d169ca4e678d341ee49be0f052dbbb46ed44a8b))
 
 
-## v1.11.1 (2026-03-15)
+## 1.11.1 (2026-03-15)
 
 ### Bug Fixes
 
@@ -3412,7 +3412,7 @@
   [`09cdc78`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/09cdc78c9d7bec6d6d4cb779caedcbd255364163))
 
 
-## v1.11.0 (2026-03-15)
+## 1.11.0 (2026-03-15)
 
 ### Bug Fixes
 
@@ -3537,7 +3537,7 @@
   ([`0c9501a`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/0c9501a5c8652fff2bc005c71991de6a48bc2b06))
 
 
-## v1.10.0 (2026-03-15)
+## 1.10.0 (2026-03-15)
 
 ### Bug Fixes
 
@@ -3744,7 +3744,7 @@
   ([`11e4c9d`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/11e4c9da4c6dedccf298fd3b3f1a3773b46b5719))
 
 
-## v1.9.0 (2026-03-14)
+## 1.9.0 (2026-03-14)
 
 ### Bug Fixes
 
@@ -3855,7 +3855,7 @@
   ([`0045caf`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/0045caf708df09ddf3622f5c5e60f6e6ec514ec1))
 
 
-## v1.8.1 (2026-03-13)
+## 1.8.1 (2026-03-13)
 
 ### Bug Fixes
 
@@ -3875,7 +3875,7 @@
   ([`85cfe67`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/85cfe6702e2b902a4865cb3db31915f956cbb1ea))
 
 
-## v1.8.0 (2026-03-13)
+## 1.8.0 (2026-03-13)
 
 ### Bug Fixes
 
@@ -3948,7 +3948,7 @@
   [`dd62b8f`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/dd62b8f6e4bc2ec67bba9a679ff62528898c875a))
 
 
-## v1.7.1 (2026-03-13)
+## 1.7.1 (2026-03-13)
 
 ### Bug Fixes
 
@@ -3999,7 +3999,7 @@
   ([`eb30fb4`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/eb30fb40242e48f1e8085dfd2ab28e517937917c))
 
 
-## v1.7.0 (2026-03-13)
+## 1.7.0 (2026-03-13)
 
 ### Bug Fixes
 
@@ -4198,7 +4198,7 @@
   ([`de9d6d4`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/de9d6d43e4229d92fc4a0514b668a45e3c980e29))
 
 
-## v1.6.0 (2026-03-11)
+## 1.6.0 (2026-03-11)
 
 ### Bug Fixes
 
@@ -4326,7 +4326,7 @@
   ([`cbe9537`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/cbe95373f49519cc42807fd594209a3388c6c0c6))
 
 
-## v1.5.0 (2026-03-11)
+## 1.5.0 (2026-03-11)
 
 ### Bug Fixes
 
@@ -4426,7 +4426,7 @@
   [`010ed03`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/010ed03e0188816220ee413af6e842e8ce02ba1f))
 
 
-## v1.4.0 (2026-03-10)
+## 1.4.0 (2026-03-10)
 
 ### Features
 
@@ -4435,7 +4435,7 @@
   [`d519354`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/d5193543d5571be4f84aa354fc816fcafd8ff5ad))
 
 
-## v1.3.1 (2026-03-10)
+## 1.3.1 (2026-03-10)
 
 ### Documentation
 
@@ -4443,7 +4443,7 @@
   ([`79c0f5f`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/79c0f5f55947319dd7d9f43d1219d79860a72c34))
 
 
-## v1.3.0 (2026-03-10)
+## 1.3.0 (2026-03-10)
 
 ### Bug Fixes
 
@@ -4486,7 +4486,7 @@
   ([`32d6f4f`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/32d6f4ff844665b8baa2ab12a1798ac401af1e3b))
 
 
-## v1.2.0 (2026-03-09)
+## 1.2.0 (2026-03-09)
 
 ### Features
 
@@ -4495,7 +4495,7 @@
   [`5b181d7`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/5b181d7eec53c5c71a4707b3a949720c1c08d3e0))
 
 
-## v1.1.1 (2026-03-09)
+## 1.1.1 (2026-03-09)
 
 ### Bug Fixes
 
@@ -4504,7 +4504,7 @@
   [`3786c55`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/3786c55f2cdbce4b1d623e1cedfb9da8b9c437b5))
 
 
-## v1.1.0 (2026-03-09)
+## 1.1.0 (2026-03-09)
 
 ### Bug Fixes
 
@@ -4543,6 +4543,6 @@
   [`8c5a2af`](https://github.com/pvliesdonk/markdown-vault-mcp/commit/8c5a2af8ff13b1665fc934189bbec400c68c0ae4))
 
 
-## v1.0.0 (2026-03-09)
+## 1.0.0 (2026-03-09)
 
 - Initial Release

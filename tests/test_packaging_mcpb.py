@@ -15,9 +15,9 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 MCPB_DIR = REPO_ROOT / "packaging" / "mcpb"
 PLUGIN_DIR = REPO_ROOT / ".claude-plugin" / "plugin"
 
-# Stable `X.Y.Z` or python-semantic-release prerelease format `X.Y.Z-rc.N`.
-# The release workflow bumps the manifests for every release including RCs
-# (via PSR's build_command), so main may carry an RC version between stable
+# Stable `X.Y.Z` or prerelease format `X.Y.Z-rc.N`. knope versions
+# pyproject.toml for every release including RCs (rc release PRs merged to
+# main carry the rc version), so main may carry an RC version between stable
 # releases.
 _VERSION_RE = re.compile(r"\d+\.\d+\.\d+(?:-rc\.\d+)?")
 
