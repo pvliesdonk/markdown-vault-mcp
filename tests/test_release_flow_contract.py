@@ -308,6 +308,60 @@ def test_release_workflows_are_interlocked_on_the_psr_block() -> None:
         )
 
 
+def test_release_workflow_binds_the_prep_head_to_the_base() -> None:
+    """A merged prep PR only releases when its head matches its base.
+
+    The job-level ``if`` can only prefix-match the head, so a step must
+    compute the exact prep branch for the PR's base
+    (``knope/prepare/<base with slashes as dashes>``) and hard-fail on a
+    mismatch — a prep PR retargeted at a different base must never be
+    treated as that base's release decision.  It runs before knope is
+    installed, like the interlock.
+    """
+    text = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+    step_name = "Refuse a prep head that does not match the PR's base"
+    assert step_name in text, "head-to-base binding step missing"
+    idx = text.index(step_name)
+    assert 'expected="knope/prepare/${BASE_REF//\\//-}"' in text, (
+        "the step must derive the expected head from the PR's base with "
+        "release-prepare.yml's exact slash-to-dash mapping"
+    )
+    assert "exit 1" in text[idx:], "the binding step does not fail on mismatch"
+    assert idx < text.index("knope-dev/action"), (
+        "the binding step must run before knope is even installed"
+    )
+
+
+def test_prepare_collision_step_covers_tags_and_open_release_prs() -> None:
+    """The prepare-time version check refuses tags AND open-PR reservations.
+
+    A version is claimed by a repo-global tag or by another base's open
+    release PR (merging it creates the tag) — the step must query the open
+    ``knope/prepare/*`` PRs' pinned titles, skip its own prep branch, and
+    name ``override_version`` as a remedy.  The gh call degrades to the
+    tag-only check on API failure rather than failing the prepare.
+    """
+    text = PREPARE_WORKFLOW.read_text(encoding="utf-8")
+    step_name = "Refuse a version that is already tagged or reserved"
+    assert step_name in text, "version tag/reservation step missing"
+    step = text[text.index(step_name) :]
+    step = step[: step.index("- name:")] if "- name:" in step else step
+    assert "gh pr list" in step, "no open-release-PR reservation query"
+    assert 'startswith("knope/prepare/")' in step, (
+        "the reservation query must filter to prep-branch heads"
+    )
+    assert "chore: prepare release " in step, (
+        "reservation parsing must key on knope's pinned release-PR title"
+    )
+    assert '"$head" = "$PREP_BRANCH"' in step, (
+        "the step must skip this dispatch's own prep branch"
+    )
+    assert "override_version" in step, "the refusals must name the override remedy"
+    assert "|| true" in step.split("gh pr list", 1)[1], (
+        "the gh call must degrade to the tag-only check on API failure"
+    )
+
+
 def _run_stamper(workdir: Path, *args: str) -> subprocess.CompletedProcess[str]:
     """Run the real stamp script against ``workdir``."""
     return subprocess.run(

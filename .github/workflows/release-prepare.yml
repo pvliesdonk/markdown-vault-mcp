@@ -41,6 +41,8 @@ jobs:
       contents: read
       # For the advisory quiescence step's issue/milestone reads.
       issues: read
+      # For the version-reservation check's open-release-PR listing.
+      pull-requests: read
     # Per-base buckets, mirroring release.yml's release-${ref} buckets: a
     # backport prepare off release/X.Y must not serialise behind (or cancel)
     # a trunk prepare.  cancel-in-progress stays false — a prepare is short
@@ -228,7 +230,16 @@ jobs:
       # surface only at tag time, after the release PR merged.  The dry run
       # prints the exact version the real run below would stamp (same
       # flags, same commits); its output format is pinned by knope 0.23.0.
-      - name: Refuse a version that is already tagged repo-globally
+      #
+      # Tags are not the only claim on a version: another base's OPEN
+      # release PR reserves the version it prepares (merging it creates the
+      # tag), so the second half checks the open `knope/prepare/*` PRs'
+      # pinned titles too — first-merged would otherwise win the tag and
+      # strand the other release PR at tag time.
+      - name: Refuse a version that is already tagged or reserved
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PREP_BRANCH: ${{ steps.prep.outputs.branch }}
         run: |
           version="$(knope prepare-release --dry-run ${{ steps.channel.outputs.flags }} \
             | sed -n 's/^Would add the following to pyproject.toml: //p' | head -1)"
@@ -240,7 +251,29 @@ jobs:
             echo "::error::v${version} is already tagged in this repository (most likely released from another branch whose version stamps were never ported). Re-dispatch with override_version set to an untaken version, or land a version-stamp port to ${GITHUB_REF_NAME} first."
             exit 1
           fi
-          echo "computed version ${version} is untaken — proceeding"
+          # Reservation check across other bases' open release PRs.  The gh
+          # call is guarded: on an API hiccup it degrades to the tag-only
+          # check above (an open-PR collision then still refuses at tag
+          # time) rather than failing a prepare the API outage never made
+          # wrong.  Titles are knope-pinned to `chore: prepare release
+          # <version>`; a prep-named head with any other title is skipped.
+          reserved="$(gh pr list --state open --limit 100 --json headRefName,title \
+            --jq '.[] | select(.headRefName | startswith("knope/prepare/")) | [.headRefName, .title] | @tsv' \
+            2>/dev/null || true)"
+          if [ -n "$reserved" ]; then
+            while IFS="$(printf '\t')" read -r head title; do
+              [ -n "$head" ] || continue
+              [ "$head" = "$PREP_BRANCH" ] && continue
+              other="$(printf '%s' "$title" \
+                | sed -nE 's/^chore: prepare release ([0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?)$/\1/p')"
+              [ -n "$other" ] || continue
+              if [ "$other" = "$version" ]; then
+                echo "::error::version ${version} is already reserved by the open release PR from '${head}' (${title}) — merging both would race for tag v${version}. Merge or close that release PR first, or re-dispatch with override_version set to an untaken version."
+                exit 1
+              fi
+            done <<< "$reserved"
+          fi
+          echo "computed version ${version} is untaken and unreserved — proceeding"
 
       # knope's prepare-release workflow (knope.toml): PrepareRelease bumps
       # pyproject.toml and writes the changelog section, the stamp Command

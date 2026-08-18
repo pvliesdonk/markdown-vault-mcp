@@ -89,6 +89,25 @@ jobs:
           fi
           echo "interlock: no [tool.semantic_release] block — knope flow is armed"
 
+      # The job-level `if` can only prefix-match the head (workflow
+      # expressions cannot string-replace), so bind the head to the base
+      # here: release-prepare.yml names the prep branch for base B exactly
+      # `knope/prepare/<B with slashes as dashes>`, and a prep PR retargeted
+      # at a DIFFERENT base — merging main's prep branch into release/X.Y,
+      # say — must never be treated as that base's release decision: its
+      # stamps and changelog were computed against another ancestry.
+      - name: Refuse a prep head that does not match the PR's base
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          expected="knope/prepare/${BASE_REF//\//-}"
+          if [ "$HEAD_REF" != "$expected" ]; then
+            echo "::error::merged head '${HEAD_REF}' is not the prep branch for base '${BASE_REF}' (expected '${expected}') — a retargeted release PR is not a release decision. Nothing was tagged; re-dispatch Release Prepare on '${BASE_REF}' for a reviewed release PR of its own."
+            exit 1
+          fi
+          echo "prep head matches its base: ${HEAD_REF} <- ${BASE_REF}"
+
       # knope-dev/action installs the pinned knope CLI.  Renovate: the
       # action ref is covered by the template repo's jinja-workflow regex
       # manager, and the `version:` input below by its knope-cli regex
