@@ -33,7 +33,8 @@ jobs:
       group: release-notes-publish
       cancel-in-progress: false
     permissions:
-      contents: write   # gh-pages push (mike deploy)
+      contents: write       # gh-pages push (mike deploy)
+      pull-requests: read   # the release-merge gate's commits-to-PRs lookup
     steps:
       - uses: actions/checkout@v7
         with:

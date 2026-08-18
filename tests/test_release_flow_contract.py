@@ -582,6 +582,11 @@ def test_publish_workflow_skips_release_pr_merges() -> None:
         "the squash-subject check must remain as the degraded fallback for "
         "an API failure"
     )
+    assert "pull-requests: read" in publish, (
+        "the commits-to-PRs lookup needs the pull-requests read permission — "
+        "a job-level permissions block zeroes everything unspecified, and "
+        "without it the gate always degrades to the squash-only fallback"
+    )
     gate_idx = publish.index("^chore: prepare release ")
     pages_idx = publish.index("Find changed release pages")
     assert gate_idx < pages_idx, "the gate must run before page detection"
