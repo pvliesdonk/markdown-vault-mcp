@@ -336,10 +336,13 @@ def test_prepare_collision_step_covers_tags_and_open_release_prs() -> None:
     """The prepare-time version check refuses tags AND open-PR reservations.
 
     A version is claimed by a repo-global tag or by another base's open
-    release PR (merging it creates the tag) — the step must query the open
-    ``knope/prepare/*`` PRs' pinned titles, skip its own prep branch, and
-    name ``override_version`` as a remedy.  The gh call degrades to the
-    tag-only check on API failure rather than failing the prepare.
+    release PR (merging it creates the tag) — the step must read each open
+    ``knope/prepare/*`` PR's stamped ``pyproject.toml`` version (the same
+    file release.yml derives the tag from — never the mutable PR title,
+    whose retitling would silently drop a reservation), skip its own prep
+    branch, and name ``override_version`` as a remedy.  The gh calls
+    degrade to the tag-only check on API failure rather than failing the
+    prepare.
     """
     text = PREPARE_WORKFLOW.read_text(encoding="utf-8")
     step_name = "Refuse a version that is already tagged or reserved"
@@ -350,8 +353,12 @@ def test_prepare_collision_step_covers_tags_and_open_release_prs() -> None:
     assert 'startswith("knope/prepare/")' in step, (
         "the reservation query must filter to prep-branch heads"
     )
-    assert "chore: prepare release " in step, (
-        "reservation parsing must key on knope's pinned release-PR title"
+    assert "contents/pyproject.toml?ref=" in step, (
+        "the reserved version must be read from each prep head's committed "
+        "pyproject.toml, not from the mutable PR title"
+    )
+    assert "chore: prepare release " not in step, (
+        "reservation parsing must not key on the mutable release-PR title"
     )
     assert '"$head" = "$PREP_BRANCH"' in step, (
         "the step must skip this dispatch's own prep branch"

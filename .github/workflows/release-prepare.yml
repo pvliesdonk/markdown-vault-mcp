@@ -244,12 +244,13 @@ jobs:
       # Tags are not the only claim on a version: another base's OPEN
       # release PR reserves the version it prepares (merging it creates the
       # tag), so the second half checks the open `knope/prepare/*` PRs'
-      # pinned titles too — first-merged would otherwise win the tag and
+      # stamped versions too — first-merged would otherwise win the tag and
       # strand the other release PR at tag time.
       - name: Refuse a version that is already tagged or reserved
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PREP_BRANCH: ${{ steps.prep.outputs.branch }}
+          REPO: ${{ github.repository }}
         run: |
           version="$(knope prepare-release --dry-run ${{ steps.channel.outputs.flags }} \
             | sed -n 's/^Would add the following to pyproject.toml: //p' | head -1)"
@@ -261,24 +262,30 @@ jobs:
             echo "::error::v${version} is already tagged in this repository (most likely released from another branch whose version stamps were never ported). Re-dispatch with override_version set to an untaken version, or land a version-stamp port to ${GITHUB_REF_NAME} first."
             exit 1
           fi
-          # Reservation check across other bases' open release PRs.  The gh
-          # call is guarded: on an API hiccup it degrades to the tag-only
-          # check above (an open-PR collision then still refuses at tag
-          # time) rather than failing a prepare the API outage never made
-          # wrong.  Titles are knope-pinned to `chore: prepare release
-          # <version>`; a prep-named head with any other title is skipped.
-          reserved="$(gh pr list --state open --limit 100 --json headRefName,title \
-            --jq '.[] | select(.headRefName | startswith("knope/prepare/")) | [.headRefName, .title] | @tsv' \
+          # Reservation check across other bases' open release PRs.  The
+          # reserved version is read from each prep head's committed
+          # pyproject.toml — the same file release.yml derives the tag from
+          # on merge — never from the PR title, which is mutable: a
+          # retitled release PR would silently drop its reservation while
+          # remaining every bit as mergeable and taggable.  Every gh call
+          # is guarded: on an API hiccup the check degrades to the tag-only
+          # refusal above (an open-PR collision then still refuses at tag
+          # time) rather than failing a prepare the outage never made
+          # wrong; a prep-named head whose pyproject cannot be read (e.g. a
+          # fork branch, which release.yml refuses anyway) is skipped.
+          reserved="$(gh pr list --state open --limit 100 --json headRefName \
+            --jq '.[] | select(.headRefName | startswith("knope/prepare/")) | .headRefName' \
             2>/dev/null || true)"
           if [ -n "$reserved" ]; then
-            while IFS="$(printf '\t')" read -r head title; do
+            while IFS= read -r head; do
               [ -n "$head" ] || continue
               [ "$head" = "$PREP_BRANCH" ] && continue
-              other="$(printf '%s' "$title" \
-                | sed -nE 's/^chore: prepare release ([0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?)$/\1/p')"
+              other="$(gh api "repos/${REPO}/contents/pyproject.toml?ref=${head}" \
+                --jq '.content' 2>/dev/null | base64 -d 2>/dev/null \
+                | sed -n 's/^version = "\(.*\)"/\1/p' | head -1 || true)"
               [ -n "$other" ] || continue
               if [ "$other" = "$version" ]; then
-                echo "::error::version ${version} is already reserved by the open release PR from '${head}' (${title}) — merging both would race for tag v${version}. Merge or close that release PR first, or re-dispatch with override_version set to an untaken version."
+                echo "::error::version ${version} is already reserved by the open release PR from '${head}' (its stamped pyproject.toml carries ${other}) — merging both would race for tag v${version}. Merge or close that release PR first, or re-dispatch with override_version set to an untaken version."
                 exit 1
               fi
             done <<< "$reserved"
