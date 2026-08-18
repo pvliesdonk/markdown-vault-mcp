@@ -100,7 +100,16 @@ jobs:
         env:
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
           BASE_REF: ${{ github.event.pull_request.base.ref }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
+          # Mirror release-prepare.yml's releasable-ref form exactly: the
+          # default branch or release/X.Y (nothing deeper — the documented
+          # form, and the guarantee that keeps the slash-to-dash prep-branch
+          # encoding below injective).
+          if [ "$BASE_REF" != "$DEFAULT_BRANCH" ] && ! printf '%s' "$BASE_REF" | grep -Eq '^release/[0-9]+\.[0-9]+$'; then
+            echo "::error::base '${BASE_REF}' is not a releasable ref (the default branch or release/X.Y) — this merge is not a release decision. Nothing was tagged."
+            exit 1
+          fi
           expected="knope/prepare/${BASE_REF//\//-}"
           if [ "$HEAD_REF" != "$expected" ]; then
             echo "::error::merged head '${HEAD_REF}' is not the prep branch for base '${BASE_REF}' (expected '${expected}') — a retargeted release PR is not a release decision. Nothing was tagged; re-dispatch Release Prepare on '${BASE_REF}' for a reviewed release PR of its own."

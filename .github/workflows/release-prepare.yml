@@ -93,15 +93,17 @@ jobs:
           REF: ${{ github.ref_name }}
           DEFAULT: ${{ github.event.repository.default_branch }}
         run: |
-          case "$REF" in
-            "$DEFAULT" | release/*)
-              echo "releasable ref: $REF"
-              ;;
-            *)
-              echo "::error::'${REF}' is not a releasable ref — dispatch Release Prepare on '${DEFAULT}' or a release/X.Y stabilisation branch. Other branches release nothing (their ancestry would compute a bogus version)."
-              exit 1
-              ;;
-          esac
+          # Exactly release/X.Y, not release/* — the documented stabilisation
+          # form.  Deeper or dashed names would also collide in the lossy
+          # slash-to-dash prep-branch encoding (release/4.0/hotfix and
+          # release/4.0-hotfix map to the same prep branch), so restricting
+          # to X.Y keeps that encoding injective by construction.
+          if [ "$REF" = "$DEFAULT" ] || printf '%s' "$REF" | grep -Eq '^release/[0-9]+\.[0-9]+$'; then
+            echo "releasable ref: $REF"
+          else
+            echo "::error::'${REF}' is not a releasable ref — dispatch Release Prepare on '${DEFAULT}' or a release/X.Y stabilisation branch (exactly X.Y, the documented form). Other branches release nothing (their ancestry would compute a bogus version)."
+            exit 1
+          fi
 
       # Advisory only (never blocks — the cut may be intentional, or belong
       # on a release/X.Y branch cut from an earlier commit).  Runs at
