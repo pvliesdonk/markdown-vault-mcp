@@ -386,7 +386,7 @@ jobs:
           # Python.  The job's `contents: read` keeps the agent from
           # pushing anything.
           claude_args: |
-            --allowedTools "Skill,Task,Read,Glob,Grep,Edit(docs/releases/**),Edit(.vale/styles/config/vocabularies/**),Edit(.release-notes-pr-body.md),mcp__github__get_*,mcp__github__list_*,mcp__github__search_*,Bash(gh api *),Bash(vale *),Bash(uv run mkdocs build --strict)"
+            --allowedTools "Skill,Task,Read,Glob,Grep,Edit(docs/releases/**),Edit(.vale/styles/config/vocabularies/Base/accept.txt),Edit(.release-notes-pr-body.md),mcp__github__get_*,mcp__github__list_*,mcp__github__search_*,Bash(gh api *),Bash(vale *),Bash(uv run mkdocs build --strict)"
 
       # The agent is done; everything after this line treats this runner
       # as compromised.  The surface ships to a FRESH runner as an
