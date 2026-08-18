@@ -302,10 +302,13 @@ jobs:
           # Read-only GitHub research (MCP read tools + gh api), Task for the
           # per-theme fan-out, Skill to load the contract, vale + mkdocs for
           # the quality loop, and read-only git for tag-to-tag surface diffs.
-          # Edit/Write stay available from the action's defaults; the job's
+          # The file tools are listed explicitly: in headless mode
+          # --allowedTools IS the allowlist — nothing is inherited from the
+          # action, and the first live run had every page write denied before
+          # failing the watermark gate (template#421).  The job's
           # `contents: read` keeps the agent from pushing anything.
           claude_args: |
-            --allowedTools "Skill,Task,mcp__github__get_*,mcp__github__list_*,mcp__github__search_*,Bash(gh api *),Bash(vale *),Bash(uv run mkdocs *),Bash(git tag *),Bash(git show *),Bash(git diff *),Bash(git log *)"
+            --allowedTools "Skill,Task,Read,Write,Edit,Glob,Grep,mcp__github__get_*,mcp__github__list_*,mcp__github__search_*,Bash(gh api *),Bash(vale *),Bash(uv run mkdocs *),Bash(git tag *),Bash(git show *),Bash(git diff *),Bash(git log *)"
 
       - name: Land the drafted page
         env:

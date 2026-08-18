@@ -511,6 +511,11 @@ def test_notes_workflow_is_callable_and_not_release_triggered() -> None:
         "events; this workflow runs on workflow_dispatch/workflow_call, "
         "where passing it is a hard error before the agent starts"
     )
+    assert "Read,Write,Edit,Glob,Grep" in text, (
+        "the drafting agent's --allowedTools must list the file tools "
+        "explicitly — in headless mode the flag IS the allowlist, nothing "
+        "is inherited, and without them every page write is denied"
+    )
     call_half = text[text.index('if [ -n "$PREP_BRANCH" ]') :]
     call_half = call_half[: call_half.index("# Dispatch mode")]
     assert "::error::" in call_half and "skip_notes" in call_half, (
