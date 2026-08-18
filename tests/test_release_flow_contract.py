@@ -545,6 +545,12 @@ def test_notes_workflow_is_callable_and_not_release_triggered() -> None:
         "an edit-versus-delete divergence must fail loudly — copying "
         "would silently resurrect the file the base deleted"
     )
+    assert "seeded.txt" in text, (
+        "the seed step must record which files it created, and the "
+        "divergence check must exempt them — a seeded placeholder absent "
+        "from the landing clone is the first release of its series, not "
+        "a concurrent deletion"
+    )
     assert "\n  land:\n    needs: draft" in text, (
         "the landing must run in a SEPARATE job on a fresh runner — the "
         "drafting runner may be poisoned beyond the tree (GITHUB_PATH, "

@@ -263,15 +263,24 @@ jobs:
           PAGE: ${{ steps.ctx.outputs.page }}
         run: |
           set -euo pipefail
-          ACCEPT=".vale/styles/config/vocabularies/Base/accept.txt"
-          mkdir -p docs/releases "$(dirname "$ACCEPT")"
-          [ -f "$PAGE" ] || : > "$PAGE"
-          [ -f docs/releases/index.md ] || : > docs/releases/index.md
-          [ -f "$ACCEPT" ] || : > "$ACCEPT"
-          [ -f .release-notes-pr-body.md ] || : > .release-notes-pr-body.md
           PRE="$RUNNER_TEMP/pre-notes"
           rm -rf "$PRE"
           mkdir -p "$PRE"
+          # Record every file seeded into being: a seeded placeholder that
+          # is absent from the landing clone is the first release of its
+          # series, not a concurrent deletion.
+          : > "$PRE/seeded.txt"
+          seed() {
+            [ -f "$1" ] && return 0
+            mkdir -p "$(dirname "$1")"
+            : > "$1"
+            echo "$1" >> "$PRE/seeded.txt"
+          }
+          ACCEPT=".vale/styles/config/vocabularies/Base/accept.txt"
+          seed "$PAGE"
+          seed docs/releases/index.md
+          seed "$ACCEPT"
+          seed .release-notes-pr-body.md
           cp -R docs/releases "$PRE/releases"
           cp "$ACCEPT" "$PRE/accept.txt"
 
@@ -474,15 +483,18 @@ jobs:
           # three-way merged, failing loudly on overlap — a silent
           # clobber would revert the concurrent change.
           overlay() {
-            src="$1"; base="$2"; dst="$3"
+            src="$1"; base="$2"; dst="$3"; relpath="$4"
             [ -f "$base" ] || base=/dev/null
             if cmp -s "$src" "$base"; then
               return 0    # the draft left this file as it found it
             fi
-            if [ "$base" != /dev/null ] && [ ! -f "$dst" ]; then
+            if [ "$base" != /dev/null ] && [ ! -f "$dst" ] \
+              && ! grep -qxF "$relpath" "$PRE/seeded.txt"; then
               # Edit-versus-delete divergence: the draft changed a file
               # the base deleted while it ran.  Copying would silently
-              # resurrect the deleted file; a human decides.
+              # resurrect the deleted file; a human decides.  A SEEDED
+              # baseline is exempt — its absence from the clone means the
+              # first release of its series, not a deletion.
               echo "::error::${dst} was deleted on the base while the draft edited it — resolve by hand and re-run the drafting job"
               exit 1
             fi
@@ -502,11 +514,12 @@ jobs:
           if [ -d "$SURFACE/releases" ]; then
             while IFS= read -r -d '' f; do
               rel="${f#"$SURFACE"/releases/}"
-              overlay "$f" "$PRE/releases/$rel" "$LAND/docs/releases/$rel"
+              overlay "$f" "$PRE/releases/$rel" "$LAND/docs/releases/$rel" \
+                "docs/releases/$rel"
             done < <(find "$SURFACE/releases" -type f -print0)
           fi
           if [ -f "$SURFACE/accept.txt" ]; then
-            overlay "$SURFACE/accept.txt" "$PRE/accept.txt" "$LAND/$ACCEPT"
+            overlay "$SURFACE/accept.txt" "$PRE/accept.txt" "$LAND/$ACCEPT" "$ACCEPT"
           fi
           if [ -n "$PREP_BRANCH" ]; then
             # Call mode: the page is release content — commit it onto the
