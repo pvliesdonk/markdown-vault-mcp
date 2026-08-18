@@ -506,6 +506,11 @@ def test_notes_workflow_is_callable_and_not_release_triggered() -> None:
     assert "--force-with-lease=" in text, (
         "the prep-branch commit must be leased on the expected stamp head"
     )
+    assert "track_progress" not in text, (
+        "claude-code-action's track_progress is only supported on PR/issue "
+        "events; this workflow runs on workflow_dispatch/workflow_call, "
+        "where passing it is a hard error before the agent starts"
+    )
     call_half = text[text.index('if [ -n "$PREP_BRANCH" ]') :]
     call_half = call_half[: call_half.index("# Dispatch mode")]
     assert "::error::" in call_half and "skip_notes" in call_half, (
