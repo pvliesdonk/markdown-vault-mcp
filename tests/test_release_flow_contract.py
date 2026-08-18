@@ -556,6 +556,11 @@ def test_notes_workflow_is_callable_and_not_release_triggered() -> None:
         "the surface and the pre-draft snapshot must cross jobs as "
         "artifacts — data, not environment"
     )
+    assert text.count("concurrency:") == 1 and "\nconcurrency:\n" in text, (
+        "concurrency must be workflow-level, covering draft and landing "
+        "end to end — with per-job groups a queued newer draft can "
+        "replace the pending landing, stranding a finished draft"
+    )
     assert "persist-credentials: false" in text, (
         "the checkout must not persist the release PAT — the agent's "
         "unrestricted Read would let a prompt-injected research source "

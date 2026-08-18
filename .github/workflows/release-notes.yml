@@ -63,14 +63,17 @@ on:
 permissions:
   contents: read
 
+# One notes run at a time, END TO END.  Serialising per job would let
+# the draft job release the lock before its landing ran, and GitHub
+# keeps only one pending entry per group — a queued newer draft could
+# replace the pending landing, stranding a finished draft unlanded.
+concurrency:
+  group: release-notes-draft
+  cancel-in-progress: false
+
 jobs:
   draft:
     runs-on: ubuntu-latest
-    # Serialise drafts: two quick successive releases would race on the same
-    # index page and branch namespace.
-    concurrency:
-      group: release-notes-draft
-      cancel-in-progress: false
     timeout-minutes: 60
     permissions:
       contents: read       # the agent only reads; the landing job pushes
@@ -415,9 +418,6 @@ jobs:
   land:
     needs: draft
     runs-on: ubuntu-latest
-    concurrency:
-      group: release-notes-draft
-      cancel-in-progress: false
     timeout-minutes: 15
     permissions:
       contents: read       # pushes use RELEASE_TOKEN, not GITHUB_TOKEN
