@@ -262,6 +262,7 @@ jobs:
           PREP_BRANCH: ${{ inputs.prep_branch }}
           EXPECTED_HEAD: ${{ inputs.expected_head }}
           PAGE: ${{ steps.ctx.outputs.page }}
+          RANGE_END: ${{ steps.ctx.outputs.range_end }}
         run: |
           set -euo pipefail
           # Only the notes surface is ever committed: the release pages and
@@ -273,30 +274,43 @@ jobs:
             # Call mode: the page is release content — commit it onto the
             # release PR's prep branch so the release PR's diff carries it
             # and the merge puts it in the tagged tree (template#419).  An
-            # empty draft splits two ways: an EXISTING page with no changes
-            # means the accepted draft already covers this range (the
-            # incremental-research contract's already-current case — normal
-            # at a quiet promotion), while a MISSING page with no changes is
-            # a failed draft, and a release PR without its notes is
-            # incomplete — re-run this job, or re-dispatch Release Prepare
-            # with skip_notes to consciously release without a refresh.
+            # empty draft is a success ONLY when the existing page's
+            # notes-range-end watermark equals this run's range end — the
+            # mechanically checkable already-current case (normal at a
+            # quiet promotion).  Any other empty draft — page missing,
+            # watermark stale or absent — is a failed refresh: an honest
+            # agent failure also leaves no edits, and accepting it would
+            # silently ship stale notes.  Re-run this job, or re-dispatch
+            # Release Prepare with skip_notes to consciously release
+            # without a refresh.
             if ! git status --porcelain -- docs/releases "$ACCEPT" | grep -q .; then
-              if [ -f "$PAGE" ]; then
-                echo "page ${PAGE} already covers this range — nothing to commit; the release PR ships the accepted draft from its base"
-                exit 0
+              if [ -f "$PAGE" ] && grep -qF "notes-range-end: ${RANGE_END}" "$PAGE"; then
+                echo "page ${PAGE} already covers this range (watermark at ${RANGE_END}) — nothing to commit; the release PR ships the accepted draft from its base"
+              else
+                echo "::error::the drafting run produced no notes changes and ${PAGE} is missing or its notes-range-end watermark does not match ${RANGE_END} — an unchanged page is only current when its watermark matches. Re-run this job, or re-dispatch Release Prepare with skip_notes=true to release without a notes refresh"
+                exit 1
               fi
-              echo "::error::the drafting run produced no notes changes and ${PAGE} does not exist — re-run this job, or re-dispatch Release Prepare with skip_notes=true to release without a notes refresh"
-              exit 1
+            else
+              git add docs/releases "$ACCEPT"
+              git commit -m "docs(releases): notes for ${TAG}"
+              # Lease on the stamp head this draft was cut against: a
+              # Release Prepare re-dispatch force-recreates the prep
+              # branch, and a stale draft must never clobber the newer
+              # prepare — the lease fails this push loudly instead; the
+              # newer dispatch's own draft-notes job owns the branch.
+              git push --force-with-lease="${PREP_BRANCH}:${EXPECTED_HEAD}" \
+                origin "HEAD:${PREP_BRANCH}"
             fi
-            git add docs/releases "$ACCEPT"
-            git commit -m "docs(releases): notes for ${TAG}"
-            # Lease on the stamp head this draft was cut against: a Release
-            # Prepare re-dispatch force-recreates the prep branch, and a
-            # stale draft must never clobber the newer prepare — the lease
-            # fails this push loudly instead; the newer dispatch's own
-            # draft-notes job owns the branch.
-            git push --force-with-lease="${PREP_BRANCH}:${EXPECTED_HEAD}" \
-              origin "HEAD:${PREP_BRANCH}"
+            # The notes are in (or confirmed current) — lift the draft hold
+            # release-prepare.yml placed on the release PR, making it
+            # mergeable only now that it is complete (template#421).
+            pr="$(gh pr list --state open --head "$PREP_BRANCH" \
+              --json number --jq '.[0].number' 2>/dev/null || true)"
+            if [ -n "$pr" ]; then
+              gh pr ready "$pr" || echo "::warning::could not mark release PR #${pr} ready — lift the draft hold by hand"
+            else
+              echo "::warning::no open release PR found for ${PREP_BRANCH} — nothing to mark ready"
+            fi
             exit 0
           fi
           # Dispatch mode (backfill / re-draft): a standalone notes PR

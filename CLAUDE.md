@@ -449,7 +449,7 @@ Rolling channels are ordering-aware: Docker `latest`/`vX`/`vX.Y`, the GitHub lat
 Rules for working with the notes:
 
 - **The evidence contract governs the page.** Every causal claim must trace to a linked issue or PR; no evidence, no narrative. Reviewing a release PR includes this evidence check — follow the links and verify they support the claims — not prose polish; Vale (including the `ai-tells` pack) already gated the prose.
-- **`skip_notes` is the only way to release without the refresh.** A failed drafting job fails the prepare run loudly; re-run it, or re-dispatch Release Prepare with `skip_notes: true` to consciously ship whatever page state the base carries. The **Release Notes** workflow's manual dispatch remains as the backfill/re-draft tool (its standalone notes PRs need no separate issue, same class as Renovate bumps), and later hand edits to a released page trigger the **Release Notes Publish** docs redeploy.
+- **`skip_notes` is the only way to release without the refresh.** The release PR is held as a **draft** until the notes job lands its commit (or verifies the page's `notes-range-end` watermark already matches the range end), so a notes-less release PR is never mergeable; a failed drafting job fails the prepare run loudly and leaves the PR draft. Re-run it, or re-dispatch Release Prepare with `skip_notes: true` to consciously ship whatever page state the base carries. The **Release Notes** workflow's manual dispatch remains as the backfill/re-draft tool (its standalone notes PRs need no separate issue, same class as Renovate bumps), and later hand edits to a released page trigger the **Release Notes Publish** docs redeploy.
 <!-- TEMPLATE-TRACKING-END -->
 
 ## Tool Registration Checklist

@@ -116,8 +116,9 @@ tag created.
 This PR also carries the release-notes page under `docs/releases/`,
 drafted by the prepare run's notes job — review it as part of the release
 (an evidence check: every causal claim must trace to its linked issue or
-PR).  If the notes commit has not appeared yet, the notes job is still
-running or failed — check the prepare run before merging.
+PR).  The PR is held as a DRAFT until the notes land; the notes job marks
+it ready.  Still draft means the notes job is running or failed — check
+the prepare run.
 
 Do NOT use GitHub's "Update branch" button on this PR — the only valid
 refresh is re-dispatching the Release Prepare workflow, which recreates this

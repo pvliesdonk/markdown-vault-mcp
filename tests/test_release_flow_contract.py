@@ -511,9 +511,59 @@ def test_notes_workflow_is_callable_and_not_release_triggered() -> None:
     assert "::error::" in call_half and "skip_notes" in call_half, (
         "an empty draft with no existing page must fail loudly and name skip_notes"
     )
-    assert "already covers" in call_half, (
-        "an unchanged EXISTING page is the already-current success case "
-        "(the incremental-research contract), not a failure"
+    assert "notes-range-end: ${RANGE_END}" in call_half, (
+        "an unchanged page counts as already-current ONLY when its "
+        "notes-range-end watermark equals this run's range end — an honest "
+        "agent failure also leaves no edits, and accepting it would "
+        "silently ship stale notes"
+    )
+    assert "gh pr ready " in call_half, (
+        "the call mode must lift the release PR's draft hold once the "
+        "notes land or are confirmed current"
+    )
+
+
+def test_release_pr_is_held_draft_until_the_notes_land() -> None:
+    """The notes are a merge gate, not a footnote (template#421).
+
+    The release PR opens before the hour-scale draft-notes job runs, and
+    required CI can go green on the stamped head first — which would leave
+    a notes-less release PR mergeable and taggable.  The prepare job must
+    convert the PR to draft right after creation (skipped only under the
+    explicit ``skip_notes`` escape hatch), and only the notes job's
+    ``gh pr ready`` lifts the hold.
+    """
+    prepare = PREPARE_WORKFLOW.read_text(encoding="utf-8")
+    step_name = "Hold the release PR as draft until its notes land"
+    assert step_name in prepare, "the draft-hold step is gone"
+    step = prepare[prepare.index(step_name) :]
+    step = step[: step.index("- name:")] if "- name:" in step else step
+    assert "gh pr ready --undo" in step, (
+        "the hold must use draft conversion — a draft PR cannot be merged"
+    )
+    assert "skip_notes" in prepare[: prepare.index(step_name)] or (
+        "skip_notes" in step
+    ), "the hold must be skippable only via skip_notes"
+
+
+def test_publish_workflow_skips_release_pr_merges() -> None:
+    """The release owns its own docs deploy (template#421).
+
+    A release PR's merge changes ``docs/releases/`` and would trigger this
+    workflow's redeploy concurrently with the release — which resolves the
+    series' newest tag BEFORE the new tag exists and could overwrite the
+    fresh deploy with the previous tag's content.  Pushes whose head is a
+    release-PR merge (the pinned squash subject) must be skipped wholesale.
+    """
+    publish = NOTES_PUBLISH_WORKFLOW.read_text(encoding="utf-8")
+    assert "^chore: prepare release " in publish, (
+        "the publish workflow must detect and skip release-PR merges"
+    )
+    gate_idx = publish.index("^chore: prepare release ")
+    pages_idx = publish.index("Find changed release pages")
+    assert gate_idx < pages_idx, "the gate must run before page detection"
+    assert "steps.gate.outputs.skip != 'true'" in publish, (
+        "page detection must be conditioned on the gate"
     )
 
 

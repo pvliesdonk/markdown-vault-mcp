@@ -334,6 +334,32 @@ jobs:
         id: head
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
+      # Merge gate for the notes (template#421): the release PR opens
+      # before the potentially hour-long draft-notes job runs, and the
+      # ruleset's required CI could go green on the stamped head first —
+      # leaving a notes-less release PR mergeable and taggable, with the
+      # late notes push orphaned after the immutable tag.  Hold the PR as
+      # DRAFT until the notes land; the draft-notes job lifts the hold
+      # after its commit (or after confirming the page is already
+      # current).  A failed draft leaves the PR visibly draft and
+      # unmergeable — exactly the incomplete state it is in.  With
+      # skip_notes the hold is skipped: the operator chose to ship the
+      # base's page state.
+      - name: Hold the release PR as draft until its notes land
+        if: ${{ !inputs.skip_notes }}
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          PREP_BRANCH: ${{ steps.prep.outputs.branch }}
+        run: |
+          pr="$(gh pr list --state open --head "$PREP_BRANCH" \
+            --json number --jq '.[0].number')"
+          if [ -z "$pr" ]; then
+            echo "::error::no open release PR found for ${PREP_BRANCH} — CreatePullRequest reported success but the PR is not listed"
+            exit 1
+          fi
+          gh pr ready --undo "$pr"
+          echo "release PR #${pr} held as draft until draft-notes lands"
+
   # Release notes are release content with exactly the changelog's
   # lifecycle (template#419): drafted here, into the release PR's diff,
   # reviewed as part of the release decision, landed on the base by the

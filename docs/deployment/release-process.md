@@ -134,9 +134,11 @@ narrative included. Every causal claim in a page must cite a linked
 issue or pull request, and the drafting agent runs the same prose lint
 as the rest of this site.
 
-A drafting failure fails the prepare run visibly; re-run the notes job,
-or re-dispatch Release Prepare with `skip_notes` to release without a
-notes refresh. For a release shipped that way, the **Release Notes**
+The release pull request stays a draft until the notes job lands its
+page, so a release without its notes can never merge by accident. A
+drafting failure fails the prepare run visibly and leaves the pull
+request in draft; re-run the notes job, or re-dispatch Release Prepare
+with `skip_notes` to release without a notes refresh. For a release shipped that way, the **Release Notes**
 workflow's manual dispatch drafts a standalone notes pull request as a
 backfill. Later hand edits to a released page redeploy that minor's
 versioned docs through the **Release Notes Publish** workflow.

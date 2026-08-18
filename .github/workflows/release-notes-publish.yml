@@ -41,7 +41,28 @@ jobs:
           # gh-pages branch (mike) both live outside the pushed commit.
           fetch-depth: 0
 
+      # A release PR's merge changes docs/releases/ too (the notes travel
+      # inside it, template#419), but the RELEASE owns that deploy: docs.yml
+      # builds the new tag's own docs on the release event.  Redeploying
+      # here would race it — this workflow resolves "the series' newest
+      # tag" BEFORE the release workflow has created the new one, so it
+      # could overwrite the fresh deploy with the previous tag's content
+      # (template#421).  Out-of-band page edits are this workflow's only
+      # job, so a push whose head commit is a release-PR merge (the pinned
+      # squash subject) is skipped wholesale.
+      - name: Skip release-PR merges — the release deploys its own docs
+        id: gate
+        run: |
+          subject="$(git log -1 --format=%s HEAD)"
+          if printf '%s' "$subject" | grep -qE '^chore: prepare release '; then
+            echo "release-PR merge (${subject}) — the release workflow owns this deploy; skipping"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Find changed release pages
+        if: steps.gate.outputs.skip != 'true'
         id: pages
         env:
           BEFORE: ${{ github.event.before }}
