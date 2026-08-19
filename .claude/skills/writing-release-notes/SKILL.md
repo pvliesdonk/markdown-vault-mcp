@@ -58,9 +58,13 @@ You are given, or must derive first:
 The accepted page is the cache; do not re-research a range the page
 already covers. When the page carries the watermark:
 
-- If the watermark SHA equals `RANGE_END`, the page is already current:
-  change nothing and say so in your final report — the calling workflow
-  treats an unchanged existing page as success.
+- If the watermark SHA equals `RANGE_END`, the page's researched content
+  is already current: do no re-research and leave the prose alone, but
+  still apply the date backfill from the page-format section — it derives
+  from tag existence, not from the research range. Say what you did in
+  your final report either way; the calling workflow treats an unchanged
+  existing page as success, and a backfill-only change lands like any
+  other draft.
 - Otherwise research only `WATERMARK..RANGE_END` (the same fan-out and
   evidence rules, over the delta), fold the findings into the existing
   narrative — extend a theme, add one, or leave prose untouched when the
@@ -288,7 +292,8 @@ re-draft or hand-edits the page.
 ## Output
 
 Leave the working tree holding only: the release page, `docs/releases/index.md`
-(new-page mode), any `accept.txt` additions, and your proposed PR body in
+(new-page mode, or when the date backfill touched it), any `accept.txt`
+additions, and your proposed PR body in
 `.release-notes-pr-body.md` at the repository root (the workflow's mechanical
 step commits the docs paths — onto the release PR's prep branch in the
 primary flow, or as a standalone notes PR from the body file in backfill
