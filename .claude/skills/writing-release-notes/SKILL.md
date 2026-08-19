@@ -254,12 +254,14 @@ entry replaces the seeded placeholder line). Do not edit
 `mkdocs.yml`: the navigation is project-owned. If the nav has no
 Release Notes entry yet, note that in the PR body instead of adding one.
 
-Never state that the target version has shipped. At prepare time the tag
-does not exist — an rc target's stable may still be weeks out — so the
-target's index entry and page carry no "(released <date>)" qualifier and
-no past-tense shipping claim. Older entries carry dates only because those
-versions had actually shipped when their pages were written; the target
-earns its date from a later draft that runs after the stable tag exists.
+Never claim the target version has shipped before it has. The gate is
+whether the target's stable tag exists at drafting time (read it through
+the API when unsure). At prepare time it does not — an rc target's stable
+may still be weeks out — so a prepare-time draft gives the target's index
+entry and page no "(released <date>)" qualifier and no past-tense shipping
+claim. A post-release backfill or re-draft, whose target tag does exist,
+states the real date — that is the later draft the target earns its date
+from.
 
 ## Quality gates — run them, do not assume them
 
