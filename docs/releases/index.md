@@ -7,6 +7,7 @@ behind it.
 ## Available pages
 
 <!-- RELEASE-PAGES-START -->
+- [4.0](4.0.md) (released August 19, 2026).
 - [3.1](3.1.md) (released July 8, 2026). Backfilled.
 - [3.0](3.0.md) (released June 17, 2026, with patch releases through v3.0.4).
   Backfilled.

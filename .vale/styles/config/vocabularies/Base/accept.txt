@@ -271,3 +271,12 @@ Syncthing
 
 # --- Maintainer-decision corrections to the backfilled notes (#1058) ---
 upstreams
+
+# --- 4.0 release notes vocabulary ---
+CI
+dataclasses
+interop
+OKF
+severities
+umask
+unnormalized
