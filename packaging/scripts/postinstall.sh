@@ -22,7 +22,19 @@ fi
 "${VENV_DIR}/bin/pip" install --quiet --upgrade pip
 
 if [ -n "$PKG_VERSION" ]; then
-    "${VENV_DIR}/bin/pip" install --quiet "markdown-vault-mcp[all]==${PKG_VERSION}"
+    case "$PKG_VERSION" in
+        *-rc.*)
+            # Pre-releases never reach PyPI; install the wheel attached to
+            # this version's own GitHub release. The wheel filename carries
+            # the PEP 440 canonical spelling (-rc.N -> rcN).
+            canonical="$(printf '%s' "$PKG_VERSION" | sed 's/-rc\./rc/')"
+            "${VENV_DIR}/bin/pip" install --quiet \
+                "markdown-vault-mcp[all] @ https://github.com/pvliesdonk/markdown-vault-mcp/releases/download/v${PKG_VERSION}/markdown_vault_mcp-${canonical}-py3-none-any.whl"
+            ;;
+        *)
+            "${VENV_DIR}/bin/pip" install --quiet "markdown-vault-mcp[all]==${PKG_VERSION}"
+            ;;
+    esac
 else
     "${VENV_DIR}/bin/pip" install --quiet "markdown-vault-mcp[all]"
 fi

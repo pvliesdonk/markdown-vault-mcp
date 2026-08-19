@@ -1000,6 +1000,13 @@ def test_linux_packages_attach_to_prereleases_too() -> None:
     assert "is_prerelease" not in block, (
         "publish-linux-packages must not skip prereleases"
     )
+    postinstall = (REPO_ROOT / "packaging" / "scripts" / "postinstall.sh").read_text(
+        encoding="utf-8"
+    )
+    assert "*-rc.*" in postinstall and "releases/download" in postinstall, (
+        "an rc package's postinstall must install the wheel from the"
+        " version's own GitHub release — rc versions never reach PyPI"
+    )
 
 
 @pytest.mark.parametrize(
