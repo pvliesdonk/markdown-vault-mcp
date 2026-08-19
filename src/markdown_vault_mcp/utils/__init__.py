@@ -39,6 +39,36 @@ def is_path_excluded(path: str, exclude_patterns: Sequence[str] | None) -> bool:
     return any(fnmatch.fnmatch(path, pat) for pat in exclude_patterns)
 
 
+def normalize_folder(folder: str | None) -> str | None:
+    """Fold a caller-supplied folder value to its canonical vault spelling.
+
+    Folder values arrive from tool callers in whatever shape a human types:
+    ``"X/"``, ``"/X"``, ``"X\\Y"``.  The stored ``folder`` column holds a
+    slash-separated path with no surrounding slashes (``""`` for the vault
+    root), so every folder-scoped surface folds its input through here
+    before comparing.
+
+    Three states stay distinct, and only the third is folded:
+
+    - ``None`` -- no folder restriction at all.
+    - ``""`` (and ``"/"``) -- root-level documents only.  Never collapsed to
+      ``None``: an explicit empty folder is a restriction, not its absence.
+    - anything else -- backslashes folded to slashes, surrounding slashes
+      stripped, so ``"X/"`` and ``"/X"`` both select the same notes as
+      ``"X"``.
+
+    Args:
+        folder: Folder value as received from the caller.
+
+    Returns:
+        ``None`` when *folder* is ``None``, else the canonical folder
+        string.
+    """
+    if folder is None:
+        return None
+    return folder.replace("\\", "/").strip("/")
+
+
 def effective_attachment_extensions(
     attachment_extensions: Sequence[str] | None,
 ) -> frozenset[str]:

@@ -858,6 +858,56 @@ def test_hybrid_search_caps_per_file_after_rrf(
         assert len(r.sections) <= 1
 
 
+# ---------------------------------------------------------------------------
+# folder="" — root-level only, on every channel (#1106)
+# ---------------------------------------------------------------------------
+
+
+ROOT_NOTES = {"alpha.md", "beta.md"}
+
+
+@pytest.mark.parametrize("mode", ["keyword", "semantic", "hybrid"])
+def test_empty_folder_restricts_search_to_root_level(
+    search_mgr_with_embeddings: SearchManager, mode: str
+) -> None:
+    """``folder=""`` selects root-level notes only, in every mode (#1106).
+
+    The vector channel used to collapse ``""`` to "no restriction", so
+    semantic and hybrid answered from the whole vault while keyword and
+    ``list_documents`` honoured the documented root-only contract.
+    """
+    results = search_mgr_with_embeddings.search("world", mode=mode, folder="", limit=10)
+    assert results, f"expected root-level results in mode={mode}"
+    assert {r.path for r in results} <= ROOT_NOTES
+
+
+@pytest.mark.parametrize("mode", ["semantic", "hybrid"])
+def test_empty_folder_is_not_the_same_as_no_folder(
+    search_mgr_with_embeddings: SearchManager, mode: str
+) -> None:
+    """An unrestricted search reaches sub-folders that ``folder=""`` excludes."""
+    unrestricted = search_mgr_with_embeddings.search(
+        "world", mode=mode, folder=None, limit=10
+    )
+    assert any(r.path.startswith("notes/") for r in unrestricted)
+
+
+def test_empty_folder_restricts_get_similar_to_root_level(
+    search_mgr_with_embeddings: SearchManager,
+) -> None:
+    """``get_similar`` shares the root-only contract (#1106)."""
+    results = search_mgr_with_embeddings.get_similar("alpha.md", folder="", limit=10)
+    assert {r.path for r in results} <= ROOT_NOTES
+
+
+def test_empty_folder_restricts_list_to_root_level(
+    search_mgr_with_embeddings: SearchManager,
+) -> None:
+    """``list_documents`` already honoured the contract; keep it that way."""
+    listed = search_mgr_with_embeddings.list(folder="")
+    assert {n.path for n in listed} == ROOT_NOTES
+
+
 def test_hybrid_folder_filter_normalizes_trailing_slash(
     search_mgr_with_embeddings: SearchManager,
 ) -> None:

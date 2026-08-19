@@ -553,6 +553,7 @@ def register(mcp: FastMCP) -> None:
             folder: Restrict results to this folder (exact match or
                 sub-folder prefix), e.g. "3-Resources". Useful to scope
                 link candidates to one part of the vault.
+                Use folder="" for root-level (top-level) documents only.
             filters: Frontmatter equality filters, ANDed — e.g.
                 {"type": "resource"}. Matched post-hoc against each
                 candidate's full frontmatter, so any frontmatter key works
@@ -719,6 +720,7 @@ def register(mcp: FastMCP) -> None:
             limit: Maximum number of notes to return (default 20).
             folder: Optional folder filter. When provided, only returns
                 notes from this folder (e.g. "Journal").
+                Use folder="" for root-level (top-level) documents only.
             wait_for_pending_writes: When True, wait until your recent
                 document mutations have been applied to the
                 index before answering, so the results reflect those changes.

@@ -68,6 +68,7 @@ from markdown_vault_mcp.utils import (
     effective_attachment_extensions,
     fts_row_to_note_info,
     is_path_excluded,
+    normalize_folder,
     validate_path,
 )
 from markdown_vault_mcp.utils.fs import GLOB_SYMLINK_KWARGS
@@ -529,9 +530,10 @@ class SearchManager:
         and *filters* checks frontmatter via :meth:`_row_matches_filters`
         (any frontmatter key — not limited to ``indexed_frontmatter_fields``).
 
-        *folder* is normalized first (backslashes to slashes, surrounding
-        slashes stripped) so a natural ``"3-Resources/"`` does not silently
-        match nothing; a value that normalizes to ``""`` means no restriction.
+        *folder* is folded through :func:`normalize_folder` first, so a
+        natural ``"3-Resources/"`` does not silently match nothing, and
+        ``""`` restricts to root-level documents instead of lifting the
+        restriction.
 
         Args:
             raw: Result dicts from :meth:`VectorIndex.search` /
@@ -542,8 +544,7 @@ class SearchManager:
         Returns:
             The rows that satisfy every condition, original order preserved.
         """
-        if folder is not None:
-            folder = folder.replace("\\", "/").strip("/") or None
+        folder = normalize_folder(folder)
         okf_filters = okf_filters or {}
         okf_verdicts: dict[str, bool] = {}
         filtered: builtins.list[dict[str, Any]] = []

@@ -383,6 +383,19 @@ filters — it is not limited to `indexed_frontmatter_fields`; the candidate
 pool is widened (×4, floor 200) when filtering is active so narrow scopes
 do not starve the result list.
 
+**The `folder` argument has three states, not two** (issue #1106). `None`
+means no folder restriction; `""` means root-level documents only (the
+root folder is stored as `""` in the `folder` column and reported as `""`
+by `list_folders`); any other value selects that folder and its
+sub-folders. `utils.normalize_folder` is the single helper every
+folder-scoped surface folds its input through, and it deliberately never
+collapses `""` to `None` — an explicit empty folder is a restriction, not
+its absence. Before the fix the vector post-filter normalized with
+`... .strip("/") or None`, whose falsy-empty collapse silently lifted the
+restriction on `mode="semantic"`, `mode="hybrid"` and `get_similar` while
+the SQL-backed surfaces honoured it, so the two halves of the tool surface
+disagreed on the same documented contract.
+
 **Non-goal:** No frontmatter-based ranking. The MCP must not require, recommend, or
 special-case any frontmatter convention on vault content (no `kind`, no `noindex`, no
 `boost`). Vault organisation is the user's choice; the server treats all `.md` files
