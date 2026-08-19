@@ -51,35 +51,37 @@ jobs:
       - name: Install browser test deps
         run: uv sync --no-default-groups --all-extras --group docs --group browser --frozen
 
-      # `playwright install --with-deps` shells out to
-      #   sudo -- sh -c "apt-get update && apt-get install -y --no-install-recommends <libs>"
-      # with stdio inherited, no timeout and no retry, so an apt that blocks
-      # blocks the step for as long as the job is allowed to live.  Two of the
-      # things that make apt block on a hosted runner are configurable, but not
-      # through this step's `env:` — playwright elevates with plain `sudo`, and
-      # sudo resets the environment.  Both are therefore set as config files
-      # apt and needrestart read for themselves.
-      - name: Make apt non-blocking for the Playwright dependency install
-        run: |
-          # The image's periodic-upgrade units hold the dpkg lock; apt waits on
-          # it forever unless told otherwise.  Stop them, then bound the wait.
-          sudo systemctl stop apt-daily.timer apt-daily-upgrade.timer 2>/dev/null || true
-          sudo systemctl stop apt-daily.service apt-daily-upgrade.service unattended-upgrades.service 2>/dev/null || true
-          printf 'DPkg::Lock::Timeout "120";\n' \
-            | sudo tee /etc/apt/apt.conf.d/99-lock-timeout >/dev/null
-          # Never stop for a conffile prompt on a stdin that will not answer.
-          printf 'DPkg::Options { "--force-confdef"; "--force-confold"; };\n' \
-            | sudo tee /etc/apt/apt.conf.d/99-noninteractive >/dev/null
-          sudo mkdir -p /etc/needrestart/conf.d
-          printf '$nrconf{restart} = "a";\n$nrconf{kernelhints} = 0;\n' \
-            | sudo tee /etc/needrestart/conf.d/99-noninteractive.conf >/dev/null
+      # Playwright's browser archives only change when the pinned version
+      # does, so cache them rather than pulling ~300 MB from the CDN each run.
+      # `playwright install` checks this directory itself and skips the
+      # download when it is populated, so no cache-hit conditional is needed.
+      - name: Cache Playwright browsers
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('uv.lock') }}
+          restore-keys: playwright-${{ runner.os }}-
 
+      # Split from the dependency install below, which is the unreliable half.
+      # This half only talks to Playwright's CDN, so the browser the tests need
+      # no longer depends on apt being reachable.
       - name: Install Chromium
-        # Backstop for anything the hardening above does not cover: fail in
-        # bounded time so the run is re-runnable, rather than occupying a
-        # runner until the job timeout.
         timeout-minutes: 8
-        run: uv run playwright install --with-deps chromium
+        run: uv run playwright install chromium
+
+      # apt on the hosted runners intermittently stalls (template#430, and
+      # upstream actions/runner-images#11347 / microsoft/playwright#34297, both
+      # unresolved).  On ubuntu-latest this step installs font packages only —
+      # the Chromium shared libraries already ship on the image — so a mirror
+      # outage should cost glyph coverage for CJK/Cyrillic/Thai text, not the
+      # whole job.  The failure stays visible in the log rather than silent.
+      #
+      # Projects doing visual or screenshot comparison, where fallback glyphs
+      # would be a real regression, should drop `continue-on-error` here.
+      - name: Install Chromium system dependencies (fonts)
+        timeout-minutes: 5
+        continue-on-error: true
+        run: uv run playwright install-deps chromium
 
       - name: Run config-wizard browser tests
         # Both the template-owned smoke suite and the project-owned domain suite
