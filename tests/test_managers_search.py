@@ -216,6 +216,37 @@ class TestList:
         assert attachment_items[0].path == "image.png"
         assert attachment_items[0].kind == "attachment"
 
+    def test_nested_attachment_paths_are_posix_spelled(
+        self, search_vault: Path, search_mgr: SearchManager
+    ) -> None:
+        """A nested attachment reports POSIX ``path`` and ``folder``.
+
+        `str(Path)` yields OS separators, so this used to hand back
+        ``notes\\image.png`` on Windows while the index, the exclusion
+        check and a normalized ``folder`` argument all speak POSIX — the
+        folder filter below then matched no attachment at all. The
+        assertions are trivially true on POSIX runners (CI is
+        ubuntu-only), so they pin the contract rather than reproduce the
+        platform bug.
+        """
+        (search_vault / "notes" / "image.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+
+        items = search_mgr.list(include_attachments=True)
+        attachments = [i for i in items if isinstance(i, AttachmentInfo)]
+        assert [a.path for a in attachments] == ["notes/image.png"]
+        assert attachments[0].folder == "notes"
+
+    def test_nested_attachment_survives_the_folder_filter(
+        self, search_vault: Path, search_mgr: SearchManager
+    ) -> None:
+        """The folder filter reaches nested attachments, in every spelling."""
+        (search_vault / "notes" / "image.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+
+        for spelling in ("notes", "notes/", "/notes", "notes\\"):
+            items = search_mgr.list(folder=spelling, include_attachments=True)
+            attachments = [i for i in items if isinstance(i, AttachmentInfo)]
+            assert [a.path for a in attachments] == ["notes/image.png"], spelling
+
     def test_list_attachments_respects_extension_filter(
         self, search_vault: Path, search_mgr: SearchManager
     ) -> None:

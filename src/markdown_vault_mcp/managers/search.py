@@ -14,7 +14,6 @@ import json
 import logging
 import mimetypes
 import sqlite3
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, TypeVar
 
 from markdown_vault_mcp.exceptions import EmbeddingsNotConfiguredError
@@ -77,6 +76,7 @@ from markdown_vault_mcp.utils.fs import GLOB_SYMLINK_KWARGS
 if TYPE_CHECKING:
     import builtins
     from collections.abc import Callable, Sequence
+    from pathlib import Path
 
     from markdown_vault_mcp.fts_index import FTSIndex
     from markdown_vault_mcp.managers.link import LinkManager
@@ -1269,10 +1269,14 @@ class SearchManager:
         rel = self._attachment_rel_path(abs_path)
         if rel is None:
             return None
-        rel_path = str(rel)
+        # POSIX spelling throughout: `str(Path)` yields OS separators, so on
+        # Windows this produced `docs\\api` where the index, the exclusion
+        # check above, and a normalized `folder` argument all use `docs/api`
+        # — nested attachments then matched nothing.
+        rel_path = rel.as_posix()
         if pattern and not fnmatch.fnmatch(rel_path, pattern):
             return None
-        rel_folder = str(Path(rel_path).parent)
+        rel_folder = rel.parent.as_posix()
         if rel_folder == ".":
             rel_folder = ""
         if folder is not None and not folder_matches(rel_folder, folder):
