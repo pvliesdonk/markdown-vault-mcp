@@ -515,7 +515,10 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # ignore-error: this workflow runs on pull_request closed, whose
+          # Actions cache token has no writable scopes — without it the
+          # cache export hard-fails the whole (otherwise successful) build.
+          cache-to: type=gha,mode=max,ignore-error=true
 
       - name: Generate artifact attestation
         uses: actions/attest-build-provenance@v4
@@ -543,7 +546,10 @@ jobs:
 
   publish-linux-packages:
     needs: release
-    if: needs.release.outputs.released == 'true' && needs.release.outputs.is_prerelease == 'false'
+    # Runs for rcs too: this only attaches deb/rpm to the version's own
+    # GitHub release — a per-version immutable channel like the wheel and
+    # mcpb assets, not an external publish surface.
+    if: needs.release.outputs.released == 'true'
     runs-on: ubuntu-latest
 
     permissions:

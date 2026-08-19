@@ -81,7 +81,9 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # ignore-error: a cache-service outage must not fail the build —
+          # the cache is an optimization, never a correctness input.
+          cache-to: type=gha,mode=max,ignore-error=true
 
   mcpb-bundle:
     runs-on: ubuntu-latest

@@ -63,6 +63,7 @@ NOTES_PUBLISH_WORKFLOW = (
     REPO_ROOT / ".github" / "workflows" / "release-notes-publish.yml"
 )
 DOCS_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "docs.yml"
+UNSTABLE_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "unstable.yml"
 PLUGIN_JSON = Path(".claude-plugin/plugin/.claude-plugin/plugin.json")
 MCP_JSON = Path(".claude-plugin/plugin/.mcp.json")
 
@@ -962,6 +963,42 @@ def test_stable_version_stamps_every_published_pin(stamp_sandbox: Path) -> None:
     )
     assert re.search(r"^A .*uv\.lock$", status, re.MULTILINE), (
         "the stamped lockfile must be staged for knope's release commit"
+    )
+
+
+def test_docker_cache_export_cannot_fail_a_build() -> None:
+    """Every gha cache export is best-effort, never a build gate.
+
+    The Release workflow runs on pull_request closed, whose Actions cache
+    token has no writable scopes — a plain ``cache-to: type=gha`` then
+    hard-fails an otherwise successful image build (the v4.0.0-rc.2
+    regression).  The unstable channel gets the same treatment: the cache
+    is an optimization, never a correctness input.
+    """
+    for workflow in (RELEASE_WORKFLOW, UNSTABLE_WORKFLOW):
+        text = workflow.read_text(encoding="utf-8")
+        assert "cache-to: type=gha,mode=max,ignore-error=true" in text, (
+            f"{workflow.name} lost the best-effort cache export"
+        )
+        assert "cache-to: type=gha,mode=max\n" not in text, (
+            f"{workflow.name} carries a cache export that can fail the build"
+        )
+
+
+def test_linux_packages_attach_to_prereleases_too() -> None:
+    """publish-linux-packages runs for rcs, gated on ``released`` alone.
+
+    It only attaches deb/rpm to the version's own GitHub release — a
+    per-version immutable channel like the wheel and mcpb assets — so an
+    rc gets its artifacts; external surfaces (PyPI, registry, marketplace)
+    stay stable-gated elsewhere.
+    """
+    block = _release_job_block("publish-linux-packages", "build-mcpb")
+    assert "if: needs.release.outputs.released == 'true'\n" in block, (
+        "publish-linux-packages must gate on released alone"
+    )
+    assert "is_prerelease" not in block, (
+        "publish-linux-packages must not skip prereleases"
     )
 
 
