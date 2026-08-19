@@ -4,7 +4,7 @@ Human-readable notes for each minor release: what changed, who is affected, and 
 
 ## Available pages
 
-- [4.0](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/4.0/index.md) (released August 19, 2026).
+- [4.0](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/4.0/index.md).
 - [3.1](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/3.1/index.md) (released July 8, 2026). Backfilled.
 - [3.0](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/3.0/index.md) (released June 17, 2026, with patch releases through v3.0.4). Backfilled.
 - [1.x](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/1.x/index.md) (March 9 to May 3, 2026; the whole 1.x line on one page). Backfilled, and closed: the 1.x line receives no further releases, so that page is final. The pages above it stay open and gain a section whenever their minor gets a patch release.
