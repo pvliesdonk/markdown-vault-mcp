@@ -248,6 +248,11 @@ A patch section goes inside the patch sentinels, oldest first, as:
 
     <evidence-linked detail, same rules as above>
 
+The `— 2026-08-20` date suffix follows the same tag-existence gate as the
+shipped-claim rule below: a prepare-time patch draft, whose tag does not
+exist yet, writes the bare `## v3.2.1` heading, and the post-release draft
+appends the real date.
+
 For a **new** page, also add the minor to the list in
 `docs/releases/index.md` (newest first, between its markers; the first real
 entry replaces the seeded placeholder line). Do not edit
