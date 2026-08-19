@@ -206,6 +206,7 @@ def register(mcp: FastMCP) -> None:
         Args:
             folder: Optional folder filter. When provided, only checks
                 links from documents in this folder (e.g. "Journal").
+                Use folder="" for root-level (top-level) documents only.
                 Without this, checks all documents.
             wait_for_pending_writes: When True, wait until your recent
                 document mutations have been applied to the

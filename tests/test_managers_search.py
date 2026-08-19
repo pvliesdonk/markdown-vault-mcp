@@ -859,6 +859,78 @@ def test_hybrid_search_caps_per_file_after_rrf(
 
 
 # ---------------------------------------------------------------------------
+# folder="X/" — trailing/leading slashes fold on every surface (#1103)
+# ---------------------------------------------------------------------------
+
+
+NOTES_FOLDER_NOTES = {"notes/gamma.md", "notes/delta.md"}
+
+
+@pytest.mark.parametrize("spelling", ["notes/", "/notes", "/notes/", "notes\\"])
+@pytest.mark.parametrize("mode", ["keyword", "semantic", "hybrid"])
+def test_folder_spellings_select_the_same_notes(
+    search_mgr_with_embeddings: SearchManager, mode: str, spelling: str
+) -> None:
+    """Every natural spelling of a folder selects the same notes (#1103).
+
+    The SQL-backed channels compared the value as received, so a trailing
+    slash matched no row and the call returned ``[]`` — indistinguishable
+    from an empty folder.
+    """
+    canonical = search_mgr_with_embeddings.search(
+        "gamma", mode=mode, folder="notes", limit=10
+    )
+    assert canonical, f"fixture precondition: no {mode} hits under notes/"
+    results = search_mgr_with_embeddings.search(
+        "gamma", mode=mode, folder=spelling, limit=10
+    )
+    assert {r.path for r in results} == {r.path for r in canonical}
+    assert {r.path for r in results} <= NOTES_FOLDER_NOTES
+
+
+@pytest.mark.parametrize("spelling", ["notes/", "/notes", "notes\\"])
+def test_list_documents_folds_folder_spellings(
+    search_mgr_with_embeddings: SearchManager, spelling: str
+) -> None:
+    """``list_documents`` folds the same spellings (#1103)."""
+    listed = search_mgr_with_embeddings.list(folder=spelling)
+    assert {n.path for n in listed} == NOTES_FOLDER_NOTES
+
+
+@pytest.mark.parametrize("spelling", ["notes/", "/notes", "notes\\"])
+def test_get_recent_folds_folder_spellings(
+    search_mgr_with_embeddings: SearchManager, spelling: str
+) -> None:
+    """``get_recent`` folds the same spellings (#1103)."""
+    recent = search_mgr_with_embeddings.get_recent(folder=spelling)
+    assert {n.path for n in recent} == NOTES_FOLDER_NOTES
+
+
+@pytest.mark.parametrize("spelling", ["notes/", "/notes", "notes\\"])
+def test_get_similar_folds_folder_spellings(
+    search_mgr_with_embeddings: SearchManager, spelling: str
+) -> None:
+    """``get_similar`` folds the same spellings (#1103)."""
+    results = search_mgr_with_embeddings.get_similar(
+        "alpha.md", folder=spelling, limit=10
+    )
+    assert results, f"expected results for folder={spelling!r}"
+    assert {r.path for r in results} <= NOTES_FOLDER_NOTES
+
+
+@pytest.mark.parametrize("mode", ["keyword", "semantic", "hybrid"])
+def test_root_slash_folder_is_the_root_selector(
+    search_mgr_with_embeddings: SearchManager, mode: str
+) -> None:
+    """``folder="/"`` folds to the root selector rather than matching nothing."""
+    results = search_mgr_with_embeddings.search(
+        "world", mode=mode, folder="/", limit=10
+    )
+    assert results, f"expected root-level results in mode={mode}"
+    assert {r.path for r in results} <= ROOT_NOTES
+
+
+# ---------------------------------------------------------------------------
 # folder="" — root-level only, on every channel (#1106)
 # ---------------------------------------------------------------------------
 

@@ -387,10 +387,15 @@ do not starve the result list.
 means no folder restriction; `""` means root-level documents only (the
 root folder is stored as `""` in the `folder` column and reported as `""`
 by `list_folders`); any other value selects that folder and its
-sub-folders. `utils.normalize_folder` is the single helper every
-folder-scoped surface folds its input through, and it deliberately never
-collapses `""` to `None` — an explicit empty folder is a restriction, not
-its absence. Before the fix the vector post-filter normalized with
+sub-folders, after backslashes are folded to forward slashes and
+surrounding slashes are stripped, so `"X"`, `"X/"` and `"/X/"` are one
+scope. `utils.normalize_folder` is the single helper every folder-scoped
+surface folds its input through — applied once at the manager entry
+points (`SearchManager.search` / `.list` / `.get_recent` / `.get_similar`
+and `LinkManager.get_broken_links`) rather than per channel, so the SQL
+and vector halves cannot drift apart again (issue #1103). It deliberately
+never collapses `""` to `None` — an explicit empty folder is a
+restriction, not its absence. Before the fix the vector post-filter normalized with
 `... .strip("/") or None`, whose falsy-empty collapse silently lifted the
 restriction on `mode="semantic"`, `mode="hybrid"` and `get_similar` while
 the SQL-backed surfaces honoured it, so the two halves of the tool surface

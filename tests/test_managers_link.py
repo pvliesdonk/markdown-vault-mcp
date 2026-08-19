@@ -177,6 +177,36 @@ class TestGetBrokenLinks:
         results = link_mgr.get_broken_links(folder="nonexistent_folder")
         assert results == []
 
+    @pytest.mark.parametrize("spelling", ["sub", "sub/", "/sub", "/sub/", "sub\\"])
+    def test_folder_spellings_select_the_same_links(
+        self, tmp_path: Path, spelling: str
+    ) -> None:
+        """Every natural spelling of a folder selects the same links (#1103).
+
+        The SQL comparison used the value as received, so a trailing slash
+        matched no row and the call returned ``[]`` — indistinguishable
+        from a folder with no broken links.
+        """
+        (tmp_path / "sub").mkdir()
+        (tmp_path / "sub" / "note.md").write_text(
+            "---\ntitle: Note\n---\n# Note\n\nA [broken](missing.md) link.\n",
+            encoding="utf-8",
+        )
+        fts = FTSIndex(db_path=":memory:")
+        for note in scan_directory(tmp_path):
+            fts.upsert_note(note)
+        fts.resolve_vault_wikilinks()
+        mgr = LinkManager(fts=fts, source_dir=tmp_path)
+
+        results = mgr.get_broken_links(folder=spelling)
+        assert [r.source_path for r in results] == ["sub/note.md"]
+
+    def test_empty_folder_restricts_to_root_level(self, link_mgr: LinkManager) -> None:
+        """``folder=""`` selects root-level sources, not the whole vault (#1106)."""
+        results = link_mgr.get_broken_links(folder="")
+        assert results, "expected the root-level broken link"
+        assert all(r.source_path == "alpha.md" for r in results)
+
 
 # ---------------------------------------------------------------------------
 # get_orphan_notes

@@ -18,7 +18,11 @@ from markdown_vault_mcp.types import (
     NoteInfo,
     OutlinkInfo,
 )
-from markdown_vault_mcp.utils import fts_row_to_note_info, validate_path
+from markdown_vault_mcp.utils import (
+    fts_row_to_note_info,
+    normalize_folder,
+    validate_path,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -144,12 +148,14 @@ class LinkManager:
 
         Args:
             folder: If provided, restrict to source documents in this folder
-                (exact match or sub-folder prefix).
+                (exact match or sub-folder prefix).  ``""`` restricts to
+                root-level documents; the value is folded through
+                :func:`~markdown_vault_mcp.utils.normalize_folder`.
 
         Returns:
             List of :class:`~markdown_vault_mcp.types.BrokenLinkInfo` objects.
         """
-        rows = self._fts.get_broken_links(folder=folder)
+        rows = self._fts.get_broken_links(folder=normalize_folder(folder))
         return [
             BrokenLinkInfo(
                 source_path=row["source_path"],

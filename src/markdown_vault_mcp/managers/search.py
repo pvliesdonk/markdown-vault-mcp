@@ -613,7 +613,10 @@ class SearchManager:
                 semantics).  Only works for fields in
                 ``indexed_frontmatter_fields``.
             folder: If provided, restrict results to documents in this
-                folder (and its sub-folders).
+                folder (and its sub-folders).  ``""`` restricts to
+                root-level documents; the value is folded through
+                :func:`normalize_folder`, so ``"X/"`` and ``"X"`` select
+                the same notes on every channel.
             chunks_per_file: Maximum number of sections returned per file.
                 ``None`` uses the instance default (``self._chunks_per_file``).
             snippet_words: Width of the FTS5 snippet window in words.
@@ -633,6 +636,7 @@ class SearchManager:
             chunks_per_file if chunks_per_file is not None else self._chunks_per_file
         )
         eff_snip = snippet_words if snippet_words is not None else self._snippet_words
+        folder = normalize_folder(folder)
         filters, okf_filters = self._split_okf_filters(filters)
 
         if mode == "keyword":
@@ -1081,7 +1085,8 @@ class SearchManager:
 
         Args:
             folder: If provided, only return documents in this folder (and
-                sub-folders).
+                sub-folders).  ``""`` restricts to root-level documents;
+                the value is folded through :func:`normalize_folder`.
             pattern: Unix glob matched against the relative path using
                 :func:`fnmatch.fnmatch`.  Example: ``"Journal/*.md"``.
             include_attachments: When ``True``, also return non-.md files
@@ -1105,6 +1110,7 @@ class SearchManager:
             ValueError: If an active OKF ``stale`` filter value is not a
                 true/false spelling.
         """
+        folder = normalize_folder(folder)
         plain_filters, okf_filters = self._split_okf_filters(filters)
         rows = self._fts.list_notes(folder=folder)
         note_infos = [fts_row_to_note_info(row) for row in rows]
@@ -1362,13 +1368,15 @@ class SearchManager:
         Args:
             limit: Maximum number of documents to return.
             folder: If provided, restrict to documents in this folder
-                (exact match or sub-folder prefix).
+                (exact match or sub-folder prefix).  ``""`` restricts to
+                root-level documents; the value is folded through
+                :func:`normalize_folder`.
 
         Returns:
             List of :class:`~markdown_vault_mcp.types.NoteInfo` objects
             ordered by modification time (most recent first).
         """
-        rows = self._fts.get_recent(limit=limit, folder=folder)
+        rows = self._fts.get_recent(limit=limit, folder=normalize_folder(folder))
         return [fts_row_to_note_info(row) for row in rows]
 
     def get_similar(
@@ -1392,7 +1400,9 @@ class SearchManager:
             chunks_per_file: Maximum sections returned per result file.
                 ``None`` uses the instance default.
             folder: If provided, restrict results to documents in this
-                folder (exact match or sub-folder prefix).
+                folder (exact match or sub-folder prefix).  ``""``
+                restricts to root-level documents; the value is folded
+                through :func:`normalize_folder`.
             filters: Optional ``{frontmatter_key: value}`` equality filters,
                 ANDed. Applied post-hoc against each candidate's full
                 frontmatter (any key — not limited to
@@ -1412,6 +1422,7 @@ class SearchManager:
         self._validate_path(path)
         if self._fts.get_note(path) is None:
             raise ValueError(f"Document not found: {path}")
+        folder = normalize_folder(folder)
 
         if self._embedding_provider is None or self._embeddings_path is None:
             return []
