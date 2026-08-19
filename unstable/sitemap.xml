@@ -2,162 +2,166 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
          <loc>https://pvliesdonk.github.io/markdown-vault-mcp/unstable/</loc>
-         <lastmod>2026-08-18</lastmod>
+         <lastmod>2026-08-19</lastmod>
     </url>
     <url>
          <loc>https://pvliesdonk.github.io/markdown-vault-mcp/unstable/configuration-generator/</loc>
-         <lastmod>2026-08-18</lastmod>
+         <lastmod>2026-08-19</lastmod>
     </url>
     <url>
          <loc>https://pvliesdonk.github.io/markdown-vault-mcp/unstable/configuration/</loc>
-         <lastmod>2026-08-18</lastmod>
+         <lastmod>2026-08-19</lastmod>
     </url>
     <url>
          <loc>https://pvliesdonk.github.io/markdown-vault-mcp/unstable/installation/</loc>
-         <lastmod>2026-08-18</lastmod>
+         <lastmod>2026-08-19</lastmod>
     </url>
     <url>
          <loc>https://pvliesdonk.github.io/markdown-vault-mcp/unstable/prompts/</loc>
-         <lastmod>2026-08-18</lastmod>
+         <lastmod>2026-08-19</lastmod>
     </url>
     <url>
          <loc>https://pvliesdonk.github.io/markdown-vault-mcp/unstable/resources/</loc>
-         <lastmod>2026-08-18</lastmod>
+         <lastmod>2026-08-19</lastmod>
     </url>
     <url>
          <loc>https://pvliesdonk.github.io/markdown-vault-mcp/unstable/api/config/</loc>
-         <lastmod>2026-08-18</lastmod>
+         <lastmod>2026-08-19</lastmod>
     </url>
     <url>
          <loc>https://pvliesdonk.github.io/markdown-vault-mcp/unstable/api/exceptions/</loc>
-         <lastmod>2026-08-18</lastmod>
+         <lastmod>2026-08-19</lastmod>
     </url>
     <url>
          <loc>https://pvliesdonk.github.io/markdown-vault-mcp/unstable/api/facets/</loc>
-         <lastmod>2026-08-18</lastmod>
+         <lastmod>2026-08-19</lastmod>
     </url>
     <url>
          <loc>https://pvliesdonk.github.io/markdown-vault-mcp/unstable/api/git/</loc>
-         <lastmod>2026-08-18</lastmod>
+         <lastmod>2026-08-19</lastmod>
     </url>
     <url>
          <loc>https://pvliesdonk.github.io/markdown-vault-mcp/unstable/api/providers/</loc>
-         <lastmod>2026-08-18</lastmod>
+         <lastmod>2026-08-19</lastmod>
     </url>
     <url>
          <loc>https://pvliesdonk.github.io/markdown-vault-mcp/unstable/api/types/</loc>
-         <lastmod>2026-08-18</lastmod>
+         <lastmod>2026-08-19</lastmod>
     </url>
     <url>
          <loc>https://pvliesdonk.github.io/markdown-vault-mcp/unstable/api/vault/</loc>
-         <lastmod>2026-08-18</lastmod>
+         <lastmod>2026-08-19</lastmod>
     </url>
     <url>
          <loc>https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deployment/</loc>
-         <lastmod>2026-08-18</lastmod>
+         <lastmod>2026-08-19</lastmod>
     </url>
     <url>
          <loc>https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deployment/claude-desktop/</loc>
-         <lastmod>2026-08-18</lastmod>
+         <lastmod>2026-08-19</lastmod>
     </url>
     <url>
          <loc>https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deployment/docker/</loc>
-         <lastmod>2026-08-18</lastmod>
+         <lastmod>2026-08-19</lastmod>
     </url>
     <url>
          <loc>https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deployment/oidc/</loc>
-         <lastmod>2026-08-18</lastmod>
+         <lastmod>2026-08-19</lastmod>
     </url>
     <url>
          <loc>https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deployment/release-process/</loc>
-         <lastmod>2026-08-18</lastmod>
+         <lastmod>2026-08-19</lastmod>
     </url>
     <url>
          <loc>https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deployment/repository-protection/</loc>
-         <lastmod>2026-08-18</lastmod>
+         <lastmod>2026-08-19</lastmod>
     </url>
     <url>
          <loc>https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deployment/systemd/</loc>
-         <lastmod>2026-08-18</lastmod>
+         <lastmod>2026-08-19</lastmod>
     </url>
     <url>
          <loc>https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/</loc>
-         <lastmod>2026-08-18</lastmod>
+         <lastmod>2026-08-19</lastmod>
     </url>
     <url>
          <loc>https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/authentication/</loc>
-         <lastmod>2026-08-18</lastmod>
+         <lastmod>2026-08-19</lastmod>
     </url>
     <url>
          <loc>https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/claude-code-plugin/</loc>
-         <lastmod>2026-08-18</lastmod>
+         <lastmod>2026-08-19</lastmod>
     </url>
     <url>
          <loc>https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/claude-desktop/</loc>
-         <lastmod>2026-08-18</lastmod>
+         <lastmod>2026-08-19</lastmod>
     </url>
     <url>
          <loc>https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/docker/</loc>
-         <lastmod>2026-08-18</lastmod>
+         <lastmod>2026-08-19</lastmod>
     </url>
     <url>
          <loc>https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/embeddings/</loc>
-         <lastmod>2026-08-18</lastmod>
+         <lastmod>2026-08-19</lastmod>
     </url>
     <url>
          <loc>https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/git-integration/</loc>
-         <lastmod>2026-08-18</lastmod>
+         <lastmod>2026-08-19</lastmod>
     </url>
     <url>
          <loc>https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/mcp-apps/</loc>
-         <lastmod>2026-08-18</lastmod>
+         <lastmod>2026-08-19</lastmod>
     </url>
     <url>
          <loc>https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/obsidian-everywhere/</loc>
-         <lastmod>2026-08-18</lastmod>
+         <lastmod>2026-08-19</lastmod>
     </url>
     <url>
          <loc>https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/oidc-providers/</loc>
-         <lastmod>2026-08-18</lastmod>
+         <lastmod>2026-08-19</lastmod>
     </url>
     <url>
          <loc>https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/okf/</loc>
-         <lastmod>2026-08-18</lastmod>
+         <lastmod>2026-08-19</lastmod>
     </url>
     <url>
          <loc>https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/para/</loc>
-         <lastmod>2026-08-18</lastmod>
+         <lastmod>2026-08-19</lastmod>
     </url>
     <url>
          <loc>https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/research-workflows/</loc>
-         <lastmod>2026-08-18</lastmod>
+         <lastmod>2026-08-19</lastmod>
     </url>
     <url>
          <loc>https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/transfer-links/</loc>
-         <lastmod>2026-08-18</lastmod>
+         <lastmod>2026-08-19</lastmod>
     </url>
     <url>
          <loc>https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/zettelkasten/</loc>
-         <lastmod>2026-08-18</lastmod>
+         <lastmod>2026-08-19</lastmod>
     </url>
     <url>
          <loc>https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/</loc>
-         <lastmod>2026-08-18</lastmod>
+         <lastmod>2026-08-19</lastmod>
     </url>
     <url>
          <loc>https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/1.x/</loc>
-         <lastmod>2026-08-18</lastmod>
+         <lastmod>2026-08-19</lastmod>
     </url>
     <url>
          <loc>https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/3.0/</loc>
-         <lastmod>2026-08-18</lastmod>
+         <lastmod>2026-08-19</lastmod>
     </url>
     <url>
          <loc>https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/3.1/</loc>
-         <lastmod>2026-08-18</lastmod>
+         <lastmod>2026-08-19</lastmod>
+    </url>
+    <url>
+         <loc>https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/4.0/</loc>
+         <lastmod>2026-08-19</lastmod>
     </url>
     <url>
          <loc>https://pvliesdonk.github.io/markdown-vault-mcp/unstable/tools/</loc>
-         <lastmod>2026-08-18</lastmod>
+         <lastmod>2026-08-19</lastmod>
     </url>
 </urlset>
