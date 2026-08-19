@@ -23,6 +23,7 @@ jobs:
     # Validation only: strict docs build. Never deploys; publishing happens
     # in `deploy` on release:published.
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
         with:
@@ -50,7 +51,34 @@ jobs:
       - name: Install browser test deps
         run: uv sync --no-default-groups --all-extras --group docs --group browser --frozen
 
+      # `playwright install --with-deps` shells out to
+      #   sudo -- sh -c "apt-get update && apt-get install -y --no-install-recommends <libs>"
+      # with stdio inherited, no timeout and no retry, so an apt that blocks
+      # blocks the step for as long as the job is allowed to live.  Two of the
+      # things that make apt block on a hosted runner are configurable, but not
+      # through this step's `env:` — playwright elevates with plain `sudo`, and
+      # sudo resets the environment.  Both are therefore set as config files
+      # apt and needrestart read for themselves.
+      - name: Make apt non-blocking for the Playwright dependency install
+        run: |
+          # The image's periodic-upgrade units hold the dpkg lock; apt waits on
+          # it forever unless told otherwise.  Stop them, then bound the wait.
+          sudo systemctl stop apt-daily.timer apt-daily-upgrade.timer 2>/dev/null || true
+          sudo systemctl stop apt-daily.service apt-daily-upgrade.service unattended-upgrades.service 2>/dev/null || true
+          printf 'DPkg::Lock::Timeout "120";\n' \
+            | sudo tee /etc/apt/apt.conf.d/99-lock-timeout >/dev/null
+          # Never stop for a conffile prompt on a stdin that will not answer.
+          printf 'DPkg::Options { "--force-confdef"; "--force-confold"; };\n' \
+            | sudo tee /etc/apt/apt.conf.d/99-noninteractive >/dev/null
+          sudo mkdir -p /etc/needrestart/conf.d
+          printf '$nrconf{restart} = "a";\n$nrconf{kernelhints} = 0;\n' \
+            | sudo tee /etc/needrestart/conf.d/99-noninteractive.conf >/dev/null
+
       - name: Install Chromium
+        # Backstop for anything the hardening above does not cover: fail in
+        # bounded time so the run is re-runnable, rather than occupying a
+        # runner until the job timeout.
+        timeout-minutes: 8
         run: uv run playwright install --with-deps chromium
 
       - name: Run config-wizard browser tests
@@ -88,6 +116,7 @@ jobs:
       group: ${{ github.workflow }}-deploy-${{ github.event_name }}
       cancel-in-progress: ${{ github.event_name == 'push' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: write
     steps:
