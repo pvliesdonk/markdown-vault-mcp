@@ -36,7 +36,8 @@ def compute_new_raw_target(
             or source-directory-relative path.
 
     Returns:
-        The replacement raw_target string to write into the source file.
+        The replacement raw_target string to write into the source file,
+        written in the same shape the original used.
     """
     if link_type == "wikilink":
         # Determine whether the original wikilink included the .md extension.
@@ -47,12 +48,18 @@ def compute_new_raw_target(
             new_path_part = new_path[:-3]
         return new_path_part + ("#" + fragment if fragment else "")
     else:
-        # markdown and reference links.
-        # Detect whether the link was written as vault-root-relative (raw_target
-        # matches old_path) or as a path relative to the source file's directory
-        # (raw_target != old_path, e.g. "../archive/target.md" from docs/).
+        # markdown and reference links, in one of three shapes:
+        #   "/folder/target.md"  leading-slash root-relative (#969, and what
+        #                        OKF recommends and its tooling emits)
+        #   "folder/target.md"   root-relative, matching old_path
+        #   "../target.md"       relative to the source file's directory
+        # Each is rewritten in its own shape: the link still resolves either
+        # way, but silently converting one spelling to another undoes a
+        # vault's OKF link conformance on any rename or folder move (#1105).
         raw_path_part = raw_target.split("#")[0]
-        if source_path and old_path and raw_path_part != old_path:
+        if raw_path_part.startswith("/"):
+            new_path_part = "/" + new_path
+        elif source_path and old_path and raw_path_part != old_path:
             # Relative-to-source link: compute the correct new relative path so
             # cross-directory links continue to resolve after the rename.
             source_dir = str(Path(source_path).parent)

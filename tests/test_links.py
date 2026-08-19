@@ -1321,6 +1321,7 @@ def rename_vault(tmp_path: Path) -> Path:
         linker_wiki_frag.md  contains a wikilink with fragment [[target#heading]]
         no_links.md          no links — should not be modified
         subdir/linker_rel.md contains a relative markdown link ../target.md
+        linker_rootrel.md    contains a root-relative markdown link /target.md
     """
     vault = tmp_path / "vault"
     vault.mkdir()
@@ -1347,6 +1348,9 @@ def rename_vault(tmp_path: Path) -> Path:
     )
     (vault / "subdir" / "linker_rel.md").write_text(
         "# Linker Rel\n\nSee [Target](../target.md) for details.\n"
+    )
+    (vault / "linker_rootrel.md").write_text(
+        "# Linker Root Rel\n\nSee [Target](/target.md) for details.\n"
     )
     (vault / "no_links.md").write_text("# No Links\n\nJust prose.\n")
     return vault
@@ -1442,8 +1446,8 @@ class TestRenameUpdateLinks:
         result = col.writer.rename("target.md", "renamed.md", update_links=True)
 
         # linker_md, linker_wiki, linker_ref, linker_frag, linker_alias,
-        # linker_wiki_frag, subdir/linker_rel = 7
-        assert result.updated_links == 7
+        # linker_wiki_frag, subdir/linker_rel, linker_rootrel = 8
+        assert result.updated_links == 8
 
     def test_update_links_failure_does_not_prevent_rename(
         self, rename_vault: Path
@@ -1472,8 +1476,8 @@ class TestRenameUpdateLinks:
         # Rename succeeded even though one source update failed.
         assert (rename_vault / "renamed.md").is_file()
         assert not (rename_vault / "target.md").is_file()
-        # updated_links is less than the total of 7 (one failure)
-        assert result.updated_links < 7
+        # updated_links is less than the total of 8 (one failure)
+        assert result.updated_links < 8
 
     def test_update_links_wikilink_fragment_preserved(self, rename_vault: Path) -> None:
         """Wikilink with fragment [[target#heading]] becomes [[renamed#heading]]."""
@@ -1500,6 +1504,22 @@ class TestRenameUpdateLinks:
         content = (rename_vault / "subdir" / "linker_rel.md").read_text()
         assert "(../renamed.md)" in content
         assert "(../target.md)" not in content
+
+    def test_update_links_root_relative_preserved(self, rename_vault: Path) -> None:
+        """Root-relative links keep their leading slash after rename (#1105).
+
+        A file with [Target](/target.md) should become [Target](/renamed.md),
+        not the source-directory-relative renamed.md — the spelling OKF
+        recommends must survive an unrelated rename.
+        """
+        col = Vault(source_dir=rename_vault, read_only=False)
+        col.index.build_index()
+
+        col.writer.rename("target.md", "renamed.md", update_links=True)
+
+        content = (rename_vault / "linker_rootrel.md").read_text()
+        assert "(/renamed.md)" in content
+        assert "(/target.md)" not in content
 
     def test_update_links_fts_reindexed_after_update(self, rename_vault: Path) -> None:
         """Updated source documents are re-indexed in FTS."""

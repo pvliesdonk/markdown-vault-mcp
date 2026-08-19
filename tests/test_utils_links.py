@@ -66,6 +66,61 @@ class TestComputeNewRawTarget:
         # raw_target != old_path, so recompute relative
         assert result == "../archive/new.md"
 
+    def test_markdown_link_leading_slash_root_relative(self) -> None:
+        """A leading-slash link keeps its leading slash (#1105).
+
+        `/folder/note.md` is the spelling OKF recommends and its migration
+        tooling emits. It never equals `old_path` (which carries no leading
+        slash), so it used to fall into the relative-to-source branch and be
+        rewritten as a bare filename, undoing the vault's link conformance on
+        any rename or folder move.
+        """
+        result = compute_new_raw_target(
+            link_type="markdown",
+            raw_target="/0-Inbox/x/beta.md",
+            fragment=None,
+            new_path="0-Inbox/x/delta.md",
+            source_path="0-Inbox/x/alpha.md",
+            old_path="0-Inbox/x/beta.md",
+        )
+        assert result == "/0-Inbox/x/delta.md"
+
+    def test_markdown_link_leading_slash_across_directories(self) -> None:
+        """The leading-slash shape survives a move to another directory."""
+        result = compute_new_raw_target(
+            link_type="markdown",
+            raw_target="/a/target.md",
+            fragment=None,
+            new_path="b/target.md",
+            source_path="c/src.md",
+            old_path="a/target.md",
+        )
+        assert result == "/b/target.md"
+
+    def test_markdown_link_leading_slash_with_fragment(self) -> None:
+        """The fragment rides along on the leading-slash shape."""
+        result = compute_new_raw_target(
+            link_type="markdown",
+            raw_target="/notes/old.md#section",
+            fragment="section",
+            new_path="notes/new.md",
+            source_path="index.md",
+            old_path="notes/old.md",
+        )
+        assert result == "/notes/new.md#section"
+
+    def test_reference_link_leading_slash_root_relative(self) -> None:
+        """Reference definitions share the markdown branch, and its shapes."""
+        result = compute_new_raw_target(
+            link_type="reference",
+            raw_target="/notes/old.md",
+            fragment=None,
+            new_path="notes/new.md",
+            source_path="index.md",
+            old_path="notes/old.md",
+        )
+        assert result == "/notes/new.md"
+
     def test_reference_link(self) -> None:
         result = compute_new_raw_target(
             link_type="reference",

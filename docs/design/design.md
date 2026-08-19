@@ -1792,6 +1792,19 @@ vault root clamps to root.
 `fragment=heading`. The fragment is preserved on `LinkInfo` but the target path
 is stored without it.
 
+**Link rewrites preserve the spelling they found.** `rename` and `move_folder`
+repoint links through `compute_new_raw_target`, which recognises three shapes
+for markdown and reference links: leading-slash root-relative (`/folder/x.md`),
+root-relative matching `old_path` (`folder/x.md`), and relative to the source
+file's directory (`../x.md`). Each is rewritten in its own shape. The first was
+missing until issue #1105: `old_path` carries no leading slash, so a
+leading-slash link never compared equal to it and fell into the
+relative-to-source branch, silently converting OKF's recommended spelling (and
+what `okf_convert_links` / `okf_generate_index` emit) into a bare relative
+filename on any rename or folder move. Nothing broke — the output was a correct
+relative path — which is what made it a fidelity defect rather than a
+correctness one, and what let it go unnoticed.
+
 **Wikilink resolution (Obsidian semantics)**: Wikilinks follow Obsidian's
 vault-wide resolution rules rather than relative path resolution:
 

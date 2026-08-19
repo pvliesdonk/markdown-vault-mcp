@@ -97,6 +97,30 @@ def test_move_folder_moves_notes_and_rewrites_inter_subtree_links(
     assert "archive/2026/b.md" not in a_text
 
 
+def test_move_folder_preserves_root_relative_link_spelling(
+    vault: Vault, source_dir: Path
+) -> None:
+    """A `/root/relative.md` link stays root-relative across a move (#1105).
+
+    OKF recommends the leading-slash spelling and `okf_convert_links` /
+    `okf_generate_index` emit it, so rewriting it as a bare relative
+    filename silently undid a vault's link conformance on every move. The
+    link resolved either way, which is why nothing showed up as broken.
+    """
+    _write(vault, "drafts/a.md", "See [B](/drafts/b.md).\n")
+    _write(vault, "drafts/b.md", "I am b.\n")
+    _write(vault, "index.md", "See [A](/drafts/a.md).\n")
+
+    vault.writer.move_folder("drafts", "archive/2026")
+    wait_for_writer_drain(vault)
+
+    a_text = (source_dir / "archive/2026/a.md").read_text()
+    assert "[B](/archive/2026/b.md)" in a_text
+
+    index_text = (source_dir / "index.md").read_text()
+    assert "[A](/archive/2026/a.md)" in index_text
+
+
 def test_move_folder_rewrites_external_backlinks(
     vault: Vault, source_dir: Path
 ) -> None:
