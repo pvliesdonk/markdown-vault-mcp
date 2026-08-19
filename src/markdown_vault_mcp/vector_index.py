@@ -355,7 +355,8 @@ class VectorIndex:
 
         Args:
             query: Natural-language search string.
-            limit: Maximum number of results to return.
+            limit: Maximum number of results to return.  Zero or less
+                returns ``[]``.
             predicate: Optional row filter applied to each candidate's
                 metadata dict before the cap. Rows it rejects are skipped;
                 ``None`` admits every row. Called at most once per stored
@@ -371,6 +372,13 @@ class VectorIndex:
         """
         if self.count == 0:
             logger.debug("VectorIndex.search: index empty, returning []")
+            return []
+
+        if limit <= 0:
+            # The collect-until-full loop below checks its stop condition
+            # after appending, so a non-positive cap has to be refused here
+            # or it would yield one row.
+            logger.debug("VectorIndex.search: limit=%d, returning []", limit)
             return []
 
         logger.debug(

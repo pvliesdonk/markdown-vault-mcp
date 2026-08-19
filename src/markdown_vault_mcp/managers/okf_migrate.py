@@ -32,6 +32,7 @@ from markdown_vault_mcp.okf import (
     build_log_markdown,
     convert_wikilinks_to_markdown,
 )
+from markdown_vault_mcp.utils import normalize_folder
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -79,7 +80,8 @@ class OkfMigrationManager:
 
         Args:
             folder: Restrict to this folder subtree; ``None`` covers the
-                whole vault.
+                whole vault, ``""`` the bundle root only.  Folded through
+                :func:`~markdown_vault_mcp.utils.normalize_folder`.
 
         Returns:
             An :class:`~markdown_vault_mcp.okf.OkfConvertResult`.
@@ -90,6 +92,7 @@ class OkfMigrationManager:
         """
         self._doc_mgr.ensure_writable()
         self._require_built()
+        folder = normalize_folder(folder)
         files_changed = 0
         converted = 0
         skipped = 0
@@ -129,6 +132,10 @@ class OkfMigrationManager:
 
         Args:
             folder: Vault-relative folder (``""`` for the bundle root).
+                Folded through
+                :func:`~markdown_vault_mcp.utils.normalize_folder`, so the
+                path arithmetic below is never handed a spelling with
+                surrounding slashes.
 
         Returns:
             An :class:`~markdown_vault_mcp.okf.OkfIndexResult`.
@@ -141,6 +148,7 @@ class OkfMigrationManager:
         self._require_built()
         from markdown_vault_mcp.types import NoteInfo
 
+        folder = normalize_folder(folder) or ""
         prefix = f"{folder}/" if folder else ""
         note_entries: list[tuple[str, str, str | None]] = []
         subfolders: set[str] = set()
@@ -194,6 +202,8 @@ class OkfMigrationManager:
 
         Args:
             folder: Vault-relative folder (``""`` for the bundle root).
+                Folded through
+                :func:`~markdown_vault_mcp.utils.normalize_folder`.
             limit: Maximum commits to read (clamped to 100 by the git layer).
 
         Returns:
@@ -204,6 +214,7 @@ class OkfMigrationManager:
             FileExistsError: If ``log.md`` already exists in *folder*.
         """
         self._doc_mgr.ensure_writable()
+        folder = normalize_folder(folder) or ""
         log_path = f"{folder}/log.md" if folder else "log.md"
         if self._doc_mgr.read(log_path) is not None:
             raise FileExistsError(

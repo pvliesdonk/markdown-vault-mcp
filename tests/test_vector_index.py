@@ -744,6 +744,19 @@ class TestSearchPredicate:
             for r in index.search("query text", limit=5, predicate=lambda _row: True)
         ]
 
+    @pytest.mark.parametrize("limit", [0, -1])
+    def test_non_positive_limit_returns_empty(
+        self, mock_provider: MockEmbeddingProvider, limit: int
+    ) -> None:
+        """A cap of zero or less admits no rows.
+
+        The collect-until-full loop checks its stop condition after
+        appending, so without an explicit guard a zero cap would yield one
+        row — where the earlier slice-based implementation yielded none.
+        """
+        index = self._niche_index(mock_provider)
+        assert index.search("query text", limit=limit) == []
+
     def test_predicate_matching_nothing_returns_empty(
         self, mock_provider: MockEmbeddingProvider
     ) -> None:

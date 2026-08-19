@@ -155,6 +155,25 @@ class TestGenerateIndex:
         assert result.frontmatter_preserved is False
         assert "# guides" in vault.reader.read("guides/index.md").content
 
+    @pytest.mark.parametrize("spelling", ["guides/", "/guides", "/guides/"])
+    def test_folder_index_folds_folder_spellings(
+        self, vault: Vault, spelling: str
+    ) -> None:
+        """A folder spelling with slashes indexes the same folder (#1103).
+
+        The path arithmetic here slices note paths by ``len(folder) + 1``, so
+        an unnormalized ``"guides/"`` built the prefix ``"guides//"`` and every
+        listed entry lost its first character, while the heading derived from
+        ``rsplit("/", 1)[-1]`` came out empty.
+        """
+        _write(vault, "guides/one.md", "# One\n")
+        result = vault.writer.okf_generate_index(folder=spelling)
+        wait_for_writer_drain(vault)
+        assert result.path == "guides/index.md"
+        body = vault.reader.read("guides/index.md").content
+        assert "# guides" in body
+        assert "- [One](/guides/one.md)" in body
+
     def test_progressive_disclosure_one_level(self, vault: Vault) -> None:
         # index.md lists only immediate notes plus a pointer per immediate
         # subfolder — it does not flatten the whole subtree.
@@ -192,6 +211,17 @@ class TestSeedLog:
         # scope; the folder still chooses the write path (guides/log.md).
         _write(vault, "guides/note.md", "# Note\n")
         result = vault.writer.okf_seed_log(folder="guides")
+        wait_for_writer_drain(vault)
+        assert result.path == "guides/log.md"
+        assert vault.reader.read("guides/log.md") is not None
+
+    @pytest.mark.parametrize("spelling", ["guides/", "/guides", "/guides/"])
+    def test_folder_log_folds_folder_spellings(
+        self, vault: Vault, spelling: str
+    ) -> None:
+        """``log.md`` lands at the folder's real path for any spelling (#1103)."""
+        _write(vault, "guides/note.md", "# Note\n")
+        result = vault.writer.okf_seed_log(folder=spelling)
         wait_for_writer_drain(vault)
         assert result.path == "guides/log.md"
         assert vault.reader.read("guides/log.md") is not None

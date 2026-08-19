@@ -409,9 +409,15 @@ sub-folders, after backslashes are folded to forward slashes and
 surrounding slashes are stripped, so `"X"`, `"X/"` and `"/X/"` are one
 scope. `utils.normalize_folder` is the single helper every folder-scoped
 surface folds its input through — applied once at the manager entry
-points (`SearchManager.search` / `.list` / `.get_recent` / `.get_similar`
-and `LinkManager.get_broken_links`) rather than per channel, so the SQL
-and vector halves cannot drift apart again (issue #1103). It deliberately
+points (`SearchManager.search` / `.list` / `.get_recent` / `.get_similar`,
+`LinkManager.get_broken_links`, and `OkfMigrationManager.convert_links` /
+`.generate_index` / `.seed_log`) rather than per channel, so the SQL and
+vector halves cannot drift apart again (issue #1103). The OKF write tools
+are in that set because they do path *arithmetic* on the value rather
+than comparison: `generate_index` slices note paths by `len(folder) + 1`
+and derives its heading with `rsplit("/", 1)[-1]`, so an unnormalized
+`"guides/"` built the prefix `"guides//"`, truncated every listed entry
+by a character, and produced an empty heading. It deliberately
 never collapses `""` to `None` — an explicit empty folder is a
 restriction, not its absence. Before the fix the vector post-filter normalized with
 `... .strip("/") or None`, whose falsy-empty collapse silently lifted the
