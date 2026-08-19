@@ -1004,6 +1004,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#notes-with-no-body" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Notes with no body
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#slow-or-cpu-only-backends" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2223,6 +2234,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#notes-with-no-body" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Notes with no body
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#slow-or-cpu-only-backends" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2483,6 +2505,22 @@ curl<span class="w"> </span>https://api.openai.com/v1/embeddings<span class="w">
 <p>The ONNX batch size is tuned for the default <code>BAAI/bge-small-en-v1.5</code> model (512-token context). ONNX self-attention scales as O(batch × seq_len²) in RAM; long-context models require a much smaller batch size to avoid OOM — see issue <a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/306">#306</a>.</p>
 <p>For very large vaults (thousands of notes), the first startup may take several minutes. If the process is interrupted mid-build, it will rebuild from scratch on the next startup — partial indices are never persisted.</p>
 </div>
+<h3 id="notes-with-no-body">Notes with no body<a class="headerlink" href="#notes-with-no-body" title="Permanent link">&para;</a></h3>
+<p>A note with no body is indexed for keyword search but is not embedded. This
+covers zero-byte files, notes that are nothing but frontmatter, and notes
+whose body is only whitespace. These notes hold no text to embed, so they
+carry no semantic signal either way.</p>
+<p>The server skips these notes deliberately. Embedding providers reject an empty
+input string with HTTP 400 (Voyage reports <code>Input cannot contain empty strings
+or empty lists</code>), and the rejection fails the whole request, so a single
+body-less note used to stop a batch of unrelated notes from being embedded as
+well. On version 3.1.0 it could hold the entire index stale until the file was
+excluded. See issue <a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1087">#1087</a>.</p>
+<p>Nothing is required of you. The notes still appear in keyword search and in
+<code>list_documents</code>, and they gain vectors as soon as they get a body. If you set
+<code>MARKDOWN_VAULT_MCP_EMBED_CONTEXT</code> or <code>MARKDOWN_VAULT_MCP_SEARCHABLE_FIELDS</code>,
+the enriched input carries the title and frontmatter values, so those notes are
+embedded as before.</p>
 <h3 id="slow-or-cpu-only-backends">Slow or CPU-only backends<a class="headerlink" href="#slow-or-cpu-only-backends" title="Permanent link">&para;</a></h3>
 <p>Each embedding request has a wall-clock budget, <code>MARKDOWN_VAULT_MCP_EMBED_TIMEOUT_S</code> (default <code>30.0</code> seconds). It applies to the network providers, OpenAI and Ollama. FastEmbed runs in-process with no network call and ignores it.</p>
 <p>The budget and the batch size interact, and the default pairing is tight on modest hardware. On a CPU-only Ollama running a large model such as <code>bge-m3</code>, a single chunk can take 4 to 11 seconds, so the default batch of 4 chunks may need 20 to 44 seconds against a 30-second budget. The result is intermittent timeouts under ordinary writing load rather than an outright failure, which makes it easy to misread (issue <a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/954">#954</a>).</p>
