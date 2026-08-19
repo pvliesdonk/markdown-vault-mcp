@@ -12,7 +12,7 @@ import pytest
 
 from markdown_vault_mcp.exceptions import IndexUnavailableError
 from markdown_vault_mcp.fts_index import FTSIndex
-from markdown_vault_mcp.indexing import IndexWriteCoordinator
+from markdown_vault_mcp.indexing import IndexWriteCoordinator, ProcessDirtyPaths
 from markdown_vault_mcp.managers.index import IndexManager
 from markdown_vault_mcp.scanner import HeadingChunker
 from markdown_vault_mcp.tracker import ChangeTracker
@@ -644,6 +644,15 @@ def test_build_index_clears_stale_error_during_sync_rebuild(tmp_path: Path) -> N
     try:
         coord._readiness.fail_build(RuntimeError("stale async failure"))
         assert coord.get_index_status()["status"] == "failed"
+
+        # Fence (#1091): run one no-op job through the writer so its coverage
+        # trace-hook install (triggered by its first traced events under the
+        # 3.11 settrace core) completes before the builder thread bootstraps
+        # its own. Concurrent installs trip CPython 3.11's process-global
+        # settrace reentrancy guard (python/cpython#98257), killing the
+        # builder inside threading._bootstrap_inner before the gated runner
+        # ever runs — with the fence, at most one thread installs at a time.
+        coord.writer.submit(ProcessDirtyPaths()).result(timeout=5)
 
         started = threading.Event()
         proceed = threading.Event()
