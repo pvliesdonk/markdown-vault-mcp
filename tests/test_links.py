@@ -279,6 +279,28 @@ class TestExtractWikilinks:
         # raw_target re-attaches the fragment to the stem (no .md)
         assert links[0].raw_target == "note#section"
 
+    def test_fragment_only_wikilink_skipped(self) -> None:
+        """[[#Heading]] is a same-note anchor, not a vault link (#1107).
+
+        The fragment is split off before ``.md`` is appended, which left an
+        empty path portion and stored the literal target ``".md"`` — a path
+        that cannot exist, so every such link was reported broken.
+        """
+        links = extract_links("Jump to [[#Real Section]] below.", "notes/frag.md")
+        assert links == []
+
+    def test_fragment_only_wikilink_with_alias_skipped(self) -> None:
+        """The alias form [[#Heading|text]] is skipped for the same reason."""
+        links = extract_links("Jump to [[#Real Section|there]].", "notes/frag.md")
+        assert links == []
+
+    def test_wikilink_to_another_note_fragment_still_extracted(self) -> None:
+        """Only the *empty* path portion is skipped; [[note#heading]] is a link."""
+        links = extract_links("See [[other#Section]].", "notes/frag.md")
+        assert len(links) == 1
+        assert links[0].target_path == "other.md"
+        assert links[0].fragment == "Section"
+
     def test_wikilink_path_stored_as_is(self) -> None:
         """Wikilinks with a path component are stored as-is for vault-wide resolution.
 
@@ -1575,6 +1597,28 @@ class TestResolveVaultWikilinks:
         assert outlinks[0].exists is True
 
         # Must not appear in broken links.
+        assert col.graph.get_broken_links() == []
+        assert col.reader.stats().broken_link_count == 0
+
+    def test_same_note_heading_wikilink_is_not_broken(self, tmp_path: Path) -> None:
+        """[[#Heading]] never reaches the broken-link report (#1107).
+
+        End-to-end companion to the extraction test: the link used to
+        resolve to the literal path ``".md"``, so every note using
+        Obsidian's same-note heading reference contributed to
+        ``broken_link_count``.
+        """
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        (vault / "frag.md").write_text(
+            "# Frag\n\nJump to [[#Real Section]] below.\n\n## Real Section\n\nHere.\n",
+            encoding="utf-8",
+        )
+
+        col = Vault(source_dir=vault)
+        col.index.build_index()
+
+        assert col.graph.get_outlinks("frag.md") == []
         assert col.graph.get_broken_links() == []
         assert col.reader.stats().broken_link_count == 0
 

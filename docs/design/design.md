@@ -1757,7 +1757,16 @@ Links are extracted from markdown content during `parse_note()` and stored in th
 
 **Exclusions**: links inside fenced code blocks (`` ``` ``) and inline code (`` ` ``)
 are not extracted. External URLs (`http://`, `https://`, `mailto:`) and pure anchors
-(`#heading`) are skipped.
+are skipped. "Pure anchor" covers every spelling of a same-document reference:
+`[text](#heading)`, a reference definition whose target starts with `#`, and the
+wikilink form `[[#heading]]` (issue #1107). The wikilink form was the exception
+until #1107: its fragment is split off before `.md` is appended, so the empty path
+portion became the literal target `".md"`, which no document can match, and every
+note using Obsidian's same-note heading reference contributed to
+`broken_link_count`. Recording it as a link to the source note itself would have
+avoided the false positive too, but at the cost of a self-edge that suppresses
+orphan detection and inflates backlink counts, so skipping is what keeps all three
+spellings consistent.
 
 **Path resolution for markdown links**: relative paths are resolved against the
 source document's directory. `../sibling.md` from `Journal/2024/today.md` resolves

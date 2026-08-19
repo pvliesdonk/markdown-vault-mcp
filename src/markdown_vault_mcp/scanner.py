@@ -874,7 +874,9 @@ def extract_links(content: str, source_path: str) -> list[LinkInfo]:
     * **Wikilinks**: ``[[path]]`` or ``[[path|alias]]``
 
     Links inside fenced code blocks and inline code spans are ignored.
-    External URLs (``http://``, ``https://``, ``mailto:``) are skipped.
+    External URLs (``http://``, ``https://``, ``mailto:``) are skipped, as
+    are same-document anchors in every spelling — ``[text](#heading)``,
+    ``[text][ref]`` with a ``#`` target, and ``[[#heading]]``.
 
     Args:
         content: Markdown body text (frontmatter already stripped).
@@ -975,6 +977,9 @@ def _extract_wikilinks(clean: str, source_path: str) -> list[LinkInfo]:
     semantics: only explicit relative prefixes (``./`` / ``../``) resolve
     source-relative; bare and path-qualified wikilinks are stored as-is
     for ``FTSIndex.resolve_vault_wikilinks()`` to resolve vault-wide.
+
+    Fragment-only wikilinks (``[[#Heading]]``) are skipped, matching how
+    :func:`_extract_inline_links` treats ``[text](#heading)`` (#1107).
     """
     links: list[LinkInfo] = []
     for m in _RE_WIKILINK.finditer(clean):
@@ -994,6 +999,17 @@ def _extract_wikilinks(clean: str, source_path: str) -> list[LinkInfo]:
             idx = raw_path.index("#")
             fragment = raw_path[idx + 1 :] or None
             raw_path = raw_path[:idx]
+
+        if not raw_path:
+            # Fragment-only wikilink ([[#Heading]]) — Obsidian's same-note
+            # heading reference, not a vault link. Skipped for the same
+            # reason _extract_inline_links skips [text](#heading): it is
+            # intra-document navigation, and recording it would add a
+            # self-edge that suppresses orphan detection and inflates
+            # backlink counts. Appending ".md" to the empty path portion is
+            # what used to store the literal target ".md", which cannot
+            # exist and so was always reported broken (#1107).
+            continue
 
         # raw_target for wikilinks: path portion before .md is appended,
         # with fragment re-attached so the original [[Note#section]] is preserved.
