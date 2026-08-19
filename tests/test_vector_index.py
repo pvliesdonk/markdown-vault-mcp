@@ -756,6 +756,9 @@ class TestSearchPredicate:
         """
         index = self._niche_index(mock_provider)
         assert index.search("query text", limit=limit) == []
+        # search_by_path takes the cap as a slice bound, where a negative
+        # value would silently drop rows from the end instead.
+        assert index.search_by_path("bulk/note0.md", limit=limit) == []
 
     def test_predicate_matching_nothing_returns_empty(
         self, mock_provider: MockEmbeddingProvider

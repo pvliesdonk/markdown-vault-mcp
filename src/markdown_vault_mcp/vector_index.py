@@ -431,7 +431,8 @@ class VectorIndex:
 
         Args:
             path: Relative document path whose stored vectors to use.
-            limit: Maximum number of results to return.
+            limit: Maximum number of results to return.  Zero or less
+                returns ``[]``.
             predicate: Optional row filter applied before the cap, with the
                 same contract as :meth:`search`.
 
@@ -441,7 +442,10 @@ class VectorIndex:
             key.  Returns ``[]`` if ``path`` has no stored embeddings or
             the index is empty.
         """
-        if self.count == 0:
+        if self.count == 0 or limit <= 0:
+            # `candidates[:min(limit, len(candidates))]` below would read a
+            # negative cap as a negative slice and drop rows from the *end*,
+            # so the cap is refused here, matching :meth:`search`.
             return []
 
         # Gather indices for all chunks belonging to this document.
