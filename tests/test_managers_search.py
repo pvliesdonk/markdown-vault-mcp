@@ -981,6 +981,56 @@ def test_folder_scoped_semantic_search_is_limit_independent(
     assert {r.path for r in small} <= {r.path for r in large}
 
 
+def test_folder_scoped_get_similar_keeps_room_for_other_files(
+    search_mgr_with_embeddings: SearchManager, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A long in-folder document must not crowd every other file out (#1108).
+
+    The folder predicate stops out-of-scope rows from consuming the cap, but
+    not one in-scope document's own chunks: grouping keeps ``chunks_per_file``
+    per path, so a pool filled by a single path collapses to a single result.
+    ``get_similar`` has always widened its pool when a folder is given, and
+    the fake store below returns a ranking where dropping that widening loses
+    the second file entirely.
+    """
+    ranking = [
+        {
+            "path": "notes/long.md",
+            "title": "Long",
+            "folder": "notes",
+            "heading": f"H{i}",
+            "content": f"chunk {i}",
+            "score": 1.0 - i / 1000,
+            "start_line": i,
+        }
+        for i in range(120)
+    ]
+    ranking.append(
+        {
+            "path": "notes/other.md",
+            "title": "Other",
+            "folder": "notes",
+            "heading": "Only",
+            "content": "other chunk",
+            "score": 0.1,
+            "start_line": 0,
+        }
+    )
+
+    def fake_search_by_path(_path, *, limit, predicate=None):
+        eligible = [r for r in ranking if predicate is None or predicate(r)]
+        return [dict(r) for r in eligible[:limit]]
+
+    monkeypatch.setattr(
+        search_mgr_with_embeddings._vectors, "search_by_path", fake_search_by_path
+    )
+
+    results = search_mgr_with_embeddings.get_similar(
+        "alpha.md", folder="notes", limit=2, chunks_per_file=1
+    )
+    assert {r.path for r in results} == {"notes/long.md", "notes/other.md"}
+
+
 def test_folder_scoped_get_similar_is_limit_independent(
     buried_folder_mgr: SearchManager,
 ) -> None:

@@ -1489,6 +1489,15 @@ class SearchManager:
             filters=filters,
             okf_filters=okf_filters,
         )
+        if folder is not None:
+            # The scope itself is exact now — the predicate below runs inside
+            # the similarity scan — but the pool still has to be wide enough
+            # that one long document *inside* the folder cannot fill it and
+            # collapse the grouped result to a single file: grouping keeps
+            # only ``eff_cpf`` chunks per path, so a pool of one path's chunks
+            # yields one result. This widening has always been here; it just
+            # answers a different question than the post-filter one above.
+            candidate_limit = max(candidate_limit * 4, 200)
         raw_results = self._vectors.search_by_path(
             path,
             limit=candidate_limit,

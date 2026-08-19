@@ -401,6 +401,13 @@ compare on metadata the vector store already holds; frontmatter and OKF
 dimensions stay post-hoc (per-path lookups are too expensive to run over
 every chunk — see #875) and keep the widening.
 
+`get_similar` still widens ×4 when a folder is given, for a different
+reason than the post-filter one: grouping keeps only `chunks_per_file`
+chunks per path, so a pool filled by one long in-scope document collapses
+the grouped result to a single file however exact the scope is. The
+predicate answers "are these rows in scope"; the widening answers "are
+there enough distinct paths among them".
+
 **The `folder` argument has three states, not two** (issue #1106). `None`
 means no folder restriction; `""` means root-level documents only (the
 root folder is stored as `""` in the `folder` column and reported as `""`
