@@ -558,38 +558,38 @@ class SearchManager:
         self,
         raw: builtins.list[dict[str, Any]],
         *,
-        folder: str | None,
         filters: dict[str, str] | None,
         okf_filters: dict[str, str] | None = None,
     ) -> builtins.list[dict[str, Any]]:
-        """Apply folder-prefix and frontmatter filters to vector-search rows.
+        """Apply frontmatter and OKF filters to vector-search rows.
 
-        Vector search carries no structured metadata, so filtering happens
-        after the fact: *folder* matches exactly or as a sub-folder prefix,
-        and *filters* checks frontmatter via :meth:`_row_matches_filters`
-        (any frontmatter key — not limited to ``indexed_frontmatter_fields``).
+        Vector search carries no structured metadata, so these two
+        dimensions are checked after the fact: *filters* against
+        frontmatter via :meth:`_row_matches_filters` (any frontmatter key —
+        not limited to ``indexed_frontmatter_fields``), *okf_filters*
+        against the OKF annotations.  Both need a per-path lookup, which is
+        why they cannot ride along in the similarity scan the way the
+        folder scope does (see :meth:`_folder_predicate`), and why callers
+        widen the candidate pool for them (see
+        :meth:`_widen_for_post_filter`).
 
-        *folder* is folded through :func:`normalize_folder` first, so a
-        natural ``"3-Resources/"`` does not silently match nothing, and
-        ``""`` restricts to root-level documents instead of lifting the
-        restriction.
+        The folder scope is deliberately absent: it is applied inside
+        :meth:`VectorIndex.search` before the candidate cap, so repeating
+        it here would be a second place for one rule to live (#1108).
 
         Args:
             raw: Result dicts from :meth:`VectorIndex.search` /
                 :meth:`VectorIndex.search_by_path`.
-            folder: Optional folder to restrict results to.
             filters: Optional ``{frontmatter_key: value}`` equality filters.
+            okf_filters: Optional OKF-dimension filters.
 
         Returns:
             The rows that satisfy every condition, original order preserved.
         """
-        folder = normalize_folder(folder)
         okf_filters = okf_filters or {}
         okf_verdicts: dict[str, bool] = {}
         filtered: builtins.list[dict[str, Any]] = []
         for r in raw:
-            if folder is not None and not folder_matches(r.get("folder", ""), folder):
-                continue
             if filters and not self._row_matches_filters(r["path"], filters):
                 continue
             if okf_filters:
@@ -948,7 +948,7 @@ class SearchManager:
         )
 
         filtered = self._post_filter_semantic_rows(
-            raw, folder=folder, filters=filters, okf_filters=okf_filters
+            raw, filters=filters, okf_filters=okf_filters
         )
         rows = self._adapt_semantic_rows(filtered)
 
@@ -1015,7 +1015,7 @@ class SearchManager:
             predicate=self._folder_predicate(folder),
         )
         vec_filtered = self._post_filter_semantic_rows(
-            vec_raw, folder=folder, filters=filters, okf_filters=okf_filters
+            vec_raw, filters=filters, okf_filters=okf_filters
         )
         vec_rows = _apply_length_downweight(
             self._adapt_semantic_rows(vec_filtered),
@@ -1491,7 +1491,7 @@ class SearchManager:
             predicate=self._folder_predicate(folder),
         )
         raw_results = self._post_filter_semantic_rows(
-            raw_results, folder=folder, filters=filters, okf_filters=okf_filters
+            raw_results, filters=filters, okf_filters=okf_filters
         )
 
         rows = self._adapt_semantic_rows(raw_results)

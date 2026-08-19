@@ -378,7 +378,8 @@ which thinned duplicates but did not group them.
 `get_similar` accepts the same `folder` / `filters` scoping as semantic
 `search`. The frontmatter and OKF dimensions are applied post-hoc via the
 shared `_post_filter_semantic_rows` helper (the vector store carries no
-structured metadata, and each dimension needs a per-path lookup). The
+structured metadata, and each dimension needs a per-path lookup); the
+folder scope is not, and lives solely in the scan-time predicate below. The
 post-filter matches against full frontmatter, so — unlike keyword-mode
 `search` filters — it is not limited to `indexed_frontmatter_fields`; the
 candidate pool is widened (×4, floor 200) when either is active so narrow
