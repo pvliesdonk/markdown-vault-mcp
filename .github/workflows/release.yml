@@ -867,8 +867,11 @@ jobs:
           MANIFEST: .claude-plugin/marketplace.json
         run: |
           cd catalog
-          if git diff --quiet -- "$MANIFEST"; then
-            echo "${MANIFEST} already at v${VERSION}; nothing to publish"
+          # No-op only when NEITHER generated file changed: a re-run whose
+          # manifest is already current can still be repairing a stale
+          # README, and exiting on the manifest alone would strand that.
+          if git diff --quiet -- "$MANIFEST" README.md; then
+            echo "${MANIFEST} and README.md already current for v${VERSION}; nothing to publish"
             exit 0
           fi
           git config user.name  "github-actions[bot]"

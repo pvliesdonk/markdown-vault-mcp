@@ -43,8 +43,12 @@ jobs:
     # commit.  That race produced two full reviews of one diff on
     # template#437.  `claude-review` skips with this job, per its empty
     # output (see its `if:` below).
+    # Skip Renovate dependency bumps too: automated version-pin diffs need
+    # no Claude review, and each one would otherwise wait on CI and spend a
+    # full review run.
     if: ${{ github.event.pull_request.head.repo.full_name == github.repository
-      && github.event.pull_request.draft == false }}
+      && github.event.pull_request.draft == false
+      && !startsWith(github.head_ref, 'renovate/') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
