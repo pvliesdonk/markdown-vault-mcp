@@ -859,6 +859,107 @@ def test_hybrid_search_caps_per_file_after_rrf(
 
 
 # ---------------------------------------------------------------------------
+# folder-scoped semantic search is limit-independent (#1108)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def buried_folder_vault(tmp_path: Path) -> Path:
+    """Vault where the ``niche/`` notes are outnumbered by bulk content."""
+    for i in range(30):
+        (tmp_path / f"bulk{i}.md").write_text(
+            f"---\ntitle: Bulk {i}\n---\n# Bulk {i}\n\nBulk body {i}.\n",
+            encoding="utf-8",
+        )
+    (tmp_path / "niche").mkdir()
+    for i in range(2):
+        (tmp_path / "niche" / f"n{i}.md").write_text(
+            f"---\ntitle: Niche {i}\n---\n# Niche {i}\n\nNiche body {i}.\n",
+            encoding="utf-8",
+        )
+    return tmp_path
+
+
+@pytest.fixture()
+def buried_folder_mgr(
+    buried_folder_vault: Path, monkeypatch: pytest.MonkeyPatch
+) -> SearchManager:
+    """SearchManager over ``buried_folder_vault`` with a small candidate floor.
+
+    The production floor is 1000 chunks; shrinking it to 3 reproduces the
+    starvation a 27k-chunk vault shows at the default floor without
+    building a 27k-chunk fixture.
+    """
+    from markdown_vault_mcp.vector_index import VectorIndex
+    from tests.conftest import MockEmbeddingProvider
+
+    monkeypatch.setattr(
+        "markdown_vault_mcp.managers.search._SEMANTIC_CANDIDATE_FLOOR", 3
+    )
+    fts = FTSIndex(db_path=":memory:")
+    provider = MockEmbeddingProvider()
+    vectors = VectorIndex(provider)
+    for note in scan_directory(buried_folder_vault):
+        fts.upsert_note(note)
+        texts = [c.content for c in note.chunks]
+        folder = "niche" if note.path.startswith("niche/") else ""
+        if texts:
+            vectors.add(
+                texts,
+                [
+                    {
+                        "path": note.path,
+                        "title": note.title,
+                        "folder": folder,
+                        "heading": c.heading,
+                        "content": c.content,
+                    }
+                    for c in note.chunks
+                ],
+            )
+    fts.resolve_vault_wikilinks()
+    embeddings_path = buried_folder_vault / "embeddings"
+    vectors.save(embeddings_path)
+    mgr = SearchManager(
+        fts=fts,
+        source_dir=buried_folder_vault,
+        embeddings_path=embeddings_path,
+        embedding_provider=provider,
+    )
+    mgr._vectors = vectors
+    return mgr
+
+
+@pytest.mark.parametrize("mode", ["semantic", "hybrid"])
+def test_folder_scoped_semantic_search_is_limit_independent(
+    buried_folder_mgr: SearchManager, mode: str
+) -> None:
+    """A folder-scoped search answers from the folder at any limit (#1108).
+
+    The candidate pool used to be capped before the folder post-filter ran,
+    so a folder whose chunks all ranked below the cap came back empty —
+    and the caller could not tell that from a folder with no related
+    content. Raising ``limit`` used to be the only way to surface them.
+    """
+    small = buried_folder_mgr.search("body", mode=mode, folder="niche", limit=1)
+    assert small, f"expected a niche/ hit at limit=1 in mode={mode}"
+    assert all(r.path.startswith("niche/") for r in small)
+
+    large = buried_folder_mgr.search("body", mode=mode, folder="niche", limit=100)
+    assert {r.path for r in large} == {"niche/n0.md", "niche/n1.md"}
+    assert {r.path for r in small} <= {r.path for r in large}
+
+
+def test_folder_scoped_get_similar_is_limit_independent(
+    buried_folder_mgr: SearchManager,
+) -> None:
+    """``get_similar`` scopes inside the similarity scan too (#1108)."""
+    results = buried_folder_mgr.get_similar("bulk0.md", folder="niche", limit=1)
+    assert results, "expected a niche/ hit at limit=1"
+    assert all(r.path.startswith("niche/") for r in results)
+
+
+# ---------------------------------------------------------------------------
 # folder="X/" — trailing/leading slashes fold on every surface (#1103)
 # ---------------------------------------------------------------------------
 
@@ -1099,7 +1200,7 @@ def test_hybrid_search_search_type_is_group_union_not_head(
         },
     ]
 
-    def fake_vec_search(_query, *, limit):  # noqa: ARG001
+    def fake_vec_search(_query, *, limit, predicate=None):  # noqa: ARG001
         return list(fake_vec_rows)
 
     monkeypatch.setattr(vectors, "search", fake_vec_search)

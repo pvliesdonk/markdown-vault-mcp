@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from markdown_vault_mcp.providers import EmbeddingProvider
 
 try:
@@ -335,12 +337,29 @@ class VectorIndex:
         )
         return len(raw_vectors)
 
-    def search(self, query: str, *, limit: int = 10) -> list[dict[str, Any]]:
+    def search(
+        self,
+        query: str,
+        *,
+        limit: int = 10,
+        predicate: Callable[[dict[str, Any]], bool] | None = None,
+    ) -> list[dict[str, Any]]:
         """Return the top-k most similar chunks for ``query``.
+
+        Every stored chunk is scored regardless of *limit* (the similarity
+        pass is a full dot product), so *predicate* costs nothing extra and
+        selects the top-k **within** the eligible rows instead of leaving a
+        caller to discard rows the cap already admitted — a scope whose
+        chunks all rank below the cap would otherwise come back empty
+        however many of them match (#1108).
 
         Args:
             query: Natural-language search string.
             limit: Maximum number of results to return.
+            predicate: Optional row filter applied to each candidate's
+                metadata dict before the cap. Rows it rejects are skipped;
+                ``None`` admits every row. Called at most once per stored
+                chunk, in descending-score order, so keep it cheap.
 
         Returns:
             List of metadata dicts ordered by descending cosine similarity.
@@ -371,20 +390,31 @@ class VectorIndex:
         # Dot product against normalised rows = cosine similarity.
         scores: np.ndarray = self._embeddings @ q_vec
 
-        k = min(limit, self.count)
-        # argsort descending, then take the top-k indices.
-        top_indices = np.argsort(scores)[::-1][:k]
-
+        # argsort descending, then walk it until *limit* eligible rows are
+        # collected.  Walking (rather than slicing to k up front) is what
+        # lets *predicate* narrow the pool without narrowing the result.
         results: list[dict[str, Any]] = []
-        for idx in top_indices:
-            entry = dict(self._metadata[int(idx)])
-            entry["score"] = float(scores[int(idx)])
+        for idx in np.argsort(scores)[::-1]:
+            i = int(idx)
+            row = self._metadata[i]
+            if predicate is not None and not predicate(row):
+                continue
+            entry = dict(row)
+            entry["score"] = float(scores[i])
             results.append(entry)
+            if len(results) >= limit:
+                break
 
         logger.debug("VectorIndex.search: returning %d results", len(results))
         return results
 
-    def search_by_path(self, path: str, *, limit: int = 10) -> list[dict[str, Any]]:
+    def search_by_path(
+        self,
+        path: str,
+        *,
+        limit: int = 10,
+        predicate: Callable[[dict[str, Any]], bool] | None = None,
+    ) -> list[dict[str, Any]]:
         """Return the top-k most similar chunks from *other* documents.
 
         Looks up the stored embedding vectors for ``path``, averages them
@@ -394,6 +424,8 @@ class VectorIndex:
         Args:
             path: Relative document path whose stored vectors to use.
             limit: Maximum number of results to return.
+            predicate: Optional row filter applied before the cap, with the
+                same contract as :meth:`search`.
 
         Returns:
             List of metadata dicts ordered by descending cosine similarity.
@@ -419,11 +451,16 @@ class VectorIndex:
         # Dot product against all stored vectors.
         scores: np.ndarray = self._embeddings @ q_vec
 
-        # Build (score, index) pairs excluding chunks from the same document.
+        # Build (score, index) pairs excluding chunks from the same document
+        # and any row the caller's predicate rejects.
         candidates: list[tuple[float, int]] = []
         for i, score in enumerate(scores):
-            if self._metadata[i].get("path") != path:
-                candidates.append((float(score), i))
+            row = self._metadata[i]
+            if row.get("path") == path:
+                continue
+            if predicate is not None and not predicate(row):
+                continue
+            candidates.append((float(score), i))
 
         # Sort descending by score and take top-k.
         candidates.sort(key=lambda x: x[0], reverse=True)

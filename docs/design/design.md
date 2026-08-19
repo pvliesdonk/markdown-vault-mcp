@@ -376,12 +376,29 @@ Replaces the per-path cap from PR #433 (`_apply_chunks_per_doc_cap`),
 which thinned duplicates but did not group them.
 
 `get_similar` accepts the same `folder` / `filters` scoping as semantic
-`search`, applied post-hoc via the shared `_post_filter_semantic_rows`
-helper (the vector store carries no structured metadata). The post-filter
-matches against full frontmatter, so — unlike keyword-mode `search`
-filters — it is not limited to `indexed_frontmatter_fields`; the candidate
-pool is widened (×4, floor 200) when filtering is active so narrow scopes
-do not starve the result list.
+`search`. The frontmatter and OKF dimensions are applied post-hoc via the
+shared `_post_filter_semantic_rows` helper (the vector store carries no
+structured metadata, and each dimension needs a per-path lookup). The
+post-filter matches against full frontmatter, so — unlike keyword-mode
+`search` filters — it is not limited to `indexed_frontmatter_fields`; the
+candidate pool is widened (×4, floor 200) when either is active so narrow
+scopes do not starve the result list.
+
+**The folder scope is applied inside the similarity scan, not after it**
+(issue #1108). Widening is a mitigation and not a guarantee: the vector
+pool is capped at `max(limit × (chunks_per_file + 4), 1000)`, so on a
+large vault a folder whose chunks all score below that cap was discarded
+wholesale and the call returned `[]` — indistinguishable from a folder
+with no related content, and surfacing its notes needed a `limit` in the
+thousands. `VectorIndex.search` / `.search_by_path` therefore take an
+optional `predicate` over each candidate's metadata, applied while
+walking the descending-score order and before the cap, so the cap selects
+the top-k *within* the scope. This costs nothing: the similarity pass is
+a full dot product over every stored chunk regardless of `limit`. Folder
+is the dimension that rides along, because matching it is a string
+compare on metadata the vector store already holds; frontmatter and OKF
+dimensions stay post-hoc (per-path lookups are too expensive to run over
+every chunk — see #875) and keep the widening.
 
 **The `folder` argument has three states, not two** (issue #1106). `None`
 means no folder restriction; `""` means root-level documents only (the

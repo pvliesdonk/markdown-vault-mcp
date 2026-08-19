@@ -689,6 +689,80 @@ class TestVectorIndexPersistence:
         assert remaining == ["embeddings.json", "embeddings.npy"]
 
 
+class TestSearchPredicate:
+    """The ``predicate`` row filter runs before the cap (#1108)."""
+
+    @staticmethod
+    def _niche_index(provider: MockEmbeddingProvider) -> VectorIndex:
+        """Index where 20 bulk chunks bury 3 chunks under ``niche/``."""
+        index = VectorIndex(provider)
+        texts = [f"bulk chunk number {i}" for i in range(20)]
+        meta = [_make_meta(f"bulk/note{i}.md") for i in range(20)]
+        texts += [f"niche chunk number {i}" for i in range(3)]
+        meta += [_make_meta(f"niche/note{i}.md") for i in range(3)]
+        index.add(texts, meta)
+        return index
+
+    def test_predicate_selects_top_k_within_the_scope(
+        self, mock_provider: MockEmbeddingProvider
+    ) -> None:
+        """A small cap still returns scope rows, however low they rank overall.
+
+        Without the predicate the cap admits the globally best rows and a
+        caller filtering afterwards is left with whatever survives — which
+        is nothing when the scope's rows all rank below the cap.
+        """
+        index = self._niche_index(mock_provider)
+
+        def _in_niche(row: dict) -> bool:
+            return row["folder"] == "niche"
+
+        results = index.search("query text", limit=2, predicate=_in_niche)
+        assert len(results) == 2
+        assert all(r["folder"] == "niche" for r in results)
+
+    def test_predicate_keeps_descending_score_order(
+        self, mock_provider: MockEmbeddingProvider
+    ) -> None:
+        """Filtering does not disturb the ranking of what survives."""
+        index = self._niche_index(mock_provider)
+        scores = [
+            r["score"]
+            for r in index.search(
+                "query text", limit=3, predicate=lambda row: row["folder"] == "niche"
+            )
+        ]
+        assert scores == sorted(scores, reverse=True)
+
+    def test_no_predicate_is_unchanged(
+        self, mock_provider: MockEmbeddingProvider
+    ) -> None:
+        """Omitting the predicate returns exactly the unfiltered top-k."""
+        index = self._niche_index(mock_provider)
+        assert [r["path"] for r in index.search("query text", limit=5)] == [
+            r["path"]
+            for r in index.search("query text", limit=5, predicate=lambda _row: True)
+        ]
+
+    def test_predicate_matching_nothing_returns_empty(
+        self, mock_provider: MockEmbeddingProvider
+    ) -> None:
+        """A scope with no rows is an honest empty answer, not an error."""
+        index = self._niche_index(mock_provider)
+        assert index.search("query text", predicate=lambda _row: False) == []
+
+    def test_search_by_path_honours_the_predicate(
+        self, mock_provider: MockEmbeddingProvider
+    ) -> None:
+        """``search_by_path`` shares the contract, on top of self-exclusion."""
+        index = self._niche_index(mock_provider)
+        results = index.search_by_path(
+            "bulk/note0.md", limit=2, predicate=lambda row: row["folder"] == "niche"
+        )
+        assert len(results) == 2
+        assert all(r["folder"] == "niche" for r in results)
+
+
 class TestSearchByPath:
     """Tests for VectorIndex.search_by_path."""
 

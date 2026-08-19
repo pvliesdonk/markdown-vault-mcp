@@ -69,6 +69,22 @@ def normalize_folder(folder: str | None) -> str | None:
     return folder.replace("\\", "/").strip("/")
 
 
+def folder_matches(row_folder: str, folder: str) -> bool:
+    """Whether a stored folder value falls inside a normalized folder scope.
+
+    Args:
+        row_folder: The ``folder`` value stored for a row (``""`` for the
+            vault root).
+        folder: A scope already folded through :func:`normalize_folder`.
+
+    Returns:
+        ``True`` when the row is the scope itself or one of its
+        sub-folders.  With *folder* ``""`` only root-level rows match,
+        since no stored folder starts with ``"/"``.
+    """
+    return row_folder == folder or row_folder.startswith(folder + "/")
+
+
 def effective_attachment_extensions(
     attachment_extensions: Sequence[str] | None,
 ) -> frozenset[str]:

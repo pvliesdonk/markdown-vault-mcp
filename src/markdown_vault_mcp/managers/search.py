@@ -66,6 +66,7 @@ from markdown_vault_mcp.types import (
 )
 from markdown_vault_mcp.utils import (
     effective_attachment_extensions,
+    folder_matches,
     fts_row_to_note_info,
     is_path_excluded,
     normalize_folder,
@@ -497,23 +498,61 @@ class SearchManager:
         return _apply_okf_downweight(rows, factor_for=factor_for)
 
     @staticmethod
-    def _widen_for_okf(candidate_limit: int, okf_filters: dict[str, str]) -> int:
-        """Widen a candidate pool when OKF dimensions will post-filter it.
+    def _widen_for_post_filter(
+        candidate_limit: int,
+        *,
+        filters: dict[str, str] | None = None,
+        okf_filters: dict[str, str] | None = None,
+    ) -> int:
+        """Widen a candidate pool when a post-filter will thin it.
 
-        Post-filtering discards candidates after the pool is capped, so a
-        narrow filter could otherwise starve the result list (same
-        rationale as the ``get_similar`` folder/filter widening).
+        Frontmatter and OKF dimensions are evaluated after the pool is
+        capped (each needs a per-path lookup, so they cannot ride along in
+        the similarity scan), and every candidate they discard is one the
+        result list never gets back.  Widening mitigates that; it does not
+        remove it.  The folder scope is treated exactly instead — see
+        :meth:`_folder_predicate` — so it is deliberately not a reason to
+        widen (#1108).
 
         Args:
             candidate_limit: The mode's normal candidate cap.
+            filters: Frontmatter equality filters; empty leaves the cap
+                alone.
             okf_filters: OKF-dimension filters; empty leaves the cap alone.
 
         Returns:
             The (possibly widened) cap.
         """
-        if not okf_filters:
+        if not filters and not okf_filters:
             return candidate_limit
         return max(candidate_limit * 4, 200)
+
+    @staticmethod
+    def _folder_predicate(
+        folder: str | None,
+    ) -> Callable[[dict[str, Any]], bool] | None:
+        """Build a vector-row predicate for a folder scope, or ``None``.
+
+        Handing this to :meth:`VectorIndex.search` applies the scope
+        *inside* the similarity scan, so the cap selects the best rows
+        within the folder rather than the best rows in the vault that
+        happen to be in the folder (#1108).
+
+        Args:
+            folder: Folder scope, already folded through
+                :func:`normalize_folder`.  ``None`` means no restriction
+                and yields no predicate.
+
+        Returns:
+            A predicate over vector-row metadata dicts, or ``None``.
+        """
+        if folder is None:
+            return None
+
+        def _in_folder(row: dict[str, Any]) -> bool:
+            return folder_matches(row.get("folder", ""), folder)
+
+        return _in_folder
 
     def _post_filter_semantic_rows(
         self,
@@ -549,10 +588,8 @@ class SearchManager:
         okf_verdicts: dict[str, bool] = {}
         filtered: builtins.list[dict[str, Any]] = []
         for r in raw:
-            if folder is not None:
-                r_folder = r.get("folder", "")
-                if r_folder != folder and not r_folder.startswith(folder + "/"):
-                    continue
+            if folder is not None and not folder_matches(r.get("folder", ""), folder):
+                continue
             if filters and not self._row_matches_filters(r["path"], filters):
                 continue
             if okf_filters:
@@ -780,8 +817,8 @@ class SearchManager:
         okf_filters: dict[str, str] | None = None,
     ) -> list[GroupedResult]:
         okf_filters = okf_filters or {}
-        candidate_limit = self._widen_for_okf(
-            max(limit * (chunks_per_file + 4), 50), okf_filters
+        candidate_limit = self._widen_for_post_filter(
+            max(limit * (chunks_per_file + 4), 50), okf_filters=okf_filters
         )
 
         raw = self._fts.search(
@@ -899,10 +936,16 @@ class SearchManager:
     ) -> list[GroupedResult]:
         okf_filters = okf_filters or {}
         vectors = self._load_vectors()
-        candidate_limit = self._widen_for_okf(
-            max(limit * (chunks_per_file + 4), _SEMANTIC_CANDIDATE_FLOOR), okf_filters
+        candidate_limit = self._widen_for_post_filter(
+            max(limit * (chunks_per_file + 4), _SEMANTIC_CANDIDATE_FLOOR),
+            filters=filters,
+            okf_filters=okf_filters,
         )
-        raw = vectors.search(query, limit=candidate_limit)
+        raw = vectors.search(
+            query,
+            limit=candidate_limit,
+            predicate=self._folder_predicate(folder),
+        )
 
         filtered = self._post_filter_semantic_rows(
             raw, folder=folder, filters=filters, okf_filters=okf_filters
@@ -944,11 +987,13 @@ class SearchManager:
         # goes through the identical VectorIndex.search and the same recall cap
         # applies: a floor-50 pool drops a document whose best chunk ranks just
         # past 50 from the RRF merge at small limits.
-        fts_candidate_limit = self._widen_for_okf(
-            max(limit * (chunks_per_file + 4), 50), okf_filters
+        fts_candidate_limit = self._widen_for_post_filter(
+            max(limit * (chunks_per_file + 4), 50), okf_filters=okf_filters
         )
-        vec_candidate_limit = self._widen_for_okf(
-            max(limit * (chunks_per_file + 4), _SEMANTIC_CANDIDATE_FLOOR), okf_filters
+        vec_candidate_limit = self._widen_for_post_filter(
+            max(limit * (chunks_per_file + 4), _SEMANTIC_CANDIDATE_FLOOR),
+            filters=filters,
+            okf_filters=okf_filters,
         )
 
         fts_raw: list[FTSResult] = self._fts.search(
@@ -964,7 +1009,11 @@ class SearchManager:
         )
 
         vectors = self._load_vectors()
-        vec_raw = vectors.search(query, limit=vec_candidate_limit)
+        vec_raw = vectors.search(
+            query,
+            limit=vec_candidate_limit,
+            predicate=self._folder_predicate(folder),
+        )
         vec_filtered = self._post_filter_semantic_rows(
             vec_raw, folder=folder, filters=filters, okf_filters=okf_filters
         )
@@ -1226,11 +1275,7 @@ class SearchManager:
         rel_folder = str(Path(rel_path).parent)
         if rel_folder == ".":
             rel_folder = ""
-        if (
-            folder is not None
-            and rel_folder != folder
-            and not rel_folder.startswith(folder + "/")
-        ):
+        if folder is not None and not folder_matches(rel_folder, folder):
             return None
         try:
             stat = abs_path.stat()
@@ -1435,12 +1480,16 @@ class SearchManager:
             chunks_per_file if chunks_per_file is not None else self._chunks_per_file
         )
         filters, okf_filters = self._split_okf_filters(filters)
-        candidate_limit = max(limit * (eff_cpf + 4), 50)
-        if folder is not None or filters or okf_filters:
-            # Post-filtering discards candidates; widen the pool so a
-            # narrow folder/filter cannot starve the result list.
-            candidate_limit = max(candidate_limit * 4, 200)
-        raw_results = self._vectors.search_by_path(path, limit=candidate_limit)
+        candidate_limit = self._widen_for_post_filter(
+            max(limit * (eff_cpf + 4), 50),
+            filters=filters,
+            okf_filters=okf_filters,
+        )
+        raw_results = self._vectors.search_by_path(
+            path,
+            limit=candidate_limit,
+            predicate=self._folder_predicate(folder),
+        )
         raw_results = self._post_filter_semantic_rows(
             raw_results, folder=folder, filters=filters, okf_filters=okf_filters
         )
