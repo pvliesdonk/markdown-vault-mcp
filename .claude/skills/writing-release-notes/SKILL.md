@@ -267,7 +267,12 @@ may still be weeks out — so a prepare-time draft gives the target's index
 entry and page no "(released <date>)" qualifier and no past-tense shipping
 claim. A post-release backfill or re-draft, whose target tag does exist,
 states the real date — that is the later draft the target earns its date
-from.
+from. That later draft need not target the shipped version: every draft,
+whatever its target, also backfills the date onto any index entry or patch
+heading whose tag now exists but which an earlier pre-tag draft left
+undated, using the tag's own timestamp as the source. Dates therefore lag
+by at most one drafting run; an operator who wants one sooner dispatches a
+re-draft or hand-edits the page.
 
 ## Quality gates — run them, do not assume them
 
