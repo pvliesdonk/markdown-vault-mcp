@@ -155,6 +155,13 @@ Corollary: do not infer outside demand from an issue the maintainer filed —
 if an outside PR preceded the maintainer's tracking issue, the honest
 attribution is the PR.
 
+A quote's citation names the artifact where the quoted words verbatim
+appear, written by the person you attribute them to — fetch that artifact
+and check both before writing the citation. A maintainer-filed tracking
+issue often restates a contributor's words; citing it turns the
+contributor's report into the maintainer's, which is exactly the
+misattribution above wearing a link.
+
 ### 5. Synthesis pass, with licence to regroup
 
 After the briefs return, look across them before writing: separate
@@ -246,6 +253,13 @@ For a **new** page, also add the minor to the list in
 entry replaces the seeded placeholder line). Do not edit
 `mkdocs.yml`: the navigation is project-owned. If the nav has no
 Release Notes entry yet, note that in the PR body instead of adding one.
+
+Never state that the target version has shipped. At prepare time the tag
+does not exist — an rc target's stable may still be weeks out — so the
+target's index entry and page carry no "(released <date>)" qualifier and
+no past-tense shipping claim. Older entries carry dates only because those
+versions had actually shipped when their pages were written; the target
+earns its date from a later draft that runs after the stable tag exists.
 
 ## Quality gates — run them, do not assume them
 
