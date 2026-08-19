@@ -274,8 +274,12 @@ states the real date — that is the later draft the target earns its date
 from. That later draft need not target the shipped version: every draft,
 whatever its target, also backfills the date onto any index entry or patch
 heading whose tag now exists but which an earlier pre-tag draft left
-undated, using the tag's own timestamp as the source. Dates therefore lag
-by at most one drafting run; an operator who wants one sooner dispatches a
+undated, using the tag's own timestamp as the source. The backfill covers
+what the draft's checked-out tree carries: on the default branch that is
+every series, so dates lag by at most one default-branch drafting run; a
+draft on a `release/X.Y` branch may have been cut from an old tag that
+lacks newer pages, and the entries missing there wait for the next
+default-branch draft. An operator who wants a date sooner dispatches a
 re-draft or hand-edits the page.
 
 ## Quality gates — run them, do not assume them
@@ -291,9 +295,10 @@ re-draft or hand-edits the page.
 
 ## Output
 
-Leave the working tree holding only: the release page, `docs/releases/index.md`
-(new-page mode, or when the date backfill touched it), any `accept.txt`
-additions, and your proposed PR body in
+Leave the working tree holding only: the target release page, any other
+release page or `docs/releases/index.md` that the date backfill touched
+(the index also in new-page mode), any `accept.txt` additions, and your
+proposed PR body in
 `.release-notes-pr-body.md` at the repository root (the workflow's mechanical
 step commits the docs paths — onto the release PR's prep branch in the
 primary flow, or as a standalone notes PR from the body file in backfill
