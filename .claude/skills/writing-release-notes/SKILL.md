@@ -41,7 +41,7 @@ You are given, or must derive first:
   (branch force-pushed) alongside any re-dispatch of the release PR.
 - Mode — **new page** (the minor's page does not exist: write the whole
   page), **patch append** (the page exists but does not yet cover the
-  target patch release, `Z > 0`: add one dated section inside the patch
+  target patch release, `Z > 0`: add one section inside the patch
   sentinels; leave the rest of the page alone unless it is factually
   wrong), or **redraft** (the page already covers the target — an `X.Y.0`
   page drafted at prepare time, or any target whose `RELEASE-SUMMARY`
@@ -215,8 +215,9 @@ or fix — do not file issues yourself from an automated run.
 
 ## Page format
 
-One page per minor: `docs/releases/MINOR.md`. Patch releases append a dated
-section to the same page, so a minor's story stays in one linkable document.
+One page per minor: `docs/releases/MINOR.md`. Patch releases append a
+section to the same page (dated per the tag-existence gate below), so a
+minor's story stays in one linkable document.
 Skeleton for a new page (the comment markers are load-bearing — the publish
 workflow extracts summary blocks by tag, and later patch drafts insert only
 inside the patch sentinels):
