@@ -2410,13 +2410,19 @@ curl<span class="w"> </span>http://localhost:8000/health
 <td>Each stable release that is newest in its series</td>
 </tr>
 <tr>
+<td><code>rc</code></td>
+<td>Newest release candidate</td>
+<td>Each pre-release still ahead of <code>latest</code></td>
+</tr>
+<tr>
 <td><code>edge</code></td>
 <td>Newest commit on <code>main</code></td>
 <td>Every merge to <code>main</code></td>
 </tr>
 </tbody>
 </table>
-<p>Rolling tags are ordering-aware: a patch release cut from an old <code>release/X.Y</code> branch after a newer stable has shipped updates its own series tags but never <code>latest</code>. A pre-release pushes only its immutable <code>vX.Y.Z-rc.N</code> tag. To run the latest merged code, use <code>edge</code>, which follows <code>main</code> continuously and carries no version identity. To find the commit behind an <code>edge</code> image, read its <code>org.opencontainers.image.revision</code> label:</p>
+<p>Rolling tags are ordering-aware: a patch release cut from an old <code>release/X.Y</code> branch after a newer stable has shipped updates its own series tags but never <code>latest</code>. The same rule governs <code>rc</code>: a candidate only moves the tag while its version is still ahead of the newest stable, so a candidate for an already-released version never pulls <code>rc</code> behind <code>latest</code>.</p>
+<p>The three rolling tags answer different questions. Use <code>latest</code> to run released code, <code>rc</code> to test the candidate for the next release, and <code>edge</code> to run the newest merged commit. Note that <code>rc</code> is not cleared when its release ships: it keeps pointing at the last candidate until the next one is cut, so <code>latest</code> is the tag to follow in production. To find the commit behind an <code>edge</code> image, read its <code>org.opencontainers.image.revision</code> label:</p>
 <div class="highlight"><pre><span></span><code>docker<span class="w"> </span>inspect<span class="w"> </span>--format<span class="w"> </span><span class="s1">&#39;{{ index .Config.Labels &quot;org.opencontainers.image.revision&quot; }}&#39;</span><span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>ghcr.io/pvliesdonk/markdown-vault-mcp:edge
 </code></pre></div>
