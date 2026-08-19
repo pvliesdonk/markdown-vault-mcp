@@ -13,7 +13,7 @@ from.
 | Channel | Version identity | What it promises |
 |---|---|---|
 | `edge` | None; the commit is the identity | The newest merged code. Every merge to `main` rebuilds the rolling Docker tag plus an `.mcpb` bundle workflow artifact, and the rolling `unstable` docs version deploys from the same trigger. It leaves no git tag, GitHub release, or PyPI entry behind. |
-| Pre-release | `vX.Y.Z-rc.N`, computed and reviewed in its release pull request | A stabilisation step toward exactly that version, normally cut from a `release/X.Y` branch. Publishes a GitHub release with wheels, `sdist`, `.mcpb` bundle, and SBOM attached, plus a Docker image under its immutable version tag. Skips PyPI, `.deb`/`.rpm` packages, the marketplace and registry entries, and the docs deploy. |
+| Pre-release | `vX.Y.Z-rc.N`, computed and reviewed in its release pull request | A stabilisation step toward exactly that version, normally cut from a `release/X.Y` branch. Publishes a GitHub release with wheels, `sdist`, `.deb`/`.rpm` packages, `.mcpb` bundle, and SBOM attached, plus a Docker image under its immutable version tag. Skips PyPI, the marketplace and registry entries, and the docs deploy. |
 | Stable | `vX.Y.Z` | The full artifact set: PyPI, Docker, Linux packages, GitHub release assets (wheels, `sdist`, `.mcpb` bundle, SBOM), marketplace and registry entries, versioned docs. |
 
 Pre-release and `edge` builds never reach PyPI: PyPI is where every
