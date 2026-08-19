@@ -781,6 +781,41 @@ FTS/`document_tags` refresh half-applied while the tracker never advanced,
 so every retry re-detected the same diff and failed identically until a
 cold-boot rebuild ran the resilient batch path instead.
 
+### Blank Embedding Inputs (#1087)
+
+A note with no body — zero-byte, frontmatter-only, or whitespace-only —
+chunks to a single chunk whose `content` is `""`. Under the default (v1)
+embedding format `EmbedTextBuilder.build()` returns that content verbatim,
+so the empty string would be submitted to the provider. Every
+OpenAI-compatible endpoint rejects an empty input string with HTTP 400
+(Voyage: `Input cannot contain empty strings or empty lists`), **and the
+rejection fails the whole request batch, not just the offending element** —
+so on the cold build, which batches across documents, one body-less note
+takes up to `_EMBEDDING_BATCH_SIZE` unrelated chunks down with it.
+
+`embed_text.is_embeddable()` is the single predicate for "may be sent to a
+provider" (non-whitespace text), and every embedding site filters through
+it:
+
+- `IndexManager._embed_inputs()` — the shared builder for the cold build,
+  the inline reindex, and the deferred flush — drops blank entries from
+  both the `texts` and `metadata` lists. Callers already treat an empty
+  result as "no vectors for this path", so a wholly body-less note reaches
+  the existing `delete_by_path` branch.
+- The convergence pass filters the FTS rows **at the source**, before the
+  signature diff, rather than at its embed call. This is load-bearing: the
+  diff compares the FTS row multiset against the sidecar's, so a blank
+  chunk excluded only at embed time would leave the two permanently
+  unequal and re-embed that document on *every* pass.
+
+A body-less note stays fully keyword-searchable through FTS; only its
+vector is skipped, which costs nothing — there is no content to match
+semantically. Under the v2 format the same note builds a non-empty text
+(title, heading, first-chunk preamble) and is embedded as before, so
+enrichment behaviour is unchanged. A sidecar written by a provider that
+did accept empty inputs converges after one re-embed of the affected
+documents.
+
 ### Error Handling
 
 Two-layer model:

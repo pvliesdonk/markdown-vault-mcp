@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import TYPE_CHECKING
 
-from markdown_vault_mcp.embed_text import EmbedTextBuilder, fields_text
+import pytest
 
-if TYPE_CHECKING:
-    import pytest
+from markdown_vault_mcp.embed_text import (
+    EmbedTextBuilder,
+    fields_text,
+    is_embeddable,
+)
 
 # ---------------------------------------------------------------------------
 # fields_text (module-level, shared with the FTS summary column)
@@ -191,3 +193,42 @@ class TestBuildV2:
             is_first_chunk=True,
         )
         assert out == "T\n\nc"
+
+
+class TestIsEmbeddable:
+    """`is_embeddable` gates what may reach an embedding provider (#1087)."""
+
+    @pytest.mark.parametrize(
+        "text",
+        ["", "   ", "\n", "\t\n  \n", "\u00a0"],
+    )
+    def test_blank_text_is_not_embeddable(self, text: str) -> None:
+        assert is_embeddable(text) is False
+
+    @pytest.mark.parametrize(
+        "text",
+        ["a", "# Title", "  body  ", "0", "\n\ncontent\n\n"],
+    )
+    def test_text_with_content_is_embeddable(self, text: str) -> None:
+        assert is_embeddable(text) is True
+
+    def test_v1_build_of_a_body_less_note_is_rejected(self) -> None:
+        """The exact shape that produced the reported HTTP 400 (#1087)."""
+        builder = EmbedTextBuilder()
+        text = builder.build(
+            title="Empty", heading=None, content="", fields_text="", is_first_chunk=True
+        )
+        assert text == ""
+        assert is_embeddable(text) is False
+
+    def test_v2_build_of_a_body_less_note_still_embeds(self) -> None:
+        """Enrichment gives a body-less note real text, so it is kept."""
+        builder = EmbedTextBuilder(embed_context=True, searchable_fields=("summary",))
+        text = builder.build(
+            title="Empty",
+            heading=None,
+            content="",
+            fields_text="A summary.",
+            is_first_chunk=True,
+        )
+        assert is_embeddable(text) is True

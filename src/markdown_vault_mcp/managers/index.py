@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Any
 
 import yaml
 
-from markdown_vault_mcp.embed_text import EmbedTextBuilder
+from markdown_vault_mcp.embed_text import EmbedTextBuilder, is_embeddable
 from markdown_vault_mcp.exceptions import EmbeddingsNotConfiguredError
 from markdown_vault_mcp.fts_index import _derive_folder, should_optimize
 from markdown_vault_mcp.hashing import compute_file_hash
@@ -213,22 +213,38 @@ class IndexManager:
             chunks: The document's chunks, in document order.
 
         Returns:
-            ``(texts, metadata)`` lists of equal length, one entry per chunk.
+            ``(texts, metadata)`` lists of equal length, one entry per
+            *embeddable* chunk. Chunks whose built text is blank are
+            omitted (#1087), so both lists may be shorter than *chunks* —
+            and empty for a body-less note, which every caller already
+            handles as "no vectors for this path".
         """
         fields_text = self._embed_builder.fields_text(frontmatter)
         texts: list[str] = []
         meta: list[dict[str, Any]] = []
         for i, chunk in enumerate(chunks):
             is_first = i == 0
-            texts.append(
-                self._embed_builder.build(
-                    title=title,
-                    heading=chunk.heading,
-                    content=chunk.content,
-                    fields_text=fields_text,
-                    is_first_chunk=is_first,
-                )
+            text = self._embed_builder.build(
+                title=title,
+                heading=chunk.heading,
+                content=chunk.content,
+                fields_text=fields_text,
+                is_first_chunk=is_first,
             )
+            if not is_embeddable(text):
+                # Nothing to embed, and sending it is actively harmful: an
+                # empty input string is a hard HTTP 400 that fails the whole
+                # batch (#1087). The cold build batches across documents, so
+                # one body-less note would take up to _embedding_batch_size
+                # unrelated chunks down with it. The chunk stays keyword-
+                # searchable through FTS; only its vector is skipped.
+                #
+                # ``is_first`` deliberately stays bound to the document's
+                # real chunk 0 rather than shifting to the first *surviving*
+                # chunk: the preamble belongs to chunk 0, and a chunk 0 that
+                # carries a preamble is never blank in the first place.
+                continue
+            texts.append(text)
             meta.append(
                 {
                     "path": path,
@@ -1050,7 +1066,13 @@ class IndexManager:
 
         Chunk identity is the ``(title, heading, content)`` multiset per
         document path — exactly the metadata stored alongside each vector
-        row, so the diff needs no file re-parsing.  Documents present only
+        row, so the diff needs no file re-parsing.  Chunks whose embedding
+        input is blank are excluded from that multiset before the diff runs
+        (#1087), so a body-less note is simply a path with no embeddable
+        chunks: it never enters the comparison, and any vectors it still has
+        are reclaimed through the stale-path branch.  A sidecar written by a
+        provider that *did* accept an empty input sees one re-embed of the
+        affected documents and converges after it.  Documents present only
         in the vector index (deleted or newly excluded while no server
         ran) lose their vectors; documents missing from it are embedded;
         documents whose chunk multiset differs in any way (modified
@@ -1123,6 +1145,28 @@ class IndexManager:
                 if row.get("is_first_chunk")
                 else ""
             )
+            text = self._embed_builder.build(
+                title=row["title"],
+                heading=row["heading"],
+                content=row["content"],
+                fields_text=row["preamble"],
+                is_first_chunk=bool(row.get("is_first_chunk")),
+            )
+            if not is_embeddable(text):
+                # Same filter as _embed_inputs (#1087), but it has to be
+                # applied *here* rather than at the embed call below.
+                # _signature() compares this row set against the sidecar's
+                # rows, so a blank chunk dropped only at embed time would
+                # leave the two multisets permanently unequal and re-embed
+                # the whole document on every convergence pass. Filtering at
+                # the source keeps the comparison, the embed inputs, the
+                # metadata and the up_to_date tally on one row set.
+                continue
+            # Carried on the row so the embed loop below does not rebuild it.
+            # Safe to attach: the sidecar metadata is assembled from named
+            # keys, and _signature() reads only the identity keys, so this
+            # never leaks into a vector row or perturbs the diff.
+            row["embed_text"] = text
             fts_by_path.setdefault(row["path"], []).append(row)
         vec_by_path = vectors.chunks_by_path()
 
@@ -1148,16 +1192,7 @@ class IndexManager:
         # untouched and every other document still converges.
         for path in missing_paths + refresh_paths:
             rows = fts_by_path[path]
-            texts = [
-                self._embed_builder.build(
-                    title=r["title"],
-                    heading=r["heading"],
-                    content=r["content"],
-                    fields_text=r["preamble"],
-                    is_first_chunk=bool(r.get("is_first_chunk")),
-                )
-                for r in rows
-            ]
+            texts = [r["embed_text"] for r in rows]
             # Vector metadata keeps the canonical row shape (plus preamble);
             # the list_chunks-only keys (frontmatter_json, is_first_chunk)
             # must not leak into the sidecar.

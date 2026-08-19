@@ -2888,8 +2888,10 @@ class TestEmbeddingsStatus:
         status = semantic_vault.index.embeddings_status()
 
         assert status["available"] is True
-        # 9 documents, each one chunk — chunk_count must match.
-        assert status["chunk_count"] == 9
+        # 9 documents, each one chunk, minus the zero-byte ``empty.md``
+        # fixture: a note with no body is keyword-indexed but never
+        # embedded, because an empty provider input is a hard 400 (#1087).
+        assert status["chunk_count"] == 8
 
     def test_status_reads_json_when_vectors_not_loaded(
         self,
@@ -2943,9 +2945,11 @@ class TestBuildEmbeddings:
     ) -> None:
         """build_embeddings(force=False) converges, not rebuilds, when chunks exist.
 
-        The first call embeds 9 chunks and saves to disk.  The second call (no
-        force) diffs the vector index against the FTS chunk set (#665), finds
-        no drift, embeds nothing, and reports zero newly embedded chunks.
+        The first call embeds 8 chunks and saves to disk (9 documents less
+        the body-less ``empty.md``, which is never embedded — #1087).  The
+        second call (no force) diffs the vector index against the FTS chunk
+        set (#665), finds no drift, embeds nothing, and reports zero newly
+        embedded chunks.
         """
         embeddings_path = tmp_path / "embeddings"
         col = Vault(
@@ -2955,7 +2959,7 @@ class TestBuildEmbeddings:
         )
         col.index.build_index()
         count1 = col.index.build_embeddings()
-        assert count1 == 9
+        assert count1 == 8
 
         # Track embed calls to prove no re-embedding happens.
         original_embed = mock_provider.embed
@@ -3003,7 +3007,8 @@ class TestBuildEmbeddings:
 
         # Re-embedding must have occurred.
         assert len(embed_calls) > 0
-        assert count == 9
+        # 8, not 9: the body-less ``empty.md`` fixture is never embedded (#1087).
+        assert count == 8
 
     def test_build_embeddings_uses_bounded_batches(
         self,
@@ -3032,7 +3037,8 @@ class TestBuildEmbeddings:
         mock_provider.embed = tracking_embed  # type: ignore[method-assign]
 
         count = col.index.build_embeddings(force=True)
-        assert count == 9
+        # 8, not 9: the body-less ``empty.md`` fixture is never embedded (#1087).
+        assert count == 8
 
         # embed() must have been called, and every batch at most _EMBEDDING_BATCH_SIZE.
         assert len(batch_sizes) > 0, "embed() should have been called"

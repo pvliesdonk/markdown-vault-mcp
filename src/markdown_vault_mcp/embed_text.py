@@ -37,6 +37,30 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def is_embeddable(text: str) -> bool:
+    """Return whether *text* is safe to submit to an embedding provider.
+
+    A note with no body — zero-byte, frontmatter-only, or whitespace-only —
+    chunks to a single chunk whose content is ``""``, and under the default
+    v1 format :meth:`EmbedTextBuilder.build` returns that content verbatim.
+    Every OpenAI-compatible provider rejects an empty input string with a
+    hard HTTP 400 (Voyage: ``Input cannot contain empty strings or empty
+    lists``), and the rejection fails the whole *batch*, not just the
+    offending element (#1087).
+
+    Whitespace-only text is treated the same way: it carries no signal, and
+    providers differ on whether they accept it.
+
+    Args:
+        text: A candidate embedding input, as returned by
+            :meth:`EmbedTextBuilder.build`.
+
+    Returns:
+        ``True`` when *text* has non-whitespace content.
+    """
+    return bool(text.strip())
+
+
 def fields_text(
     frontmatter_or_json: Mapping[str, Any] | str | None,
     fields: Sequence[str],

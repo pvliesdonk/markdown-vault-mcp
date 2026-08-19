@@ -241,6 +241,26 @@ Regardless of which provider you choose:
 
     For very large vaults (thousands of notes), the first startup may take several minutes. If the process is interrupted mid-build, it will rebuild from scratch on the next startup — partial indices are never persisted.
 
+### Notes with no body
+
+A note with no body is indexed for keyword search but is not embedded. This
+covers zero-byte files, notes that are nothing but frontmatter, and notes
+whose body is only whitespace. These notes hold no text to embed, so they
+carry no semantic signal either way.
+
+The server skips these notes deliberately. Embedding providers reject an empty
+input string with HTTP 400 (Voyage reports `Input cannot contain empty strings
+or empty lists`), and the rejection fails the whole request, so a single
+body-less note used to stop a batch of unrelated notes from being embedded as
+well. On version 3.1.0 it could hold the entire index stale until the file was
+excluded. See issue [#1087](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1087).
+
+Nothing is required of you. The notes still appear in keyword search and in
+`list_documents`, and they gain vectors as soon as they get a body. If you set
+`MARKDOWN_VAULT_MCP_EMBED_CONTEXT` or `MARKDOWN_VAULT_MCP_SEARCHABLE_FIELDS`,
+the enriched input carries the title and frontmatter values, so those notes are
+embedded as before.
+
 ### Slow or CPU-only backends
 
 Each embedding request has a wall-clock budget, `MARKDOWN_VAULT_MCP_EMBED_TIMEOUT_S` (default `30.0` seconds). It applies to the network providers, OpenAI and Ollama. FastEmbed runs in-process with no network call and ignores it.

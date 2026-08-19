@@ -2104,3 +2104,131 @@ class TestEmbeddingBatchSize:
 
         assert failed == 0
         assert provider.calls == [2, 2, 1]
+
+
+# ---------------------------------------------------------------------------
+# Body-less notes never reach the embedding provider (#1087)
+# ---------------------------------------------------------------------------
+
+
+class _StrictProvider(MockEmbeddingProvider):
+    """Provider that rejects blank input the way a real endpoint does.
+
+    Mirrors the reported failure: OpenAI-compatible endpoints answer an
+    empty input string with HTTP 400 and fail the *whole batch*, not just
+    the offending element (#1087).
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        # Every attempt, including the ones that raise — asserting on
+        # attempts rather than successes is what distinguishes "never sent"
+        # from "sent and rejected".
+        self.calls: list[list[str]] = []
+        self.texts: list[str] = []
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        self.calls.append(list(texts))
+        if any(not t.strip() for t in texts):
+            raise RuntimeError(
+                "OpenAI API error 400: Error for argument 'input': Value error, "
+                "Input cannot contain empty strings or empty lists"
+            )
+        self.texts.extend(texts)
+        return super().embed(texts)
+
+
+def _body_less_vault(tmp_path: Path) -> Path:
+    """A vault holding each reported empty-body shape plus one real note."""
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    (vault / "zero.md").write_bytes(b"")
+    (vault / "fm_only.md").write_text(
+        "---\nlast_edited: 2026-08-17\n---\n", encoding="utf-8"
+    )
+    (vault / "whitespace.md").write_text("   \n\n", encoding="utf-8")
+    (vault / "real.md").write_text("# Real\n\nActual body text.\n", encoding="utf-8")
+    return vault
+
+
+class TestBodyLessNotesAreNotEmbedded:
+    """A note with no body must never produce an empty provider input."""
+
+    def _mgr(self, vault: Path, tmp_path: Path, provider: _StrictProvider):
+        return _make_index_mgr(
+            vault,
+            tmp_path,
+            embeddings_path=tmp_path / "embeddings",
+            embedding_provider=provider,
+        )
+
+    def test_cold_build_skips_them_and_embeds_the_rest(self, tmp_path: Path) -> None:
+        provider = _StrictProvider()
+        vault = _body_less_vault(tmp_path)
+        mgr, fts, _holder = self._mgr(vault, tmp_path, provider)
+        mgr.build_index()
+
+        # Would raise from _StrictProvider before the fix: the cold build
+        # batches across documents, so one blank input takes the whole
+        # batch — including real.md — down with it.
+        assert mgr.build_embeddings() == 1
+        assert provider.texts == ["# Real\n\nActual body text."]
+
+        # The body-less notes are still keyword-indexed; only their vectors
+        # are skipped.
+        indexed = {row["path"] for row in fts.list_chunks()}
+        assert {"zero.md", "fm_only.md", "whitespace.md", "real.md"} <= indexed
+
+    def test_hot_reindex_skips_a_note_that_becomes_empty(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        provider = _StrictProvider()
+        vault = _body_less_vault(tmp_path)
+        mgr, _fts, holder = self._mgr(vault, tmp_path, provider)
+        mgr.build_index()
+        mgr.build_embeddings()
+        provider.calls.clear()
+        provider.texts.clear()
+
+        # The failure mode from the report: a note is emptied while the
+        # server runs, and the file watcher's reindex picks it up.
+        (vault / "real.md").write_text("---\ntitle: Real\n---\n", encoding="utf-8")
+        with caplog.at_level(
+            logging.WARNING, logger="markdown_vault_mcp.managers.index"
+        ):
+            mgr.reindex()
+
+        # Nothing was *sent*, which is the point: before the fix the blank
+        # input went out and came back 400, and the same 400 recurred on
+        # every later reindex of the same file.
+        assert provider.calls == []
+        assert not [
+            r
+            for r in caplog.records
+            if "reindex_inline_embed_failed_docs" in r.getMessage()
+        ]
+        # Its now-stale vectors are dropped rather than left behind.
+        assert "real.md" not in holder["vectors"].chunks_by_path()
+
+    def test_repeated_convergence_does_no_work(self, tmp_path: Path) -> None:
+        """The signature-drift regression guard.
+
+        Blank chunks are filtered out of the FTS row set *before* the
+        convergence diff, not at the embed call. Filtering only at embed
+        time would leave the FTS and sidecar multisets permanently unequal,
+        re-embedding every body-less note's document on every single pass.
+        """
+        provider = _StrictProvider()
+        vault = _body_less_vault(tmp_path)
+        mgr, _fts, _holder = self._mgr(vault, tmp_path, provider)
+        mgr.build_index()
+        mgr.build_embeddings()
+        provider.calls.clear()
+
+        # A converged index must be a genuine no-op, twice over: not one
+        # provider call, not one retried document. Asserting on the return
+        # value alone would not discriminate — a failed re-embed also
+        # reports 0 newly embedded chunks.
+        assert mgr.build_embeddings() == 0
+        assert mgr.build_embeddings() == 0
+        assert provider.calls == []
