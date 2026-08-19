@@ -158,7 +158,9 @@ class IndexManager:
         """
         return is_path_excluded(path, self._exclude_patterns)
 
-    def _discover_indexable_candidates(self) -> list[tuple[Path, str]]:
+    def _discover_indexable_candidates(
+        self, *, on_walk_error: Callable[[OSError], None] | None = None
+    ) -> list[tuple[Path, str]]:
         """Discover markdown files eligible for indexing, with relative paths.
 
         Applies the per-file :meth:`_is_path_excluded` filter as the correctness
@@ -174,7 +176,11 @@ class IndexManager:
             files, in discovery order.
         """
         candidates: list[tuple[Path, str]] = []
-        for abs_path in iter_markdown_files(self._source_dir, self._exclude_patterns):
+        for abs_path in iter_markdown_files(
+            self._source_dir,
+            self._exclude_patterns,
+            on_error=on_walk_error,
+        ):
             if not abs_path.is_file():
                 continue
             # iter_markdown_files yields paths built as source_dir / rel, so
@@ -265,6 +271,52 @@ class IndexManager:
                 "Embeddings require both 'embedding_provider' and "
                 "'embeddings_path' to be configured."
             )
+
+    def _empty_embedding_build_is_authoritative(self, indexed_paths: set[str]) -> bool:
+        """Return whether an empty FTS-derived embedding build is complete.
+
+        A forced FTS rebuild can omit a source that failed parsing, leaving no
+        row for :meth:`build_embeddings` to re-parse. Before replacing an old
+        sidecar with an empty one, inspect only source candidates absent from
+        FTS. Deliberate required-frontmatter skips are authoritative; parse,
+        I/O, and FTS-population gaps are not.
+        """
+        walk_incomplete = False
+
+        def _record_walk_error(_exc: OSError) -> None:
+            nonlocal walk_incomplete
+            walk_incomplete = True
+
+        candidates = self._discover_indexable_candidates(
+            on_walk_error=_record_walk_error
+        )
+        if walk_incomplete:
+            logger.warning("build_embeddings_source_walk_incomplete (no vectors saved)")
+            return False
+
+        for abs_path, path in candidates:
+            if path in indexed_paths:
+                continue
+            outcome = parse_note_categorized(
+                abs_path,
+                self._source_dir,
+                self._chunk_strategy,
+                rel_path=path,
+                title_field=self._title_field,
+                required_frontmatter=self._required_frontmatter,
+                log_context="build_embeddings",
+            )
+            if (
+                isinstance(outcome, CategorizedSkip)
+                and outcome.skip.category == "missing_frontmatter"
+            ):
+                continue
+            logger.warning(
+                "build_embeddings_unindexed_source path=%s (no vectors saved)",
+                path,
+            )
+            return False
+        return True
 
     def _load_vectors(self) -> VectorIndex:
         """Load or return the cached VectorIndex, self-healing corrupt sidecars.
@@ -920,8 +972,10 @@ class IndexManager:
             also transient API/network errors) is logged and the batch
             skipped, so this may be less than the total number of chunks
             attempted; if every batch is skipped, ``0`` is returned and no
-            vectors are saved.  On the convergence path this counts only the
-            newly embedded chunks — a fully converged index returns ``0``.
+            vectors are saved. A successful build with no embeddable chunks
+            persists an empty index so stale sidecar vectors cannot survive a
+            forced rebuild. On the convergence path this counts only the newly
+            embedded chunks — a fully converged index returns ``0``.
 
         Raises:
             EmbeddingsNotConfiguredError: If ``embedding_provider`` or
@@ -955,10 +1009,12 @@ class IndexManager:
             # Empty index — fall through to the full cold build.
 
         rows = self._fts.list_notes()
+        indexed_paths = {row["path"] for row in rows}
         num_notes = len(rows)
         logger.info("build_embeddings: parsing %d notes into chunks", num_notes)
         texts: list[str] = []
         meta: list[dict[str, Any]] = []
+        had_parse_failure = False
 
         for i, row in enumerate(rows, 1):
             path = row["path"]
@@ -974,6 +1030,7 @@ class IndexManager:
                 )
             except (UnicodeDecodeError, OSError, yaml.YAMLError) as exc:
                 logger.warning("build_embeddings: skipping %s — %s", path, exc)
+                had_parse_failure = True
                 continue
             note_texts, note_meta = self._embed_inputs(
                 path=path,
@@ -1057,8 +1114,17 @@ class IndexManager:
                 "build_embeddings_all_batches_failed total=%d (no vectors saved)",
                 total,
             )
+        elif had_parse_failure:
+            logger.warning(
+                "build_embeddings_parse_failures_with_no_inputs (no vectors saved)"
+            )
+        elif not self._empty_embedding_build_is_authoritative(indexed_paths):
+            logger.warning(
+                "build_embeddings_empty_not_authoritative (no vectors saved)"
+            )
         else:
-            logger.info("build_embeddings: nothing to embed")
+            vectors.save(self._embeddings_path)
+            logger.info("build_embeddings: saved empty index")
         return embedded
 
     def _converge_embeddings(self, vectors: VectorIndex) -> int:

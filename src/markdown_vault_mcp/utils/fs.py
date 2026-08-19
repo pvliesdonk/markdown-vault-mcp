@@ -8,7 +8,7 @@ import sys
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Iterator, Sequence
+    from collections.abc import Callable, Iterable, Iterator, Sequence
     from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -124,6 +124,8 @@ def _should_prune_dir(
 def iter_markdown_files(
     source_dir: Path,
     exclude_patterns: Sequence[str] | None = None,
+    *,
+    on_error: Callable[[OSError], None] | None = None,
 ) -> Iterator[Path]:
     """Yield ``*.md`` files under *source_dir*, pruning excluded subtrees.
 
@@ -155,6 +157,8 @@ def iter_markdown_files(
         exclude_patterns: Exclude glob patterns. Used only to derive directory
             prune rules; ``None`` or empty prunes nothing (the walk still runs
             and yields every ``*.md`` file).
+        on_error: Optional callback invoked after an unreadable-directory error
+            is logged. The walk continues after the callback returns.
 
     Yields:
         Absolute paths to ``*.md`` files, anchored at the unresolved
@@ -169,6 +173,8 @@ def iter_markdown_files(
         # permission-denied or broken-link subtree does not silently disappear
         # from discovery/indexing (#835).
         logger.warning("markdown_walk_dir_unreadable path=%s: %s", exc.filename, exc)
+        if on_error is not None:
+            on_error(exc)
 
     for dirpath, dirnames, filenames in os.walk(
         source_str, onerror=_on_walk_error, followlinks=_WALK_FOLLOWLINKS

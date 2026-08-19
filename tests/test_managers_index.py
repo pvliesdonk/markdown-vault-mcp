@@ -1065,6 +1065,62 @@ class TestBuildEmbeddings:
             for r in caplog.records
         )
 
+    def test_force_rebuild_persists_empty_only_after_successful_parse(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """An authoritative empty rebuild replaces stale on-disk vectors."""
+        from markdown_vault_mcp.managers import index as index_module
+        from markdown_vault_mcp.vector_index import VectorIndex
+
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        note = vault / "note.md"
+        note.write_text("# Note\n\nBody.\n", encoding="utf-8")
+        embeddings_path = tmp_path / "embeddings"
+        provider = MockEmbeddingProvider()
+        holder: dict = {"vectors": None}
+        mgr, _fts, _ = _make_index_mgr(
+            vault,
+            tmp_path,
+            embeddings_path=embeddings_path,
+            embedding_provider=provider,
+            get_vectors=lambda: holder["vectors"],
+            set_vectors=lambda vectors: holder.__setitem__("vectors", vectors),
+        )
+        mgr.build_index()
+        assert mgr.build_embeddings() == 1
+        assert VectorIndex.load(embeddings_path, provider).count == 1
+
+        # An unreadable source is not authoritative: keep its last good vector.
+        note.write_text("---\ntitle: [unclosed\n---\nbody", encoding="utf-8")
+        assert mgr.build_embeddings(force=True) == 0
+        assert VectorIndex.load(embeddings_path, provider).count == 1
+
+        # The same guarantee must hold after a forced FTS rebuild has skipped
+        # the malformed source and therefore no longer exposes its old row.
+        mgr.build_index(force=True)
+        assert mgr.build_embeddings(force=True) == 0
+        assert VectorIndex.load(embeddings_path, provider).count == 1
+
+        # An incomplete directory walk is equally non-authoritative, even
+        # when the unreadable subtree leaves discovery with no candidates.
+        def incomplete_walk(_source, _excludes, *, on_error=None):
+            if on_error is not None:
+                on_error(PermissionError("unreadable subtree"))
+            return iter(())
+
+        with monkeypatch.context() as patch:
+            patch.setattr(index_module, "iter_markdown_files", incomplete_walk)
+            assert mgr.build_embeddings(force=True) == 0
+            assert VectorIndex.load(embeddings_path, provider).count == 1
+
+        # A successful parse with no embeddable text is authoritative: the
+        # empty index must reach disk so a restart cannot revive stale vectors.
+        note.write_text("---\ntitle: Note\n---\n", encoding="utf-8")
+        mgr.build_index(force=True)
+        assert mgr.build_embeddings(force=True) == 0
+        assert VectorIndex.load(embeddings_path, provider).count == 0
+
     def test_build_embeddings_all_batches_fail_escalates(self, tmp_path, caplog):
         """Every batch failing returns 0, saves nothing, warns loudly (#649)."""
         import logging
