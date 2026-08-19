@@ -126,10 +126,10 @@ Artifacts ship on three channels. Each row lists exactly what that channel publi
 | Channel | Version identity | Artifacts |
 |---|---|---|
 | `edge` (rolling) | None; the commit is the identity | Docker image `:edge` rebuilt on every merge to `main`; `.mcpb` bundle as the `mcpb-bundle-edge` workflow artifact; rolling `unstable` docs version. It leaves no git tag, GitHub release, or PyPI entry behind. |
-| Pre-release | `vX.Y.Z-rc.N`, computed and reviewed in its release pull request | GitHub release with wheels, `sdist`, `.deb`/`.rpm` packages, `.mcpb` bundle, and SBOM attached; Docker image under its immutable `vX.Y.Z-rc.N` tag only. Skips PyPI, the plugin marketplace, the MCP registry, and the docs deploy. |
+| Pre-release | `vX.Y.Z-rc.N`, computed and reviewed in its release pull request | GitHub release with wheels, `sdist`, `.deb`/`.rpm` packages, `.mcpb` bundle, and SBOM attached; Docker image under its immutable `vX.Y.Z-rc.N` tag plus the ordering-aware rolling `rc` tag. Skips PyPI, the plugin marketplace, the MCP registry, and the docs deploy. |
 | Stable | `vX.Y.Z` | Everything: PyPI, Docker (version tag plus ordering-aware `latest` / `vX` / `vX.Y`), `.deb`/`.rpm`, GitHub release assets (wheels, `sdist`, `.mcpb` bundle, SBOM), plugin marketplace and MCP registry entries (when the release is the newest stable), versioned docs with an ordering-aware `latest` alias. |
 
-The PyPI split is deliberate: `edge` and pre-release builds never reach PyPI, where every ordinary installer would see them. A pre-release's wheels are still attached to its GitHub release and installable by URL for anyone who opts in. Rolling pointers are ordering-aware, so a patch release cut from an old `release/X.Y` branch never moves `latest`-style tags back to older content. See [Release process](docs/deployment/release-process.md) for the full model.
+The PyPI split is deliberate: `edge` and pre-release builds never reach PyPI, where every ordinary installer would see them. A pre-release's wheels are still attached to its GitHub release and installable by URL for anyone who opts in. Rolling pointers are ordering-aware, so a patch release cut from an old `release/X.Y` branch never moves `latest`-style tags back to older content, and a candidate for an already-released version never moves `rc`. See [Release process](docs/deployment/release-process.md) for the full model.
 
 ## Quick Start
 

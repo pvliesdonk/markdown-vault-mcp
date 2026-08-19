@@ -4,9 +4,11 @@
 # manifest churn — this channel answers "let me run the latest merged code"
 # without release machinery. Version-numbered pre-releases (rc) remain
 # release.yml's job, cut from short-lived release/X.Y stabilisation branches
-# and published only under their immutable vX.Y.Z-rc.N image tags (the
-# rc-fed rolling `unstable` tag is retired; `edge` is the one rolling
-# unstable tag, and one tag must have exactly one producer).
+# and published under their immutable vX.Y.Z-rc.N image tags plus the
+# rolling `rc` tag that follows the newest candidate. The two rolling
+# unstable tags answer different questions and have exactly one producer
+# each: `edge` is the newest commit on main (here), `rc` is the newest
+# release candidate (release.yml). Neither writes the other's tag.
 name: Unstable channel
 
 on:

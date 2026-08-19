@@ -191,11 +191,12 @@ jobs:
           is_latest=false
           is_latest_major=false
           is_latest_minor=false
+          is_newest_rc=false
+          stable=$(git tag --list | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' || true)
           if [ "$IS_PRERELEASE" != "true" ]; then
             ver="${TAG#v}"
             major="${ver%%.*}"
             minor="${ver%.*}"
-            stable=$(git tag --list | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$')
             if [ "$(printf '%s\n' "$stable" | sort -V | tail -1)" = "$TAG" ]; then
               is_latest=true
             fi
@@ -205,11 +206,33 @@ jobs:
             if [ "$(printf '%s\n' "$stable" | grep -E "^v${minor//./\\.}\." | sort -V | tail -1)" = "$TAG" ]; then
               is_latest_minor=true
             fi
+          else
+            # Rolling `rc` follows the newest candidate, and only forwards:
+            # it moves when THIS tag is the highest rc in the repo AND its
+            # base version is still ahead of the newest stable.  Without the
+            # second half, a leftover rc of an already-released version, or
+            # an rc cut on an older release/X.Y branch, would repoint `rc`
+            # at content older than `latest`.
+            rcs=$(git tag --list | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$' || true)
+            if [ "$(printf '%s\n' "$rcs" | sort -V | tail -1)" = "$TAG" ]; then
+              # `sort -V` does NOT implement semver prerelease precedence —
+              # it orders v4.0.0 BEFORE v4.0.0-rc.1 — so it may rank rcs
+              # among themselves but must never compare an rc against a
+              # stable.  Compare the rc's BASE version instead; equal means
+              # that version already shipped and the rc is behind `latest`.
+              base="${TAG%-rc.*}"
+              newest_stable=$(printf '%s\n' "$stable" | sort -V | tail -1)
+              if [ -z "$newest_stable" ] || { [ "$base" != "$newest_stable" ] \
+                && [ "$(printf '%s\n%s\n' "$base" "$newest_stable" | sort -V | tail -1)" = "$base" ]; }; then
+                is_newest_rc=true
+              fi
+            fi
           fi
           {
             echo "is_latest=$is_latest"
             echo "is_latest_major=$is_latest_major"
             echo "is_latest_minor=$is_latest_minor"
+            echo "is_newest_rc=$is_newest_rc"
           } >> "$GITHUB_OUTPUT"
 
       # Release-body contract (template#350 → #419): knope's Release step
@@ -343,6 +366,7 @@ jobs:
       is_latest: ${{ steps.ordering.outputs.is_latest }}
       is_latest_major: ${{ steps.ordering.outputs.is_latest_major }}
       is_latest_minor: ${{ steps.ordering.outputs.is_latest_minor }}
+      is_newest_rc: ${{ steps.ordering.outputs.is_newest_rc }}
 
   publish-pypi:
     needs: release
@@ -445,17 +469,20 @@ jobs:
           FALLBACK_LATEST: ${{ needs.release.outputs.is_latest }}
           FALLBACK_MINOR: ${{ needs.release.outputs.is_latest_minor }}
           FALLBACK_MAJOR: ${{ needs.release.outputs.is_latest_major }}
+          FALLBACK_NEWEST_RC: ${{ needs.release.outputs.is_newest_rc }}
         run: |
           is_latest=false
           is_latest_major=false
           is_latest_minor=false
+          is_newest_rc=false
+          remote=$(git ls-remote --tags --refs origin 2>/dev/null \
+            | awk -F'refs/tags/' '{print $2}' || true)
+          stable=$(printf '%s\n' "$remote" \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' || true)
           if [ "$IS_PRERELEASE" != "true" ]; then
             ver="${TAG#v}"
             major="${ver%%.*}"
             minor="${ver%.*}"
-            stable=$(git ls-remote --tags --refs origin 2>/dev/null \
-              | awk -F'refs/tags/' '{print $2}' \
-              | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' || true)
             if [ -z "$stable" ]; then
               # A stable release always sees at least its own tag, so an
               # empty list means the query failed, not that no tags exist.
@@ -474,11 +501,40 @@ jobs:
                 is_latest_minor=true
               fi
             fi
+          else
+            # Rolling `rc`, ordering-gated exactly like `latest`: it moves
+            # only when THIS tag is the highest rc in the repo AND its base
+            # version is still ahead of the newest stable, so a leftover rc
+            # of an already-released version — or an rc cut on an older
+            # release/X.Y branch — can never point `rc` behind `latest`.
+            rcs=$(printf '%s\n' "$remote" \
+              | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$' || true)
+            if [ -z "$rcs" ]; then
+              # The stable arm's witness read for this channel: an rc always
+              # sees at least its own rc tag, so an empty RC list means the
+              # query failed.  An empty STABLE list does not — that is the
+              # legitimate "nothing released yet" case, handled below.
+              echo "::warning::could not list remote tags — falling back to the release-time ordering"
+              is_newest_rc="$FALLBACK_NEWEST_RC"
+            elif [ "$(printf '%s\n' "$rcs" | sort -V | tail -1)" = "$TAG" ]; then
+              # `sort -V` does NOT implement semver prerelease precedence —
+              # it orders v4.0.0 BEFORE v4.0.0-rc.1 — so it may rank rcs
+              # among themselves but must never compare an rc against a
+              # stable.  Compare the rc's BASE version instead; equal means
+              # that version already shipped and the rc is behind `latest`.
+              base="${TAG%-rc.*}"
+              newest_stable=$(printf '%s\n' "$stable" | sort -V | tail -1)
+              if [ -z "$newest_stable" ] || { [ "$base" != "$newest_stable" ] \
+                && [ "$(printf '%s\n%s\n' "$base" "$newest_stable" | sort -V | tail -1)" = "$base" ]; }; then
+                is_newest_rc=true
+              fi
+            fi
           fi
           {
             echo "is_latest=$is_latest"
             echo "is_latest_minor=$is_latest_minor"
             echo "is_latest_major=$is_latest_major"
+            echo "is_newest_rc=$is_newest_rc"
           } >> "$GITHUB_OUTPUT"
 
       - name: Extract metadata (tags, labels)
@@ -490,13 +546,16 @@ jobs:
           # above (NOT the release job's stale-able outputs): a backport
           # patch cut after a newer stable updates only the series tags it
           # is actually the newest member of, and never `latest`.  An rc
-          # pushes its immutable version tag alone — the rolling `unstable`
-          # tag is retired now that rcs are rare, branch-scoped
-          # stabilisation builds ("run the latest code" is the `edge` tag,
-          # pushed per merge to main by the Unstable channel workflow).
+          # takes the same treatment on its own channel: `rc` follows the
+          # newest candidate that is still ahead of `latest`, and the two
+          # families are disjoint — no stable ever writes `rc`, no rc ever
+          # writes `latest`/`vX`/`vX.Y`.  The three rolling tags each have
+          # exactly one producer: `latest` and `rc` here, `edge` in the
+          # Unstable channel workflow ("run the latest merged code").
           tags: |
             type=raw,value=v${{ steps.version.outputs.version }}
             type=raw,value=latest,enable=${{ steps.recheck.outputs.is_latest == 'true' }}
+            type=raw,value=rc,enable=${{ steps.recheck.outputs.is_newest_rc == 'true' }}
             type=raw,value=v${{ steps.version.outputs.minor }},enable=${{ steps.recheck.outputs.is_latest_minor == 'true' }}
             type=raw,value=v${{ steps.version.outputs.major }},enable=${{ steps.recheck.outputs.is_latest_major == 'true' }}
           labels: |
@@ -649,6 +708,12 @@ jobs:
   # Publishes the marketplace catalog entry by committing straight to the
   # catalog's default branch — a release must not end at an open PR awaiting
   # a human merge (fastmcp-server-template#333; 15 such PRs once went stale).
+  # The manifest is `.claude-plugin/marketplace.json`, and only that path:
+  # Claude Code reads no other location, so a catalog carrying the file at
+  # its repo root is not a marketplace at all (template#383 — the bump had
+  # been writing a file nothing read).  The path is asserted below rather
+  # than discovered, so a future relocation fails with a sentence instead
+  # of a jq stack trace.
   # The plugin-artifact check guards against publishing a git-subdir entry
   # whose path does not exist at the tag, which is uninstallable; projects
   # without a .claude-plugin/plugin directory skip with a warning rather
@@ -717,15 +782,29 @@ jobs:
         if: steps.plugin_check.outputs.present == 'true'
         env:
           VERSION: ${{ needs.release.outputs.version }}
+          MANIFEST: .claude-plugin/marketplace.json
+          # Through env, not interpolated into the script: the blurb is
+          # free-form prose and a quote in it would otherwise break the
+          # shell rather than the entry.
+          PLUGIN_DESC: "Generic markdown vault MCP server with FTS5 + semantic search"
+          PLUGIN_HOME: "https://pvliesdonk.github.io/markdown-vault-mcp/"
         run: |
           cd catalog
+          if [ ! -f "$MANIFEST" ]; then
+            echo "::error::pvliesdonk/claude-plugins has no ${MANIFEST} — that is the only path Claude Code reads, so the catalog is not loadable as a marketplace and there is nothing to bump. Fix the catalog before releasing."
+            exit 1
+          fi
           NEW_ENTRY=$(jq -n \
             --arg name    "markdown-vault-mcp" \
+            --arg desc    "$PLUGIN_DESC" \
+            --arg home    "$PLUGIN_HOME" \
             --arg url     "https://github.com/pvliesdonk/markdown-vault-mcp.git" \
             --arg ref     "v$VERSION" \
             --arg version "$VERSION" \
             '{
               name: $name,
+              description: $desc,
+              homepage: $home,
               source: {
                 source: "git-subdir",
                 url: $url,
@@ -734,39 +813,74 @@ jobs:
               },
               version: $version
             }')
+          # The upsert refreshes the blurb as well as the pin: the catalog's
+          # README is generated from these descriptions, and this project —
+          # not the catalog — is where its own one-line description lives.
+          # A hand-edited blurb on this entry is therefore replaced on every
+          # release, deliberately; curate it here, in `domain_description`.
           jq --arg name "markdown-vault-mcp" \
              --arg v    "$VERSION" \
              --arg ref  "v$VERSION" \
+             --arg desc "$PLUGIN_DESC" \
+             --arg home "$PLUGIN_HOME" \
              --argjson new "$NEW_ENTRY" '
             .plugins |= (
               if any(.[]; .name == $name)
-              then map(if .name == $name then .version = $v | .source.ref = $ref else . end)
+              then map(
+                if .name == $name
+                then .version = $v
+                     | .source.ref = $ref
+                     | .description = $desc
+                     | .homepage = $home
+                else . end
+              )
               else . + [$new]
               end
             )
-          ' marketplace.json > marketplace.json.tmp
-          mv marketplace.json.tmp marketplace.json
-          # The catalog must never be pushed malformed or with a mismatched
-          # entry: validate before anything is committed.
-          jq empty marketplace.json
-          jq -e --arg name "markdown-vault-mcp" --arg v "$VERSION" '
+          ' "$MANIFEST" > "$MANIFEST.tmp"
+          mv "$MANIFEST.tmp" "$MANIFEST"
+          # The catalog must never be pushed malformed, with a mismatched
+          # entry, or missing the keys the marketplace validator requires:
+          # validate before anything is committed.
+          jq empty "$MANIFEST"
+          jq -e '.name and .owner and (.plugins | type == "array")' "$MANIFEST" > /dev/null \
+            || { echo "::error::${MANIFEST} lost a required top-level key (name / owner / plugins) — refusing to publish a manifest Claude Code would reject"; exit 1; }
+          jq -e --arg name "markdown-vault-mcp" --arg v "$VERSION" \
+                --arg desc "$PLUGIN_DESC" '
             .plugins[] | select(.name == $name)
-            | select(.version == $v and .source.ref == ("v" + $v))
-          ' marketplace.json > /dev/null
+            | select(.version == $v and .source.ref == ("v" + $v)
+                     and .description == $desc)
+          ' "$MANIFEST" > /dev/null
+
+          # The catalog generates its README from the manifest.  Run its own
+          # generator so the bump and the prose it feeds land in one commit,
+          # rather than leaving the catalog's default branch stale (or red)
+          # until a human runs it.  Guarded on the file: a catalog without a
+          # generator, or one that has not adopted it yet, is unaffected.
+          if [ -f scripts/gen_readme.py ]; then
+            python3 scripts/gen_readme.py
+          fi
       - name: Commit and push to catalog
         if: steps.plugin_check.outputs.present == 'true'
         env:
           VERSION: ${{ needs.release.outputs.version }}
+          MANIFEST: .claude-plugin/marketplace.json
         run: |
           cd catalog
-          if git diff --quiet -- marketplace.json; then
-            echo "marketplace.json already at v${VERSION}; nothing to publish"
+          if git diff --quiet -- "$MANIFEST"; then
+            echo "${MANIFEST} already at v${VERSION}; nothing to publish"
             exit 0
           fi
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           BRANCH=$(git rev-parse --abbrev-ref HEAD)
-          git add marketplace.json
+          git add "$MANIFEST"
+          # Only when the generator actually rewrote it — most bumps change
+          # no prose and leave the README untouched, which keeps concurrent
+          # sibling releases off the same lines in the rebase-retry below.
+          if ! git diff --quiet -- README.md; then
+            git add README.md
+          fi
           git commit -m "chore: bump markdown-vault-mcp to v${VERSION}"
           # Concurrent sibling releases race on the same file; rebase-retry
           # instead of failing. Bumping existing entries touches distinct

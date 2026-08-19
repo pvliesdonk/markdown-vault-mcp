@@ -13,7 +13,7 @@ from.
 | Channel | Version identity | What it promises |
 |---|---|---|
 | `edge` | None; the commit is the identity | The newest merged code. Every merge to `main` rebuilds the rolling Docker tag plus an `.mcpb` bundle workflow artifact, and the rolling `unstable` docs version deploys from the same trigger. It leaves no git tag, GitHub release, or PyPI entry behind. |
-| Pre-release | `vX.Y.Z-rc.N`, computed and reviewed in its release pull request | A stabilisation step toward exactly that version, normally cut from a `release/X.Y` branch. Publishes a GitHub release with wheels, `sdist`, `.deb`/`.rpm` packages, `.mcpb` bundle, and SBOM attached, plus a Docker image under its immutable version tag. Skips PyPI, the marketplace and registry entries, and the docs deploy. |
+| Pre-release | `vX.Y.Z-rc.N`, computed and reviewed in its release pull request | A stabilisation step toward exactly that version, normally cut from a `release/X.Y` branch. Publishes a GitHub release with wheels, `sdist`, `.deb`/`.rpm` packages, `.mcpb` bundle, and SBOM attached, plus a Docker image under its immutable version tag and the rolling `rc` tag. Skips PyPI, the marketplace and registry entries, and the docs deploy. |
 | Stable | `vX.Y.Z` | The full artifact set: PyPI, Docker, Linux packages, GitHub release assets (wheels, `sdist`, `.mcpb` bundle, SBOM), marketplace and registry entries, versioned docs. |
 
 Pre-release and `edge` builds never reach PyPI: PyPI is where every
@@ -26,7 +26,9 @@ Rolling pointers are ordering-aware. The Docker `latest`, `vX`, and `vX.Y`
 tags, the GitHub latest-release pointer, the docs `latest` alias, and the
 marketplace and registry entries follow a release only when it is the
 newest in the relevant series, so a patch release cut from an old
-`release/X.Y` branch never moves them back to older content. This holds
+`release/X.Y` branch never moves them back to older content. The Docker
+`rc` tag follows the same rule on the pre-release side: it moves only
+while the candidate's version is still ahead of the newest stable. This holds
 even when two releases overlap: each rolling channel checks the tag
 ordering again inside its own publish job. See
 [Image tags](docker.md#image-tags) for the Docker tag list.

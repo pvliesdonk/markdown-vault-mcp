@@ -447,13 +447,125 @@ def test_docker_rolling_tags_gate_on_the_recheck_not_the_release_job() -> None:
     step green — exactly the silent-drift shape this suite guards against.
     """
     block = _release_job_block("publish-docker", "publish-linux-packages")
-    for output in ("is_latest", "is_latest_minor", "is_latest_major"):
+    for output in ("is_latest", "is_latest_minor", "is_latest_major", "is_newest_rc"):
         needle = "enable=${{ steps.recheck.outputs." + output + " == 'true' }}"
         assert needle in block, (
             f"the rolling-tag enable for {output} must read the recheck step"
         )
     assert "enable=${{ needs.release.outputs" not in block, (
         "no rolling-tag enable may read the release job's stale-able outputs"
+    )
+
+
+def test_docker_rc_tag_is_ordering_gated_and_disjoint_from_latest() -> None:
+    """An rc release repoints the rolling ``rc`` tag, and only that one.
+
+    Before template#360 the rc-fed rolling tag was ``unstable`` and its
+    enable was the bare ``prerelease`` flag — no ordering at all, so a
+    backport rc repointed it backwards.  #360 retired the tag rather than
+    fixing the gate, which left rcs with no rolling pointer whatsoever:
+    ``edge`` follows ``main``, not a stabilisation branch, so "run the
+    current candidate" had no answer.  ``rc`` restores the pointer *with*
+    the ordering discipline ``latest`` already had.
+
+    Two properties are asserted, both of which have been wrong in the past:
+
+    1. The ``rc`` enable exists and reads the publish-time recheck.
+    2. The two ordering families are disjoint — no stable rolling tag reads
+       ``is_newest_rc`` and the ``rc`` tag reads nothing else — so a stable
+       release can never move ``rc`` nor an rc move ``latest``.
+    """
+    block = _release_job_block("publish-docker", "publish-linux-packages")
+    tag_lines = [
+        line.strip()
+        for line in block.splitlines()
+        if line.strip().startswith("type=raw,")
+    ]
+    rc_lines = [line for line in tag_lines if line.startswith("type=raw,value=rc,")]
+    assert len(rc_lines) == 1, (
+        f"publish-docker must push exactly one rolling `rc` tag line, got: {rc_lines}"
+    )
+    assert "is_newest_rc" in rc_lines[0], (
+        "the `rc` tag must be gated on the rc ordering output, not on the "
+        f"bare prerelease flag (template#360's regression): {rc_lines[0]}"
+    )
+    for line in tag_lines:
+        if line in rc_lines:
+            continue
+        assert "is_newest_rc" not in line, (
+            f"a stable rolling tag must never follow the rc ordering: {line}"
+        )
+    for stable_output in ("is_latest", "is_latest_minor", "is_latest_major"):
+        assert stable_output not in rc_lines[0], (
+            f"the `rc` tag must not read {stable_output}: {rc_lines[0]}"
+        )
+
+
+def test_rc_ordering_compares_base_versions_not_rc_tags() -> None:
+    """The rc gate never version-sorts an rc tag against a stable tag.
+
+    ``sort -V`` does not implement semver prerelease precedence: it orders
+    ``v4.0.0`` BEFORE ``v4.0.0-rc.1``.  Ranking rcs among themselves is
+    fine, but comparing an rc tag directly against a stable one silently
+    inverts, and would let a leftover candidate of an already-released
+    version keep ``rc`` ahead of ``latest``.  The gate therefore strips
+    ``-rc.N`` and compares the BASE version — this asserts that stripping
+    survives, because losing it produces no error, just a wrong tag.
+    """
+    block = _release_job_block("publish-docker", "publish-linux-packages")
+    assert "${TAG%-rc.*}" in block, (
+        "the rc ordering must compare the rc's base version against the "
+        "newest stable; `sort -V` inverts if given the rc tag itself"
+    )
+
+
+def test_marketplace_bump_targets_the_only_loadable_manifest_path() -> None:
+    """The catalog bump writes ``.claude-plugin/marketplace.json``.
+
+    Claude Code reads the marketplace manifest from that path and nowhere
+    else, so a bump written to a root-level ``marketplace.json`` succeeds,
+    commits, and publishes nothing anyone can install — which is what this
+    job did until template#383.  The failure is silent by construction, so
+    the path is asserted rather than trusted.
+    """
+    block = _release_job_block("publish-claude-plugin", "publish-registry")
+    assert "MANIFEST: .claude-plugin/marketplace.json" in block, (
+        "publish-claude-plugin must bump .claude-plugin/marketplace.json"
+    )
+    stray = [
+        line
+        for line in block.splitlines()
+        if "marketplace.json" in line
+        and ".claude-plugin/marketplace.json" not in line
+        and not line.lstrip().startswith("#")
+        and not line.lstrip().startswith("- name:")
+    ]
+    assert not stray, (
+        f"no step may still operate on a bare root-level marketplace.json: {stray}"
+    )
+
+
+def test_marketplace_bump_feeds_the_catalog_readme() -> None:
+    """The bump refreshes the entry's prose and regenerates the catalog README.
+
+    The catalog's README plugin list is generated from the manifest, so the
+    ``description`` is not decoration — it is the generator's input, and this
+    project is where its own blurb lives.  Two ways that silently degrades:
+    trimming the upsert back to version+ref, which freezes every existing
+    entry's prose at whatever it was when first appended; and dropping the
+    generator call, which leaves the catalog's default branch describing a
+    plugin set it no longer serves (the ``scholar-mcp`` class, invisible
+    because nothing there fails).  Neither produces an error, so both are
+    asserted here.
+    """
+    block = _release_job_block("publish-claude-plugin", "publish-registry")
+    assert ".description = $desc" in block, (
+        "the upsert must refresh the entry's description, not only its pin — "
+        "the catalog README is generated from it"
+    )
+    assert "scripts/gen_readme.py" in block, (
+        "the bump must run the catalog's README generator, or the catalog's "
+        "default branch goes stale after every release"
     )
 
 
