@@ -1769,6 +1769,18 @@ avoided the false positive too, but at the cost of a self-edge that suppresses
 orphan detection and inflates backlink counts, so skipping is what keeps all three
 spellings consistent.
 
+**Markdown footnotes are not links.** `[^label]` and `[^label]: body` differ
+from reference-style link syntax by one character, and both reference regexes
+matched them (issue #1104): a footnote definition was collected as a link
+reference definition with its prose body as the target, and two adjacent
+footnote references (`[^a][^b]`) read as one `[text][ref]` pair, taking the
+label of one footnote as link text and the target of another as its target.
+Because the resulting target was a whole markdown link rather than a URL, the
+external-URL skip did not recognise it and the path resolver joined it against
+the source note's directory, collapsing `https://` to `https:/` in the stored
+`target_path`. Both halves of reference extraction now skip labels beginning
+with `^`.
+
 **Path resolution for markdown links**: relative paths are resolved against the
 source document's directory. `../sibling.md` from `Journal/2024/today.md` resolves
 to `Journal/sibling.md`. A leading slash makes the target vault-root-relative

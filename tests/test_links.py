@@ -230,6 +230,46 @@ class TestExtractReferenceLinks:
         links = extract_links(content, "index.md")
         assert links == []
 
+    def test_footnote_definition_not_a_link(self) -> None:
+        """[^label]: body is a footnote, not a reference definition (#1104).
+
+        ``[^\\]]+`` in the definition regex accepts a leading ``^``, so a
+        footnote definition was collected as a link reference and its
+        prose body stored as a vault target.
+        """
+        content = (
+            "See NIST SP800-57[^nist-1].\n\n"
+            "[^nist-1]: [SP 800-57 Part 1](https://csrc.nist.gov/sp/800-57-part-1)\n"
+        )
+        assert extract_links(content, "notes/crypto.md") == []
+
+    def test_adjacent_footnote_references_are_not_one_link(self) -> None:
+        """[^a][^b] is two footnote references, not [text][ref] (#1104).
+
+        The usage regex paired the first label as link text with the
+        second as the reference, so the reported link carried the label of
+        one footnote and the target of another.
+        """
+        content = (
+            "See NIST SP800-57[^nist-1][^nist-2][^nist-3].\n\n"
+            "[^nist-1]: first source\n"
+            "[^nist-2]: notes/topic.md\n"
+            "[^nist-3]: third source\n"
+        )
+        assert extract_links(content, "notes/crypto.md") == []
+
+    def test_footnotes_do_not_disturb_real_reference_links(self) -> None:
+        """A real [text][ref] link in a note that also uses footnotes survives."""
+        content = (
+            "A footnote[^a] and a [real link][r].\n\n"
+            "[^a]: some prose\n"
+            "[r]: notes/topic.md\n"
+        )
+        links = extract_links(content, "index.md")
+        assert len(links) == 1
+        assert links[0].target_path == "notes/topic.md"
+        assert links[0].link_text == "real link"
+
     def test_reference_relative_path_resolved(self) -> None:
         """Relative path in reference definition is resolved correctly."""
         content = "See [note][ref]\n\n[ref]: ../sibling.md"

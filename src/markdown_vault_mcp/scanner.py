@@ -787,6 +787,9 @@ _RE_INLINE_LINK = re.compile(r"\[([^\]]*)\]\(([^)]+)\)")
 _RE_REF_USAGE = re.compile(r"\[([^\]]*)\]\[([^\]]*)\]")
 # Reference definition: [ref]: target  (at start of line, optional leading whitespace)
 _RE_REF_DEF = re.compile(r"^\s*\[([^\]]+)\]:\s*(.+)$", re.MULTILINE)
+# Markdown footnotes ([^label] / [^label]: body) differ from reference-style
+# links by exactly this character, and both reference regexes match them.
+_FOOTNOTE_LABEL_PREFIX = "^"
 # Wikilink: [[path]], [[path|alias]], or [[path\|alias]] (Obsidian table-cell escape)
 _RE_WIKILINK = re.compile(r"\[\[([^\]|]+)(?:\|([^\]]+))?\]\]")
 
@@ -933,12 +936,21 @@ def _extract_reference_links(clean: str, source_path: str) -> list[LinkInfo]:
     titles stripped), then resolves each usage; an empty ``[ref]`` falls
     back to the link text per CommonMark shortcut semantics. External URLs
     and pure anchors are skipped.
+
+    Markdown footnotes are skipped on both halves: a footnote definition
+    (``[^label]: body``) is prose, not a link target, and two adjacent
+    footnote references (``[^a][^b]``) are not one reference-style link
+    (#1104).
     """
     links: list[LinkInfo] = []
     # Collect reference definitions first.
     ref_defs: dict[str, str] = {}
     for m in _RE_REF_DEF.finditer(clean):
         ref_key = m.group(1).strip().lower()
+        if ref_key.startswith(_FOOTNOTE_LABEL_PREFIX):
+            # Footnote definition: the body is prose, so storing it as a
+            # target resolved whatever the footnote said as a vault path.
+            continue
         ref_target = m.group(2).strip()
         # Strip optional CommonMark title: "...", '...', or (...)
         ref_target = re.sub(r'\s+(?:"[^"]*"|\'[^\']*\'|\([^)]*\))\s*$', "", ref_target)
@@ -947,6 +959,14 @@ def _extract_reference_links(clean: str, source_path: str) -> list[LinkInfo]:
     for m in _RE_REF_USAGE.finditer(clean):
         text = m.group(1)
         ref = m.group(2).strip() or text  # empty [ref] falls back to link text
+        if text.startswith(_FOOTNOTE_LABEL_PREFIX) or ref.startswith(
+            _FOOTNOTE_LABEL_PREFIX
+        ):
+            # Consecutive footnote references read as one [text][ref] pair,
+            # taking the first label as link text and the second as the
+            # reference — and finditer, being non-overlapping, then swallows
+            # the second label so a third reference goes unseen.
+            continue
         ref_key = ref.lower()
         raw_target = ref_defs.get(ref_key)
         if raw_target is None:
