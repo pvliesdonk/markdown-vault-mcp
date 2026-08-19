@@ -3090,8 +3090,10 @@ from an old `release/X.Y` never repoints them backwards; the immutable
 cuts a `vX.Y.Z-rc.N` tag and marks the GitHub Release as a pre-release,
 the Docker image publishes `:vX.Y.Z-rc.N` only (`edge` is the sole
 rolling unstable tag — no `:latest`/`:vX.Y`/`:vX` movement), and the
-mcpb bundle is built from the merge commit and attached for manual
-smoke-test. PyPI, linux packages, the Claude Code catalog publish, and
+mcpb bundle and `.deb`/`.rpm` packages are built from the merge commit
+and attached for manual smoke-test (an rc package's postinstall pulls
+the wheel from the release itself, since the version is not on PyPI).
+PyPI, the Claude Code catalog publish, and
 the MCP Registry publish are all skipped; rc prepares leave the
 `server.json`/plugin pins untouched at the last published stable, since
 the versions those pins name only exist for stable releases.
