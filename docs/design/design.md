@@ -2559,11 +2559,25 @@ overrides it.
   CGNAT/shared 100.64/10, and reserved ranges are all blocked, with NAT64
   embedded-IPv4 validation), DNS-rebind pinning of the validated IP,
   `trust_env=False` (ambient `HTTP(S)_PROXY`/`.netrc` cannot divert the
-  pinned connection), redirect refusal, a streaming size cap, and
-  userinfo/query redaction in logs and errors. The tool keeps only the
-  vault-side policy: which cap applies (attachment limit vs. uncapped
-  markdown) and the operator-facing size-limit message naming
-  `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB`.
+  pinned connection), a streaming size cap, and userinfo/query redaction in
+  logs and errors. The tool keeps only the vault-side policy: which cap
+  applies (attachment limit vs. uncapped markdown) and the operator-facing
+  size-limit message naming `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB`.
+
+  **Redirects are followed, and every hop re-runs that chain** (#1116).
+  Through 3.1 the primitive refused every 3xx outright; from the 4.11.2
+  floor the guard lives in the transport httpx sends each hop through, so a
+  `Location` pointing at an internal target is refused exactly as a directly
+  supplied one is. The posture is not locally configurable — pvl-core owns
+  it — and it was adopted deliberately rather than inherited silently: per-hop
+  revalidation is a stronger guarantee than a blanket refusal, and ordinary
+  indirection (`http`→`https`, shortened links, CDN hand-offs) now resolves
+  instead of erroring. The cost is that the bytes need not come from the host
+  in `url`, so the tool returns `final_url` — the URL the bytes actually came
+  from — and a caller enforcing a host policy must check it rather than
+  trusting the URL it supplied. A chain longer than httpx's `max_redirects`
+  raises `httpx.TooManyRedirects`, which propagates uncaught like the other
+  transport-tier failures.
 
 These semantics are intentionally close to Claude Code's file tools for
 familiarity. LLMs that know how to read/write/edit files can use these tools

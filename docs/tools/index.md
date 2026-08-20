@@ -503,7 +503,7 @@ Download a file from a URL and save it to the vault as a note or attachment. Des
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `url` | string | required | Source URL to download. Only `http`/`https` schemes allowed; the host is resolved and blocked unless every address is publicly routable (private, loopback, link-local, CGNAT/shared, and reserved ranges are all refused); the validated IP is pinned for the connection; ambient `HTTP(S)_PROXY`/`.netrc` settings are ignored; redirects are not followed (SSRF protection) |
+| `url` | string | required | Source URL to download. Only `http`/`https` schemes allowed; the host is resolved and blocked unless every address is publicly routable (private, loopback, link-local, CGNAT/shared, and reserved ranges are all refused); the validated IP is pinned for the connection; ambient `HTTP(S)_PROXY`/`.netrc` settings are ignored. Redirects are followed, and each hop repeats every check above (SSRF protection) |
 | `path` | string | required | Destination path in vault. Extension determines handling: `.md` for notes, anything else for attachments |
 | `frontmatter` | object | `null` | Optional YAML frontmatter dict for `.md` files. Ignored for attachments |
 | `if_match` | string | `null` | Optional etag from a previous `read` call for optimistic concurrency |
@@ -513,13 +513,29 @@ Download a file from a URL and save it to the vault as a note or attachment. Des
 the saved file by `path` for downstream tools rather than `read()`-ing it
 back into context.
 
-**Returns:** `{"path": "notes/report.md", "created": true, "content_length": 4096, "content_type": "text/markdown"}`
+**Returns:** `{"path": "notes/report.md", "created": true, "content_length": 4096, "content_type": "text/markdown", "final_url": "https://example.com/report.md"}`
 
 For `.md` destinations, the response may also include a `conventions` list; see [`write`](#write).
 
 The download itself runs through `fastmcp-pvl-core`'s hardened `fetch_url`
 primitive, so the SSRF protections above are shared, audited code rather
 than a local copy.
+
+!!! warning "Redirects are followed (changed in 4.0)"
+
+    Through 3.1 this tool refused every redirect: a `301` or `302` produced
+    an error rather than content. It now follows the chain, so the bytes may
+    come from a host other than the one you asked for. Every hop re-runs the
+    full address check, so a redirect cannot reach an internal target — but
+    if you rely on `fetch` to reject indirection, that guarantee is gone.
+
+    `final_url` reports where the bytes came from: equal to `url` when
+    nothing redirected, otherwise the last hop. Check it when the source
+    host matters. It keeps its query string (a redirect target's query is
+    often load-bearing), so do not log it verbatim.
+
+    A chain longer than the transport's redirect limit fails with a
+    "too many redirects" error rather than saving anything.
 
 ### `git_sync`
 

@@ -588,8 +588,14 @@ def register(mcp: FastMCP) -> None:
                 every address is publicly routable (private, loopback,
                 link-local, CGNAT/shared, and reserved ranges are all
                 blocked), the validated IP is pinned for the connection
-                (closing DNS rebinding), ambient HTTP(S)_PROXY / .netrc
-                settings are ignored, and redirects are NOT followed.
+                (closing DNS rebinding), and ambient HTTP(S)_PROXY / .netrc
+                settings are ignored. Redirects ARE followed (changed in
+                #1116; through v3.1.0 a redirect was refused), and every hop
+                repeats the whole chain above — a ``Location`` pointing at an
+                internal target is refused exactly as a directly supplied one
+                is. Because of that, the bytes need not come from the host in
+                *url*: check the returned ``final_url`` when the source host
+                matters.
             path: Destination path in the vault (e.g. "notes/report.md"
                 or "assets/diagram.png"). Extension determines handling:
                 .md for notes, anything else for attachments.
@@ -607,6 +613,10 @@ def register(mcp: FastMCP) -> None:
             - created (bool): true if new file, false if overwrite
             - content_length (int): bytes downloaded
             - content_type (str or null): Content-Type from the response
+            - final_url (str): the URL the bytes actually came from — equal
+              to ``url`` when nothing redirected, otherwise the last hop.
+              Userinfo is stripped; the query string is not, so do not log
+              it verbatim
             - conventions (list, optional; .md only): the user's authoring
               conventions for the target folder (root-first list of
               {folder, path, content}). When present, verify the saved note
@@ -618,9 +628,15 @@ def register(mcp: FastMCP) -> None:
 
         Raises:
             ValueError: If the URL scheme is not http/https, the host is
-                blocked or cannot be resolved, a redirect is returned, the
-                download exceeds the size limit, or the response cannot be
-                decoded.
+                blocked or cannot be resolved (on the supplied URL or on any
+                redirect hop), the download exceeds the size limit, or the
+                response cannot be decoded.
+            httpx.TooManyRedirects: If the redirect chain exceeds httpx's
+                ``max_redirects``. Propagates uncaught, like the
+                ``HTTPStatusError`` of a non-2xx response and the
+                ``TransportError`` of a timeout — the vault has no better
+                answer than the transport's own. Unreachable before #1116,
+                when a redirect was refused outright.
         """
         # Attachment size cap only: markdown notes are not size-limited, and
         # a non-positive configured cap disables the limit. `capped` derives
@@ -638,19 +654,20 @@ def register(mcp: FastMCP) -> None:
         max_bytes = cap_bytes if capped else _FETCH_UNCAPPED_BYTES
 
         # All SSRF hardening (scheme allowlist, non-public-address rejection
-        # incl. CGNAT, DNS-rebind pinning, trust_env=False, redirect refusal,
-        # streaming size cap, userinfo/query redaction) lives in pvl-core's
-        # fetch_url — the shared primitive this tool's guard was lifted into
-        # (#862; pvl-core #219).
+        # incl. CGNAT, DNS-rebind pinning, trust_env=False, per-redirect-hop
+        # revalidation of all of those, streaming size cap, userinfo/query
+        # redaction) lives in pvl-core's fetch_url — the shared primitive this
+        # tool's guard was lifted into (#862; pvl-core #219).
         try:
             fetched = await fetch_url(url, max_bytes=max_bytes, timeout_s=timeout_s)
         except ValueError as exc:
             # Translate the size-cap refusal into the vault's operator-facing
             # terms (which env var raises the limit). Matches fetch_url's full
-            # terminal suffix — not a substring, which URL content could spoof
-            # (e.g. a redirect refusal whose redacted URL contains the words).
-            # Couples to fetch_url's message text, but fails safe: on a reword
-            # the original error still propagates.
+            # terminal suffix — not a substring. The size-cap message embeds
+            # the (redacted) URL, which is caller-supplied, so a substring test
+            # could be spoofed by a URL crafted to contain the phrase; the
+            # suffix is fetch_url's own text and cannot be. Couples to that
+            # text, but fails safe: on a reword the original error propagates.
             if capped and str(exc).endswith(
                 f"exceeded the size cap of {max_bytes} bytes."
             ):
@@ -666,6 +683,13 @@ def register(mcp: FastMCP) -> None:
         raw_bytes = fetched.body
         content_type = fetched.content_type
         content_length = fetched.size
+        # Where the bytes actually came from. Equal to `url` when nothing
+        # redirected; since #1116 redirects are followed, so a caller that
+        # cares which host served the content has to be told (validating the
+        # supplied URL alone is no longer sufficient). Surfaced rather than
+        # logged: fetch_url already logged the redacted source, and this
+        # string keeps its query, which may be a pre-signed token.
+        final_url = fetched.final_url
 
         # Dispatch to the appropriate write method.
         if is_markdown:
@@ -707,6 +731,7 @@ def register(mcp: FastMCP) -> None:
             **asdict(result),
             "content_length": content_length,
             "content_type": content_type,
+            "final_url": final_url,
         }
         if is_markdown:
             data = await attach_conventions(vault, data, path)

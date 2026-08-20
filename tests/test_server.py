@@ -1675,6 +1675,80 @@ class TestFetchTool:
         assert "title: Report" in written
         assert "source: https://example.com/report.md" in written
 
+    async def test_fetch_reports_final_url_when_nothing_redirected(
+        self, _mcp_env_writable_with_attachments: Path
+    ) -> None:
+        """final_url echoes the requested URL when there was no redirect."""
+        mock_fetch = self._fetch_url_returning(
+            b"# Direct\n", "text/markdown", final_url="https://example.com/direct.md"
+        )
+
+        with patch(self._FETCH_URL_SEAM, mock_fetch):
+            server = make_server()
+            async with Client(server) as client:
+                result = await client.call_tool(
+                    "fetch",
+                    {"url": "https://example.com/direct.md", "path": "direct.md"},
+                )
+        assert result.data["final_url"] == "https://example.com/direct.md"
+
+    async def test_fetch_reports_final_url_after_a_redirect(
+        self, _mcp_env_writable_with_attachments: Path
+    ) -> None:
+        """A followed redirect is reported, not refused (#1116).
+
+        Through v3.1.0 pvl-core refused every 3xx and the tool surfaced the
+        refusal as an error. Since the 4.11.2 floor the hop is followed —
+        each one re-running the SSRF chain — so the bytes can come from a
+        host other than the one asked for, and ``final_url`` is how a caller
+        enforcing a host policy finds out.
+        """
+        mock_fetch = self._fetch_url_returning(
+            b"# Moved\n", "text/markdown", final_url="https://cdn.example.net/moved.md"
+        )
+
+        with patch(self._FETCH_URL_SEAM, mock_fetch):
+            server = make_server()
+            async with Client(server) as client:
+                result = await client.call_tool(
+                    "fetch",
+                    {"url": "https://example.com/moved.md", "path": "moved.md"},
+                )
+        assert result.data["created"] is True
+        assert result.data["final_url"] == "https://cdn.example.net/moved.md"
+        assert (
+            (_mcp_env_writable_with_attachments / "moved.md")
+            .read_text(encoding="utf-8")
+            .endswith("# Moved\n")
+        )
+
+    async def test_fetch_too_many_redirects(
+        self, _mcp_env_writable_with_attachments: Path
+    ) -> None:
+        """A redirect chain past httpx's max_redirects propagates (#1116).
+
+        Unreachable before the 4.11.2 floor, when a redirect was refused
+        outright with a ValueError the size-cap handler already caught. It
+        now reaches the client as a ToolError, like the sibling
+        HTTPStatusError and TimeoutException paths.
+        """
+        import httpx
+
+        async def _too_many(url: str, **_kwargs: object) -> None:
+            raise httpx.TooManyRedirects(
+                "Exceeded maximum allowed redirects.",
+                request=httpx.Request("GET", url),
+            )
+
+        with patch(self._FETCH_URL_SEAM, _too_many):
+            server = make_server()
+            async with Client(server) as client:
+                with pytest.raises(ToolError, match="redirects"):
+                    await client.call_tool(
+                        "fetch",
+                        {"url": "https://example.com/loop.md", "path": "loop.md"},
+                    )
+
     async def test_fetch_http_error_status(
         self, _mcp_env_writable_with_attachments: Path
     ) -> None:
