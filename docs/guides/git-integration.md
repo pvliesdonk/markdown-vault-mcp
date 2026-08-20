@@ -67,19 +67,25 @@ Behavior:
   it costs a fetch and nothing more.
 - `ping`, GitHub's handshake delivery, answers `pong`; every other event
   returns 200 and does nothing.
-- A delivery that lands before the server has finished starting, or whose
-  pull did not apply, returns 503 so GitHub retries it instead of marking
-  it delivered. GitHub's retry budget spans roughly two minutes, so a
-  delivery during a long cold-start index build can still be lost.
-- A pull that fails permanently, such as an unresolved conflict or a
-  missing remote, exhausts those retries and waits for the next periodic
-  tick. Divergent history is not a failure: it flows through the
+- A delivery whose pull did not apply returns 503, so GitHub retries it
+  instead of marking it delivered. A pull that keeps failing, such as an
+  unresolved conflict, exhausts the retries and waits for the next
+  periodic tick. Divergent history is not a failure: it flows through the
   Syncthing-style sibling resolution described under
   [`git_sync`](#manual-sync-git_sync-tool) below.
+- A delivery arriving while the initial index build is still running is
+  handled, not dropped. The pull is a pure git operation and runs
+  regardless of index state; only the reindex is skipped, and the boot
+  reconciliation pass that follows the build picks the pulled changes up.
 
-The webhook is a managed-mode feature. With no `GIT_REPO_URL` configured
-there is nothing to pull from, and deliveries are acknowledged with 200
-without doing any work.
+!!! warning "Managed mode only"
+    Set the secret only where the server owns the remote. Outside managed
+    mode a delivery is not a quiet no-op: the pull path ignores the sync
+    switch that unmanaged mode turns off and runs `git fetch origin`
+    anyway. A checkout with no reachable `origin` fails that fetch and
+    answers 503, burning GitHub's retries on every push; against a vault
+    that is not a git repository at all, the pull raises out of the
+    handler.
 
 Keep `GIT_PULL_INTERVAL_S` enabled. The webhook narrows the staleness
 window; the loop is what catches the deliveries the webhook loses.
