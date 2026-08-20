@@ -293,7 +293,7 @@ Change detection is hash-based, so an unchanged file is never re-parsed, and the
 
 Build vector embeddings to enable semantic and hybrid search. This can be slow for large vaults.
 
-Without `force`, an existing vector index is **converged** to the FTS chunk set (#665). The operation embeds missing documents, re-embeds those whose indexed content changed, and drops vectors for deleted or excluded documents. Work scales with the size of the drift, not the size of the vault; an already-converged index does no embedding work.
+Without `force`, an existing vector index is **converged** to the FTS chunk set (#665). The operation embeds missing documents, re-embeds those whose indexed content changed, and drops vectors for deleted or excluded documents. A document whose source file still exists but is missing from the search index (such as one that failed to parse) keeps its vectors until the index sees it again (#1130). Work scales with the size of the drift, not the size of the vault; an already-converged index does no embedding work.
 
 **Parameters:**
 

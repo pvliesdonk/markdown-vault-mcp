@@ -1156,6 +1156,239 @@ class TestBuildEmbeddings:
 
 
 # ---------------------------------------------------------------------------
+# Convergence reclaims stale vectors only on authoritative FTS absence (#1130)
+# ---------------------------------------------------------------------------
+
+
+class TestConvergeStaleConfirmation:
+    """FTS row absence alone must not delete a still-existing source's vectors.
+
+    ``_converge_embeddings`` reclaims vectors for paths absent from FTS.
+    Absence also covers sources a build could not parse or a walk could not
+    see (#1129), so an unconfirmed absence must keep the vectors (#1130)
+    while genuine deletions, exclusions, deliberate ``missing_frontmatter``
+    skips, and body-less notes (#930/#1087) still reclaim.
+    """
+
+    @staticmethod
+    def _embedded_pair(tmp_path: Path):
+        """Vault with good.md + bad.md indexed and embedded; returns wiring."""
+        from markdown_vault_mcp.vector_index import VectorIndex
+
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        (vault / "good.md").write_text(
+            "---\ntitle: Good\n---\n# Good\n\nGood body.\n", encoding="utf-8"
+        )
+        (vault / "bad.md").write_text(
+            "---\ntitle: Bad\n---\n# Bad\n\nBad body.\n", encoding="utf-8"
+        )
+        embeddings_path = tmp_path / "embeddings"
+        provider = MockEmbeddingProvider()
+        mgr, _fts, _holder = _make_index_mgr(
+            vault,
+            tmp_path,
+            embeddings_path=embeddings_path,
+            embedding_provider=provider,
+        )
+        mgr.build_index()
+        assert mgr.build_embeddings() == 2
+        assert set(VectorIndex.load(embeddings_path, provider).chunks_by_path()) == {
+            "good.md",
+            "bad.md",
+        }
+        return vault, embeddings_path, provider, mgr
+
+    @staticmethod
+    def _sidecar_paths(embeddings_path: Path, provider) -> set[str]:
+        from markdown_vault_mcp.vector_index import VectorIndex
+
+        return set(VectorIndex.load(embeddings_path, provider).chunks_by_path())
+
+    def test_unparseable_source_keeps_vectors(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Shape A of #1130: parse failure + forced FTS rebuild loses nothing."""
+        vault, embeddings_path, provider, mgr = self._embedded_pair(tmp_path)
+
+        # Corrupt bad.md; a forced FTS rebuild drops its row while the file
+        # is still on disk.
+        (vault / "bad.md").write_text(
+            "---\ntitle: [unclosed\n---\nbody", encoding="utf-8"
+        )
+        mgr.build_index(force=True)
+        assert {row["path"] for row in mgr._fts.list_notes()} == {"good.md"}
+
+        with caplog.at_level(
+            logging.WARNING, logger="markdown_vault_mcp.managers.index"
+        ):
+            mgr.build_embeddings()
+        assert self._sidecar_paths(embeddings_path, provider) == {
+            "good.md",
+            "bad.md",
+        }
+        assert any(
+            "build_embeddings_converge_kept" in r.getMessage()
+            and "bad.md" in r.getMessage()
+            for r in caplog.records
+        )
+
+        # A second pass does not erode the guarantee.
+        mgr.build_embeddings()
+        assert self._sidecar_paths(embeddings_path, provider) == {
+            "good.md",
+            "bad.md",
+        }
+
+        # Once the source is valid again but FTS has not yet caught up, the
+        # gap is FTS-side, so the vectors still stay.
+        (vault / "bad.md").write_text(
+            "---\ntitle: Bad\n---\n# Bad\n\nRepaired body.\n", encoding="utf-8"
+        )
+        mgr.build_embeddings()
+        assert self._sidecar_paths(embeddings_path, provider) == {
+            "good.md",
+            "bad.md",
+        }
+
+        # After reindexing picks the repaired file back up, convergence heals.
+        mgr.build_index()
+        mgr.build_embeddings()
+        assert {row["path"] for row in mgr._fts.list_notes()} == {
+            "good.md",
+            "bad.md",
+        }
+        assert self._sidecar_paths(embeddings_path, provider) == {
+            "good.md",
+            "bad.md",
+        }
+
+    def test_unavailable_source_tree_keeps_all_vectors(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Shape B of #1130: a cold index over a vanished vault wipes nothing."""
+        import shutil
+
+        vault, embeddings_path, provider, _mgr = self._embedded_pair(tmp_path)
+
+        # Cold boot against the same sidecar with the source tree unavailable
+        # (unmounted volume / not-yet-populated checkout): the walk is
+        # incomplete, so nothing is authoritative and nothing is removed.
+        shutil.rmtree(vault)
+        state2 = tmp_path / "state2"
+        state2.mkdir()
+        mgr2, _fts2, _holder2 = _make_index_mgr(
+            vault,
+            state2,
+            embeddings_path=embeddings_path,
+            embedding_provider=provider,
+        )
+        mgr2.build_index()
+        assert mgr2._fts.list_notes() == []
+        with caplog.at_level(
+            logging.WARNING, logger="markdown_vault_mcp.managers.index"
+        ):
+            mgr2.build_embeddings()
+        assert self._sidecar_paths(embeddings_path, provider) == {
+            "good.md",
+            "bad.md",
+        }
+        assert any(
+            "build_embeddings_converge_walk_incomplete" in r.getMessage()
+            for r in caplog.records
+        )
+
+    def test_deleted_source_still_reclaims(self, tmp_path: Path) -> None:
+        """A genuinely deleted note still loses its vectors — the reclaim
+        convergence exists for."""
+        vault, embeddings_path, provider, mgr = self._embedded_pair(tmp_path)
+
+        (vault / "bad.md").unlink()
+        mgr.build_index(force=True)
+        mgr.build_embeddings()
+        assert self._sidecar_paths(embeddings_path, provider) == {"good.md"}
+
+    def test_newly_excluded_source_still_reclaims(self, tmp_path: Path) -> None:
+        """A note newly covered by an exclude pattern loses its vectors."""
+        vault, embeddings_path, provider, _mgr = self._embedded_pair(tmp_path)
+
+        state2 = tmp_path / "state2"
+        state2.mkdir()
+        mgr2, _fts2, _holder2 = _make_index_mgr(
+            vault,
+            state2,
+            embeddings_path=embeddings_path,
+            embedding_provider=provider,
+            exclude_patterns=["bad.md"],
+        )
+        mgr2.build_index()
+        mgr2.build_embeddings()
+        assert self._sidecar_paths(embeddings_path, provider) == {"good.md"}
+
+    def test_missing_frontmatter_skip_still_reclaims(self, tmp_path: Path) -> None:
+        """A deliberate required-frontmatter skip is authoritative."""
+        from markdown_vault_mcp.vector_index import VectorIndex
+
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        (vault / "good.md").write_text(
+            "---\ntitle: Good\n---\n# Good\n\nGood body.\n", encoding="utf-8"
+        )
+        (vault / "bad.md").write_text(
+            "---\ntitle: Bad\n---\n# Bad\n\nBad body.\n", encoding="utf-8"
+        )
+        embeddings_path = tmp_path / "embeddings"
+        provider = MockEmbeddingProvider()
+        mgr, _fts, _holder = _make_index_mgr(
+            vault,
+            tmp_path,
+            embeddings_path=embeddings_path,
+            embedding_provider=provider,
+            required_frontmatter=["title"],
+        )
+        mgr.build_index()
+        assert mgr.build_embeddings() == 2
+
+        # Drop the required key: the note is now deliberately unindexed.
+        (vault / "bad.md").write_text("# Bad\n\nBad body.\n", encoding="utf-8")
+        mgr.build_index(force=True)
+        mgr.build_embeddings()
+        assert set(VectorIndex.load(embeddings_path, provider).chunks_by_path()) == {
+            "good.md"
+        }
+
+    def test_note_without_embeddable_text_still_reclaims(self, tmp_path: Path) -> None:
+        """A note that parses to no embeddable text loses its vectors (#930/#1087)."""
+        vault, embeddings_path, provider, mgr = self._embedded_pair(tmp_path)
+
+        (vault / "bad.md").write_text("---\ntitle: Bad\n---\n", encoding="utf-8")
+        mgr.build_index(force=True)
+        mgr.build_embeddings()
+        assert self._sidecar_paths(embeddings_path, provider) == {"good.md"}
+
+    def test_transient_oserror_keeps_vectors(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A possibly-transient read failure confirms nothing."""
+        from markdown_vault_mcp.managers import index as index_module
+
+        vault, embeddings_path, provider, mgr = self._embedded_pair(tmp_path)
+
+        (vault / "bad.md").write_text(
+            "---\ntitle: [unclosed\n---\nbody", encoding="utf-8"
+        )
+        mgr.build_index(force=True)
+        monkeypatch.setattr(
+            index_module, "parse_note_categorized", lambda *_a, **_kw: None
+        )
+        mgr.build_embeddings()
+        assert self._sidecar_paths(embeddings_path, provider) == {
+            "good.md",
+            "bad.md",
+        }
+
+
+# ---------------------------------------------------------------------------
 # _load_vectors self-heal of a corrupt/incomplete sidecar
 # ---------------------------------------------------------------------------
 

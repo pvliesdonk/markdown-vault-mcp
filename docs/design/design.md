@@ -753,8 +753,18 @@ reconciles:
   boundaries) are re-embedded in full. The multiset is the chunk identity
   (`VectorIndex` has no per-chunk keys, only a parallel metadata list
   with path-level deletion).
-- Vectors for documents no longer in the FTS index (deleted, or newly
-  excluded) are removed.
+- Vectors for documents no longer in the FTS index are removed — but only
+  when the absence is **authoritative** (#1130). FTS row absence alone also
+  covers a source the producing build failed to parse or a walk failed to
+  see (#1129), so a sidecar path with no FTS rows at all is first confirmed
+  against the source tree: an incomplete walk (unreadable or missing vault
+  directory) confirms nothing and removes nothing, and a source still
+  present on disk keeps its vectors — logged as
+  `build_embeddings_converge_kept` — unless re-parsing shows a state the
+  current build would also decline to embed (a deliberate
+  `missing_frontmatter` skip, or a note with no embeddable chunk text,
+  #930/#1087). Deletions and exclusions reclaim as before; a body-less note
+  that still has FTS chunk rows reclaims without touching the disk.
 - Unchanged documents are untouched; the sidecar is saved only when
   something actually changed, and the run is summarised in a single
   `build_embeddings_converged added=N removed=M up_to_date=K` log line.
