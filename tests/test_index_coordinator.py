@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from markdown_vault_mcp.exceptions import IndexUnavailableError
-from markdown_vault_mcp.fts_index import FTSIndex
+from markdown_vault_mcp.fts_index import INDEX_SEMANTICS_VERSION, FTSIndex
 from markdown_vault_mcp.indexing import IndexWriteCoordinator, ProcessDirtyPaths
 from markdown_vault_mcp.managers.index import IndexManager
 from markdown_vault_mcp.scanner import HeadingChunker
@@ -234,6 +234,173 @@ def test_transient_context_read_does_not_flap(tmp_path: Path) -> None:
         assert coord2._chunking_meta_matches() is True
         stats = coord2.build_index()
         assert stats.chunks_indexed == 0  # warm O(1)
+    finally:
+        coord2.close(timeout=5)
+
+
+# --- #1124: an older parse pipeline rejects the warm restart ---------------
+
+
+def _stored_semantics_version(db: Path) -> int:
+    conn = sqlite3.connect(db)
+    try:
+        row = conn.execute(
+            "SELECT value FROM meta WHERE key = 'index_semantics_version'"
+        ).fetchone()
+    finally:
+        conn.close()
+    return 0 if row is None else int(row[0])
+
+
+def _set_semantics_version(db: Path, value: str) -> None:
+    conn = sqlite3.connect(db)
+    try:
+        with conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO meta(key, value) VALUES('index_semantics_version', ?)",
+                (value,),
+            )
+    finally:
+        conn.close()
+
+
+def _link_targets(db: Path) -> list[str]:
+    conn = sqlite3.connect(db)
+    try:
+        return [row[0] for row in conn.execute("SELECT target_path FROM links")]
+    finally:
+        conn.close()
+
+
+def test_build_records_current_semantics_version(tmp_path: Path) -> None:
+    """A clean build stamps the running pipeline version into ``meta``."""
+    db = tmp_path / "index.db"
+    coord = make_coordinator(tmp_path, db=db)
+    try:
+        coord.build_index()
+    finally:
+        coord.close(timeout=5)
+    assert _stored_semantics_version(db) == INDEX_SEMANTICS_VERSION
+
+
+def test_older_semantics_version_rejects_warm_restart(tmp_path: Path) -> None:
+    """An index built by an older parse pipeline is rebuilt, not short-circuited.
+
+    Hash-based reindexing never re-parses an unchanged file, so rows derived
+    from its bytes by a since-fixed extractor would be served forever. The
+    stale link row planted here stands in for the wrong link rows #1124
+    reported surviving an upgrade: only a real re-parse clears it.
+    """
+    db = tmp_path / "index.db"
+    coord = make_coordinator(tmp_path, db=db)
+    try:
+        coord.build_index()
+    finally:
+        coord.close(timeout=5)
+
+    conn = sqlite3.connect(db)
+    try:
+        with conn:
+            doc_id = conn.execute("SELECT id FROM documents LIMIT 1").fetchone()[0]
+            conn.execute(
+                "INSERT INTO links(source_id, target_path, link_text, link_type) "
+                "VALUES(?, 'stale-extractor-row.md', '#Stale', 'wikilink')",
+                (doc_id,),
+            )
+    finally:
+        conn.close()
+    assert "stale-extractor-row.md" in _link_targets(db)
+    _set_semantics_version(db, str(INDEX_SEMANTICS_VERSION - 1))
+
+    coord2 = make_coordinator(tmp_path, db=db)
+    try:
+        assert coord2._chunking_meta_matches() is False
+        stats = coord2.build_index()
+        assert stats.chunks_indexed > 0  # full re-parse ran, not warm O(1)
+    finally:
+        coord2.close(timeout=5)
+
+    assert "stale-extractor-row.md" not in _link_targets(db)
+    assert _stored_semantics_version(db) == INDEX_SEMANTICS_VERSION
+
+
+def test_absent_semantics_version_rejects_warm_restart(tmp_path: Path) -> None:
+    """An index written before the key existed reads as 0 and rebuilds once."""
+    db = tmp_path / "index.db"
+    coord = make_coordinator(tmp_path, db=db)
+    try:
+        coord.build_index()
+    finally:
+        coord.close(timeout=5)
+
+    conn = sqlite3.connect(db)
+    try:
+        with conn:
+            conn.execute("DELETE FROM meta WHERE key = 'index_semantics_version'")
+    finally:
+        conn.close()
+
+    coord2 = make_coordinator(tmp_path, db=db)
+    try:
+        assert coord2._chunking_meta_matches() is False
+        assert coord2.build_index().chunks_indexed > 0
+    finally:
+        coord2.close(timeout=5)
+
+
+def test_unparseable_semantics_version_rejects_warm_restart(tmp_path: Path) -> None:
+    """A corrupted version row rebuilds rather than trusting the index."""
+    db = tmp_path / "index.db"
+    coord = make_coordinator(tmp_path, db=db)
+    try:
+        coord.build_index()
+    finally:
+        coord.close(timeout=5)
+    _set_semantics_version(db, "not-a-version")
+
+    coord2 = make_coordinator(tmp_path, db=db)
+    try:
+        assert coord2._chunking_meta_matches() is False
+    finally:
+        coord2.close(timeout=5)
+
+
+def test_async_warm_restart_also_rejects_older_semantics(tmp_path: Path) -> None:
+    """The async boot path applies the same invalidation as the sync one."""
+    db = tmp_path / "index.db"
+    coord = make_coordinator(tmp_path, db=db)
+    try:
+        coord.build_index()
+    finally:
+        coord.close(timeout=5)
+    _set_semantics_version(db, str(INDEX_SEMANTICS_VERSION - 1))
+
+    coord2 = make_coordinator(tmp_path, db=db)
+    try:
+        stats = coord2.build_index_async().result(timeout=30)
+        assert stats.chunks_indexed > 0  # a real BuildIndex job ran
+    finally:
+        coord2.close(timeout=5)
+
+
+def test_provenance_mismatch_is_logged_with_its_key(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The rebuild an operator sees in the log names the key that caused it."""
+    db = tmp_path / "index.db"
+    coord = make_coordinator(tmp_path, embed_model_name="A", db=db)
+    try:
+        coord.build_index()
+    finally:
+        coord.close(timeout=5)
+
+    coord2 = make_coordinator(tmp_path, embed_model_name="B", db=db)
+    try:
+        with caplog.at_level(
+            logging.INFO, logger="markdown_vault_mcp.indexing.coordinator"
+        ):
+            assert coord2._chunking_meta_matches() is False
+        assert "index_provenance_changed key=embed_model_name" in caplog.text
     finally:
         coord2.close(timeout=5)
 

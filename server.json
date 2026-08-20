@@ -96,9 +96,9 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_READ_ONLY",
-          "description": "Set to false to enable the write tools (write, edit, append, delete, rename, move_folder, fetch, git_sync, the okf_* tools, create_upload_link). git_sync also needs managed git mode; create_upload_link needs an HTTP transport.",
+          "description": "Set to true to hide the write tools (write, edit, append, delete, rename, move_folder, fetch, git_sync, the okf_* tools, create_upload_link) and serve a search-only vault. git_sync also needs managed git mode; create_upload_link needs an HTTP transport.",
           "format": "boolean",
-          "default": "true"
+          "default": "false"
         },
         {
           "name": "MARKDOWN_VAULT_MCP_DISABLE_APPS_UI",
@@ -626,9 +626,9 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_READ_ONLY",
-          "description": "Set to false to enable the write tools (write, edit, append, delete, rename, move_folder, fetch, git_sync, the okf_* tools, create_upload_link). git_sync also needs managed git mode; create_upload_link needs an HTTP transport.",
+          "description": "Set to true to hide the write tools (write, edit, append, delete, rename, move_folder, fetch, git_sync, the okf_* tools, create_upload_link) and serve a search-only vault. git_sync also needs managed git mode; create_upload_link needs an HTTP transport.",
           "format": "boolean",
-          "default": "true"
+          "default": "false"
         },
         {
           "name": "MARKDOWN_VAULT_MCP_DISABLE_APPS_UI",

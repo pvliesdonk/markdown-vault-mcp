@@ -80,7 +80,6 @@ def make_server(
     # build_instructions' hint advertises). Both fall back when unset/empty.
     server_name = env(_ENV_PREFIX, "SERVER_NAME", "markdown-vault-mcp")
     instructions = env(_ENV_PREFIX, "INSTRUCTIONS") or build_instructions(
-        read_only=True,
         env_prefix=_ENV_PREFIX,
         domain_line="Generic markdown vault MCP server with FTS5 + semantic search",
     )

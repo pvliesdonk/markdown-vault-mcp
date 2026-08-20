@@ -565,7 +565,9 @@ class TestFetchThreadsActor:
             "markdown_vault_mcp._server_tools.writer.fetch_url",
             AsyncMock(
                 return_value=FetchResult(
-                    body=b"# Fetched\n\nBody.\n", content_type="text/plain"
+                    body=b"# Fetched\n\nBody.\n",
+                    content_type="text/plain",
+                    final_url="https://example.com/report.md",
                 )
             ),
         )

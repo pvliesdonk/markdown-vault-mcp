@@ -19,6 +19,7 @@ from concurrent.futures import CancelledError, Future
 from typing import TYPE_CHECKING, Any
 
 from markdown_vault_mcp.exceptions import IndexUnavailableError
+from markdown_vault_mcp.fts_index import INDEX_SEMANTICS_VERSION
 from markdown_vault_mcp.indexing.index_writer import (
     BuildEmbeddings,
     BuildIndex,
@@ -212,7 +213,7 @@ class IndexWriteCoordinator:
     # ------------------------------------------------------------------
 
     def _chunking_meta_matches(self) -> bool:
-        """True when the stored build provenance matches the current config.
+        """True when the stored build provenance matches this process.
 
         Compares the STABLE inputs to the FTS build's contents — the model
         name and the explicit ``MAX_CHUNK_CHARS`` override (the shared
@@ -224,15 +225,51 @@ class IndexWriteCoordinator:
         warm-restart short-circuit (cold rebuild); a derived cap that merely
         differs because the model context was read transiently differently
         (e.g. an Ollama instance briefly unreachable) changes no input, so
-        it does NOT force a rebuild (avoid flapping)."""
+        it does NOT force a rebuild (avoid flapping).
+
+        The recorded :data:`~markdown_vault_mcp.fts_index.INDEX_SEMANTICS_VERSION`
+        is compared on the same footing (#1124). It is the one key that is
+        not an operator input: it invalidates an index whose derived rows
+        (links, chunks, tags) were produced by an older parse pipeline, which
+        hash-based reindexing would otherwise never re-parse.
+
+        Returns:
+            ``True`` when every recorded key matches; ``False`` after logging
+            the first mismatching key at INFO, so the rebuild an operator
+            sees in the log names its own cause.
+        """
         stored = self._fts.get_chunking_meta()
-        return (
-            stored.model == self._embed_model_name
-            and stored.max_chunk_chars_override == self._max_chunk_chars_override
-            and stored.title_field == self._title_field
-            and stored.searchable_fields == self._searchable_fields
-            and stored.indexed_frontmatter_fields == self._indexed_frontmatter_fields
+        checks: tuple[tuple[str, object, object], ...] = (
+            ("embed_model_name", stored.model, self._embed_model_name),
+            (
+                "max_chunk_chars_override",
+                stored.max_chunk_chars_override,
+                self._max_chunk_chars_override,
+            ),
+            ("title_field", stored.title_field, self._title_field),
+            ("searchable_fields", stored.searchable_fields, self._searchable_fields),
+            (
+                "indexed_frontmatter_fields",
+                stored.indexed_frontmatter_fields,
+                self._indexed_frontmatter_fields,
+            ),
+            (
+                "index_semantics_version",
+                stored.semantics_version,
+                INDEX_SEMANTICS_VERSION,
+            ),
         )
+        for key, stored_value, current_value in checks:
+            if stored_value != current_value:
+                logger.info(
+                    "index_provenance_changed key=%s stored=%s current=%s "
+                    "action=rebuild",
+                    key,
+                    stored_value,
+                    current_value,
+                )
+                return False
+        return True
 
     def build_index(self, *, force: bool = False) -> IndexStats:
         """Scan source_dir and build the FTS index (warm restart is O(1))."""

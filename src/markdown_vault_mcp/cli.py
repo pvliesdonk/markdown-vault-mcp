@@ -232,6 +232,15 @@ def reindex(
     index_path: str | None = typer.Option(
         None, help=f"Path to SQLite index file (overrides ${_ENV_PREFIX}_INDEX_PATH)."
     ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help=(
+            "Drop the index and re-parse every file, ignoring change detection. "
+            "An upgrade that changes extraction rebuilds by itself on the next "
+            "run; use this only for an index you have reason to distrust."
+        ),
+    ),
 ) -> None:
     """Incrementally reindex the vault."""
     from markdown_vault_mcp._http_logging import quiet_http_loggers
@@ -240,8 +249,9 @@ def reindex(
     quiet_http_loggers()
     vault = _build_vault(source_dir, index_path)
     # reindex() needs a built index (#525); build_index() is a cheap no-op when
-    # the index is already populated (a SQL row-count check, no filesystem scan).
-    vault.index.build_index()
+    # the index is already populated (a SQL row-count check, no filesystem scan)
+    # and the recorded build provenance still matches this process (#1124).
+    vault.index.build_index(force=force)
     result = vault.index.reindex()
     typer.echo(
         f"Reindex: {result.added} added, {result.modified} modified, "

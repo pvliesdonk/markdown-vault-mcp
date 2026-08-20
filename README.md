@@ -23,7 +23,7 @@ Point it at a directory of Markdown files (an Obsidian vault, a docs folder, a Z
 > **Upgrading.** As of this release, `search` returns query-relevant snippets in the `content` field by default (approximately 200 words). Pass `snippet_words=0` to recover the prior full-chunk behaviour, or use `read(path, section=heading)` to fetch the full section after seeing a snippet. Documents are also re-chunked on next `reindex` to honour the adaptive `MARKDOWN_VAULT_MCP_MAX_CHUNK_WORDS` threshold (default 400).
 - **Frontmatter-aware**: indexes YAML frontmatter fields, supports required field enforcement
 - **OKF-aware**: recognizes [Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog) bundles (an `okf_version` declaration in the root `index.md`) and annotates search/read results with each note's type, lifecycle status, staleness, and trust tier. Those dimensions are filterable and also nudge ranking on a detected bundle (deprecated and stale notes rank lower, and the reserved `index.md` / `log.md` navigation files are demoted below real notes), and the server adds an `okf_validate` conformance audit plus one-shot migration transforms (`okf_convert_links`, `okf_generate_index`, `okf_seed_log`) for moving a vault into the format, plus a downloadable bundle export served through `create_download_link` with an `okf-bundle` reference. Read semantics are controlled by `MARKDOWN_VAULT_MCP_OKF_MODE`
-- **Incremental reindexing**: hash-based change detection, only re-processes modified files; an automatic boot-time reconciliation pass picks up changes made while no server was running, and the vector index converges to the reconciled chunk set (embedding exactly the delta)
+- **Incremental reindexing**: hash-based change detection, only re-processes modified files; an automatic boot-time reconciliation pass picks up changes made while no server was running, and the vector index converges to the reconciled chunk set (embedding exactly the delta). Each build records the version of the parse pipeline that produced it, so an upgrade that changes what is extracted from a note rebuilds the index once instead of serving rows the current server would no longer produce
 - **Write operations**: create, edit, append to, delete, rename documents, and move entire folder subtrees with automatic index updates
 - **Folder conventions**: per-folder `_conventions.md` files carry your authoring rules, such as "reference notes stay self-contained"; the server surfaces them to LLM clients at write time via the `get_conventions` tool and in `write`/`edit` results, without interpreting them
 - **Attachment support**: read, write, delete, and list non-markdown files (PDFs, images, etc.)
@@ -211,7 +211,7 @@ embedding-provider conventions `OLLAMA_HOST`, `OPENAI_API_KEY`,
 | `MARKDOWN_VAULT_MCP_BUILD_TIMEOUT_S` | `60` | No | Maximum seconds an index-backed tool or resource waits for the FTS index to become queryable during a cold-start background build before raising IndexUnavailableError(reason="timeout"). Increase for large vaults. |
 | `MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S` | `60` | No | Maximum seconds an index-querying read tool waits for the IndexWriter to drain when called with wait_for_pending_writes=true. On timeout the tool answers from the current index and reports index_stale=true in the response _meta. |
 | `MARKDOWN_VAULT_MCP_SOURCE_DIR` | `/data/vault` | No | Path to the markdown vault directory. Required; the server refuses to start without it. Symbolic links inside the vault are followed on Python 3.13+. |
-| `MARKDOWN_VAULT_MCP_READ_ONLY` | `true` | No | Set to false to enable the write tools (write, edit, append, delete, rename, move_folder, fetch, git_sync, the okf_* tools, create_upload_link). git_sync also needs managed git mode; create_upload_link needs an HTTP transport. |
+| `MARKDOWN_VAULT_MCP_READ_ONLY` | `false` | No | Set to true to hide the write tools (write, edit, append, delete, rename, move_folder, fetch, git_sync, the okf_* tools, create_upload_link) and serve a search-only vault. git_sync also needs managed git mode; create_upload_link needs an HTTP transport. |
 | `MARKDOWN_VAULT_MCP_DISABLE_APPS_UI` | `false` | No | Hide the MCP Apps UI tools (browse_vault, show_context) from the tool listing for clients that do not render MCP Apps panels. |
 | `MARKDOWN_VAULT_MCP_INDEX_PATH` | (none) | No | Path to the SQLite FTS5 index file; unset keeps the index in memory. Set it for persistence across restarts. |
 | `MARKDOWN_VAULT_MCP_STATE_PATH` | (none) | No | Path to the change-tracking state file. Defaults to {SOURCE_DIR}/.markdown_vault_mcp/state.json. |
@@ -418,8 +418,10 @@ markdown-vault-mcp search <query> [-n LIMIT] [-m {keyword|semantic|hybrid}] [--f
 Incrementally reindex the vault (only processes changed files). When semantic search is configured, the vector index is converged to the updated chunk set: exactly the changed documents are re-embedded and orphaned vectors dropped, never the whole corpus.
 
 ```bash
-markdown-vault-mcp reindex [--source-dir PATH] [--index-path PATH]
+markdown-vault-mcp reindex [--source-dir PATH] [--index-path PATH] [--force]
 ```
+
+`--force` drops the index and re-parses every file, ignoring change detection. An upgrade that changes how notes are parsed rebuilds the index by itself on the next run, so this is a manual repair for an index you have reason to distrust, not routine maintenance.
 
 ## MCP Tools
 
@@ -436,7 +438,7 @@ markdown-vault-mcp reindex [--source-dir PATH] [--index-path PATH]
 | `list_documents` | List indexed documents; pass `include_attachments=true` to also list non-markdown files |
 | `list_folders` | List all folder paths in the vault |
 | `list_tags` | List all unique frontmatter tag values |
-| `reindex` | Incrementally reindex files changed outside the server; fast runs answer inline with real counts, slow runs promote to a job (`get_job_result`) |
+| `reindex` | Incrementally reindex files changed outside the server (`force=true` re-parses everything); fast runs answer inline with real counts, slow runs promote to a job (`get_job_result`) |
 | `stats` | Get vault statistics (document count, chunk count, link health metrics, etc.) |
 | `build_embeddings` | Build or rebuild vector embeddings for semantic search; fast convergence answers inline, slow builds promote to a job (`get_job_result`) |
 | `embeddings_status` | Check embedding provider and index status |
@@ -462,7 +464,7 @@ markdown-vault-mcp reindex [--source-dir PATH] [--index-path PATH]
 | `browse_vault` | Open the vault explorer SPA in a supporting MCP Apps client |
 | `show_context` | Open the Context Card for a specific note in a supporting MCP Apps client |
 
-Write tools (`write`, `edit`, `append`, `delete`, `rename`, `move_folder`, `fetch`, `git_sync`, the `okf_*` tools, `create_upload_link`) are only available when `MARKDOWN_VAULT_MCP_READ_ONLY=false`. `git_sync` also requires managed git mode (`MARKDOWN_VAULT_MCP_GIT_REPO_URL` set), and `create_upload_link` an HTTP transport with `BASE_URL` configured.
+Write tools (`write`, `edit`, `append`, `delete`, `rename`, `move_folder`, `fetch`, `git_sync`, the `okf_*` tools, `create_upload_link`) are registered by default and hidden when `MARKDOWN_VAULT_MCP_READ_ONLY=true`. `git_sync` also requires managed git mode (`MARKDOWN_VAULT_MCP_GIT_REPO_URL` set), and `create_upload_link` an HTTP transport with `BASE_URL` configured.
 
 `summarize` is registered only when a summarization backend is configured: an `OPENAI_API_KEY`, or an OpenAI-compatible base URL for local endpoints that need no key. It needs the `openai` SDK (`pip install 'markdown-vault-mcp[summarize]'`) and sends note content to the model provider. Any OpenAI-compatible endpoint works: OpenAI itself, a local Ollama (`http://localhost:11434/v1`, no key needed), the Anthropic compatibility endpoint (`https://api.anthropic.com/v1`), vLLM, and others. See [Configuration](https://pvliesdonk.github.io/markdown-vault-mcp/latest/configuration/) for provider recipes.
 
@@ -499,7 +501,7 @@ Prompt templates guide the LLM through multi-step workflows using the vault tool
 | `compare` | `path1`, `path2` | Read two documents and produce a side-by-side comparison |
 | `propose-links` | `scope` (optional), `per_note_limit` (optional) | Scan a candidate set of notes (a folder, `recent`, or `all`), propose links between semantically close notes that aren't already connected, and write them on confirmation |
 
-Write prompts (`research`, `discuss`, `create_from_template`, `propose-links`) are only available when `MARKDOWN_VAULT_MCP_READ_ONLY=false`.
+Write prompts (`research`, `discuss`, `create_from_template`, `propose-links`) are hidden when `MARKDOWN_VAULT_MCP_READ_ONLY=true`.
 
 Templates are regular markdown files. If placeholder template text pollutes search results, add your templates folder to `MARKDOWN_VAULT_MCP_EXCLUDE` (such as `_templates/**`).
 

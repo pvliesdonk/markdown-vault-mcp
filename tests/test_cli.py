@@ -726,6 +726,36 @@ def test_reindex_calls_build_index_first() -> None:
     assert call_names.index("build_index") < call_names.index("reindex")
 
 
+def test_reindex_force_drops_and_rebuilds() -> None:
+    """``--force`` passes force through to build_index (#1124 escape hatch)."""
+    mock_vault = MagicMock()
+    mock_result = MagicMock()
+    mock_result.added = mock_result.modified = mock_result.deleted = 0
+    mock_result.unchanged = mock_result.skipped = 0
+    mock_vault.index.reindex.return_value = mock_result
+
+    with patch("markdown_vault_mcp.cli._build_vault", return_value=mock_vault):
+        result = runner.invoke(app, ["reindex", "--force"])
+
+    assert result.exit_code == 0, result.output
+    mock_vault.index.build_index.assert_called_once_with(force=True)
+
+
+def test_reindex_without_force_keeps_warm_restart() -> None:
+    """Without ``--force`` the build stays the cheap warm-restart no-op."""
+    mock_vault = MagicMock()
+    mock_result = MagicMock()
+    mock_result.added = mock_result.modified = mock_result.deleted = 0
+    mock_result.unchanged = mock_result.skipped = 0
+    mock_vault.index.reindex.return_value = mock_result
+
+    with patch("markdown_vault_mcp.cli._build_vault", return_value=mock_vault):
+        result = runner.invoke(app, ["reindex"])
+
+    assert result.exit_code == 0, result.output
+    mock_vault.index.build_index.assert_called_once_with(force=False)
+
+
 def test_reindex_builds_embeddings_when_configured() -> None:
     """``reindex`` calls build_embeddings() (no force) when configured."""
     mock_vault = MagicMock()

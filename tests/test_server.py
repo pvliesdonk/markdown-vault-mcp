@@ -50,9 +50,27 @@ _CLEAR_VARS = (
 
 @pytest.fixture
 def _mcp_env(vault_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Set minimal env vars for make_server (read_only=true default)."""
+    """Set minimal env vars for make_server, leaving READ_ONLY at its default.
+
+    That default is ``false`` since #1113, so a server built on this fixture
+    is read-write. Tests that need the write surface hidden use
+    ``_mcp_env_readonly``.
+    """
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault_path))
     monkeypatch.delenv("MARKDOWN_VAULT_MCP_READ_ONLY", raising=False)
+    for var in _CLEAR_VARS:
+        monkeypatch.delenv(var, raising=False)
+
+
+@pytest.fixture
+def _mcp_env_readonly(vault_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Set env vars with an explicit read_only=true.
+
+    Read-only is an opt-in since #1113, so every read-only expectation names
+    it rather than relying on the default.
+    """
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault_path))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "true")
     for var in _CLEAR_VARS:
         monkeypatch.delenv(var, raising=False)
 
@@ -85,16 +103,21 @@ def _mcp_env_with_fields(vault_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
 class TestServerIdentity:
     """Verify SERVER_NAME and INSTRUCTIONS env vars are respected."""
 
-    @pytest.mark.usefixtures("_mcp_env")
-    def test_defaults_read_only(self) -> None:
+    @pytest.mark.usefixtures("_mcp_env_readonly")
+    def test_read_only_when_opted_in(self) -> None:
         server = make_server()
         assert server.name == "markdown-vault-mcp"
         assert "READ-ONLY" in server.instructions
         assert "not available" in server.instructions
 
     @pytest.mark.usefixtures("_mcp_env")
-    def test_defaults_read_write(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
+    def test_defaults_read_write(self) -> None:
+        """READ_ONLY defaults to false, so an unset server is read-write.
+
+        Through 3.1 this fixture produced a read-only server; the flip is
+        #1113 and is the one 4.0 change where doing nothing on upgrade
+        widens what the server may do to the vault.
+        """
         server = make_server()
         assert "READ-WRITE" in server.instructions
         assert "'write'" in server.instructions
@@ -113,6 +136,31 @@ class TestServerIdentity:
         # env var exists to customise them).
         assert "MARKDOWN_VAULT_MCP_INSTRUCTIONS" in server.instructions
         assert "Operators:" in server.instructions
+
+    def test_mode_line_is_composed_domain_side(self) -> None:
+        """The READ-ONLY/READ-WRITE line is ours, not pvl-core's (#1114).
+
+        pvl-core 4.11.2 dropped the announcement (and the ``read_only``
+        keyword that selected it) because nothing in the library enforced
+        it. This server does enforce it, so the sentence is composed in
+        ``build_default_instructions`` — after the domain prose and before
+        the operator-override hint the core still appends.
+        """
+        import inspect
+
+        from fastmcp_pvl_core import build_instructions as core_build_instructions
+
+        from markdown_vault_mcp._instructions import build_default_instructions
+
+        assert "read_only" not in inspect.signature(core_build_instructions).parameters
+
+        text = build_default_instructions(read_only=True)
+        assert "READ-ONLY" in text
+        assert text.index("READ-ONLY") < text.index("Operators:")
+
+        text = build_default_instructions(read_only=False)
+        assert "READ-WRITE" in text
+        assert text.index("READ-WRITE") < text.index("Operators:")
 
     @pytest.mark.usefixtures("_mcp_env")
     def test_custom_server_name(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -140,7 +188,7 @@ class TestServerIdentity:
 class TestToolListing:
     """Verify correct tools are registered based on read_only setting."""
 
-    @pytest.mark.usefixtures("_mcp_env")
+    @pytest.mark.usefixtures("_mcp_env_readonly")
     async def test_write_tools_absent_when_readonly(self) -> None:
         server = make_server()
         async with Client(server) as client:
@@ -1474,11 +1522,24 @@ class TestFetchTool:
     _UNCAPPED = 2**63 - 1
 
     @staticmethod
-    def _fetch_url_returning(body: bytes, content_type: str | None) -> AsyncMock:
-        """Stub ``fetch_url`` returning a real ``FetchResult``."""
+    def _fetch_url_returning(
+        body: bytes,
+        content_type: str | None,
+        final_url: str = "https://example.com/note.md",
+    ) -> AsyncMock:
+        """Stub ``fetch_url`` returning a real ``FetchResult``.
+
+        ``final_url`` is the URL the bytes came from — equal to the requested
+        URL when nothing redirected, which is what every caller here wants
+        (pvl-core 4.11.2 made the field mandatory, #1114).
+        """
         from fastmcp_pvl_core import FetchResult
 
-        return AsyncMock(return_value=FetchResult(body=body, content_type=content_type))
+        return AsyncMock(
+            return_value=FetchResult(
+                body=body, content_type=content_type, final_url=final_url
+            )
+        )
 
     async def test_fetch_markdown_note(
         self, _mcp_env_writable_with_attachments: Path
@@ -1637,6 +1698,80 @@ class TestFetchTool:
         assert "title: Report" in written
         assert "source: https://example.com/report.md" in written
 
+    async def test_fetch_reports_final_url_when_nothing_redirected(
+        self, _mcp_env_writable_with_attachments: Path
+    ) -> None:
+        """final_url echoes the requested URL when there was no redirect."""
+        mock_fetch = self._fetch_url_returning(
+            b"# Direct\n", "text/markdown", final_url="https://example.com/direct.md"
+        )
+
+        with patch(self._FETCH_URL_SEAM, mock_fetch):
+            server = make_server()
+            async with Client(server) as client:
+                result = await client.call_tool(
+                    "fetch",
+                    {"url": "https://example.com/direct.md", "path": "direct.md"},
+                )
+        assert result.data["final_url"] == "https://example.com/direct.md"
+
+    async def test_fetch_reports_final_url_after_a_redirect(
+        self, _mcp_env_writable_with_attachments: Path
+    ) -> None:
+        """A followed redirect is reported, not refused (#1116).
+
+        Through v3.1.0 pvl-core refused every 3xx and the tool surfaced the
+        refusal as an error. Since the 4.11.2 floor the hop is followed —
+        each one re-running the SSRF chain — so the bytes can come from a
+        host other than the one asked for, and ``final_url`` is how a caller
+        enforcing a host policy finds out.
+        """
+        mock_fetch = self._fetch_url_returning(
+            b"# Moved\n", "text/markdown", final_url="https://cdn.example.net/moved.md"
+        )
+
+        with patch(self._FETCH_URL_SEAM, mock_fetch):
+            server = make_server()
+            async with Client(server) as client:
+                result = await client.call_tool(
+                    "fetch",
+                    {"url": "https://example.com/moved.md", "path": "moved.md"},
+                )
+        assert result.data["created"] is True
+        assert result.data["final_url"] == "https://cdn.example.net/moved.md"
+        assert (
+            (_mcp_env_writable_with_attachments / "moved.md")
+            .read_text(encoding="utf-8")
+            .endswith("# Moved\n")
+        )
+
+    async def test_fetch_too_many_redirects(
+        self, _mcp_env_writable_with_attachments: Path
+    ) -> None:
+        """A redirect chain past httpx's max_redirects propagates (#1116).
+
+        Unreachable before the 4.11.2 floor, when a redirect was refused
+        outright with a ValueError the size-cap handler already caught. It
+        now reaches the client as a ToolError, like the sibling
+        HTTPStatusError and TimeoutException paths.
+        """
+        import httpx
+
+        async def _too_many(url: str, **_kwargs: object) -> None:
+            raise httpx.TooManyRedirects(
+                "Exceeded maximum allowed redirects.",
+                request=httpx.Request("GET", url),
+            )
+
+        with patch(self._FETCH_URL_SEAM, _too_many):
+            server = make_server()
+            async with Client(server) as client:
+                with pytest.raises(ToolError, match="redirects"):
+                    await client.call_tool(
+                        "fetch",
+                        {"url": "https://example.com/loop.md", "path": "loop.md"},
+                    )
+
     async def test_fetch_http_error_status(
         self, _mcp_env_writable_with_attachments: Path
     ) -> None:
@@ -1724,7 +1859,7 @@ class TestFetchTool:
                     {"url": "http://100.64.0.1/internal", "path": "stolen.md"},
                 )
 
-    @pytest.mark.usefixtures("_mcp_env")
+    @pytest.mark.usefixtures("_mcp_env_readonly")
     async def test_fetch_hidden_in_read_only_mode(self) -> None:
         """fetch tool should not appear when server is read-only."""
         server = make_server()
@@ -2499,7 +2634,7 @@ class TestPrompts:
 class TestPromptVisibility:
     """Verify write-tagged prompts are hidden in read-only mode."""
 
-    @pytest.mark.usefixtures("_mcp_env")
+    @pytest.mark.usefixtures("_mcp_env_readonly")
     async def test_write_prompts_hidden_when_readonly(self) -> None:
         server = make_server()
         async with Client(server) as client:
@@ -3111,6 +3246,13 @@ class TestStartupSummaryLogging:
         assert "Server config:" in caplog.text
         assert "version=" in caplog.text
         assert "auth=none" in caplog.text
+        # READ_ONLY is unset, so the summary reports the default (#1113).
+        assert "read-write" in caplog.text
+
+        caplog.clear()
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "true")
+        with caplog.at_level(logging.INFO):
+            make_server()
         assert "read-only" in caplog.text
 
     def test_startup_version_fallback(
@@ -3930,7 +4072,7 @@ async def test_transfer_tools_absent_on_stdio() -> None:
     assert "create_upload_link" not in names
 
 
-@pytest.mark.usefixtures("_mcp_env")
+@pytest.mark.usefixtures("_mcp_env_readonly")
 async def test_transfer_download_present_upload_hidden_in_readonly(
     monkeypatch: pytest.MonkeyPatch,
 ):

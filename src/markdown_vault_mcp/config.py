@@ -87,13 +87,13 @@ class ProjectConfig:
         },
     )
     read_only: bool = field(
-        default=True,
+        default=False,
         metadata={
             "help": (
-                "Set to false to enable the write tools "
-                f"({write_tools_phrase()}). {gated_tool('git_sync')} also "
-                f"needs managed git mode; {gated_tool('create_upload_link')} "
-                "needs an HTTP transport."
+                "Set to true to hide the write tools "
+                f"({write_tools_phrase()}) and serve a search-only vault. "
+                f"{gated_tool('git_sync')} also needs managed git mode; "
+                f"{gated_tool('create_upload_link')} needs an HTTP transport."
             ),
             "tags": ("vault",),
         },
@@ -992,7 +992,7 @@ class ProjectConfig:
             # OPENAI_EMBEDDING_MODEL fallbacks) are declared in
             # config-presentation.domain.yml instead.
             source_dir=require_source_dir(env(_ENV_PREFIX, "SOURCE_DIR")),
-            read_only=to_bool(env(_ENV_PREFIX, "READ_ONLY"), default=True),
+            read_only=to_bool(env(_ENV_PREFIX, "READ_ONLY"), default=False),
             server_name=read_server_name(_ENV_PREFIX),
             instructions=read_instructions(_ENV_PREFIX),
             disable_apps_ui=to_bool(env(_ENV_PREFIX, "DISABLE_APPS_UI"), default=False),

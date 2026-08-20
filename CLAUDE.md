@@ -501,5 +501,6 @@ If a conflict marker appears in a copier-update bot PR, the conflict itself ofte
 - Hybrid search: Reciprocal Rank Fusion (RRF)
 - Tool semantics: mirror Claude Code Read/Write/Edit patterns
 - Library is sync; MCP layer uses `asyncio.to_thread()`
+- Indexing is hash-based, so an unchanged file is never re-parsed: any change to how a note's stored rows are derived from its bytes (link extraction, chunking, tag/alias/heading derivation) must bump `INDEX_SEMANTICS_VERSION` in `fts_index.py` in the same commit, or deployed vaults keep serving the rows the old code produced (#1124)
 - Full decision log in `docs/design/design.md` appendix
 <!-- DOMAIN-END -->

@@ -1,6 +1,6 @@
 # MCP Tools
 
-markdown-vault-mcp exposes MCP tools across several categories. Write tools are only available when `MARKDOWN_VAULT_MCP_READ_ONLY=false`.
+markdown-vault-mcp exposes MCP tools across several categories. Write tools are available unless `MARKDOWN_VAULT_MCP_READ_ONLY=true`.
 
 !!! note "Index freshness on read tools (`wait_for_pending_writes` + `_meta.index_stale`)"
     Every read tool that queries the FTS index (`search`, `list_documents`, `list_folders`, `list_tags`, `stats`, `get_recent`, `get_backlinks`, `get_outlinks`, `get_broken_links`, `get_similar`, `get_toc`, `get_context`, `get_orphan_notes`, `get_most_linked`, and `get_connection_path`) accepts an optional **`wait_for_pending_writes`** (`bool`, default `false`) parameter and reports index freshness **out-of-band in the MCP response's `_meta.index_stale` field** rather than wrapping the payload in a `{stale, data}` envelope. The data payload is a **bare list/dict, identical whether the index is fresh or stale**; clients that do not care about drift ignore `_meta` entirely. Clients that need a fresh-read guarantee either inspect `result._meta.index_stale`, or pass `wait_for_pending_writes=true` to block until the writer drains (bounded by `MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S`, default 60&nbsp;s; on timeout it answers from the current index rather than raising). `index_stale` is `true` when the IndexWriter had pending or in-flight work. The relevant conditions are: the optional `wait_for_pending_writes` timed out; a write completed inside the read window; the writer was non-idle at response time. The same `_meta.index_stale` field rides on the index-querying MCP **resources** (`config://`, `stats://`, `folders://`, `tags://`, `recent://`, `toc://`, `similar://`), readable via the resource read's `_meta` (resources carry no `wait_for_pending_writes` parameter; they signal only).
@@ -39,7 +39,7 @@ markdown-vault-mcp exposes MCP tools across several categories. Write tools are 
 | [`get_job_result`](#get_job_result) | Get Job Result | AI | Retrieve the outcome of a background job started by a long-running tool |
 | [`get_history`](#get_history) | Note History | Read (git) | List commits that touched a note, attachment, folder, or the whole vault |
 | [`get_diff`](#get_diff) | Note Diff | Read (git) | Return a diff of a note or attachment between two points in history |
-| [`reindex`](#reindex) | Reindex Vault | Admin | Incremental reindex; inline result when fast, job promotion when slow |
+| [`reindex`](#reindex) | Reindex Vault | Admin | Incremental reindex (`force=true` re-parses everything); inline result when fast, job promotion when slow |
 | [`build_embeddings`](#build_embeddings) | Build Embeddings | Admin | Build or rebuild vector embeddings; inline result when fast, job promotion when slow |
 | [`write`](#write) | Write Note | Write | Create or overwrite a document or attachment |
 | [`edit`](#edit) | Edit Note | Write | Replace a unique text span in a document |
@@ -279,7 +279,15 @@ If semantic search is configured, the reindex job re-embeds the changed document
 !!! note "Boot reconciliation"
     The server lifespan automatically queues one incremental reindex at every startup (#665), so files added, modified, or deleted while no server was running are reconciled without a manual `reindex` call. Reads served before that job completes report `index_stale: true` in `_meta`.
 
-**Returns:** The tool is dual-mode. A fast reindex (the common case, since work scales with the drift, not the vault) completes inline with `"status": "completed"` and its real counts: `added`, `modified`, `deleted`, `unchanged`, and `skipped`. A reindex still running at the jobs soft deadline (`JOBS_SOFT_DEADLINE_S`, default 25 s) continues on the single-owner :class:`IndexWriter` thread (#559) and returns `{"status": "working", "job_id": ...}` immediately; fetch the outcome with [`get_job_result`](#get_job_result). A failure within the deadline raises immediately; after promotion it is reported through `get_job_result` (and mirrored in `get_index_status`'s `last_reindex_error`). `get_index_status` remains the non-blocking observability view (`queue_depth`, `in_flight`, `dirty_paths`, `dirty_embeddings`), covering boot-time and file-watcher work no client call initiated.
+**Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `force` | bool | `false` | When true, drops every indexed document and re-parses the whole vault instead of applying the hash-detected delta. The index is not queryable while the rebuild runs |
+
+Change detection is hash-based, so an unchanged file is never re-parsed, and the rows derived from it (links, chunks, tags) persist as first extracted. A server upgrade that changes extraction needs the index rebuilt, and the server does that for itself: each build records the version of its parse pipeline, and a start that finds an older version rebuilds once before serving (#1124). `force=true` is the manual form of the same repair, for an index you have reason to distrust; it is not routine maintenance. An ordinary reindex re-embeds the documents it touches, but a forced rebuild does not, so follow one with [`build_embeddings`](#build_embeddings) (without `force`) when semantic search is configured.
+
+**Returns:** The tool is dual-mode. A fast reindex (the common case, since work scales with the drift, not the vault) completes inline with `"status": "completed"` and its real counts: `added`, `modified`, `deleted`, `unchanged`, and `skipped`, plus `full_rebuild` (true only for a `force=true` run, whose counts report every document under `added` because the rebuild dropped and re-added them all). A reindex still running at the jobs soft deadline (`JOBS_SOFT_DEADLINE_S`, default 25 s) continues on the single-owner :class:`IndexWriter` thread (#559) and returns `{"status": "working", "job_id": ...}` immediately; fetch the outcome with [`get_job_result`](#get_job_result). A failure within the deadline raises immediately; after promotion it is reported through `get_job_result` (and mirrored in `get_index_status`'s `last_reindex_error`). `get_index_status` remains the non-blocking observability view (`queue_depth`, `in_flight`, `dirty_paths`, `dirty_embeddings`), covering boot-time and file-watcher work no client call initiated.
 
 ### `build_embeddings`
 
@@ -302,8 +310,15 @@ Without `force`, an existing vector index is **converged** to the FTS chunk set 
 
 ## Write Operations
 
-!!! warning "Write tools require `MARKDOWN_VAULT_MCP_READ_ONLY=false`"
-    These tools are hidden when the server is in read-only mode (the default).
+!!! info "Write tools are hidden when `MARKDOWN_VAULT_MCP_READ_ONLY=true`"
+    They are registered by default. Set the variable to `true` for a
+    search-only vault; through 3.1 that was the default, so a server
+    upgrading from 3.x without setting it gains these tools.
+
+    Several of them carry a second gate that this flag does not lift:
+    `git_sync` needs managed git mode, `create_upload_link` needs an HTTP
+    transport with `BASE_URL`, and the `okf_*` tools need OKF semantics
+    active. Each is noted on its own entry below.
 
 ### `write`
 
@@ -503,7 +518,7 @@ Download a file from a URL and save it to the vault as a note or attachment. Des
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `url` | string | required | Source URL to download. Only `http`/`https` schemes allowed; the host is resolved and blocked unless every address is publicly routable (private, loopback, link-local, CGNAT/shared, and reserved ranges are all refused); the validated IP is pinned for the connection; ambient `HTTP(S)_PROXY`/`.netrc` settings are ignored; redirects are not followed (SSRF protection) |
+| `url` | string | required | Source URL to download. Only `http`/`https` schemes allowed; the host is resolved and blocked unless every address is publicly routable (private, loopback, link-local, CGNAT/shared, and reserved ranges are all refused); the validated IP is pinned for the connection; ambient `HTTP(S)_PROXY`/`.netrc` settings are ignored. Redirects are followed, and each hop repeats every check above (SSRF protection) |
 | `path` | string | required | Destination path in vault. Extension determines handling: `.md` for notes, anything else for attachments |
 | `frontmatter` | object | `null` | Optional YAML frontmatter dict for `.md` files. Ignored for attachments |
 | `if_match` | string | `null` | Optional etag from a previous `read` call for optimistic concurrency |
@@ -513,13 +528,29 @@ Download a file from a URL and save it to the vault as a note or attachment. Des
 the saved file by `path` for downstream tools rather than `read()`-ing it
 back into context.
 
-**Returns:** `{"path": "notes/report.md", "created": true, "content_length": 4096, "content_type": "text/markdown"}`
+**Returns:** `{"path": "notes/report.md", "created": true, "content_length": 4096, "content_type": "text/markdown", "final_url": "https://example.com/report.md"}`
 
 For `.md` destinations, the response may also include a `conventions` list; see [`write`](#write).
 
 The download itself runs through `fastmcp-pvl-core`'s hardened `fetch_url`
 primitive, so the SSRF protections above are shared, audited code rather
 than a local copy.
+
+!!! warning "Redirects are followed (changed in 4.0)"
+
+    Through 3.1 this tool refused every redirect: a `301` or `302` produced
+    an error rather than content. It now follows the chain, so the bytes may
+    come from a host other than the one you asked for. Every hop re-runs the
+    full address check, so a redirect cannot reach an internal target — but
+    if you rely on `fetch` to reject indirection, that guarantee is gone.
+
+    `final_url` reports where the bytes came from: equal to `url` when
+    nothing redirected, otherwise the last hop. Check it when the source
+    host matters. It keeps its query string (a redirect target's query is
+    often load-bearing), so do not log it verbatim.
+
+    A chain longer than the transport's redirect limit fails with a
+    "too many redirects" error rather than saving anything.
 
 ### `git_sync`
 

@@ -42,7 +42,7 @@ The configuration prompt covers these settings, each wired to the matching serve
 | Setting | Default | What it sets |
 |---------|---------|--------------|
 | Vault directory | _(required)_ | `MARKDOWN_VAULT_MCP_SOURCE_DIR`: the vault to serve |
-| Read-only mode | `true` | `MARKDOWN_VAULT_MCP_READ_ONLY`; set `false` to enable the write tools (`write`, `edit`, `append`, `delete`, `rename`, `move_folder`, `fetch`, `git_sync`, the `okf_*` tools, `create_upload_link`) |
+| Read-only mode | `false` | `MARKDOWN_VAULT_MCP_READ_ONLY`; the write tools (`write`, `edit`, `append`, `delete`, `rename`, `move_folder`, `fetch`, `git_sync`, the `okf_*` tools, `create_upload_link`) are available out of the box. Set `true` for a search-only vault |
 | Exclude patterns | `.obsidian/**,.trash/**,.git/**` | `MARKDOWN_VAULT_MCP_EXCLUDE`: comma-separated globs kept out of the index |
 | Embedding provider | _(empty)_ | `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` (`fastembed`, `ollama`, `openai`); empty means keyword-only search |
 | Ollama host | `http://localhost:11434` | `OLLAMA_HOST`; used only with the `ollama` provider |

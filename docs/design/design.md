@@ -604,6 +604,28 @@ Two methods manage the index:
   unreachable at startup, so its context length reads as `None` and the cap
   falls back to a conservative default) changes neither key and so does
   not force a rebuild, avoiding flap.
+
+  **Derived-content invalidation (issue #1124)**: the same `meta` row set
+  carries one key that records no operator input —
+  `index_semantics_version`, written from the source constant
+  `INDEX_SEMANTICS_VERSION` in `fts_index.py`. Change detection is
+  hash-based, so an unchanged file is never re-parsed; the rows derived
+  from its bytes (links, chunks, tags, aliases, headings) therefore survive
+  every upgrade that fixes how those rows are derived. That is what #1124
+  observed after the link-extraction fixes in #1104 / #1107: new notes got
+  the corrected extraction, every pre-existing note kept its wrong link
+  rows, and no tool exposed a way to force the re-parse. The constant is
+  bumped in the same commit as any change that makes unchanged bytes yield
+  different stored rows; `_chunking_meta_matches` compares it like every
+  other key, so the first start after such an upgrade rejects the
+  short-circuit and cold-rebuilds once. An index written before the key
+  existed reads back as `0` and rebuilds on the same rule; a corrupted or
+  unparseable row also reads as `0`, because serving stale derived rows is
+  the worse failure. Changes that only affect how stored rows are queried
+  or rendered (ranking, snippets, response shaping) need no bump.
+  `reindex(force=True)` is the manual counterpart, surfacing the
+  already-existing `build_index(force=True)` for an index an operator has
+  reason to distrust.
 - **`reindex()`**: incremental update. Uses `ChangeTracker` to detect
   adds/modifies/deletes since the last scan and applies only the delta.
   Applies `exclude_patterns` filtering and purges stale excluded documents.
@@ -2559,11 +2581,25 @@ overrides it.
   CGNAT/shared 100.64/10, and reserved ranges are all blocked, with NAT64
   embedded-IPv4 validation), DNS-rebind pinning of the validated IP,
   `trust_env=False` (ambient `HTTP(S)_PROXY`/`.netrc` cannot divert the
-  pinned connection), redirect refusal, a streaming size cap, and
-  userinfo/query redaction in logs and errors. The tool keeps only the
-  vault-side policy: which cap applies (attachment limit vs. uncapped
-  markdown) and the operator-facing size-limit message naming
-  `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB`.
+  pinned connection), a streaming size cap, and userinfo/query redaction in
+  logs and errors. The tool keeps only the vault-side policy: which cap
+  applies (attachment limit vs. uncapped markdown) and the operator-facing
+  size-limit message naming `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB`.
+
+  **Redirects are followed, and every hop re-runs that chain** (#1116).
+  Through 3.1 the primitive refused every 3xx outright; from the 4.11.2
+  floor the guard lives in the transport httpx sends each hop through, so a
+  `Location` pointing at an internal target is refused exactly as a directly
+  supplied one is. The posture is not locally configurable — pvl-core owns
+  it — and it was adopted deliberately rather than inherited silently: per-hop
+  revalidation is a stronger guarantee than a blanket refusal, and ordinary
+  indirection (`http`→`https`, shortened links, CDN hand-offs) now resolves
+  instead of erroring. The cost is that the bytes need not come from the host
+  in `url`, so the tool returns `final_url` — the URL the bytes actually came
+  from — and a caller enforcing a host policy must check it rather than
+  trusting the URL it supplied. A chain longer than httpx's `max_redirects`
+  raises `httpx.TooManyRedirects`, which propagates uncaught like the other
+  transport-tier failures.
 
 These semantics are intentionally close to Claude Code's file tools for
 familiarity. LLMs that know how to read/write/edit files can use these tools
@@ -2687,7 +2723,7 @@ For MCP server deployment:
 | `MARKDOWN_VAULT_MCP_INSTRUCTIONS` | System-level instructions for LLM context | generic description |
 | `MARKDOWN_VAULT_MCP_DISABLE_APPS_UI` | Hide MCP-Apps UI tools (`browse_vault`, `show_context`) from the listing | `false` |
 | `MARKDOWN_VAULT_MCP_SOURCE_DIR` | Path to markdown files | required |
-| `MARKDOWN_VAULT_MCP_READ_ONLY` | Disable write tools | `true` |
+| `MARKDOWN_VAULT_MCP_READ_ONLY` | Hide the write tools | `false` |
 | `MARKDOWN_VAULT_MCP_INDEX_PATH` | SQLite index path | in-memory |
 | `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` | Embeddings directory | disabled |
 | `MARKDOWN_VAULT_MCP_INDEXED_FIELDS` | Comma-separated frontmatter fields to index into `document_tags` | none |

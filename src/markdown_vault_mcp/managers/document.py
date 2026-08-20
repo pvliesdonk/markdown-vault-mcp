@@ -124,8 +124,11 @@ class DocumentManager:
         source_dir: Absolute path to the vault root directory.
         write_lock: Shared re-entrant lock serialising write operations.
         chunk_strategy: Strategy for splitting documents into chunks.
-        read_only: When ``True``, write operations raise
-            :exc:`~markdown_vault_mcp.exceptions.ReadOnlyError`.
+        read_only: When ``True`` (default), write operations raise
+            :exc:`~markdown_vault_mcp.exceptions.ReadOnlyError`. Stays
+            ``True`` for the same reason ``Vault``'s does: it is the
+            library-tier fail-safe, not the operator default the server
+            flipped in #1113.
         exclude_patterns: Glob patterns for paths to exclude.
         attachment_extensions: Allowlist of attachment file extensions.
         max_note_read_bytes: Maximum bytes returned by full-document reads.

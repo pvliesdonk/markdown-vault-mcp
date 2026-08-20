@@ -25,7 +25,16 @@ def build_default_instructions(
 
     Composes MV's domain-specific guidance into a ``domain_line`` and
     delegates to :func:`fastmcp_pvl_core.build_instructions` for the
-    read-only/read-write line and operator override hint.
+    operator override hint.
+
+    The read-only/read-write announcement is composed here rather than by
+    pvl-core, which dropped it in 4.11.2 (pvl-core #222) because nothing in
+    the library enforced it — a server could be told to announce read-only
+    while every write tool stayed listable and callable. This server does
+    enforce it: write-tagged components are never registered when
+    ``read_only`` is set, and ``DocumentManager`` raises ``ReadOnlyError``
+    underneath. The sentence is therefore true here, so it is kept and owned
+    domain-side (#1114).
 
     The folder-conventions sentence is emitted whenever *conventions_file*
     is configured, not gated on convention files existing on disk: in
@@ -35,7 +44,8 @@ def build_default_instructions(
 
     Args:
         read_only: Whether write tools are disabled; selects the write-guidance
-            sentence and the read-only/read-write line.
+            sentence and the read-only/read-write announcement, both of which
+            this function owns.
         conventions_file: The configured per-folder conventions filename, or
             ``None`` when conventions are not configured.
         summarize_note_limit: The configured summarize note limit, surfaced so
@@ -119,12 +129,20 @@ def build_default_instructions(
             "markdown links for new cross-references."
         )
     )
+    # Enforced here, so announced here — see the docstring. Placed last in
+    # ``domain_line`` so the composed text keeps the word order pvl-core
+    # produced before 4.11.2: domain prose, then the mode line, then the
+    # operator hint the core still appends.
+    write_line = (
+        " This instance is READ-ONLY — write tools are not available."
+        if read_only
+        else " This instance is READ-WRITE — write tools are available."
+    )
     domain_line = (
         f"{prelude}{write_guidance}{search_guidance}"
-        f"{summarize_guidance}{conventions_guidance}{okf_guidance}"
+        f"{summarize_guidance}{conventions_guidance}{okf_guidance}{write_line}"
     )
     return _core_build_instructions(
-        read_only=read_only,
         env_prefix=_ENV_PREFIX,
         domain_line=domain_line,
     )
