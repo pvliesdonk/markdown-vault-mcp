@@ -2290,7 +2290,7 @@
 
 
 <h1 id="mcp-prompts">MCP Prompts<a class="headerlink" href="#mcp-prompts" title="Permanent link">&para;</a></h1>
-<p>Prompt templates guide the LLM through multi-step workflows using the vault tools. Write prompts (<code>research</code>, <code>discuss</code>, <code>create_from_template</code>) are only available when <code>MARKDOWN_VAULT_MCP_READ_ONLY=false</code>.</p>
+<p>Prompt templates guide the LLM through multi-step workflows using the vault tools. Write prompts (<code>research</code>, <code>discuss</code>, <code>create_from_template</code>) are hidden when <code>MARKDOWN_VAULT_MCP_READ_ONLY=true</code>; they are available by default.</p>
 <!-- DOMAIN-PROMPTS-LIST-START -->
 <h2 id="quick-reference">Quick Reference<a class="headerlink" href="#quick-reference" title="Permanent link">&para;</a></h2>
 <table>
@@ -2439,7 +2439,7 @@
 </ol>
 <div class="admonition note">
 <p class="admonition-title">Write prompt</p>
-<p>This prompt creates a new document and is only available when <code>READ_ONLY=false</code>.</p>
+<p>This prompt creates a new document and is hidden when <code>READ_ONLY=true</code>.</p>
 </div>
 <h2 id="discuss"><code>discuss</code><a class="headerlink" href="#discuss" title="Permanent link">&para;</a></h2>
 <p>Analyze a document and suggest improvements, applying changes via <code>edit</code> (not <code>write</code>).</p>
@@ -2469,7 +2469,7 @@
 </ol>
 <div class="admonition note">
 <p class="admonition-title">Write prompt</p>
-<p>This prompt modifies existing documents and is only available when <code>READ_ONLY=false</code>.</p>
+<p>This prompt modifies existing documents and is hidden when <code>READ_ONLY=true</code>.</p>
 </div>
 <h2 id="create_from_template"><code>create_from_template</code><a class="headerlink" href="#create_from_template" title="Permanent link">&para;</a></h2>
 <p>Create a new note by adapting a template from your configured templates folder.</p>
@@ -2504,7 +2504,7 @@
 </div>
 <div class="admonition note">
 <p class="admonition-title">Write prompt</p>
-<p>This prompt creates a new document and is only available when <code>READ_ONLY=false</code>.</p>
+<p>This prompt creates a new document and is hidden when <code>READ_ONLY=true</code>.</p>
 </div>
 <h2 id="related"><code>related</code><a class="headerlink" href="#related" title="Permanent link">&para;</a></h2>
 <p>Find related notes via search and suggest cross-references as markdown links.</p>
@@ -2598,7 +2598,7 @@
 </ol>
 <div class="admonition note">
 <p class="admonition-title">Write prompt</p>
-<p>This prompt modifies documents and is only available when <code>READ_ONLY=false</code>.</p>
+<p>This prompt modifies documents and is hidden when <code>READ_ONLY=true</code>.</p>
 </div>
 <div class="admonition note">
 <p class="admonition-title">Embeddings recommended</p>

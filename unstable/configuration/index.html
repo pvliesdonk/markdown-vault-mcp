@@ -2381,9 +2381,9 @@ about the disagreement.</p>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_READ_ONLY</code></td>
 <td>bool</td>
-<td><code>true</code></td>
+<td><code>false</code></td>
 <td>No</td>
-<td>Set to <code>false</code> to enable write operations</td>
+<td>Set to <code>true</code> to hide the write tools and serve a search-only vault. See the upgrade note below</td>
 </tr>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_INDEX_PATH</code></td>
@@ -2485,6 +2485,31 @@ about the disagreement.</p>
 </tr>
 </tbody>
 </table>
+<div class="admonition danger">
+<p class="admonition-title">Upgrading from 3.x: the write tools are now on by default</p>
+<p>Through 3.1, <code>MARKDOWN_VAULT_MCP_READ_ONLY</code> defaulted to <code>true</code>, so a
+server that never set it exposed search and reading only. It now defaults
+to <code>false</code>, which unhides the write-tagged tool set.</p>
+<p>On a default install that means <code>write</code>, <code>edit</code>, <code>append</code>, <code>delete</code>,
+<code>rename</code>, <code>move_folder</code>, and <code>fetch</code> — enough for a connected model to
+create, rewrite, and delete notes in your vault. The rest of the
+write-tagged set stays behind its own gates and stays hidden even after
+this flag flips: <code>git_sync</code> still needs managed git mode
+(<code>GIT_REPO_URL</code>), <code>create_upload_link</code> still needs an HTTP transport with
+<code>BASE_URL</code>, and the <code>okf_*</code> tools still need OKF semantics active
+(<code>OKF_MODE</code>, which under the default <code>auto</code> switches on only for a vault
+declaring <code>okf_version</code>) — with <code>okf_verify</code> additionally requiring
+<code>OKF_WRITE</code>.</p>
+<p><strong>Doing nothing on upgrade widens what the server may do to your data.</strong>
+If you relied on the old default, set the variable explicitly before you
+restart:</p>
+<div class="highlight"><pre><span></span><code><span class="nv">MARKDOWN_VAULT_MCP_READ_ONLY</span><span class="o">=</span><span class="nb">true</span>
+</code></pre></div>
+<p>Deployments that already set it either way are unaffected — the value you
+set still wins. The default changed because a vault server that cannot
+write to the vault is a search index, and reaching the rest of the product
+required discovering a flag first.</p>
+</div>
 <p>The file watcher never watches the directories that hold <code>INDEX_PATH</code>,
 <code>EMBEDDINGS_PATH</code>, and <code>STATE_PATH</code> (or <code>.git</code>), so the writes the server makes
 while indexing do not trigger it again. If you place one of these paths inside a

@@ -2463,6 +2463,15 @@ when <em>embeddings_path</em> is set.</p>
               <div class="doc-md-description">
                 <p>When <code>True</code> (default), write operations raise
 :exc:<code>~markdown_vault_mcp.exceptions.ReadOnlyError</code>.</p>
+<p>This library default deliberately stays <code>True</code> even though
+the server's <code>MARKDOWN_VAULT_MCP_READ_ONLY</code> now defaults to
+<code>False</code> (#1113). They are separate tiers: the operator default
+is a product decision about what an installed server should do,
+while this one is a fail-safe for a downstream Python consumer
+who constructs a <code>Vault</code> without naming the argument. Keeping
+it costs nothing — the server path always passes the value
+explicitly through <code>to_vault_kwargs</code> — and moving it would be
+an independent breaking change to the public library interface.</p>
               </div>
             </td>
             <td>

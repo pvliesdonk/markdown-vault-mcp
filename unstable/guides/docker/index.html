@@ -2333,10 +2333,11 @@
 <p>Create a <code>.env</code> file:</p>
 <div class="highlight"><pre><span></span><code><span class="c1"># .env</span>
 <span class="nv">MARKDOWN_VAULT_MCP_SOURCE_DIR</span><span class="o">=</span>/home/user/ObsidianVault
-<span class="nv">MARKDOWN_VAULT_MCP_READ_ONLY</span><span class="o">=</span><span class="nb">true</span>
 <span class="nv">MARKDOWN_VAULT_MCP_SERVER_NAME</span><span class="o">=</span>my-vault
 <span class="nv">MARKDOWN_VAULT_MCP_EXCLUDE</span><span class="o">=</span>.obsidian/**,.trash/**
 </code></pre></div>
+<p>The write tools are available by default. Add
+<code>MARKDOWN_VAULT_MCP_READ_ONLY=true</code> to this file for a search-only server.</p>
 <p>Replace <code>/home/user/ObsidianVault</code> with the path to your vault <strong>on the host</strong>. Inside the container, the vault is always mounted at <code>/data/vault</code> (the <code>compose.yml</code> handles this mapping automatically).</p>
 <h3 id="start-with-docker-compose">Start with Docker Compose<a class="headerlink" href="#start-with-docker-compose" title="Permanent link">&para;</a></h3>
 <p>The repository includes a <code>compose.yml</code>. If you cloned the repo, just run:</p>

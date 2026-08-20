@@ -1,6 +1,6 @@
 # MCP Prompts
 
-Prompt templates guide the LLM through multi-step workflows using the vault tools. Write prompts (`research`, `discuss`, `create_from_template`) are only available when `MARKDOWN_VAULT_MCP_READ_ONLY=false`.
+Prompt templates guide the LLM through multi-step workflows using the vault tools. Write prompts (`research`, `discuss`, `create_from_template`) are hidden when `MARKDOWN_VAULT_MCP_READ_ONLY=true`; they are available by default.
 
 ## Quick Reference
 
@@ -74,7 +74,7 @@ Search for a topic, synthesize findings across multiple documents, and create a 
 
 Write prompt
 
-This prompt creates a new document and is only available when `READ_ONLY=false`.
+This prompt creates a new document and is hidden when `READ_ONLY=true`.
 
 ## `discuss`
 
@@ -95,7 +95,7 @@ Analyze a document and suggest improvements, applying changes via `edit` (not `w
 
 Write prompt
 
-This prompt modifies existing documents and is only available when `READ_ONLY=false`.
+This prompt modifies existing documents and is hidden when `READ_ONLY=true`.
 
 ## `create_from_template`
 
@@ -121,7 +121,7 @@ Templates are regular markdown files. Set `MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER` 
 
 Write prompt
 
-This prompt creates a new document and is only available when `READ_ONLY=false`.
+This prompt creates a new document and is hidden when `READ_ONLY=true`.
 
 ## `related`
 
@@ -181,7 +181,7 @@ Scan a bounded set of notes for semantically close pairs that aren't already lin
 
 Write prompt
 
-This prompt modifies documents and is only available when `READ_ONLY=false`.
+This prompt modifies documents and is hidden when `READ_ONLY=true`.
 
 Embeddings recommended
 
