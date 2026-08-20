@@ -43,6 +43,7 @@ No `CLIENT_ID` or `CLIENT_SECRET` needed. Tokens are validated locally via JWKS.
 |---|---|---|
 | `MARKDOWN_VAULT_MCP_OIDC_AUDIENCE` | (none) | Expected `aud` claim; tokens issued for another audience are rejected. |
 | `MARKDOWN_VAULT_MCP_OIDC_REQUIRED_SCOPES` | `openid` | Scopes a caller must present, space- or comma-separated. Defaults to `openid` in oidc-proxy mode. |
+| `MARKDOWN_VAULT_MCP_OIDC_ADVERTISED_SCOPES` | `openid offline_access` | Scopes advertised to MCP clients in protected-resource metadata, space- or comma-separated. Overrides the default `openid offline_access`; `oidc_required_scopes` is always added on top. Set this when the registered client is not permitted `offline_access`, or to have clients request extra claim scopes (such as `groups`) without also requiring them in every token. |
 | `MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY` | `derived` | Signing key for issued JSON Web Tokens; used in oidc-proxy mode only. When unset, the key is derived deterministically from `oidc_client_secret`, so tokens survive a restart. Rotating that secret invalidates every issued token. Set this explicitly to decouple token validity from secret rotation. Generate with `openssl rand -hex 32`. |
 | `MARKDOWN_VAULT_MCP_OIDC_VERIFY_ACCESS_TOKEN` | `false` | Validate the access token instead of the id token. |
 <!-- GENERATED-ENV-TABLE-OIDC-OPTIONAL-END -->
@@ -246,47 +247,82 @@ Register this callback URI in your OIDC provider:
 https://mcp.example.com/vault/auth/callback
 ```
 
+### What the server serves, and where
+
+The MCP endpoint and the OAuth discovery documents sit on opposite sides of the prefix, which is what makes subpath routing more than one strip rule. With `BASE_URL=https://mcp.example.com/myservice` and `HTTP_PATH=/mcp`:
+
+| Public URL | Path the container listens on | Served when |
+|------------|-------------------------------|-------------|
+| `/myservice/mcp` | `/mcp` | always |
+| `/myservice/authorize`, `/token`, `/register`, `/auth/callback`, `/consent` | the same path without the prefix | the server proxies OAuth (client ID and secret set) |
+| `/.well-known/oauth-protected-resource/myservice/mcp` | the identical path, prefix included | OIDC is enabled, in every mode |
+| `/.well-known/oauth-authorization-server` | the identical path, at the host root | the server proxies OAuth (client ID and secret set) |
+
+Two properties of that table drive every routing rule below:
+
+1. The MCP endpoint and the OAuth endpoints listen **without** the prefix, so the proxy has to strip it.
+2. The protected-resource document's path **contains** the prefix, because RFC 9728 §3.1 appends the resource path after the well-known segment. The server registers that full path verbatim, so stripping the prefix from this request returns 404.
+
+A server holding no client ID and secret verifies tokens the provider issued directly. It serves protected-resource metadata only and answers `/.well-known/oauth-authorization-server` with 404. That is the correct answer, because the provider is the authorization server, so do not route that path to a server configured this way.
+
 ### Reverse proxy routing
 
-The reverse proxy must:
+The reverse proxy needs two routers pointing at the same service, because a prefix rule cannot express both halves:
 
-1. **Strip the prefix** (`/vault`) from operational routes before forwarding to the app
-2. **Forward OAuth discovery routes** to this service (without stripping prefixes):
-    - `/.well-known/oauth-authorization-server` (authorization server metadata)
-    - `/.well-known/oauth-protected-resource/vault/mcp` (protected resource metadata)
-
-Example Traefik configuration:
+1. **Operational routes** match the prefix and strip it: `/myservice/mcp` and, in proxy mode, the OAuth endpoints.
+2. **Discovery routes** match their own well-known paths and pass through untouched. Their URLs do not begin with `/myservice`, so a `PathPrefix(/myservice)` rule never sees them.
 
 ```yaml
 labels:
-  # Operational routes: strip /vault prefix before forwarding
-  - "traefik.http.routers.vault-app.rule=Host(`mcp.example.com`) && PathPrefix(`/vault`)"
-  - "traefik.http.middlewares.strip-vault.stripprefix.prefixes=/vault"
-  - "traefik.http.routers.vault-app.middlewares=strip-vault"
-  - "traefik.http.services.vault-app.loadbalancer.server.port=8000"
-  # OAuth discovery routes: forward without stripping
-  - "traefik.http.routers.vault-wellknown.rule=Host(`mcp.example.com`) && (PathPrefix(`/.well-known/oauth-authorization-server`) || PathPrefix(`/.well-known/oauth-protected-resource/vault/mcp`))"
-  - "traefik.http.routers.vault-wellknown.service=vault-app"
+  # Operational routes: strip the /myservice prefix before forwarding
+  - "traefik.http.routers.mcp-app.rule=Host(`mcp.example.com`) && PathPrefix(`/myservice`)"
+  - "traefik.http.middlewares.strip-myservice.stripprefix.prefixes=/myservice"
+  - "traefik.http.routers.mcp-app.middlewares=strip-myservice"
+  - "traefik.http.services.mcp-app.loadbalancer.server.port=8000"
+  # Discovery routes: same service, no strip middleware
+  - "traefik.http.routers.mcp-wellknown.rule=Host(`mcp.example.com`) && (PathPrefix(`/.well-known/oauth-protected-resource/myservice/mcp`) || PathPrefix(`/.well-known/oauth-authorization-server`))"
+  - "traefik.http.routers.mcp-wellknown.service=mcp-app"
 ```
 
-!!! note
-    This configuration requires that no other OAuth service claims `/.well-known/oauth-authorization-server` on this hostname. See [Shared-hostname limitation](#shared-hostname-limitation) below.
+Drop the `oauth-authorization-server` clause when the server holds no client ID and secret. That path returns 404 in such a configuration, and claiming it on a shared hostname takes the document away from whichever service does answer.
 
-### Shared-hostname limitation
+Two routers rather than one is deliberate. A single router carrying the strip rule would apply it to the discovery request as well. Nothing here relies on how a given proxy treats a strip prefix that fails to match: separate routers state the untouched route outright, in any proxy that has the concept.
 
-!!! warning "Shared-hostname subpath with native OIDC is not supported"
-    When multiple OAuth-capable services share a hostname (such as `mcp-auth-proxy` at the root and `markdown-vault-mcp` at `/vault`), native OIDC on a subpath does not work.
+### Sharing a hostname
 
-    **Why:** FastMCP serves the OAuth authorization-server metadata at `/.well-known/oauth-authorization-server` (host root), regardless of the subpath in `BASE_URL`. The FastMCP codebase contains an RFC 8414 path-aware override (`OIDCProxy.get_well_known_routes()`) that would serve it at `/.well-known/oauth-authorization-server/vault`. However, this method is not wired into the route mounting flow and is effectively dead code.
+The failure that follows from point 2 above is worth spelling out, because its symptom points somewhere else entirely.
 
-    The protected-resource metadata (`/.well-known/oauth-protected-resource/vault/mcp`) is correctly path-namespaced and does not collide. Only the authorization-server discovery route is the problem.
+The discovery URL sits outside the prefix, so on a hostname shared with other services, prefix-based routing cannot claim it. Without a router that matches it explicitly, the request falls through to whatever else holds the host: an OAuth gateway, an SSO portal, or another MCP server at the root. That service answers with **its** metadata, the client builds an authorization URL from another service's endpoints, and the visible symptom is an authorization URL 404ing at a path nobody configured. It reads as a client bug or an auth bug; it is a routing rule one path too narrow.
 
-    This works when `markdown-vault-mcp` is the **only** OAuth service on the hostname (the host-root `/.well-known/oauth-authorization-server` does not collide with anything). It breaks when another service already owns that route.
+The `mcp-wellknown` router above is the fix. In Traefik it also wins by default: routers sort by rule length, so a rule naming the full well-known path outranks a bare `Host(...)` catch-all. Where the competing service sets an explicit `priority`, set a higher one here, because Traefik ignores its rule-length default for any router that carries one.
 
-**Recommendations for shared-hostname scenarios:**
+!!! warning "One document still collides: `oauth-authorization-server`"
+    In proxy mode the server serves authorization-server metadata at `/.well-known/oauth-authorization-server`, at the **host root**, whatever prefix `BASE_URL` carries. FastMCP does contain an RFC 8414 path-aware override, `OAuthProvider.get_well_known_routes()`, which would serve it at `/.well-known/oauth-authorization-server/myservice`. Nothing reaches it: the HTTP app mounts `get_routes()` instead, leaving the path-aware form unreachable. (Verified against FastMCP 3.4.7.)
 
-- **Dedicated hostname** (preferred): give `markdown-vault-mcp` its own hostname (such as `vault.example.com`) so discovery routes do not collide.
-- **External auth gateway**: use `mcp-auth-proxy` as a sidecar instead of native OIDC. The MCP server runs unauthenticated behind the proxy, and the proxy handles OAuth discovery at its own routes.
+    Only this one document collides. Protected-resource metadata is path-namespaced, so several servers can share a hostname without contending for it.
+
+    Where another OAuth service already owns the root path, either give this server its own hostname, or run it without client ID and secret so it never serves the document. An authorization-server metadata request then belongs to the provider, where the `authorization_servers` entry in this server's protected-resource metadata sends the client anyway.
+
+### Verifying the routing
+
+Probe the container first, to separate what the server serves from what the proxy does with it. The image ships no HTTP client, so borrow one. Passing `--network container:` puts the throwaway container inside the server's network namespace, which makes `localhost:8000` the server itself:
+
+```bash
+NS="container:$(docker compose ps -q markdown-vault-mcp)"
+docker run --rm --network "$NS" curlimages/curl -s -o /dev/null \
+  -w '%{http_code}\n' localhost:8000/mcp
+docker run --rm --network "$NS" curlimages/curl -s \
+  localhost:8000/.well-known/oauth-protected-resource/myservice/mcp
+```
+
+Expect `401` for the first, meaning the endpoint is there and authentication is on, and the metadata JSON for the second. A `404` instead of the `401` means `HTTP_PATH` carries the prefix it should not. Then repeat from outside, through the proxy:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' https://mcp.example.com/myservice/mcp
+curl -s https://mcp.example.com/.well-known/oauth-protected-resource/myservice/mcp
+```
+
+Both must reach this server, and the `resource` field in the JSON must read `https://mcp.example.com/myservice/mcp`. A `resource` naming a different service is the shared-hostname problem above, not an incorrect `BASE_URL`.
 
 
 <!-- DOMAIN-OIDC-EXTRA-START -->

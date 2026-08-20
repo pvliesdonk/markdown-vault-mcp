@@ -31,25 +31,35 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
-    # >=4.11.2 because the code cannot run against anything older: that
-    # release removed the `read_only` keyword from build_instructions, which
-    # both call sites passed (server.py's skeleton body and _instructions.py's
-    # domain composition), so 4.11.1 and 4.11.2 are mutually exclusive — one
-    # requires the argument, the other rejects it with a TypeError before
-    # make_server finishes.  It also made FetchResult.final_url mandatory.
-    # The floor and the call sites had to move together (#1114).
+    # >=4.11.3 for ServerConfig.oidc_advertised_scopes, which
+    # config-presentation.yml names: the config-surface generator rejects a
+    # presentation entry for a var core does not declare, so generation fails
+    # outright wherever an older core is resolved.  The field is the operator
+    # override for the scopes pvl-core advertises to MCP clients in
+    # protected-resource metadata — `openid offline_access` by default
+    # (pvl-core #280).  Before it, the advertised set was derived from
+    # oidc_required_scopes, which multi mode requires to be empty, so clients
+    # requested no scopes at all, the grant carried no refresh token, and
+    # every session ended at access-token expiry needing a human at a browser.
     #
-    # Earlier floors, kept for the rationale: >=4.11.1 for the usable-/data
-    # probe in build_kv_store's unset-URL default (server.py wires build_jobs
-    # unconditionally, and on 4.11.0 that crashed make_server with
-    # PermissionError on hosts without a writable /data — bare-metal/uvx
-    # installs, CI); >=4.11.0 for configure_task_backend +
+    # 4.11.2 was the previous floor, for build_instructions without the
+    # read_only keyword: 4.11.1 declares that argument required and 4.11.2
+    # rejects it, so the floor and the server.py call site had to move in one
+    # change (#443).  4.11.2 also makes FetchResult.final_url mandatory, so a
+    # consumer constructing one — a project's test fakes included — must pass
+    # it from that floor on.
+    #
+    # 4.11.0 was the floor before that, for configure_task_backend +
     # ServerConfig.tasks_url (the background-task backend surface, ADR 0002
-    # §4), which also moved fastmcp[tasks] into pvl-core's BASE dependencies,
-    # so pydocket arrives transitively — no extra to declare here, and no
-    # packaging plumbing.  (The config-surface generator pins the floor
-    # exactly, so the floor must name a version that exists on PyPI.)
-    "fastmcp-pvl-core>=4.11.2,<5",
+    # §4), which server.py wires unconditionally.  4.11.0 also moves
+    # fastmcp[tasks] into pvl-core's BASE dependencies, so pydocket arrives
+    # transitively — no extra to declare here, and no packaging plumbing.
+    # 4.10.1 was the floor for apply_tool_visibility, named in place of the
+    # 4.10.0 that was tagged but never reached PyPI: the generator resolves
+    # this whole constraint rather than the floor alone (#335), but a floor
+    # naming a release nobody can install is still a trap for anyone pinning
+    # to it.
+    "fastmcp-pvl-core>=4.11.3,<5",
     "typer>=0.12",
 
     # PROJECT-DEPS-START — add domain dependencies below; kept across copier update

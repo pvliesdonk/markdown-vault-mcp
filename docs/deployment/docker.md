@@ -81,6 +81,8 @@ All `/data/*` directories are pre-created and owned by the runtime user in the i
 
 The `compose.yml` includes Traefik labels out of the box. When Traefik is running and watching Docker, it picks up these labels and routes traffic automatically.
 
+Running behind a reverse proxy on a path prefix (`https://mcp.example.com/myservice/mcp`) rather than its own hostname needs two routing rules, one of which sits outside the prefix: see [Subpath Deployments](oidc.md#subpath-deployments).
+
 **What the labels do:**
 
 - `traefik.enable=true`: opts this service in to Traefik discovery

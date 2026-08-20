@@ -139,6 +139,7 @@ Client → markdown-vault-mcp → OIDC Provider
 |---|---|---|
 | `MARKDOWN_VAULT_MCP_OIDC_AUDIENCE` | (none) | Expected `aud` claim; tokens issued for another audience are rejected. |
 | `MARKDOWN_VAULT_MCP_OIDC_REQUIRED_SCOPES` | `openid` | Scopes a caller must present, space- or comma-separated. Defaults to `openid` in oidc-proxy mode. |
+| `MARKDOWN_VAULT_MCP_OIDC_ADVERTISED_SCOPES` | `openid offline_access` | Scopes advertised to MCP clients in protected-resource metadata, space- or comma-separated. Overrides the default `openid offline_access`; `oidc_required_scopes` is always added on top. Set this when the registered client is not permitted `offline_access`, or to have clients request extra claim scopes (such as `groups`) without also requiring them in every token. |
 | `MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY` | `derived` | Signing key for issued JSON Web Tokens; used in oidc-proxy mode only. When unset, the key is derived deterministically from `oidc_client_secret`, so tokens survive a restart. Rotating that secret invalidates every issued token. Set this explicitly to decouple token validity from secret rotation. Generate with `openssl rand -hex 32`. |
 | `MARKDOWN_VAULT_MCP_OIDC_VERIFY_ACCESS_TOKEN` | `false` | Validate the access token instead of the id token. |
 <!-- GENERATED-ENV-TABLE-OIDC-OPTIONAL-END -->
@@ -246,7 +247,7 @@ Three independent issues prevent token refresh:
 | Layer | Issue | Impact |
 |-------|-------|--------|
 | **Claude Code** | Stores refresh tokens but never uses them ([claude-code#21333](https://github.com/anthropics/claude-code/issues/21333)) | Refresh tokens are obtained and saved but never sent back to refresh expired access tokens |
-| **Claude Code** | Never requests `offline_access` scope ([claude-code#7744](https://github.com/anthropics/claude-code/issues/7744)) | Most OIDC providers won't issue a refresh token without this scope |
+| **Claude Code** | Does not ask for `offline_access` on its own ([claude-code#7744](https://github.com/anthropics/claude-code/issues/7744)) | Most OIDC providers issue no refresh token without this scope. The server advertises `openid offline_access` in its protected-resource metadata, so a client that requests the advertised set gets a refresh-capable grant; one that ignores the metadata still does not. |
 | **MCP Python SDK** | Token refresh deadlocks inside SSE streams ([python-sdk#1326](https://github.com/modelcontextprotocol/python-sdk/issues/1326)) | Even with a valid refresh token, the SDK hangs when attempting refresh during an active stream |
 
 The server-side refresh architecture (FastMCP's `OAuthProxy.exchange_refresh_token()`) is correctly implemented and would work, but it requires the client to initiate the refresh, which none of the current clients do reliably.
@@ -259,10 +260,10 @@ The server-side refresh architecture (FastMCP's `OAuthProxy.exchange_refresh_tok
 
 **Long token lifetimes** are the only viable workaround for OIDC in oidc-proxy mode. Set all three lifetimes (access, id, refresh) to cover your typical session duration:
 
-- `access_token: '8h'` (covers a workday)
-- `id_token: '8h'` (**must match access_token** when using `verify_id_token` mode, critical for Authelia)
-- `refresh_token: '30d'` (ready for when clients support refresh)
-- Include `offline_access` in provider-side scopes (no effect today, but will enable refresh when clients are fixed)
+- `access_token: '8h'`: covers a workday
+- `id_token: '8h'`: **must match access_token** when using `verify_id_token` mode (critical for Authelia)
+- `refresh_token: '30d'`: ready for when clients support refresh
+- Permit `offline_access` for the registered client; the server advertises it by default, so a client that honours the advertised scopes requests it. Where the client may not hold that scope, narrow what the server advertises with `MARKDOWN_VAULT_MCP_OIDC_ADVERTISED_SCOPES` rather than letting the authorization request fail
 
 ### Tracking
 

@@ -202,6 +202,23 @@
       }
     },
     {
+      "id": "oidc_advertised_scopes",
+      "label": "OIDC advertised scopes (CSV)",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_OIDC_ADVERTISED_SCOPES",
+      "help": "Scopes advertised to MCP clients in protected-resource metadata, space- or comma-separated. Overrides the default `openid offline_access`; `oidc_required_scopes` is always added on top. Set this when the registered client is not permitted `offline_access`, or to have clients request extra claim scopes (e.g. `groups`) without also requiring them in every token.",
+      "advancedGroup": "Auth",
+      "showIf": {
+        "deployment": [
+          "server"
+        ],
+        "auth": [
+          "oidc",
+          "both"
+        ]
+      }
+    },
+    {
       "id": "oidc_jwt_signing_key",
       "label": "OIDC JWT signing key",
       "type": "text",

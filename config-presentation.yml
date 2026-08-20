@@ -233,6 +233,7 @@ packaging:
   "{PREFIX}_OIDC_JWT_SIGNING_KEY": [oci]
   "{PREFIX}_OIDC_AUDIENCE": [oci]
   "{PREFIX}_OIDC_REQUIRED_SCOPES": [oci]
+  "{PREFIX}_OIDC_ADVERTISED_SCOPES": [oci]
   "{PREFIX}_OIDC_VERIFY_ACCESS_TOKEN": [oci]
   # Not HTTP-specific despite the wizard's shorthand label: this backs every
   # pvl-core subsystem that keeps state, so a stdio install still wants it to
@@ -265,6 +266,12 @@ documented_defaults:
   # `default_factory=tuple`) — non-`None` but empty, so `_is_empty_default`
   # routes it here instead of printing the literal `()`.
   "{PREFIX}_OIDC_REQUIRED_SCOPES": "openid"
+  # `_resolve_advertised_scopes`: an unset field advertises pvl-core's
+  # `_DEFAULT_ADVERTISED_SCOPES`, filtered against the authorization server's
+  # published `scopes_supported` and with `oidc_required_scopes` added on top.
+  # Same `default_factory=tuple` shape as the required-scopes field above, so
+  # the same `(none)` cell to displace.
+  "{PREFIX}_OIDC_ADVERTISED_SCOPES": "openid offline_access"
   # Not a literal fallback value: `OIDCProxy` derives the signing key from
   # `oidc_client_secret` when this is unset, so there is no string to print.
   # Declared anyway so the `Default` column reads `` `derived` `` instead of
@@ -338,6 +345,7 @@ wizard_labels:
   "{PREFIX}_OIDC_JWT_SIGNING_KEY": "OIDC JWT signing key"
   "{PREFIX}_OIDC_AUDIENCE": "OIDC audience"
   "{PREFIX}_OIDC_REQUIRED_SCOPES": "OIDC required scopes (CSV)"
+  "{PREFIX}_OIDC_ADVERTISED_SCOPES": "OIDC advertised scopes (CSV)"
   "{PREFIX}_OIDC_VERIFY_ACCESS_TOKEN": "Verify access token (not id token)"
   "{PREFIX}_KV_STORE_URL": "KV store URL (HTTP session persistence)"
   "{PREFIX}_EVENT_STORE_URL": "Event store URL (HTTP resumability)"
