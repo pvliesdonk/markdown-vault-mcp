@@ -77,10 +77,18 @@ about the disagreement.
 
     Through 3.1, `MARKDOWN_VAULT_MCP_READ_ONLY` defaulted to `true`, so a
     server that never set it exposed search and reading only. It now defaults
-    to `false`: `write`, `edit`, `append`, `delete`, `rename`, `move_folder`,
-    `fetch`, `git_sync`, the `okf_*` tools, and `create_upload_link` are
-    registered out of the box, and a connected model can create, rewrite, and
-    delete notes in your vault.
+    to `false`, which unhides the write-tagged tool set.
+
+    On a default install that means `write`, `edit`, `append`, `delete`,
+    `rename`, `move_folder`, and `fetch` — enough for a connected model to
+    create, rewrite, and delete notes in your vault. The rest of the
+    write-tagged set stays behind its own gates and stays hidden even after
+    this flag flips: `git_sync` still needs managed git mode
+    (`GIT_REPO_URL`), `create_upload_link` still needs an HTTP transport with
+    `BASE_URL`, and the `okf_*` tools still need OKF semantics active
+    (`OKF_MODE`, which under the default `auto` switches on only for a vault
+    declaring `okf_version`) — with `okf_verify` additionally requiring
+    `OKF_WRITE`.
 
     **Doing nothing on upgrade widens what the server may do to your data.**
     If you relied on the old default, set the variable explicitly before you

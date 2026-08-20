@@ -305,7 +305,12 @@ Without `force`, an existing vector index is **converged** to the FTS chunk set 
 !!! info "Write tools are hidden when `MARKDOWN_VAULT_MCP_READ_ONLY=true`"
     They are registered by default. Set the variable to `true` for a
     search-only vault; through 3.1 that was the default, so a server
-    upgrading from 3.x without setting it gains this whole section.
+    upgrading from 3.x without setting it gains these tools.
+
+    Several of them carry a second gate that this flag does not lift:
+    `git_sync` needs managed git mode, `create_upload_link` needs an HTTP
+    transport with `BASE_URL`, and the `okf_*` tools need OKF semantics
+    active. Each is noted on its own entry below.
 
 ### `write`
 
