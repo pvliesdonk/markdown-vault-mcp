@@ -189,6 +189,29 @@ _META_SEARCHABLE_FIELDS_KEY = "searchable_fields"
 # left to default to INDEXED_FIELDS).
 _META_INDEXED_FIELDS_KEY = "indexed_frontmatter_fields"
 
+# Derived-content provenance: the version of this server's own parse-to-row
+# pipeline (#1124). Unlike every key above it, this records no operator input
+# at all — it is a source constant, bumped whenever a code change alters the
+# rows derived from unchanged file bytes. Indexing is hash-based, so an
+# unchanged file is never re-parsed after an upgrade and its stale rows would
+# be served indefinitely; recording the version lets the warm-restart
+# short-circuit reject an index built by an older pipeline and cold-rebuild
+# it once. An index written before this key existed reads back as 0, so the
+# first start after the upgrade rebuilds — which is the repair #1124 found
+# missing after the link-extraction fixes in #1104 / #1107.
+_META_INDEX_SEMANTICS_KEY = "index_semantics_version"
+
+#: Current version of the parse-to-row pipeline whose output is stored in the
+#: index (link extraction, chunk boundaries, tag/alias/heading derivation).
+#:
+#: **Bump this in the same commit** as any change that makes an unchanged file
+#: yield different stored rows. The bump is what converts such a fix into a
+#: fix operators actually receive: on the next start, the warm-restart
+#: short-circuit is rejected and every file is re-parsed once. Changes that
+#: only affect how stored rows are *queried* or *rendered* (ranking, snippets,
+#: response shaping) need no bump — nothing on disk went stale.
+INDEX_SEMANTICS_VERSION = 1
+
 
 class ChunkingMeta(NamedTuple):
     """Embedding/indexing provenance recorded with an FTS build (#649).
@@ -207,6 +230,8 @@ class ChunkingMeta(NamedTuple):
         indexed_frontmatter_fields: Comma-joined canonical form of the
             frontmatter fields promoted to ``document_tags`` for structured
             filtering (default ``""`` — none configured).
+        semantics_version: :data:`INDEX_SEMANTICS_VERSION` in force when the
+            build ran (``0`` for an index written before the key existed).
     """
 
     model: str | None
@@ -214,6 +239,7 @@ class ChunkingMeta(NamedTuple):
     title_field: str = "title"
     searchable_fields: str = ""
     indexed_frontmatter_fields: str = ""
+    semantics_version: int = 0
 
 
 def _escape_like(value: str) -> str:
@@ -1041,6 +1067,12 @@ class FTSIndex:
         detect a genuine option change and reject the short-circuit,
         triggering a cold rebuild (#649, #927).
 
+        :data:`INDEX_SEMANTICS_VERSION` is written alongside them and is
+        deliberately not a parameter: it records this build's *code*
+        provenance rather than an operator input, so a pipeline change that
+        alters derived rows invalidates the index the same way an option
+        change does (#1124).
+
         Args:
             model: Embedding model name, or ``None`` when no provider is
                 configured. ``None`` is stored as the empty string.
@@ -1072,6 +1104,7 @@ class FTSIndex:
                 (_META_TITLE_FIELD_KEY, title_value),
                 (_META_SEARCHABLE_FIELDS_KEY, searchable_fields),
                 (_META_INDEXED_FIELDS_KEY, indexed_frontmatter_fields),
+                (_META_INDEX_SEMANTICS_KEY, str(INDEX_SEMANTICS_VERSION)),
             ):
                 conn.execute(
                     "INSERT OR REPLACE INTO meta(key, value) VALUES(?, ?)",
@@ -1088,18 +1121,22 @@ class FTSIndex:
             ``max_chunk_chars_override``, ``"title"`` for ``title_field``,
             ``""`` for ``searchable_fields`` and
             ``indexed_frontmatter_fields``);
-            ``max_chunk_chars_override`` reads back as ``int``.
+            ``max_chunk_chars_override`` reads back as ``int``, and
+            ``semantics_version`` as ``int`` (``0`` when absent or
+            unparseable — either way the index predates the pipeline
+            version it claims and must be rebuilt).
         """
         conn = self._conn()
         with conn:
             rows = conn.execute(
-                "SELECT key, value FROM meta WHERE key IN (?, ?, ?, ?, ?)",
+                "SELECT key, value FROM meta WHERE key IN (?, ?, ?, ?, ?, ?)",
                 (
                     _META_EMBED_MODEL_KEY,
                     _META_MAX_CHUNK_CHARS_OVERRIDE_KEY,
                     _META_TITLE_FIELD_KEY,
                     _META_SEARCHABLE_FIELDS_KEY,
                     _META_INDEXED_FIELDS_KEY,
+                    _META_INDEX_SEMANTICS_KEY,
                 ),
             ).fetchall()
         stored = {row[0]: row[1] for row in rows}
@@ -1109,12 +1146,19 @@ class FTSIndex:
         # An empty string (a stored ``None``) is falsy → reads back as None;
         # config rejects a 0 override so truthiness is safe here.
         override: int | None = int(override_raw) if override_raw else None
+        try:
+            semantics_version = int(stored.get(_META_INDEX_SEMANTICS_KEY) or 0)
+        except ValueError:
+            # A hand-edited or corrupted row is not a reason to serve stale
+            # derived rows: read it as "older than anything" and rebuild.
+            semantics_version = 0
         return ChunkingMeta(
             model=model,
             max_chunk_chars_override=override,
             title_field=stored.get(_META_TITLE_FIELD_KEY) or "title",
             searchable_fields=stored.get(_META_SEARCHABLE_FIELDS_KEY) or "",
             indexed_frontmatter_fields=stored.get(_META_INDEXED_FIELDS_KEY) or "",
+            semantics_version=semantics_version,
         )
 
     @_retry_on_locked

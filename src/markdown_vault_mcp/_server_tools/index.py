@@ -144,6 +144,7 @@ def register_index_jobs(mcp: FastMCP, jobs: Jobs) -> None:
     )
     @needs_queryable()
     async def reindex(
+        force: bool = False,
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
         """Run an incremental reindex on the writer thread.
@@ -153,6 +154,16 @@ def register_index_jobs(mcp: FastMCP, jobs: Jobs) -> None:
         the vault directory. Do NOT call this after using 'write', 'edit',
         'delete', or 'rename' — those tools update the index immediately as
         part of the operation.
+
+        Change detection is hash-based, so an unchanged file is never
+        re-parsed. Use force=True to drop the index and re-parse every file
+        regardless of hashes — the repair for index content that no longer
+        matches what the current server would extract. A version upgrade that
+        changes extraction does this by itself on the next start (#1124), so
+        force=True is a manual escape hatch, not routine maintenance. When
+        semantic search is configured, follow a force=True run with
+        'build_embeddings' (without force) so the vector index converges to
+        the rebuilt chunk set; an ordinary reindex re-embeds as it goes.
 
         To rebuild all embeddings from scratch (e.g. after changing the
         embedding model), use 'build_embeddings' with force=True.
@@ -165,16 +176,29 @@ def register_index_jobs(mcp: FastMCP, jobs: Jobs) -> None:
         observability view of the index (it also covers boot-time builds and
         file-watcher reindexes no client call initiated).
 
+        Args:
+            force: When True, drop every indexed document and re-parse the
+                whole vault instead of applying the hash-detected delta.
+                The index is not queryable while the rebuild runs, and the
+                cost scales with the vault rather than the drift, so prefer
+                the default.
+
         Returns:
             On inline completion, a dict with ``"status": "completed"`` plus
             the reindex counts:
 
-            - added (int): Documents added since the last index.
-            - modified (int): Documents that changed since the last index.
-            - deleted (int): Documents removed since the last index.
-            - unchanged (int): Documents with no changes.
+            - added (int): Documents added since the last index. On a
+              force=True rebuild every indexed document is counted here,
+              because the rebuild dropped and re-added them all.
+            - modified (int): Documents that changed since the last index
+              (always 0 on a force=True rebuild).
+            - deleted (int): Documents removed since the last index (always
+              0 on a force=True rebuild — the drop is not a vault change).
+            - unchanged (int): Documents with no changes (always 0 on a
+              force=True rebuild).
             - skipped (int): Files deliberately not indexed (missing required
               frontmatter, exclude patterns, unparseable).
+            - full_rebuild (bool): True when force=True re-parsed everything.
 
             When promoted, a dict with ``"status": "working"``, a ``job_id``,
             and a ``poll_with`` field naming ``get_job_result``.
@@ -191,8 +215,19 @@ def register_index_jobs(mcp: FastMCP, jobs: Jobs) -> None:
                 fails with a job-limit error and the queued reindex is
                 cancelled — retry after fetching pending job results.
         """
+        if force:
+            stats = await asyncio.wrap_future(vault.index.build_index_async(force=True))
+            return {
+                "status": "completed",
+                "added": stats.documents_indexed,
+                "modified": 0,
+                "deleted": 0,
+                "unchanged": 0,
+                "skipped": stats.skipped,
+                "full_rebuild": True,
+            }
         result = await asyncio.wrap_future(vault.index.reindex_async())
-        return {**asdict(result), "status": "completed"}
+        return {**asdict(result), "status": "completed", "full_rebuild": False}
 
     @register_long_running_tool(
         mcp,

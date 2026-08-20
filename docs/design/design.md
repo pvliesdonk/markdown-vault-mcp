@@ -604,6 +604,28 @@ Two methods manage the index:
   unreachable at startup, so its context length reads as `None` and the cap
   falls back to a conservative default) changes neither key and so does
   not force a rebuild, avoiding flap.
+
+  **Derived-content invalidation (issue #1124)**: the same `meta` row set
+  carries one key that records no operator input —
+  `index_semantics_version`, written from the source constant
+  `INDEX_SEMANTICS_VERSION` in `fts_index.py`. Change detection is
+  hash-based, so an unchanged file is never re-parsed; the rows derived
+  from its bytes (links, chunks, tags, aliases, headings) therefore survive
+  every upgrade that fixes how those rows are derived. That is what #1124
+  observed after the link-extraction fixes in #1104 / #1107: new notes got
+  the corrected extraction, every pre-existing note kept its wrong link
+  rows, and no tool exposed a way to force the re-parse. The constant is
+  bumped in the same commit as any change that makes unchanged bytes yield
+  different stored rows; `_chunking_meta_matches` compares it like every
+  other key, so the first start after such an upgrade rejects the
+  short-circuit and cold-rebuilds once. An index written before the key
+  existed reads back as `0` and rebuilds on the same rule; a corrupted or
+  unparseable row also reads as `0`, because serving stale derived rows is
+  the worse failure. Changes that only affect how stored rows are queried
+  or rendered (ranking, snippets, response shaping) need no bump.
+  `reindex(force=True)` is the manual counterpart, surfacing the
+  already-existing `build_index(force=True)` for an index an operator has
+  reason to distrust.
 - **`reindex()`**: incremental update. Uses `ChangeTracker` to detect
   adds/modifies/deletes since the last scan and applies only the delta.
   Applies `exclude_patterns` filtering and purges stale excluded documents.

@@ -1144,33 +1144,52 @@ class TestGetRecent:
 
 
 def test_chunking_meta_roundtrip(tmp_path):
-    from markdown_vault_mcp.fts_index import ChunkingMeta, FTSIndex
+    from markdown_vault_mcp.fts_index import (
+        INDEX_SEMANTICS_VERSION,
+        ChunkingMeta,
+        FTSIndex,
+    )
 
     idx = FTSIndex(db_path=str(tmp_path / "i.db"))
     idx.set_chunking_meta(model="bge-m3:latest", max_chunk_chars_override=5000)
     assert idx.get_chunking_meta() == ChunkingMeta(
-        model="bge-m3:latest", max_chunk_chars_override=5000
+        model="bge-m3:latest",
+        max_chunk_chars_override=5000,
+        semantics_version=INDEX_SEMANTICS_VERSION,
     )
     idx2 = FTSIndex(db_path=str(tmp_path / "j.db"))
+    # A never-built index reads back the all-defaults meta, semantics
+    # version included (0 = "older than any recorded pipeline", #1124).
     assert idx2.get_chunking_meta() == ChunkingMeta(
         model=None, max_chunk_chars_override=None
     )
+    assert idx2.get_chunking_meta().semantics_version == 0
 
 
 def test_chunking_meta_stores_none_as_empty(tmp_path):
     """``None`` model + override round-trip back as ``None`` (stored empty)."""
-    from markdown_vault_mcp.fts_index import ChunkingMeta, FTSIndex
+    from markdown_vault_mcp.fts_index import (
+        INDEX_SEMANTICS_VERSION,
+        ChunkingMeta,
+        FTSIndex,
+    )
 
     idx = FTSIndex(db_path=str(tmp_path / "k.db"))
     idx.set_chunking_meta(model=None, max_chunk_chars_override=None)
     assert idx.get_chunking_meta() == ChunkingMeta(
-        model=None, max_chunk_chars_override=None
+        model=None,
+        max_chunk_chars_override=None,
+        semantics_version=INDEX_SEMANTICS_VERSION,
     )
 
 
 def test_chunking_meta_indexed_frontmatter_fields_roundtrip(tmp_path):
     """indexed_frontmatter_fields persists and defaults to ``""``."""
-    from markdown_vault_mcp.fts_index import ChunkingMeta, FTSIndex
+    from markdown_vault_mcp.fts_index import (
+        INDEX_SEMANTICS_VERSION,
+        ChunkingMeta,
+        FTSIndex,
+    )
 
     idx = FTSIndex(db_path=str(tmp_path / "i.db"))
     idx.set_chunking_meta(
@@ -1182,6 +1201,7 @@ def test_chunking_meta_indexed_frontmatter_fields_roundtrip(tmp_path):
         model=None,
         max_chunk_chars_override=None,
         indexed_frontmatter_fields="tags,category",
+        semantics_version=INDEX_SEMANTICS_VERSION,
     )
     idx2 = FTSIndex(db_path=str(tmp_path / "j.db"))
     assert idx2.get_chunking_meta().indexed_frontmatter_fields == ""
