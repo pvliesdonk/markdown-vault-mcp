@@ -1,6 +1,6 @@
 # MCP Tools
 
-markdown-vault-mcp exposes MCP tools across several categories. Write tools are only available when `MARKDOWN_VAULT_MCP_READ_ONLY=false`.
+markdown-vault-mcp exposes MCP tools across several categories. Write tools are available unless `MARKDOWN_VAULT_MCP_READ_ONLY=true`.
 
 !!! note "Index freshness on read tools (`wait_for_pending_writes` + `_meta.index_stale`)"
     Every read tool that queries the FTS index (`search`, `list_documents`, `list_folders`, `list_tags`, `stats`, `get_recent`, `get_backlinks`, `get_outlinks`, `get_broken_links`, `get_similar`, `get_toc`, `get_context`, `get_orphan_notes`, `get_most_linked`, and `get_connection_path`) accepts an optional **`wait_for_pending_writes`** (`bool`, default `false`) parameter and reports index freshness **out-of-band in the MCP response's `_meta.index_stale` field** rather than wrapping the payload in a `{stale, data}` envelope. The data payload is a **bare list/dict, identical whether the index is fresh or stale**; clients that do not care about drift ignore `_meta` entirely. Clients that need a fresh-read guarantee either inspect `result._meta.index_stale`, or pass `wait_for_pending_writes=true` to block until the writer drains (bounded by `MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S`, default 60&nbsp;s; on timeout it answers from the current index rather than raising). `index_stale` is `true` when the IndexWriter had pending or in-flight work. The relevant conditions are: the optional `wait_for_pending_writes` timed out; a write completed inside the read window; the writer was non-idle at response time. The same `_meta.index_stale` field rides on the index-querying MCP **resources** (`config://`, `stats://`, `folders://`, `tags://`, `recent://`, `toc://`, `similar://`), readable via the resource read's `_meta` (resources carry no `wait_for_pending_writes` parameter; they signal only).
@@ -302,8 +302,10 @@ Without `force`, an existing vector index is **converged** to the FTS chunk set 
 
 ## Write Operations
 
-!!! warning "Write tools require `MARKDOWN_VAULT_MCP_READ_ONLY=false`"
-    These tools are hidden when the server is in read-only mode (the default).
+!!! info "Write tools are hidden when `MARKDOWN_VAULT_MCP_READ_ONLY=true`"
+    They are registered by default. Set the variable to `true` for a
+    search-only vault; through 3.1 that was the default, so a server
+    upgrading from 3.x without setting it gains this whole section.
 
 ### `write`
 

@@ -29,10 +29,12 @@ Create a `.env` file:
 ```bash
 # .env
 MARKDOWN_VAULT_MCP_SOURCE_DIR=/home/user/ObsidianVault
-MARKDOWN_VAULT_MCP_READ_ONLY=true
 MARKDOWN_VAULT_MCP_SERVER_NAME=my-vault
 MARKDOWN_VAULT_MCP_EXCLUDE=.obsidian/**,.trash/**
 ```
+
+The write tools are available by default. Add
+`MARKDOWN_VAULT_MCP_READ_ONLY=true` to this file for a search-only server.
 
 Replace `/home/user/ObsidianVault` with the path to your vault **on the host**. Inside the container, the vault is always mounted at `/data/vault` (the `compose.yml` handles this mapping automatically).
 

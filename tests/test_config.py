@@ -291,7 +291,7 @@ class TestLoadConfig:
         config = ProjectConfig.from_env()
 
         assert config.source_dir == Path("/tmp/vault")
-        assert config.read_only is True  # default
+        assert config.read_only is False  # default (#1113)
         assert config.indexing.index_path is None
         assert config.indexing.embeddings_path is None
         assert config.indexing.state_path is None
@@ -1222,7 +1222,7 @@ class TestEmptyBoolEnvVarsFallToDefault:
     ) -> None:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "")
         config = ProjectConfig.from_env()
-        assert config.read_only is True  # default
+        assert config.read_only is False  # default (#1113)
 
     def test_git_lfs_empty_falls_through_to_default(
         self, monkeypatch: pytest.MonkeyPatch

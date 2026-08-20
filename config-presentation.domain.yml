@@ -107,7 +107,7 @@ files:
       "{PREFIX}_READ_ONLY":
         id: read_only
         title: "Read-only mode"
-        default: true
+        default: false
       "{PREFIX}_EXCLUDE":
         id: exclude_patterns
         title: "Exclude patterns"

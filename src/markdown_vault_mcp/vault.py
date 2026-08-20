@@ -157,6 +157,16 @@ class Vault:
             when *embeddings_path* is set.
         read_only: When ``True`` (default), write operations raise
             :exc:`~markdown_vault_mcp.exceptions.ReadOnlyError`.
+
+            This library default deliberately stays ``True`` even though
+            the server's ``MARKDOWN_VAULT_MCP_READ_ONLY`` now defaults to
+            ``False`` (#1113). They are separate tiers: the operator default
+            is a product decision about what an installed server should do,
+            while this one is a fail-safe for a downstream Python consumer
+            who constructs a ``Vault`` without naming the argument. Keeping
+            it costs nothing — the server path always passes the value
+            explicitly through ``to_vault_kwargs`` — and moving it would be
+            an independent breaking change to the public library interface.
         state_path: Path to the hash-state JSON file used by
             :class:`~markdown_vault_mcp.tracker.ChangeTracker`.  Defaults to
             ``{source_dir}/.markdown_vault_mcp/state.json``.

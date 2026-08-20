@@ -1,6 +1,6 @@
 # MCP Prompts
 
-Prompt templates guide the LLM through multi-step workflows using the vault tools. Write prompts (`research`, `discuss`, `create_from_template`) are only available when `MARKDOWN_VAULT_MCP_READ_ONLY=false`.
+Prompt templates guide the LLM through multi-step workflows using the vault tools. Write prompts (`research`, `discuss`, `create_from_template`) are hidden when `MARKDOWN_VAULT_MCP_READ_ONLY=true`; they are available by default.
 
 <!-- DOMAIN-PROMPTS-LIST-START -->
 ## Quick Reference
@@ -74,7 +74,7 @@ Search for a topic, synthesize findings across multiple documents, and create a 
 3. Writes a structured summary with source links to `Research/{topic-slug}.md`
 
 !!! note "Write prompt"
-    This prompt creates a new document and is only available when `READ_ONLY=false`.
+    This prompt creates a new document and is hidden when `READ_ONLY=true`.
 
 ## `discuss`
 
@@ -94,7 +94,7 @@ Analyze a document and suggest improvements, applying changes via `edit` (not `w
 4. Applies approved changes using `edit` calls
 
 !!! note "Write prompt"
-    This prompt modifies existing documents and is only available when `READ_ONLY=false`.
+    This prompt modifies existing documents and is hidden when `READ_ONLY=true`.
 
 ## `create_from_template`
 
@@ -118,7 +118,7 @@ Create a new note by adapting a template from your configured templates folder.
     Templates are regular markdown files. Set `MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER` (default `_templates`) to control where template files live.
 
 !!! note "Write prompt"
-    This prompt creates a new document and is only available when `READ_ONLY=false`.
+    This prompt creates a new document and is hidden when `READ_ONLY=true`.
 
 ## `related`
 
@@ -177,7 +177,7 @@ Scan a bounded set of notes for semantically close pairs that aren't already lin
 7. Write approved edits; skip failures (such as `ConcurrentModificationError`) and report reasons.
 
 !!! note "Write prompt"
-    This prompt modifies documents and is only available when `READ_ONLY=false`.
+    This prompt modifies documents and is hidden when `READ_ONLY=true`.
 
 !!! note "Embeddings recommended"
     `propose-links` falls back to keyword search without embeddings, but the quality of candidates is noticeably better when `get_similar` is available. See [Embeddings](guides/embeddings.md) for setup.

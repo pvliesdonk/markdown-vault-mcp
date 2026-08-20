@@ -25,7 +25,7 @@ empty. Highlights of the screen:
 | Setting | Default | What it sets |
 |---|---|---|
 | Vault directory | *(required)* | `MARKDOWN_VAULT_MCP_SOURCE_DIR` |
-| Read-only mode | `true` | `MARKDOWN_VAULT_MCP_READ_ONLY`; set `false` to enable write tools |
+| Read-only mode | `false` | `MARKDOWN_VAULT_MCP_READ_ONLY`; set `true` to hide the write tools and serve a search-only vault |
 | Exclude patterns | `.obsidian/**,.trash/**,.git/**` | `MARKDOWN_VAULT_MCP_EXCLUDE` |
 | Embedding provider | *(empty)* | `fastembed` / `ollama` / `openai`; empty means keyword-only search |
 

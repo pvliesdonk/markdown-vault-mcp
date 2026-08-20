@@ -57,12 +57,34 @@ about the disagreement.
 | Variable | Type | Default | Required | Description |
 |----------|------|---------|----------|-------------|
 | `MARKDOWN_VAULT_MCP_SOURCE_DIR` | path | (none) | **Yes** | Path to the markdown vault directory. Symbolic links inside the vault are followed on Python 3.13+ (3.11/3.12 do not follow symlinks); cyclic links hang the scan, so symlink-farm layouts must be acyclic |
-| `MARKDOWN_VAULT_MCP_READ_ONLY` | bool | `true` | No | Set to `false` to enable write operations |
+| `MARKDOWN_VAULT_MCP_READ_ONLY` | bool | `false` | No | Set to `true` to hide the write tools and serve a search-only vault. See the upgrade note below |
 | `MARKDOWN_VAULT_MCP_INDEX_PATH` | path | in-memory | No | Path to the SQLite FTS5 index file; set for persistence across restarts |
 | `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` | path | disabled | No | Path to the numpy embeddings file; required to enable semantic search |
 | `MARKDOWN_VAULT_MCP_STATE_PATH` | path | `{SOURCE_DIR}/.markdown_vault_mcp/state.json` | No | Path to the change-tracking state file |
 | `MARKDOWN_VAULT_MCP_INDEXED_FIELDS` | csv | (none) | No | Comma-separated frontmatter fields to promote to the tag index for structured filtering. Recorded as a warm-restart key, so setting or changing it cold-rebuilds the index once on next startup. When `SEARCHABLE_FIELDS` is unset, it defaults to this value, so a field indexed for filtering is also keyword/semantically searchable out of the box; a change here then also activates context-enriched embeddings and re-embeds the vault once. Set `SEARCHABLE_FIELDS` explicitly (or to `none`) to decouple. **One-time rebuild on upgrade:** a vault with `INDEXED_FIELDS` already configured cold-rebuilds once on its first startup after upgrading to the release that introduced this tracking ([#927](https://github.com/pvliesdonk/markdown-vault-mcp/issues/927)), and (if embeddings are enabled and `SEARCHABLE_FIELDS` was unset) also re-embeds once as the inherited default takes effect. No action is required; subsequent restarts warm-restart as normal |
 | `MARKDOWN_VAULT_MCP_REQUIRED_FIELDS` | csv | (none) | No | Comma-separated frontmatter fields required on every document; documents missing any are excluded from the index |
+
+!!! danger "Upgrading from 3.x: the write tools are now on by default"
+
+    Through 3.1, `MARKDOWN_VAULT_MCP_READ_ONLY` defaulted to `true`, so a
+    server that never set it exposed search and reading only. It now defaults
+    to `false`: `write`, `edit`, `append`, `delete`, `rename`, `move_folder`,
+    `fetch`, `git_sync`, the `okf_*` tools, and `create_upload_link` are
+    registered out of the box, and a connected model can create, rewrite, and
+    delete notes in your vault.
+
+    **Doing nothing on upgrade widens what the server may do to your data.**
+    If you relied on the old default, set the variable explicitly before you
+    restart:
+
+    ```bash
+    MARKDOWN_VAULT_MCP_READ_ONLY=true
+    ```
+
+    Deployments that already set it either way are unaffected — the value you
+    set still wins. The default changed because a vault server that cannot
+    write to the vault is a search index, and reaching the rest of the product
+    required discovering a flag first.
 | `MARKDOWN_VAULT_MCP_EXCLUDE` | csv | (none) | No | Comma-separated glob patterns to exclude from scanning (such as `.obsidian/**,.trash/**`) |
 | `MARKDOWN_VAULT_MCP_TITLE_FIELD` | string | `title` | No | Frontmatter field used as the document title. Resolution order: this field → `title` (when a custom field is set) → first H1 heading → filename stem. Recorded as a warm-restart key, so changing it cold-rebuilds the index once on next startup |
 | `MARKDOWN_VAULT_MCP_SEARCHABLE_FIELDS` | csv | defaults to `INDEXED_FIELDS` | No | Comma-separated frontmatter fields whose scalar values are indexed into the FTS `summary` column (chunk-0 row of each document), making them keyword-searchable (including `summary:term` column filters). They are also prefixed to first-chunk embedding text (format v2), independent of `EMBED_CONTEXT`. When unset, defaults to `INDEXED_FIELDS`; set explicitly to a different field list to diverge from that default, or to the sentinel `none` for no searchable fields at all ("filterable but not searchable"). An empty string is treated the same as unset, matching every other list-valued config var. Recorded as a warm-restart key, so setting or changing it cold-rebuilds the index and re-embeds the vault once on next startup |

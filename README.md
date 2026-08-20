@@ -211,7 +211,7 @@ embedding-provider conventions `OLLAMA_HOST`, `OPENAI_API_KEY`,
 | `MARKDOWN_VAULT_MCP_BUILD_TIMEOUT_S` | `60` | No | Maximum seconds an index-backed tool or resource waits for the FTS index to become queryable during a cold-start background build before raising IndexUnavailableError(reason="timeout"). Increase for large vaults. |
 | `MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S` | `60` | No | Maximum seconds an index-querying read tool waits for the IndexWriter to drain when called with wait_for_pending_writes=true. On timeout the tool answers from the current index and reports index_stale=true in the response _meta. |
 | `MARKDOWN_VAULT_MCP_SOURCE_DIR` | `/data/vault` | No | Path to the markdown vault directory. Required; the server refuses to start without it. Symbolic links inside the vault are followed on Python 3.13+. |
-| `MARKDOWN_VAULT_MCP_READ_ONLY` | `true` | No | Set to false to enable the write tools (write, edit, append, delete, rename, move_folder, fetch, git_sync, the okf_* tools, create_upload_link). git_sync also needs managed git mode; create_upload_link needs an HTTP transport. |
+| `MARKDOWN_VAULT_MCP_READ_ONLY` | `false` | No | Set to true to hide the write tools (write, edit, append, delete, rename, move_folder, fetch, git_sync, the okf_* tools, create_upload_link) and serve a search-only vault. git_sync also needs managed git mode; create_upload_link needs an HTTP transport. |
 | `MARKDOWN_VAULT_MCP_DISABLE_APPS_UI` | `false` | No | Hide the MCP Apps UI tools (browse_vault, show_context) from the tool listing for clients that do not render MCP Apps panels. |
 | `MARKDOWN_VAULT_MCP_INDEX_PATH` | (none) | No | Path to the SQLite FTS5 index file; unset keeps the index in memory. Set it for persistence across restarts. |
 | `MARKDOWN_VAULT_MCP_STATE_PATH` | (none) | No | Path to the change-tracking state file. Defaults to {SOURCE_DIR}/.markdown_vault_mcp/state.json. |
@@ -462,7 +462,7 @@ markdown-vault-mcp reindex [--source-dir PATH] [--index-path PATH]
 | `browse_vault` | Open the vault explorer SPA in a supporting MCP Apps client |
 | `show_context` | Open the Context Card for a specific note in a supporting MCP Apps client |
 
-Write tools (`write`, `edit`, `append`, `delete`, `rename`, `move_folder`, `fetch`, `git_sync`, the `okf_*` tools, `create_upload_link`) are only available when `MARKDOWN_VAULT_MCP_READ_ONLY=false`. `git_sync` also requires managed git mode (`MARKDOWN_VAULT_MCP_GIT_REPO_URL` set), and `create_upload_link` an HTTP transport with `BASE_URL` configured.
+Write tools (`write`, `edit`, `append`, `delete`, `rename`, `move_folder`, `fetch`, `git_sync`, the `okf_*` tools, `create_upload_link`) are registered by default and hidden when `MARKDOWN_VAULT_MCP_READ_ONLY=true`. `git_sync` also requires managed git mode (`MARKDOWN_VAULT_MCP_GIT_REPO_URL` set), and `create_upload_link` an HTTP transport with `BASE_URL` configured.
 
 `summarize` is registered only when a summarization backend is configured: an `OPENAI_API_KEY`, or an OpenAI-compatible base URL for local endpoints that need no key. It needs the `openai` SDK (`pip install 'markdown-vault-mcp[summarize]'`) and sends note content to the model provider. Any OpenAI-compatible endpoint works: OpenAI itself, a local Ollama (`http://localhost:11434/v1`, no key needed), the Anthropic compatibility endpoint (`https://api.anthropic.com/v1`), vLLM, and others. See [Configuration](https://pvliesdonk.github.io/markdown-vault-mcp/latest/configuration/) for provider recipes.
 
@@ -499,7 +499,7 @@ Prompt templates guide the LLM through multi-step workflows using the vault tool
 | `compare` | `path1`, `path2` | Read two documents and produce a side-by-side comparison |
 | `propose-links` | `scope` (optional), `per_note_limit` (optional) | Scan a candidate set of notes (a folder, `recent`, or `all`), propose links between semantically close notes that aren't already connected, and write them on confirmation |
 
-Write prompts (`research`, `discuss`, `create_from_template`, `propose-links`) are only available when `MARKDOWN_VAULT_MCP_READ_ONLY=false`.
+Write prompts (`research`, `discuss`, `create_from_template`, `propose-links`) are hidden when `MARKDOWN_VAULT_MCP_READ_ONLY=true`.
 
 Templates are regular markdown files. If placeholder template text pollutes search results, add your templates folder to `MARKDOWN_VAULT_MCP_EXCLUDE` (such as `_templates/**`).
 

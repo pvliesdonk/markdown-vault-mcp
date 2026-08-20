@@ -714,7 +714,9 @@ class TestUserPromptWriteTag:
         content = "---\ntags:\n  - write\n---\nWrite something."
         (prompts_dir / "mywriter.md").write_text(content, encoding="utf-8")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_PROMPTS_FOLDER", str(prompts_dir))
-        # READ_ONLY is True by default (env not set)
+        # Read-only is opt-in since #1113, so name it rather than relying
+        # on the default.
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "true")
 
         server = make_server()
         async with Client(server) as client:
@@ -744,16 +746,29 @@ class TestNoPromptsFolder:
     """When PROMPTS_FOLDER is not set, all built-ins are registered normally."""
 
     @pytest.mark.usefixtures("_clear_vars")
-    async def test_all_builtins_present_without_prompts_folder(self) -> None:
+    async def test_all_builtins_present_without_prompts_folder(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Every built-in registers on a default (read-write) server (#1113)."""
         server = make_server()
         async with Client(server) as client:
             prompts = await client.list_prompts()
         names = {p.name for p in prompts}
-        # Read-only mode: these built-ins should be present
         assert "summarize" in names
         assert "related" in names
         assert "compare" in names
-        # Write-tagged builtins (research, discuss, propose-links) should be hidden.
+        # Write-tagged builtins are present too, now that the default is
+        # read-write; opting in to read-only hides exactly those three.
+        assert "research" in names
+        assert "discuss" in names
+        assert "propose-links" in names
+
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "true")
+        server = make_server()
+        async with Client(server) as client:
+            prompts = await client.list_prompts()
+        names = {p.name for p in prompts}
+        assert "summarize" in names
         assert "research" not in names
         assert "discuss" not in names
         assert "propose-links" not in names
