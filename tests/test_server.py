@@ -114,6 +114,31 @@ class TestServerIdentity:
         assert "MARKDOWN_VAULT_MCP_INSTRUCTIONS" in server.instructions
         assert "Operators:" in server.instructions
 
+    def test_mode_line_is_composed_domain_side(self) -> None:
+        """The READ-ONLY/READ-WRITE line is ours, not pvl-core's (#1114).
+
+        pvl-core 4.11.2 dropped the announcement (and the ``read_only``
+        keyword that selected it) because nothing in the library enforced
+        it. This server does enforce it, so the sentence is composed in
+        ``build_default_instructions`` — after the domain prose and before
+        the operator-override hint the core still appends.
+        """
+        import inspect
+
+        from fastmcp_pvl_core import build_instructions as core_build_instructions
+
+        from markdown_vault_mcp._instructions import build_default_instructions
+
+        assert "read_only" not in inspect.signature(core_build_instructions).parameters
+
+        text = build_default_instructions(read_only=True)
+        assert "READ-ONLY" in text
+        assert text.index("READ-ONLY") < text.index("Operators:")
+
+        text = build_default_instructions(read_only=False)
+        assert "READ-WRITE" in text
+        assert text.index("READ-WRITE") < text.index("Operators:")
+
     @pytest.mark.usefixtures("_mcp_env")
     def test_custom_server_name(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SERVER_NAME", "my-vault")
@@ -1474,11 +1499,24 @@ class TestFetchTool:
     _UNCAPPED = 2**63 - 1
 
     @staticmethod
-    def _fetch_url_returning(body: bytes, content_type: str | None) -> AsyncMock:
-        """Stub ``fetch_url`` returning a real ``FetchResult``."""
+    def _fetch_url_returning(
+        body: bytes,
+        content_type: str | None,
+        final_url: str = "https://example.com/note.md",
+    ) -> AsyncMock:
+        """Stub ``fetch_url`` returning a real ``FetchResult``.
+
+        ``final_url`` is the URL the bytes came from — equal to the requested
+        URL when nothing redirected, which is what every caller here wants
+        (pvl-core 4.11.2 made the field mandatory, #1114).
+        """
         from fastmcp_pvl_core import FetchResult
 
-        return AsyncMock(return_value=FetchResult(body=body, content_type=content_type))
+        return AsyncMock(
+            return_value=FetchResult(
+                body=body, content_type=content_type, final_url=final_url
+            )
+        )
 
     async def test_fetch_markdown_note(
         self, _mcp_env_writable_with_attachments: Path

@@ -41,7 +41,7 @@ dependencies = [
     # extra to declare here, and no packaging plumbing.  (The
     # config-surface generator pins the floor exactly, so the floor must
     # name a version that exists on PyPI.)
-    "fastmcp-pvl-core>=4.11.1,<5",
+    "fastmcp-pvl-core>=4.11.2,<5",
     "typer>=0.12",
 
     # PROJECT-DEPS-START — add domain dependencies below; kept across copier update
