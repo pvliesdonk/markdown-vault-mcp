@@ -758,6 +758,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#push-triggered-pull-github-webhook" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Push-Triggered Pull: GitHub Webhook
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#manual-sync-git_sync-tool" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1938,6 +1949,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#push-triggered-pull-github-webhook" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Push-Triggered Pull: GitHub Webhook
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#manual-sync-git_sync-tool" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2051,6 +2073,67 @@
 <li>Writes are committed and pushed after the configured idle delay.</li>
 <li>Periodic pull uses fast-forward-only updates.</li>
 </ul>
+<p>Two mechanisms sit alongside the periodic loop, both described below: a
+GitHub webhook that pulls the moment someone pushes, and the <code>git_sync</code>
+tool for pulling or pushing on demand from inside a conversation.</p>
+<h2 id="push-triggered-pull-github-webhook">Push-Triggered Pull: GitHub Webhook<a class="headerlink" href="#push-triggered-pull-github-webhook" title="Permanent link">&para;</a></h2>
+<p>The periodic loop leaves reads up to <code>GIT_PULL_INTERVAL_S</code> seconds behind
+the remote (default 600). In a multi-author vault, where a teammate or
+another instance commits from elsewhere, that window is what the webhook
+closes: GitHub delivers a <code>push</code> event, the server pulls and reindexes
+straight away, and staleness drops to delivery latency, a couple of
+seconds in practice.</p>
+<p>Generate a secret and set it:</p>
+<div class="highlight"><pre><span></span><code><span class="nv">MARKDOWN_VAULT_MCP_GITHUB_WEBHOOK_SECRET</span><span class="o">=</span><span class="k">$(</span>openssl<span class="w"> </span>rand<span class="w"> </span>-hex<span class="w"> </span><span class="m">32</span><span class="k">)</span>
+</code></pre></div>
+<p>Setting the secret mounts <code>POST /github-webhook</code> on the HTTP and SSE
+transports. Under stdio there is no HTTP server, so nothing is mounted and
+the setting has no effect. In the GitHub repository, add a webhook pointing
+at <code>https://&lt;your-host&gt;/github-webhook</code> with content type
+<code>application/json</code>, the same secret, and the <code>push</code> event selected.</p>
+<p>Behavior:</p>
+<ul>
+<li>Every delivery's <code>X-Hub-Signature-256</code> header is verified (HMAC-SHA256,
+  constant-time). An invalid or missing signature returns 401 and no git
+  operation runs.</li>
+<li>A <code>push</code> event pulls first, then reindexes only when HEAD actually moved.
+  A push to a branch the vault does not track leaves HEAD where it was, so
+  it costs a fetch and nothing more.</li>
+<li><code>ping</code>, GitHub's handshake delivery, answers <code>pong</code>; every other event
+  returns 200 and does nothing.</li>
+<li>A delivery whose pull did not apply returns 503, so GitHub retries it
+  instead of marking it delivered. A pull that keeps failing, such as an
+  unresolved conflict, exhausts the retries and waits for the next
+  periodic tick. Divergent history is not a failure: it flows through the
+  Syncthing-style sibling resolution described under
+  <a href="#manual-sync-git_sync-tool"><code>git_sync</code></a> below.</li>
+<li>A delivery arriving while the initial index build is still running is
+  handled, not dropped. The pull is a pure git operation and runs
+  regardless of index state; only the reindex is skipped, and the boot
+  reconciliation pass that follows the build picks the pulled changes up.</li>
+</ul>
+<div class="admonition warning">
+<p class="admonition-title">Managed mode only</p>
+<p>Set the secret only where the server owns the remote. Outside managed
+mode a delivery is not a quiet no-op: the pull path ignores the sync
+switch that unmanaged mode turns off and runs <code>git fetch origin</code>
+anyway. A checkout with no reachable <code>origin</code> fails that fetch and
+answers 503, burning GitHub's retries on every push; against a vault
+that is not a git repository at all, the pull raises out of the
+handler.</p>
+</div>
+<p>Keep <code>GIT_PULL_INTERVAL_S</code> enabled. The webhook narrows the staleness
+window; the loop is what catches the deliveries the webhook loses.</p>
+<div class="admonition note">
+<p class="admonition-title">The file watcher steps aside</p>
+<p>Setting <code>GITHUB_WEBHOOK_SECRET</code> disables the filesystem watcher, the
+same way <code>GIT_PULL_INTERVAL_S &gt; 0</code> does. Git rewrites the working tree
+during a checkout, and a watcher firing mid-checkout would scan a
+partial tree. Reindexing stays driven by the webhook and the periodic
+loop. See <a href="../../configuration/#file-watcher">File Watcher</a>.</p>
+</div>
+<p>The variable itself is listed in the
+<a href="../../configuration/#github-webhook-push-triggered-pull">configuration reference</a>.</p>
 <h2 id="manual-sync-git_sync-tool">Manual sync: <code>git_sync</code> tool<a class="headerlink" href="#manual-sync-git_sync-tool" title="Permanent link">&para;</a></h2>
 <p>The periodic loops are time-based: pull every
 <code>MARKDOWN_VAULT_MCP_GIT_PULL_INTERVAL_S</code> seconds (default 600), push

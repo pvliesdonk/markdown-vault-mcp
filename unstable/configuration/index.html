@@ -3019,7 +3019,7 @@ durable cross-restart execution is what the native task path with a
 <li>In your GitHub repository, add a webhook pointing at <code>https://&lt;your-host&gt;/github-webhook</code> with content type <code>application/json</code> and the same secret.</li>
 <li>Select the <code>push</code> event (other events are acknowledged with 200 and ignored).</li>
 </ol>
-<p>The periodic pull loop (<code>GIT_PULL_INTERVAL_S</code>) remains active as a belt-and-suspenders fallback for missed webhook deliveries.</p>
+<p>The periodic pull loop (<code>GIT_PULL_INTERVAL_S</code>) remains active as a belt-and-suspenders fallback for missed webhook deliveries. For the same setup in context, alongside the other sync mechanisms and what each delivery outcome means, see the <a href="../guides/git-integration/#push-triggered-pull-github-webhook">git integration guide</a>.</p>
 <h2 id="file-watcher">File Watcher<a class="headerlink" href="#file-watcher" title="Permanent link">&para;</a></h2>
 <p>Detects external file changes (edits by a local editor, sync daemon, or <code>cp -r</code>) without requiring git integration. Enabled by default for vaults that are not managed by git pull; automatically disabled when the periodic git pull loop (<code>GIT_PULL_INTERVAL_S &gt; 0</code>) or the GitHub webhook (<code>GITHUB_WEBHOOK_SECRET</code>) is active, since those mechanisms already trigger reindex on their own cadence.</p>
 <p>Requires the optional <code>watchdog</code> dependency: <code>pip install 'markdown-vault-mcp[file-watcher]'</code>.</p>
