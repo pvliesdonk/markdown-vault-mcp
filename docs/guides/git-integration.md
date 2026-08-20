@@ -32,6 +32,68 @@ Behavior:
 - Writes are committed and pushed after the configured idle delay.
 - Periodic pull uses fast-forward-only updates.
 
+Two mechanisms sit alongside the periodic loop, both described below: a
+GitHub webhook that pulls the moment someone pushes, and the `git_sync`
+tool for pulling or pushing on demand from inside a conversation.
+
+## Push-Triggered Pull: GitHub Webhook
+
+The periodic loop leaves reads up to `GIT_PULL_INTERVAL_S` seconds behind
+the remote (default 600). In a multi-author vault, where a teammate or
+another instance commits from elsewhere, that window is what the webhook
+closes: GitHub delivers a `push` event, the server pulls and reindexes
+straight away, and staleness drops to delivery latency, a couple of
+seconds in practice.
+
+Generate a secret and set it:
+
+```bash
+MARKDOWN_VAULT_MCP_GITHUB_WEBHOOK_SECRET=$(openssl rand -hex 32)
+```
+
+Setting the secret mounts `POST /github-webhook` on the HTTP and SSE
+transports. Under stdio there is no HTTP server, so nothing is mounted and
+the setting has no effect. In the GitHub repository, add a webhook pointing
+at `https://<your-host>/github-webhook` with content type
+`application/json`, the same secret, and the `push` event selected.
+
+Behavior:
+
+- Every delivery's `X-Hub-Signature-256` header is verified (HMAC-SHA256,
+  constant-time). An invalid or missing signature returns 401 and no git
+  operation runs.
+- A `push` event pulls first, then reindexes only when HEAD actually moved.
+  A push to a branch the vault does not track leaves HEAD where it was, so
+  it costs a fetch and nothing more.
+- `ping`, GitHub's handshake delivery, answers `pong`; every other event
+  returns 200 and does nothing.
+- A delivery that lands before the server has finished starting, or whose
+  pull did not apply, returns 503 so GitHub retries it instead of marking
+  it delivered. GitHub's retry budget spans roughly two minutes, so a
+  delivery during a long cold-start index build can still be lost.
+- A pull that fails permanently, such as an unresolved conflict or a
+  missing remote, exhausts those retries and waits for the next periodic
+  tick. Divergent history is not a failure: it flows through the
+  Syncthing-style sibling resolution described under
+  [`git_sync`](#manual-sync-git_sync-tool) below.
+
+The webhook is a managed-mode feature. With no `GIT_REPO_URL` configured
+there is nothing to pull from, and deliveries are acknowledged with 200
+without doing any work.
+
+Keep `GIT_PULL_INTERVAL_S` enabled. The webhook narrows the staleness
+window; the loop is what catches the deliveries the webhook loses.
+
+!!! note "The file watcher steps aside"
+    Setting `GITHUB_WEBHOOK_SECRET` disables the filesystem watcher, the
+    same way `GIT_PULL_INTERVAL_S > 0` does. Git rewrites the working tree
+    during a checkout, and a watcher firing mid-checkout would scan a
+    partial tree. Reindexing stays driven by the webhook and the periodic
+    loop. See [File Watcher](../configuration.md#file-watcher).
+
+The variable itself is listed in the
+[configuration reference](../configuration.md#github-webhook-push-triggered-pull).
+
 ## Manual sync: `git_sync` tool
 
 The periodic loops are time-based: pull every
