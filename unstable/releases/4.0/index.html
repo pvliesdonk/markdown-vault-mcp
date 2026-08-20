@@ -1827,6 +1827,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#folder-filter-and-link-rewrite-bug-sweep" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Folder-filter and link-rewrite bug sweep
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#new-append-tool-and-other-write-and-git-fixes" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1891,7 +1902,7 @@
 
 
 <h1 id="40">4.0<a class="headerlink" href="#40" title="Permanent link">&para;</a></h1>
-<!-- notes-range-end: 70024c22274d4825c65799ce4c6b58630ed52864 -->
+<!-- notes-range-end: 8dc73f8cd42f2fc5cdcaa77c81fbcbaa7311b25b -->
 
 <!-- RELEASE-SUMMARY v4.0.0 START -->
 <p>4.0.0 is the first stable release since v3.1.0 (July 8, 2026), and it carries
@@ -1904,14 +1915,18 @@ vaults, a rebuilt <a href="#llm-backed-summarization">LLM summarization</a> feat
 now talks to any OpenAI-compatible endpoint and runs as a background job when
 it's slow, per-vault <a href="#folder-conventions-custom-frontmatter-and-ranking-control">authoring conventions and ranking
 control</a>, a new
-<code>append</code> tool, two security fixes, and a <a href="#packaging-the-claude-code-plugin-channel">Claude Code plugin
-channel</a> with guided setup. It's a
-major version because two things break existing setups on upgrade; see
+<code>append</code> tool, security fixes, and a <a href="#packaging-the-claude-code-plugin-channel">Claude Code plugin
+channel</a> with guided setup. Late in
+the cycle, <code>MARKDOWN_VAULT_MCP_READ_ONLY</code> also flipped its default from <code>true</code>
+to <code>false</code>, so a freshly installed server now serves its write tools out of
+the box instead of only a search index
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1113">#1113</a>). It's
+a major version because four things break existing setups on upgrade; see
 <a href="#upgrading">Upgrading</a>.</p>
 <!-- RELEASE-SUMMARY v4.0.0 END -->
 
 <h2 id="why-this-release-covers-so-much">Why this release covers so much<a class="headerlink" href="#why-this-release-covers-so-much" title="Permanent link">&para;</a></h2>
-<p>Between v3.1.0 and 4.0.0, <code>main</code> accumulated 95+ commits while <code>v3.2.0-rc.1</code>
+<p>Between v3.1.0 and 4.0.0, <code>main</code> accumulated 125+ commits while <code>v3.2.0-rc.1</code>
 through <code>v3.2.0-rc.7</code> ran for five weeks without ever becoming a stable
 release. The rc series stalled on a mechanical problem: each <code>v3.2.0-rc.N</code>
 tag predicted the next stable would be <code>3.2.0</code>, but the release tooling
@@ -2129,15 +2144,76 @@ reported by
   (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/955">#955</a>,
   fixed in
   <a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/994">#994</a>).</li>
+<li>A note with no body (zero-byte, frontmatter-only, or whitespace-only)
+  chunks to a single empty-string chunk, and sending that string to an
+  embedding provider gets HTTP 400 back, which used to abort the whole
+  batch rather than just the offending note: one reporter's 3-line
+  frontmatter-only note "held the index stale for ~17 hours before anyone
+  noticed"
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1087">#1087</a>,
+  reported by
+  <a href="https://github.com/salmonumbrella">@salmonumbrella</a>). A blank chunk is
+  now dropped before it reaches the provider, at both the embed call and
+  the convergence-pass signature diff (dropping it in only one place would
+  make the index re-embed the same document forever); the note stays fully
+  keyword-searchable through FTS, only its vector is skipped
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1112">#1112</a>).</li>
 <li><code>reindex</code> and <code>build_embeddings</code> are now <strong>dual-mode background jobs</strong>: a
   fast call still returns its result inline, but a slow one now returns
   <code>{"status": "working", "job_id": ...}</code> for polling via <code>get_job_result</code>,
   and a backend failure that happens within the deadline now raises on the
   call itself instead of surfacing only through <code>get_index_status</code>
   (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1037">#1037</a>).
-  This is one of the two behavior changes covered under
+  This is one of the four behavior changes covered under
   <a href="#upgrading">Upgrading</a>.</li>
 </ul>
+<h2 id="folder-filter-and-link-rewrite-bug-sweep">Folder-filter and link-rewrite bug sweep<a class="headerlink" href="#folder-filter-and-link-rewrite-bug-sweep" title="Permanent link">&para;</a></h2>
+<p>A live 902-note vault run against <code>4.0.0-rc.4</code> turned up six bugs in one
+sitting, all filed against the v4.0 milestone and fixed together in one PR
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1109">#1109</a>):</p>
+<ul>
+<li><strong>Trailing-slash folder filters returned nothing.</strong> <code>folder="X/"</code> and
+  <code>folder="X"</code> were supposed to select the same notes, but every
+  FTS-backed surface (<code>search(mode="keyword")</code>, <code>list_documents</code>,
+  <code>get_recent</code>, <code>get_broken_links</code>) silently returned <code>[]</code> for the
+  trailing-slash form, and <code>mode="hybrid"</code> quietly dropped to
+  semantic-only results
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1103">#1103</a>).
+  A related fix corrected the opposite bug on the vector-row post-filter,
+  where <code>.strip("/") or None</code> collapsed an explicit <code>folder=""</code> into "no
+  restriction" and made <code>mode="semantic"</code>/<code>"hybrid"</code>/<code>get_similar</code> search
+  the whole vault instead of the documented root-level-only scope
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1106">#1106</a>).
+  Both are now handled by one shared <code>normalize_folder</code> helper that keeps
+  <code>None</code>, <code>""</code>, and every other value distinct.</li>
+<li><strong>A folder-scoped semantic search needed <code>limit</code> in the thousands to
+  return anything.</strong> The candidate pool was capped before the folder
+  filter ran, so a folder whose chunks all scored below the cap came back
+  empty
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1108">#1108</a>).
+  The cap now applies after scoping, not before.</li>
+<li><strong><code>rename</code> and <code>move_folder</code> demoted root-relative links back to
+  folder-relative ones</strong>, silently undoing OKF's own link convention on
+  every move: a link <code>okf_convert_links</code> had just rewritten to
+  <code>/folder/note.md</code> came back as bare <code>note.md</code> after the next <code>rename</code>
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1105">#1105</a>).
+  <code>compute_new_raw_target</code> now recognizes the leading-slash shape as a
+  third link form rather than falling through to relative.</li>
+<li><strong><code>[[#Heading]]</code> wikilinks stored a literal <code>.md</code> target</strong> because the
+  fragment was split off before <code>.md</code> was appended
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1107">#1107</a>);
+  they're now skipped, matching how <code>[text](#heading)</code> is already
+  handled.</li>
+<li><strong>Footnote definitions were parsed as link targets</strong>, because footnote
+  syntax differs from reference-link syntax by one character and both
+  reference regexes matched it
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1104">#1104</a>).</li>
+</ul>
+<p>Five more regressions the fix itself introduced were caught in review
+before merge (a <code>limit=0</code> off-by-one, corrupted <code>okf_generate_index</code> /
+<code>okf_seed_log</code> output, Windows attachment paths dropping out of
+<code>list_documents</code>, and a folder-scoped <code>get_similar</code> losing its pool
+widening), all fixed in the same PR and none shipped.</p>
 <h2 id="new-append-tool-and-other-write-and-git-fixes">New <code>append</code> tool, and other write and git fixes<a class="headerlink" href="#new-append-tool-and-other-write-and-git-fixes" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong><code>append</code></strong>: a write tool that appends text to the end of a note without
@@ -2191,6 +2267,23 @@ reported by
   the issue nor the fix describes the vulnerability's attack vector beyond
   the audit tool's own flag; if you need more detail, check the upstream
   <code>mcp</code> advisory directly.</li>
+<li><strong><code>fetch</code> now follows redirects instead of refusing them.</strong> This is a
+  side effect of raising the <code>fastmcp-pvl-core</code> floor to 4.11.2, which
+  hardcodes <code>follow_redirects=True</code> in the shared <code>fetch_url</code> helper with
+  no opt-out
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1116">#1116</a>).
+  The guard is not weakened by this: it moved from a one-time pre-flight
+  check into the transport itself, so every redirect hop re-runs the
+  scheme check, the address validation, and the IP pin, and a <code>Location</code>
+  header pointing at an internal target is refused exactly as a direct
+  request would be. The response now reports where the bytes actually came
+  from in a <code>final_url</code> field, which may differ from the requested <code>url</code>
+  after a redirect; a caller enforcing its own host policy needs to check
+  that field, not just the input. A chain longer than the transport's
+  redirect limit now fails with <code>httpx.TooManyRedirects</code> instead of the
+  previous <code>ValueError</code>
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1118">#1118</a>).
+  See <a href="#upgrading">Upgrading</a>.</li>
 </ul>
 <h2 id="packaging-the-claude-code-plugin-channel">Packaging: the Claude Code plugin channel<a class="headerlink" href="#packaging-the-claude-code-plugin-channel" title="Permanent link">&para;</a></h2>
 <p>Configuring this server used to mean "editing a shell profile and
@@ -2240,11 +2333,36 @@ plugin channel:</p>
 <p>See the <a href="../../guides/claude-code-plugin/">Claude Code plugin guide</a> and the
 <a href="../../guides/claude-desktop/">Claude Desktop guide</a> for current setup steps.</p>
 <h2 id="upgrading">Upgrading<a class="headerlink" href="#upgrading" title="Permanent link">&para;</a></h2>
-<p>Two changes break existing setups. Everything else in this release is
+<p>Four changes break existing setups. Everything else in this release is
 additive: new tools, new optional environment variables, and reworks of
 features (like <code>summarize</code>) that never reached a stable release before now,
 so their internal churn had no released surface to break.</p>
 <ul>
+<li><strong><code>MARKDOWN_VAULT_MCP_READ_ONLY</code> now defaults to <code>false</code>.</strong> Through 3.1
+  it defaulted to <code>true</code>, so a server installed from any channel started
+  with its entire write surface hidden, which is "most of what the server
+  is for"
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1113">#1113</a>).
+  This is the one 4.0 change where doing nothing on upgrade silently
+  widens what a connected model may do to your data: a default install
+  now gains <code>write</code>, <code>edit</code>, <code>append</code>, <code>delete</code>, <code>rename</code>, <code>move_folder</code>,
+  and <code>fetch</code> (seven tools, not the full write-tagged set: <code>git_sync</code>,
+  <code>create_upload_link</code>, and the <code>okf_*</code> tools stay behind their own
+  gates). Set <code>MARKDOWN_VAULT_MCP_READ_ONLY=true</code> explicitly to keep a
+  read-only server
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1119">#1119</a>).
+  The corresponding library-level defaults
+  (<code>Vault.__init__</code>/<code>DocumentManager.__init__</code>) are unchanged at
+  <code>read_only=True</code>, since that tier is a downstream Python consumer's
+  fail-safe, not the operator default.</li>
+<li><strong><code>fetch</code> follows redirects instead of refusing them.</strong> Through 3.1 the
+  tool's own docstring promised redirects were not followed; a caller
+  that relied on a refusal error to reject indirection now silently gets
+  content instead, with <code>final_url</code> reporting where it actually came from
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1116">#1116</a>,
+  fixed in
+  <a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1118">#1118</a>).
+  See <a href="#security-fixes">Security fixes</a> for the guard-safety detail.</li>
 <li><strong><code>from markdown_vault_mcp import X</code> no longer works for most names.</strong> The
   package root used to lazily re-export <code>Vault</code>, <code>ProjectConfig</code>,
   <code>GitWriteStrategy</code>, every exception type, and the shared dataclasses; it
