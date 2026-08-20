@@ -275,8 +275,10 @@ upstreams
 # --- 4.0 release notes vocabulary ---
 CI
 dataclasses
+hardcodes
 interop
 OKF
+regexes
 severities
 umask
 unnormalized
