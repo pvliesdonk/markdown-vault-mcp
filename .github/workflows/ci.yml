@@ -44,9 +44,6 @@ jobs:
         run: uv sync --all-extras --all-groups --locked
 
 
-      - name: Verify assembled SPA source is up-to-date
-        run: uv run python scripts/build_spa.py --check
-
       - name: Verify vendored SPA is up-to-date
         run: uv run python scripts/vendor_spa.py --check
 

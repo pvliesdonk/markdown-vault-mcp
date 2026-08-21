@@ -53,6 +53,18 @@ FILE_MODULE_PATHS = {
     "cli.py": f"src/{MODULE}/cli.py",
 }
 
+# Template-owned NON-Python files (#941, #942 — the README/ci.yml tail of the
+# #898 de-fork). README.md is hybrid: DOMAIN blocks (HTML-comment sentinels)
+# are ours and the GENERATED-ENV-TABLE-* regions belong to the config
+# generator; everything else must match the pristine render. ci.yml declares
+# no sentinels, so the whole file is compared (its former domain step lives in
+# the domain-owned spa-source-check.yml workflow now). Compared with
+# blank-line-only normalization — the import-dropping rule is Python-specific.
+NON_PY_FILE_PATHS = {
+    "README.md": "README.md",
+    "ci.yml": ".github/workflows/ci.yml",
+}
+
 # Empty — epic #898 is complete and every template-owned file is held to the
 # strict conformance check. Asserted empty by ``test_ratchet_is_empty``; adding
 # a file here does nothing on its own (the weak-check branch was removed at
@@ -61,6 +73,14 @@ RATCHET: dict[str, str] = {}
 
 _START = re.compile(r"#\s*([A-Z0-9-]+)-START\b")
 _END = re.compile(r"#\s*([A-Z0-9-]+)-END\b")
+
+# Markdown sentinels are HTML comments: `<!-- DOMAIN-START -->` and the
+# config generator's `<!-- GENERATED-ENV-TABLE-*-START — ... -->` markers.
+# One regex pair covers both; the generated regions collapse on both sides,
+# so the repo's filled tables compare equal to the pristine render's empty
+# ones (the generator, not the template, owns their interior).
+_MD_START = re.compile(r"<!--\s*([A-Z0-9-]+)-START\b")
+_MD_END = re.compile(r"<!--\s*([A-Z0-9-]+)-END\b")
 
 
 # --------------------------------------------------------------------------- #
@@ -80,7 +100,11 @@ def _normalize(text: str) -> list[str]:
     return lines
 
 
-def _sentinel_names(pristine_lines: list[str]) -> set[str]:
+def _sentinel_names(
+    pristine_lines: list[str],
+    start_re: re.Pattern[str] = _START,
+    end_re: re.Pattern[str] = _END,
+) -> set[str]:
     """Legal sentinel names = those the *pristine* render declares.
 
     Authoritative source: a fork cannot legitimize itself by inventing a
@@ -89,12 +113,12 @@ def _sentinel_names(pristine_lines: list[str]) -> set[str]:
     names: set[str] = set()
     stack: list[str] = []
     for ln in pristine_lines:
-        start = _START.search(ln)
+        start = start_re.search(ln)
         if start:
             stack.append(start.group(1))
             names.add(start.group(1))
             continue
-        end = _END.search(ln)
+        end = end_re.search(ln)
         if end:
             assert stack and stack[-1] == end.group(1), (
                 f"unbalanced sentinel {end.group(1)}-END in pristine render"
@@ -104,7 +128,12 @@ def _sentinel_names(pristine_lines: list[str]) -> set[str]:
     return names
 
 
-def _strip_sentinels(lines: list[str], legal: set[str]) -> list[str]:
+def _strip_sentinels(
+    lines: list[str],
+    legal: set[str],
+    start_re: re.Pattern[str] = _START,
+    end_re: re.Pattern[str] = _END,
+) -> list[str]:
     """Replace each inclusive ``NAME-START..NAME-END`` block with one token.
 
     Marker-anchored (not index-anchored), so equal blocks line up regardless of
@@ -115,12 +144,12 @@ def _strip_sentinels(lines: list[str], legal: set[str]) -> list[str]:
     out: list[str] = []
     i, n = 0, len(lines)
     while i < n:
-        start = _START.search(lines[i])
+        start = start_re.search(lines[i])
         if start and start.group(1) in legal:
             name = start.group(1)
             j = i + 1
             while j < n:
-                end = _END.search(lines[j])
+                end = end_re.search(lines[j])
                 if end and end.group(1) == name:
                     break
                 j += 1
@@ -171,6 +200,16 @@ def _significant(lines: list[str]) -> list[str]:
         out.append(lines[i])
         i += 1
     return out
+
+
+def _significant_text(lines: list[str]) -> list[str]:
+    """Blank-line-only significance filter for non-Python files.
+
+    The import-dropping in :func:`_significant` is a Python-specific
+    allowance; Markdown prose or YAML starting with ``from `` / ``import ``
+    must still be compared, so only blank lines are dropped here.
+    """
+    return [ln for ln in lines if ln.strip() != ""]
 
 
 def _first_divergence(
@@ -375,7 +414,8 @@ def ctx(tmp_path_factory: pytest.TempPathFactory) -> _Ctx:
         )
     # Render success = clean exit AND every watched file present. Inferring it
     # from one file would turn a partial render into a spurious per-file FAIL.
-    missing = [rel for rel in FILE_MODULE_PATHS.values() if not (dest / rel).exists()]
+    watched = list(FILE_MODULE_PATHS.values()) + list(NON_PY_FILE_PATHS.values())
+    missing = [rel for rel in watched if not (dest / rel).exists()]
     if proc.returncode != 0 or missing:  # pragma: no cover
         pytest.skip(
             "template-conformance gate: pristine render FAILED — SKIPPED, not a "
@@ -420,6 +460,35 @@ def test_template_owned_file_conforms(fname: str, ctx: _Ctx) -> None:
 
     # Unconditionally strict (epic #898 complete): every template-owned file
     # must conform outside its sentinel blocks. See test_ratchet_is_empty.
+    assert div is None, _fork_message(fname, rel, ctx.ref, div, repo)
+
+
+@pytest.mark.parametrize("fname", sorted(NON_PY_FILE_PATHS))
+def test_non_python_template_owned_file_conforms(fname: str, ctx: _Ctx) -> None:
+    """README.md / ci.yml conform to the pristine render (#941, #942).
+
+    Same gate as the Python files, with Markdown-comment sentinels and a
+    blank-line-only significance filter. For ci.yml the pristine render
+    declares no sentinels, so the comparison is the strict whole file.
+    """
+    rel = NON_PY_FILE_PATHS[fname]
+    repo_path = REPO_ROOT / rel
+    pristine_path = ctx.render_dir / rel
+
+    if rel in ctx.exempt:  # pragma: no cover — neither file is skip-listed
+        assert repo_path.exists(), f"{fname} is template-exempt but missing from repo"
+        return
+
+    assert pristine_path.exists(), (
+        f"pristine render did not produce {rel}; gate cannot verify it"
+    )
+    pristine = _normalize(pristine_path.read_text())
+    repo = _normalize(repo_path.read_text())
+    legal = _sentinel_names(pristine, _MD_START, _MD_END)
+    div = _first_divergence(
+        _significant_text(_strip_sentinels(repo, legal, _MD_START, _MD_END)),
+        _significant_text(_strip_sentinels(pristine, legal, _MD_START, _MD_END)),
+    )
     assert div is None, _fork_message(fname, rel, ctx.ref, div, repo)
 
 

@@ -1,0 +1,43 @@
+# Domain-owned workflow — NOT rendered by the copier template, so it survives
+# `copier update` untouched (#942). It enforces the domain-only half of the SPA
+# pipeline (`spa/* -> scripts/build_spa.py -> app.src.html`): a stale
+# `app.src.html` (unbuilt `spa/` edits) passes the template's
+# `vendor_spa --check` in ci.yml when `app.html` matches the stale source, so
+# this check must live somewhere — and a template-owned ci.yml cannot carry a
+# domain step without re-forking on every template change.
+name: SPA Source Check
+
+on:
+  push:
+    branches: [main, "release/**"]
+  pull_request:
+    branches: [main, "release/**"]
+  workflow_dispatch:
+
+jobs:
+  build-spa-check:
+    name: SPA source up-to-date
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.2.0
+        with:
+          version: "latest"
+
+      - name: Cache Python interpreter
+        uses: actions/cache@v6
+        with:
+          path: ~/.local/share/uv/python
+          key: uv-python-3.12-${{ runner.os }}
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --all-extras --all-groups --locked
+
+      - name: Verify assembled SPA source is up-to-date
+        run: uv run python scripts/build_spa.py --check

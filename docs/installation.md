@@ -125,7 +125,41 @@ markdown-vault-mcp search "hello world"
 ```
 
 <!-- DOMAIN-INSTALL-EXTRA-START -->
-<!-- Project-specific notes for installation go here; kept across copier
-     update. (E.g. system dependencies, optional extras, custom configuration
-     steps.) -->
+## Upgrading from earlier versions
+
+- **Package root minimized (issue #903): import from submodules, not the package root.**
+  The `markdown_vault_mcp` root package no longer re-exports the public API. Update
+  library imports to their submodules:
+
+  ```python
+  # Before: from markdown_vault_mcp import Vault, ProjectConfig
+  # After:  from markdown_vault_mcp.vault import Vault
+  #         from markdown_vault_mcp.config import ProjectConfig
+  ```
+
+  Types such as `GroupedResult` come from `markdown_vault_mcp.types`. Only
+  `__version__` remains importable from the root.
+- **v2.0.0 (issue #469): `search`, `get_similar`, and `get_context.similar` now return grouped results.**
+  Each file appears once with a `sections` list; the flat `content`, `heading`, and `score`
+  fields have moved inside each `SectionHit`. Library consumers must update iteration:
+
+  ```python
+  # Before: result.content, result.heading
+  # After:  result.sections[0].content, result.sections[0].heading
+  ```
+
+  `MARKDOWN_VAULT_MCP_CHUNKS_PER_FILE` replaces `MARKDOWN_VAULT_MCP_CHUNKS_PER_DOC`.
+  `SimilarItem` is removed; use `GroupedResult` (from `markdown_vault_mcp.types`).
+- **Search returns snippets by default.** The `content` field carries a query-relevant
+  snippet (approximately 200 words). Pass `snippet_words=0` to recover the prior
+  full-chunk behaviour, or use `read(path, section=heading)` to fetch the full section
+  after seeing a snippet.
+- `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB` default lowered from **10 MB**
+  to **1 MB**.  Most LLM contexts can't survive a 10 MB base64-encoded
+  attachment; the old default was a silent context-blow-up. If you have
+  non-LLM consumers (scripts, CI) that need the old behaviour, set
+  `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB=10` explicitly.
+- `MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES` caps whole-document `.md` reads (default
+  256 KB); reads above it raise `ValueError`. Partial reads via
+  `read(path, section=heading)` bypass the cap.
 <!-- DOMAIN-INSTALL-EXTRA-END -->
