@@ -1,0 +1,80 @@
+name: Set up project environment
+description: >
+  Install uv, restore the cached interpreter, install a Python, and sync the
+  project's dependencies. The sequence every job that runs `uv run` needs,
+  in one place so a change to the uv pin, the cache key or the sync flags
+  lands once instead of once per job (#455). Domain workflows a project adds
+  itself reuse this rather than copying the steps, which is what keeps them
+  from drifting away from ci.yml as the template moves.
+
+  Requires the repository to be checked out first: a local composite is only
+  resolvable once actions/checkout has run. Checkout stays at the call site
+  for that reason, and because jobs need different fetch depths.
+
+inputs:
+  python-version:
+    description: Interpreter version to install, and the version segment of the cache key.
+    required: false
+    default: "3.12"
+  sync:
+    description: >
+      Whether to install the project's dependencies. Set to "false" for a job
+      that only needs uv itself — an audit that resolves with `uv export`, or
+      a step that runs a tool through `uvx` — so it does not pay for a venv
+      it never imports from.
+    required: false
+    default: "true"
+  sync-args:
+    description: >
+      Flags for `uv sync`. The default installs everything the gate needs and
+      fails on lockfile drift; pass `--frozen` in place of `--locked` for a
+      job that must leave the workspace byte-clean even when the lockfile is
+      stale (see the reviewer workflow).
+    required: false
+    default: "--all-extras --all-groups --locked"
+
+runs:
+  using: composite
+  steps:
+    - name: Install uv
+      uses: astral-sh/setup-uv@v8.2.0
+      with:
+        version: "latest"
+
+    - name: Cache Python interpreter
+      uses: actions/cache@v6
+      with:
+        # `uv python install` writes to UV_PYTHON_INSTALL_DIR, which is
+        # separate from the uv package cache and not covered by setup-uv's
+        # enable-cache. Caching by version + OS avoids re-downloading the
+        # python-build-standalone tarball on every run.
+        path: ~/.local/share/uv/python
+        key: uv-python-${{ inputs.python-version }}-${{ runner.os }}
+
+    - name: Set up Python ${{ inputs.python-version }}
+      shell: bash
+      env:
+        PYTHON_VERSION: ${{ inputs.python-version }}
+      run: uv python install "$PYTHON_VERSION"
+
+    - name: Install dependencies
+      # `--locked` rather than a bare sync: an unfrozen `uv sync` re-locks
+      # when `uv.lock` is stale relative to `pyproject.toml`, which both
+      # hides the drift (the workspace silently self-heals while the branch
+      # stays broken) and mutates a tracked file mid-job. Fail loudly
+      # instead — this is the check that would have caught the release-commit
+      # lockfile drift in #325 on the release that introduced it, rather
+      # than in an unrelated workflow weeks later (#326). Fix a red install
+      # step with `uv lock`, and commit the result.
+      #
+      # The flags are an input because one caller needs `--frozen` instead;
+      # the args go through the environment rather than straight into the
+      # command line so the expansion is a shell one, on a value no
+      # workflow-expression injection can reach.
+      if: ${{ inputs.sync == 'true' }}
+      shell: bash
+      env:
+        SYNC_ARGS: ${{ inputs.sync-args }}
+      # Deliberately unquoted: the flags are one string that must word-split.
+      # shellcheck disable=SC2086
+      run: uv sync $SYNC_ARGS

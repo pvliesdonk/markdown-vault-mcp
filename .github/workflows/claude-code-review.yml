@@ -105,36 +105,25 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v8.2.0
-        with:
-          version: "latest"
-
-      - name: Cache Python interpreter
-        uses: actions/cache@v6
-        with:
-          path: ~/.local/share/uv/python
-          key: uv-python-3.12-${{ runner.os }}
-
-      - name: Set up Python
-        run: uv python install 3.12
-
-      - name: Install dependencies
+      - name: Set up project environment
         # Gives the reviewer a working venv so its targeted `uv run` checks
         # (freedom to investigate one finding) actually execute. REVIEW.md
         # tells it not to re-run the full gate.
         #
-        # `--frozen` because this sync must leave the workspace byte-clean:
-        # the review action switches to the PR branch internally, and an
-        # unfrozen sync against a lockfile that is stale relative to
-        # `pyproject.toml` re-locks `uv.lock` in place, so that checkout
-        # aborts ("Your local changes ... would be overwritten") for every PR
-        # whose lockfile differs from the base branch's — no review posted,
-        # deterministically (#326). `--frozen` installs from the lockfile as
-        # committed and never rewrites it; unlike `--locked` it also does not
-        # fail on drift, which is right here — a stale lockfile is CI's
-        # finding to report, not a reason to skip the review.
-        run: uv sync --all-extras --all-groups --frozen
+        # `--frozen` in place of the composite's default `--locked` because
+        # this sync must leave the workspace byte-clean: the review action
+        # switches to the PR branch internally, and an unfrozen sync against
+        # a lockfile that is stale relative to `pyproject.toml` re-locks
+        # `uv.lock` in place, so that checkout aborts ("Your local changes
+        # ... would be overwritten") for every PR whose lockfile differs from
+        # the base branch's — no review posted, deterministically (#326).
+        # `--frozen` installs from the lockfile as committed and never
+        # rewrites it; unlike `--locked` it also does not fail on drift,
+        # which is right here — a stale lockfile is CI's finding to report,
+        # not a reason to skip the review.
+        uses: ./.github/actions/setup-project-env
+        with:
+          sync-args: "--all-extras --all-groups --frozen"
 
       # The /code-review plugin fans out into parallel review agents. On Claude
       # Code >= 2.1.198 those dispatch as background tasks that claude-code-action

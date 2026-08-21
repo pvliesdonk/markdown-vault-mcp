@@ -18,30 +18,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v8.2.0
-        with:
-          version: "latest"
-
-      - name: Cache Python interpreter
-        uses: actions/cache@v6
-        with:
-          path: ~/.local/share/uv/python
-          key: uv-python-3.12-${{ runner.os }}
-
-      - name: Set up Python
-        run: uv python install 3.12
-
-      - name: Install dependencies
-        # `--locked` rather than a bare sync: an unfrozen `uv sync` re-locks
-        # when `uv.lock` is stale relative to `pyproject.toml`, which both
-        # hides the drift (the workspace silently self-heals while the branch
-        # stays broken) and mutates a tracked file mid-job. Fail loudly
-        # instead — this is the check that would have caught the release-commit
-        # lockfile drift in #325 on the release that introduced it, rather
-        # than in an unrelated workflow weeks later (#326). Fix a red install
-        # step with `uv lock`, and commit the result.
-        run: uv sync --all-extras --all-groups --locked
+      - name: Set up project environment
+        uses: ./.github/actions/setup-project-env
 
 
       - name: Verify vendored SPA is up-to-date
@@ -63,23 +41,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v8.2.0
-        with:
-          version: "latest"
-
-      - name: Cache Python interpreter
-        uses: actions/cache@v6
-        with:
-          path: ~/.local/share/uv/python
-          key: uv-python-3.12-${{ runner.os }}
-
-      - name: Set up Python
-        run: uv python install 3.12
-
-      - name: Install dependencies
-        # `--locked` — see the lint job's install step for why.
-        run: uv sync --all-extras --all-groups --locked
+      - name: Set up project environment
+        uses: ./.github/actions/setup-project-env
 
       - name: Run mypy
         run: uv run mypy src/ tests/
@@ -120,27 +83,10 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v8.2.0
+      - name: Set up project environment
+        uses: ./.github/actions/setup-project-env
         with:
-          version: "latest"
-
-      - name: Cache Python interpreter
-        uses: actions/cache@v6
-        with:
-          # `uv python install` writes to UV_PYTHON_INSTALL_DIR, which is
-          # separate from the uv package cache and not covered by setup-uv's
-          # enable-cache. Caching by version + OS avoids re-downloading the
-          # python-build-standalone tarball on every run.
-          path: ~/.local/share/uv/python
-          key: uv-python-${{ matrix.python-version }}-${{ runner.os }}
-
-      - name: Set up Python ${{ matrix.python-version }}
-        run: uv python install ${{ matrix.python-version }}
-
-      - name: Install dependencies
-        # `--locked` — see the lint job's install step for why.
-        run: uv sync --all-extras --all-groups --locked
+          python-version: ${{ matrix.python-version }}
 
       - name: Run tests with coverage
         run: uv run pytest --cov --cov-report=xml
@@ -243,19 +189,13 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v8.2.0
+      - name: Set up project environment
+        # No sync: this job resolves the dependency list with `uv export` and
+        # runs pip-audit through `uvx`, so it never imports the project and
+        # does not need a venv built for it.
+        uses: ./.github/actions/setup-project-env
         with:
-          version: "latest"
-
-      - name: Cache Python interpreter
-        uses: actions/cache@v6
-        with:
-          path: ~/.local/share/uv/python
-          key: uv-python-3.12-${{ runner.os }}
-
-      - name: Set up Python
-        run: uv python install 3.12
+          sync: "false"
 
       - name: Export dependency list (excluding local project)
         # `dev` is uv's only auto-activated default group, so --no-default-groups
@@ -409,23 +349,8 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v8.2.0
-        with:
-          version: "latest"
-
-      - name: Cache Python interpreter
-        uses: actions/cache@v6
-        with:
-          path: ~/.local/share/uv/python
-          key: uv-python-3.12-${{ runner.os }}
-
-      - name: Set up Python
-        run: uv python install 3.12
-
-      - name: Install dependencies
-        # `--locked` — see the lint job's install step for why.
-        run: uv sync --all-extras --all-groups --locked
+      - name: Set up project environment
+        uses: ./.github/actions/setup-project-env
 
       - name: Fetch base branch
         run: git fetch origin ${{ github.base_ref }} --depth=50
