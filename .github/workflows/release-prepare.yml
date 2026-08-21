@@ -382,6 +382,16 @@ jobs:
   draft-notes:
     needs: prepare
     if: ${{ !inputs.skip_notes }}
+    # The notes lock, taken HERE because this is call mode (template#448):
+    # a workflow-level concurrency key belongs to the triggered run, which
+    # for a reusable workflow is the CALLER's run — the group declared at
+    # the top of release-notes.yml governs only its own dispatch-triggered
+    # runs.  Same group and semantics as there: one notes run at a time,
+    # end to end, never cancelling (a cancelled landing strands a
+    # finished draft).
+    concurrency:
+      group: release-notes-draft
+      cancel-in-progress: false
     uses: ./.github/workflows/release-notes.yml
     with:
       target_version: ${{ needs.prepare.outputs.version }}

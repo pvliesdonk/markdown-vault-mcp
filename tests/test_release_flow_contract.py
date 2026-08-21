@@ -597,6 +597,63 @@ def test_prepare_drafts_notes_into_the_release_pr() -> None:
         assert handed_over in block, f"draft-notes no longer passes {handed_over}"
 
 
+def test_notes_lock_is_taken_by_the_caller_job_in_call_mode() -> None:
+    """The end-to-end notes lock needs BOTH declaration sites (template#448).
+
+    A workflow-level ``concurrency`` key belongs to the triggered run —
+    for a reusable workflow that is the caller's run, so the group at the
+    top of release-notes.yml serialises its dispatch-triggered runs only.
+    The draft-notes caller job must take the same group at the job level
+    (the reusable-workflow mechanism GitHub documents), and neither site
+    may cancel in progress: a cancelled landing strands a finished draft.
+    """
+    prepare = PREPARE_WORKFLOW.read_text(encoding="utf-8")
+    block = prepare[prepare.index("draft-notes:") :]
+    match = re.search(
+        r"concurrency:\n\s+group: (\S+)\n\s+cancel-in-progress: (\S+)", block
+    )
+    assert match, "the draft-notes caller job declares no job-level concurrency"
+    assert match.group(1) == "release-notes-draft", (
+        "the caller job's group must be the notes workflow's own "
+        f"'release-notes-draft' bucket, got: {match.group(1)!r}"
+    )
+    assert match.group(2) == "false", "the notes lock must never cancel in progress"
+    notes = NOTES_WORKFLOW.read_text(encoding="utf-8")
+    assert "group: release-notes-draft" in notes, (
+        "the notes workflow's own group (dispatch-mode serialisation) "
+        "must keep the same 'release-notes-draft' bucket"
+    )
+
+
+def test_notes_dispatch_offers_a_full_redraft_override() -> None:
+    """The watermark cache needs an operator override (template#452).
+
+    Incremental research deliberately preserves accepted prose, so a
+    change to the skill's own contract can never reach a range the page
+    already covers on its own.  The manual dispatch must expose the
+    full_redraft flag and the drafting prompt must thread it to the
+    agent; the prepare-time call stays incremental, so the
+    workflow_call inputs must NOT grow the flag.
+    """
+    text = NOTES_WORKFLOW.read_text(encoding="utf-8")
+    on_block = text[text.index("\non:") : text.index("\npermissions:")]
+    call_block = on_block[
+        on_block.index("workflow_call:") : on_block.index("workflow_dispatch:")
+    ]
+    dispatch_block = on_block[on_block.index("workflow_dispatch:") :]
+    assert "full_redraft:" in dispatch_block, (
+        "the dispatch entry lost its full_redraft force-rewrite input"
+    )
+    assert "full_redraft" not in call_block, (
+        "call mode must stay incremental — the prepare-time refresh may "
+        "never force-rewrite accepted prose"
+    )
+    prompt = text[text.index("Draft the notes page") :]
+    assert "full redraft:" in prompt, (
+        "the drafting prompt no longer threads the full_redraft flag to the agent"
+    )
+
+
 def test_notes_workflow_is_callable_and_not_release_triggered() -> None:
     """The notes workflow serves the release PR; the post-hoc path is gone.
 

@@ -59,6 +59,16 @@ on:
         description: 'Re-draft: the release PR source commit/ref that ends the research range. Required with target_version.'
         type: string
         default: ''
+      # Force rewrite (template#452): the incremental-research contract
+      # treats the accepted page as a cache, so a change to the skill's
+      # own rules never reaches a range the page already covers.  This
+      # flag is the operator's override — a deliberate dispatch, never
+      # the prepare-time default; the draft still lands through the
+      # normal review paths (release PR diff or standalone notes PR).
+      full_redraft:
+        description: 'Force rewrite: ignore the page''s notes-range-end watermark, research the full range the page covers, and re-derive its prose under the current skill contract. Valid in tag mode and target_version mode alike.'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -67,6 +77,10 @@ permissions:
 # the draft job release the lock before its landing ran, and GitHub
 # keeps only one pending entry per group — a queued newer draft could
 # replace the pending landing, stranding a finished draft unlanded.
+# This workflow-level key governs DISPATCH runs only: in call mode the
+# run is the caller's, so release-prepare.yml's draft-notes job takes
+# the same group at the job level — the two declarations share one
+# bucket (template#448).
 concurrency:
   group: release-notes-draft
   cancel-in-progress: false
@@ -207,7 +221,12 @@ jobs:
               || { echo "::error::'${TAG}' is not a stable vX.Y.Z tag — notes pages are per stable minor; rcs have no page"; exit 1; }
             git rev-parse -q --verify "refs/tags/${TAG}" > /dev/null \
               || { echo "::error::tag ${TAG} not found"; exit 1; }
-            RANGE_END="$TAG"
+            # Resolve the tag to its commit so RANGE_END is a SHA in BOTH
+            # modes and the page's notes-range-end watermark keeps one
+            # shape across drafts — a prepare-time run compares that
+            # watermark against its own SHA to decide whether the page is
+            # already current, and a tag-name watermark would never match.
+            RANGE_END="$(git rev-parse "refs/tags/${TAG}^{commit}")"
           fi
           ver="${TAG#v}"
           minor="${ver%.*}"
@@ -354,9 +373,10 @@ jobs:
             - repository: ${{ github.repository }}
             - tag: ${{ steps.ctx.outputs.tag }} (version ${{ steps.ctx.outputs.version }}, minor series ${{ steps.ctx.outputs.minor }})
             - previous stable: ${{ steps.ctx.outputs.prev }} (empty means first release)
-            - research range end (RANGE_END): ${{ steps.ctx.outputs.range_end }} (equals the tag after a release; at prepare time it is the open release PR's source commit — the tag does not exist yet)
+            - research range end (RANGE_END): ${{ steps.ctx.outputs.range_end }} (a commit SHA: the tagged commit after a release; at prepare time the open release PR's source commit — the tag does not exist yet)
             - page: ${{ steps.ctx.outputs.page }}
             - mode: ${{ steps.ctx.outputs.mode }} (new = write the whole page and add it to docs/releases/index.md; patch = append one section inside the patch sentinels, dated per the skill's tag-existence gate; redraft = the minor's page already exists — e.g. drafted at prepare time — so update/extend it in place and never append a duplicate section for this release)
+            - full redraft: ${{ inputs.full_redraft == true }} (true = ignore any existing notes-range-end watermark: research the FULL range the page covers and re-derive its prose under the current skill contract, per the skill's full-redraft override; false = incremental research per the watermark)
 
             The vale binary (packs synced) and `uv run mkdocs build --strict` are available for the skill's quality gates. Write your proposed pull-request body to .release-notes-pr-body.md at the repository root (used only when this run opens a standalone notes PR; ignored when the draft lands on a release PR's branch). Do not commit, push, or open a PR yourself — the workflow's next step lands your working tree mechanically.
           # No progress-tracking input: the action supports it only on

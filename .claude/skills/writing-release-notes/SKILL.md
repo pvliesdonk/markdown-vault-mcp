@@ -34,9 +34,9 @@ You are given, or must derive first:
 - `MINOR` — the series (e.g. `3.2`); the page is `docs/releases/MINOR.md`.
 - `PREV` — the highest stable tag strictly below the target version
   (series-aware, `sort -V`); empty on a first release.
-- `RANGE_END` — where the research range ends. After a release this equals
-  `TAG`; at prepare time it is the release PR's source commit, because the
-  tag does not exist yet. The evidence rules below are identical either
+- `RANGE_END` — where the research range ends, always a commit SHA. After
+  a release this is the tagged commit; at prepare time it is the release
+  PR's source commit, because the tag does not exist yet. The evidence rules below are identical either
   way — only the range endpoints move. A prepare-time draft is refreshed
   (branch force-pushed) alongside any re-dispatch of the release PR.
 - Mode — **new page** (the minor's page does not exist: write the whole
@@ -52,6 +52,8 @@ You are given, or must derive first:
   `<!-- notes-range-end: SHA -->` comment recording where its last
   accepted draft's research ended. This is the incremental-research
   anchor for the modes below.
+- Full-redraft flag — a manual dispatch may set it; it suspends the
+  watermark's cache role for that one run (see the override below).
 
 ## Incremental research (patch and redraft modes)
 
@@ -77,6 +79,21 @@ already covers. When the page carries the watermark:
 A page without a watermark predates this contract: research the full
 `PREV..RANGE_END` range once, and add the watermark with the result.
 
+**Full-redraft override.** When the run's inputs say full redraft, the
+watermark loses its cache role for that run only: research the full
+range the page covers — from the highest stable tag strictly below the
+minor's first release (`X.Y.0`, series-aware via the tags API; the
+whole history on a first series) through `RANGE_END` — and re-derive
+the page's prose under the current contract, keeping only claims the
+evidence still supports. The page's structure is unchanged (summary
+markers, patch sentinels, index entry all stay), and the watermark
+still moves to `RANGE_END`. This is the operator's remedy when this
+skill's own rules changed after a page was accepted: the incremental
+path above deliberately preserves accepted prose, so contract
+improvements never reach an already-covered range without this
+override. It exists only on the manual dispatch — a prepare-time
+refresh is always incremental.
+
 ## Non-negotiables
 
 1. **No evidence, no narrative.** Every causal claim ("X was slow because
@@ -99,6 +116,20 @@ A page without a watermark predates this contract: research the full
    list is the recognised failure ("a haiku summary of the git log") — if you
    notice the page reading like grouped commit subjects, the research phase
    was skipped; go back.
+5. **Write the net delta, not the development journey.** The page answers
+   "what changes when I upgrade from `PREV`", so a state that existed only
+   *between* two commits of the range is invisible to every reader: a
+   feature new in this release is described as it ships, never through the
+   fixes that hardened it inside the same range; a regression introduced
+   and fixed within the range is not a fix worth reporting; work superseded
+   or reverted before `RANGE_END` does not appear at all. Evidence-linked
+   is necessary, not sufficient — development progress is mildly
+   interesting and still not release information. An intermediate PR may
+   still be *cited* where it is the best evidence for how the shipped
+   behaviour works; what must not appear is the sequence of intermediate
+   states as narrative. The summary block is the strictest surface: it
+   positions the release against `PREV` only, never against an rc or an
+   unshipped intermediate ("rebuilt", "now fixed") no reader ever ran.
 
 ## Research procedure
 
@@ -129,6 +160,10 @@ Build the theme map from structure first:
   paragraph against what actually landed; edit it, do not just copy it.
 - The release **milestone** (or the `ships-atomically` label) marks work
   that was planned to ship together — treat it as one story.
+- A bump of a **first-party upstream** (the `fastmcp-pvl-core` library, or
+  the copier template behind a `chore(copier): update` commit) is a theme
+  lead of its own, researched through the upstream repository — see the
+  dedicated rule below.
 - Everything else falls into themes by subject (each significant feature,
   contributor-driven changes, platform/infrastructure work, fixes). Where a
   repository has no epics or milestones, this thematic grouping is the whole
@@ -147,7 +182,11 @@ issue bodies **and comments**, and returns a compact structured brief:
   `author_association`, not just commit authors;
 - exact enablement: env vars, defaults, config keys, tool names;
 - any concrete numbers (timings, sizes, counts) with their source;
-- the feature's docs page(s), and whether they changed in this range.
+- the feature's docs page(s), and whether they changed in this range;
+- the **shipped end state only**: where later commits in the range
+  superseded earlier ones, brief the final behaviour and mark the
+  earlier intra-range states as superseded — they are evidence trail,
+  not findings (the net-delta non-negotiable).
 
 The synthesiser writes **from the briefs only**.
 
@@ -172,7 +211,38 @@ After the briefs return, look across them before writing: separate
 deliverables may be one recipe with several delivery channels (write the
 "which do I want" paragraph, not three bullets), and a fix filed under one
 scope may really belong to another theme's story. Conventional-commit scopes
-are not the outline; the reader's questions are.
+are not the outline; the reader's questions are. This is also where the
+net-delta non-negotiable gets applied across briefs: collapse any surviving
+journey narration into the shipped end state before a section is written.
+
+### 6. First-party dependency bumps are research leads, not dead ends
+
+A commit that raises the `fastmcp-pvl-core` floor or applies a template
+update (`chore(copier): update to vX.Y.Z`) changes this server's behaviour
+while carrying no content of its own — the change lives in the upstream
+repository, and a downstream issue restating it may not exist. Do not let
+the fan-out dead-end there:
+
+- Read the old and new versions from the range's endpoints (the
+  `pyproject.toml` constraint, `uv.lock`'s pinned entry, or the copier
+  answers file's `_commit`), through the API like every other
+  file-at-ref read. The upstream repository comes from the dependency's
+  project URLs or the answers file's `_src_path`.
+- Research the upstream range between those two versions through the
+  upstream repo's own release artifacts: its `docs/releases/` pages and
+  GitHub release bodies are themselves evidence-linked — read them
+  rather than re-deriving upstream history, and follow into upstream
+  PRs/issues only where they are thin or missing.
+- Surface only what an operator or user of **this** server experiences
+  on upgrade — a security-posture change, a flipped default, new
+  behaviour of a shared helper (redirect handling, error shapes) — in
+  the theme where a reader would look for it, never as a bare
+  "dependencies were bumped" list. Link the upstream evidence directly;
+  the evidence rules do not weaken across a repository boundary.
+- Third-party bumps stay out unless a linked local issue makes one a
+  story (a CVE fix, an outage remedy).
+- The net-delta rule crosses repos too: an upstream change absorbed
+  and already compensated for within this same range is invisible.
 
 ## Writing the page
 
@@ -245,7 +315,7 @@ inside the patch sentinels):
 
 A patch section goes inside the patch sentinels, oldest first, as:
 
-    ## v3.2.1 — 2026-08-20
+    ## v3.2.1 (2026-08-20)
 
     <!-- RELEASE-SUMMARY v3.2.1 START -->
     One paragraph: what this patch fixes and who should care.
@@ -253,10 +323,14 @@ A patch section goes inside the patch sentinels, oldest first, as:
 
     <evidence-linked detail, same rules as above>
 
-The `— 2026-08-20` date suffix follows the same tag-existence gate as the
+The `(2026-08-20)` date suffix follows the same tag-existence gate as the
 shipped-claim rule below: a prepare-time patch draft, whose tag does not
 exist yet, writes the bare `## v3.2.1` heading, and the post-release draft
-appends the real date.
+appends the real date. The parenthesised form is deliberate: the shipped
+Vale packs reject em dashes (`Google.EmDash`, `ai-tells.EmDashUsage`), so
+an em-dash separator here would fail the skill's own prose gate — write
+page prose without em dashes generally rather than spending vocabulary
+or rewrites on them.
 
 For a **new** page, also add the minor to the list in
 `docs/releases/index.md` (newest first, between its markers; the first real
