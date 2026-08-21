@@ -10,13 +10,13 @@
       
       
       
-        <link rel="canonical" href="https://pvliesdonk.github.io/markdown-vault-mcp/unstable/installation/">
+        <link rel="canonical" href="https://pvliesdonk.github.io/markdown-vault-mcp/unstable/cli/">
       
       
-        <link rel="prev" href="..">
+        <link rel="prev" href="../configuration-generator/">
       
       
-        <link rel="next" href="../configuration/">
+        <link rel="next" href="../guides/">
       
       
         
@@ -27,7 +27,7 @@
     
     
       
-        <title>Installation - markdown-vault-mcp</title>
+        <title>CLI Reference - markdown-vault-mcp</title>
       
     
     
@@ -82,7 +82,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#installation" class="md-skip">
+        <a href="#cli-reference" class="md-skip">
           Skip to content
         </a>
       
@@ -120,7 +120,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Installation
+              CLI Reference
             
           </span>
         </div>
@@ -256,7 +256,7 @@
     
     
       <li class="md-tabs__item md-tabs__item--active">
-        <a href="./" class="md-tabs__link">
+        <a href="../installation/" class="md-tabs__link">
           
   
   
@@ -500,37 +500,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Installation
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../installation/" class="md-nav__link">
         
   
   
@@ -546,114 +519,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#from-pypi" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        From PyPI
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#using-uv" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Using uv
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#from-source" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        From Source
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#docker" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Docker
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#linux-packages-deb-rpm" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Linux Packages (.deb / .rpm)
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#claude-code-plugin" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Claude Code Plugin
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#verify-installation" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Verify Installation
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#upgrading-from-earlier-versions" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Upgrading from earlier versions
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -719,10 +584,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../cli/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI Reference
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -738,6 +630,81 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#serve" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        serve
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#reverse-proxy-subpath-mounts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reverse proxy subpath mounts
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#index" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        index
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#search" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        search
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#reindex" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        reindex
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -1944,10 +1911,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#from-pypi" class="md-nav__link">
+  <a href="#serve" class="md-nav__link">
     <span class="md-ellipsis">
       
-        From PyPI
+        serve
       
     </span>
   </a>
@@ -1955,10 +1922,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#using-uv" class="md-nav__link">
+  <a href="#reverse-proxy-subpath-mounts" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Using uv
+        Reverse proxy subpath mounts
       
     </span>
   </a>
@@ -1966,10 +1933,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#from-source" class="md-nav__link">
+  <a href="#index" class="md-nav__link">
     <span class="md-ellipsis">
       
-        From Source
+        index
       
     </span>
   </a>
@@ -1977,10 +1944,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#docker" class="md-nav__link">
+  <a href="#search" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Docker
+        search
       
     </span>
   </a>
@@ -1988,43 +1955,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#linux-packages-deb-rpm" class="md-nav__link">
+  <a href="#reindex" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Linux Packages (.deb / .rpm)
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#claude-code-plugin" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Claude Code Plugin
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#verify-installation" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Verify Installation
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#upgrading-from-earlier-versions" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Upgrading from earlier versions
+        reindex
       
     </span>
   </a>
@@ -2051,146 +1985,74 @@
   
 
 
-<h1 id="installation">Installation<a class="headerlink" href="#installation" title="Permanent link">&para;</a></h1>
-<h2 id="from-pypi">From PyPI<a class="headerlink" href="#from-pypi" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>markdown-vault-mcp
+<h1 id="cli-reference">CLI Reference<a class="headerlink" href="#cli-reference" title="Permanent link">&para;</a></h1>
+<p>The <code>markdown-vault-mcp</code> command drives the server and the index from the shell:</p>
+<div class="highlight"><pre><span></span><code>markdown-vault-mcp &lt;command&gt; [options]
 </code></pre></div>
-<p>With optional dependencies:</p>
-<div class="tabbed-set tabbed-alternate" data-tabs="1:4"><input checked="checked" id="__tabbed_1_1" name="__tabbed_1" type="radio" /><input id="__tabbed_1_2" name="__tabbed_1" type="radio" /><input id="__tabbed_1_3" name="__tabbed_1" type="radio" /><input id="__tabbed_1_4" name="__tabbed_1" type="radio" /><div class="tabbed-labels"><label for="__tabbed_1_1">MCP server</label><label for="__tabbed_1_2">API embeddings</label><label for="__tabbed_1_3">Local embeddings</label><label for="__tabbed_1_4">All (recommended)</label></div>
-<div class="tabbed-content">
-<div class="tabbed-block">
-<p><div class="highlight"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>markdown-vault-mcp<span class="o">[</span>mcp<span class="o">]</span>
+<h2 id="serve"><code>serve</code><a class="headerlink" href="#serve" title="Permanent link">&para;</a></h2>
+<p>Start the MCP server.</p>
+<div class="highlight"><pre><span></span><code>markdown-vault-mcp<span class="w"> </span>serve<span class="w"> </span><span class="o">[</span>--transport<span class="w"> </span><span class="o">{</span>stdio<span class="p">|</span>sse<span class="p">|</span>http<span class="o">}]</span><span class="w"> </span><span class="o">[</span>--host<span class="w"> </span>HOST<span class="o">]</span><span class="w"> </span><span class="o">[</span>--port<span class="w"> </span>PORT<span class="o">]</span><span class="w"> </span><span class="o">[</span>--http-path<span class="w"> </span>PATH<span class="o">]</span>
 </code></pre></div>
-Adds FastMCP for running as an MCP server.</p>
-</div>
-<div class="tabbed-block">
-<p><div class="highlight"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>markdown-vault-mcp<span class="o">[</span>embeddings-api<span class="o">]</span>
-</code></pre></div>
-Adds the openai SDK + httpx + numpy for Ollama/OpenAI embeddings via API.</p>
-</div>
-<div class="tabbed-block">
-<p><div class="highlight"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>markdown-vault-mcp<span class="o">[</span>embeddings<span class="o">]</span>
-</code></pre></div>
-Adds FastEmbed + numpy for local embeddings.</p>
-</div>
-<div class="tabbed-block">
-<p><div class="highlight"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>markdown-vault-mcp<span class="o">[</span>all<span class="o">]</span>
-</code></pre></div>
-MCP + FastEmbed + API embeddings.</p>
-</div>
-</div>
-</div>
-<h2 id="using-uv">Using uv<a class="headerlink" href="#using-uv" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code>uv<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>markdown-vault-mcp<span class="o">[</span>all<span class="o">]</span>
-</code></pre></div>
-<h2 id="from-source">From Source<a class="headerlink" href="#from-source" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/pvliesdonk/markdown-vault-mcp.git
-<span class="nb">cd</span><span class="w"> </span>markdown-vault-mcp
-uv<span class="w"> </span>sync<span class="w"> </span>--all-extras<span class="w"> </span>--all-groups
-</code></pre></div>
-<h2 id="docker">Docker<a class="headerlink" href="#docker" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code>docker<span class="w"> </span>pull<span class="w"> </span>ghcr.io/pvliesdonk/markdown-vault-mcp:latest
-</code></pre></div>
-<p>The Docker image uses <code>[all]</code> (MCP + FastEmbed + API embeddings). Semantic search is available by default with FastEmbed and can switch to Ollama/OpenAI when configured.</p>
-<p>The <code>latest</code> tag is the newest stable release. For early adopters who want to test unreleased changes, the rolling <code>edge</code> tag tracks every merge to <code>main</code> and carries no version identity; see <a href="../deployment/docker/#image-tags">Image tags</a> for the full list. The floating <code>:latest</code>, <code>:vN</code>, and <code>:vN.M</code> tags only move on stable releases.</p>
-<div class="highlight"><pre><span></span><code>docker<span class="w"> </span>pull<span class="w"> </span>ghcr.io/pvliesdonk/markdown-vault-mcp:edge
-</code></pre></div>
-<p>See <a href="../deployment/docker/">Docker deployment</a> for compose setup and volume configuration.</p>
-<h2 id="linux-packages-deb-rpm">Linux Packages (.deb / .rpm)<a class="headerlink" href="#linux-packages-deb-rpm" title="Permanent link">&para;</a></h2>
-<p>Download <code>.deb</code> or <code>.rpm</code> packages from the <a href="https://github.com/pvliesdonk/markdown-vault-mcp/releases">GitHub Releases</a> page.</p>
-<div class="tabbed-set tabbed-alternate" data-tabs="2:2"><input checked="checked" id="__tabbed_2_1" name="__tabbed_2" type="radio" /><input id="__tabbed_2_2" name="__tabbed_2" type="radio" /><div class="tabbed-labels"><label for="__tabbed_2_1">Debian / Ubuntu</label><label for="__tabbed_2_2">Fedora / RHEL</label></div>
-<div class="tabbed-content">
-<div class="tabbed-block">
-<div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>dpkg<span class="w"> </span>-i<span class="w"> </span>markdown-vault-mcp_*.deb
-sudo<span class="w"> </span>apt-get<span class="w"> </span>install<span class="w"> </span>-f<span class="w">   </span><span class="c1"># resolve dependencies if needed</span>
-</code></pre></div>
-</div>
-<div class="tabbed-block">
-<div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>rpm<span class="w"> </span>-i<span class="w"> </span>markdown-vault-mcp-*.rpm
-</code></pre></div>
-</div>
-</div>
-</div>
-<p>The packages install:</p>
 <table>
 <thead>
 <tr>
-<th>Path</th>
-<th>Purpose</th>
+<th>Flag</th>
+<th>Default</th>
+<th>Description</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>/opt/markdown-vault-mcp/venv/</code></td>
-<td>Python virtualenv (created by post-install)</td>
+<td><code>--transport</code></td>
+<td><code>stdio</code></td>
+<td>MCP transport: <code>stdio</code> (stdin/stdout, default), <code>sse</code> (Server-Sent Events), <code>http</code> (streamable-HTTP). Use <code>http</code> for Docker with a reverse proxy or when OIDC is enabled.</td>
 </tr>
 <tr>
-<td><code>/etc/markdown-vault-mcp/env</code></td>
-<td>Configuration file (created from template on first install)</td>
+<td><code>--host</code></td>
+<td><code>127.0.0.1</code></td>
+<td>Bind host for the <code>http</code> transport (ignored for <code>stdio</code> and <code>sse</code>); pass <code>0.0.0.0</code> to bind all interfaces inside Docker</td>
 </tr>
 <tr>
-<td><code>/var/lib/markdown-vault-mcp/</code></td>
-<td>State directory (index, embeddings, vault data)</td>
+<td><code>--port</code></td>
+<td><code>8000</code></td>
+<td>Port for the <code>http</code> transport (ignored for <code>stdio</code> and <code>sse</code>)</td>
 </tr>
 <tr>
-<td><code>/usr/lib/systemd/system/markdown-vault-mcp.service</code></td>
-<td>Systemd unit file with security hardening</td>
+<td><code>--http-path</code> (alias <code>--path</code>)</td>
+<td>env <code>MARKDOWN_VAULT_MCP_HTTP_PATH</code> or <code>/mcp</code></td>
+<td>MCP HTTP path for <code>http</code> transport; useful for reverse-proxy subpath mounting (such as <code>/vault/mcp</code>). The legacy <code>--path</code> spelling is still accepted.</td>
 </tr>
 </tbody>
 </table>
-<p>A <code>markdown-vault-mcp</code> system user and group are created automatically.</p>
-<p>After installing, edit <code>/etc/markdown-vault-mcp/env</code> to set at least <code>MARKDOWN_VAULT_MCP_SOURCE_DIR</code>, then:</p>
-<div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>systemctl<span class="w"> </span><span class="nb">enable</span><span class="w"> </span>--now<span class="w"> </span>markdown-vault-mcp
+<h2 id="reverse-proxy-subpath-mounts">Reverse proxy subpath mounts<a class="headerlink" href="#reverse-proxy-subpath-mounts" title="Permanent link">&para;</a></h2>
+<p>By default, HTTP transport serves MCP on <code>/mcp</code>. You can run it under a subpath:</p>
+<div class="highlight"><pre><span></span><code>markdown-vault-mcp<span class="w"> </span>serve<span class="w"> </span>--transport<span class="w"> </span>http<span class="w"> </span>--http-path<span class="w"> </span>/vault/mcp
 </code></pre></div>
-<p>See the <a href="../deployment/systemd/">systemd deployment guide</a> for full configuration and troubleshooting.</p>
-<h2 id="claude-code-plugin">Claude Code Plugin<a class="headerlink" href="#claude-code-plugin" title="Permanent link">&para;</a></h2>
-<p>Install markdown-vault-mcp directly in Claude Code using the plugin marketplace:</p>
-<div class="highlight"><pre><span></span><code>/plugin marketplace add pvliesdonk/claude-plugins
-/plugin install markdown-vault-mcp@pvliesdonk
+<p>Equivalent env-based config:</p>
+<div class="highlight"><pre><span></span><code><span class="nv">MARKDOWN_VAULT_MCP_HTTP_PATH</span><span class="o">=</span>/vault/mcp
 </code></pre></div>
-<p>See the <a href="../guides/claude-code-plugin/">Claude Code plugin guide</a> for configuration and usage details.</p>
-<h2 id="verify-installation">Verify Installation<a class="headerlink" href="#verify-installation" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><span class="c1"># Check the CLI is available</span>
-markdown-vault-mcp<span class="w"> </span>--help
-
-<span class="c1"># Quick test with a local vault</span>
-<span class="nb">export</span><span class="w"> </span><span class="nv">MARKDOWN_VAULT_MCP_SOURCE_DIR</span><span class="o">=</span>/path/to/your/markdown/files
-markdown-vault-mcp<span class="w"> </span>search<span class="w"> </span><span class="s2">&quot;hello world&quot;</span>
-</code></pre></div>
-<!-- DOMAIN-INSTALL-EXTRA-START -->
-<h2 id="upgrading-from-earlier-versions">Upgrading from earlier versions<a class="headerlink" href="#upgrading-from-earlier-versions" title="Permanent link">&para;</a></h2>
+<p>For reverse proxies, you can either:</p>
 <ul>
-<li><strong>Package root minimized (issue #903): import from submodules, not the package root.</strong>
-  The <code>markdown_vault_mcp</code> root package no longer re-exports the public API. Update
-  library imports to their submodules:</li>
+<li>Keep app path at <code>/mcp</code> and use proxy rewrite/strip-prefix middleware.</li>
+<li>Set app path directly to the public path (<code>/vault/mcp</code>) and route without rewrite.</li>
 </ul>
-<div class="highlight"><pre><span></span><code><span class="c1"># Before: from markdown_vault_mcp import Vault, ProjectConfig</span>
-<span class="c1"># After:  from markdown_vault_mcp.vault import Vault</span>
-<span class="c1">#         from markdown_vault_mcp.config import ProjectConfig</span>
+<p>When OIDC is enabled under a subpath, the configuration is different: the subpath goes in <code>BASE_URL</code> only, and <code>HTTP_PATH</code> stays at <code>/mcp</code>. See <a href="../deployment/oidc/#subpath-deployments">OIDC subpath deployments</a>.</p>
+<p>Then your redirect URI is:</p>
+<div class="highlight"><pre><span></span><code>https://mcp.example.com/vault/auth/callback
 </code></pre></div>
-<p>Types such as <code>GroupedResult</code> come from <code>markdown_vault_mcp.types</code>. Only
-  <code>__version__</code> remains importable from the root.
-- <strong>v2.0.0 (issue #469): <code>search</code>, <code>get_similar</code>, and <code>get_context.similar</code> now return grouped results.</strong>
-  Each file appears once with a <code>sections</code> list; the flat <code>content</code>, <code>heading</code>, and <code>score</code>
-  fields have moved inside each <code>SectionHit</code>. Library consumers must update iteration:</p>
-<div class="highlight"><pre><span></span><code><span class="c1"># Before: result.content, result.heading</span>
-<span class="c1"># After:  result.sections[0].content, result.sections[0].heading</span>
+<h2 id="index"><code>index</code><a class="headerlink" href="#index" title="Permanent link">&para;</a></h2>
+<p>Build the full-text search index.</p>
+<div class="highlight"><pre><span></span><code>markdown-vault-mcp<span class="w"> </span>index<span class="w"> </span><span class="o">[</span>--source-dir<span class="w"> </span>PATH<span class="o">]</span><span class="w"> </span><span class="o">[</span>--index-path<span class="w"> </span>PATH<span class="o">]</span><span class="w"> </span><span class="o">[</span>--force<span class="o">]</span>
 </code></pre></div>
-<p><code>MARKDOWN_VAULT_MCP_CHUNKS_PER_FILE</code> replaces <code>MARKDOWN_VAULT_MCP_CHUNKS_PER_DOC</code>.
-  <code>SimilarItem</code> is removed; use <code>GroupedResult</code> (from <code>markdown_vault_mcp.types</code>).
-- <strong>Search returns snippets by default.</strong> The <code>content</code> field carries a query-relevant
-  snippet (approximately 200 words). Pass <code>snippet_words=0</code> to recover the prior
-  full-chunk behaviour, or use <code>read(path, section=heading)</code> to fetch the full section
-  after seeing a snippet.
-- <code>MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB</code> default lowered from <strong>10 MB</strong>
-  to <strong>1 MB</strong>.  Most LLM contexts can't survive a 10 MB base64-encoded
-  attachment; the old default was a silent context-blow-up. If you have
-  non-LLM consumers (scripts, CI) that need the old behaviour, set
-  <code>MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB=10</code> explicitly.
-- <code>MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES</code> caps whole-document <code>.md</code> reads (default
-  256 KB); reads above it raise <code>ValueError</code>. Partial reads via
-  <code>read(path, section=heading)</code> bypass the cap.</p>
-<!-- DOMAIN-INSTALL-EXTRA-END -->
+<h2 id="search"><code>search</code><a class="headerlink" href="#search" title="Permanent link">&para;</a></h2>
+<p>Search the vault from the CLI.</p>
+<div class="highlight"><pre><span></span><code>markdown-vault-mcp<span class="w"> </span>search<span class="w"> </span>&lt;query&gt;<span class="w"> </span><span class="o">[</span>-n<span class="w"> </span>LIMIT<span class="o">]</span><span class="w"> </span><span class="o">[</span>-m<span class="w"> </span><span class="o">{</span>keyword<span class="p">|</span>semantic<span class="p">|</span>hybrid<span class="o">}]</span><span class="w"> </span><span class="o">[</span>--folder<span class="w"> </span>PATH<span class="o">]</span><span class="w"> </span><span class="o">[</span>--json<span class="o">]</span>
+</code></pre></div>
+<h2 id="reindex"><code>reindex</code><a class="headerlink" href="#reindex" title="Permanent link">&para;</a></h2>
+<p>Incrementally reindex the vault (only processes changed files). When semantic search is configured, the vector index is converged to the updated chunk set: exactly the changed documents are re-embedded and orphaned vectors dropped, never the whole corpus.</p>
+<div class="highlight"><pre><span></span><code>markdown-vault-mcp<span class="w"> </span>reindex<span class="w"> </span><span class="o">[</span>--source-dir<span class="w"> </span>PATH<span class="o">]</span><span class="w"> </span><span class="o">[</span>--index-path<span class="w"> </span>PATH<span class="o">]</span><span class="w"> </span><span class="o">[</span>--force<span class="o">]</span>
+</code></pre></div>
+<p><code>--force</code> drops the index and re-parses every file, ignoring change detection. An upgrade that changes how notes are parsed rebuilds the index by itself on the next run, so this is a manual repair for an index you have reason to distrust, not routine maintenance.</p>
 
 
 

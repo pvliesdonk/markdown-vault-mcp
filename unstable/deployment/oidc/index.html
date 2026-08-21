@@ -577,6 +577,34 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -1685,6 +1713,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#what-the-server-serves-and-where" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What the server serves, and where
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#reverse-proxy-routing" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1696,10 +1735,21 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#shared-hostname-limitation" class="md-nav__link">
+  <a href="#sharing-a-hostname" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Shared-hostname limitation
+        Sharing a hostname
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#verifying-the-routing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Verifying the routing
       
     </span>
   </a>
@@ -2333,6 +2383,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#what-the-server-serves-and-where" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What the server serves, and where
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#reverse-proxy-routing" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2344,10 +2405,21 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#shared-hostname-limitation" class="md-nav__link">
+  <a href="#sharing-a-hostname" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Shared-hostname limitation
+        Sharing a hostname
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#verifying-the-routing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Verifying the routing
       
     </span>
   </a>
@@ -2479,6 +2551,11 @@
 <td><code>MARKDOWN_VAULT_MCP_OIDC_REQUIRED_SCOPES</code></td>
 <td><code>openid</code></td>
 <td>Scopes a caller must present, space- or comma-separated. Defaults to <code>openid</code> in oidc-proxy mode.</td>
+</tr>
+<tr>
+<td><code>MARKDOWN_VAULT_MCP_OIDC_ADVERTISED_SCOPES</code></td>
+<td><code>openid offline_access</code></td>
+<td>Scopes advertised to MCP clients in protected-resource metadata, space- or comma-separated. Overrides the default <code>openid offline_access</code>; <code>oidc_required_scopes</code> is always added on top. Set this when the registered client is not permitted <code>offline_access</code>, or to have clients request extra claim scopes (such as <code>groups</code>) without also requiring them in every token.</td>
 </tr>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY</code></td>
@@ -2660,44 +2737,86 @@ Client → markdown-vault-mcp (present JWT → validate via JWKS)
 <p>Register this callback URI in your OIDC provider:</p>
 <div class="highlight"><pre><span></span><code>https://mcp.example.com/vault/auth/callback
 </code></pre></div>
-<h3 id="reverse-proxy-routing">Reverse proxy routing<a class="headerlink" href="#reverse-proxy-routing" title="Permanent link">&para;</a></h3>
-<p>The reverse proxy must:</p>
+<h3 id="what-the-server-serves-and-where">What the server serves, and where<a class="headerlink" href="#what-the-server-serves-and-where" title="Permanent link">&para;</a></h3>
+<p>The MCP endpoint and the OAuth discovery documents sit on opposite sides of the prefix, which is what makes subpath routing more than one strip rule. With <code>BASE_URL=https://mcp.example.com/myservice</code> and <code>HTTP_PATH=/mcp</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Public URL</th>
+<th>Path the container listens on</th>
+<th>Served when</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/myservice/mcp</code></td>
+<td><code>/mcp</code></td>
+<td>always</td>
+</tr>
+<tr>
+<td><code>/myservice/authorize</code>, <code>/token</code>, <code>/register</code>, <code>/auth/callback</code>, <code>/consent</code></td>
+<td>the same path without the prefix</td>
+<td>the server proxies OAuth (client ID and secret set)</td>
+</tr>
+<tr>
+<td><code>/.well-known/oauth-protected-resource/myservice/mcp</code></td>
+<td>the identical path, prefix included</td>
+<td>OIDC is enabled, in every mode</td>
+</tr>
+<tr>
+<td><code>/.well-known/oauth-authorization-server</code></td>
+<td>the identical path, at the host root</td>
+<td>the server proxies OAuth (client ID and secret set)</td>
+</tr>
+</tbody>
+</table>
+<p>Two properties of that table drive every routing rule below:</p>
 <ol>
-<li><strong>Strip the prefix</strong> (<code>/vault</code>) from operational routes before forwarding to the app</li>
-<li><strong>Forward OAuth discovery routes</strong> to this service (without stripping prefixes):<ul>
-<li><code>/.well-known/oauth-authorization-server</code> (authorization server metadata)</li>
-<li><code>/.well-known/oauth-protected-resource/vault/mcp</code> (protected resource metadata)</li>
-</ul>
-</li>
+<li>The MCP endpoint and the OAuth endpoints listen <strong>without</strong> the prefix, so the proxy has to strip it.</li>
+<li>The protected-resource document's path <strong>contains</strong> the prefix, because RFC 9728 §3.1 appends the resource path after the well-known segment. The server registers that full path verbatim, so stripping the prefix from this request returns 404.</li>
 </ol>
-<p>Example Traefik configuration:</p>
+<p>A server holding no client ID and secret verifies tokens the provider issued directly. It serves protected-resource metadata only and answers <code>/.well-known/oauth-authorization-server</code> with 404. That is the correct answer, because the provider is the authorization server, so do not route that path to a server configured this way.</p>
+<h3 id="reverse-proxy-routing">Reverse proxy routing<a class="headerlink" href="#reverse-proxy-routing" title="Permanent link">&para;</a></h3>
+<p>The reverse proxy needs two routers pointing at the same service, because a prefix rule cannot express both halves:</p>
+<ol>
+<li><strong>Operational routes</strong> match the prefix and strip it: <code>/myservice/mcp</code> and, in proxy mode, the OAuth endpoints.</li>
+<li><strong>Discovery routes</strong> match their own well-known paths and pass through untouched. Their URLs do not begin with <code>/myservice</code>, so a <code>PathPrefix(/myservice)</code> rule never sees them.</li>
+</ol>
 <div class="highlight"><pre><span></span><code><span class="nt">labels</span><span class="p">:</span>
-<span class="w">  </span><span class="c1"># Operational routes: strip /vault prefix before forwarding</span>
-<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;traefik.http.routers.vault-app.rule=Host(`mcp.example.com`)</span><span class="nv"> </span><span class="s">&amp;&amp;</span><span class="nv"> </span><span class="s">PathPrefix(`/vault`)&quot;</span>
-<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;traefik.http.middlewares.strip-vault.stripprefix.prefixes=/vault&quot;</span>
-<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;traefik.http.routers.vault-app.middlewares=strip-vault&quot;</span>
-<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;traefik.http.services.vault-app.loadbalancer.server.port=8000&quot;</span>
-<span class="w">  </span><span class="c1"># OAuth discovery routes: forward without stripping</span>
-<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;traefik.http.routers.vault-wellknown.rule=Host(`mcp.example.com`)</span><span class="nv"> </span><span class="s">&amp;&amp;</span><span class="nv"> </span><span class="s">(PathPrefix(`/.well-known/oauth-authorization-server`)</span><span class="nv"> </span><span class="s">||</span><span class="nv"> </span><span class="s">PathPrefix(`/.well-known/oauth-protected-resource/vault/mcp`))&quot;</span>
-<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;traefik.http.routers.vault-wellknown.service=vault-app&quot;</span>
+<span class="w">  </span><span class="c1"># Operational routes: strip the /myservice prefix before forwarding</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;traefik.http.routers.mcp-app.rule=Host(`mcp.example.com`)</span><span class="nv"> </span><span class="s">&amp;&amp;</span><span class="nv"> </span><span class="s">PathPrefix(`/myservice`)&quot;</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;traefik.http.middlewares.strip-myservice.stripprefix.prefixes=/myservice&quot;</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;traefik.http.routers.mcp-app.middlewares=strip-myservice&quot;</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;traefik.http.services.mcp-app.loadbalancer.server.port=8000&quot;</span>
+<span class="w">  </span><span class="c1"># Discovery routes: same service, no strip middleware</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;traefik.http.routers.mcp-wellknown.rule=Host(`mcp.example.com`)</span><span class="nv"> </span><span class="s">&amp;&amp;</span><span class="nv"> </span><span class="s">(PathPrefix(`/.well-known/oauth-protected-resource/myservice/mcp`)</span><span class="nv"> </span><span class="s">||</span><span class="nv"> </span><span class="s">PathPrefix(`/.well-known/oauth-authorization-server`))&quot;</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;traefik.http.routers.mcp-wellknown.service=mcp-app&quot;</span>
 </code></pre></div>
-<div class="admonition note">
-<p class="admonition-title">Note</p>
-<p>This configuration requires that no other OAuth service claims <code>/.well-known/oauth-authorization-server</code> on this hostname. See <a href="#shared-hostname-limitation">Shared-hostname limitation</a> below.</p>
-</div>
-<h3 id="shared-hostname-limitation">Shared-hostname limitation<a class="headerlink" href="#shared-hostname-limitation" title="Permanent link">&para;</a></h3>
+<p>Drop the <code>oauth-authorization-server</code> clause when the server holds no client ID and secret. That path returns 404 in such a configuration, and claiming it on a shared hostname takes the document away from whichever service does answer.</p>
+<p>Two routers rather than one is deliberate. A single router carrying the strip rule would apply it to the discovery request as well. Nothing here relies on how a given proxy treats a strip prefix that fails to match: separate routers state the untouched route outright, in any proxy that has the concept.</p>
+<h3 id="sharing-a-hostname">Sharing a hostname<a class="headerlink" href="#sharing-a-hostname" title="Permanent link">&para;</a></h3>
+<p>The failure that follows from point 2 above is worth spelling out, because its symptom points somewhere else entirely.</p>
+<p>The discovery URL sits outside the prefix, so on a hostname shared with other services, prefix-based routing cannot claim it. Without a router that matches it explicitly, the request falls through to whatever else holds the host: an OAuth gateway, an SSO portal, or another MCP server at the root. That service answers with <strong>its</strong> metadata, the client builds an authorization URL from another service's endpoints, and the visible symptom is an authorization URL 404ing at a path nobody configured. It reads as a client bug or an auth bug; it is a routing rule one path too narrow.</p>
+<p>The <code>mcp-wellknown</code> router above is the fix. In Traefik it also wins by default: routers sort by rule length, so a rule naming the full well-known path outranks a bare <code>Host(...)</code> catch-all. Where the competing service sets an explicit <code>priority</code>, set a higher one here, because Traefik ignores its rule-length default for any router that carries one.</p>
 <div class="admonition warning">
-<p class="admonition-title">Shared-hostname subpath with native OIDC is not supported</p>
-<p>When multiple OAuth-capable services share a hostname (such as <code>mcp-auth-proxy</code> at the root and <code>markdown-vault-mcp</code> at <code>/vault</code>), native OIDC on a subpath does not work.</p>
-<p><strong>Why:</strong> FastMCP serves the OAuth authorization-server metadata at <code>/.well-known/oauth-authorization-server</code> (host root), regardless of the subpath in <code>BASE_URL</code>. The FastMCP codebase contains an RFC 8414 path-aware override (<code>OIDCProxy.get_well_known_routes()</code>) that would serve it at <code>/.well-known/oauth-authorization-server/vault</code>. However, this method is not wired into the route mounting flow and is effectively dead code.</p>
-<p>The protected-resource metadata (<code>/.well-known/oauth-protected-resource/vault/mcp</code>) is correctly path-namespaced and does not collide. Only the authorization-server discovery route is the problem.</p>
-<p>This works when <code>markdown-vault-mcp</code> is the <strong>only</strong> OAuth service on the hostname (the host-root <code>/.well-known/oauth-authorization-server</code> does not collide with anything). It breaks when another service already owns that route.</p>
+<p class="admonition-title">One document still collides: <code>oauth-authorization-server</code></p>
+<p>In proxy mode the server serves authorization-server metadata at <code>/.well-known/oauth-authorization-server</code>, at the <strong>host root</strong>, whatever prefix <code>BASE_URL</code> carries. FastMCP does contain an RFC 8414 path-aware override, <code>OAuthProvider.get_well_known_routes()</code>, which would serve it at <code>/.well-known/oauth-authorization-server/myservice</code>. Nothing reaches it: the HTTP app mounts <code>get_routes()</code> instead, leaving the path-aware form unreachable. (Verified against FastMCP 3.4.7.)</p>
+<p>Only this one document collides. Protected-resource metadata is path-namespaced, so several servers can share a hostname without contending for it.</p>
+<p>Where another OAuth service already owns the root path, either give this server its own hostname, or run it without client ID and secret so it never serves the document. An authorization-server metadata request then belongs to the provider, where the <code>authorization_servers</code> entry in this server's protected-resource metadata sends the client anyway.</p>
 </div>
-<p><strong>Recommendations for shared-hostname scenarios:</strong></p>
-<ul>
-<li><strong>Dedicated hostname</strong> (preferred): give <code>markdown-vault-mcp</code> its own hostname (such as <code>vault.example.com</code>) so discovery routes do not collide.</li>
-<li><strong>External auth gateway</strong>: use <code>mcp-auth-proxy</code> as a sidecar instead of native OIDC. The MCP server runs unauthenticated behind the proxy, and the proxy handles OAuth discovery at its own routes.</li>
-</ul>
+<h3 id="verifying-the-routing">Verifying the routing<a class="headerlink" href="#verifying-the-routing" title="Permanent link">&para;</a></h3>
+<p>Probe the container first, to separate what the server serves from what the proxy does with it. The image ships no HTTP client, so borrow one. Passing <code>--network container:</code> puts the throwaway container inside the server's network namespace, which makes <code>localhost:8000</code> the server itself:</p>
+<div class="highlight"><pre><span></span><code><span class="nv">NS</span><span class="o">=</span><span class="s2">&quot;container:</span><span class="k">$(</span>docker<span class="w"> </span>compose<span class="w"> </span>ps<span class="w"> </span>-q<span class="w"> </span>markdown-vault-mcp<span class="k">)</span><span class="s2">&quot;</span>
+docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>--network<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$NS</span><span class="s2">&quot;</span><span class="w"> </span>curlimages/curl<span class="w"> </span>-s<span class="w"> </span>-o<span class="w"> </span>/dev/null<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-w<span class="w"> </span><span class="s1">&#39;%{http_code}\n&#39;</span><span class="w"> </span>localhost:8000/mcp
+docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>--network<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$NS</span><span class="s2">&quot;</span><span class="w"> </span>curlimages/curl<span class="w"> </span>-s<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>localhost:8000/.well-known/oauth-protected-resource/myservice/mcp
+</code></pre></div>
+<p>Expect <code>401</code> for the first, meaning the endpoint is there and authentication is on, and the metadata JSON for the second. A <code>404</code> instead of the <code>401</code> means <code>HTTP_PATH</code> carries the prefix it should not. Then repeat from outside, through the proxy:</p>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-s<span class="w"> </span>-o<span class="w"> </span>/dev/null<span class="w"> </span>-w<span class="w"> </span><span class="s1">&#39;%{http_code}\n&#39;</span><span class="w"> </span>https://mcp.example.com/myservice/mcp
+curl<span class="w"> </span>-s<span class="w"> </span>https://mcp.example.com/.well-known/oauth-protected-resource/myservice/mcp
+</code></pre></div>
+<p>Both must reach this server, and the <code>resource</code> field in the JSON must read <code>https://mcp.example.com/myservice/mcp</code>. A <code>resource</code> naming a different service is the shared-hostname problem above, not an incorrect <code>BASE_URL</code>.</p>
 <!-- DOMAIN-OIDC-EXTRA-START -->
 <!-- Project-specific notes for OIDC deployment go here; kept across copier
      update. (E.g. "Keycloak requires X claim", "Authelia token-cache quirk

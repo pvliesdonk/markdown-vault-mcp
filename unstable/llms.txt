@@ -11,6 +11,7 @@ markdown-vault-mcp is a generic markdown vault MCP server with FTS5 full-text se
 - [Installation](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/installation/index.md): Installation from PyPI, uv, source, or Docker
 - [Configuration](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/configuration/index.md): All environment variables with types and defaults
 - [Configuration Generator](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/configuration-generator/index.md): In-browser generator for config, Docker, and systemd artifacts
+- [CLI Reference](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/cli/index.md): CLI reference — serve, index, search, reindex, and subpath mounts
 
 ## Guides
 

@@ -82,6 +82,8 @@ Versions before v1.9.0 used three separate state volumes (`index-data`, `embeddi
 
 The `compose.yml` includes Traefik labels out of the box. When Traefik is running and watching Docker, it picks up these labels and routes traffic automatically.
 
+Running behind a reverse proxy on a path prefix (`https://mcp.example.com/myservice/mcp`) rather than its own hostname needs two routing rules, one of which sits outside the prefix: see [Subpath Deployments](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deployment/oidc/#subpath-deployments).
+
 **What the labels do:**
 
 - `traefik.enable=true`: opts this service in to Traefik discovery

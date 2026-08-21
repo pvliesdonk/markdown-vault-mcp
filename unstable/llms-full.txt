@@ -229,6 +229,31 @@ export MARKDOWN_VAULT_MCP_SOURCE_DIR=/path/to/your/markdown/files
 markdown-vault-mcp search "hello world"
 ```
 
+## Upgrading from earlier versions
+
+- **Package root minimized (issue #903): import from submodules, not the package root.** The `markdown_vault_mcp` root package no longer re-exports the public API. Update library imports to their submodules:
+
+```
+# Before: from markdown_vault_mcp import Vault, ProjectConfig
+# After:  from markdown_vault_mcp.vault import Vault
+#         from markdown_vault_mcp.config import ProjectConfig
+```
+
+Types such as `GroupedResult` come from `markdown_vault_mcp.types`. Only `__version__` remains importable from the root.
+
+- **v2.0.0 (issue #469): `search`, `get_similar`, and `get_context.similar` now return grouped results.** Each file appears once with a `sections` list; the flat `content`, `heading`, and `score` fields have moved inside each `SectionHit`. Library consumers must update iteration:
+
+```
+# Before: result.content, result.heading
+# After:  result.sections[0].content, result.sections[0].heading
+```
+
+`MARKDOWN_VAULT_MCP_CHUNKS_PER_FILE` replaces `MARKDOWN_VAULT_MCP_CHUNKS_PER_DOC`. `SimilarItem` is removed; use `GroupedResult` (from `markdown_vault_mcp.types`).
+
+- **Search returns snippets by default.** The `content` field carries a query-relevant snippet (approximately 200 words). Pass `snippet_words=0` to recover the prior full-chunk behaviour, or use `read(path, section=heading)` to fetch the full section after seeing a snippet.
+- `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB` default lowered from **10 MB** to **1 MB**. Most LLM contexts can't survive a 10 MB base64-encoded attachment; the old default was a silent context-blow-up. If you have non-LLM consumers (scripts, CI) that need the old behaviour, set `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB=10` explicitly.
+- `MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES` caps whole-document `.md` reads (default 256 KB); reads above it raise `ValueError`. Partial reads via `read(path, section=heading)` bypass the cap.
+
 # Configuration
 
 Markdown Vault MCP is configured via environment variables with the `MARKDOWN_VAULT_MCP_` prefix.
@@ -545,16 +570,17 @@ Transfer tools and the `/transfer/{token}` route are registered only when the se
 
 Optional token-based authentication for HTTP deployments. OIDC activates when all four required variables are set. See [OIDC deployment](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deployment/oidc/index.md) for setup details.
 
-| Variable                                      | Type   | Required | Description                                                                                                                                                                                    |
-| --------------------------------------------- | ------ | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `MARKDOWN_VAULT_MCP_BASE_URL`                 | url    | Yes      | Public base URL (see [Server Identity](#server-identity) above); required for OIDC                                                                                                             |
-| `MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL`          | url    | Yes      | OIDC discovery endpoint (such as `https://auth.example.com/.well-known/openid-configuration`)                                                                                                  |
-| `MARKDOWN_VAULT_MCP_OIDC_CLIENT_ID`           | string | Yes      | OIDC client ID registered with your provider                                                                                                                                                   |
-| `MARKDOWN_VAULT_MCP_OIDC_CLIENT_SECRET`       | string | Yes      | OIDC client secret                                                                                                                                                                             |
-| `MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY`     | string | No       | JWT signing key; **required on Linux/Docker** (the default is ephemeral and invalidates tokens on restart). Generate with `openssl rand -hex 32`                                               |
-| `MARKDOWN_VAULT_MCP_OIDC_AUDIENCE`            | string | No       | Expected JWT audience claim; leave unset if your provider does not set one                                                                                                                     |
-| `MARKDOWN_VAULT_MCP_OIDC_REQUIRED_SCOPES`     | csv    | `openid` | Comma-separated required scopes                                                                                                                                                                |
-| `MARKDOWN_VAULT_MCP_OIDC_VERIFY_ACCESS_TOKEN` | bool   | `false`  | Set `true` to verify the upstream access token as JWT instead of the id token. Only needed when your provider issues JWT access tokens and you require audience-claim validation on that token |
+| Variable                                      | Type   | Required                | Description                                                                                                                                                                                    |
+| --------------------------------------------- | ------ | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MARKDOWN_VAULT_MCP_BASE_URL`                 | url    | Yes                     | Public base URL (see [Server Identity](#server-identity) above); required for OIDC                                                                                                             |
+| `MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL`          | url    | Yes                     | OIDC discovery endpoint (such as `https://auth.example.com/.well-known/openid-configuration`)                                                                                                  |
+| `MARKDOWN_VAULT_MCP_OIDC_CLIENT_ID`           | string | Yes                     | OIDC client ID registered with your provider                                                                                                                                                   |
+| `MARKDOWN_VAULT_MCP_OIDC_CLIENT_SECRET`       | string | Yes                     | OIDC client secret                                                                                                                                                                             |
+| `MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY`     | string | No                      | JWT signing key; **required on Linux/Docker** (the default is ephemeral and invalidates tokens on restart). Generate with `openssl rand -hex 32`                                               |
+| `MARKDOWN_VAULT_MCP_OIDC_AUDIENCE`            | string | No                      | Expected JWT audience claim; leave unset if your provider does not set one                                                                                                                     |
+| `MARKDOWN_VAULT_MCP_OIDC_REQUIRED_SCOPES`     | csv    | `openid`                | Comma-separated required scopes                                                                                                                                                                |
+| `MARKDOWN_VAULT_MCP_OIDC_ADVERTISED_SCOPES`   | csv    | `openid offline_access` | Scopes advertised to MCP clients in protected-resource metadata; `oidc_required_scopes` is always added on top                                                                                 |
+| `MARKDOWN_VAULT_MCP_OIDC_VERIFY_ACCESS_TOKEN` | bool   | `false`                 | Set `true` to verify the upstream access token as JWT instead of the id token. Only needed when your provider issues JWT access tokens and you require audience-claim validation on that token |
 
 ## Boolean Parsing
 
@@ -574,6 +600,82 @@ Boolean environment variables accept `true`, `1`, or `yes` (case-insensitive) as
 Answer a few questions and copy a ready-to-use configuration for your exact deployment. Everything runs in your browser; nothing you type is sent anywhere. Secret fields (tokens, keys) are never included in the shareable link; replace the `<YOUR_...>` placeholders if you leave them blank.
 
 Loading the configuration generator…
+
+# CLI Reference
+
+The `markdown-vault-mcp` command drives the server and the index from the shell:
+
+```
+markdown-vault-mcp <command> [options]
+```
+
+## `serve`
+
+Start the MCP server.
+
+```
+markdown-vault-mcp serve [--transport {stdio|sse|http}] [--host HOST] [--port PORT] [--http-path PATH]
+```
+
+| Flag                           | Default                                      | Description                                                                                                                                                               |
+| ------------------------------ | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--transport`                  | `stdio`                                      | MCP transport: `stdio` (stdin/stdout, default), `sse` (Server-Sent Events), `http` (streamable-HTTP). Use `http` for Docker with a reverse proxy or when OIDC is enabled. |
+| `--host`                       | `127.0.0.1`                                  | Bind host for the `http` transport (ignored for `stdio` and `sse`); pass `0.0.0.0` to bind all interfaces inside Docker                                                   |
+| `--port`                       | `8000`                                       | Port for the `http` transport (ignored for `stdio` and `sse`)                                                                                                             |
+| `--http-path` (alias `--path`) | env `MARKDOWN_VAULT_MCP_HTTP_PATH` or `/mcp` | MCP HTTP path for `http` transport; useful for reverse-proxy subpath mounting (such as `/vault/mcp`). The legacy `--path` spelling is still accepted.                     |
+
+## Reverse proxy subpath mounts
+
+By default, HTTP transport serves MCP on `/mcp`. You can run it under a subpath:
+
+```
+markdown-vault-mcp serve --transport http --http-path /vault/mcp
+```
+
+Equivalent env-based config:
+
+```
+MARKDOWN_VAULT_MCP_HTTP_PATH=/vault/mcp
+```
+
+For reverse proxies, you can either:
+
+- Keep app path at `/mcp` and use proxy rewrite/strip-prefix middleware.
+- Set app path directly to the public path (`/vault/mcp`) and route without rewrite.
+
+When OIDC is enabled under a subpath, the configuration is different: the subpath goes in `BASE_URL` only, and `HTTP_PATH` stays at `/mcp`. See [OIDC subpath deployments](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deployment/oidc/#subpath-deployments).
+
+Then your redirect URI is:
+
+```
+https://mcp.example.com/vault/auth/callback
+```
+
+## `index`
+
+Build the full-text search index.
+
+```
+markdown-vault-mcp index [--source-dir PATH] [--index-path PATH] [--force]
+```
+
+## `search`
+
+Search the vault from the CLI.
+
+```
+markdown-vault-mcp search <query> [-n LIMIT] [-m {keyword|semantic|hybrid}] [--folder PATH] [--json]
+```
+
+## `reindex`
+
+Incrementally reindex the vault (only processes changed files). When semantic search is configured, the vector index is converged to the updated chunk set: exactly the changed documents are re-embedded and orphaned vectors dropped, never the whole corpus.
+
+```
+markdown-vault-mcp reindex [--source-dir PATH] [--index-path PATH] [--force]
+```
+
+`--force` drops the index and re-parses every file, ignoring change detection. An upgrade that changes how notes are parsed rebuilds the index by itself on the next run, so this is a manual repair for an index you have reason to distrust, not routine maintenance.
 # Guides
 
 # Guides
@@ -1793,12 +1895,13 @@ Client → markdown-vault-mcp → OIDC Provider
 
 ### Optional variables
 
-| Variable                                      | Default   | Description                                                                                                                                                                                                                                                                                                                                    |
-| --------------------------------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `MARKDOWN_VAULT_MCP_OIDC_AUDIENCE`            | (none)    | Expected `aud` claim; tokens issued for another audience are rejected.                                                                                                                                                                                                                                                                         |
-| `MARKDOWN_VAULT_MCP_OIDC_REQUIRED_SCOPES`     | `openid`  | Scopes a caller must present, space- or comma-separated. Defaults to `openid` in oidc-proxy mode.                                                                                                                                                                                                                                              |
-| `MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY`     | `derived` | Signing key for issued JSON Web Tokens; used in oidc-proxy mode only. When unset, the key is derived deterministically from `oidc_client_secret`, so tokens survive a restart. Rotating that secret invalidates every issued token. Set this explicitly to decouple token validity from secret rotation. Generate with `openssl rand -hex 32`. |
-| `MARKDOWN_VAULT_MCP_OIDC_VERIFY_ACCESS_TOKEN` | `false`   | Validate the access token instead of the id token.                                                                                                                                                                                                                                                                                             |
+| Variable                                      | Default                 | Description                                                                                                                                                                                                                                                                                                                                                                   |
+| --------------------------------------------- | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MARKDOWN_VAULT_MCP_OIDC_AUDIENCE`            | (none)                  | Expected `aud` claim; tokens issued for another audience are rejected.                                                                                                                                                                                                                                                                                                        |
+| `MARKDOWN_VAULT_MCP_OIDC_REQUIRED_SCOPES`     | `openid`                | Scopes a caller must present, space- or comma-separated. Defaults to `openid` in oidc-proxy mode.                                                                                                                                                                                                                                                                             |
+| `MARKDOWN_VAULT_MCP_OIDC_ADVERTISED_SCOPES`   | `openid offline_access` | Scopes advertised to MCP clients in protected-resource metadata, space- or comma-separated. Overrides the default `openid offline_access`; `oidc_required_scopes` is always added on top. Set this when the registered client is not permitted `offline_access`, or to have clients request extra claim scopes (such as `groups`) without also requiring them in every token. |
+| `MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY`     | `derived`               | Signing key for issued JSON Web Tokens; used in oidc-proxy mode only. When unset, the key is derived deterministically from `oidc_client_secret`, so tokens survive a restart. Rotating that secret invalidates every issued token. Set this explicitly to decouple token validity from secret rotation. Generate with `openssl rand -hex 32`.                                |
+| `MARKDOWN_VAULT_MCP_OIDC_VERIFY_ACCESS_TOKEN` | `false`                 | Validate the access token instead of the id token.                                                                                                                                                                                                                                                                                                                            |
 
 JWT signing key and secret rotation
 
@@ -1901,11 +2004,11 @@ MCP clients cannot maintain sessions beyond the token lifetime because token ref
 
 Three independent issues prevent token refresh:
 
-| Layer              | Issue                                                                                                                          | Impact                                                                                         |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
-| **Claude Code**    | Stores refresh tokens but never uses them ([claude-code#21333](https://github.com/anthropics/claude-code/issues/21333))        | Refresh tokens are obtained and saved but never sent back to refresh expired access tokens     |
-| **Claude Code**    | Never requests `offline_access` scope ([claude-code#7744](https://github.com/anthropics/claude-code/issues/7744))              | Most OIDC providers won't issue a refresh token without this scope                             |
-| **MCP Python SDK** | Token refresh deadlocks inside SSE streams ([python-sdk#1326](https://github.com/modelcontextprotocol/python-sdk/issues/1326)) | Even with a valid refresh token, the SDK hangs when attempting refresh during an active stream |
+| Layer              | Issue                                                                                                                          | Impact                                                                                                                                                                                                                                                                    |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Claude Code**    | Stores refresh tokens but never uses them ([claude-code#21333](https://github.com/anthropics/claude-code/issues/21333))        | Refresh tokens are obtained and saved but never sent back to refresh expired access tokens                                                                                                                                                                                |
+| **Claude Code**    | Does not ask for `offline_access` on its own ([claude-code#7744](https://github.com/anthropics/claude-code/issues/7744))       | Most OIDC providers issue no refresh token without this scope. The server advertises `openid offline_access` in its protected-resource metadata, so a client that requests the advertised set gets a refresh-capable grant; one that ignores the metadata still does not. |
+| **MCP Python SDK** | Token refresh deadlocks inside SSE streams ([python-sdk#1326](https://github.com/modelcontextprotocol/python-sdk/issues/1326)) | Even with a valid refresh token, the SDK hangs when attempting refresh during an active stream                                                                                                                                                                            |
 
 The server-side refresh architecture (FastMCP's `OAuthProxy.exchange_refresh_token()`) is correctly implemented and would work, but it requires the client to initiate the refresh, which none of the current clients do reliably.
 
@@ -1917,10 +2020,10 @@ The server-side refresh architecture (FastMCP's `OAuthProxy.exchange_refresh_tok
 
 **Long token lifetimes** are the only viable workaround for OIDC in oidc-proxy mode. Set all three lifetimes (access, id, refresh) to cover your typical session duration:
 
-- `access_token: '8h'` (covers a workday)
-- `id_token: '8h'` (**must match access_token** when using `verify_id_token` mode, critical for Authelia)
-- `refresh_token: '30d'` (ready for when clients support refresh)
-- Include `offline_access` in provider-side scopes (no effect today, but will enable refresh when clients are fixed)
+- `access_token: '8h'`: covers a workday
+- `id_token: '8h'`: **must match access_token** when using `verify_id_token` mode (critical for Authelia)
+- `refresh_token: '30d'`: ready for when clients support refresh
+- Permit `offline_access` for the registered client; the server advertises it by default, so a client that honours the advertised scopes requests it. Where the client may not hold that scope, narrow what the server advertises with `MARKDOWN_VAULT_MCP_OIDC_ADVERTISED_SCOPES` rather than letting the authorization request fail
 
 ### Tracking
 
@@ -6040,6 +6143,8 @@ Versions before v1.9.0 used three separate state volumes (`index-data`, `embeddi
 
 The `compose.yml` includes Traefik labels out of the box. When Traefik is running and watching Docker, it picks up these labels and routes traffic automatically.
 
+Running behind a reverse proxy on a path prefix (`https://mcp.example.com/myservice/mcp`) rather than its own hostname needs two routing rules, one of which sits outside the prefix: see [Subpath Deployments](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deployment/oidc/#subpath-deployments).
+
 **What the labels do:**
 
 - `traefik.enable=true`: opts this service in to Traefik discovery
@@ -6753,12 +6858,13 @@ No `CLIENT_ID` or `CLIENT_SECRET` needed. Tokens are validated locally via JWKS.
 
 ## Optional Variables
 
-| Variable                                      | Default   | Description                                                                                                                                                                                                                                                                                                                                    |
-| --------------------------------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `MARKDOWN_VAULT_MCP_OIDC_AUDIENCE`            | (none)    | Expected `aud` claim; tokens issued for another audience are rejected.                                                                                                                                                                                                                                                                         |
-| `MARKDOWN_VAULT_MCP_OIDC_REQUIRED_SCOPES`     | `openid`  | Scopes a caller must present, space- or comma-separated. Defaults to `openid` in oidc-proxy mode.                                                                                                                                                                                                                                              |
-| `MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY`     | `derived` | Signing key for issued JSON Web Tokens; used in oidc-proxy mode only. When unset, the key is derived deterministically from `oidc_client_secret`, so tokens survive a restart. Rotating that secret invalidates every issued token. Set this explicitly to decouple token validity from secret rotation. Generate with `openssl rand -hex 32`. |
-| `MARKDOWN_VAULT_MCP_OIDC_VERIFY_ACCESS_TOKEN` | `false`   | Validate the access token instead of the id token.                                                                                                                                                                                                                                                                                             |
+| Variable                                      | Default                 | Description                                                                                                                                                                                                                                                                                                                                                                   |
+| --------------------------------------------- | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MARKDOWN_VAULT_MCP_OIDC_AUDIENCE`            | (none)                  | Expected `aud` claim; tokens issued for another audience are rejected.                                                                                                                                                                                                                                                                                                        |
+| `MARKDOWN_VAULT_MCP_OIDC_REQUIRED_SCOPES`     | `openid`                | Scopes a caller must present, space- or comma-separated. Defaults to `openid` in oidc-proxy mode.                                                                                                                                                                                                                                                                             |
+| `MARKDOWN_VAULT_MCP_OIDC_ADVERTISED_SCOPES`   | `openid offline_access` | Scopes advertised to MCP clients in protected-resource metadata, space- or comma-separated. Overrides the default `openid offline_access`; `oidc_required_scopes` is always added on top. Set this when the registered client is not permitted `offline_access`, or to have clients request extra claim scopes (such as `groups`) without also requiring them in every token. |
+| `MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY`     | `derived`               | Signing key for issued JSON Web Tokens; used in oidc-proxy mode only. When unset, the key is derived deterministically from `oidc_client_secret`, so tokens survive a restart. Rotating that secret invalidates every issued token. Set this explicitly to decouple token validity from secret rotation. Generate with `openssl rand -hex 32`.                                |
+| `MARKDOWN_VAULT_MCP_OIDC_VERIFY_ACCESS_TOKEN` | `false`                 | Validate the access token instead of the id token.                                                                                                                                                                                                                                                                                                                            |
 
 ## JWT Signing Key
 
@@ -6963,49 +7069,83 @@ Register this callback URI in your OIDC provider:
 https://mcp.example.com/vault/auth/callback
 ```
 
+### What the server serves, and where
+
+The MCP endpoint and the OAuth discovery documents sit on opposite sides of the prefix, which is what makes subpath routing more than one strip rule. With `BASE_URL=https://mcp.example.com/myservice` and `HTTP_PATH=/mcp`:
+
+| Public URL                                                                  | Path the container listens on        | Served when                                         |
+| --------------------------------------------------------------------------- | ------------------------------------ | --------------------------------------------------- |
+| `/myservice/mcp`                                                            | `/mcp`                               | always                                              |
+| `/myservice/authorize`, `/token`, `/register`, `/auth/callback`, `/consent` | the same path without the prefix     | the server proxies OAuth (client ID and secret set) |
+| `/.well-known/oauth-protected-resource/myservice/mcp`                       | the identical path, prefix included  | OIDC is enabled, in every mode                      |
+| `/.well-known/oauth-authorization-server`                                   | the identical path, at the host root | the server proxies OAuth (client ID and secret set) |
+
+Two properties of that table drive every routing rule below:
+
+1. The MCP endpoint and the OAuth endpoints listen **without** the prefix, so the proxy has to strip it.
+1. The protected-resource document's path **contains** the prefix, because RFC 9728 §3.1 appends the resource path after the well-known segment. The server registers that full path verbatim, so stripping the prefix from this request returns 404.
+
+A server holding no client ID and secret verifies tokens the provider issued directly. It serves protected-resource metadata only and answers `/.well-known/oauth-authorization-server` with 404. That is the correct answer, because the provider is the authorization server, so do not route that path to a server configured this way.
+
 ### Reverse proxy routing
 
-The reverse proxy must:
+The reverse proxy needs two routers pointing at the same service, because a prefix rule cannot express both halves:
 
-1. **Strip the prefix** (`/vault`) from operational routes before forwarding to the app
-1. **Forward OAuth discovery routes** to this service (without stripping prefixes):
-   - `/.well-known/oauth-authorization-server` (authorization server metadata)
-   - `/.well-known/oauth-protected-resource/vault/mcp` (protected resource metadata)
-
-Example Traefik configuration:
+1. **Operational routes** match the prefix and strip it: `/myservice/mcp` and, in proxy mode, the OAuth endpoints.
+1. **Discovery routes** match their own well-known paths and pass through untouched. Their URLs do not begin with `/myservice`, so a `PathPrefix(/myservice)` rule never sees them.
 
 ```
 labels:
-  # Operational routes: strip /vault prefix before forwarding
-  - "traefik.http.routers.vault-app.rule=Host(`mcp.example.com`) && PathPrefix(`/vault`)"
-  - "traefik.http.middlewares.strip-vault.stripprefix.prefixes=/vault"
-  - "traefik.http.routers.vault-app.middlewares=strip-vault"
-  - "traefik.http.services.vault-app.loadbalancer.server.port=8000"
-  # OAuth discovery routes: forward without stripping
-  - "traefik.http.routers.vault-wellknown.rule=Host(`mcp.example.com`) && (PathPrefix(`/.well-known/oauth-authorization-server`) || PathPrefix(`/.well-known/oauth-protected-resource/vault/mcp`))"
-  - "traefik.http.routers.vault-wellknown.service=vault-app"
+  # Operational routes: strip the /myservice prefix before forwarding
+  - "traefik.http.routers.mcp-app.rule=Host(`mcp.example.com`) && PathPrefix(`/myservice`)"
+  - "traefik.http.middlewares.strip-myservice.stripprefix.prefixes=/myservice"
+  - "traefik.http.routers.mcp-app.middlewares=strip-myservice"
+  - "traefik.http.services.mcp-app.loadbalancer.server.port=8000"
+  # Discovery routes: same service, no strip middleware
+  - "traefik.http.routers.mcp-wellknown.rule=Host(`mcp.example.com`) && (PathPrefix(`/.well-known/oauth-protected-resource/myservice/mcp`) || PathPrefix(`/.well-known/oauth-authorization-server`))"
+  - "traefik.http.routers.mcp-wellknown.service=mcp-app"
 ```
 
-Note
+Drop the `oauth-authorization-server` clause when the server holds no client ID and secret. That path returns 404 in such a configuration, and claiming it on a shared hostname takes the document away from whichever service does answer.
 
-This configuration requires that no other OAuth service claims `/.well-known/oauth-authorization-server` on this hostname. See [Shared-hostname limitation](#shared-hostname-limitation) below.
+Two routers rather than one is deliberate. A single router carrying the strip rule would apply it to the discovery request as well. Nothing here relies on how a given proxy treats a strip prefix that fails to match: separate routers state the untouched route outright, in any proxy that has the concept.
 
-### Shared-hostname limitation
+### Sharing a hostname
 
-Shared-hostname subpath with native OIDC is not supported
+The failure that follows from point 2 above is worth spelling out, because its symptom points somewhere else entirely.
 
-When multiple OAuth-capable services share a hostname (such as `mcp-auth-proxy` at the root and `markdown-vault-mcp` at `/vault`), native OIDC on a subpath does not work.
+The discovery URL sits outside the prefix, so on a hostname shared with other services, prefix-based routing cannot claim it. Without a router that matches it explicitly, the request falls through to whatever else holds the host: an OAuth gateway, an SSO portal, or another MCP server at the root. That service answers with **its** metadata, the client builds an authorization URL from another service's endpoints, and the visible symptom is an authorization URL 404ing at a path nobody configured. It reads as a client bug or an auth bug; it is a routing rule one path too narrow.
 
-**Why:** FastMCP serves the OAuth authorization-server metadata at `/.well-known/oauth-authorization-server` (host root), regardless of the subpath in `BASE_URL`. The FastMCP codebase contains an RFC 8414 path-aware override (`OIDCProxy.get_well_known_routes()`) that would serve it at `/.well-known/oauth-authorization-server/vault`. However, this method is not wired into the route mounting flow and is effectively dead code.
+The `mcp-wellknown` router above is the fix. In Traefik it also wins by default: routers sort by rule length, so a rule naming the full well-known path outranks a bare `Host(...)` catch-all. Where the competing service sets an explicit `priority`, set a higher one here, because Traefik ignores its rule-length default for any router that carries one.
 
-The protected-resource metadata (`/.well-known/oauth-protected-resource/vault/mcp`) is correctly path-namespaced and does not collide. Only the authorization-server discovery route is the problem.
+One document still collides: `oauth-authorization-server`
 
-This works when `markdown-vault-mcp` is the **only** OAuth service on the hostname (the host-root `/.well-known/oauth-authorization-server` does not collide with anything). It breaks when another service already owns that route.
+In proxy mode the server serves authorization-server metadata at `/.well-known/oauth-authorization-server`, at the **host root**, whatever prefix `BASE_URL` carries. FastMCP does contain an RFC 8414 path-aware override, `OAuthProvider.get_well_known_routes()`, which would serve it at `/.well-known/oauth-authorization-server/myservice`. Nothing reaches it: the HTTP app mounts `get_routes()` instead, leaving the path-aware form unreachable. (Verified against FastMCP 3.4.7.)
 
-**Recommendations for shared-hostname scenarios:**
+Only this one document collides. Protected-resource metadata is path-namespaced, so several servers can share a hostname without contending for it.
 
-- **Dedicated hostname** (preferred): give `markdown-vault-mcp` its own hostname (such as `vault.example.com`) so discovery routes do not collide.
-- **External auth gateway**: use `mcp-auth-proxy` as a sidecar instead of native OIDC. The MCP server runs unauthenticated behind the proxy, and the proxy handles OAuth discovery at its own routes.
+Where another OAuth service already owns the root path, either give this server its own hostname, or run it without client ID and secret so it never serves the document. An authorization-server metadata request then belongs to the provider, where the `authorization_servers` entry in this server's protected-resource metadata sends the client anyway.
+
+### Verifying the routing
+
+Probe the container first, to separate what the server serves from what the proxy does with it. The image ships no HTTP client, so borrow one. Passing `--network container:` puts the throwaway container inside the server's network namespace, which makes `localhost:8000` the server itself:
+
+```
+NS="container:$(docker compose ps -q markdown-vault-mcp)"
+docker run --rm --network "$NS" curlimages/curl -s -o /dev/null \
+  -w '%{http_code}\n' localhost:8000/mcp
+docker run --rm --network "$NS" curlimages/curl -s \
+  localhost:8000/.well-known/oauth-protected-resource/myservice/mcp
+```
+
+Expect `401` for the first, meaning the endpoint is there and authentication is on, and the metadata JSON for the second. A `404` instead of the `401` means `HTTP_PATH` carries the prefix it should not. Then repeat from outside, through the proxy:
+
+```
+curl -s -o /dev/null -w '%{http_code}\n' https://mcp.example.com/myservice/mcp
+curl -s https://mcp.example.com/.well-known/oauth-protected-resource/myservice/mcp
+```
+
+Both must reach this server, and the `resource` field in the JSON must read `https://mcp.example.com/myservice/mcp`. A `resource` naming a different service is the shared-hostname problem above, not an incorrect `BASE_URL`.
 
 # Release Process
 
@@ -7105,6 +7245,34 @@ If your release credential is a GitHub App installation token rather than a pers
 `bootstrap.yml` upserts each ruleset by name: it updates the existing ruleset when one matches and creates it otherwise. Every apply replaces the whole ruleset with the checked-in state. Edits made by hand in the GitHub UI are reset on the next run, so change the JSON files instead. A push that touches `.github/rulesets/` or the bootstrap workflow re-applies automatically; `workflow_dispatch` re-applies on demand. Rulesets with other names are never touched, so you can add your own alongside.
 
 The apply step needs `administration: write`, a permission the default `GITHUB_TOKEN` cannot be granted, so it runs with `RELEASE_TOKEN`, matching the permission set the README already asks for.
+
+## Requiring a check the template does not own
+
+`CI Success` is the only context the shipped rulesets require, and it is an aggregate: it passes when every job in the generated `ci.yml` passed, so adding a job there needs no ruleset change. A check that lives outside that workflow is a different matter. A workflow cannot list another workflow's job in its own `needs:`, so a domain workflow the project added itself cannot join the aggregate: it runs, it shows red on the pull request, and nothing stops the merge.
+
+List its context in the `extra_required_checks` copier answer instead:
+
+```
+# .copier-answers.yml
+extra_required_checks:
+  - SPA sources
+```
+
+Each name renders into the `required_status_checks` array of both branch rulesets, alongside `CI Success`, and applies to `main` and `release/*` alike. The answer is the project's own, so the rulesets stay template-owned and a `copier update` re-renders them with the project's checks intact. An empty answer, the default, renders exactly the single-context form every project already had.
+
+Write each name as the check appears on the pull request. That is the job's `name:` when it has one and the job id otherwise, not the workflow's name, and not the file it lives in.
+
+The rendered files reach GitHub the same way as any other ruleset change: commit them and push, and the `.github/rulesets/` path filter starts `bootstrap.yml`; a `workflow_dispatch` run applies them on demand.
+
+A required check must report on every pull request
+
+A required context that never reports blocks the merge forever. The pull request waits for a check that is not coming, and there is no timeout. This is easy to trigger by accident, because the natural way to write a domain workflow is to scope it:
+
+- a `paths:` filter means the check reports on the pull requests that touch those files and no others,
+- a job-level `if:` that evaluates false skips the job, which reports nothing,
+- a workflow that runs only on `push` never reports on a pull request at all.
+
+Let the workflow run on every pull request to a protected branch and decide inside the job whether there is work to do, exiting zero when there is not. Verify on a pull request that touches nothing the check cares about: the context must still appear, and pass.
 
 ## Applying by hand
 

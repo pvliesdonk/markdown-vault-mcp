@@ -577,6 +577,34 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -2656,6 +2684,11 @@ Client → markdown-vault-mcp (present JWT → validate via JWKS)
 <td>Scopes a caller must present, space- or comma-separated. Defaults to <code>openid</code> in oidc-proxy mode.</td>
 </tr>
 <tr>
+<td><code>MARKDOWN_VAULT_MCP_OIDC_ADVERTISED_SCOPES</code></td>
+<td><code>openid offline_access</code></td>
+<td>Scopes advertised to MCP clients in protected-resource metadata, space- or comma-separated. Overrides the default <code>openid offline_access</code>; <code>oidc_required_scopes</code> is always added on top. Set this when the registered client is not permitted <code>offline_access</code>, or to have clients request extra claim scopes (such as <code>groups</code>) without also requiring them in every token.</td>
+</tr>
+<tr>
 <td><code>MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY</code></td>
 <td><code>derived</code></td>
 <td>Signing key for issued JSON Web Tokens; used in oidc-proxy mode only. When unset, the key is derived deterministically from <code>oidc_client_secret</code>, so tokens survive a restart. Rotating that secret invalidates every issued token. Set this explicitly to decouple token validity from secret rotation. Generate with <code>openssl rand -hex 32</code>.</td>
@@ -2765,8 +2798,8 @@ Client → markdown-vault-mcp (present JWT → validate via JWKS)
 </tr>
 <tr>
 <td><strong>Claude Code</strong></td>
-<td>Never requests <code>offline_access</code> scope (<a href="https://github.com/anthropics/claude-code/issues/7744">claude-code#7744</a>)</td>
-<td>Most OIDC providers won't issue a refresh token without this scope</td>
+<td>Does not ask for <code>offline_access</code> on its own (<a href="https://github.com/anthropics/claude-code/issues/7744">claude-code#7744</a>)</td>
+<td>Most OIDC providers issue no refresh token without this scope. The server advertises <code>openid offline_access</code> in its protected-resource metadata, so a client that requests the advertised set gets a refresh-capable grant; one that ignores the metadata still does not.</td>
 </tr>
 <tr>
 <td><strong>MCP Python SDK</strong></td>
@@ -2781,10 +2814,10 @@ Client → markdown-vault-mcp (present JWT → validate via JWKS)
 <p><strong>Bearer token auth</strong> is unaffected by all of the above. If your deployment allows it (such as Claude Code with env vars, or API clients), bearer tokens are the simplest and most reliable option.</p>
 <p><strong>Long token lifetimes</strong> are the only viable workaround for OIDC in oidc-proxy mode. Set all three lifetimes (access, id, refresh) to cover your typical session duration:</p>
 <ul>
-<li><code>access_token: '8h'</code> (covers a workday)</li>
-<li><code>id_token: '8h'</code> (<strong>must match access_token</strong> when using <code>verify_id_token</code> mode, critical for Authelia)</li>
-<li><code>refresh_token: '30d'</code> (ready for when clients support refresh)</li>
-<li>Include <code>offline_access</code> in provider-side scopes (no effect today, but will enable refresh when clients are fixed)</li>
+<li><code>access_token: '8h'</code>: covers a workday</li>
+<li><code>id_token: '8h'</code>: <strong>must match access_token</strong> when using <code>verify_id_token</code> mode (critical for Authelia)</li>
+<li><code>refresh_token: '30d'</code>: ready for when clients support refresh</li>
+<li>Permit <code>offline_access</code> for the registered client; the server advertises it by default, so a client that honours the advertised scopes requests it. Where the client may not hold that scope, narrow what the server advertises with <code>MARKDOWN_VAULT_MCP_OIDC_ADVERTISED_SCOPES</code> rather than letting the authorization request fail</li>
 </ul>
 <h3 id="tracking">Tracking<a class="headerlink" href="#tracking" title="Permanent link">&para;</a></h3>
 <p>These upstream issues are actively tracked:</p>

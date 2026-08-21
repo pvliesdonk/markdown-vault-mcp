@@ -577,6 +577,34 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -2480,6 +2508,7 @@ curl<span class="w"> </span>http://localhost:8000/health
 </div>
 <h2 id="traefik-reverse-proxy">Traefik Reverse Proxy<a class="headerlink" href="#traefik-reverse-proxy" title="Permanent link">&para;</a></h2>
 <p>The <code>compose.yml</code> includes Traefik labels out of the box. When Traefik is running and watching Docker, it picks up these labels and routes traffic automatically.</p>
+<p>Running behind a reverse proxy on a path prefix (<code>https://mcp.example.com/myservice/mcp</code>) rather than its own hostname needs two routing rules, one of which sits outside the prefix: see <a href="../oidc/#subpath-deployments">Subpath Deployments</a>.</p>
 <p><strong>What the labels do:</strong></p>
 <ul>
 <li><code>traefik.enable=true</code>: opts this service in to Traefik discovery</li>
