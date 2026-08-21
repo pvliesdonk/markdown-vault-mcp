@@ -347,6 +347,7 @@ Full OAuth 2.1 authentication for HTTP deployments. OIDC activates when all four
 | `MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY` | No | JWT signing key. When unset, derived deterministically from the OIDC client secret, so tokens survive restarts; rotating the secret invalidates issued tokens. Set explicitly (generate with `openssl rand -hex 32`) to decouple token validity from secret rotation |
 | `MARKDOWN_VAULT_MCP_OIDC_AUDIENCE` | No | Expected JWT audience claim; leave unset if your provider does not set one |
 | `MARKDOWN_VAULT_MCP_OIDC_REQUIRED_SCOPES` | No | Comma-separated required scopes; default `openid` |
+| `MARKDOWN_VAULT_MCP_OIDC_ADVERTISED_SCOPES` | No | Comma- or space-separated scopes advertised to MCP clients in protected-resource metadata; default `openid offline_access`, with required scopes always added on top. Set when the registered client is not permitted `offline_access`, or to have clients request extra claim scopes without also requiring them |
 | `MARKDOWN_VAULT_MCP_OIDC_VERIFY_ACCESS_TOKEN` | No | Set `true` to verify the upstream access token as a JWT instead of the id token. Only needed when your provider issues JWT access tokens and you require audience-claim validation on that token. Default: verify the id token (works with all providers, including opaque-token issuers like Authelia) |
 
 ## CLI Reference
