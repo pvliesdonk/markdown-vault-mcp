@@ -7203,6 +7203,8 @@ The pages under [Release Notes](https://pvliesdonk.github.io/markdown-vault-mcp/
 
 The release pull request stays a draft until the notes job lands its page, so a release without its notes can never merge by accident. A drafting failure fails the prepare run visibly and leaves the pull request in draft; re-run the notes job, or re-dispatch Release Prepare with `skip_notes` to release without a notes refresh. For a release shipped that way, the **Release Notes** workflow's manual dispatch drafts a standalone notes pull request as a backfill. Later hand edits to a released page redeploy that minor's versioned docs through the **Release Notes Publish** workflow.
 
+A notes refresh is incremental by default: the drafting agent researches only the commits since the page's last accepted draft and leaves accepted prose alone. To rewrite a page from scratch under the current drafting rules, dispatch Release Prepare with `full_redraft`; the rewrite lands inside the release pull request like any other draft. The **Release Notes** workflow's manual dispatch accepts the same flag in both of its modes: a target version re-drafts against an open release pull request without re-running the whole prepare, and a tag produces a standalone backfill pull request for a shipped release.
+
 # Repository Protection
 
 The template ships GitHub repository rulesets that gate the branches a release can ship from. The rules live as JSON files in `.github/rulesets/` and the `bootstrap.yml` workflow applies them, so the effective protection state is checked in, reviewed, and re-applied rather than clicked together in the UI and forgotten.
