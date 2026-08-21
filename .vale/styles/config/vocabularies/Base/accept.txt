@@ -254,8 +254,11 @@ Plex
 # --- Release-notes prose vocabulary ---
 accessor
 backoff
+callables
 globbed
+indirected
 subcommands
+unvalidated
 
 # --- Release-notes backfill vocabulary (#1058) ---
 backfilled
