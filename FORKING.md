@@ -30,8 +30,7 @@ rm -f .github/workflows/copier-update.yml \
       .github/workflows/claude.yml \
       .github/workflows/claude-code-review.yml \
       .github/workflows/release-notes.yml
-rm -f scripts/copier_update_aggregator.py
-rm -rf scripts/copier_update_prompts
+rm -f scripts/copier_update_notes.py
 ```
 
 What this removes and why:
@@ -41,9 +40,8 @@ What this removes and why:
 - `release-notes.yml` — the Claude-agent release-notes drafter (same
   `CLAUDE_CODE_OAUTH_TOKEN` dependency as the review wiring). Keep it
   instead if your fork keeps that secret and wants agent-drafted notes.
-- `scripts/copier_update_aggregator.py`, `scripts/copier_update_prompts/` —
-  the orchestration that only `copier-update.yml` invoked; dead weight once
-  that workflow is gone.
+- `scripts/copier_update_notes.py` — the UPGRADING.md section picker that
+  only `copier-update.yml` invoked; dead weight once that workflow is gone.
 
 **Keep** your own CI and release workflows: `ci.yml`, `codeql.yml`,
 `coverage-status.yml`, `docs.yml`, `release-prepare.yml`, `release.yml`, and

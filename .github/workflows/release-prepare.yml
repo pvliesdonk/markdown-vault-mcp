@@ -34,6 +34,10 @@ on:
         description: 'Escape hatch: prepare the release PR WITHOUT drafting/refreshing its release-notes page (e.g. the drafting agent is down, or the page was just hand-edited). The release PR then ships whatever docs/releases/ state its base carries.'
         type: boolean
         default: false
+      full_redraft:
+        description: 'Force rewrite of the release-notes page (template#452): the notes job ignores the page''s notes-range-end watermark, researches the full range the page covers, and re-derives its prose under the current skill contract. Off = the normal incremental refresh. Mutually exclusive with skip_notes.'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -98,6 +102,15 @@ jobs:
             exit 1
           fi
           echo "interlock: no [tool.semantic_release] block — knope flow is armed"
+
+      # The two notes inputs contradict each other: one skips drafting,
+      # the other forces a full rewrite.  Refuse the pair before any
+      # heavy work runs.
+      - name: Refuse contradictory notes inputs
+        if: ${{ inputs.skip_notes && inputs.full_redraft }}
+        run: |
+          echo "::error::skip_notes and full_redraft are mutually exclusive — skip_notes ships the base's page state untouched, full_redraft forces a rewrite. Re-dispatch with at most one of them set."
+          exit 1
 
       # Only the default branch and release/X.Y stabilisation branches
       # release (the PSR-era branch groups' refusal, carried over as an
@@ -398,6 +411,7 @@ jobs:
       source_ref: ${{ needs.prepare.outputs.source_sha }}
       prep_branch: ${{ needs.prepare.outputs.prep_branch }}
       expected_head: ${{ needs.prepare.outputs.prep_head }}
+      full_redraft: ${{ inputs.full_redraft }}
     secrets: inherit
     permissions:
       contents: read

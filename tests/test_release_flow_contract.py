@@ -593,8 +593,14 @@ def test_prepare_drafts_notes_into_the_release_pr() -> None:
         "source_ref:",
         "prep_branch:",
         "expected_head:",
+        "full_redraft:",
     ):
         assert handed_over in block, f"draft-notes no longer passes {handed_over}"
+    assert "Refuse contradictory notes inputs" in text, (
+        "skip_notes and full_redraft contradict each other (one skips "
+        "drafting, the other forces a rewrite) — the prepare job must "
+        "refuse the pair before any heavy work runs"
+    )
 
 
 def test_notes_lock_is_taken_by_the_caller_job_in_call_mode() -> None:
@@ -626,14 +632,17 @@ def test_notes_lock_is_taken_by_the_caller_job_in_call_mode() -> None:
 
 
 def test_notes_dispatch_offers_a_full_redraft_override() -> None:
-    """The watermark cache needs an operator override (template#452).
+    """The watermark cache needs an operator override (template#452/#460).
 
     Incremental research deliberately preserves accepted prose, so a
     change to the skill's own contract can never reach a range the page
-    already covers on its own.  The manual dispatch must expose the
-    full_redraft flag and the drafting prompt must thread it to the
-    agent; the prepare-time call stays incremental, so the
-    workflow_call inputs must NOT grow the flag.
+    already covers on its own.  Both entry points must expose the
+    full_redraft flag — the Release Notes dispatch directly, and the
+    workflow_call so Release Prepare can thread its own input through —
+    and the drafting prompt must hand it to the agent.  The call input
+    must DEFAULT to false: a prepare that does not opt in stays
+    incremental, so a force rewrite is always an explicit operator
+    choice.
     """
     text = NOTES_WORKFLOW.read_text(encoding="utf-8")
     on_block = text[text.index("\non:") : text.index("\npermissions:")]
@@ -644,13 +653,67 @@ def test_notes_dispatch_offers_a_full_redraft_override() -> None:
     assert "full_redraft:" in dispatch_block, (
         "the dispatch entry lost its full_redraft force-rewrite input"
     )
-    assert "full_redraft" not in call_block, (
-        "call mode must stay incremental — the prepare-time refresh may "
-        "never force-rewrite accepted prose"
+    call_flag = re.search(
+        r"full_redraft:\n(?:\s+\S.*\n)*?\s+default: (\S+)\n", call_block
+    )
+    assert call_flag, (
+        "the workflow_call inputs lost full_redraft — Release Prepare "
+        "can no longer thread its force-rewrite input through the call"
+    )
+    assert call_flag.group(1) == "false", (
+        "the call-mode full_redraft must default to false — an un-opted "
+        "prepare refresh stays incremental"
     )
     prompt = text[text.index("Draft the notes page") :]
     assert "full redraft:" in prompt, (
         "the drafting prompt no longer threads the full_redraft flag to the agent"
+    )
+    # The rewrite must be mechanically reachable (template#463): the
+    # agent's only mutation tool is path-scoped Edit, which writes whole
+    # pages reliably only into seeded EMPTY files — so a full redraft
+    # empties the page, and only AFTER the pre-draft snapshot copied it,
+    # or the landing overlay would lose the baseline that attributes the
+    # rewrite to this draft.
+    seed_step = text[
+        text.index("Seed and snapshot the notes surface") : text.index(
+            "Upload the pre-draft snapshot"
+        )
+    ]
+    assert (
+        'if [ "$FULL_REDRAFT" = "true" ]' in seed_step and ': > "$PAGE"' in seed_step
+    ), (
+        "the seed step no longer empties the page on a full redraft — "
+        "in-place prose replacement is not reachable in the drafting "
+        "sandbox (152 denied bulk-edit attempts on the first live run)"
+    )
+    assert seed_step.index('cp -R docs/releases "$PRE/releases"') < seed_step.index(
+        'if [ "$FULL_REDRAFT" = "true" ]'
+    ), (
+        "the page must be emptied AFTER the snapshot copies it — "
+        "truncating first would snapshot the empty file and break the "
+        "landing overlay's change attribution"
+    )
+
+
+def test_ready_lift_retries_the_stale_pr_head_read() -> None:
+    """The ready-lift must ride out its own push's API lag (template#462).
+
+    The landing step reads the PR head right after its own lease-guarded
+    push, and the API's view can still report the pre-push lease head for
+    a moment.  The guard must retry while it sees exactly EXPECTED_HEAD
+    (staleness, not a takeover) and still refuse on any third head — an
+    un-retried read left a complete release PR stuck in draft on the
+    first live rc.6 landing downstream.
+    """
+    text = NOTES_WORKFLOW.read_text(encoding="utf-8")
+    land = text[text.index("\n  land:") :]
+    assert '"$current_head" = "$EXPECTED_HEAD"' in land, (
+        "the ready-lift no longer distinguishes a stale read of its own "
+        "push (the lease head) from a genuinely newer prepare"
+    )
+    assert re.search(r"for attempt in [0-9 ]+; do\n(?:.*\n)*?.*headRefOid", land), (
+        "the PR-head read must sit inside a retry loop — a single read "
+        "races the run's own push"
     )
 
 

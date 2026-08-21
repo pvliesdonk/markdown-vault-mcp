@@ -144,3 +144,13 @@ with `skip_notes` to release without a notes refresh. For a release shipped that
 workflow's manual dispatch drafts a standalone notes pull request as a
 backfill. Later hand edits to a released page redeploy that minor's
 versioned docs through the **Release Notes Publish** workflow.
+
+A notes refresh is incremental by default: the drafting agent
+researches only the commits since the page's last accepted draft and
+leaves accepted prose alone. To rewrite a page from scratch under the
+current drafting rules, dispatch Release Prepare with `full_redraft`;
+the rewrite lands inside the release pull request like any other
+draft. The **Release Notes** workflow's manual dispatch accepts the
+same flag in both of its modes: a target version re-drafts against an
+open release pull request without re-running the whole prepare, and a
+tag produces a standalone backfill pull request for a shipped release.

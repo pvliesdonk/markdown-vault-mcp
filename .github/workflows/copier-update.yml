@@ -5,12 +5,31 @@ name: Copier Update
 # refreshes) a PR on branch `copier/update` so CI can validate the diff and
 # an operator can review/merge.
 #
+# Deterministic by design: the run applies the update, commits any conflict
+# markers for the operator, and composes the PR body from facts alone — the
+# ref delta, the template's release notes and UPGRADING.md sections for the
+# jump, the conflict list, and the diff stat.  Automated runs step at most
+# ONE major at a time: a multi-major jump becomes a sequence of per-major
+# update PRs (merge one, the next scheduled run opens the next), so each PR
+# carries one major's migration notes and CI validates each stage.  An
+# explicit `vcs_ref` dispatch input jumps straight to the asked ref.
+#
+# No agent analysis: an earlier
+# incarnation ran three claude-code agent steps (conflict auto-resolution,
+# changelog triage, excluded-file triage) whose wall-clock cost dwarfed the
+# update itself and whose conflict resolutions drifted toward preserving
+# local deviations from the template.  The template is the one upstream
+# source that keeps every downstream repo aligned, so the PR body now states
+# the resolution policy (template wins outside downstream-owned regions) and
+# leaves resolution to the operator — or to an interactive Claude session on
+# the branch, where the operator can supervise it.
+#
 # Uses the RELEASE_TOKEN PAT (not GITHUB_TOKEN) so the opened PR triggers
 # downstream workflows — GITHUB_TOKEN-authored PRs are muted by design.
 
 on:
-#  schedule:
-#    - cron: "0 6 * * 1"  # Monday 06:00 UTC
+  schedule:
+    - cron: "0 6 * * 1"  # Monday 06:00 UTC
   workflow_dispatch:
     inputs:
       vcs_ref:
@@ -27,11 +46,6 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
-      # Required by anthropics/claude-code-action@v1: setupGitHubToken() mints
-      # a Claude-app GitHub token via OIDC token exchange, which needs
-      # id-token: write at the job level. Without it the agent steps retry
-      # 3x then abort on "Could not fetch an OIDC token".
-      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -49,20 +63,69 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      - name: Run copier update
-        id: copier
+      - name: Choose target ref (one major per run)
+        id: target
         env:
-          VCS_REF: ${{ inputs.vcs_ref }}
+          INPUT_VCS_REF: ${{ inputs.vcs_ref }}
         run: |
           set -euo pipefail
           # Capture the pre-update `_commit` BEFORE copier rewrites
           # `.copier-answers.yml` with the new ref — the PR body uses it to
-          # render the prev_ref→ref delta and a compare link.  `|| true` so
-          # a missing/corrupt answers file doesn't abort before the update
-          # (the post-update meta step re-parses and hard-fails if needed).
+          # render the prev_ref→ref delta, a compare link, and the UPGRADING
+          # section range.  `|| true` so a missing/corrupt answers file
+          # doesn't abort before the update (the post-update meta step
+          # re-parses and hard-fails if needed).
           prev_ref=$(awk '/^_commit:[[:space:]]/ {print $2; exit}' .copier-answers.yml || true)
           echo "prev_ref=${prev_ref}" >> "$GITHUB_OUTPUT"
 
+          # Derive the template source repo from `_src_path` in .copier-answers.yml
+          # rather than synthesising from `{{ github_org }}` — `github_org` is the
+          # *consumer's* org (for Docker paths, etc.), not the template source's.
+          # Normalize the common forms copier may have stored ({gh:,https://github.com/,
+          # git@github.com:}org/repo[.git]) down to `org/repo`; local paths or anything
+          # else unrecognised becomes empty and the later steps skip the release-notes,
+          # upgrade-notes, compare-link, and staging logic gracefully.
+          src_path=$(awk '/^_src_path:[[:space:]]/ {print $2; exit}' .copier-answers.yml || true)
+          template_repo=$(printf '%s' "${src_path}" \
+            | sed -E 's|^gh:||; s|^https?://github\.com/||; s|^git@github\.com:||; s|\.git$||; s|/+$||')
+          if ! printf '%s' "${template_repo}" | grep -qE '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$'; then
+            template_repo=""
+          fi
+          echo "template_repo=${template_repo}" >> "$GITHUB_OUTPUT"
+
+          # An explicit dispatch input wins outright — the operator asked
+          # for that exact ref, staging does not apply.
+          vcs_ref="${INPUT_VCS_REF}"
+          latest_tag=""
+          if [ -z "${vcs_ref}" ] && [ -n "${template_repo}" ] && [ -n "${prev_ref}" ]; then
+            # Stage automated runs one major at a time: list the template's
+            # tags and let pick-target choose the newest stable tag of the
+            # next major above the current one (empty output = no majors
+            # ahead = copier's latest-tag default is already right).
+            # Best-effort: an ls-remote failure (private template, network)
+            # falls through to the default, same as before staging existed.
+            if git ls-remote --tags --refs \
+                "https://github.com/${template_repo}.git" 2>/dev/null \
+                | awk -F/ '{print $NF}' > /tmp/template-tags.txt; then
+              vcs_ref=$(python3 scripts/copier_update_notes.py pick-target \
+                --previous "${prev_ref}" --tags /tmp/template-tags.txt)
+              # Newest stable tag overall — the PR body compares it against
+              # the chosen target to flag a staged (not-yet-latest) update.
+              latest_tag=$(grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' /tmp/template-tags.txt \
+                | sort -V | tail -1 || true)
+            else
+              echo "::notice::could not list template tags; falling back to copier's latest-tag default"
+            fi
+          fi
+          echo "vcs_ref=${vcs_ref}" >> "$GITHUB_OUTPUT"
+          echo "latest_tag=${latest_tag}" >> "$GITHUB_OUTPUT"
+
+      - name: Run copier update
+        id: copier
+        env:
+          VCS_REF: ${{ steps.target.outputs.vcs_ref }}
+        run: |
+          set -euo pipefail
           # `--conflict=inline` runs a real 3-way merge and writes standard
           # `<<<<<<< before updating / ||||||| last update / ======= / >>>>>>> after updating`
           # markers when local edits collide with template changes.  The
@@ -89,9 +152,6 @@ jobs:
       - name: Read template ref + collect conflict files
         if: steps.changes.outputs.changed == 'true'
         id: meta
-        env:
-          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
-          PREVIOUS_COMMIT: ${{ steps.copier.outputs.prev_ref }}
         run: |
           set -euo pipefail
           # Parse `_commit:` from .copier-answers.yml without depending on
@@ -102,25 +162,7 @@ jobs:
             echo "::error::could not read _commit from .copier-answers.yml"
             exit 1
           fi
-          # Detect whether the template ref actually changed (agent jobs B/C
-          # should fire even when no conflicts but the template advanced).
-          if [ -n "${PREVIOUS_COMMIT}" ] && [ "${PREVIOUS_COMMIT}" != "${ref}" ]; then
-            template_advanced=true
-          else
-            template_advanced=false
-          fi
-          echo "template_advanced=${template_advanced}" >> "$GITHUB_OUTPUT"
-          # Surface previous_commit / new_ref under stable names so the
-          # downstream agent + aggregator steps can reference them via
-          # `steps.meta.outputs.*` regardless of which earlier step produced
-          # the value.  `previous_commit` may be empty on first-ever update.
-          echo "previous_commit=${PREVIOUS_COMMIT}" >> "$GITHUB_OUTPUT"
-          echo "new_ref=${ref}" >> "$GITHUB_OUTPUT"
-          # Pre-detect any existing PR on the copier/update branch so the
-          # aggregator's overflow-comment step has a PR number to post to
-          # (set to 0 when no PR exists yet — overflow posting is best-effort).
-          pr_number=$(gh pr view copier/update --json number --jq .number 2>/dev/null || echo 0)
-          echo "pr_number=${pr_number}" >> "$GITHUB_OUTPUT"
+          echo "ref=${ref}" >> "$GITHUB_OUTPUT"
           # `--conflict=inline` writes standard `<<<<<<< before updating`
           # markers (not `.rej` sidecars).  Collect files that contain at
           # least one conflict marker; skip binary files with `git grep -I`.
@@ -134,22 +176,7 @@ jobs:
           else
             conflict_count=0
           fi
-          # Derive the template source repo from `_src_path` in .copier-answers.yml
-          # rather than synthesising from `{{ github_org }}` — `github_org` is the
-          # *consumer's* org (for Docker paths, etc.), not the template source's.
-          # Normalize the common forms copier may have stored ({gh:,https://github.com/,
-          # git@github.com:}org/repo[.git]) down to `org/repo`; local paths or anything
-          # else unrecognised becomes empty and the PR step skips the release-notes
-          # and compare-link sections gracefully.
-          src_path=$(awk '/^_src_path:[[:space:]]/ {print $2; exit}' .copier-answers.yml || true)
-          template_repo=$(printf '%s' "${src_path}" \
-            | sed -E 's|^gh:||; s|^https?://github\.com/||; s|^git@github\.com:||; s|\.git$||; s|/+$||')
-          if ! printf '%s' "${template_repo}" | grep -qE '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$'; then
-            template_repo=""
-          fi
-          echo "ref=${ref}" >> "$GITHUB_OUTPUT"
           echo "conflict_count=${conflict_count}" >> "$GITHUB_OUTPUT"
-          echo "template_repo=${template_repo}" >> "$GITHUB_OUTPUT"
           # Multiline `conflict_files` needs the heredoc form of $GITHUB_OUTPUT.
           # The `CONFLICT_FILES_EOF` delimiter is safe because git-tracked file paths
           # can't contain newlines, let alone a line that matches that literal string.
@@ -159,196 +186,44 @@ jobs:
             echo "CONFLICT_FILES_EOF"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Clone template at both refs (for agent context)
-        id: clone-template
-        # Provides /tmp/template at both old (downstream's previous _commit)
-        # and new (just-applied) refs so the three claude-code agent steps can
-        # read template-side history (CHANGELOG, conflict files at the old
-        # ref, excluded-file evolution diffs).
-        # Failure-tolerant: if clone fails, agent steps see the missing dir
-        # and write error placeholders; PR still opens.
-        if: steps.changes.outputs.changed == 'true' && (steps.meta.outputs.conflict_count > 0 || steps.meta.outputs.template_advanced == 'true')
+      - name: Collect UPGRADING.md sections for the jump
+        # The template's UPGRADING.md is `_exclude`d (never rendered here),
+        # so fetch it from the template source at the target ref and let
+        # scripts/copier_update_notes.py select the sections between the
+        # previous ref's minor and the target's.  Best-effort: a private
+        # template source, a pre-UPGRADING ref, or an unparseable previous
+        # ref all degrade to an empty file, and the PR body links the full
+        # file instead.  (The fetch is unauthenticated-equivalent: the
+        # RELEASE_TOKEN PAT is scoped to THIS repo, so a template repo is
+        # only readable when public — the same assumption the release-notes
+        # fetch below has always made.)  `continue-on-error` because the
+        # embed is an enrichment: if this step fails, the body step sees an
+        # empty/absent notes file and falls back to linking the full file.
+        if: steps.changes.outputs.changed == 'true'
         continue-on-error: true
         env:
-          PREVIOUS_COMMIT: ${{ steps.meta.outputs.previous_commit }}
-          NEW_REF: ${{ steps.meta.outputs.new_ref }}
-          TEMPLATE_REPO: ${{ steps.meta.outputs.template_repo }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          REF: ${{ steps.meta.outputs.ref }}
+          PREV_REF: ${{ steps.target.outputs.prev_ref }}
+          TEMPLATE_REPO: ${{ steps.target.outputs.template_repo }}
         run: |
           set -euo pipefail
-          rm -rf /tmp/template
-          if [ -z "${TEMPLATE_REPO}" ]; then
-            echo "::notice::template_repo unresolved; skipping clone (agent steps will skip)"
+          : > /tmp/upgrading-notes.md
+          if [ -z "${TEMPLATE_REPO}" ] || [ "${PREV_REF}" = "${REF}" ]; then
             exit 0
           fi
-          git clone --filter=blob:none \
-            "https://github.com/${TEMPLATE_REPO}.git" \
-            /tmp/template
-          # Verify both refs are reachable before declaring the clone usable.
-          git -C /tmp/template fetch --tags
-          if [ -n "${PREVIOUS_COMMIT}" ]; then
-            git -C /tmp/template rev-parse "${PREVIOUS_COMMIT}^{commit}" >/dev/null
+          if ! gh api -H "Accept: application/vnd.github.raw" \
+              "repos/${TEMPLATE_REPO}/contents/UPGRADING.md?ref=${REF}" \
+              > /tmp/upgrading.md 2>/dev/null; then
+            echo "::notice::could not fetch UPGRADING.md at ${REF}; the PR body links the file instead"
+            exit 0
           fi
-          if [ -n "${NEW_REF}" ]; then
-            git -C /tmp/template rev-parse "${NEW_REF}^{commit}" >/dev/null \
-              || { echo "::error::NEW_REF not reachable in template clone: ${NEW_REF}"; exit 1; }
-          fi
-          echo "template_clone_ok=true" >> "$GITHUB_OUTPUT"
-
-      - name: Check claude-code token availability
-        id: agent-prereq
-        if: steps.changes.outputs.changed == 'true'
-        # Detect whether the downstream repo has CLAUDE_CODE_OAUTH_TOKEN
-        # configured. Without it, the three agent steps skip and the
-        # aggregator renders "agent disabled" placeholders.
-        env:
-          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-        run: |
-          if [ -n "${CLAUDE_CODE_OAUTH_TOKEN}" ]; then
-            echo "agent_enabled=true"  >> "$GITHUB_OUTPUT"
-          else
-            echo "agent_enabled=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::CLAUDE_CODE_OAUTH_TOKEN not set; skipping agent analysis. Set in repo secrets to enable."
-          fi
-
-      # Jobs A, B, C are independent — they share no data dependency, only
-      # the cloned `/tmp/template` workspace and the per-job env vars.
-      # Currently sequential for simplicity (single workflow job, fewer
-      # `needs:` edges); could be parallelized into separate jobs if wall-
-      # clock latency becomes an issue. Don't make A→B→C serial for
-      # ordering reasons — there is no ordering reason. Agent JSON outputs
-      # land in distinct `/tmp/agent-job-{a,b,c}.json` files; the
-      # aggregator step reads each independently.
-      #
-      # Each agent step has TWO sub-steps:
-      #   1. Pre-render its prompt via `envsubst` and capture into a step
-      #      output (heredoc form for multi-line content).
-      #   2. Invoke claude-code-action with `prompt:` set to the rendered
-      #      content. claude-code-action@v1 only accepts `prompt:` (a
-      #      string) as a public input — there is NO `prompt_file:` input
-      #      on the user-facing wrapper (the action internally writes the
-      #      resolved prompt to `${RUNNER_TEMP}/claude-prompts/claude-prompt.txt`
-      #      from the `prompt:` value).
-      #
-      # envsubst's restricted-form `'${VAR1} ${VAR2}'` only substitutes
-      # those listed; any other `$VAR` references in the prompt body
-      # (e.g. shell-pattern examples) stay literal.
-      #
-      # Multi-line `CONFLICT_FILES_LIST` is safe via envsubst's file-to-file
-      # I/O — no argv quoting. Same pattern is used in release.yml.jinja's
-      # mcpb manifest rendering.
-      #
-      # Each agent step constrains tool access via `claude_args
-      # --allowed-tools` to enforce the spec's per-job tool boundaries
-      # (Job A: file read/write + git commit on the working tree; Jobs B/C:
-      # read everywhere, plus a bare Write — narrowed to the single output
-      # JSON at /tmp/agent-job-{b,c}.json by prose in each job's prompt).
-      # The path-scoped Write(//tmp/agent-job-b.json) form documented at
-      # code.claude.com/docs/en/permissions empirically doesn't match the
-      # agent's single-slash invocations under the SDK shipped with
-      # claude-code-action@v1, so the prose constraint is what's narrow.
-
-      - name: Pre-render Job A prompt
-        id: prepare-prompt-a
-        if: |
-          steps.changes.outputs.changed == 'true' &&
-          steps.agent-prereq.outputs.agent_enabled == 'true' &&
-          steps.meta.outputs.conflict_count > 0 &&
-          steps.clone-template.outputs.template_clone_ok == 'true'
-        env:
-          PREVIOUS_COMMIT: ${{ steps.meta.outputs.previous_commit }}
-          NEW_REF: ${{ steps.meta.outputs.new_ref }}
-          CONFLICT_FILES_LIST: ${{ steps.meta.outputs.conflict_files }}
-        run: |
-          envsubst '${PREVIOUS_COMMIT} ${NEW_REF} ${CONFLICT_FILES_LIST}' \
-            < scripts/copier_update_prompts/job_a.md \
-            > /tmp/agent-prompt-a.md
-          {
-            echo "prompt<<PROMPT_EOF"
-            cat /tmp/agent-prompt-a.md
-            echo "PROMPT_EOF"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Agent Job A — Conflict resolution
-        if: |
-          steps.changes.outputs.changed == 'true' &&
-          steps.agent-prereq.outputs.agent_enabled == 'true' &&
-          steps.meta.outputs.conflict_count > 0 &&
-          steps.clone-template.outputs.template_clone_ok == 'true'
-        continue-on-error: true
-        uses: anthropics/claude-code-action@v1
-        with:
-          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          prompt: ${{ steps.prepare-prompt-a.outputs.prompt }}
-          claude_args: |
-            --allowed-tools "Read,Edit,Write,Bash(git status:*),Bash(git diff:*),Bash(git add:*),Bash(git config user.name:*),Bash(git config user.email:*),Bash(git commit:*),Bash(git rev-parse:*),Bash(git -C /tmp/template:*)"
-
-      - name: Pre-render Job B prompt
-        id: prepare-prompt-b
-        if: |
-          steps.changes.outputs.changed == 'true' &&
-          steps.agent-prereq.outputs.agent_enabled == 'true' &&
-          steps.meta.outputs.template_advanced == 'true' &&
-          steps.clone-template.outputs.template_clone_ok == 'true'
-        env:
-          PREVIOUS_COMMIT: ${{ steps.meta.outputs.previous_commit }}
-          NEW_REF: ${{ steps.meta.outputs.new_ref }}
-        run: |
-          envsubst '${PREVIOUS_COMMIT} ${NEW_REF}' \
-            < scripts/copier_update_prompts/job_b.md \
-            > /tmp/agent-prompt-b.md
-          {
-            echo "prompt<<PROMPT_EOF"
-            cat /tmp/agent-prompt-b.md
-            echo "PROMPT_EOF"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Agent Job B — Changelog triage
-        if: |
-          steps.changes.outputs.changed == 'true' &&
-          steps.agent-prereq.outputs.agent_enabled == 'true' &&
-          steps.meta.outputs.template_advanced == 'true' &&
-          steps.clone-template.outputs.template_clone_ok == 'true'
-        continue-on-error: true
-        uses: anthropics/claude-code-action@v1
-        with:
-          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          prompt: ${{ steps.prepare-prompt-b.outputs.prompt }}
-          claude_args: |
-            --allowed-tools "Read,Write,Bash(cat:*),Bash(git -C /tmp/template:*)"
-
-      - name: Pre-render Job C prompt
-        id: prepare-prompt-c
-        if: |
-          steps.changes.outputs.changed == 'true' &&
-          steps.agent-prereq.outputs.agent_enabled == 'true' &&
-          steps.meta.outputs.template_advanced == 'true' &&
-          steps.clone-template.outputs.template_clone_ok == 'true'
-        env:
-          PREVIOUS_COMMIT: ${{ steps.meta.outputs.previous_commit }}
-          NEW_REF: ${{ steps.meta.outputs.new_ref }}
-        run: |
-          envsubst '${PREVIOUS_COMMIT} ${NEW_REF}' \
-            < scripts/copier_update_prompts/job_c.md \
-            > /tmp/agent-prompt-c.md
-          {
-            echo "prompt<<PROMPT_EOF"
-            cat /tmp/agent-prompt-c.md
-            echo "PROMPT_EOF"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Agent Job C — Excluded-file evolution
-        if: |
-          steps.changes.outputs.changed == 'true' &&
-          steps.agent-prereq.outputs.agent_enabled == 'true' &&
-          steps.meta.outputs.template_advanced == 'true' &&
-          steps.clone-template.outputs.template_clone_ok == 'true'
-        continue-on-error: true
-        uses: anthropics/claude-code-action@v1
-        with:
-          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          prompt: ${{ steps.prepare-prompt-c.outputs.prompt }}
-          claude_args: |
-            --allowed-tools "Read,Write,Bash(cat:*),Bash(git -C /tmp/template:*)"
+          python3 scripts/copier_update_notes.py notes \
+            --upgrading /tmp/upgrading.md \
+            --previous "${PREV_REF}" \
+            --target "${REF}" \
+            --max-chars 30000 \
+            --output /tmp/upgrading-notes.md
 
       - name: Ensure PR labels exist
         if: steps.changes.outputs.changed == 'true'
@@ -373,11 +248,6 @@ jobs:
           REF: ${{ steps.meta.outputs.ref }}
         run: |
           set -euo pipefail
-          # claude-code-action overwrites local git config (user.name/email) to
-          # claude[bot] during the agent step; reset here so this commit is
-          # attributed to github-actions[bot], not the agent identity.
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           branch="copier/update"
           # `git add -A` runs BEFORE `git checkout -B` because copier's
           # `--conflict=inline` mode leaves conflict-marker files in the
@@ -397,16 +267,10 @@ jobs:
         id: diff
         run: |
           set -euo pipefail
-          # `copier/update` may have 1 or 2 commits ahead of main:
-          #   1 commit  — the chore(copier) commit only (no Job A auto-commit
-          #               because no conflicts arose, or Job A didn't run).
-          #   2 commits — Job A's "auto-resolve N trivial conflicts" commit
-          #               (made on default branch, carried forward into
-          #               copier/update via `git checkout -B`) PLUS the chore
-          #               commit on top.
-          # Always diff against main rather than HEAD~1 so Job A's
-          # auto-resolved files are reflected in the diff stat regardless
-          # of how many commits are stacked.
+          # Diff against main rather than HEAD~1: `copier/update` carries a
+          # single fresh commit per run today, but the branch survives
+          # between weekly refreshes and diffing the base keeps the stat
+          # honest regardless of how the branch history evolves.
           git fetch origin main --depth=50
           diff_count=$(git diff --name-only origin/main HEAD | wc -l | tr -d ' ')
           echo "diff_count=${diff_count}" >> "$GITHUB_OUTPUT"
@@ -422,15 +286,16 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           REF: ${{ steps.meta.outputs.ref }}
-          PREV_REF: ${{ steps.copier.outputs.prev_ref }}
-          TEMPLATE_REPO: ${{ steps.meta.outputs.template_repo }}
+          PREV_REF: ${{ steps.target.outputs.prev_ref }}
+          TEMPLATE_REPO: ${{ steps.target.outputs.template_repo }}
           CONFLICT_COUNT: ${{ steps.meta.outputs.conflict_count }}
           CONFLICT_FILES: ${{ steps.meta.outputs.conflict_files }}
           DIFF_COUNT: ${{ steps.diff.outputs.diff_count }}
           DIFF_STAT: ${{ steps.diff.outputs.diff_stat }}
+          LATEST_TAG: ${{ steps.target.outputs.latest_tag }}
         run: |
           set -euo pipefail
-          mkdir -p /tmp/aggregator
+          mkdir -p /tmp/pr
 
           # Fetch release notes for the target ref.  Empty when the release
           # isn't cut yet (e.g. a manual `--vcs-ref` run targeting an unreleased
@@ -459,6 +324,14 @@ jobs:
             body="## Template update to \`${REF}\`"
           fi
 
+          # Staged update: automated runs step one major at a time, so when
+          # the chosen target is not the template's newest stable tag, say
+          # so — the operator should expect the next stage, not wonder why
+          # the update stopped short.
+          if [ -n "${LATEST_TAG}" ] && [ "${REF}" != "${LATEST_TAG}" ]; then
+            body+=$'\n\n'"> **Staged update:** automated runs advance one major at a time. The template's newest stable release is \`${LATEST_TAG}\`; merge this PR and the next scheduled run opens the next stage (or dispatch the workflow with \`vcs_ref\` to jump directly)."
+          fi
+
           # Release notes in a collapsed block so the PR body stays scannable.
           if [ -n "${release_notes}" ]; then
             body+=$'\n\n'"<details><summary>Release notes (${REF})</summary>"
@@ -466,12 +339,34 @@ jobs:
             body+=$'\n\n'"</details>"
           fi
 
-          # Diff stat — always collapsed; even a handful of files is noisy.
-          body+=$'\n\n'"<details><summary>Files changed (${DIFF_COUNT})</summary>"
-          body+=$'\n\n''```'
-          body+=$'\n'"${DIFF_STAT}"
-          body+=$'\n''```'
-          body+=$'\n\n'"</details>"
+          # UPGRADING.md sections for the jump — the template-maintained
+          # record of the manual work `copier update` cannot do.  Collapsed;
+          # the full file at the target ref is always linked so the embed can
+          # degrade (fetch failure, first update, oversized range) without
+          # losing the pointer.
+          if [ -n "${TEMPLATE_REPO}" ]; then
+            upgrading_url="https://github.com/${TEMPLATE_REPO}/blob/${REF}/UPGRADING.md"
+            if [ -s /tmp/upgrading-notes.md ]; then
+              body+=$'\n\n'"### Upgrade notes (manual steps)"
+              body+=$'\n\n'"<details><summary>UPGRADING.md sections for this jump</summary>"
+              body+=$'\n\n'"$(cat /tmp/upgrading-notes.md)"
+              body+=$'\n\n'"</details>"
+              body+=$'\n\n'"Full guide: [\`UPGRADING.md\` at ${REF}](${upgrading_url})."
+            else
+              body+=$'\n\n'"### Upgrade notes (manual steps)"
+              body+=$'\n\n'"Read [\`UPGRADING.md\` at ${REF}](${upgrading_url}) — every applicable section between the previous ref and the target."
+            fi
+          fi
+
+          # Resolution policy — the template is the alignment mechanism for
+          # the whole fleet, so the default in every conflict is the template
+          # side; local deviations outside the downstream-owned regions are
+          # drift, not house style.
+          body+=$'\n\n'"### Resolution policy"
+          body+=$'\n\n'"This project tracks the template: the template is the single upstream source that keeps every downstream repo aligned. Resolve the diff — and any conflict markers — by **taking the template side**, except in downstream-owned regions:"
+          body+=$'\n\n'"- content inside \`DOMAIN-*\` / \`PROJECT-*\` / \`CONFIG-*\` sentinel blocks;"
+          body+=$'\n'"- files listed under \`_skip_if_exists\` in the template's \`copier.yml\`."
+          body+=$'\n\n'"\"House style\", \"we already had this\", or \"otherwise something would be missing\" are not reasons to keep local drift. If the template's side seems wrong or incomplete, that is a template bug or a missing sentinel seam — file it upstream (see \`CONTRIBUTING.md\` routing) and fix it there, so the whole fleet gets the correction."
 
           # Conflicts — list the files (not just a count), and call out that
           # the markers are *committed to the branch*, not sidecar .rej files.
@@ -484,49 +379,27 @@ jobs:
             done <<< "${CONFLICT_FILES}"
           fi
 
+          # Diff stat — always collapsed; even a handful of files is noisy.
+          body+=$'\n\n'"<details><summary>Files changed (${DIFF_COUNT})</summary>"
+          body+=$'\n\n''```'
+          body+=$'\n'"${DIFF_STAT}"
+          body+=$'\n''```'
+          body+=$'\n\n'"</details>"
+
           body+=$'\n\n'"---"
           body+=$'\n\n'"> **Note:** \`--skip-answered\` was passed, so any **new** template variables introduced since the last update were silently filled with their copier defaults. Skim \`.copier-answers.yml\` for unexpected new keys."
 
-          # Persist for the aggregator (Compose PR body) and as the fallback
-          # body when the aggregator step fails.
-          printf '%s' "${body}" > /tmp/aggregator/existing-body.md
+          printf '%s' "${body}" > /tmp/pr/body.md
 
-      - name: Compose PR body via aggregator
-        id: compose
-        # Reads the existing PR body data + three /tmp/agent-job-*.json
-        # files (any may be missing/errored) and writes the composed PR body.
-        # Failure-tolerant: if aggregator crashes, PR still opens with the
-        # existing body (no agent sections).
-        if: steps.changes.outputs.changed == 'true'
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
-          AGENT_ENABLED: ${{ steps.agent-prereq.outputs.agent_enabled }}
-          CONFLICT_COUNT: ${{ steps.meta.outputs.conflict_count }}
-          TEMPLATE_ADVANCED: ${{ steps.meta.outputs.template_advanced }}
-          PR_NUMBER: ${{ steps.meta.outputs.pr_number || '0' }}
-        run: |
-          set -euo pipefail
-
-          python3 scripts/copier_update_aggregator.py \
-            --existing-body /tmp/aggregator/existing-body.md \
-            --agent-enabled "${AGENT_ENABLED}" \
-            $( [ -f /tmp/agent-job-a.json ] && echo "--job-a /tmp/agent-job-a.json" ) \
-            $( [ -f /tmp/agent-job-b.json ] && echo "--job-b /tmp/agent-job-b.json" ) \
-            $( [ -f /tmp/agent-job-c.json ] && echo "--job-c /tmp/agent-job-c.json" ) \
-            --conflict-count "${CONFLICT_COUNT}" \
-            --template-advanced "${TEMPLATE_ADVANCED}" \
-            --output-body /tmp/aggregator/composed-body.md \
-            --overflow-dir /tmp/aggregator/overflow
-
-          echo "composed_body_path=/tmp/aggregator/composed-body.md" >> "$GITHUB_OUTPUT"
-
-          # Post overflow comments if any (best-effort: requires PR_NUMBER>0).
-          if [ "${PR_NUMBER}" != "0" ] && [ -d /tmp/aggregator/overflow ]; then
-            for overflow_file in /tmp/aggregator/overflow/overflow-*.md; do
-              [ -f "$overflow_file" ] || continue
-              gh pr comment "${PR_NUMBER}" --body-file "$overflow_file" || true
-            done
+          # GitHub rejects PR bodies over 65536 characters.  The embedded
+          # sections are individually bounded (upgrade notes at 30000 via
+          # --max-chars, release notes one release deep), but belt-and-braces:
+          # a hard truncation with a visible marker beats a failed `gh pr
+          # create` after the branch already pushed.
+          if [ "$(wc -c < /tmp/pr/body.md)" -gt 60000 ]; then
+            head -c 60000 /tmp/pr/body.md > /tmp/pr/body.trunc
+            printf '\n\n---\n\n> **Truncated:** this body exceeded the PR size limit — read the linked release notes and UPGRADING.md directly.' >> /tmp/pr/body.trunc
+            mv /tmp/pr/body.trunc /tmp/pr/body.md
           fi
 
       - name: Open or update PR
@@ -539,18 +412,10 @@ jobs:
           branch="copier/update"
           title="chore(copier): update to ${REF}"
 
-          # Prefer the aggregator's composed body; fall back to the plain body
-          # if the aggregator step failed (continue-on-error: true).
-          if [ -f /tmp/aggregator/composed-body.md ]; then
-            body_file=/tmp/aggregator/composed-body.md
-          else
-            body_file=/tmp/aggregator/existing-body.md
-          fi
-
           if gh pr view "${branch}" --json state --jq '.state' 2>/dev/null | grep -q OPEN; then
             gh pr edit "${branch}" \
               --title "${title}" \
-              --body-file "${body_file}" \
+              --body-file /tmp/pr/body.md \
               --add-label copier \
               --add-label dependencies
           else
@@ -558,7 +423,7 @@ jobs:
               --base main \
               --head "${branch}" \
               --title "${title}" \
-              --body-file "${body_file}" \
+              --body-file /tmp/pr/body.md \
               --label copier \
               --label dependencies
           fi

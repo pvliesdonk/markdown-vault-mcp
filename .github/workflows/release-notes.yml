@@ -40,6 +40,11 @@ on:
         description: 'The prep-branch head the draft was cut against; the push is leased on it so a newer Release Prepare re-dispatch is never clobbered.'
         type: string
         required: true
+      full_redraft:
+        description: 'Force rewrite (template#452/#460): ignore the page''s notes-range-end watermark and re-derive its prose under the current skill contract. Defaults to false, so a prepare-time refresh stays incremental unless the operator set the flag on the Release Prepare dispatch.'
+        type: boolean
+        required: false
+        default: false
   workflow_dispatch:
     inputs:
       tag:
@@ -62,9 +67,11 @@ on:
       # Force rewrite (template#452): the incremental-research contract
       # treats the accepted page as a cache, so a change to the skill's
       # own rules never reaches a range the page already covers.  This
-      # flag is the operator's override — a deliberate dispatch, never
-      # the prepare-time default; the draft still lands through the
-      # normal review paths (release PR diff or standalone notes PR).
+      # flag is the operator's override — always an explicit choice,
+      # never the default: here on the dispatch, or threaded through
+      # the call from Release Prepare's own full_redraft input
+      # (template#460).  The draft still lands through the normal
+      # review paths (release PR diff or standalone notes PR).
       full_redraft:
         description: 'Force rewrite: ignore the page''s notes-range-end watermark, research the full range the page covers, and re-derive its prose under the current skill contract. Valid in tag mode and target_version mode alike.'
         type: boolean
@@ -280,6 +287,7 @@ jobs:
       - name: Seed and snapshot the notes surface
         env:
           PAGE: ${{ steps.ctx.outputs.page }}
+          FULL_REDRAFT: ${{ inputs.full_redraft == true }}
         run: |
           set -euo pipefail
           PRE="$RUNNER_TEMP/pre-notes"
@@ -302,6 +310,22 @@ jobs:
           seed .release-notes-pr-body.md
           cp -R docs/releases "$PRE/releases"
           cp "$ACCEPT" "$PRE/accept.txt"
+          # AFTER the snapshot: a full redraft starts from an EMPTY page.
+          # The agent's only mutation tool is path-scoped Edit, which
+          # writes whole pages reliably only into seeded empty files —
+          # asked to replace existing prose in place, the first live
+          # full-redraft run burned 152 permission denials on bulk-edit
+          # tools the sandbox refuses and landed a 5-line copy-edit
+          # (template#463).  Emptying the page makes the rewrite the
+          # proven new-page path, and keeps failure honest: an agent that
+          # writes nothing leaves an empty page, which the call-mode
+          # watermark gate refuses loudly, and a standalone backfill PR
+          # shows its reviewer a gutted diff, never a silent stale page.
+          # The snapshot above keeps the pre-truncation content, so the
+          # landing overlay attributes the whole rewrite to this draft.
+          if [ "$FULL_REDRAFT" = "true" ]; then
+            : > "$PAGE"
+          fi
 
       # Uploaded BEFORE the agent runs — the landing job's trusted
       # baseline for "what did this draft actually change".
@@ -376,7 +400,7 @@ jobs:
             - research range end (RANGE_END): ${{ steps.ctx.outputs.range_end }} (a commit SHA: the tagged commit after a release; at prepare time the open release PR's source commit — the tag does not exist yet)
             - page: ${{ steps.ctx.outputs.page }}
             - mode: ${{ steps.ctx.outputs.mode }} (new = write the whole page and add it to docs/releases/index.md; patch = append one section inside the patch sentinels, dated per the skill's tag-existence gate; redraft = the minor's page already exists — e.g. drafted at prepare time — so update/extend it in place and never append a duplicate section for this release)
-            - full redraft: ${{ inputs.full_redraft == true }} (true = ignore any existing notes-range-end watermark: research the FULL range the page covers and re-derive its prose under the current skill contract, per the skill's full-redraft override; false = incremental research per the watermark)
+            - full redraft: ${{ inputs.full_redraft == true }} (true = the workflow emptied the page after snapshotting it: research the FULL range the page covers and write the COMPLETE re-derived page into the empty file — summary markers for every release it covered, patch sentinels, watermark — per the skill's full-redraft override; false = incremental research per the watermark)
 
             The vale binary (packs synced) and `uv run mkdocs build --strict` are available for the skill's quality gates. Write your proposed pull-request body to .release-notes-pr-body.md at the repository root (used only when this run opens a standalone notes PR; ignored when the draft lands on a release PR's branch). Do not commit, push, or open a PR yourself — the workflow's next step lands your working tree mechanically.
           # No progress-tracking input: the action supports it only on
@@ -589,7 +613,21 @@ jobs:
               echo "::warning::no open release PR found for ${PREP_BRANCH} — nothing to mark ready"
               exit 0
             fi
-            current_head="$(gh pr view "$pr" --json headRefOid --jq .headRefOid 2>/dev/null || true)"
+            # The API's view of the PR can lag the push this run just
+            # made (observed live: the pre-push head reported ~600ms
+            # after the push, template#462).  While the view still
+            # reports exactly the lease head we pushed on top of, that
+            # is staleness, not a newer prepare — a newer prepare would
+            # have force-recreated the branch to a different stamp
+            # head.  Retry through the lag; any THIRD head is a genuine
+            # takeover and leaves the hold in place immediately.
+            current_head=""
+            for attempt in 1 2 3 4 5; do
+              current_head="$(gh pr view "$pr" --json headRefOid --jq .headRefOid 2>/dev/null || true)"
+              [ "$current_head" = "$accepted_head" ] && break
+              [ "$current_head" = "$EXPECTED_HEAD" ] || break
+              sleep 2
+            done
             if [ "$current_head" != "$accepted_head" ]; then
               echo "::warning::release PR #${pr} head ${current_head} is not the head this run accepted (${accepted_head}) — a newer prepare owns the PR; leaving its draft hold in place"
               exit 0

@@ -52,8 +52,9 @@ You are given, or must derive first:
   `<!-- notes-range-end: SHA -->` comment recording where its last
   accepted draft's research ended. This is the incremental-research
   anchor for the modes below.
-- Full-redraft flag — a manual dispatch may set it; it suspends the
-  watermark's cache role for that one run (see the override below).
+- Full-redraft flag — the operator may set it on either dispatch
+  (Release Prepare threads it through to the notes job); it suspends
+  the watermark's cache role for that one run (see the override below).
 
 ## Incremental research (patch and redraft modes)
 
@@ -80,19 +81,28 @@ A page without a watermark predates this contract: research the full
 `PREV..RANGE_END` range once, and add the watermark with the result.
 
 **Full-redraft override.** When the run's inputs say full redraft, the
-watermark loses its cache role for that run only: research the full
-range the page covers — from the highest stable tag strictly below the
-minor's first release (`X.Y.0`, series-aware via the tags API; the
-whole history on a first series) through `RANGE_END` — and re-derive
-the page's prose under the current contract, keeping only claims the
-evidence still supports. The page's structure is unchanged (summary
-markers, patch sentinels, index entry all stay), and the watermark
-still moves to `RANGE_END`. This is the operator's remedy when this
-skill's own rules changed after a page was accepted: the incremental
-path above deliberately preserves accepted prose, so contract
-improvements never reach an already-covered range without this
-override. It exists only on the manual dispatch — a prepare-time
-refresh is always incremental.
+watermark loses its cache role for that run only, and the calling
+workflow has already **emptied the page** (after snapshotting it):
+write the complete page from scratch, exactly as in new-page mode.
+Research the full range the page covers — from the highest stable tag
+strictly below the minor's first release (`X.Y.0`, series-aware via
+the tags API; the whole history on a first series) through
+`RANGE_END` — and re-derive every part of the page under the current
+contract: the summary block for each release the page covered (the
+minor's tags, read via the API, tell you which), the theme sections,
+the upgrade section, the patch sentinels and their sections, and the
+watermark at `RANGE_END`. The previous page remains readable through
+the API at the branch ref for reference, but write from the
+re-research, never by restoring it — a full redraft that reproduces
+the old prose with word-level touch-ups is the override not honoured.
+The index entry lives in a separate file and stays. This is the
+operator's remedy when this skill's own rules changed after a page was
+accepted: the incremental path above deliberately preserves accepted
+prose, so contract improvements never reach an already-covered range
+without this override. The flag is off by default on every entry
+point — a refresh is incremental unless the operator sets it, either
+on the Release Prepare dispatch (threaded through to the notes job) or
+on the Release Notes dispatch directly.
 
 ## Non-negotiables
 
