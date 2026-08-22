@@ -2186,6 +2186,11 @@
 <div class="highlight"><pre><span></span><code>uv<span class="w"> </span>tool<span class="w"> </span>install<span class="w"> </span>markdown-vault-mcp
 </code></pre></div>
 <p>Or download the <code>.mcpb</code> bundle from the <a href="https://github.com/pvliesdonk/markdown-vault-mcp/releases">GitHub Releases</a> page and double-click to install; Claude Desktop prompts for required env vars via a GUI wizard, no manual JSON editing needed.</p>
+<p>The bundle does not carry the code. It pins <code>markdown-vault-mcp[all]</code> at its own
+version and <code>uvx</code> fetches that from PyPI on first launch, so the machine
+needs network access the first time it starts. Release candidates publish to
+PyPI for exactly this reason, which makes a <code>vX.Y.Z-rc.N</code> bundle installable
+the same way a stable one is.</p>
 <h3 id="2-configure-claude-desktop">2. Configure Claude Desktop<a class="headerlink" href="#2-configure-claude-desktop" title="Permanent link">&para;</a></h3>
 <p>If you installed via <code>.mcpb</code>, skip this step. Claude Desktop was configured automatically by the wizard.</p>
 <p>Otherwise, add the server to your Claude Desktop configuration file. The path varies by operating system:</p>

@@ -1513,6 +1513,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#testing-a-candidates-claude-code-plugin" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Testing a candidate's Claude Code plugin
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#the-release-pull-request" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1939,6 +1950,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#testing-a-candidates-claude-code-plugin" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Testing a candidate's Claude Code plugin
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#the-release-pull-request" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2040,12 +2062,12 @@ from.</p>
 <tr>
 <td><code>edge</code></td>
 <td>None; the commit is the identity</td>
-<td>The newest merged code. Every merge to <code>main</code> rebuilds the rolling Docker tag plus an <code>.mcpb</code> bundle workflow artifact, and the rolling <code>unstable</code> docs version deploys from the same trigger. It leaves no git tag, GitHub release, or PyPI entry behind.</td>
+<td>The newest merged code. Every merge to <code>main</code> rebuilds the rolling Docker tag plus an <code>.mcpb</code> bundle and a Claude Code plugin <code>.zip</code> as workflow artifacts, and the rolling <code>unstable</code> docs version deploys from the same trigger. It leaves no git tag, GitHub release, or PyPI entry behind.</td>
 </tr>
 <tr>
 <td>Pre-release</td>
 <td><code>vX.Y.Z-rc.N</code>, computed and reviewed in its release pull request</td>
-<td>A stabilisation step toward exactly that version, normally cut from a <code>release/X.Y</code> branch. Publishes a GitHub release with wheels, <code>sdist</code>, <code>.deb</code>/<code>.rpm</code> packages, <code>.mcpb</code> bundle, and SBOM attached, plus a Docker image under its immutable version tag and the rolling <code>rc</code> tag. Skips PyPI, the marketplace and registry entries, and the docs deploy.</td>
+<td>A stabilisation step toward exactly that version, normally cut from a <code>release/X.Y</code> branch. Publishes a GitHub release with wheels, <code>sdist</code>, <code>.deb</code>/<code>.rpm</code> packages, <code>.mcpb</code> bundle, plugin <code>.zip</code>, and SBOM attached, plus the wheel on PyPI and a Docker image under its immutable version tag and the rolling <code>rc</code> tag. Skips the marketplace and registry entries and the docs deploy.</td>
 </tr>
 <tr>
 <td>Stable</td>
@@ -2054,11 +2076,20 @@ from.</p>
 </tr>
 </tbody>
 </table>
-<p>Pre-release and <code>edge</code> builds never reach PyPI: PyPI is where every
-ordinary installer looks, and unstable builds do not belong in front of
-it. A pre-release's wheels are still attached to its
-<a href="https://github.com/pvliesdonk/markdown-vault-mcp/releases">GitHub release</a>
-and installable by URL for anyone who opts in.</p>
+<p>Pre-releases do reach PyPI, and that does not put them in front of
+ordinary installers. A PEP 440 resolver skips pre-releases unless the
+requirement pins one or you pass <code>--pre</code>, so <code>pip install markdown-vault-mcp</code>
+and <code>uv add markdown-vault-mcp</code> still resolve to the newest stable. Ask for a
+candidate by name to get one:</p>
+<div class="highlight"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>markdown-vault-mcp<span class="o">==</span>X.Y.ZrcN
+</code></pre></div>
+<p>Note the spelling. Tags and the changelog use SemVer (<code>vX.Y.Z-rc.N</code>);
+PyPI uses the PEP 440 canonical form (<code>X.Y.ZrcN</code>).</p>
+<p>Candidates need PyPI because the <code>.mcpb</code> bundle points there rather than
+carrying the code. Its manifest launches <code>uvx --from markdown-vault-mcp[all]==&lt;version&gt;</code>,
+so a candidate absent from PyPI ships a bundle that fails on the tester's
+machine at install time. <code>edge</code> still publishes nothing to PyPI: it has no
+version identity to publish under.</p>
 <p>Rolling pointers are ordering-aware. The Docker <code>latest</code>, <code>vX</code>, and <code>vX.Y</code>
 tags, the GitHub latest-release pointer, the docs <code>latest</code> alias, and the
 marketplace and registry entries follow a release only when it is the
@@ -2069,6 +2100,27 @@ while the candidate's version is still ahead of the newest stable. This holds
 even when two releases overlap: each rolling channel checks the tag
 ordering again inside its own publish job. See
 <a href="../docker/#image-tags">Image tags</a> for the Docker tag list.</p>
+<h2 id="testing-a-candidates-claude-code-plugin">Testing a candidate's Claude Code plugin<a class="headerlink" href="#testing-a-candidates-claude-code-plugin" title="Permanent link">&para;</a></h2>
+<p>Every release attaches <code>markdown-vault-mcp-plugin-&lt;version&gt;.zip</code>, and every
+merge to <code>main</code> produces the same archive as the <code>plugin-zip-edge</code> workflow
+artifact. Load one without installing anything:</p>
+<div class="highlight"><pre><span></span><code>claude<span class="w"> </span>--plugin-url<span class="w"> </span>https://github.com/pvliesdonk/markdown-vault-mcp/releases/download/vX.Y.Z-rc.N/markdown-vault-mcp-plugin-X.Y.Z-rc.N.zip
+</code></pre></div>
+<p>The plugin loads for that session only and leaves no install record, so this
+is the way to try a candidate without disturbing the installed copy. Check it
+came up with <code>/plugin</code>, or from the shell:</p>
+<div class="highlight"><pre><span></span><code>claude<span class="w"> </span>--plugin-url<span class="w"> </span>&lt;url&gt;<span class="w"> </span>plugin<span class="w"> </span>details<span class="w"> </span>markdown-vault-mcp
+</code></pre></div>
+<p>The zip carries its own wheel and launches it from <code>${CLAUDE_PLUGIN_ROOT}</code>,
+so it works at versions no index serves: every candidate, and the <code>edge</code>
+build, whose constant <code>0.0.0-dev</code> could never be published. Its
+dependencies still resolve normally at launch, so the machine needs network
+access the first time the server starts.</p>
+<p>The marketplace entry is the other half of the channel and works
+differently: it is a thin pointer that installs <code>markdown-vault-mcp</code> from PyPI,
+it is what <code>/plugin install</code> reads, and it follows stable releases only.
+Claude Code has no marketplace-free way to install a plugin permanently, so
+a candidate is something you load per session rather than install.</p>
 <h2 id="the-release-pull-request">The release pull request<a class="headerlink" href="#the-release-pull-request" title="Permanent link">&para;</a></h2>
 <p>Dispatching <strong>Release Prepare</strong> on the branch to release from has the
 release tool, <a href="https://knope.tech/">knope</a>, compute the next version from

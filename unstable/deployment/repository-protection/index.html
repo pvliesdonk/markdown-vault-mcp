@@ -1571,6 +1571,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Requiring a check the template does not own">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#codecovpatch-if-you-require-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        codecov/patch, if you require it
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1963,6 +1980,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Requiring a check the template does not own">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#codecovpatch-if-you-require-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        codecov/patch, if you require it
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -2155,6 +2189,21 @@ decide inside the job whether there is work to do, exiting zero when
 there is not. Verify on a pull request that touches nothing the check
 cares about: the context must still appear, and pass.</p>
 </div>
+<h3 id="codecovpatch-if-you-require-it"><code>codecov/patch</code>, if you require it<a class="headerlink" href="#codecovpatch-if-you-require-it" title="Permanent link">&para;</a></h3>
+<p><code>codecov/patch</code> is the one context this rule applies to that the template
+itself ships, and it is worth knowing how it reaches a pull request before
+you add it to <code>extra_required_checks</code>.</p>
+<p>Two workflows post it. <code>ci.yml</code> posts it directly for a pull request from a
+branch in this repository. A pull request from a fork gets a read-only token,
+so <code>ci.yml</code> cannot write the status there; <code>coverage-status.yml</code> posts it
+instead, from a <code>workflow_run</code> that executes in this repository's context
+after CI finishes.</p>
+<p>Both post under every outcome, including an <code>error</code> state when the coverage
+result is missing. That is deliberate: an <code>error</code> is recoverable, because a
+maintainer can re-run the workflow, while a missing status is not. If you
+require this context and a fork pull request stalls on it, check the <strong>Post
+Coverage Status</strong> workflow's runs rather than the CI run: the status comes
+from there.</p>
 <h2 id="applying-by-hand">Applying by hand<a class="headerlink" href="#applying-by-hand" title="Permanent link">&para;</a></h2>
 <p>Without the bootstrap workflow (or when importing into another repository):</p>
 <div class="highlight"><pre><span></span><code>gh<span class="w"> </span>api<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span><span class="s2">&quot;repos/OWNER/REPO/rulesets&quot;</span><span class="w"> </span><span class="se">\</span>
